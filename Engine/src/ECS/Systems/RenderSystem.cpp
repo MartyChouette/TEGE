@@ -284,13 +284,6 @@ void RenderSystem::CreateTriangleMesh() {
 void RenderSystem::RenderEntity(Entity entity) {
     static bool firstFrame = true;
 
-    // TEMPORARY: Skip all rendering to test if EndFrame works
-    if (firstFrame) {
-        ENJIN_LOG_INFO(Renderer, "RenderEntity: SKIPPING ALL RENDERING (test mode)");
-        firstFrame = false;
-    }
-    return;
-
     if (!m_Pipeline || !m_Renderer) {
         return;
     }
@@ -377,13 +370,13 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: all bindings done, skipping draw call...");
 
-    // Draw - TEMPORARILY DISABLED to test if basic rendering works
+    // Draw - TEMPORARILY DISABLED to test if bindings work
     // vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
 
     if (firstFrame) {
-        ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call skipped (testing)");
+        ENJIN_LOG_INFO(Renderer, "RenderEntity: frame complete (no draw)");
         firstFrame = false;
     }
 }
