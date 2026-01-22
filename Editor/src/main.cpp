@@ -54,8 +54,14 @@ public:
         // IMPORTANT: record draw commands between BeginFrame/EndFrame.
         // BeginFrame can fail due to swapchain recreation, minimized window, etc.
         if (!m_Renderer->BeginFrame()) {
+            m_FrameFailCount++;
+            if (m_FrameFailCount % 60 == 1) {  // Log first failure and every 60th after
+                ENJIN_LOG_WARN(Editor, "BeginFrame failed (total failures: %u)", m_FrameFailCount);
+            }
             return;  // Skip this frame if we couldn't acquire an image
         }
+
+        m_FrameFailCount = 0;  // Reset on success
 
         // RenderSystem::Update records draw calls into the current command buffer.
         if (m_World) {
@@ -69,6 +75,7 @@ private:
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;
     std::unique_ptr<Enjin::ECS::World> m_World;
     Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;
+    Enjin::u32 m_FrameFailCount = 0;
 };
 
 Enjin::Application* CreateApplication() {
