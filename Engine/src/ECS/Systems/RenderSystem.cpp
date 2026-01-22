@@ -372,11 +372,11 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
 
-    // Draw
-    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Draw - TEMPORARILY DISABLED to test if basic rendering works
+    // vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
 
     if (firstFrame) {
-        ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete");
+        ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call skipped (testing)");
         firstFrame = false;
     }
 }
