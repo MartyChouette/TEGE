@@ -282,16 +282,22 @@ void RenderSystem::CreateTriangleMesh() {
 }
 
 void RenderSystem::RenderEntity(Entity entity) {
+    static bool firstFrame = true;
+
     if (!m_Pipeline || !m_Renderer) {
         return;
     }
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: checking components...");
+
     TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
-    
+
     if (!transform || !mesh || !mesh->IsValid()) {
         return;
     }
+
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: getting render data...");
 
     auto it = m_EntityRenderData.find(entity);
     if (it == m_EntityRenderData.end()) {
@@ -310,14 +316,20 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: updating uniform buffer...");
+
     // Update uniform buffer
     UpdateUniformBuffer(entity);
 
     // Use the renderer's current frame index for proper synchronization
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding pipeline...");
+
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);
+
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding descriptor set %u...", currentFrame);
 
     // Bind descriptor set
     vkCmdBindDescriptorSets(
@@ -327,6 +339,8 @@ void RenderSystem::RenderEntity(Entity entity) {
         0, 1, &m_DescriptorSets[currentFrame],
         0, nullptr
     );
+
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: setting viewport/scissor...");
 
     // Set viewport and scissor
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
@@ -344,16 +358,27 @@ void RenderSystem::RenderEntity(Entity entity) {
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding vertex buffer...");
+
     // Bind vertex buffer
     VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
     VkDeviceSize offsets[] = { 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding index buffer...");
+
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
+
     // Draw
     vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+
+    if (firstFrame) {
+        ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete");
+        firstFrame = false;
+    }
 }
 
 } // namespace ECS
