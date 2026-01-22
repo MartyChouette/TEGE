@@ -370,13 +370,13 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: all bindings done, skipping draw call...");
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
 
-    // Draw - TEMPORARILY DISABLED to test if bindings work
-    // vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Draw
+    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
 
     if (firstFrame) {
-        ENJIN_LOG_INFO(Renderer, "RenderEntity: frame complete (no draw)");
+        ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete!");
         firstFrame = false;
     }
 }
