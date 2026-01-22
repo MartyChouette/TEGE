@@ -57,13 +57,11 @@ void RenderSystem::Initialize() {
     // Create pipeline
     CreatePipeline();
 
-    // Create uniform buffers
-    CreateUniformBuffers();
+    // Skip uniform buffers and descriptor sets - minimal shader doesn't need them
+    // CreateUniformBuffers();
+    // CreateDescriptorSets();
 
-    // Create descriptor sets
-    CreateDescriptorSets();
-
-    // Create triangle mesh
+    // Create triangle mesh (entity for tracking, but buffers won't be used)
     CreateTriangleMesh();
 
     m_Initialized = true;
@@ -103,7 +101,7 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
-    // Render all entities with Transform and Mesh components
+    // Render using minimal shader (entity not needed for draw, but we check it exists)
     if (m_TriangleEntity != INVALID_ENTITY) {
         RenderEntity(m_TriangleEntity);
     }
@@ -263,52 +261,22 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 void RenderSystem::CreateTriangleMesh() {
     m_TriangleEntity = m_World->CreateEntity();
 
-    // Add transform
+    // Add transform (not used by minimal shader but keeps entity valid)
     TransformComponent& transform = m_World->AddComponent<TransformComponent>(m_TriangleEntity);
     transform.position = Math::Vector3(0.0f, 0.0f, 0.0f);
     transform.scale = Math::Vector3(1.0f);
 
-    // Add mesh (triangle)
-    MeshComponent& mesh = m_World->AddComponent<MeshComponent>(m_TriangleEntity);
-    mesh.vertices = {
-        { Math::Vector3(0.0f, -0.5f, 0.0f), Math::Vector3(0.0f, 0.0f, 1.0f), Math::Vector2(0.5f, 0.0f) },
-        { Math::Vector3(0.5f, 0.5f, 0.0f), Math::Vector3(0.0f, 0.0f, 1.0f), Math::Vector2(1.0f, 1.0f) },
-        { Math::Vector3(-0.5f, 0.5f, 0.0f), Math::Vector3(0.0f, 0.0f, 1.0f), Math::Vector2(0.0f, 1.0f) }
-    };
-    mesh.indices = { 0, 1, 2 };
-
-    SetupEntityBuffers(m_TriangleEntity);
-    ENJIN_LOG_INFO(Renderer, "Created triangle entity: %llu", m_TriangleEntity);
+    // Skip mesh component and buffers - minimal shader generates triangle internally
+    ENJIN_LOG_INFO(Renderer, "Created triangle entity: %llu (using minimal shader)", m_TriangleEntity);
 }
 
 void RenderSystem::RenderEntity(Entity entity) {
     static bool firstFrame = true;
+    (void)entity; // Unused for now - minimal shader doesn't need entity data
 
     if (!m_Pipeline || !m_Renderer) {
         return;
     }
-
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: checking components...");
-
-    TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
-    MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
-
-    if (!transform || !mesh || !mesh->IsValid()) {
-        return;
-    }
-
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: getting render data...");
-
-    auto it = m_EntityRenderData.find(entity);
-    if (it == m_EntityRenderData.end()) {
-        SetupEntityBuffers(entity);
-        it = m_EntityRenderData.find(entity);
-        if (it == m_EntityRenderData.end()) {
-            return;
-        }
-    }
-
-    EntityRenderData& renderData = it->second;
 
     // Get command buffer
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
@@ -316,46 +284,10 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: updating uniform buffer...");
-
-    // Update uniform buffer
-    UpdateUniformBuffer(entity);
-
-    // Use the renderer's current frame index for proper synchronization
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
-    // Memory barrier to ensure UBO update is visible to GPU before draw
-    // Intel iGPUs require explicit synchronization for host-visible memory
-    VkMemoryBarrier memoryBarrier{};
-    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-    memoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
-    memoryBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
-
-    vkCmdPipelineBarrier(
-        commandBuffer,
-        VK_PIPELINE_STAGE_HOST_BIT,
-        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
-        0,
-        1, &memoryBarrier,
-        0, nullptr,
-        0, nullptr
-    );
-
     if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding pipeline...");
 
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);
-
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding descriptor set %u...", currentFrame);
-
-    // Bind descriptor set
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(),
-        0, 1, &m_DescriptorSets[currentFrame],
-        0, nullptr
-    );
 
     if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: setting viewport/scissor...");
 
@@ -375,22 +307,11 @@ void RenderSystem::RenderEntity(Entity entity) {
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding vertex buffer...");
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing with minimal shader (no buffers)...");
 
-    // Bind vertex buffer
-    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding index buffer...");
-
-    // Bind index buffer
-    vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
-
-    // Draw indexed triangle
-    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Draw triangle using minimal shader that generates positions from gl_VertexIndex
+    // No vertex buffers, no index buffers, no UBO needed
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     if (firstFrame) {
         ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete!");
