@@ -60,8 +60,12 @@ void RenderSystem::Initialize() {
         return;
     }
 
+    ENJIN_LOG_INFO(Renderer, "Creating pipeline...");
+
     // Create pipeline
     CreatePipeline();
+
+    ENJIN_LOG_INFO(Renderer, "Creating triangle mesh...");
 
     // Skip uniform buffers and descriptor sets - minimal shader doesn't need them
     // CreateUniformBuffers();

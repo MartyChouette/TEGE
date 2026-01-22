@@ -18,14 +18,17 @@ bool VulkanPipeline::Create(
     VulkanShader* vertexShader,
     VulkanShader* fragmentShader
 ) {
+    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating descriptor set layout...");
     if (!CreateDescriptorSetLayout()) {
         return false;
     }
 
+    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating pipeline layout...");
     if (!CreatePipelineLayout()) {
         return false;
     }
 
+    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating graphics pipeline...");
     return CreatePipeline(config, vertexShader, fragmentShader);
 }
 
@@ -91,6 +94,8 @@ bool VulkanPipeline::CreatePipeline(
     VulkanShader* vertexShader,
     VulkanShader* fragmentShader
 ) {
+    ENJIN_LOG_INFO(Renderer, "CreatePipeline: setting up shader stages...");
+
     // Shader stages
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 
@@ -229,6 +234,8 @@ bool VulkanPipeline::CreatePipeline(
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
+
+    ENJIN_LOG_INFO(Renderer, "CreatePipeline: calling vkCreateGraphicsPipelines...");
 
     VkResult result = vkCreateGraphicsPipelines(
         m_Context->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline);
