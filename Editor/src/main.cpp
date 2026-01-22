@@ -52,7 +52,10 @@ public:
         }
 
         // IMPORTANT: record draw commands between BeginFrame/EndFrame.
-        m_Renderer->BeginFrame();
+        // BeginFrame can fail due to swapchain recreation, minimized window, etc.
+        if (!m_Renderer->BeginFrame()) {
+            return;  // Skip this frame if we couldn't acquire an image
+        }
 
         // RenderSystem::Update records draw calls into the current command buffer.
         if (m_World) {
