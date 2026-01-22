@@ -284,6 +284,13 @@ void RenderSystem::CreateTriangleMesh() {
 void RenderSystem::RenderEntity(Entity entity) {
     static bool firstFrame = true;
 
+    // TEMPORARY: Skip all rendering to test if EndFrame works
+    if (firstFrame) {
+        ENJIN_LOG_INFO(Renderer, "RenderEntity: SKIPPING ALL RENDERING (test mode)");
+        firstFrame = false;
+    }
+    return;
+
     if (!m_Pipeline || !m_Renderer) {
         return;
     }
