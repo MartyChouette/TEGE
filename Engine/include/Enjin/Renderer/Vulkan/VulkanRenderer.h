@@ -58,6 +58,7 @@ public:
     VulkanContext* GetContext() const { return m_Context.get(); }
     VulkanSwapchain* GetSwapchain() const { return m_Swapchain.get(); }
     VkExtent2D GetSwapchainExtent() const { return m_Swapchain ? m_Swapchain->GetExtent() : VkExtent2D{0, 0}; }
+    u32 GetCurrentFrameIndex() const { return m_CurrentFrame; }
 
     void OnWindowResize(u32 width, u32 height);
 

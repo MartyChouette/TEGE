@@ -249,9 +249,8 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         return;
     }
 
-    // Get current frame index (simplified - in production you'd track this properly)
-    static u32 currentFrame = 0;
-    currentFrame = (currentFrame + 1) % static_cast<u32>(m_UniformBuffers.size());
+    // Use the renderer's current frame index for proper synchronization
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     Renderer::UniformBufferObject ubo{};
     ubo.model = transform->ToMatrix();
@@ -314,9 +313,8 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Update uniform buffer
     UpdateUniformBuffer(entity);
 
-    // Get current frame index (simplified)
-    static u32 currentFrame = 0;
-    currentFrame = (currentFrame + 1) % static_cast<u32>(m_DescriptorSets.size());
+    // Use the renderer's current frame index for proper synchronization
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);
