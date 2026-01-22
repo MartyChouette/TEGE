@@ -324,6 +324,23 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Use the renderer's current frame index for proper synchronization
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
+    // Memory barrier to ensure UBO update is visible to GPU before draw
+    // Intel iGPUs require explicit synchronization for host-visible memory
+    VkMemoryBarrier memoryBarrier{};
+    memoryBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    memoryBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    memoryBarrier.dstAccessMask = VK_ACCESS_UNIFORM_READ_BIT;
+
+    vkCmdPipelineBarrier(
+        commandBuffer,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_VERTEX_SHADER_BIT,
+        0,
+        1, &memoryBarrier,
+        0, nullptr,
+        0, nullptr
+    );
+
     if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: binding pipeline...");
 
     // Bind pipeline
@@ -370,10 +387,10 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: trying non-indexed draw with 3 vertices...");
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
 
-    // Try non-indexed draw to test if issue is index buffer or shader
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    // Draw indexed triangle
+    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
 
     if (firstFrame) {
         ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete!");
