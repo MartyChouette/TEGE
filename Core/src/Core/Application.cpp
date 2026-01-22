@@ -135,7 +135,7 @@ void Application::MainLoop() {
         // Log every 100 frames to confirm loop is running
         if (frameCount % 100 == 0) {
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - loopStartTime);
-            ENJIN_LOG_DEBUG(Core, "Frame %u, elapsed: %lld ms", frameCount, elapsed.count());
+            ENJIN_LOG_INFO(Core, "Frame %u, elapsed: %lld ms", frameCount, elapsed.count());
         }
     }
 

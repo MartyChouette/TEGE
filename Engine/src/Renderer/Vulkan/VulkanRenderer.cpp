@@ -338,12 +338,15 @@ void VulkanRenderer::SubmitCommandBuffer() {
 }
 
 bool VulkanRenderer::BeginFrame() {
+    static u32 successCount = 0;
+
     if (m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "BeginFrame called while frame already in progress");
         return false;
     }
 
     if (!AcquireNextImage()) {
+        ENJIN_LOG_WARN(Renderer, "BeginFrame: AcquireNextImage failed");
         return false;
     }
 
@@ -365,7 +368,7 @@ bool VulkanRenderer::BeginFrame() {
     renderPassInfo.renderArea.extent = m_Swapchain->GetExtent();
 
     std::array<VkClearValue, 2> clearValues{};
-    clearValues[0].color = { { 0.0f, 0.0f, 0.0f, 1.0f } };
+    clearValues[0].color = { { 0.1f, 0.1f, 0.2f, 1.0f } };  // Dark blue to confirm clearing works
     clearValues[1].depthStencil = { 1.0f, 0 };
 
     renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
@@ -373,10 +376,17 @@ bool VulkanRenderer::BeginFrame() {
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
 
+    successCount++;
+    if (successCount == 1) {
+        ENJIN_LOG_INFO(Renderer, "BeginFrame: first frame started successfully");
+    }
+
     return true;
 }
 
 void VulkanRenderer::EndFrame() {
+    static u32 successCount = 0;
+
     if (!m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "EndFrame called without matching BeginFrame");
         return;
@@ -391,6 +401,11 @@ void VulkanRenderer::EndFrame() {
 
     SubmitCommandBuffer();
     m_IsFrameStarted = false;
+
+    successCount++;
+    if (successCount == 1) {
+        ENJIN_LOG_INFO(Renderer, "EndFrame: first frame completed and submitted successfully");
+    }
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
