@@ -370,10 +370,10 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: drawing %u indices...", renderData.indexCount);
+    if (firstFrame) ENJIN_LOG_INFO(Renderer, "RenderEntity: trying non-indexed draw with 3 vertices...");
 
-    // Draw
-    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Try non-indexed draw to test if issue is index buffer or shader
+    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
 
     if (firstFrame) {
         ENJIN_LOG_INFO(Renderer, "RenderEntity: draw call complete!");
