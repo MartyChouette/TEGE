@@ -37,19 +37,25 @@ void RenderSystem::Initialize() {
         m_Camera = &defaultCamera;
     }
 
+    ENJIN_LOG_INFO(Renderer, "Loading vertex shader (%zu bytes)...",
+        Renderer::ShaderData::TriangleVertexShaderSize);
+
     // Create shaders
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShader.data()),
-        Renderer::ShaderData::TriangleVertexShader.size() * sizeof(u32))) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShaderData),
+        Renderer::ShaderData::TriangleVertexShaderSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load vertex shader");
         return;
     }
 
+    ENJIN_LOG_INFO(Renderer, "Loading fragment shader (%zu bytes)...",
+        Renderer::ShaderData::TriangleFragmentShaderSize);
+
     m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShader.data()),
-        Renderer::ShaderData::TriangleFragmentShader.size() * sizeof(u32))) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShaderData),
+        Renderer::ShaderData::TriangleFragmentShaderSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load fragment shader");
         return;
     }
