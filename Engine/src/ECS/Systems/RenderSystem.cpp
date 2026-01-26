@@ -129,9 +129,9 @@ void RenderSystem::CreatePipeline() {
     Renderer::PipelineConfig config;
     config.renderPass = m_Renderer->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    config.depthTest = true;
-    config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.depthTest = false;  // Disable for testing
+    config.depthWrite = false;
+    config.cullMode = VK_CULL_MODE_NONE;  // Disable culling for testing
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
 
