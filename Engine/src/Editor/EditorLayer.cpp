@@ -42,9 +42,11 @@ void EditorLayer::Shutdown() {
 void EditorLayer::Update(f32 deltaTime) {
     (void)deltaTime;
 
-    // Disable camera controller when UI wants input
+    // Camera controller handles its own input - only fully disable when typing in a text field
+    // The camera controller checks for right-mouse before looking, so it's OK to leave it enabled
     if (m_CameraController) {
-        m_CameraController->SetEnabled(!WantsMouseInput());
+        // Only disable when user is typing in a text field
+        m_CameraController->SetEnabled(!WantsKeyboardInput());
     }
 }
 
