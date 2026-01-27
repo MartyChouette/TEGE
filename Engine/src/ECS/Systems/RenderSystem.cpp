@@ -105,9 +105,13 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
-    // Render triangle entity
-    if (m_TriangleEntity != INVALID_ENTITY) {
-        RenderEntity(m_TriangleEntity);
+    // Render all entities with mesh and transform components
+    const auto& entities = m_World->GetAllEntities();
+    for (Entity entity : entities) {
+        if (m_World->HasComponent<TransformComponent>(entity) &&
+            m_World->HasComponent<MeshComponent>(entity)) {
+            RenderEntity(entity);
+        }
     }
 }
 

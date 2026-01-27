@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include <vector>
 
 namespace Enjin {
 namespace ECS {
@@ -24,10 +25,13 @@ public:
 
     void Reset(); // Destroy all entities
 
+    const std::vector<Entity>& GetAllEntities() const { return m_ActiveEntities; }
+    usize GetEntityCount() const { return m_ActiveEntities.size(); }
+
 private:
     Entity m_NextEntity = 1;
-    // In a full implementation, you'd track active entities
-    // For now, we use a simple counter
+    std::vector<Entity> m_ActiveEntities;
+    std::vector<Entity> m_FreeEntities; // Recycled entity IDs
 };
 
 } // namespace ECS

@@ -111,6 +111,18 @@ public:
      */
     void Clear(); // Clear all entities and components
 
+    /**
+     * @brief Get all active entities
+     * @return Vector of all active entity handles
+     */
+    const std::vector<Entity>& GetAllEntities() const { return m_EntityManager.GetAllEntities(); }
+
+    /**
+     * @brief Get the number of active entities
+     * @return Count of active entities
+     */
+    usize GetEntityCount() const { return m_EntityManager.GetEntityCount(); }
+
 private:
     // Type-erased component storage wrapper
     struct StorageBase {

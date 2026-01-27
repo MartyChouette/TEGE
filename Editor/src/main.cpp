@@ -1,8 +1,12 @@
 #include "Enjin/Core/Application.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Platform/Input.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Camera.h"
+#include "Enjin/Renderer/CameraController.h"
+#include "Enjin/Editor/EditorLayer.h"
 #include <iostream>
 #include <memory>
 #if !defined(_WIN32)
@@ -16,8 +20,7 @@ public:
     void Initialize() override {
         ENJIN_LOG_INFO(Editor, "Enjin Editor starting...");
 
-        // Minimal bring-up: render the existing triangle system so the window
-        // isn't blank. This will evolve into the full editor renderer later.
+        // Initialize Vulkan renderer
         m_Renderer = std::make_unique<Enjin::Renderer::VulkanRenderer>();
         if (!m_Renderer->Initialize(GetWindow())) {
             ENJIN_LOG_FATAL(Editor, "Failed to initialize Vulkan renderer");
@@ -25,25 +28,66 @@ public:
             return;
         }
 
+        // Setup camera
+        m_Camera = std::make_unique<Enjin::Renderer::Camera>();
+        m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
+        m_Camera->SetPosition(Enjin::Math::Vector3(0.0f, 2.0f, 5.0f));
+
+        // Setup camera controller
+        m_CameraController = std::make_unique<Enjin::Renderer::CameraController>(m_Camera.get());
+        m_CameraController->SetMoveSpeed(5.0f);
+        m_CameraController->SetLookSensitivity(0.15f);
+
+        // Create ECS world
         m_World = std::make_unique<Enjin::ECS::World>();
+
+        // Setup render system
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
+        m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->Initialize();
+
+        // Setup editor UI
+        m_EditorLayer = std::make_unique<Enjin::Editor::EditorLayer>();
+        if (!m_EditorLayer->Initialize(GetWindow(), m_Renderer.get())) {
+            ENJIN_LOG_ERROR(Editor, "Failed to initialize editor layer");
+            m_EditorLayer.reset();
+        } else {
+            m_EditorLayer->SetWorld(m_World.get());
+            m_EditorLayer->SetCamera(m_Camera.get());
+            m_EditorLayer->SetCameraController(m_CameraController.get());
+        }
+
+        ENJIN_LOG_INFO(Editor, "Editor initialized - Use RMB + WASD to fly, scroll to adjust speed");
     }
 
     void Shutdown() override {
         ENJIN_LOG_INFO(Editor, "Enjin Editor shutting down...");
+
+        if (m_EditorLayer) {
+            m_EditorLayer->Shutdown();
+            m_EditorLayer.reset();
+        }
 
         if (m_RenderSystem) {
             m_RenderSystem->Shutdown();
             m_RenderSystem = nullptr;
         }
         m_World.reset();
+        m_CameraController.reset();
+        m_Camera.reset();
         m_Renderer.reset();
     }
 
     void Update(Enjin::f32 deltaTime) override {
-        (void)deltaTime;
-        // Editor update logic
+        // Update camera controller
+        if (m_CameraController) {
+            m_CameraController->Update(deltaTime);
+        }
+
+        // Update editor layer
+        if (m_EditorLayer) {
+            m_EditorLayer->Update(deltaTime);
+        }
     }
 
     void Render() override {
@@ -51,21 +95,32 @@ public:
             return;
         }
 
-        // IMPORTANT: record draw commands between BeginFrame/EndFrame.
-        // BeginFrame can fail due to swapchain recreation, minimized window, etc.
         if (!m_Renderer->BeginFrame()) {
             m_FrameFailCount++;
-            if (m_FrameFailCount % 60 == 1) {  // Log first failure and every 60th after
+            if (m_FrameFailCount % 60 == 1) {
                 ENJIN_LOG_WARN(Editor, "BeginFrame failed (total failures: %u)", m_FrameFailCount);
             }
-            return;  // Skip this frame if we couldn't acquire an image
+            return;
         }
 
-        m_FrameFailCount = 0;  // Reset on success
+        m_FrameFailCount = 0;
 
-        // RenderSystem::Update records draw calls into the current command buffer.
+        // Update camera aspect ratio
+        auto extent = m_Renderer->GetSwapchainExtent();
+        if (extent.width > 0 && extent.height > 0 && m_Camera) {
+            Enjin::f32 aspect = static_cast<Enjin::f32>(extent.width) / static_cast<Enjin::f32>(extent.height);
+            m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
+        }
+
+        // Render scene
         if (m_World) {
             m_World->Update(0.0f);
+        }
+
+        // Render editor UI
+        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+        if (m_EditorLayer && cmd != VK_NULL_HANDLE) {
+            m_EditorLayer->Render(cmd);
         }
 
         m_Renderer->EndFrame();
@@ -73,7 +128,10 @@ public:
 
 private:
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;
+    std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
+    std::unique_ptr<Enjin::Renderer::CameraController> m_CameraController;
     std::unique_ptr<Enjin::ECS::World> m_World;
+    std::unique_ptr<Enjin::Editor::EditorLayer> m_EditorLayer;
     Enjin::ECS::RenderSystem* m_RenderSystem = nullptr;
     Enjin::u32 m_FrameFailCount = 0;
 };
