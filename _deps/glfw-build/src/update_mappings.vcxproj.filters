@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="D:\GitHub\enjin\CMakeFiles\17746b85ba2df56d3ca976cc9973525e\update_mappings.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+    <CustomBuild Include="D:\GitHub\enjin\_deps\glfw-src\src\CMakeLists.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="D:\GitHub\enjin\_deps\glfw-src\src\mappings.h.in">
+      <Filter>Header Files</Filter>
+    </None>
+    <None Include="D:\GitHub\enjin\_deps\glfw-src\CMake\GenerateMappings.cmake" />
+    <None Include="D:\GitHub\enjin\_deps\glfw-build\src\CMakeFiles\update_mappings" />
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{F5106B2F-C263-324A-AE24-24AC6D362738}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{A2644B1C-D31D-3FBE-A8DC-739EC3AED0AC}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
