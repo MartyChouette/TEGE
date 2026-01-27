@@ -60,6 +60,7 @@ private:
     
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_LightingBuffers;
     std::vector<VkDescriptorSet> m_DescriptorSets;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
     
