@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Core/Assert.h"
+#include <array>
 
 namespace Enjin {
 namespace Renderer {
@@ -51,6 +52,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
+    // UBO binding for model/view/projection matrices
     VkDescriptorSetLayoutBinding uboLayoutBinding{};
     uboLayoutBinding.binding = 0;
     uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
@@ -113,28 +115,28 @@ bool VulkanPipeline::CreatePipeline(
     fragShaderStageInfo.pName = "main";
     shaderStages.push_back(fragShaderStageInfo);
 
-    // Vertex input
+    // Vertex input - position, normal, UV
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(Math::Vector3) * 2 + sizeof(Math::Vector2); // pos + normal + uv
+    bindingDescription.stride = sizeof(f32) * 8; // vec3 pos + vec3 normal + vec2 uv
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::vector<VkVertexInputAttributeDescription> attributeDescriptions(3);
-    // Position
+    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    // Position (location 0)
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
     attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
     attributeDescriptions[0].offset = 0;
-    // Normal
+    // Normal (location 1)
     attributeDescriptions[1].binding = 0;
     attributeDescriptions[1].location = 1;
     attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
-    attributeDescriptions[1].offset = sizeof(Math::Vector3);
-    // UV
+    attributeDescriptions[1].offset = sizeof(f32) * 3;
+    // UV (location 2)
     attributeDescriptions[2].binding = 0;
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
-    attributeDescriptions[2].offset = sizeof(Math::Vector3) * 2;
+    attributeDescriptions[2].offset = sizeof(f32) * 6;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

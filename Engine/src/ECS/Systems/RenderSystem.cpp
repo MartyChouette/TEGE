@@ -10,7 +10,6 @@ namespace ECS {
 
 RenderSystem::RenderSystem(World* world, Renderer::VulkanRenderer* renderer)
     : m_World(world), m_Renderer(renderer) {
-    // Camera will be set externally
     m_Camera = nullptr;
 }
 
@@ -30,7 +29,7 @@ void RenderSystem::Initialize() {
         static Renderer::Camera defaultCamera;
         defaultCamera.SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 100.0f);
         defaultCamera.SetLookAt(
-            Math::Vector3(0.0f, 0.0f, -3.0f),
+            Math::Vector3(0.0f, 0.0f, 3.0f),  // Camera at z=3 looking at origin
             Math::Vector3(0.0f, 0.0f, 0.0f),
             Math::Vector3(0.0f, 1.0f, 0.0f)
         );
@@ -40,16 +39,16 @@ void RenderSystem::Initialize() {
     // Create shaders
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShader.data()),
-        Renderer::ShaderData::TriangleVertexShader.size() * sizeof(u32))) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShaderData),
+        Renderer::ShaderData::TriangleVertexShaderSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load vertex shader");
         return;
     }
 
     m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
-        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShader.data()),
-        Renderer::ShaderData::TriangleFragmentShader.size() * sizeof(u32))) {
+        reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShaderData),
+        Renderer::ShaderData::TriangleFragmentShaderSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load fragment shader");
         return;
     }
@@ -57,10 +56,8 @@ void RenderSystem::Initialize() {
     // Create pipeline
     CreatePipeline();
 
-    // Create uniform buffers
+    // Create uniform buffers and descriptor sets
     CreateUniformBuffers();
-
-    // Create descriptor sets
     CreateDescriptorSets();
 
     // Create triangle mesh
@@ -73,6 +70,11 @@ void RenderSystem::Initialize() {
 void RenderSystem::Shutdown() {
     if (!m_Initialized) {
         return;
+    }
+
+    // Wait for GPU to finish
+    if (m_Renderer && m_Renderer->GetContext()) {
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
     }
 
     // Clean up descriptor pool
@@ -103,7 +105,7 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
-    // Render all entities with Transform and Mesh components
+    // Render triangle entity
     if (m_TriangleEntity != INVALID_ENTITY) {
         RenderEntity(m_TriangleEntity);
     }
@@ -123,7 +125,7 @@ void RenderSystem::CreatePipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.cullMode = VK_CULL_MODE_NONE;  // Disable culling for now
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
 
@@ -136,7 +138,7 @@ void RenderSystem::CreatePipeline() {
 
 void RenderSystem::CreateUniformBuffers() {
     constexpr usize bufferSize = sizeof(Renderer::UniformBufferObject);
-    constexpr u32 framesInFlight = 2; // Match renderer's MAX_FRAMES_IN_FLIGHT
+    constexpr u32 framesInFlight = 2;
 
     m_UniformBuffers.resize(framesInFlight);
     for (u32 i = 0; i < framesInFlight; ++i) {
@@ -249,9 +251,7 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         return;
     }
 
-    // Get current frame index (simplified - in production you'd track this properly)
-    static u32 currentFrame = 0;
-    currentFrame = (currentFrame + 1) % static_cast<u32>(m_UniformBuffers.size());
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     Renderer::UniformBufferObject ubo{};
     ubo.model = transform->ToMatrix();
@@ -264,7 +264,7 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 void RenderSystem::CreateTriangleMesh() {
     m_TriangleEntity = m_World->CreateEntity();
 
-    // Add transform
+    // Add transform at origin
     TransformComponent& transform = m_World->AddComponent<TransformComponent>(m_TriangleEntity);
     transform.position = Math::Vector3(0.0f, 0.0f, 0.0f);
     transform.scale = Math::Vector3(1.0f);
@@ -289,7 +289,7 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
-    
+
     if (!transform || !mesh || !mesh->IsValid()) {
         return;
     }
@@ -311,17 +311,15 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    // Update uniform buffer
+    // Update uniform buffer with transforms
     UpdateUniformBuffer(entity);
 
-    // Get current frame index (simplified)
-    static u32 currentFrame = 0;
-    currentFrame = (currentFrame + 1) % static_cast<u32>(m_DescriptorSets.size());
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);
 
-    // Bind descriptor set
+    // Bind descriptor set (UBO)
     vkCmdBindDescriptorSets(
         commandBuffer,
         VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -354,7 +352,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    // Draw
+    // Draw indexed
     vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
 }
 
