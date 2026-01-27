@@ -338,8 +338,6 @@ void VulkanRenderer::SubmitCommandBuffer() {
 }
 
 bool VulkanRenderer::BeginFrame() {
-    static u32 successCount = 0;
-
     if (m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "BeginFrame called while frame already in progress");
         return false;
@@ -375,18 +373,10 @@ bool VulkanRenderer::BeginFrame() {
     renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-
-    successCount++;
-    if (successCount == 1) {
-        ENJIN_LOG_INFO(Renderer, "BeginFrame: first frame started successfully");
-    }
-
     return true;
 }
 
 void VulkanRenderer::EndFrame() {
-    static u32 successCount = 0;
-
     if (!m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "EndFrame called without matching BeginFrame");
         return;
@@ -401,11 +391,6 @@ void VulkanRenderer::EndFrame() {
 
     SubmitCommandBuffer();
     m_IsFrameStarted = false;
-
-    successCount++;
-    if (successCount == 1) {
-        ENJIN_LOG_INFO(Renderer, "EndFrame: first frame completed and submitted successfully");
-    }
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {

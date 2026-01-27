@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Core/Assert.h"
+#include <array>
 
 namespace Enjin {
 namespace Renderer {
@@ -18,17 +19,14 @@ bool VulkanPipeline::Create(
     VulkanShader* vertexShader,
     VulkanShader* fragmentShader
 ) {
-    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating descriptor set layout...");
     if (!CreateDescriptorSetLayout()) {
         return false;
     }
 
-    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating pipeline layout...");
     if (!CreatePipelineLayout()) {
         return false;
     }
 
-    ENJIN_LOG_INFO(Renderer, "VulkanPipeline::Create - creating graphics pipeline...");
     return CreatePipeline(config, vertexShader, fragmentShader);
 }
 
@@ -54,11 +52,18 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    // Minimal shader doesn't need any descriptors - create empty layout
+    // UBO binding for model/view/projection matrices
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-    layoutInfo.bindingCount = 0;
-    layoutInfo.pBindings = nullptr;
+    layoutInfo.bindingCount = 1;
+    layoutInfo.pBindings = &uboLayoutBinding;
 
     VkResult result = vkCreateDescriptorSetLayout(
         m_Context->GetDevice(), &layoutInfo, nullptr, &m_DescriptorSetLayout);
@@ -71,11 +76,10 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
 }
 
 bool VulkanPipeline::CreatePipelineLayout() {
-    // Minimal shader needs no descriptors - empty pipeline layout
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pSetLayouts = nullptr;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
     pipelineLayoutInfo.pushConstantRangeCount = 0;
     pipelineLayoutInfo.pPushConstantRanges = nullptr;
 
@@ -94,8 +98,6 @@ bool VulkanPipeline::CreatePipeline(
     VulkanShader* vertexShader,
     VulkanShader* fragmentShader
 ) {
-    ENJIN_LOG_INFO(Renderer, "CreatePipeline: setting up shader stages...");
-
     // Shader stages
     std::vector<VkPipelineShaderStageCreateInfo> shaderStages;
 
@@ -113,13 +115,35 @@ bool VulkanPipeline::CreatePipeline(
     fragShaderStageInfo.pName = "main";
     shaderStages.push_back(fragShaderStageInfo);
 
-    // Vertex input - EMPTY for minimal shader that uses gl_VertexIndex
+    // Vertex input - position, normal, UV
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(f32) * 8; // vec3 pos + vec3 normal + vec2 uv
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    // Position (location 0)
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[0].offset = 0;
+    // Normal (location 1)
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attributeDescriptions[1].offset = sizeof(f32) * 3;
+    // UV (location 2)
+    attributeDescriptions[2].binding = 0;
+    attributeDescriptions[2].location = 2;
+    attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[2].offset = sizeof(f32) * 6;
+
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.pVertexBindingDescriptions = nullptr;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
-    vertexInputInfo.pVertexAttributeDescriptions = nullptr;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<u32>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
 
     // Input assembly
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -234,8 +258,6 @@ bool VulkanPipeline::CreatePipeline(
     pipelineInfo.subpass = 0;
     pipelineInfo.basePipelineHandle = VK_NULL_HANDLE;
     pipelineInfo.basePipelineIndex = -1;
-
-    ENJIN_LOG_INFO(Renderer, "CreatePipeline: calling vkCreateGraphicsPipelines...");
 
     VkResult result = vkCreateGraphicsPipelines(
         m_Context->GetDevice(), VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_Pipeline);

@@ -106,10 +106,6 @@ void Application::ShutdownEngine() {
 
 void Application::MainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
-    u32 frameCount = 0;
-    auto loopStartTime = std::chrono::high_resolution_clock::now();
-
-    ENJIN_LOG_INFO(Core, "Entering main loop...");
 
     while (m_Running) {
         auto currentTime = std::chrono::high_resolution_clock::now();
@@ -121,8 +117,6 @@ void Application::MainLoop() {
         if (m_Window) {
             m_Window->PollEvents();
             if (m_Window->ShouldClose()) {
-                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - loopStartTime);
-                ENJIN_LOG_INFO(Core, "Window close requested after %lld ms, %u frames", elapsed.count(), frameCount);
                 m_Running = false;
                 break;
             }
@@ -130,16 +124,7 @@ void Application::MainLoop() {
 
         Update(deltaTime);
         Render();
-        frameCount++;
-
-        // Log every 100 frames to confirm loop is running
-        if (frameCount % 100 == 0) {
-            auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(currentTime - loopStartTime);
-            ENJIN_LOG_INFO(Core, "Frame %u, elapsed: %lld ms", frameCount, elapsed.count());
-        }
     }
-
-    ENJIN_LOG_INFO(Core, "Exiting main loop after %u frames", frameCount);
 }
 
 } // namespace Enjin
