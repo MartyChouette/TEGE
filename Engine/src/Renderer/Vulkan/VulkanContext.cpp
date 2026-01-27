@@ -324,13 +324,20 @@ static VKAPI_ATTR VkBool32 VKAPI_CALL DebugCallback(
     VkDebugUtilsMessageTypeFlagsEXT messageType,
     const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
     void* pUserData) {
-    
+
     (void)pUserData;
-    
-    if (messageSeverity >= VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-        ENJIN_LOG_WARN(Renderer, "Vulkan: %s", pCallbackData->pMessage);
+    (void)messageType;
+
+    // Route to appropriate log level based on severity
+    if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
+        ENJIN_LOG_ERROR(Renderer, "[Vulkan Validation] %s", pCallbackData->pMessage);
+    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+        ENJIN_LOG_WARN(Renderer, "[Vulkan Validation] %s", pCallbackData->pMessage);
+    } else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_INFO_BIT_EXT) {
+        ENJIN_LOG_DEBUG(Renderer, "[Vulkan Validation] %s", pCallbackData->pMessage);
     }
-    
+    // Verbose messages are ignored to reduce noise
+
     return VK_FALSE;
 }
 

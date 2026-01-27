@@ -32,6 +32,7 @@ include_directories(
 
 # Add subdirectories
 add_subdirectory(Core)
+add_subdirectory(third_party/imgui)
 add_subdirectory(Engine)
 
 if(ENJIN_BUILD_EDITOR)

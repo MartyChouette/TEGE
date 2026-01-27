@@ -4,6 +4,7 @@
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include <cstring>
+#include <array>
 
 namespace Enjin {
 namespace ECS {
@@ -88,6 +89,7 @@ void RenderSystem::Shutdown() {
 
     // Clean up uniform buffers
     m_UniformBuffers.clear();
+    m_LightingBuffers.clear();
     m_DescriptorSets.clear();
 
     // Clean up pipeline
@@ -105,9 +107,13 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
-    // Render triangle entity
-    if (m_TriangleEntity != INVALID_ENTITY) {
-        RenderEntity(m_TriangleEntity);
+    // Render all entities with mesh and transform components
+    const auto& entities = m_World->GetAllEntities();
+    for (Entity entity : entities) {
+        if (m_World->HasComponent<TransformComponent>(entity) &&
+            m_World->HasComponent<MeshComponent>(entity)) {
+            RenderEntity(entity);
+        }
     }
 }
 
@@ -137,14 +143,23 @@ void RenderSystem::CreatePipeline() {
 }
 
 void RenderSystem::CreateUniformBuffers() {
-    constexpr usize bufferSize = sizeof(Renderer::UniformBufferObject);
     constexpr u32 framesInFlight = 2;
 
     m_UniformBuffers.resize(framesInFlight);
+    m_LightingBuffers.resize(framesInFlight);
+
     for (u32 i = 0; i < framesInFlight; ++i) {
+        // MVP uniform buffer
         m_UniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-        if (!m_UniformBuffers[i]->Create(bufferSize, Renderer::BufferUsage::Uniform, true)) {
+        if (!m_UniformBuffers[i]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create uniform buffer %u", i);
+            return;
+        }
+
+        // Lighting uniform buffer
+        m_LightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!m_LightingBuffers[i]->Create(sizeof(Renderer::LightingUBO), Renderer::BufferUsage::Uniform, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create lighting buffer %u", i);
             return;
         }
     }
@@ -153,10 +168,10 @@ void RenderSystem::CreateUniformBuffers() {
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool
+    // Create descriptor pool (2 UBOs per frame: MVP + Lighting)
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = framesInFlight;
+    poolSize.descriptorCount = framesInFlight * 2;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -188,23 +203,42 @@ void RenderSystem::CreateDescriptorSets() {
         return;
     }
 
-    // Update descriptor sets
+    // Update descriptor sets with both UBOs
     for (u32 i = 0; i < framesInFlight; ++i) {
-        VkDescriptorBufferInfo bufferInfo{};
-        bufferInfo.buffer = m_UniformBuffers[i]->GetBuffer();
-        bufferInfo.offset = 0;
-        bufferInfo.range = sizeof(Renderer::UniformBufferObject);
+        std::array<VkDescriptorBufferInfo, 2> bufferInfos{};
 
-        VkWriteDescriptorSet descriptorWrite{};
-        descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrite.dstSet = m_DescriptorSets[i];
-        descriptorWrite.dstBinding = 0;
-        descriptorWrite.dstArrayElement = 0;
-        descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrite.descriptorCount = 1;
-        descriptorWrite.pBufferInfo = &bufferInfo;
+        // MVP UBO
+        bufferInfos[0].buffer = m_UniformBuffers[i]->GetBuffer();
+        bufferInfos[0].offset = 0;
+        bufferInfos[0].range = sizeof(Renderer::UniformBufferObject);
 
-        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+        // Lighting UBO
+        bufferInfos[1].buffer = m_LightingBuffers[i]->GetBuffer();
+        bufferInfos[1].offset = 0;
+        bufferInfos[1].range = sizeof(Renderer::LightingUBO);
+
+        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+
+        // MVP descriptor
+        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[0].dstSet = m_DescriptorSets[i];
+        descriptorWrites[0].dstBinding = 0;
+        descriptorWrites[0].dstArrayElement = 0;
+        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[0].descriptorCount = 1;
+        descriptorWrites[0].pBufferInfo = &bufferInfos[0];
+
+        // Lighting descriptor
+        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[1].dstSet = m_DescriptorSets[i];
+        descriptorWrites[1].dstBinding = 1;
+        descriptorWrites[1].dstArrayElement = 0;
+        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[1].descriptorCount = 1;
+        descriptorWrites[1].pBufferInfo = &bufferInfos[1];
+
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+            static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 }
 
@@ -253,12 +287,25 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
+    // Update MVP UBO
     Renderer::UniformBufferObject ubo{};
     ubo.model = transform->ToMatrix();
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
-
     m_UniformBuffers[currentFrame]->UploadData(&ubo, sizeof(ubo));
+
+    // Update Lighting UBO
+    Renderer::LightingUBO lighting{};
+    lighting.ambientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
+    lighting.ambientIntensity = 1.0f;
+    lighting.cameraPos = m_Camera->GetPosition();
+    lighting._pad0 = 0.0f;
+    // Default directional light (sun from upper-right)
+    lighting.lightDir = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
+    lighting.lightIntensity = 1.2f;
+    lighting.lightColor = Math::Vector3(1.0f, 0.95f, 0.9f);
+    lighting._pad1 = 0.0f;
+    m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 }
 
 void RenderSystem::CreateTriangleMesh() {

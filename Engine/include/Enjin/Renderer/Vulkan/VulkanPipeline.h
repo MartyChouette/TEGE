@@ -19,6 +19,18 @@ struct UniformBufferObject {
     alignas(16) Math::Matrix4 proj;
 };
 
+// Lighting uniform buffer object
+struct LightingUBO {
+    alignas(16) Math::Vector3 ambientColor;
+    alignas(4) f32 ambientIntensity;
+    alignas(16) Math::Vector3 cameraPos;
+    alignas(4) f32 _pad0;
+    alignas(16) Math::Vector3 lightDir;
+    alignas(4) f32 lightIntensity;
+    alignas(16) Math::Vector3 lightColor;
+    alignas(4) f32 _pad1;
+};
+
 // Graphics pipeline configuration
 struct PipelineConfig {
     VkRenderPass renderPass = VK_NULL_HANDLE;

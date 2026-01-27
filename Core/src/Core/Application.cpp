@@ -2,6 +2,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Platform/Paths.h"
+#include "Enjin/Platform/Input.h"
 #include <chrono>
 #include <iostream>
 #undef CreateWindow
@@ -89,7 +90,10 @@ void Application::InitializeEngine() {
         m_Running = false;
         return;
     }
-    
+
+    // Initialize input system
+    Input::Initialize(m_Window);
+
     ENJIN_LOG_INFO(Core, "Engine initialized successfully");
 }
 
@@ -120,6 +124,15 @@ void Application::MainLoop() {
                 m_Running = false;
                 break;
             }
+        }
+
+        // Update input system (must be after PollEvents)
+        Input::Update();
+
+        // Escape key closes the window
+        if (Input::IsKeyPressed(KeyCode::Escape)) {
+            m_Running = false;
+            break;
         }
 
         Update(deltaTime);
