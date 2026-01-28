@@ -2,14 +2,25 @@
 
 A proprietary, licensable game engine built from scratch using Vulkan API.
 
+## Features
+
+- **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting and PBR materials
+- **Entity-Component System** - Flexible ECS architecture for game objects
+- **glTF Model Import** - Load 3D models directly into the editor
+- **Editor UI** - Full ImGui-based editor with hierarchy, inspector, and viewport panels
+- **Transform Gizmos** - Visual manipulation tools (translate, rotate, scale) via ImGuizmo
+- **Entity Selection** - Click-to-select with ray casting
+- **Camera Controller** - Fly camera with keyboard/mouse controls
+- **Material System** - PBR properties (baseColor, metallic, roughness, emissive)
+
 ## Project Structure
 
 ```
 EnjinEngine/
 ├── Core/           # Foundation layer (Memory, Math, Logging, Platform)
-├── Engine/         # Engine layer (Renderer, ECS, Assets, Physics)
+├── Engine/         # Engine layer (Renderer, ECS, Assets, GUI)
 ├── Editor/         # Editor application
-├── Examples/       # Example projects
+├── third_party/    # External dependencies (GLFW, ImGui, ImGuizmo)
 └── Tests/          # Unit tests
 ```
 
@@ -22,29 +33,39 @@ EnjinEngine/
 - [x] Platform Abstraction Layer
 - [x] Entry Point Abstraction
 
-### Phase 2: Vulkan Renderer 🚧
+### Phase 2: Vulkan Renderer ✅
 - [x] Vulkan Context Initialization
-- [ ] Swapchain Management
-- [ ] Command Buffer System
-- [ ] Resource Management (Bindless Descriptors)
-- [ ] SPIR-V Shader Pipeline
-- [ ] Render Graph
+- [x] Swapchain Management
+- [x] Command Buffer System
+- [x] SPIR-V Shader Pipeline
+- [x] Depth Buffer / Z-testing
+- [x] Blinn-Phong Lighting
 
-### Phase 3: Engine Core
-- [ ] ECS (Entity Component System)
-- [ ] Asset System (glTF, textures, audio)
-- [ ] Physics Integration
-- [ ] Input System
+### Phase 3: Engine Core ✅
+- [x] ECS (Entity Component System)
+- [x] glTF Asset Loading
+- [x] Input System (Keyboard/Mouse)
+- [x] Camera System
 
-### Phase 4: Tooling
-- [ ] Editor GUI (Dear ImGui)
-- [ ] Scene Editor
-- [ ] Hot-Reloading
+### Phase 4: Tooling ✅
+- [x] Editor GUI (Dear ImGui)
+- [x] Scene Hierarchy Panel
+- [x] Entity Inspector Panel
+- [x] Transform Gizmos (ImGuizmo)
+- [x] Entity Selection / Picking
 
-### Phase 5: Licensable Features
+### Phase 5: Advanced Rendering 🚧
+- [x] PBR Material System
+- [ ] Shadow Mapping (in progress)
+- [ ] Texture Support
+- [ ] Multiple Light Sources
+- [ ] Post-Processing Effects
+
+### Phase 6: Licensable Features
+- [ ] Scene Serialization (Save/Load)
 - [ ] Scripting Language (C#/Lua)
-- [ ] Profiling Tools
-- [ ] Platform Abstraction Layer (Console support)
+- [ ] Physics Integration
+- [ ] Audio System
 
 ## Building
 
