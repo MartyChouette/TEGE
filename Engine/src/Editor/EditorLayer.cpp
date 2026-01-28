@@ -3,15 +3,18 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Assets/SceneImporter.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <sstream>
+#include <filesystem>
 
 namespace Enjin {
 namespace Editor {
@@ -126,6 +129,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawImportDialog();
     }
 
+    // Scene dialogs
+    if (m_ShowOpenSceneDialog) {
+        DrawOpenSceneDialog();
+    }
+    if (m_ShowSaveSceneDialog) {
+        DrawSaveSceneDialog();
+    }
+
     m_ImGuiLayer->EndFrame(commandBuffer);
 }
 
@@ -154,13 +165,25 @@ void EditorLayer::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
-                // TODO: New scene
+                if (m_World) {
+                    m_World->Clear();
+                    m_SelectedEntity = ECS::INVALID_ENTITY;
+                    m_CurrentScenePath.clear();
+                    ENJIN_LOG_INFO(Editor, "Created new scene");
+                }
             }
             if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
-                // TODO: Open scene
+                m_ShowOpenSceneDialog = true;
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
-                // TODO: Save scene
+                if (!m_CurrentScenePath.empty()) {
+                    SaveScene(m_CurrentScenePath);
+                } else {
+                    m_ShowSaveSceneDialog = true;
+                }
+            }
+            if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
+                m_ShowSaveSceneDialog = true;
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
@@ -168,7 +191,7 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
-                // TODO: Exit application
+                // Application exit handled by main loop
             }
             ImGui::EndMenu();
         }
@@ -402,6 +425,11 @@ void EditorLayer::DrawInspectorPanel() {
             DrawMeshComponent(m_SelectedEntity);
         }
 
+        // Material component
+        if (m_World->HasComponent<ECS::MaterialComponent>(m_SelectedEntity)) {
+            DrawMaterialComponent(m_SelectedEntity);
+        }
+
         // Light component
         if (m_World->HasComponent<ECS::LightComponent>(m_SelectedEntity)) {
             DrawLightComponent(m_SelectedEntity);
@@ -418,6 +446,11 @@ void EditorLayer::DrawInspectorPanel() {
             if (!m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
                 if (ImGui::MenuItem("Mesh")) {
                     m_World->AddComponent<ECS::MeshComponent>(m_SelectedEntity);
+                }
+            }
+            if (!m_World->HasComponent<ECS::MaterialComponent>(m_SelectedEntity)) {
+                if (ImGui::MenuItem("Material")) {
+                    m_World->AddComponent<ECS::MaterialComponent>(m_SelectedEntity);
                 }
             }
             if (!m_World->HasComponent<ECS::LightComponent>(m_SelectedEntity)) {
@@ -467,8 +500,58 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 
         ImGui::Text("Vertices: %zu", mesh->vertices.size());
         ImGui::Text("Indices: %zu", mesh->indices.size());
+    }
+}
 
-        // TODO: Add material selection, mesh file loading, etc.
+void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::MaterialComponent* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
+        if (!material) return;
+
+        // Base color
+        f32 baseColor[3] = { material->baseColor.x, material->baseColor.y, material->baseColor.z };
+        if (ImGui::ColorEdit3("Base Color", baseColor)) {
+            material->baseColor = Math::Vector3(baseColor[0], baseColor[1], baseColor[2]);
+        }
+
+        // Opacity
+        ImGui::DragFloat("Opacity", &material->opacity, 0.01f, 0.0f, 1.0f);
+
+        // PBR properties
+        ImGui::DragFloat("Metallic", &material->metallic, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("Roughness", &material->roughness, 0.01f, 0.0f, 1.0f);
+
+        // Emission
+        f32 emissive[3] = { material->emissiveColor.x, material->emissiveColor.y, material->emissiveColor.z };
+        if (ImGui::ColorEdit3("Emissive Color", emissive)) {
+            material->emissiveColor = Math::Vector3(emissive[0], emissive[1], emissive[2]);
+        }
+        ImGui::DragFloat("Emissive Strength", &material->emissiveStrength, 0.1f, 0.0f, 100.0f);
+
+        // Rendering options
+        ImGui::Checkbox("Double Sided", &material->doubleSided);
+        ImGui::Checkbox("Cast Shadows", &material->castShadows);
+        ImGui::Checkbox("Receive Shadows", &material->receiveShadows);
+
+        // Alpha mode
+        const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
+        int currentMode = static_cast<int>(material->alphaMode);
+        if (ImGui::Combo("Alpha Mode", &currentMode, alphaModes, 3)) {
+            material->alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(currentMode);
+        }
+
+        if (material->alphaMode == ECS::MaterialComponent::AlphaMode::Mask) {
+            ImGui::DragFloat("Alpha Cutoff", &material->alphaCutoff, 0.01f, 0.0f, 1.0f);
+        }
+
+        // Texture indices (read-only info for now)
+        if (ImGui::TreeNode("Textures")) {
+            ImGui::Text("Base Color: %d", material->baseColorTexture);
+            ImGui::Text("Normal: %d", material->normalTexture);
+            ImGui::Text("Metallic/Roughness: %d", material->metallicRoughnessTexture);
+            ImGui::Text("Emissive: %d", material->emissiveTexture);
+            ImGui::TreePop();
+        }
     }
 }
 
@@ -512,7 +595,23 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
         }
 
         // Shadows
-        ImGui::Checkbox("Cast Shadows", &light->castShadows);
+        if (ImGui::TreeNode("Shadows")) {
+            ImGui::Checkbox("Cast Shadows", &light->castShadows);
+            if (light->castShadows) {
+                const char* resolutions[] = { "512", "1024", "2048", "4096" };
+                int currentRes = 0;
+                if (light->shadowMapResolution == 512) currentRes = 0;
+                else if (light->shadowMapResolution == 1024) currentRes = 1;
+                else if (light->shadowMapResolution == 2048) currentRes = 2;
+                else if (light->shadowMapResolution == 4096) currentRes = 3;
+
+                if (ImGui::Combo("Shadow Resolution", &currentRes, resolutions, 4)) {
+                    u32 resValues[] = { 512, 1024, 2048, 4096 };
+                    light->shadowMapResolution = resValues[currentRes];
+                }
+            }
+            ImGui::TreePop();
+        }
     }
 }
 
@@ -835,6 +934,132 @@ void EditorLayer::DrawGizmos() {
         Math::Quaternion qy(Math::Vector3(0, 1, 0), ry);
         Math::Quaternion qz(Math::Vector3(0, 0, 1), rz);
         transform->rotation = qy * qx * qz; // YXZ order
+    }
+}
+
+void EditorLayer::SaveScene(const std::string& path) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot save scene: no world loaded");
+        return;
+    }
+
+    Scene::SceneSerializer serializer(m_World);
+    auto result = serializer.Save(path);
+
+    if (result.success) {
+        m_CurrentScenePath = path;
+        usize entityCount = m_World->GetAllEntities().size();
+        std::stringstream ss;
+        ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_INFO(Editor, "Saved scene to %s (%zu entities)", path.c_str(), entityCount);
+    } else {
+        std::stringstream ss;
+        ss << "[Error] Failed to save scene: " << result.error;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_ERROR(Editor, "Failed to save scene to %s: %s", path.c_str(), result.error.c_str());
+    }
+}
+
+void EditorLayer::OpenScene(const std::string& path) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot open scene: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot open scene: no world loaded");
+        return;
+    }
+
+    Scene::SceneSerializer serializer(m_World);
+    auto result = serializer.Load(path, true); // Clear existing entities
+
+    if (result.success) {
+        m_CurrentScenePath = path;
+        m_SelectedEntity = ECS::INVALID_ENTITY;
+        usize entityCount = result.entities.size();
+        std::stringstream ss;
+        ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_INFO(Editor, "Loaded scene from %s (%zu entities)", path.c_str(), entityCount);
+    } else {
+        std::stringstream ss;
+        ss << "[Error] Failed to load scene: " << result.error;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_ERROR(Editor, "Failed to load scene from %s: %s", path.c_str(), result.error.c_str());
+    }
+}
+
+void EditorLayer::DrawOpenSceneDialog() {
+    ImGui::OpenPopup("Open Scene");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Open Scene", &m_ShowOpenSceneDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter the path to a scene file (.enjin):");
+        ImGui::Separator();
+
+        ImGui::InputText("Path", m_ScenePath, sizeof(m_ScenePath));
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Open", ImVec2(120, 0))) {
+            if (m_ScenePath[0] != '\0') {
+                OpenScene(m_ScenePath);
+                m_ShowOpenSceneDialog = false;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            m_ShowOpenSceneDialog = false;
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void EditorLayer::DrawSaveSceneDialog() {
+    ImGui::OpenPopup("Save Scene As");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Save Scene As", &m_ShowSaveSceneDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter the path to save the scene:");
+        ImGui::Separator();
+
+        // Pre-fill with current path if available
+        static bool initialized = false;
+        if (!initialized && !m_CurrentScenePath.empty()) {
+            strncpy(m_ScenePath, m_CurrentScenePath.c_str(), sizeof(m_ScenePath) - 1);
+            m_ScenePath[sizeof(m_ScenePath) - 1] = '\0';
+            initialized = true;
+        }
+
+        ImGui::InputText("Path", m_ScenePath, sizeof(m_ScenePath));
+
+        ImGui::TextDisabled("(Use .enjin extension for scene files)");
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            if (m_ScenePath[0] != '\0') {
+                std::string path = m_ScenePath;
+                // Add .enjin extension if not present
+                if (path.find(".enjin") == std::string::npos) {
+                    path += ".enjin";
+                }
+                SaveScene(path);
+                m_ShowSaveSceneDialog = false;
+                initialized = false;
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            m_ShowSaveSceneDialog = false;
+            initialized = false;
+        }
+
+        ImGui::EndPopup();
     }
 }
 

@@ -100,7 +100,14 @@ private:
     void DrawEntityNode(ECS::Entity entity, const std::string& name);
     void DrawTransformComponent(ECS::Entity entity);
     void DrawMeshComponent(ECS::Entity entity);
+    void DrawMaterialComponent(ECS::Entity entity);
     void DrawLightComponent(ECS::Entity entity);
+
+    // Scene management
+    void SaveScene(const std::string& path);
+    void OpenScene(const std::string& path);
+    void DrawOpenSceneDialog();
+    void DrawSaveSceneDialog();
 
     Window* m_Window = nullptr;
     Renderer::VulkanRenderer* m_Renderer = nullptr;
@@ -119,9 +126,13 @@ private:
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
     bool m_ShowImportDialog = false;
+    bool m_ShowOpenSceneDialog = false;
+    bool m_ShowSaveSceneDialog = false;
 
     // Import dialog state
     char m_ImportPath[512] = "";
+    char m_ScenePath[512] = "";
+    std::string m_CurrentScenePath;
 
     // Console log buffer
     std::vector<std::string> m_ConsoleLog;
