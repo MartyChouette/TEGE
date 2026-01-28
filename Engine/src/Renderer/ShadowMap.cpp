@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/ShadowMap.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
+#include <array>
 
 namespace Enjin {
 namespace Renderer {

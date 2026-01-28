@@ -328,7 +328,7 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     lighting.lightDir = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
     lighting.lightIntensity = 1.2f;
     lighting.lightColor = Math::Vector3(1.0f, 0.95f, 0.9f);
-    lighting._pad1 = 0.0f;
+    lighting._pad1[0] = 0.0f; lighting._pad1[1] = 0.0f; lighting._pad1[2] = 0.0f;
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 
     // Update Material UBO
