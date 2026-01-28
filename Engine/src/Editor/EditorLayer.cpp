@@ -9,6 +9,7 @@
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
+#include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
@@ -109,6 +110,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
         DrawSettingsPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::PostProcessing)) {
+        DrawPostProcessingPanel();
     }
 
     // Draw gizmos for selected entity
@@ -212,6 +216,7 @@ void EditorLayer::DrawMenuBar() {
             bool console = IsPanelVisible(EditorPanel::Console);
             bool assets = IsPanelVisible(EditorPanel::AssetBrowser);
             bool settings = IsPanelVisible(EditorPanel::Settings);
+            bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
 
             if (ImGui::MenuItem("Hierarchy", nullptr, &hierarchy)) {
                 SetPanelVisibility(EditorPanel::Hierarchy, hierarchy);
@@ -227,6 +232,9 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Settings", nullptr, &settings)) {
                 SetPanelVisibility(EditorPanel::Settings, settings);
+            }
+            if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
+                SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
@@ -712,6 +720,113 @@ void EditorLayer::DrawSettingsPanel() {
     if (ImGui::CollapsingHeader("Rendering")) {
         // TODO: Rendering settings (MSAA, shadows, etc.)
         ImGui::TextDisabled("Rendering settings not yet implemented");
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawPostProcessingPanel() {
+    ImGui::Begin("Post Processing");
+
+    if (!m_PostProcessing) {
+        ImGui::TextDisabled("Post-processing not initialized");
+        ImGui::End();
+        return;
+    }
+
+    auto& settings = m_PostProcessing->GetSettings();
+
+    // Tone Mapping
+    if (ImGui::CollapsingHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* toneMappingModes[] = { "None", "Reinhard", "Reinhard Extended", "ACES", "Uncharted 2", "AgX" };
+        int currentMode = static_cast<int>(settings.toneMappingMode);
+        if (ImGui::Combo("Mode", &currentMode, toneMappingModes, 6)) {
+            settings.toneMappingMode = static_cast<u32>(currentMode);
+        }
+
+        ImGui::DragFloat("Exposure", &settings.exposure, 0.01f, 0.01f, 10.0f);
+        ImGui::DragFloat("Gamma", &settings.gamma, 0.01f, 1.0f, 3.0f);
+
+        if (settings.toneMappingMode == 2) { // Reinhard Extended
+            ImGui::DragFloat("White Point", &settings.whitePoint, 0.1f, 1.0f, 20.0f);
+        }
+    }
+
+    // Bloom
+    if (ImGui::CollapsingHeader("Bloom")) {
+        bool bloomEnabled = settings.bloomEnabled != 0;
+        if (ImGui::Checkbox("Enabled##Bloom", &bloomEnabled)) {
+            settings.bloomEnabled = bloomEnabled ? 1 : 0;
+        }
+
+        if (settings.bloomEnabled) {
+            ImGui::DragFloat("Threshold", &settings.bloomThreshold, 0.01f, 0.0f, 5.0f);
+            ImGui::DragFloat("Intensity##Bloom", &settings.bloomIntensity, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Radius", &settings.bloomRadius, 0.001f, 0.001f, 0.1f);
+        }
+    }
+
+    // Vignette
+    if (ImGui::CollapsingHeader("Vignette")) {
+        bool vignetteEnabled = settings.vignetteEnabled != 0;
+        if (ImGui::Checkbox("Enabled##Vignette", &vignetteEnabled)) {
+            settings.vignetteEnabled = vignetteEnabled ? 1 : 0;
+        }
+
+        if (settings.vignetteEnabled) {
+            ImGui::DragFloat("Intensity##Vignette", &settings.vignetteIntensity, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Smoothness", &settings.vignetteSmoothness, 0.01f, 0.0f, 1.0f);
+        }
+    }
+
+    // Chromatic Aberration
+    if (ImGui::CollapsingHeader("Chromatic Aberration")) {
+        bool caEnabled = settings.chromaticAberrationEnabled != 0;
+        if (ImGui::Checkbox("Enabled##CA", &caEnabled)) {
+            settings.chromaticAberrationEnabled = caEnabled ? 1 : 0;
+        }
+
+        if (settings.chromaticAberrationEnabled) {
+            ImGui::DragFloat("Intensity##CA", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.05f);
+        }
+    }
+
+    // Color Grading
+    if (ImGui::CollapsingHeader("Color Grading")) {
+        f32 colorFilter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
+        if (ImGui::ColorEdit3("Color Filter", colorFilter)) {
+            settings.colorFilter = Math::Vector3(colorFilter[0], colorFilter[1], colorFilter[2]);
+        }
+
+        ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 2.0f);
+        ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.5f, 2.0f);
+        ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
+    }
+
+    // Film Grain
+    if (ImGui::CollapsingHeader("Film Grain")) {
+        bool grainEnabled = settings.filmGrainEnabled != 0;
+        if (ImGui::Checkbox("Enabled##Grain", &grainEnabled)) {
+            settings.filmGrainEnabled = grainEnabled ? 1 : 0;
+        }
+
+        if (settings.filmGrainEnabled) {
+            ImGui::DragFloat("Intensity##Grain", &settings.filmGrainIntensity, 0.001f, 0.0f, 0.2f);
+        }
+    }
+
+    // FXAA
+    if (ImGui::CollapsingHeader("Anti-Aliasing (FXAA)")) {
+        bool fxaaEnabled = settings.fxaaEnabled != 0;
+        if (ImGui::Checkbox("Enabled##FXAA", &fxaaEnabled)) {
+            settings.fxaaEnabled = fxaaEnabled ? 1 : 0;
+        }
+
+        if (settings.fxaaEnabled) {
+            ImGui::DragFloat("Span Max", &settings.fxaaSpanMax, 0.5f, 2.0f, 16.0f);
+            ImGui::DragFloat("Reduce Min", &settings.fxaaReduceMin, 0.001f, 0.0f, 0.1f, "%.4f");
+            ImGui::DragFloat("Reduce Mul", &settings.fxaaReduceMul, 0.01f, 0.0f, 0.5f);
+        }
     }
 
     ImGui::End();

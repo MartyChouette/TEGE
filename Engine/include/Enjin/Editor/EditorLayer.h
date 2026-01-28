@@ -12,6 +12,12 @@
 #include <functional>
 
 namespace Enjin {
+
+// Forward declarations
+namespace Renderer {
+    class PostProcessing;
+}
+
 namespace Editor {
 
 // Editor panel flags
@@ -23,6 +29,7 @@ enum class EditorPanel : u32 {
     Console = 1 << 3,
     AssetBrowser = 1 << 4,
     Settings = 1 << 5,
+    PostProcessing = 1 << 6,
     All = 0xFFFFFFFF
 };
 
@@ -71,6 +78,9 @@ public:
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     void SetCameraController(Renderer::CameraController* controller) { m_CameraController = controller; }
 
+    // Set post-processing for the settings panel
+    void SetPostProcessing(Renderer::PostProcessing* postProcessing) { m_PostProcessing = postProcessing; }
+
     // Panel visibility
     void SetPanelVisibility(EditorPanel panel, bool visible);
     bool IsPanelVisible(EditorPanel panel) const;
@@ -95,6 +105,7 @@ private:
     void DrawConsolePanel();
     void DrawAssetBrowserPanel();
     void DrawSettingsPanel();
+    void DrawPostProcessingPanel();
     void DrawStatsOverlay();
 
     void DrawEntityNode(ECS::Entity entity, const std::string& name);
@@ -114,6 +125,7 @@ private:
     ECS::World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Renderer::CameraController* m_CameraController = nullptr;
+    Renderer::PostProcessing* m_PostProcessing = nullptr;
 
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
 
