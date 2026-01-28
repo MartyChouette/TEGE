@@ -17,6 +17,7 @@ target_include_directories(EnjinEngine PUBLIC
 target_link_libraries(EnjinEngine PUBLIC
     EnjinCore
     imgui
+    imguizmo
 )
 
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)

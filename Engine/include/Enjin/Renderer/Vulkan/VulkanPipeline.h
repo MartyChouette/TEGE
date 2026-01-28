@@ -28,7 +28,10 @@ struct LightingUBO {
     alignas(16) Math::Vector3 lightDir;
     alignas(4) f32 lightIntensity;
     alignas(16) Math::Vector3 lightColor;
-    alignas(4) f32 _pad1;
+    alignas(4) f32 shadowBias;           // Shadow depth bias
+    alignas(16) Math::Matrix4 lightSpaceMatrix; // Light view-projection matrix for shadows
+    alignas(4) i32 shadowEnabled;        // 1 = shadows enabled, 0 = disabled
+    alignas(4) f32 _pad1[3];             // Padding for alignment
 };
 
 // Graphics pipeline configuration

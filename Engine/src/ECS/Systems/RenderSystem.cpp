@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -90,6 +91,7 @@ void RenderSystem::Shutdown() {
     // Clean up uniform buffers
     m_UniformBuffers.clear();
     m_LightingBuffers.clear();
+    m_MaterialBuffers.clear();
     m_DescriptorSets.clear();
 
     // Clean up pipeline
@@ -147,6 +149,7 @@ void RenderSystem::CreateUniformBuffers() {
 
     m_UniformBuffers.resize(framesInFlight);
     m_LightingBuffers.resize(framesInFlight);
+    m_MaterialBuffers.resize(framesInFlight);
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         // MVP uniform buffer
@@ -162,16 +165,23 @@ void RenderSystem::CreateUniformBuffers() {
             ENJIN_LOG_ERROR(Renderer, "Failed to create lighting buffer %u", i);
             return;
         }
+
+        // Material uniform buffer
+        m_MaterialBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!m_MaterialBuffers[i]->Create(sizeof(MaterialGPU), Renderer::BufferUsage::Uniform, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create material buffer %u", i);
+            return;
+        }
     }
 }
 
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool (2 UBOs per frame: MVP + Lighting)
+    // Create descriptor pool (3 UBOs per frame: MVP + Lighting + Material)
     VkDescriptorPoolSize poolSize{};
     poolSize.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSize.descriptorCount = framesInFlight * 2;
+    poolSize.descriptorCount = framesInFlight * 3;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -203,9 +213,9 @@ void RenderSystem::CreateDescriptorSets() {
         return;
     }
 
-    // Update descriptor sets with both UBOs
+    // Update descriptor sets with all UBOs
     for (u32 i = 0; i < framesInFlight; ++i) {
-        std::array<VkDescriptorBufferInfo, 2> bufferInfos{};
+        std::array<VkDescriptorBufferInfo, 3> bufferInfos{};
 
         // MVP UBO
         bufferInfos[0].buffer = m_UniformBuffers[i]->GetBuffer();
@@ -217,7 +227,12 @@ void RenderSystem::CreateDescriptorSets() {
         bufferInfos[1].offset = 0;
         bufferInfos[1].range = sizeof(Renderer::LightingUBO);
 
-        std::array<VkWriteDescriptorSet, 2> descriptorWrites{};
+        // Material UBO
+        bufferInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
+        bufferInfos[2].offset = 0;
+        bufferInfos[2].range = sizeof(MaterialGPU);
+
+        std::array<VkWriteDescriptorSet, 3> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -236,6 +251,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
         descriptorWrites[1].descriptorCount = 1;
         descriptorWrites[1].pBufferInfo = &bufferInfos[1];
+
+        // Material descriptor
+        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[2].dstSet = m_DescriptorSets[i];
+        descriptorWrites[2].dstBinding = 2;
+        descriptorWrites[2].dstArrayElement = 0;
+        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        descriptorWrites[2].descriptorCount = 1;
+        descriptorWrites[2].pBufferInfo = &bufferInfos[2];
 
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -306,6 +330,21 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     lighting.lightColor = Math::Vector3(1.0f, 0.95f, 0.9f);
     lighting._pad1 = 0.0f;
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
+
+    // Update Material UBO
+    MaterialGPU materialGPU;
+    MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+    if (material) {
+        materialGPU = MaterialGPU::FromComponent(*material);
+    } else {
+        // Default material (light gray, non-metallic)
+        MaterialComponent defaultMat;
+        defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+        defaultMat.metallic = 0.0f;
+        defaultMat.roughness = 0.5f;
+        materialGPU = MaterialGPU::FromComponent(defaultMat);
+    }
+    m_MaterialBuffers[currentFrame]->UploadData(&materialGPU, sizeof(materialGPU));
 }
 
 void RenderSystem::CreateTriangleMesh() {
