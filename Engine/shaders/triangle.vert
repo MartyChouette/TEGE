@@ -1,7 +1,6 @@
 #version 450
 
-// Lit Mesh Vertex Shader
-// Supports position, normal, and UV attributes with lighting
+// Lit Mesh Vertex Shader with Shadow Support
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -13,9 +12,28 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 
+// Access lightSpaceMatrix from lighting UBO
+// Must match C++ LightingUBO structure exactly
+layout(binding = 1) uniform LightingUBO {
+    vec3 ambientColor;
+    float ambientIntensity;
+    vec3 cameraPos;
+    float _pad0;
+    uint directionalLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+    uint _pad1;
+    mat4 lightSpaceMatrix;
+    float shadowBias;
+    int shadowEnabled;
+    vec2 _shadowPad;
+    // Note: light arrays follow but we only need lightSpaceMatrix in vertex shader
+} lighting;
+
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragUV;
+layout(location = 3) out vec4 fragPosLightSpace;
 
 void main() {
     // Transform vertex position to world space
@@ -31,4 +49,7 @@ void main() {
 
     // Pass through UV
     fragUV = inUV;
+
+    // Calculate position in light space for shadow mapping
+    fragPosLightSpace = lighting.lightSpaceMatrix * worldPos;
 }

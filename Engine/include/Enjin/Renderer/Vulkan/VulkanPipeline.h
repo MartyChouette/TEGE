@@ -19,20 +19,8 @@ struct UniformBufferObject {
     alignas(16) Math::Matrix4 proj;
 };
 
-// Lighting uniform buffer object
-struct LightingUBO {
-    alignas(16) Math::Vector3 ambientColor;
-    alignas(4) f32 ambientIntensity;
-    alignas(16) Math::Vector3 cameraPos;
-    alignas(4) f32 _pad0;
-    alignas(16) Math::Vector3 lightDir;
-    alignas(4) f32 lightIntensity;
-    alignas(16) Math::Vector3 lightColor;
-    alignas(4) f32 shadowBias;           // Shadow depth bias
-    alignas(16) Math::Matrix4 lightSpaceMatrix; // Light view-projection matrix for shadows
-    alignas(4) i32 shadowEnabled;        // 1 = shadows enabled, 0 = disabled
-    alignas(4) f32 _pad1[3];             // Padding for alignment
-};
+// Note: LightingUBO is defined in Enjin/ECS/Components/Light.h
+// Use ECS::LightingUBO for multi-light support
 
 // Graphics pipeline configuration
 struct PipelineConfig {

@@ -61,11 +61,11 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     bindings[0].pImmutableSamplers = nullptr;
 
-    // UBO binding 1: lighting data (fragment shader)
+    // UBO binding 1: lighting data (vertex + fragment shader for shadows)
     bindings[1].binding = 1;
     bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[1].stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[1].pImmutableSamplers = nullptr;
 
     // UBO binding 2: material data (fragment shader)
@@ -74,6 +74,8 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[2].pImmutableSamplers = nullptr;
+
+    // Note: Shadow map sampler (binding 3) will be added when ShadowMap is fully integrated
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;

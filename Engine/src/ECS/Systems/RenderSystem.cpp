@@ -1,5 +1,6 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Light.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -42,7 +43,7 @@ void RenderSystem::Initialize() {
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleVertexShaderData),
-        Renderer::ShaderData::TriangleVertexShaderSize)) {
+        Renderer::ShaderData::TriangleVertexShaderDataSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load vertex shader");
         return;
     }
@@ -50,7 +51,7 @@ void RenderSystem::Initialize() {
     m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_FragmentShader->LoadFromSPIRV(
         reinterpret_cast<const u8*>(Renderer::ShaderData::TriangleFragmentShaderData),
-        Renderer::ShaderData::TriangleFragmentShaderSize)) {
+        Renderer::ShaderData::TriangleFragmentShaderDataSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load fragment shader");
         return;
     }
@@ -159,9 +160,9 @@ void RenderSystem::CreateUniformBuffers() {
             return;
         }
 
-        // Lighting uniform buffer
+        // Lighting uniform buffer (multi-light support)
         m_LightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-        if (!m_LightingBuffers[i]->Create(sizeof(Renderer::LightingUBO), Renderer::BufferUsage::Uniform, true)) {
+        if (!m_LightingBuffers[i]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
             ENJIN_LOG_ERROR(Renderer, "Failed to create lighting buffer %u", i);
             return;
         }
@@ -222,10 +223,10 @@ void RenderSystem::CreateDescriptorSets() {
         bufferInfos[0].offset = 0;
         bufferInfos[0].range = sizeof(Renderer::UniformBufferObject);
 
-        // Lighting UBO
+        // Lighting UBO (multi-light)
         bufferInfos[1].buffer = m_LightingBuffers[i]->GetBuffer();
         bufferInfos[1].offset = 0;
-        bufferInfos[1].range = sizeof(Renderer::LightingUBO);
+        bufferInfos[1].range = sizeof(LightingUBO);
 
         // Material UBO
         bufferInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
@@ -318,17 +319,102 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     ubo.proj = m_Camera->GetProjectionMatrix();
     m_UniformBuffers[currentFrame]->UploadData(&ubo, sizeof(ubo));
 
-    // Update Lighting UBO
-    Renderer::LightingUBO lighting{};
+    // Update Lighting UBO with all lights in the scene
+    LightingUBO lighting{};
     lighting.ambientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
     lighting.ambientIntensity = 1.0f;
-    lighting.cameraPos = m_Camera->GetPosition();
+    lighting.cameraPosition = m_Camera->GetPosition();
     lighting._pad0 = 0.0f;
-    // Default directional light (sun from upper-right)
-    lighting.lightDir = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
-    lighting.lightIntensity = 1.2f;
-    lighting.lightColor = Math::Vector3(1.0f, 0.95f, 0.9f);
-    lighting._pad1[0] = 0.0f; lighting._pad1[1] = 0.0f; lighting._pad1[2] = 0.0f;
+    lighting.directionalLightCount = 0;
+    lighting.pointLightCount = 0;
+    lighting.spotLightCount = 0;
+    lighting._pad1 = 0;
+
+    // Query all entities and check for LightComponent
+    const auto& allEntities = m_World->GetAllEntities();
+    bool hasAnyLight = false;
+
+    for (Entity lightEntity : allEntities) {
+        if (!m_World->HasComponent<LightComponent>(lightEntity)) continue;
+        LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
+        TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
+        if (!light) continue;
+
+        hasAnyLight = true;
+
+        switch (light->type) {
+            case LightType::Directional: {
+                if (lighting.directionalLightCount < MAX_DIRECTIONAL_LIGHTS) {
+                    auto& dirLight = lighting.directionalLights[lighting.directionalLightCount];
+                    // Use transform rotation to determine direction, or default to -Z
+                    if (lightTransform) {
+                        Math::Vector3 forward(0.0f, 0.0f, -1.0f);
+                        dirLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
+                    } else {
+                        dirLight.direction = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
+                    }
+                    dirLight.color = light->color;
+                    dirLight.intensity = light->intensity;
+                    lighting.directionalLightCount++;
+                }
+                break;
+            }
+            case LightType::Point: {
+                if (lighting.pointLightCount < MAX_POINT_LIGHTS) {
+                    auto& pointLight = lighting.pointLights[lighting.pointLightCount];
+                    pointLight.position = lightTransform ? lightTransform->position : Math::Vector3(0.0f);
+                    pointLight.range = light->range;
+                    pointLight.color = light->color;
+                    pointLight.intensity = light->intensity;
+                    pointLight.constantAttenuation = light->constantAttenuation;
+                    pointLight.linearAttenuation = light->linearAttenuation;
+                    pointLight.quadraticAttenuation = light->quadraticAttenuation;
+                    lighting.pointLightCount++;
+                }
+                break;
+            }
+            case LightType::Spot: {
+                if (lighting.spotLightCount < MAX_SPOT_LIGHTS) {
+                    auto& spotLight = lighting.spotLights[lighting.spotLightCount];
+                    spotLight.position = lightTransform ? lightTransform->position : Math::Vector3(0.0f);
+                    spotLight.range = light->range;
+                    // Use transform rotation to determine direction
+                    if (lightTransform) {
+                        Math::Vector3 forward(0.0f, 0.0f, -1.0f);
+                        spotLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
+                    } else {
+                        spotLight.direction = Math::Vector3(0.0f, -1.0f, 0.0f);
+                    }
+                    spotLight.color = light->color;
+                    spotLight.intensity = light->intensity;
+                    spotLight.innerCutoff = std::cos(light->innerConeAngle * 3.14159265f / 180.0f);
+                    spotLight.outerCutoff = std::cos(light->outerConeAngle * 3.14159265f / 180.0f);
+                    spotLight.constantAttenuation = light->constantAttenuation;
+                    spotLight.linearAttenuation = light->linearAttenuation;
+                    spotLight.quadraticAttenuation = light->quadraticAttenuation;
+                    lighting.spotLightCount++;
+                }
+                break;
+            }
+        }
+    }
+
+    // If no lights in scene, add a default directional light
+    if (!hasAnyLight) {
+        lighting.directionalLights[0].direction = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
+        lighting.directionalLights[0].color = Math::Vector3(1.0f, 0.95f, 0.9f);
+        lighting.directionalLights[0].intensity = 1.2f;
+        lighting.directionalLightCount = 1;
+    }
+
+    // Shadow mapping data (disabled for now - requires ShadowMap integration)
+    // When ShadowMap is integrated, set lightSpaceMatrix from ShadowMap::GetLightSpaceMatrix()
+    lighting.lightSpaceMatrix = Math::Matrix4::Identity();
+    lighting.shadowBias = 0.005f;
+    lighting.shadowEnabled = 0;  // Disabled until ShadowMap is integrated
+    lighting._shadowPad[0] = 0.0f;
+    lighting._shadowPad[1] = 0.0f;
+
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 
     // Update Material UBO

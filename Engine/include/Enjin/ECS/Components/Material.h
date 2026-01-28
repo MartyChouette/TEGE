@@ -66,8 +66,20 @@ struct alignas(16) MaterialGPU {
         if (mat.receiveShadows) gpu.flags |= 4;
         gpu.flags |= (static_cast<i32>(mat.alphaMode) << 8);
 
+        // Texture flags (bits 16-19)
+        if (mat.baseColorTexture >= 0) gpu.flags |= (1 << 16);
+        if (mat.normalTexture >= 0) gpu.flags |= (1 << 17);
+        if (mat.metallicRoughnessTexture >= 0) gpu.flags |= (1 << 18);
+        if (mat.emissiveTexture >= 0) gpu.flags |= (1 << 19);
+
         return gpu;
     }
+
+    // Texture flag bit positions
+    static constexpr i32 FLAG_HAS_BASE_COLOR_TEXTURE = (1 << 16);
+    static constexpr i32 FLAG_HAS_NORMAL_TEXTURE = (1 << 17);
+    static constexpr i32 FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE = (1 << 18);
+    static constexpr i32 FLAG_HAS_EMISSIVE_TEXTURE = (1 << 19);
 };
 
 } // namespace ECS
