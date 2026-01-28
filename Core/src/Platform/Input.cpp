@@ -9,7 +9,9 @@
 namespace Enjin {
 
 namespace {
-    constexpr i32 MAX_KEYS = 512;
+    constexpr i32 GLFW_KEY_FIRST = 32;   // GLFW_KEY_SPACE is the first valid key
+    constexpr i32 GLFW_KEY_LAST_VALID = 348;  // GLFW_KEY_LAST
+    constexpr i32 MAX_KEYS = 512;        // Array size (must be > GLFW_KEY_LAST_VALID)
     constexpr i32 MAX_MOUSE_BUTTONS = 8;
 
     GLFWwindow* s_Window = nullptr;
@@ -81,8 +83,8 @@ void Input::Update() {
     std::memcpy(s_KeysDownPrev, s_KeysDown, sizeof(s_KeysDown));
     std::memcpy(s_MouseButtonsDownPrev, s_MouseButtonsDown, sizeof(s_MouseButtonsDown));
 
-    // Poll keyboard state
-    for (i32 key = 0; key < MAX_KEYS; ++key) {
+    // Poll keyboard state (GLFW keys are 32-348)
+    for (i32 key = GLFW_KEY_FIRST; key <= GLFW_KEY_LAST_VALID; ++key) {
         s_KeysDown[key] = glfwGetKey(s_Window, key) == GLFW_PRESS;
     }
 
