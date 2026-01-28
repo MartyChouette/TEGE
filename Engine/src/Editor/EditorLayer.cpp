@@ -1,11 +1,16 @@
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Renderer/MeshFactory.h"
+#include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
+#include <ImGuizmo.h>
 #include <sstream>
 
 namespace Enjin {
@@ -45,8 +50,31 @@ void EditorLayer::Update(f32 deltaTime) {
     // Camera controller handles its own input - only fully disable when typing in a text field
     // The camera controller checks for right-mouse before looking, so it's OK to leave it enabled
     if (m_CameraController) {
-        // Only disable when user is typing in a text field
-        m_CameraController->SetEnabled(!WantsKeyboardInput());
+        // Only disable when user is typing in a text field or using gizmo
+        bool usingGizmo = ImGuizmo::IsUsing();
+        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo);
+    }
+
+    // Gizmo mode shortcuts (only when not typing)
+    if (!WantsKeyboardInput()) {
+        if (Input::IsKeyPressed(KeyCode::W)) {
+            m_GizmoOperation = GizmoOperation::Translate;
+        }
+        if (Input::IsKeyPressed(KeyCode::E)) {
+            m_GizmoOperation = GizmoOperation::Rotate;
+        }
+        if (Input::IsKeyPressed(KeyCode::R)) {
+            m_GizmoOperation = GizmoOperation::Scale;
+        }
+        if (Input::IsKeyPressed(KeyCode::Q)) {
+            // Toggle between local and world space
+            m_GizmoSpace = (m_GizmoSpace == GizmoSpace::World) ? GizmoSpace::Local : GizmoSpace::World;
+        }
+    }
+
+    // Handle viewport picking (left-click to select, but not when using gizmo)
+    if (!ImGuizmo::IsOver()) {
+        HandleViewportPicking();
     }
 }
 
@@ -56,6 +84,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
 
     m_ImGuiLayer->BeginFrame();
+
+    // Initialize ImGuizmo for this frame
+    ImGuizmo::BeginFrame();
 
     // Menu bar
     DrawMenuBar();
@@ -77,6 +108,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawSettingsPanel();
     }
 
+    // Draw gizmos for selected entity
+    DrawGizmos();
+
     // Stats overlay
     if (m_ShowStatsOverlay) {
         DrawStatsOverlay();
@@ -85,6 +119,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Demo window (for testing)
     if (m_ShowDemoWindow) {
         ImGui::ShowDemoWindow(&m_ShowDemoWindow);
+    }
+
+    // Import dialog
+    if (m_ShowImportDialog) {
+        DrawImportDialog();
     }
 
     m_ImGuiLayer->EndFrame(commandBuffer);
@@ -122,6 +161,10 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
                 // TODO: Save scene
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
+                m_ShowImportDialog = true;
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
@@ -275,11 +318,16 @@ void EditorLayer::DrawHierarchyPanel() {
         const auto& entities = m_World->GetAllEntities();
 
         for (ECS::Entity entity : entities) {
-            std::stringstream ss;
-            ss << "Entity " << entity;
+            std::string name;
 
-            // Check if entity has a name component (if we add one later)
-            std::string name = ss.str();
+            // Use name component if available
+            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+                name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
+            } else {
+                std::stringstream ss;
+                ss << "Entity " << entity;
+                name = ss.str();
+            }
 
             DrawEntityNode(entity, name);
         }
@@ -538,6 +586,30 @@ void EditorLayer::DrawSettingsPanel() {
         }
     }
 
+    if (ImGui::CollapsingHeader("Gizmos", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Gizmo operation
+        const char* operations[] = { "Translate (W)", "Rotate (E)", "Scale (R)" };
+        int currentOp = static_cast<int>(m_GizmoOperation);
+        if (ImGui::Combo("Operation", &currentOp, operations, 3)) {
+            m_GizmoOperation = static_cast<GizmoOperation>(currentOp);
+        }
+
+        // Gizmo space
+        const char* spaces[] = { "Local", "World" };
+        int currentSpace = static_cast<int>(m_GizmoSpace);
+        if (ImGui::Combo("Space (Q)", &currentSpace, spaces, 2)) {
+            m_GizmoSpace = static_cast<GizmoSpace>(currentSpace);
+        }
+
+        // Snap settings
+        ImGui::Checkbox("Enable Snap", &m_UseSnap);
+        if (m_UseSnap) {
+            ImGui::DragFloat("Translate Snap", &m_TranslateSnap, 0.1f, 0.1f, 10.0f);
+            ImGui::DragFloat("Rotate Snap", &m_RotateSnap, 1.0f, 1.0f, 90.0f);
+            ImGui::DragFloat("Scale Snap", &m_ScaleSnap, 0.01f, 0.01f, 1.0f);
+        }
+    }
+
     if (ImGui::CollapsingHeader("Rendering")) {
         // TODO: Rendering settings (MSAA, shadows, etc.)
         ImGui::TextDisabled("Rendering settings not yet implemented");
@@ -578,6 +650,192 @@ void EditorLayer::DrawStatsOverlay() {
         }
     }
     ImGui::End();
+}
+
+void EditorLayer::DrawImportDialog() {
+    ImGui::OpenPopup("Import Model");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+
+    if (ImGui::BeginPopupModal("Import Model", &m_ShowImportDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter the path to a glTF model (.gltf or .glb):");
+        ImGui::Separator();
+
+        ImGui::InputText("Path", m_ImportPath, sizeof(m_ImportPath));
+
+        ImGui::Separator();
+
+        if (ImGui::Button("Import", ImVec2(120, 0))) {
+            if (m_ImportPath[0] != '\0') {
+                ImportModel(m_ImportPath);
+                m_ShowImportDialog = false;
+                m_ImportPath[0] = '\0';
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            m_ShowImportDialog = false;
+            m_ImportPath[0] = '\0';
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void EditorLayer::ImportModel(const std::string& path) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot import model: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot import model: no world loaded");
+        return;
+    }
+
+    Assets::ImportOptions options;
+    options.scale = 1.0f;
+
+    Assets::ImportResult result = Assets::SceneImporter::ImportGLTF(path, m_World, options);
+
+    if (result.success) {
+        std::stringstream ss;
+        ss << "[Info] Imported " << result.entities.size() << " entities from " << path;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_INFO(Editor, "Imported %zu entities from %s", result.entities.size(), path.c_str());
+
+        // Select the root entity
+        if (result.rootEntity != ECS::INVALID_ENTITY) {
+            m_SelectedEntity = result.rootEntity;
+        }
+    } else {
+        std::stringstream ss;
+        ss << "[Error] Failed to import: " << result.errorMessage;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_ERROR(Editor, "Failed to import %s: %s", path.c_str(), result.errorMessage.c_str());
+    }
+}
+
+void EditorLayer::HandleViewportPicking() {
+    // Only pick when left mouse is clicked and not interacting with UI
+    if (!Input::IsMouseButtonPressed(MouseButton::Left)) {
+        return;
+    }
+
+    // Don't pick if ImGui wants the mouse (hovering over a panel)
+    if (WantsMouseInput()) {
+        return;
+    }
+
+    if (!m_World || !m_Camera || !m_Renderer) {
+        return;
+    }
+
+    // Get mouse position and viewport size
+    Math::Vector2 mousePos = Input::GetMousePosition();
+    auto extent = m_Renderer->GetSwapchainExtent();
+
+    if (extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    // Pick entity at mouse position
+    ECS::Entity picked = ScenePicker::PickEntity(
+        m_World, m_Camera,
+        mousePos.x, mousePos.y,
+        static_cast<f32>(extent.width), static_cast<f32>(extent.height)
+    );
+
+    if (picked != ECS::INVALID_ENTITY) {
+        m_SelectedEntity = picked;
+        if (m_OnEntitySelected) {
+            m_OnEntitySelected(picked);
+        }
+        ENJIN_LOG_DEBUG(Editor, "Selected entity %llu", (unsigned long long)picked);
+    } else {
+        // Clicked on empty space - deselect
+        m_SelectedEntity = ECS::INVALID_ENTITY;
+    }
+}
+
+void EditorLayer::DrawGizmos() {
+    if (m_SelectedEntity == ECS::INVALID_ENTITY || !m_World || !m_Camera || !m_Renderer) {
+        return;
+    }
+
+    // Check if entity has transform
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
+    if (!transform) {
+        return;
+    }
+
+    // Get viewport size
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    // Set ImGuizmo to use the full screen as the viewport
+    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
+    ImGuizmo::SetRect(0, 0, static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+
+    // Get camera matrices (need to convert to float arrays for ImGuizmo)
+    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+    Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+
+    // Flip projection for Vulkan (Y is flipped compared to OpenGL)
+    projMat.m[5] *= -1.0f;
+
+    // Build entity transform matrix
+    Math::Matrix4 entityMat = Math::Matrix4::Translation(transform->position) *
+                               transform->rotation.ToMatrix() *
+                               Math::Matrix4::Scale(transform->scale);
+
+    // Determine ImGuizmo operation
+    ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
+    switch (m_GizmoOperation) {
+        case GizmoOperation::Translate: op = ImGuizmo::TRANSLATE; break;
+        case GizmoOperation::Rotate: op = ImGuizmo::ROTATE; break;
+        case GizmoOperation::Scale: op = ImGuizmo::SCALE; break;
+    }
+
+    // Determine ImGuizmo mode (local/world)
+    ImGuizmo::MODE mode = (m_GizmoSpace == GizmoSpace::Local) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+
+    // Snap values
+    f32 snapValues[3] = { 0.0f, 0.0f, 0.0f };
+    if (m_UseSnap) {
+        switch (m_GizmoOperation) {
+            case GizmoOperation::Translate:
+                snapValues[0] = snapValues[1] = snapValues[2] = m_TranslateSnap;
+                break;
+            case GizmoOperation::Rotate:
+                snapValues[0] = snapValues[1] = snapValues[2] = m_RotateSnap;
+                break;
+            case GizmoOperation::Scale:
+                snapValues[0] = snapValues[1] = snapValues[2] = m_ScaleSnap;
+                break;
+        }
+    }
+
+    // Draw and manipulate gizmo
+    if (ImGuizmo::Manipulate(viewMat.m, projMat.m, op, mode, entityMat.m,
+                              nullptr, m_UseSnap ? snapValues : nullptr)) {
+        // Decompose the modified matrix back to transform components
+        f32 translation[3], rotation[3], scale[3];
+        ImGuizmo::DecomposeMatrixToComponents(entityMat.m, translation, rotation, scale);
+
+        transform->position = Math::Vector3(translation[0], translation[1], translation[2]);
+        transform->scale = Math::Vector3(scale[0], scale[1], scale[2]);
+
+        // Convert euler angles to quaternion
+        f32 rx = Math::Radians(rotation[0]);
+        f32 ry = Math::Radians(rotation[1]);
+        f32 rz = Math::Radians(rotation[2]);
+
+        Math::Quaternion qx(Math::Vector3(1, 0, 0), rx);
+        Math::Quaternion qy(Math::Vector3(0, 1, 0), ry);
+        Math::Quaternion qz(Math::Vector3(0, 0, 1), rz);
+        transform->rotation = qy * qx * qz; // YXZ order
+    }
 }
 
 } // namespace Editor

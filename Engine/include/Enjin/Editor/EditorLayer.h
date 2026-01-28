@@ -38,6 +38,19 @@ inline bool HasPanel(EditorPanel flags, EditorPanel panel) {
     return (static_cast<u32>(flags) & static_cast<u32>(panel)) != 0;
 }
 
+// Gizmo operation mode
+enum class GizmoOperation {
+    Translate,
+    Rotate,
+    Scale
+};
+
+// Gizmo space (local vs world)
+enum class GizmoSpace {
+    Local,
+    World
+};
+
 // Editor layer - manages ImGui editor UI
 class ENJIN_API EditorLayer {
 public:
@@ -105,10 +118,28 @@ private:
     // Panel state
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
+    bool m_ShowImportDialog = false;
+
+    // Import dialog state
+    char m_ImportPath[512] = "";
 
     // Console log buffer
     std::vector<std::string> m_ConsoleLog;
     static constexpr usize MAX_CONSOLE_LINES = 1000;
+
+    // Helper methods
+    void DrawImportDialog();
+    void ImportModel(const std::string& path);
+    void HandleViewportPicking();
+    void DrawGizmos();
+
+    // Gizmo state
+    GizmoOperation m_GizmoOperation = GizmoOperation::Translate;
+    GizmoSpace m_GizmoSpace = GizmoSpace::World;
+    bool m_UseSnap = false;
+    f32 m_TranslateSnap = 0.5f;
+    f32 m_RotateSnap = 15.0f;
+    f32 m_ScaleSnap = 0.1f;
 };
 
 } // namespace Editor

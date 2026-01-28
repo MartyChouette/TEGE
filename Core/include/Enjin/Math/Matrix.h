@@ -212,12 +212,58 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 Inverted() const {
-        // Simplified inversion - full implementation would use cofactors
-        // For production, use a proper matrix inversion algorithm
+    Matrix4 Inverse() const {
+        // Full 4x4 matrix inversion using cofactors
+        f32 a00 = m[0], a01 = m[4], a02 = m[8],  a03 = m[12];
+        f32 a10 = m[1], a11 = m[5], a12 = m[9],  a13 = m[13];
+        f32 a20 = m[2], a21 = m[6], a22 = m[10], a23 = m[14];
+        f32 a30 = m[3], a31 = m[7], a32 = m[11], a33 = m[15];
+
+        f32 b00 = a00 * a11 - a01 * a10;
+        f32 b01 = a00 * a12 - a02 * a10;
+        f32 b02 = a00 * a13 - a03 * a10;
+        f32 b03 = a01 * a12 - a02 * a11;
+        f32 b04 = a01 * a13 - a03 * a11;
+        f32 b05 = a02 * a13 - a03 * a12;
+        f32 b06 = a20 * a31 - a21 * a30;
+        f32 b07 = a20 * a32 - a22 * a30;
+        f32 b08 = a20 * a33 - a23 * a30;
+        f32 b09 = a21 * a32 - a22 * a31;
+        f32 b10 = a21 * a33 - a23 * a31;
+        f32 b11 = a22 * a33 - a23 * a32;
+
+        f32 det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
+
+        if (Abs(det) < 1e-10f) {
+            // Matrix is singular, return identity
+            return Identity();
+        }
+
+        f32 invDet = 1.0f / det;
+
         Matrix4 result;
-        // TODO: Implement proper matrix inversion
+        result.m[0]  = ( a11 * b11 - a12 * b10 + a13 * b09) * invDet;
+        result.m[1]  = (-a10 * b11 + a12 * b08 - a13 * b07) * invDet;
+        result.m[2]  = ( a10 * b10 - a11 * b08 + a13 * b06) * invDet;
+        result.m[3]  = (-a10 * b09 + a11 * b07 - a12 * b06) * invDet;
+        result.m[4]  = (-a01 * b11 + a02 * b10 - a03 * b09) * invDet;
+        result.m[5]  = ( a00 * b11 - a02 * b08 + a03 * b07) * invDet;
+        result.m[6]  = (-a00 * b10 + a01 * b08 - a03 * b06) * invDet;
+        result.m[7]  = ( a00 * b09 - a01 * b07 + a02 * b06) * invDet;
+        result.m[8]  = ( a31 * b05 - a32 * b04 + a33 * b03) * invDet;
+        result.m[9]  = (-a30 * b05 + a32 * b02 - a33 * b01) * invDet;
+        result.m[10] = ( a30 * b04 - a31 * b02 + a33 * b00) * invDet;
+        result.m[11] = (-a30 * b03 + a31 * b01 - a32 * b00) * invDet;
+        result.m[12] = (-a21 * b05 + a22 * b04 - a23 * b03) * invDet;
+        result.m[13] = ( a20 * b05 - a22 * b02 + a23 * b01) * invDet;
+        result.m[14] = (-a20 * b04 + a21 * b02 - a23 * b00) * invDet;
+        result.m[15] = ( a20 * b03 - a21 * b01 + a22 * b00) * invDet;
+
         return result;
+    }
+
+    Matrix4 Inverted() const {
+        return Inverse();
     }
 };
 
