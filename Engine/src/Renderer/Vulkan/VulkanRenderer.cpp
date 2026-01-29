@@ -357,6 +357,23 @@ bool VulkanRenderer::BeginFrame() {
     }
 
     m_IsFrameStarted = true;
+    m_IsMainRenderPassActive = false;
+
+    // Note: Main render pass is NOT started here anymore.
+    // Call BeginMainRenderPass() after any pre-render passes (shadow, etc.)
+    return true;
+}
+
+void VulkanRenderer::BeginMainRenderPass() {
+    if (!m_IsFrameStarted) {
+        ENJIN_LOG_WARN(Renderer, "BeginMainRenderPass called without BeginFrame");
+        return;
+    }
+
+    if (m_IsMainRenderPassActive) {
+        ENJIN_LOG_WARN(Renderer, "BeginMainRenderPass called while already active");
+        return;
+    }
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -373,7 +390,7 @@ bool VulkanRenderer::BeginFrame() {
     renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    return true;
+    m_IsMainRenderPassActive = true;
 }
 
 void VulkanRenderer::EndFrame() {
@@ -382,7 +399,10 @@ void VulkanRenderer::EndFrame() {
         return;
     }
 
-    vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
+    if (m_IsMainRenderPassActive) {
+        vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
+        m_IsMainRenderPassActive = false;
+    }
 
     if (vkEndCommandBuffer(m_CommandBuffers[m_CurrentFrame]) != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to record command buffer");

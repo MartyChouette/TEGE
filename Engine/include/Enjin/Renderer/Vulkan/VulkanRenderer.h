@@ -42,16 +42,25 @@ public:
 
     /**
      * @brief Begin a new frame
-     * Acquire next image and begin command buffer recording
+     * Acquire next image and begin command buffer recording.
+     * Does NOT start the main render pass - call BeginMainRenderPass() for that.
      * @return true if a new frame was started, false otherwise
      */
     bool BeginFrame();
+
+    /**
+     * @brief Begin the main render pass
+     * Call this after BeginFrame() and any pre-render passes (shadow, etc.)
+     */
+    void BeginMainRenderPass();
 
     /**
      * @brief End the current frame
      * End command buffer recording and submit to queue
      */
     void EndFrame();
+
+    bool IsMainRenderPassActive() const { return m_IsMainRenderPassActive; }
 
     VkCommandBuffer GetCurrentCommandBuffer() const;
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
@@ -91,6 +100,7 @@ private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
     bool m_IsFrameStarted = false;
+    bool m_IsMainRenderPassActive = false;
 };
 
 } // namespace Renderer

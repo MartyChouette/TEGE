@@ -4,6 +4,8 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -69,6 +71,11 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["normalTexture"] = material.normalTexture;
     j["metallicRoughnessTexture"] = material.metallicRoughnessTexture;
     j["emissiveTexture"] = material.emissiveTexture;
+    // Texture paths
+    j["baseColorTexturePath"] = material.baseColorTexturePath;
+    j["normalTexturePath"] = material.normalTexturePath;
+    j["metallicRoughnessTexturePath"] = material.metallicRoughnessTexturePath;
+    j["emissiveTexturePath"] = material.emissiveTexturePath;
     j["doubleSided"] = material.doubleSided;
     j["castShadows"] = material.castShadows;
     j["receiveShadows"] = material.receiveShadows;
@@ -114,6 +121,32 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     return j;
 }
 
+json SerializeNotesComponent(const ECS::NotesComponent& notes) {
+    json j;
+    j["notes"] = notes.notes;
+    return j;
+}
+
+json SerializeCameraComponent(const ECS::CameraComponent& camera) {
+    json j;
+    j["projectionType"] = static_cast<i32>(camera.projectionType);
+    j["fieldOfView"] = camera.fieldOfView;
+    j["nearPlane"] = camera.nearPlane;
+    j["farPlane"] = camera.farPlane;
+    j["orthoSize"] = camera.orthoSize;
+    j["priority"] = camera.priority;
+    j["isActive"] = camera.isActive;
+    j["clearDepth"] = camera.clearDepth;
+    j["clearColor"] = camera.clearColor;
+    j["backgroundColor"] = SerializeVector3(camera.backgroundColor);
+    j["viewportX"] = camera.viewportX;
+    j["viewportY"] = camera.viewportY;
+    j["viewportWidth"] = camera.viewportWidth;
+    j["viewportHeight"] = camera.viewportHeight;
+    j["cullingMask"] = camera.cullingMask;
+    return j;
+}
+
 // Deserialize components
 ECS::NameComponent DeserializeNameComponent(const json& j) {
     ECS::NameComponent name;
@@ -141,6 +174,19 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.normalTexture = j["normalTexture"].get<i32>();
     material.metallicRoughnessTexture = j["metallicRoughnessTexture"].get<i32>();
     material.emissiveTexture = j["emissiveTexture"].get<i32>();
+    // Texture paths (optional, added in later versions)
+    if (j.contains("baseColorTexturePath")) {
+        material.baseColorTexturePath = j["baseColorTexturePath"].get<std::string>();
+    }
+    if (j.contains("normalTexturePath")) {
+        material.normalTexturePath = j["normalTexturePath"].get<std::string>();
+    }
+    if (j.contains("metallicRoughnessTexturePath")) {
+        material.metallicRoughnessTexturePath = j["metallicRoughnessTexturePath"].get<std::string>();
+    }
+    if (j.contains("emissiveTexturePath")) {
+        material.emissiveTexturePath = j["emissiveTexturePath"].get<std::string>();
+    }
     material.doubleSided = j["doubleSided"].get<bool>();
     material.castShadows = j["castShadows"].get<bool>();
     material.receiveShadows = j["receiveShadows"].get<bool>();
@@ -183,6 +229,32 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.castShadows = j["castShadows"].get<bool>();
     light.shadowMapResolution = j["shadowMapResolution"].get<u32>();
     return light;
+}
+
+ECS::NotesComponent DeserializeNotesComponent(const json& j) {
+    ECS::NotesComponent notes;
+    notes.notes = j["notes"].get<std::string>();
+    return notes;
+}
+
+ECS::CameraComponent DeserializeCameraComponent(const json& j) {
+    ECS::CameraComponent camera;
+    camera.projectionType = static_cast<ECS::ProjectionType>(j["projectionType"].get<i32>());
+    camera.fieldOfView = j["fieldOfView"].get<f32>();
+    camera.nearPlane = j["nearPlane"].get<f32>();
+    camera.farPlane = j["farPlane"].get<f32>();
+    camera.orthoSize = j["orthoSize"].get<f32>();
+    camera.priority = j["priority"].get<i32>();
+    camera.isActive = j["isActive"].get<bool>();
+    camera.clearDepth = j["clearDepth"].get<bool>();
+    camera.clearColor = j["clearColor"].get<bool>();
+    camera.backgroundColor = DeserializeVector3(j["backgroundColor"]);
+    camera.viewportX = j["viewportX"].get<f32>();
+    camera.viewportY = j["viewportY"].get<f32>();
+    camera.viewportWidth = j["viewportWidth"].get<f32>();
+    camera.viewportHeight = j["viewportHeight"].get<f32>();
+    camera.cullingMask = j["cullingMask"].get<u32>();
+    return camera;
 }
 
 } // anonymous namespace
@@ -251,6 +323,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::LightComponent>(entity)) {
                 const auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
                 entityJson["light"] = SerializeLightComponent(*light);
+            }
+
+            if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
+                const auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
+                entityJson["notes"] = SerializeNotesComponent(*notes);
+            }
+
+            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+                const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
+                entityJson["camera"] = SerializeCameraComponent(*camera);
             }
 
             entitiesArray.push_back(entityJson);
@@ -379,10 +461,180 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 auto light = DeserializeLightComponent(entityJson["light"]);
                 m_World->AddComponent<ECS::LightComponent>(entity, light);
             }
+
+            if (entityJson.contains("notes")) {
+                auto notes = DeserializeNotesComponent(entityJson["notes"]);
+                m_World->AddComponent<ECS::NotesComponent>(entity, notes);
+            }
+
+            if (entityJson.contains("camera")) {
+                auto camera = DeserializeCameraComponent(entityJson["camera"]);
+                m_World->AddComponent<ECS::CameraComponent>(entity, camera);
+            }
         }
 
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
+
+    } catch (const std::exception& e) {
+        result.error = std::string("JSON parsing error: ") + e.what();
+    }
+
+    return result;
+}
+
+std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
+    if (!m_World) {
+        return "";
+    }
+
+    try {
+        json sceneJson;
+        sceneJson["version"] = "1.0";
+        const auto& entities = m_World->GetAllEntities();
+        sceneJson["entityCount"] = static_cast<u32>(entities.size());
+
+        json entitiesArray = json::array();
+
+        for (ECS::Entity entity : entities) {
+            if (!m_World->IsValid(entity)) {
+                continue;
+            }
+
+            json entityJson;
+            entityJson["id"] = static_cast<u64>(entity);
+
+            // Serialize components
+            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+                const auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                entityJson["name"] = SerializeNameComponent(*name);
+            }
+
+            if (m_World->HasComponent<ECS::TransformComponent>(entity)) {
+                const auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                entityJson["transform"] = SerializeTransformComponent(*transform);
+            }
+
+            if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
+                const auto* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
+                entityJson["material"] = SerializeMaterialComponent(*material);
+            }
+
+            if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+                const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+                entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
+            }
+
+            if (m_World->HasComponent<ECS::LightComponent>(entity)) {
+                const auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
+                entityJson["light"] = SerializeLightComponent(*light);
+            }
+
+            if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
+                const auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
+                entityJson["notes"] = SerializeNotesComponent(*notes);
+            }
+
+            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+                const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
+                entityJson["camera"] = SerializeCameraComponent(*camera);
+            }
+
+            entitiesArray.push_back(entityJson);
+        }
+
+        sceneJson["entities"] = entitiesArray;
+
+        if (options.prettyPrint) {
+            return sceneJson.dump(static_cast<int>(options.indentSize));
+        } else {
+            return sceneJson.dump();
+        }
+
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Asset, "Failed to serialize scene to string: %s", e.what());
+        return "";
+    }
+}
+
+DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonString, bool clearExisting) {
+    DeserializationResult result;
+
+    if (!m_World) {
+        result.error = "No world set";
+        return result;
+    }
+
+    if (jsonString.empty()) {
+        result.error = "Empty JSON string";
+        return result;
+    }
+
+    if (clearExisting) {
+        m_World->Clear();
+    }
+
+    try {
+        json sceneJson = json::parse(jsonString);
+
+        // Check version
+        std::string version = sceneJson.value("version", "1.0");
+
+        // Deserialize entities
+        if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
+            result.error = "Invalid scene format: missing entities array";
+            return result;
+        }
+
+        for (const auto& entityJson : sceneJson["entities"]) {
+            ECS::Entity entity = m_World->CreateEntity();
+            result.entities.push_back(entity);
+
+            if (result.rootEntity == ECS::INVALID_ENTITY) {
+                result.rootEntity = entity;
+            }
+
+            // Deserialize components
+            if (entityJson.contains("name")) {
+                auto name = DeserializeNameComponent(entityJson["name"]);
+                m_World->AddComponent<ECS::NameComponent>(entity, name);
+            }
+
+            if (entityJson.contains("transform")) {
+                auto transform = DeserializeTransformComponent(entityJson["transform"]);
+                m_World->AddComponent<ECS::TransformComponent>(entity, transform);
+            }
+
+            if (entityJson.contains("material")) {
+                auto material = DeserializeMaterialComponent(entityJson["material"]);
+                m_World->AddComponent<ECS::MaterialComponent>(entity, material);
+            }
+
+            if (entityJson.contains("mesh")) {
+                auto mesh = DeserializeMeshComponent(entityJson["mesh"]);
+                if (mesh.IsValid()) {
+                    m_World->AddComponent<ECS::MeshComponent>(entity, mesh);
+                }
+            }
+
+            if (entityJson.contains("light")) {
+                auto light = DeserializeLightComponent(entityJson["light"]);
+                m_World->AddComponent<ECS::LightComponent>(entity, light);
+            }
+
+            if (entityJson.contains("notes")) {
+                auto notes = DeserializeNotesComponent(entityJson["notes"]);
+                m_World->AddComponent<ECS::NotesComponent>(entity, notes);
+            }
+
+            if (entityJson.contains("camera")) {
+                auto camera = DeserializeCameraComponent(entityJson["camera"]);
+                m_World->AddComponent<ECS::CameraComponent>(entity, camera);
+            }
+        }
+
+        result.success = true;
+        ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());
 
     } catch (const std::exception& e) {
         result.error = std::string("JSON parsing error: ") + e.what();

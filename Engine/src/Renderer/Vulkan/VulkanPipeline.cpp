@@ -19,9 +19,26 @@ bool VulkanPipeline::Create(
     VulkanShader* vertexShader,
     VulkanShader* fragmentShader
 ) {
+    m_OwnsDescriptorSetLayout = true;
     if (!CreateDescriptorSetLayout()) {
         return false;
     }
+
+    if (!CreatePipelineLayout()) {
+        return false;
+    }
+
+    return CreatePipeline(config, vertexShader, fragmentShader);
+}
+
+bool VulkanPipeline::CreateWithLayout(
+    const PipelineConfig& config,
+    VulkanShader* vertexShader,
+    VulkanShader* fragmentShader,
+    VkDescriptorSetLayout sharedLayout
+) {
+    m_OwnsDescriptorSetLayout = false;
+    m_DescriptorSetLayout = sharedLayout;
 
     if (!CreatePipelineLayout()) {
         return false;
@@ -41,7 +58,8 @@ void VulkanPipeline::Destroy() {
         m_PipelineLayout = VK_NULL_HANDLE;
     }
 
-    if (m_DescriptorSetLayout != VK_NULL_HANDLE) {
+    // Only destroy layout if we own it (not shared)
+    if (m_DescriptorSetLayout != VK_NULL_HANDLE && m_OwnsDescriptorSetLayout) {
         vkDestroyDescriptorSetLayout(m_Context->GetDevice(), m_DescriptorSetLayout, nullptr);
         m_DescriptorSetLayout = VK_NULL_HANDLE;
     }
@@ -52,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 3> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -75,7 +93,19 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[2].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[2].pImmutableSamplers = nullptr;
 
-    // Note: Shadow map sampler (binding 3) will be added when ShadowMap is fully integrated
+    // Sampler binding 3: base color texture (fragment shader)
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[3].descriptorCount = 1;
+    bindings[3].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[3].pImmutableSamplers = nullptr;
+
+    // Sampler binding 4: shadow map (fragment shader)
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[4].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -93,12 +123,19 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
 }
 
 bool VulkanPipeline::CreatePipelineLayout() {
+    // Push constant for model matrix + material (per-object data)
+    // Model matrix used in vertex shader, material used in fragment shader
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(PushConstants);
+
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     pipelineLayoutInfo.setLayoutCount = 1;
     pipelineLayoutInfo.pSetLayouts = &m_DescriptorSetLayout;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
-    pipelineLayoutInfo.pPushConstantRanges = nullptr;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
 
     VkResult result = vkCreatePipelineLayout(
         m_Context->GetDevice(), &pipelineLayoutInfo, nullptr, &m_PipelineLayout);
@@ -125,12 +162,15 @@ bool VulkanPipeline::CreatePipeline(
     vertShaderStageInfo.pName = "main";
     shaderStages.push_back(vertShaderStageInfo);
 
-    VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
-    fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
-    fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    fragShaderStageInfo.module = fragmentShader->GetModule();
-    fragShaderStageInfo.pName = "main";
-    shaderStages.push_back(fragShaderStageInfo);
+    // Fragment shader is optional (null for depth-only passes like shadow mapping)
+    if (fragmentShader != nullptr) {
+        VkPipelineShaderStageCreateInfo fragShaderStageInfo{};
+        fragShaderStageInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        fragShaderStageInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        fragShaderStageInfo.module = fragmentShader->GetModule();
+        fragShaderStageInfo.pName = "main";
+        shaderStages.push_back(fragShaderStageInfo);
+    }
 
     // Vertex input - position, normal, UV
     VkVertexInputBindingDescription bindingDescription{};
@@ -197,10 +237,10 @@ bool VulkanPipeline::CreatePipeline(
     rasterizer.lineWidth = 1.0f;
     rasterizer.cullMode = config.cullMode;
     rasterizer.frontFace = config.frontFace;
-    rasterizer.depthBiasEnable = VK_FALSE;
-    rasterizer.depthBiasConstantFactor = 0.0f;
+    rasterizer.depthBiasEnable = config.depthBiasEnable ? VK_TRUE : VK_FALSE;
+    rasterizer.depthBiasConstantFactor = config.depthBiasConstant;
     rasterizer.depthBiasClamp = 0.0f;
-    rasterizer.depthBiasSlopeFactor = 0.0f;
+    rasterizer.depthBiasSlopeFactor = config.depthBiasSlope;
 
     // Multisampling
     VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -230,8 +270,9 @@ bool VulkanPipeline::CreatePipeline(
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    // For depth-only passes (shadow mapping), no color attachments
+    colorBlending.attachmentCount = config.hasColorAttachment ? 1 : 0;
+    colorBlending.pAttachments = config.hasColorAttachment ? &colorBlendAttachment : nullptr;
     colorBlending.blendConstants[0] = 0.0f;
     colorBlending.blendConstants[1] = 0.0f;
     colorBlending.blendConstants[2] = 0.0f;

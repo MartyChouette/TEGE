@@ -485,15 +485,15 @@ void PostProcessing::DestroySceneRenderTarget() {
 }
 
 bool PostProcessing::CreateUniformBuffer() {
-    m_UniformBuffer = std::make_unique<VulkanBuffer>();
-    return m_UniformBuffer->Create(m_Context, sizeof(PostProcessSettings),
+    m_UniformBuffer = std::make_unique<VulkanBuffer>(m_Context);
+    return m_UniformBuffer->Create(sizeof(PostProcessSettings),
         VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT,
-        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        true);  // hostVisible = true for CPU updates
 }
 
 void PostProcessing::UpdateUniformBuffer() {
     if (m_UniformBuffer) {
-        m_UniformBuffer->Upload(&m_Settings, sizeof(PostProcessSettings));
+        m_UniformBuffer->UploadData(&m_Settings, sizeof(PostProcessSettings));
     }
 }
 

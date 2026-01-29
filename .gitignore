@@ -32,6 +32,7 @@ cmake_install.cmake
 
 # Dependencies
 deps/
+_deps/
 third_party/
 external/
 

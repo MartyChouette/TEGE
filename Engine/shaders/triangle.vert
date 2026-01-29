@@ -6,8 +6,13 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 
-layout(binding = 0) uniform UniformBufferObject {
+// Push constant for per-object model matrix
+layout(push_constant) uniform PushConstants {
     mat4 model;
+} pushConstants;
+
+// Uniform buffer for view/projection (shared across all objects)
+layout(binding = 0) uniform UniformBufferObject {
     mat4 view;
     mat4 proj;
 } ubo;
@@ -37,14 +42,14 @@ layout(location = 3) out vec4 fragPosLightSpace;
 
 void main() {
     // Transform vertex position to world space
-    vec4 worldPos = ubo.model * vec4(inPosition, 1.0);
+    vec4 worldPos = pushConstants.model * vec4(inPosition, 1.0);
     fragWorldPos = worldPos.xyz;
 
     // Transform to clip space
     gl_Position = ubo.proj * ubo.view * worldPos;
 
     // Transform normal to world space (using normal matrix)
-    mat3 normalMatrix = transpose(inverse(mat3(ubo.model)));
+    mat3 normalMatrix = transpose(inverse(mat3(pushConstants.model)));
     fragNormal = normalize(normalMatrix * inNormal);
 
     // Pass through UV

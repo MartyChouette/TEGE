@@ -67,8 +67,9 @@ layout(binding = 1) uniform LightingUBO {
     SpotLight spotLights[MAX_SPOT_LIGHTS];
 } lighting;
 
-// Material UBO
-layout(binding = 2) uniform MaterialUBO {
+// Material via push constants (per-object data)
+layout(push_constant) uniform PushConstants {
+    mat4 model;  // Used by vertex shader
     vec3 baseColor;
     float metallic;
     vec3 emissiveColor;
@@ -88,19 +89,15 @@ layout(binding = 2) uniform MaterialUBO {
 #define FLAG_HAS_METALLIC_TEX   (1 << 18)
 #define FLAG_HAS_EMISSIVE_TEX   (1 << 19)
 
-// Texture samplers - uncomment when texture system is integrated
-// layout(binding = 4) uniform sampler2D baseColorTexture;
+// Base color texture sampler (binding 3)
+layout(binding = 3) uniform sampler2D baseColorTexture;
 
-// Shadow map sampler - commented out until ShadowMap is fully integrated
-// layout(binding = 3) uniform sampler2D shadowMap;
+// Shadow map sampler (binding 4)
+layout(binding = 4) uniform sampler2DShadow shadowMap;
 
-// Calculate shadow factor - returns 1.0 (no shadow) until ShadowMap is integrated
+// Calculate shadow factor using PCF (Percentage Closer Filtering)
 float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
-    // Shadow mapping disabled until ShadowMap sampler is bound
-    // When enabled, uncomment binding 3 and PCF code below
-    return 1.0;
-
-    /*
+    // Check if shadows are enabled
     if (lighting.shadowEnabled == 0) {
         return 1.0;
     }
@@ -108,31 +105,33 @@ float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     // Perspective divide
     vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
 
-    // Transform to [0,1] range
-    projCoords = projCoords * 0.5 + 0.5;
+    // Transform from [-1,1] to [0,1] range for texture sampling
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
-    // Check if outside shadow map
-    if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 ||
-        projCoords.y < 0.0 || projCoords.y > 1.0) {
+    // Check if outside shadow map bounds
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
         return 1.0;
     }
 
-    // Bias based on surface angle
+    // Apply bias to reduce shadow acne
     float bias = max(lighting.shadowBias * (1.0 - dot(normal, lightDir)), lighting.shadowBias * 0.1);
+    float currentDepth = projCoords.z - bias;
 
-    // PCF (Percentage Closer Filtering)
+    // PCF (3x3 kernel)
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / textureSize(shadowMap, 0);
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
-            float pcfDepth = texture(shadowMap, projCoords.xy + vec2(x, y) * texelSize).r;
-            shadow += (projCoords.z - bias) > pcfDepth ? 0.0 : 1.0;
+            vec2 offset = vec2(float(x), float(y)) * texelSize;
+            // sampler2DShadow returns 0.0 or 1.0 based on comparison
+            shadow += texture(shadowMap, vec3(projCoords.xy + offset, currentDepth));
         }
     }
     shadow /= 9.0;
 
     return shadow;
-    */
 }
 
 // Calculate Blinn-Phong lighting contribution
@@ -164,11 +163,11 @@ void main() {
     float metallic = material.metallic;
     float roughness = material.roughness;
 
-    // Texture sampling (disabled until texture system is integrated)
-    // if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
-    //     vec4 texColor = texture(baseColorTexture, fragUV);
-    //     albedo *= texColor.rgb;
-    // }
+    // Sample base color texture if available
+    if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
+        vec4 texColor = texture(baseColorTexture, fragUV);
+        albedo *= texColor.rgb;
+    }
 
     // Convert roughness to shininess for Blinn-Phong
     float shininess = max(2.0, (2.0 / (roughness * roughness + 0.0001)) - 2.0);
@@ -179,7 +178,8 @@ void main() {
 
     // Process directional lights
     for (uint i = 0u; i < lighting.directionalLightCount && i < MAX_DIRECTIONAL_LIGHTS; ++i) {
-        vec3 lightDir = normalize(lighting.directionalLights[i].direction);
+        // Negate direction: stored as "where light points", we need "toward light source"
+        vec3 lightDir = -normalize(lighting.directionalLights[i].direction);
         vec3 lightColor = lighting.directionalLights[i].color;
         float intensity = lighting.directionalLights[i].intensity;
 

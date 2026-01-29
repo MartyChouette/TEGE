@@ -10,6 +10,8 @@
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Renderer/ShadowMap.h"
+#include "Enjin/Renderer/Texture.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
@@ -41,22 +43,38 @@ public:
 
 private:
     void RenderEntity(Entity entity);
-    void CreateTriangleMesh();
+    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
+    void CreateDefaultMesh();
     void CreatePipeline();
+    void CreateShadowPipeline();
     void CreateUniformBuffers();
     void CreateDescriptorSets();
     void UpdateUniformBuffer(Entity entity);
     void SetupEntityBuffers(Entity entity);
+    void RenderShadowPass();
 
     World* m_World = nullptr;
     Renderer::VulkanRenderer* m_Renderer = nullptr;
     Renderer::Camera* m_Camera = nullptr;
-    Entity m_TriangleEntity = INVALID_ENTITY;
+    Entity m_DefaultEntity = INVALID_ENTITY;
 
     // Rendering resources
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+
+    // Shadow mapping
+    std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
+    std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
+    bool m_ShadowsEnabled = true;
+
+    // Textures
+    std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
+    std::unordered_map<std::string, std::shared_ptr<Renderer::Texture>> m_TextureCache;
+
+    // Helper to load or get cached texture
+    std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);
+    void UpdateTextureDescriptor(Renderer::Texture* texture);
     
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;

@@ -28,6 +28,10 @@ enum class LogCategory : u8 {
     Script    = 5,
     Editor    = 6,
     Game      = 7,
+    AI        = 8,
+    Assets    = 9,
+    Procedural = 10,
+    Animation = 11,
     Count
 };
 
@@ -71,20 +75,21 @@ private:
 } // namespace Enjin
 
 // Macros for logging
+// Uses ::Enjin:: to avoid namespace conflicts when called from within Enjin sub-namespaces
 #define ENJIN_LOG_TRACE(category, ...) \
-    Enjin::Logger::Get().Trace(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Trace(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define ENJIN_LOG_DEBUG(category, ...) \
-    Enjin::Logger::Get().Debug(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Debug(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define ENJIN_LOG_INFO(category, ...) \
-    Enjin::Logger::Get().Info(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Info(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define ENJIN_LOG_WARN(category, ...) \
-    Enjin::Logger::Get().Warn(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Warn(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define ENJIN_LOG_ERROR(category, ...) \
-    Enjin::Logger::Get().Error(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Error(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define ENJIN_LOG_FATAL(category, ...) \
-    Enjin::Logger::Get().Fatal(Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+    ::Enjin::Logger::Get().Fatal(::Enjin::LogCategory::category, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)

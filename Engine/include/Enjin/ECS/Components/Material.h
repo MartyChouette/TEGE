@@ -21,11 +21,17 @@ struct MaterialComponent {
     Math::Vector3 emissiveColor = Math::Vector3(0.0f, 0.0f, 0.0f);
     f32 emissiveStrength = 0.0f;
 
-    // Texture indices (-1 means no texture)
+    // Texture indices (-1 means no texture, used internally by render system)
     i32 baseColorTexture = -1;
     i32 normalTexture = -1;
     i32 metallicRoughnessTexture = -1;
     i32 emissiveTexture = -1;
+
+    // Texture file paths (set these to load textures)
+    std::string baseColorTexturePath;
+    std::string normalTexturePath;
+    std::string metallicRoughnessTexturePath;
+    std::string emissiveTexturePath;
 
     // Rendering flags
     bool doubleSided = false;

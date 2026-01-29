@@ -12,11 +12,24 @@
 namespace Enjin {
 namespace Renderer {
 
-// Uniform buffer object for MVP matrices
+// Uniform buffer object for view/projection matrices (shared across all objects)
 struct UniformBufferObject {
-    alignas(16) Math::Matrix4 model;
     alignas(16) Math::Matrix4 view;
     alignas(16) Math::Matrix4 proj;
+};
+
+// Push constants for per-object data (model matrix + material)
+struct PushConstants {
+    alignas(16) Math::Matrix4 model;
+    // Material data (must match fragment shader)
+    alignas(16) Math::Vector3 baseColor;
+    f32 metallic;
+    alignas(16) Math::Vector3 emissiveColor;
+    f32 roughness;
+    f32 emissiveStrength;
+    f32 opacity;
+    f32 alphaCutoff;
+    i32 flags;
 };
 
 // Note: LightingUBO is defined in Enjin/ECS/Components/Light.h
@@ -32,6 +45,12 @@ struct PipelineConfig {
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL;
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    // Depth bias for shadow mapping
+    bool depthBiasEnable = false;
+    f32 depthBiasConstant = 0.0f;
+    f32 depthBiasSlope = 0.0f;
+    // For depth-only passes (no color attachment)
+    bool hasColorAttachment = true;
 };
 
 // Graphics pipeline wrapper
@@ -45,6 +64,15 @@ public:
         VulkanShader* vertexShader,
         VulkanShader* fragmentShader
     );
+
+    // Create pipeline with external descriptor set layout (for sharing layouts)
+    bool CreateWithLayout(
+        const PipelineConfig& config,
+        VulkanShader* vertexShader,
+        VulkanShader* fragmentShader,
+        VkDescriptorSetLayout sharedLayout
+    );
+
     void Destroy();
 
     void Bind(VkCommandBuffer commandBuffer);
@@ -62,6 +90,7 @@ private:
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
+    bool m_OwnsDescriptorSetLayout = true;  // False when using external layout
 };
 
 } // namespace Renderer

@@ -49,6 +49,12 @@ public:
     // Load and add entities from a JSON file (keeps existing entities)
     DeserializationResult LoadAdditive(const std::string& filepath);
 
+    // Save to string (for in-memory operations like play mode)
+    std::string SaveToString(const SerializationOptions& options = SerializationOptions{});
+
+    // Load from string (for in-memory operations like play mode)
+    DeserializationResult LoadFromString(const std::string& jsonString, bool clearExisting = true);
+
     // Get/Set world
     void SetWorld(ECS::World* world) { m_World = world; }
     ECS::World* GetWorld() const { return m_World; }

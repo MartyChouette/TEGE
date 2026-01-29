@@ -67,11 +67,12 @@ void Application::InitializeEngine() {
     Logger::Get().Initialize();
     ENJIN_LOG_INFO(Core, "Initializing Enjin Engine...");
     
-    // Create window
+    // Create window (fullscreen by default)
     WindowDesc windowDesc;
-    windowDesc.width = 1280;
-    windowDesc.height = 720;
+    windowDesc.width = 1920;
+    windowDesc.height = 1080;
     windowDesc.title = "Enjin Engine";
+    windowDesc.fullscreen = true;
     // Parentheses prevent potential macro substitution as well.
     m_Window = (CreateWindow)(windowDesc);
     

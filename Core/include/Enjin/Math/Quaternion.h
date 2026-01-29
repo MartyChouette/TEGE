@@ -131,6 +131,51 @@ struct ENJIN_API Quaternion {
             cx * cy * cz - sx * sy * sz
         );
     }
+
+    // Alias for ToMatrix to match expected API
+    Matrix4 ToMatrix4() const { return ToMatrix(); }
+
+    // Spherical linear interpolation
+    static Quaternion Slerp(const Quaternion& a, const Quaternion& b, f32 t) {
+        // Compute dot product
+        f32 dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+
+        Quaternion end = b;
+        // If negative dot, negate one to take shorter path
+        if (dot < 0.0f) {
+            dot = -dot;
+            end = Quaternion(-b.x, -b.y, -b.z, -b.w);
+        }
+
+        // If quaternions are very close, use linear interpolation
+        if (dot > 0.9995f) {
+            Quaternion result(
+                a.x + t * (end.x - a.x),
+                a.y + t * (end.y - a.y),
+                a.z + t * (end.z - a.z),
+                a.w + t * (end.w - a.w)
+            );
+            return result.Normalized();
+        }
+
+        // Compute slerp
+        f32 theta = Acos(dot);
+        f32 sinTheta = Sin(theta);
+        f32 wa = Sin((1.0f - t) * theta) / sinTheta;
+        f32 wb = Sin(t * theta) / sinTheta;
+
+        return Quaternion(
+            wa * a.x + wb * end.x,
+            wa * a.y + wb * end.y,
+            wa * a.z + wb * end.z,
+            wa * a.w + wb * end.w
+        );
+    }
+
+    // Dot product
+    f32 Dot(const Quaternion& other) const {
+        return x * other.x + y * other.y + z * other.z + w * other.w;
+    }
 };
 
 // Type alias

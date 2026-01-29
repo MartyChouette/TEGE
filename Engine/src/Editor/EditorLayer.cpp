@@ -6,16 +6,24 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Platform/FileDialog.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
+#include <vulkan/vulkan.h>
 #include <sstream>
 #include <filesystem>
+#include <cstdio>
+#include <cstring>
 
 namespace Enjin {
 namespace Editor {
@@ -37,8 +45,19 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         return false;
     }
 
+    // Initialize play mode (will be fully set up when SetWorld/SetCamera are called)
+
+    // Initialize weather system with more particles for better visibility
+    m_WeatherSystem.Initialize(2000);  // 2000 max particles for denser effects
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
+}
+
+void EditorLayer::InitializePlayMode() {
+    if (m_World && m_Camera && m_CameraController) {
+        m_PlayMode.Initialize(m_World, m_Camera, m_CameraController);
+    }
 }
 
 void EditorLayer::Shutdown() {
@@ -49,7 +68,25 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
-    (void)deltaTime;
+    // Track frame time history
+    m_LastDeltaTime = deltaTime;
+    f32 frameTimeMs = deltaTime * 1000.0f;
+    m_FrameTimeHistory[m_FrameTimeIndex] = frameTimeMs;
+    m_FrameTimeIndex = (m_FrameTimeIndex + 1) % FRAME_TIME_HISTORY_SIZE;
+
+    // Calculate min/max/avg
+    m_FrameTimeMin = m_FrameTimeHistory[0];
+    m_FrameTimeMax = m_FrameTimeHistory[0];
+    f32 sum = 0.0f;
+    for (usize i = 0; i < FRAME_TIME_HISTORY_SIZE; ++i) {
+        f32 ft = m_FrameTimeHistory[i];
+        if (ft > 0.0f) {  // Skip uninitialized entries
+            if (ft < m_FrameTimeMin) m_FrameTimeMin = ft;
+            if (ft > m_FrameTimeMax) m_FrameTimeMax = ft;
+            sum += ft;
+        }
+    }
+    m_FrameTimeAvg = sum / static_cast<f32>(FRAME_TIME_HISTORY_SIZE);
 
     // Camera controller handles its own input - only fully disable when typing in a text field
     // The camera controller checks for right-mouse before looking, so it's OK to leave it enabled
@@ -57,28 +94,76 @@ void EditorLayer::Update(f32 deltaTime) {
         // Only disable when user is typing in a text field or using gizmo
         bool usingGizmo = ImGuizmo::IsUsing();
         m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo);
+
+        // Set orbit target to selected entity position for MMB orbit
+        if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
+            if (transform) {
+                m_CameraController->SetOrbitTarget(transform->position);
+            }
+        } else {
+            // When no entity is selected, orbit around origin
+            m_CameraController->SetOrbitTarget(Math::Vector3(0.0f, 0.0f, 0.0f));
+        }
     }
 
-    // Gizmo mode shortcuts (only when not typing)
+    // Gizmo mode shortcuts (1=translate, 2=rotate, 3=scale, 4=toggle space)
+    // Using number keys to avoid conflict with WASD camera movement
     if (!WantsKeyboardInput()) {
-        if (Input::IsKeyPressed(KeyCode::W)) {
+        if (Input::IsKeyPressed(KeyCode::Num1)) {
             m_GizmoOperation = GizmoOperation::Translate;
         }
-        if (Input::IsKeyPressed(KeyCode::E)) {
+        if (Input::IsKeyPressed(KeyCode::Num2)) {
             m_GizmoOperation = GizmoOperation::Rotate;
         }
-        if (Input::IsKeyPressed(KeyCode::R)) {
+        if (Input::IsKeyPressed(KeyCode::Num3)) {
             m_GizmoOperation = GizmoOperation::Scale;
         }
-        if (Input::IsKeyPressed(KeyCode::Q)) {
+        if (Input::IsKeyPressed(KeyCode::Num4)) {
             // Toggle between local and world space
             m_GizmoSpace = (m_GizmoSpace == GizmoSpace::World) ? GizmoSpace::Local : GizmoSpace::World;
+        }
+
+        // Delete selected entity
+        if (Input::IsKeyPressed(KeyCode::Delete) && m_SelectedEntity != ECS::INVALID_ENTITY) {
+            DeleteSelectedEntity();
+        }
+
+        // Duplicate selected entity (Ctrl+D)
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::D)) {
+            if (m_SelectedEntity != ECS::INVALID_ENTITY) {
+                DuplicateEntity(m_SelectedEntity);
+            }
+        }
+
+        // Focus on selected entity (F key)
+        if (Input::IsKeyPressed(KeyCode::F) && m_SelectedEntity != ECS::INVALID_ENTITY) {
+            FocusOnEntity(m_SelectedEntity);
         }
     }
 
     // Handle viewport picking (left-click to select, but not when using gizmo)
-    if (!ImGuizmo::IsOver()) {
+    // Only allow picking in editor mode, not play mode
+    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped()) {
         HandleViewportPicking();
+    }
+
+    // Update play mode
+    m_PlayMode.Update(deltaTime);
+
+    // Weather is now updated per-camera in Game View panel (see DrawGameViewPanel)
+
+    // Update splash screen timer
+    if (m_ShowSplash) {
+        m_SplashTimer += deltaTime;
+        if (m_SplashTimer >= m_SplashDuration) {
+            m_ShowSplash = false;
+            m_EditorFadeIn = 0.0f;  // Start editor fade-in
+        }
+    } else if (m_EditorFadeIn < 1.0f) {
+        // Fade in the editor over 0.5 seconds
+        m_EditorFadeIn += deltaTime * 2.0f;
+        if (m_EditorFadeIn > 1.0f) m_EditorFadeIn = 1.0f;
     }
 }
 
@@ -92,31 +177,113 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Initialize ImGuizmo for this frame
     ImGuizmo::BeginFrame();
 
+    // During splash screen, only render the splash
+    if (m_ShowSplash) {
+        DrawSplashScreen();
+        m_ImGuiLayer->EndFrame(commandBuffer);
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Set up default window positions on first run (simulated docking)
+    if (!m_DockingInitialized) {
+        m_DockingInitialized = true;
+
+        f32 screenW = io.DisplaySize.x;
+        f32 screenH = io.DisplaySize.y;
+        f32 menuBarH = 20.0f;
+
+        // Left panel (Hierarchy) - 20% width
+        f32 leftW = screenW * 0.18f;
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(leftW, screenH - menuBarH), ImGuiCond_Always);
+
+        // Right panel (Inspector) - 22% width
+        f32 rightW = screenW * 0.22f;
+        f32 rightX = screenW - rightW;
+
+        // Bottom panel (Console) - 25% height
+        f32 bottomH = screenH * 0.22f;
+        f32 bottomY = screenH - bottomH;
+        f32 centerW = screenW - leftW - rightW;
+
+        // Position windows
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(leftW, screenH - menuBarH - bottomH), ImGuiCond_FirstUseEver);
+    }
+
     // Menu bar
     DrawMenuBar();
 
-    // Panels
+    // Calculate layout dimensions
+    f32 screenW = io.DisplaySize.x;
+    f32 screenH = io.DisplaySize.y;
+    f32 menuBarH = 22.0f;
+    f32 leftW = screenW * 0.18f;
+    f32 rightW = screenW * 0.22f;
+    f32 bottomH = screenH * 0.22f;
+    f32 centerW = screenW - leftW - rightW;
+    f32 centerH = screenH - menuBarH - bottomH;
+
+    // Panels with initial positions
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(leftW, centerH), ImGuiCond_FirstUseEver);
         DrawHierarchyPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * 0.6f), ImGuiCond_FirstUseEver);
         DrawInspectorPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH + centerH * 0.6f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * 0.4f), ImGuiCond_FirstUseEver);
+        DrawSettingsPanel();
+    }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW, screenH - bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), ImGuiCond_FirstUseEver);
         DrawConsolePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + centerW * 0.5f, screenH - bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), ImGuiCond_FirstUseEver);
         DrawAssetBrowserPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
-        DrawSettingsPanel();
-    }
     if (HasPanel(m_VisiblePanels, EditorPanel::PostProcessing)) {
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 50), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
         DrawPostProcessingPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Effects)) {
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 100), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(280, 450), ImGuiCond_FirstUseEver);
+        DrawEffectsPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+        DrawGameViewPanel();
     }
 
     // Draw gizmos for selected entity
     DrawGizmos();
+
+    // Draw grid overlay
+    if (m_ShowGrid) {
+        DrawGrid();
+    }
+
+    // Draw camera frustum for all camera entities (or selected camera)
+    if (m_World) {
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+                DrawCameraFrustum(entity);
+            }
+        }
+    }
 
     // Stats overlay
     if (m_ShowStatsOverlay) {
@@ -128,17 +295,29 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::ShowDemoWindow(&m_ShowDemoWindow);
     }
 
-    // Import dialog
-    if (m_ShowImportDialog) {
-        DrawImportDialog();
-    }
+    // Weather is now rendered per-camera in Game View panel only
+    // (see DrawGameViewPanel for weather rendering)
 
-    // Scene dialogs
-    if (m_ShowOpenSceneDialog) {
-        DrawOpenSceneDialog();
-    }
-    if (m_ShowSaveSceneDialog) {
-        DrawSaveSceneDialog();
+    // Fade-in overlay (fades from black to transparent after splash)
+    if (m_EditorFadeIn < 1.0f) {
+        f32 overlayAlpha = 1.0f - m_EditorFadeIn;
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(io.DisplaySize);
+        ImGui::SetNextWindowBgAlpha(overlayAlpha);
+
+        ImGuiWindowFlags overlayFlags = ImGuiWindowFlags_NoDecoration |
+                                        ImGuiWindowFlags_NoMove |
+                                        ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoSavedSettings |
+                                        ImGuiWindowFlags_NoFocusOnAppearing |
+                                        ImGuiWindowFlags_NoBringToFrontOnFocus |
+                                        ImGuiWindowFlags_NoNav |
+                                        ImGuiWindowFlags_NoInputs;
+
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.08f, 1.0f));
+        ImGui::Begin("##FadeOverlay", nullptr, overlayFlags);
+        ImGui::End();
+        ImGui::PopStyleColor();
     }
 
     m_ImGuiLayer->EndFrame(commandBuffer);
@@ -177,21 +356,52 @@ void EditorLayer::DrawMenuBar() {
                 }
             }
             if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
-                m_ShowOpenSceneDialog = true;
+                std::vector<FileFilter> filters = {
+                    { "Enjin Scene", "*.enjin" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::OpenFile("Open Scene", filters);
+                if (!path.empty()) {
+                    OpenScene(path);
+                }
             }
             if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
                 if (!m_CurrentScenePath.empty()) {
                     SaveScene(m_CurrentScenePath);
                 } else {
-                    m_ShowSaveSceneDialog = true;
+                    // No current path, open Save As dialog
+                    std::vector<FileFilter> filters = {
+                        { "Enjin Scene", "*.enjin" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
+                    if (!path.empty()) {
+                        SaveScene(path);
+                    }
                 }
             }
             if (ImGui::MenuItem("Save Scene As...", "Ctrl+Shift+S")) {
-                m_ShowSaveSceneDialog = true;
+                std::vector<FileFilter> filters = {
+                    { "Enjin Scene", "*.enjin" },
+                    { "All Files", "*.*" }
+                };
+                std::string defaultName = m_CurrentScenePath.empty() ? "scene.enjin" :
+                    std::filesystem::path(m_CurrentScenePath).filename().string();
+                std::string path = FileDialog::SaveFile("Save Scene As", filters, "", defaultName);
+                if (!path.empty()) {
+                    SaveScene(path);
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
-                m_ShowImportDialog = true;
+                std::vector<FileFilter> filters = {
+                    { "glTF Files", "*.gltf;*.glb" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::OpenFile("Import Model", filters);
+                if (!path.empty()) {
+                    ImportModel(path);
+                }
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
@@ -217,6 +427,8 @@ void EditorLayer::DrawMenuBar() {
             bool assets = IsPanelVisible(EditorPanel::AssetBrowser);
             bool settings = IsPanelVisible(EditorPanel::Settings);
             bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
+            bool effects = IsPanelVisible(EditorPanel::Effects);
+            bool gameView = IsPanelVisible(EditorPanel::GameView);
 
             if (ImGui::MenuItem("Hierarchy", nullptr, &hierarchy)) {
                 SetPanelVisibility(EditorPanel::Hierarchy, hierarchy);
@@ -236,9 +448,22 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
                 SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
             }
+            if (ImGui::MenuItem("Effects (Retro)", nullptr, &effects)) {
+                SetPanelVisibility(EditorPanel::Effects, effects);
+            }
+            if (ImGui::MenuItem("Game View", nullptr, &gameView)) {
+                SetPanelVisibility(EditorPanel::GameView, gameView);
+            }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Reset Layout")) {
+                m_DockingInitialized = false;  // Will re-layout on next frame
+            }
+            if (ImGui::MenuItem("Show All Panels")) {
+                m_VisiblePanels = EditorPanel::All;
+            }
             ImGui::EndMenu();
         }
 
@@ -293,6 +518,54 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("2D Object")) {
+                if (ImGui::MenuItem("Quad")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Quad");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Sprite")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                        transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));  // Face camera by default
+                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                        auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
+                        material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;  // Support transparency for sprites
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Sprite");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Circle")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                        transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));  // Flat on XZ by default
+                        // Use a highly tessellated plane to approximate a circle (flat disc)
+                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Circle");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Panel (UI)")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(2.0f, 1.0f));
+                        auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
+                        material.baseColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+                        material.opacity = 0.9f;
+                        material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                        m_World->AddComponent<ECS::NameComponent>(entity, "UI Panel");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                ImGui::EndMenu();
+            }
             if (ImGui::BeginMenu("Light")) {
                 if (ImGui::MenuItem("Directional Light")) {
                     if (m_World) {
@@ -327,6 +600,34 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Camera")) {
+                if (ImGui::MenuItem("Perspective Camera")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                        transform.position = Math::Vector3(0, 2, -5);
+                        auto& cam = m_World->AddComponent<ECS::CameraComponent>(entity);
+                        cam.projectionType = ECS::ProjectionType::Perspective;
+                        cam.fieldOfView = 60.0f;
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Game Camera");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Orthographic Camera")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                        transform.position = Math::Vector3(0, 10, 0);
+                        transform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-90.0f));
+                        auto& cam = m_World->AddComponent<ECS::CameraComponent>(entity);
+                        cam.projectionType = ECS::ProjectionType::Orthographic;
+                        cam.orthoSize = 10.0f;
+                        m_World->AddComponent<ECS::NameComponent>(entity, "2D Camera");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
 
@@ -335,6 +636,52 @@ void EditorLayer::DrawMenuBar() {
                 // TODO: About dialog
             }
             ImGui::EndMenu();
+        }
+
+        // Play mode controls (centered in menu bar)
+        ImGui::Separator();
+
+        // Color the background based on play state
+        if (m_PlayMode.IsPlaying()) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+        } else if (m_PlayMode.IsPaused()) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.6f, 0.2f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.3f, 0.3f, 1.0f));
+        }
+
+        // Play/Pause button
+        if (m_PlayMode.IsStopped()) {
+            if (ImGui::Button(" > Play ")) {
+                m_PlayMode.Play();
+            }
+        } else if (m_PlayMode.IsPlaying()) {
+            if (ImGui::Button(" || Pause ")) {
+                m_PlayMode.Pause();
+            }
+        } else {  // Paused
+            if (ImGui::Button(" > Resume ")) {
+                m_PlayMode.Resume();
+            }
+        }
+        ImGui::PopStyleColor();
+
+        // Stop button (only when playing or paused)
+        if (!m_PlayMode.IsStopped()) {
+            ImGui::SameLine();
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
+            if (ImGui::Button(" [] Stop ")) {
+                m_PlayMode.Stop();
+            }
+            ImGui::PopStyleColor();
+        }
+
+        // Show play state indicator
+        ImGui::SameLine();
+        if (m_PlayMode.IsPlaying()) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "[PLAYING]");
+        } else if (m_PlayMode.IsPaused()) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "[PAUSED]");
         }
 
         ImGui::EndMainMenuBar();
@@ -397,16 +744,24 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         }
     }
 
+    // Double-click to focus camera on entity
+    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        FocusOnEntity(entity);
+    }
+
     // Context menu
     if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Delete")) {
+        if (ImGui::MenuItem("Delete", "Del")) {
             m_World->DestroyEntity(entity);
             if (m_SelectedEntity == entity) {
                 m_SelectedEntity = ECS::INVALID_ENTITY;
             }
         }
-        if (ImGui::MenuItem("Duplicate")) {
-            // TODO: Duplicate entity
+        if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
+            DuplicateEntity(entity);
+        }
+        if (ImGui::MenuItem("Focus", "F")) {
+            FocusOnEntity(entity);
         }
         ImGui::EndPopup();
     }
@@ -420,7 +775,24 @@ void EditorLayer::DrawInspectorPanel() {
     ImGui::Begin("Inspector");
 
     if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
-        ImGui::Text("Entity %llu", (unsigned long long)m_SelectedEntity);
+        // Entity name (editable)
+        ECS::NameComponent* nameComp = m_World->GetComponent<ECS::NameComponent>(m_SelectedEntity);
+        if (nameComp) {
+            char nameBuffer[256];
+            strncpy(nameBuffer, nameComp->name.c_str(), sizeof(nameBuffer) - 1);
+            nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputText("##EntityName", nameBuffer, sizeof(nameBuffer))) {
+                nameComp->name = nameBuffer;
+            }
+        } else {
+            // No name component - show entity ID and add button
+            ImGui::Text("Entity %llu", (unsigned long long)m_SelectedEntity);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Add Name")) {
+                m_World->AddComponent<ECS::NameComponent>(m_SelectedEntity, "Unnamed");
+            }
+        }
         ImGui::Separator();
 
         // Transform component
@@ -441,6 +813,64 @@ void EditorLayer::DrawInspectorPanel() {
         // Light component
         if (m_World->HasComponent<ECS::LightComponent>(m_SelectedEntity)) {
             DrawLightComponent(m_SelectedEntity);
+        }
+
+        // Camera component
+        if (m_World->HasComponent<ECS::CameraComponent>(m_SelectedEntity)) {
+            DrawCameraComponent(m_SelectedEntity);
+        }
+
+        // Notes component
+        if (m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
+            DrawNotesComponent(m_SelectedEntity);
+        }
+
+        // Character Controller components
+        if (m_World->HasComponent<ECS::Platformer2DController>(m_SelectedEntity)) {
+            DrawPlatformer2DController(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TopDown2DController>(m_SelectedEntity)) {
+            DrawTopDown2DController(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TopDown3DController>(m_SelectedEntity)) {
+            DrawTopDown3DController(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::ThirdPersonController>(m_SelectedEntity)) {
+            DrawThirdPersonController(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::FirstPersonController>(m_SelectedEntity)) {
+            DrawFirstPersonController(m_SelectedEntity);
+        }
+
+        // Gameplay components
+        if (m_World->HasComponent<ECS::HealthComponent>(m_SelectedEntity)) {
+            DrawHealthComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::RigidbodyComponent>(m_SelectedEntity)) {
+            DrawRigidbodyComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::BoxColliderComponent>(m_SelectedEntity)) {
+            DrawBoxColliderComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::AudioSourceComponent>(m_SelectedEntity)) {
+            DrawAudioSourceComponent(m_SelectedEntity);
+        }
+
+        // 2D components
+        if (m_World->HasComponent<ECS::Sprite2DComponent>(m_SelectedEntity)) {
+            DrawSprite2DComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity)) {
+            DrawAnimatedSprite2DComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TilemapComponent>(m_SelectedEntity)) {
+            DrawTilemapComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::StateMachineComponent>(m_SelectedEntity)) {
+            DrawStateMachineComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::DialogueComponent>(m_SelectedEntity)) {
+            DrawDialogueComponent(m_SelectedEntity);
         }
 
         ImGui::Separator();
@@ -466,6 +896,208 @@ void EditorLayer::DrawInspectorPanel() {
                     m_World->AddComponent<ECS::LightComponent>(m_SelectedEntity);
                 }
             }
+            if (!m_World->HasComponent<ECS::CameraComponent>(m_SelectedEntity)) {
+                if (ImGui::MenuItem("Camera")) {
+                    m_World->AddComponent<ECS::CameraComponent>(m_SelectedEntity);
+                }
+            }
+            if (!m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
+                if (ImGui::MenuItem("Notes")) {
+                    m_World->AddComponent<ECS::NotesComponent>(m_SelectedEntity);
+                }
+            }
+            ImGui::Separator();
+
+            // Character Controllers submenu
+            if (ImGui::BeginMenu("Character Controller")) {
+                if (!m_World->HasComponent<ECS::Platformer2DController>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("2D Platformer")) {
+                        m_World->AddComponent<ECS::Platformer2DController>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TopDown2DController>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("2D Top-Down")) {
+                        m_World->AddComponent<ECS::TopDown2DController>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TopDown3DController>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("3D Top-Down")) {
+                        m_World->AddComponent<ECS::TopDown3DController>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::ThirdPersonController>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("3D Third Person")) {
+                        m_World->AddComponent<ECS::ThirdPersonController>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::FirstPersonController>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("3D First Person")) {
+                        m_World->AddComponent<ECS::FirstPersonController>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Physics submenu
+            if (ImGui::BeginMenu("Physics")) {
+                if (!m_World->HasComponent<ECS::RigidbodyComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Rigidbody")) {
+                        m_World->AddComponent<ECS::RigidbodyComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::BoxColliderComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Box Collider")) {
+                        m_World->AddComponent<ECS::BoxColliderComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::SphereColliderComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Sphere Collider")) {
+                        m_World->AddComponent<ECS::SphereColliderComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Capsule Collider")) {
+                        m_World->AddComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TriggerZoneComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Trigger Zone")) {
+                        m_World->AddComponent<ECS::TriggerZoneComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Gameplay submenu
+            if (ImGui::BeginMenu("Gameplay")) {
+                if (!m_World->HasComponent<ECS::HealthComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Health")) {
+                        m_World->AddComponent<ECS::HealthComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::DamageComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Damage")) {
+                        m_World->AddComponent<ECS::DamageComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::InteractableComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Interactable")) {
+                        m_World->AddComponent<ECS::InteractableComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::PickupComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Pickup")) {
+                        m_World->AddComponent<ECS::PickupComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::InventoryComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Inventory")) {
+                        m_World->AddComponent<ECS::InventoryComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TimerComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Timer")) {
+                        m_World->AddComponent<ECS::TimerComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // AI submenu
+            if (ImGui::BeginMenu("AI")) {
+                if (!m_World->HasComponent<ECS::AIControllerComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("AI Controller")) {
+                        m_World->AddComponent<ECS::AIControllerComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::FollowTargetComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Follow Target")) {
+                        m_World->AddComponent<ECS::FollowTargetComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::LookAtTargetComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Look At Target")) {
+                        m_World->AddComponent<ECS::LookAtTargetComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::WaypointComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Waypoint")) {
+                        m_World->AddComponent<ECS::WaypointComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Audio submenu
+            if (ImGui::BeginMenu("Audio")) {
+                if (!m_World->HasComponent<ECS::AudioSourceComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Audio Source")) {
+                        m_World->AddComponent<ECS::AudioSourceComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::AudioListenerComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Audio Listener")) {
+                        m_World->AddComponent<ECS::AudioListenerComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Visual submenu
+            if (ImGui::BeginMenu("Visual")) {
+                if (!m_World->HasComponent<ECS::BillboardComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Billboard")) {
+                        m_World->AddComponent<ECS::BillboardComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Particle Emitter")) {
+                        m_World->AddComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // 2D Graphics submenu
+            if (ImGui::BeginMenu("2D Graphics")) {
+                if (!m_World->HasComponent<ECS::Sprite2DComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Sprite")) {
+                        m_World->AddComponent<ECS::Sprite2DComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Animated Sprite")) {
+                        m_World->AddComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TilemapComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Tilemap")) {
+                        m_World->AddComponent<ECS::TilemapComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("2D Camera Bounds")) {
+                        m_World->AddComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Other
+            if (ImGui::BeginMenu("Other")) {
+                if (!m_World->HasComponent<ECS::TagComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Tags")) {
+                        m_World->AddComponent<ECS::TagComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::SpawnPointComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Spawn Point")) {
+                        m_World->AddComponent<ECS::SpawnPointComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
             ImGui::EndPopup();
         }
     } else {
@@ -623,6 +1255,144 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::CameraComponent* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
+        if (!camera) return;
+
+        // Projection type
+        const char* projTypes[] = { "Perspective", "Orthographic" };
+        int currentType = static_cast<int>(camera->projectionType);
+        if (ImGui::Combo("Projection", &currentType, projTypes, 2)) {
+            camera->projectionType = static_cast<ECS::ProjectionType>(currentType);
+        }
+
+        // Perspective settings
+        if (camera->projectionType == ECS::ProjectionType::Perspective) {
+            ImGui::DragFloat("Field of View", &camera->fieldOfView, 0.5f, 1.0f, 179.0f);
+        }
+
+        // Orthographic settings
+        if (camera->projectionType == ECS::ProjectionType::Orthographic) {
+            ImGui::DragFloat("Ortho Size", &camera->orthoSize, 0.5f, 0.1f, 100.0f);
+        }
+
+        // Common settings
+        ImGui::DragFloat("Near Plane", &camera->nearPlane, 0.01f, 0.001f, camera->farPlane - 0.01f);
+        ImGui::DragFloat("Far Plane", &camera->farPlane, 1.0f, camera->nearPlane + 0.01f, 10000.0f);
+
+        ImGui::Separator();
+
+        // Virtual camera settings
+        ImGui::Text("Virtual Camera");
+        ImGui::Checkbox("Active", &camera->isActive);
+        ImGui::DragInt("Priority", &camera->priority, 1, -100, 100);
+        ImGui::TextDisabled("(Higher priority cameras take precedence)");
+
+        ImGui::Separator();
+
+        // Clear settings
+        if (ImGui::TreeNode("Clear Settings")) {
+            ImGui::Checkbox("Clear Color", &camera->clearColor);
+            ImGui::Checkbox("Clear Depth", &camera->clearDepth);
+            if (camera->clearColor) {
+                f32 bgColor[3] = { camera->backgroundColor.x, camera->backgroundColor.y, camera->backgroundColor.z };
+                if (ImGui::ColorEdit3("Background Color", bgColor)) {
+                    camera->backgroundColor = Math::Vector3(bgColor[0], bgColor[1], bgColor[2]);
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        // Viewport settings
+        if (ImGui::TreeNode("Viewport")) {
+            ImGui::DragFloat("X", &camera->viewportX, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Y", &camera->viewportY, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Width", &camera->viewportWidth, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Height", &camera->viewportHeight, 0.01f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+
+        // Weather effects (per-camera)
+        if (ImGui::TreeNode("Weather Effects")) {
+            ImGui::Checkbox("Enable Weather", &camera->weatherEnabled);
+
+            if (camera->weatherEnabled) {
+                const char* weatherTypes[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
+                int currentWeather = static_cast<int>(camera->weatherType);
+                if (ImGui::Combo("Weather Type", &currentWeather, weatherTypes, 7)) {
+                    camera->weatherType = static_cast<u32>(currentWeather);
+                }
+
+                // Show relevant controls based on weather type
+                if (camera->weatherType == 2 || camera->weatherType == 3 || camera->weatherType == 6) {
+                    // Rain/HeavyRain/Storm
+                    ImGui::SliderFloat("Rain Intensity", &camera->rainIntensity, 0.0f, 1.0f);
+                }
+                if (camera->weatherType == 4) {
+                    // Snow
+                    ImGui::SliderFloat("Snow Intensity", &camera->snowIntensity, 0.0f, 1.0f);
+                }
+                if (camera->weatherType == 6) {
+                    // Storm - lightning toggle
+                    ImGui::Checkbox("Lightning Enabled", &camera->lightningEnabled);
+                }
+
+                // Fog settings (available in fog/cloudy/storm)
+                if (camera->weatherType >= 1) {
+                    ImGui::Spacing();
+                    ImGui::Text("Fog Settings");
+                    ImGui::SliderFloat("Fog Density", &camera->fogDensity, 0.0f, 1.0f);
+                    f32 fogCol[3] = { camera->fogColor.x, camera->fogColor.y, camera->fogColor.z };
+                    if (ImGui::ColorEdit3("Fog Color", fogCol)) {
+                        camera->fogColor = Math::Vector3(fogCol[0], fogCol[1], fogCol[2]);
+                    }
+                    ImGui::DragFloat("Fog Start", &camera->fogStart, 1.0f, 0.0f, camera->fogEnd);
+                    ImGui::DragFloat("Fog End", &camera->fogEnd, 1.0f, camera->fogStart, 500.0f);
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        // Water effects (per-camera)
+        if (ImGui::TreeNode("Water Effects")) {
+            ImGui::Checkbox("Enable Water", &camera->waterEnabled);
+
+            if (camera->waterEnabled) {
+                ImGui::DragFloat("Water Level (Y)", &camera->waterLevel, 0.1f, -100.0f, 100.0f);
+                f32 waterCol[3] = { camera->waterColor.x, camera->waterColor.y, camera->waterColor.z };
+                if (ImGui::ColorEdit3("Water Color", waterCol)) {
+                    camera->waterColor = Math::Vector3(waterCol[0], waterCol[1], waterCol[2]);
+                }
+                ImGui::SliderFloat("Water Opacity", &camera->waterOpacity, 0.0f, 1.0f);
+                ImGui::DragFloat("Wave Speed", &camera->waveSpeed, 0.1f, 0.0f, 10.0f);
+                ImGui::DragFloat("Wave Height", &camera->waveHeight, 0.01f, 0.0f, 2.0f);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::NotesComponent* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
+        if (!notes) return;
+
+        // Multi-line text input for notes
+        static char notesBuffer[4096];
+        strncpy(notesBuffer, notes->notes.c_str(), sizeof(notesBuffer) - 1);
+        notesBuffer[sizeof(notesBuffer) - 1] = '\0';
+
+        ImGui::TextDisabled("Developer notes (not exported to builds)");
+        if (ImGui::InputTextMultiline("##Notes", notesBuffer, sizeof(notesBuffer),
+                                       ImVec2(-1, 100), ImGuiInputTextFlags_AllowTabInput)) {
+            notes->notes = notesBuffer;
+        }
+    }
+}
+
 void EditorLayer::DrawConsolePanel() {
     ImGui::Begin("Console");
 
@@ -669,14 +1439,68 @@ void EditorLayer::DrawSettingsPanel() {
 
     if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_CameraController) {
+            // View preset buttons
+            ImGui::Text("View Presets:");
+            if (ImGui::Button("Persp")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Perspective);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Top")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Top);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Front")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Front);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Right")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Right);
+            }
+
+            if (ImGui::Button("Bottom")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Bottom);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Back")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Back);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Left")) {
+                m_CameraController->SetViewPreset(Renderer::ViewPreset::Left);
+            }
+
+            ImGui::Separator();
+
+            // Orthographic toggle
+            bool isOrtho = m_CameraController->IsOrthographic();
+            if (ImGui::Checkbox("Orthographic", &isOrtho)) {
+                m_CameraController->SetOrthographic(isOrtho);
+            }
+
+            if (isOrtho) {
+                f32 orthoSize = m_CameraController->GetOrthoSize();
+                if (ImGui::DragFloat("Ortho Size", &orthoSize, 0.5f, 1.0f, 100.0f)) {
+                    m_CameraController->SetOrthoSize(orthoSize);
+                    m_CameraController->SetOrthographic(true);  // Refresh projection
+                }
+            }
+
+            ImGui::Separator();
+
             f32 moveSpeed = m_CameraController->GetMoveSpeed();
             if (ImGui::DragFloat("Move Speed", &moveSpeed, 0.5f, 0.1f, 100.0f)) {
                 m_CameraController->SetMoveSpeed(moveSpeed);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("WASD movement speed in the viewport");
             }
 
             f32 sensitivity = m_CameraController->GetLookSensitivity();
             if (ImGui::DragFloat("Look Sensitivity", &sensitivity, 0.01f, 0.01f, 1.0f)) {
                 m_CameraController->SetLookSensitivity(sensitivity);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Mouse look sensitivity (Right-click + drag)");
             }
 
             // Camera mode
@@ -684,6 +1508,9 @@ void EditorLayer::DrawSettingsPanel() {
             int currentMode = static_cast<int>(m_CameraController->GetMode());
             if (ImGui::Combo("Mode", &currentMode, modes, 3)) {
                 m_CameraController->SetMode(static_cast<Renderer::CameraMode>(currentMode));
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Fly: WASD + RMB look\nOrbit: MMB to orbit around selection\nFirst Person: Ground-level movement");
             }
         }
 
@@ -693,9 +1520,17 @@ void EditorLayer::DrawSettingsPanel() {
         }
     }
 
+    if (ImGui::CollapsingHeader("Grid", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Show Grid", &m_ShowGrid);
+        if (m_ShowGrid) {
+            ImGui::DragFloat("Grid Size", &m_GridSize, 1.0f, 1.0f, 100.0f);
+            ImGui::DragInt("Grid Lines", &m_GridLines, 1, 5, 50);
+        }
+    }
+
     if (ImGui::CollapsingHeader("Gizmos", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Gizmo operation
-        const char* operations[] = { "Translate (W)", "Rotate (E)", "Scale (R)" };
+        const char* operations[] = { "Translate (1)", "Rotate (2)", "Scale (3)" };
         int currentOp = static_cast<int>(m_GizmoOperation);
         if (ImGui::Combo("Operation", &currentOp, operations, 3)) {
             m_GizmoOperation = static_cast<GizmoOperation>(currentOp);
@@ -704,7 +1539,7 @@ void EditorLayer::DrawSettingsPanel() {
         // Gizmo space
         const char* spaces[] = { "Local", "World" };
         int currentSpace = static_cast<int>(m_GizmoSpace);
-        if (ImGui::Combo("Space (Q)", &currentSpace, spaces, 2)) {
+        if (ImGui::Combo("Space (4)", &currentSpace, spaces, 2)) {
             m_GizmoSpace = static_cast<GizmoSpace>(currentSpace);
         }
 
@@ -720,6 +1555,19 @@ void EditorLayer::DrawSettingsPanel() {
     if (ImGui::CollapsingHeader("Rendering")) {
         // TODO: Rendering settings (MSAA, shadows, etc.)
         ImGui::TextDisabled("Rendering settings not yet implemented");
+    }
+
+    if (ImGui::CollapsingHeader("Keyboard Shortcuts")) {
+        ImGui::BulletText("WASD - Move camera");
+        ImGui::BulletText("Right Mouse + Drag - Look around");
+        ImGui::BulletText("Middle Mouse + Drag - Orbit (with selection)");
+        ImGui::BulletText("Scroll Wheel - Zoom");
+        ImGui::BulletText("F - Focus on selected entity");
+        ImGui::BulletText("Delete - Delete selected entity");
+        ImGui::BulletText("Ctrl+D - Duplicate entity");
+        ImGui::BulletText("1/2/3 - Translate/Rotate/Scale gizmo");
+        ImGui::BulletText("4 - Toggle Local/World space");
+        ImGui::BulletText("Double-click - Focus on entity");
     }
 
     ImGui::End();
@@ -832,6 +1680,440 @@ void EditorLayer::DrawPostProcessingPanel() {
     ImGui::End();
 }
 
+void EditorLayer::DrawEffectsPanel() {
+    ImGui::Begin("Effects (Retro)");
+
+    // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
+    if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool retroEnabled = m_RetroEffects.IsEnabled();
+        if (ImGui::Checkbox("Enable Retro Effects", &retroEnabled)) {
+            m_RetroEffects.SetEnabled(retroEnabled);
+        }
+
+        if (retroEnabled) {
+            ImGui::Text("Quick Presets:");
+            if (ImGui::Button("PS1")) { m_RetroEffects.ApplyPS1Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("N64")) { m_RetroEffects.ApplyN64Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PS2")) { m_RetroEffects.ApplyPS2Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("GameCube")) { m_RetroEffects.ApplyGameCubePreset(); }
+
+            if (ImGui::Button("SNES")) { m_RetroEffects.ApplySNESPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Dreamcast")) { m_RetroEffects.ApplyDreamcastPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear All")) { m_RetroEffects.ClearAllEffects(); }
+
+            ImGui::Separator();
+
+            // Resolution settings
+            if (ImGui::TreeNode("Resolution")) {
+                auto& res = m_RetroEffects.GetResolution();
+                int width = static_cast<int>(res.renderWidth);
+                int height = static_cast<int>(res.renderHeight);
+                if (ImGui::DragInt("Render Width", &width, 1, 160, 1920)) {
+                    res.renderWidth = static_cast<u32>(width);
+                }
+                if (ImGui::DragInt("Render Height", &height, 1, 120, 1080)) {
+                    res.renderHeight = static_cast<u32>(height);
+                }
+                ImGui::Checkbox("Point Filtering", &res.pointFiltering);
+                ImGui::Checkbox("Integer Scaling", &res.integerScaling);
+                ImGui::DragFloat("Aspect Ratio", &res.aspectRatio, 0.01f, 1.0f, 2.5f);
+                ImGui::TreePop();
+            }
+
+            // Dithering
+            if (ImGui::TreeNode("Dithering")) {
+                const char* ditherPatterns[] = { "None", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Ordered" };
+                int currentDither = static_cast<int>(m_RetroEffects.GetDitherPattern());
+                if (ImGui::Combo("Pattern", &currentDither, ditherPatterns, 6)) {
+                    m_RetroEffects.SetDitherPattern(static_cast<Effects::DitherPattern>(currentDither));
+                }
+                ImGui::TreePop();
+            }
+
+            // Color Mode
+            if (ImGui::TreeNode("Color Mode")) {
+                const char* colorModes[] = { "True Color (24-bit)", "High Color (16-bit)", "256 Colors", "16 Colors", "Monochrome" };
+                int currentMode = static_cast<int>(m_RetroEffects.GetColorMode());
+                if (ImGui::Combo("Mode", &currentMode, colorModes, 5)) {
+                    m_RetroEffects.SetColorMode(static_cast<Effects::ColorMode>(currentMode));
+                }
+                ImGui::TreePop();
+            }
+
+            // Vertex Jitter (PS1 style)
+            if (ImGui::TreeNode("Vertex Jitter (PS1)")) {
+                auto& jitter = m_RetroEffects.GetVertexJitter();
+                ImGui::Checkbox("Enabled##Jitter", &jitter.enabled);
+                if (jitter.enabled) {
+                    ImGui::DragFloat("Amount", &jitter.jitterAmount, 0.1f, 0.0f, 5.0f);
+                    ImGui::Checkbox("Snap to Grid", &jitter.snapToGrid);
+                    int gridRes = static_cast<int>(jitter.gridResolution);
+                    if (ImGui::DragInt("Grid Resolution", &gridRes, 1, 80, 320)) {
+                        jitter.gridResolution = static_cast<u32>(gridRes);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            // Affine Texture Warping (PS1)
+            if (ImGui::TreeNode("Affine Warping (PS1)")) {
+                auto& affine = m_RetroEffects.GetAffineSettings();
+                ImGui::Checkbox("Enabled##Affine", &affine.enabled);
+                if (affine.enabled) {
+                    ImGui::DragFloat("Warp Strength", &affine.warpStrength, 0.1f, 0.0f, 2.0f);
+                    ImGui::Checkbox("Vertex Snapping", &affine.vertexSnapping);
+                    ImGui::DragFloat("Snap Grid Size", &affine.snapGridSize, 0.1f, 0.5f, 4.0f);
+                }
+                ImGui::TreePop();
+            }
+
+            // CRT Filter
+            if (ImGui::TreeNode("CRT Filter")) {
+                auto& crt = m_RetroEffects.GetCRTSettings();
+                ImGui::Checkbox("Enabled##CRT", &crt.enabled);
+                if (crt.enabled) {
+                    ImGui::DragFloat("Scanline Intensity", &crt.scanlineIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::DragFloat("Scanline Width", &crt.scanlineWidth, 0.1f, 0.5f, 3.0f);
+                    ImGui::Checkbox("Curved Screen", &crt.curvedScreen);
+                    if (crt.curvedScreen) {
+                        ImGui::DragFloat("Curvature", &crt.curvature, 0.01f, 0.0f, 0.5f);
+                    }
+                    ImGui::DragFloat("Vignette", &crt.vignette, 0.01f, 0.0f, 1.0f);
+                    ImGui::Checkbox("Phosphor Glow", &crt.phosphorGlow);
+                    if (crt.phosphorGlow) {
+                        ImGui::DragFloat("Glow Strength", &crt.glowStrength, 0.01f, 0.0f, 1.0f);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            // Retro Fog
+            if (ImGui::TreeNode("Fog (Distance)")) {
+                auto& fog = m_RetroEffects.GetFogSettings();
+                ImGui::Checkbox("Enabled##Fog", &fog.enabled);
+                if (fog.enabled) {
+                    f32 fogColor[3] = { fog.color.x, fog.color.y, fog.color.z };
+                    if (ImGui::ColorEdit3("Color##Fog", fogColor)) {
+                        fog.color = Math::Vector3(fogColor[0], fogColor[1], fogColor[2]);
+                    }
+                    ImGui::DragFloat("Start Distance", &fog.start, 0.5f, 0.0f, 100.0f);
+                    ImGui::DragFloat("End Distance", &fog.end, 0.5f, 1.0f, 200.0f);
+                    ImGui::Checkbox("Hard Cutoff", &fog.hardCutoff);
+                    if (fog.hardCutoff) {
+                        ImGui::DragFloat("Cutoff Distance", &fog.cutoffDistance, 1.0f, 10.0f, 200.0f);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+
+    // === WEATHER & WATER (Per-Camera) ===
+    if (ImGui::CollapsingHeader("Weather & Water")) {
+        ImGui::TextWrapped("Weather and Water effects are now configured per-camera.");
+        ImGui::Spacing();
+        ImGui::TextWrapped("To add effects:");
+        ImGui::BulletText("Select a Camera entity");
+        ImGui::BulletText("In Inspector, expand 'Weather Effects' or 'Water Effects'");
+        ImGui::BulletText("Enable and configure the effects");
+        ImGui::BulletText("View results in Game View panel");
+        ImGui::Spacing();
+
+        // Show particle count for debugging
+        ImGui::Text("Active Particles: %u / 2000", m_WeatherSystem.GetActiveParticleCount());
+
+        if (m_WeatherSystem.IsLightningActive()) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "LIGHTNING ACTIVE!");
+        }
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawGameViewPanel() {
+    // Set window to be larger by default for Game View
+    ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
+
+    // Add a colored title bar when playing
+    bool isPlaying = m_PlayMode.IsPlaying();
+    if (isPlaying) {
+        ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+    }
+
+    ImGui::Begin("Game View");
+
+    if (isPlaying) {
+        ImGui::PopStyleColor(2);
+    }
+
+    // Find a camera entity in the scene
+    ECS::Entity gameCameraEntity = ECS::INVALID_ENTITY;
+    ECS::CameraComponent* gameCameraComp = nullptr;
+    ECS::TransformComponent* gameCameraTransform = nullptr;
+
+    if (m_World) {
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+                gameCameraEntity = entity;
+                gameCameraComp = m_World->GetComponent<ECS::CameraComponent>(entity);
+                gameCameraTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                break;  // Use first camera found
+            }
+        }
+    }
+
+    // Show play mode status
+    if (isPlaying) {
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "PLAYING");
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) {
+            m_PlayMode.Stop();
+        }
+    } else if (m_PlayMode.IsPaused()) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
+        ImGui::SameLine();
+        if (ImGui::Button("Resume")) {
+            m_PlayMode.Play();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) {
+            m_PlayMode.Stop();
+        }
+    } else {
+        ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "STOPPED");
+        ImGui::SameLine();
+        if (ImGui::Button("Play")) {
+            m_PlayMode.Play();
+        }
+    }
+
+    ImGui::Separator();
+
+    if (gameCameraEntity == ECS::INVALID_ENTITY) {
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "No Camera Found!");
+        ImGui::TextWrapped("Add a Camera component to an entity to see the game view.");
+        ImGui::Spacing();
+        ImGui::TextWrapped("Go to Entity > Create Empty, then Add Component > Camera.");
+
+        // Quick button to create a camera
+        if (m_World && ImGui::Button("Create Game Camera")) {
+            ECS::Entity camEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(camEntity, "Game Camera");
+            auto& transform = m_World->AddComponent<ECS::TransformComponent>(camEntity);
+            transform.position = Math::Vector3(0, 2, 5);
+            // Looking at origin (rotate 180 degrees around Y axis)
+            transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(180.0f));
+            auto& cam = m_World->AddComponent<ECS::CameraComponent>(camEntity);
+            cam.isActive = true;
+            cam.priority = 10;  // High priority to be the main camera
+            cam.fieldOfView = 60.0f;
+            cam.nearPlane = 0.1f;
+            cam.farPlane = 1000.0f;
+            m_SelectedEntity = camEntity;
+            ENJIN_LOG_INFO(Editor, "Created game camera entity");
+        }
+    } else {
+        // Show camera info
+        std::string cameraName = "Game Camera";
+        if (m_World->HasComponent<ECS::NameComponent>(gameCameraEntity)) {
+            cameraName = m_World->GetComponent<ECS::NameComponent>(gameCameraEntity)->name;
+        }
+
+        ImGui::Text("Camera: %s", cameraName.c_str());
+
+        if (gameCameraComp) {
+            ImGui::Text("FOV: %.1f", gameCameraComp->fieldOfView);
+            ImGui::Text("Near: %.2f  Far: %.1f", gameCameraComp->nearPlane, gameCameraComp->farPlane);
+            ImGui::Text("Priority: %d  Active: %s", gameCameraComp->priority, gameCameraComp->isActive ? "Yes" : "No");
+        }
+
+        if (gameCameraTransform) {
+            ImGui::Text("Position: %.2f, %.2f, %.2f",
+                gameCameraTransform->position.x,
+                gameCameraTransform->position.y,
+                gameCameraTransform->position.z);
+        }
+
+        ImGui::Separator();
+
+        // Game View Preview placeholder
+        ImVec2 availSize = ImGui::GetContentRegionAvail();
+        if (availSize.x > 0 && availSize.y > 0) {
+            // Calculate aspect ratio for preview area (default 16:9)
+            f32 gameAspect = 16.0f / 9.0f;
+            f32 previewWidth = availSize.x;
+            f32 previewHeight = previewWidth / gameAspect;
+            if (previewHeight > availSize.y) {
+                previewHeight = availSize.y;
+                previewWidth = previewHeight * gameAspect;
+            }
+
+            // Draw placeholder rectangle (actual render-to-texture would go here)
+            ImVec2 pos = ImGui::GetCursorScreenPos();
+            ImVec2 center((availSize.x - previewWidth) * 0.5f, 0);
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center.x);
+
+            ImDrawList* drawList = ImGui::GetWindowDrawList();
+            ImVec2 p0(pos.x + center.x, pos.y);
+            ImVec2 p1(p0.x + previewWidth, p0.y + previewHeight);
+
+            // Dark background for preview area
+            drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
+
+            // Render weather effects if camera has them enabled
+            if (gameCameraComp && gameCameraComp->weatherEnabled && gameCameraTransform) {
+                // Set weather type and intensity from camera component
+                Effects::WeatherType wType = static_cast<Effects::WeatherType>(gameCameraComp->weatherType);
+                m_WeatherSystem.SetWeather(wType, 0.1f); // Quick transition for preview
+                m_WeatherSystem.SetRainIntensity(gameCameraComp->rainIntensity);
+                m_WeatherSystem.SetSnowIntensity(gameCameraComp->snowIntensity);
+                m_WeatherSystem.SetFogDensity(gameCameraComp->fogDensity);
+                m_WeatherSystem.SetFogColor(gameCameraComp->fogColor);
+                m_WeatherSystem.SetFogStart(gameCameraComp->fogStart);
+                m_WeatherSystem.SetFogEnd(gameCameraComp->fogEnd);
+
+                // Update weather system with camera position
+                m_WeatherSystem.Update(m_LastDeltaTime, gameCameraTransform->position);
+
+                // Build camera matrices for projection
+                Math::Vector3 forward = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+                Math::Vector3 up = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+                Math::Matrix4 viewMat = Math::Matrix4::LookAt(
+                    gameCameraTransform->position,
+                    gameCameraTransform->position + forward,
+                    up
+                );
+                f32 aspect = previewWidth / previewHeight;
+                Math::Matrix4 projMat = Math::Matrix4::Perspective(
+                    gameCameraComp->fieldOfView * (3.14159f / 180.0f),
+                    aspect,
+                    gameCameraComp->nearPlane,
+                    gameCameraComp->farPlane
+                );
+                projMat.m[5] *= -1.0f; // Flip Y for Vulkan-style
+                Math::Matrix4 viewProj = projMat * viewMat;
+
+                // Project world position to screen within preview bounds
+                auto worldToPreview = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
+                    Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+                    if (clipPos.w <= 0.001f) return false;
+                    Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
+                    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f || ndc.z > 1.0f) {
+                        return false;
+                    }
+                    screenPos.x = p0.x + (ndc.x + 1.0f) * 0.5f * previewWidth;
+                    screenPos.y = p0.y + (ndc.y + 1.0f) * 0.5f * previewHeight;
+                    return true;
+                };
+
+                // Draw fog overlay first (if enabled)
+                if (gameCameraComp->fogDensity > 0.01f) {
+                    u8 fogAlpha = static_cast<u8>(gameCameraComp->fogDensity * 150.0f);
+                    ImU32 fogOverlay = IM_COL32(
+                        static_cast<int>(gameCameraComp->fogColor.x * 255),
+                        static_cast<int>(gameCameraComp->fogColor.y * 255),
+                        static_cast<int>(gameCameraComp->fogColor.z * 255),
+                        fogAlpha
+                    );
+                    drawList->AddRectFilled(p0, p1, fogOverlay);
+                }
+
+                // Draw particles
+                const auto& particles = m_WeatherSystem.GetParticles();
+                for (u32 i = 0; i < m_WeatherSystem.GetActiveParticleCount(); ++i) {
+                    const auto& particle = particles[i];
+                    if (particle.lifetime <= 0.0f) continue;
+
+                    ImVec2 screenPos;
+                    if (worldToPreview(particle.position, screenPos)) {
+                        // Clip to preview bounds
+                        if (screenPos.x >= p0.x && screenPos.x <= p1.x &&
+                            screenPos.y >= p0.y && screenPos.y <= p1.y) {
+
+                            f32 size = particle.size * 4.0f; // Scale for visibility
+
+                            // Color based on weather type
+                            if (gameCameraComp->weatherType == 2 || gameCameraComp->weatherType == 3 ||
+                                gameCameraComp->weatherType == 6) {
+                                // Rain/HeavyRain/Storm - blue streaks
+                                ImU32 color = IM_COL32(120, 160, 220, static_cast<int>(particle.alpha * 220));
+                                drawList->AddLine(
+                                    screenPos,
+                                    ImVec2(screenPos.x - 1.0f, screenPos.y - size * 6.0f),
+                                    color, 2.0f
+                                );
+                            } else if (gameCameraComp->weatherType == 4) {
+                                // Snow - white circles
+                                ImU32 color = IM_COL32(255, 255, 255, static_cast<int>(particle.alpha * 255));
+                                drawList->AddCircleFilled(screenPos, size * 1.5f, color);
+                            }
+                        }
+                    }
+                }
+
+                // Lightning flash (only in storms and if enabled)
+                if (gameCameraComp->weatherType == 6 && gameCameraComp->lightningEnabled &&
+                    m_WeatherSystem.IsLightningActive()) {
+                    f32 intensity = m_WeatherSystem.GetLightningIntensity();
+                    u8 flashAlpha = static_cast<u8>(intensity * 200.0f);
+                    ImU32 flashColor = IM_COL32(255, 255, 255, flashAlpha);
+                    drawList->AddRectFilled(p0, p1, flashColor);
+                }
+
+                // Draw water plane if enabled
+                if (gameCameraComp->waterEnabled) {
+                    // Simple water line at the water level
+                    f32 waterY = gameCameraComp->waterLevel;
+                    // Project water plane corners
+                    ImVec2 waterLeft, waterRight;
+                    bool leftOk = worldToPreview(Math::Vector3(-100, waterY, 0), waterLeft);
+                    bool rightOk = worldToPreview(Math::Vector3(100, waterY, 0), waterRight);
+                    if (leftOk && rightOk) {
+                        ImU32 waterCol = IM_COL32(
+                            static_cast<int>(gameCameraComp->waterColor.x * 255),
+                            static_cast<int>(gameCameraComp->waterColor.y * 255),
+                            static_cast<int>(gameCameraComp->waterColor.z * 255),
+                            static_cast<int>(gameCameraComp->waterOpacity * 180)
+                        );
+                        // Fill from water line to bottom
+                        drawList->AddRectFilled(
+                            ImVec2(p0.x, Math::Max(waterLeft.y, p0.y)),
+                            ImVec2(p1.x, p1.y),
+                            waterCol
+                        );
+                    }
+                }
+            }
+
+            // Preview area border
+            drawList->AddRect(p0, p1, IM_COL32(100, 100, 100, 255));
+
+            // Center text
+            const char* previewText = isPlaying ? "Game Running" : "Game Preview";
+            if (gameCameraComp && gameCameraComp->weatherEnabled) {
+                previewText = isPlaying ? "Game Running (Weather Active)" : "Preview (Weather Active)";
+            }
+            ImVec2 textSize = ImGui::CalcTextSize(previewText);
+            ImVec2 textPos((p0.x + p1.x - textSize.x) * 0.5f, p0.y + 10);
+            drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
+
+            // Reserve space
+            ImGui::Dummy(ImVec2(previewWidth, previewHeight));
+        }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Note: Full render-to-texture preview coming soon!");
+    }
+
+    ImGui::End();
+}
+
 void EditorLayer::DrawStatsOverlay() {
     const float DISTANCE = 10.0f;
     ImGuiIO& io = ImGui::GetIO();
@@ -849,8 +2131,45 @@ void EditorLayer::DrawStatsOverlay() {
                              ImGuiWindowFlags_NoMove;
 
     if (ImGui::Begin("Stats", &m_ShowStatsOverlay, flags)) {
-        ImGui::Text("FPS: %.1f", io.Framerate);
-        ImGui::Text("Frame Time: %.3f ms", 1000.0f / io.Framerate);
+        // FPS and frame time
+        f32 currentFrameTime = m_LastDeltaTime * 1000.0f;
+        f32 fps = m_LastDeltaTime > 0.0f ? 1.0f / m_LastDeltaTime : 0.0f;
+
+        // Color FPS based on performance (green > 60, yellow > 30, red < 30)
+        ImVec4 fpsColor = fps >= 60.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) :
+                          fps >= 30.0f ? ImVec4(1.0f, 1.0f, 0.2f, 1.0f) :
+                                         ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+
+        ImGui::TextColored(fpsColor, "FPS: %.1f", fps);
+        ImGui::Text("Frame: %.2f ms", currentFrameTime);
+
+        ImGui::Separator();
+        ImGui::Text("Min: %.2f ms (%.0f fps)", m_FrameTimeMin, m_FrameTimeMin > 0 ? 1000.0f / m_FrameTimeMin : 0);
+        ImGui::Text("Max: %.2f ms (%.0f fps)", m_FrameTimeMax, m_FrameTimeMax > 0 ? 1000.0f / m_FrameTimeMax : 0);
+        ImGui::Text("Avg: %.2f ms (%.0f fps)", m_FrameTimeAvg, m_FrameTimeAvg > 0 ? 1000.0f / m_FrameTimeAvg : 0);
+
+        // Frame time graph
+        ImGui::Separator();
+        ImGui::Text("Frame Time History:");
+
+        // Calculate scale for graph (show up to 2x max to see spikes clearly)
+        f32 graphMax = m_FrameTimeMax > 0.0f ? m_FrameTimeMax * 1.5f : 33.3f;
+        graphMax = graphMax < 16.7f ? 33.3f : graphMax;  // At least show 30fps line
+
+        // Draw the graph with custom getter to handle circular buffer
+        auto getter = [](void* data, int idx) -> float {
+            EditorLayer* self = static_cast<EditorLayer*>(data);
+            usize actualIdx = (self->m_FrameTimeIndex + static_cast<usize>(idx)) % FRAME_TIME_HISTORY_SIZE;
+            return self->m_FrameTimeHistory[actualIdx];
+        };
+
+        char overlay[64];
+        snprintf(overlay, sizeof(overlay), "%.1f ms", currentFrameTime);
+        ImGui::PlotLines("##FrameTime", getter, this, static_cast<int>(FRAME_TIME_HISTORY_SIZE),
+                        0, overlay, 0.0f, graphMax, ImVec2(200, 60));
+
+        // Reference lines legend
+        ImGui::TextDisabled("-- 60fps (16.7ms) -- 30fps (33.3ms)");
 
         if (m_World) {
             ImGui::Separator();
@@ -859,42 +2178,111 @@ void EditorLayer::DrawStatsOverlay() {
 
         if (m_CameraController) {
             ImGui::Separator();
-            ImGui::Text("Yaw: %.1f", m_CameraController->GetYaw());
-            ImGui::Text("Pitch: %.1f", m_CameraController->GetPitch());
+            ImGui::Text("Yaw: %.1f  Pitch: %.1f", m_CameraController->GetYaw(), m_CameraController->GetPitch());
+        }
+
+        // GPU info (if available from renderer)
+        if (m_Renderer && m_Renderer->GetContext()) {
+            ImGui::Separator();
+            VkPhysicalDeviceProperties props;
+            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+            ImGui::Text("GPU: %s", props.deviceName);
         }
     }
     ImGui::End();
 }
 
-void EditorLayer::DrawImportDialog() {
-    ImGui::OpenPopup("Import Model");
+void EditorLayer::DrawSplashScreen() {
+    ImGuiIO& io = ImGui::GetIO();
 
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
-
-    if (ImGui::BeginPopupModal("Import Model", &m_ShowImportDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter the path to a glTF model (.gltf or .glb):");
-        ImGui::Separator();
-
-        ImGui::InputText("Path", m_ImportPath, sizeof(m_ImportPath));
-
-        ImGui::Separator();
-
-        if (ImGui::Button("Import", ImVec2(120, 0))) {
-            if (m_ImportPath[0] != '\0') {
-                ImportModel(m_ImportPath);
-                m_ShowImportDialog = false;
-                m_ImportPath[0] = '\0';
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-            m_ShowImportDialog = false;
-            m_ImportPath[0] = '\0';
-        }
-
-        ImGui::EndPopup();
+    // Calculate fade alpha
+    f32 alpha = 1.0f;
+    if (m_SplashTimer > m_SplashFadeStart) {
+        f32 fadeProgress = (m_SplashTimer - m_SplashFadeStart) / (m_SplashDuration - m_SplashFadeStart);
+        alpha = 1.0f - fadeProgress;
     }
+
+    // Full-screen dark overlay
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::SetNextWindowBgAlpha(0.95f * alpha);
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
+                             ImGuiWindowFlags_NoMove |
+                             ImGuiWindowFlags_NoResize |
+                             ImGuiWindowFlags_NoSavedSettings |
+                             ImGuiWindowFlags_NoFocusOnAppearing |
+                             ImGuiWindowFlags_NoBringToFrontOnFocus |
+                             ImGuiWindowFlags_NoNav |
+                             ImGuiWindowFlags_NoInputs;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.08f, 1.0f));
+
+    if (ImGui::Begin("##Splash", nullptr, flags)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        ImVec2 center(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.5f);
+
+        // Draw decorative lines
+        u32 lineColor = IM_COL32(100, 120, 180, static_cast<int>(150 * alpha));
+        f32 lineWidth = io.DisplaySize.x * 0.3f;
+        drawList->AddLine(
+            ImVec2(center.x - lineWidth, center.y - 60),
+            ImVec2(center.x + lineWidth, center.y - 60),
+            lineColor, 2.0f);
+        drawList->AddLine(
+            ImVec2(center.x - lineWidth, center.y + 60),
+            ImVec2(center.x + lineWidth, center.y + 60),
+            lineColor, 2.0f);
+
+        // Main title "THE ENJIN ENGINE"
+        const char* title = "THE ENJIN ENGINE";
+        ImGui::PushFont(nullptr);  // Use default font (will be larger if custom font is set)
+
+        // Calculate text size for centering
+        ImVec2 titleSize = ImGui::CalcTextSize(title);
+        f32 titleScale = 2.5f;  // Scale up the text
+        titleSize.x *= titleScale;
+        titleSize.y *= titleScale;
+
+        ImVec2 titlePos(center.x - titleSize.x * 0.5f, center.y - titleSize.y * 0.5f);
+
+        // Draw title with glow effect
+        u32 glowColor = IM_COL32(80, 100, 200, static_cast<int>(100 * alpha));
+        for (int i = 0; i < 3; i++) {
+            f32 offset = (i + 1) * 2.0f;
+            drawList->AddText(nullptr, 14.0f * titleScale,
+                ImVec2(titlePos.x + offset, titlePos.y + offset),
+                glowColor, title);
+        }
+
+        // Main title text
+        u32 titleColor = IM_COL32(200, 210, 255, static_cast<int>(255 * alpha));
+        drawList->AddText(nullptr, 14.0f * titleScale, titlePos, titleColor, title);
+
+        ImGui::PopFont();
+
+        // Version info
+        const char* version = "v0.1.0 Alpha";
+        ImVec2 versionSize = ImGui::CalcTextSize(version);
+        ImVec2 versionPos(center.x - versionSize.x * 0.5f, io.DisplaySize.y - 50);
+        u32 versionColor = IM_COL32(100, 110, 140, static_cast<int>(180 * alpha));
+        drawList->AddText(versionPos, versionColor, version);
+
+        // Loading dots animation
+        int dots = static_cast<int>(m_SplashTimer * 3.0f) % 4;
+        const char* loadingTexts[] = { "Loading", "Loading.", "Loading..", "Loading..." };
+        const char* loadingText = loadingTexts[dots];
+        ImVec2 loadingSize = ImGui::CalcTextSize(loadingText);
+        ImVec2 loadingPos(center.x - loadingSize.x * 0.5f, center.y + 80);
+        u32 loadingColor = IM_COL32(120, 130, 160, static_cast<int>(200 * alpha));
+        drawList->AddText(loadingPos, loadingColor, loadingText);
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
 }
 
 void EditorLayer::ImportModel(const std::string& path) {
@@ -928,17 +2316,22 @@ void EditorLayer::ImportModel(const std::string& path) {
 }
 
 void EditorLayer::HandleViewportPicking() {
-    // Only pick when left mouse is clicked and not interacting with UI
-    if (!Input::IsMouseButtonPressed(MouseButton::Left)) {
-        return;
-    }
-
     // Don't pick if ImGui wants the mouse (hovering over a panel)
     if (WantsMouseInput()) {
         return;
     }
 
     if (!m_World || !m_Camera || !m_Renderer) {
+        return;
+    }
+
+    // Check for double-click to focus on entity
+    static f64 lastClickTime = 0.0;
+    static ECS::Entity lastClickedEntity = ECS::INVALID_ENTITY;
+    const f64 doubleClickTime = 0.3;  // 300ms
+
+    // Only pick when left mouse is clicked
+    if (!Input::IsMouseButtonPressed(MouseButton::Left)) {
         return;
     }
 
@@ -957,15 +2350,28 @@ void EditorLayer::HandleViewportPicking() {
         static_cast<f32>(extent.width), static_cast<f32>(extent.height)
     );
 
+    // Get current time for double-click detection
+    f64 currentTime = ImGui::GetTime();
+
     if (picked != ECS::INVALID_ENTITY) {
-        m_SelectedEntity = picked;
-        if (m_OnEntitySelected) {
-            m_OnEntitySelected(picked);
+        // Check for double-click on same entity
+        if (picked == lastClickedEntity && (currentTime - lastClickTime) < doubleClickTime) {
+            FocusOnEntity(picked);
+            lastClickedEntity = ECS::INVALID_ENTITY;  // Reset to prevent triple-click
+        } else {
+            // Single click - select entity
+            m_SelectedEntity = picked;
+            if (m_OnEntitySelected) {
+                m_OnEntitySelected(picked);
+            }
+            lastClickedEntity = picked;
+            lastClickTime = currentTime;
+            ENJIN_LOG_DEBUG(Editor, "Selected entity %llu", (unsigned long long)picked);
         }
-        ENJIN_LOG_DEBUG(Editor, "Selected entity %llu", (unsigned long long)picked);
     } else {
         // Clicked on empty space - deselect
         m_SelectedEntity = ECS::INVALID_ENTITY;
+        lastClickedEntity = ECS::INVALID_ENTITY;
     }
 }
 
@@ -1052,6 +2458,139 @@ void EditorLayer::DrawGizmos() {
     }
 }
 
+void EditorLayer::DrawGrid() {
+    if (!m_Camera || !m_Renderer) {
+        return;
+    }
+
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    // Get camera matrices
+    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+    Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+
+    // Flip projection for Vulkan (Y is flipped compared to OpenGL)
+    projMat.m[5] *= -1.0f;
+
+    Math::Matrix4 viewProj = projMat * viewMat;
+
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+    f32 screenWidth = static_cast<f32>(extent.width);
+    f32 screenHeight = static_cast<f32>(extent.height);
+
+    // Helper lambda to project 3D point to screen space
+    auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
+        // Transform to clip space using proper matrix * vector
+        Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+
+        // Behind camera check
+        if (clipPos.w <= 0.001f) {
+            return false;
+        }
+
+        // Perspective divide to NDC [-1, 1]
+        f32 ndcX = clipPos.x / clipPos.w;
+        f32 ndcY = clipPos.y / clipPos.w;
+
+        // Convert NDC to screen coordinates
+        // NDC X: -1 = left, +1 = right -> screen 0 to width
+        // NDC Y: +1 = top, -1 = bottom -> screen 0 to height (Y inverted for screen coords)
+        screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
+        screenPos.y = (1.0f - ndcY) * 0.5f * screenHeight;  // Invert Y for screen coords
+
+        return true;
+    };
+
+    // Helper to clip line to screen bounds and draw
+    auto drawGridLine = [&](const Math::Vector3& p1, const Math::Vector3& p2, ImU32 color, f32 thickness) {
+        ImVec2 screen1, screen2;
+        bool v1 = worldToScreen(p1, screen1);
+        bool v2 = worldToScreen(p2, screen2);
+
+        if (v1 && v2) {
+            // Both points visible - draw the line
+            drawList->AddLine(screen1, screen2, color, thickness);
+        }
+    };
+
+    // Grid parameters
+    f32 halfExtent = m_GridSize * 0.5f;
+    f32 step = m_GridSize / static_cast<f32>(m_GridLines);
+
+    // Colors
+    ImU32 gridColor = IM_COL32(60, 60, 60, 120);
+    ImU32 axisColorX = IM_COL32(180, 60, 60, 200);  // Red for X axis
+    ImU32 axisColorZ = IM_COL32(60, 60, 180, 200);  // Blue for Z axis
+
+    // Draw lines parallel to X axis (at different Z positions)
+    for (i32 i = -m_GridLines / 2; i <= m_GridLines / 2; ++i) {
+        f32 z = static_cast<f32>(i) * step;
+        Math::Vector3 start(-halfExtent, 0.0f, z);
+        Math::Vector3 end(halfExtent, 0.0f, z);
+
+        ImU32 color = (i == 0) ? axisColorX : gridColor;
+        f32 thickness = (i == 0) ? 2.0f : 1.0f;
+        drawGridLine(start, end, color, thickness);
+    }
+
+    // Draw lines parallel to Z axis (at different X positions)
+    for (i32 i = -m_GridLines / 2; i <= m_GridLines / 2; ++i) {
+        f32 x = static_cast<f32>(i) * step;
+        Math::Vector3 start(x, 0.0f, -halfExtent);
+        Math::Vector3 end(x, 0.0f, halfExtent);
+
+        ImU32 color = (i == 0) ? axisColorZ : gridColor;
+        f32 thickness = (i == 0) ? 2.0f : 1.0f;
+        drawGridLine(start, end, color, thickness);
+    }
+}
+
+void EditorLayer::FocusOnEntity(ECS::Entity entity) {
+    if (!m_Camera || !m_CameraController || !m_World) {
+        return;
+    }
+
+    // Get entity transform
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+    if (!transform) {
+        return;
+    }
+
+    // Calculate bounding size for appropriate distance
+    f32 boundingSize = 2.0f;  // Default size
+
+    // If entity has a mesh, estimate size from scale
+    if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+        boundingSize = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z)) * 2.0f;
+    }
+
+    // Calculate camera distance based on bounding size
+    f32 distance = boundingSize * 2.5f;
+    distance = Math::Clamp(distance, 2.0f, 50.0f);
+
+    // Get current camera direction (maintain viewing angle)
+    Math::Vector3 cameraForward = m_Camera->GetForward();
+
+    // Calculate new camera position
+    Math::Vector3 targetPos = transform->position;
+    Math::Vector3 newCameraPos = targetPos - cameraForward * distance;
+
+    // Set camera position and update orbit target
+    m_Camera->SetPosition(newCameraPos);
+    m_Camera->SetLookAt(newCameraPos, targetPos, Math::Vector3(0.0f, 1.0f, 0.0f));
+
+    // Update controller's orbit target and sync orientation
+    m_CameraController->SetOrbitTarget(targetPos);
+    m_CameraController->SetOrbitDistance(distance);
+    m_CameraController->SyncFromCamera();
+
+    ENJIN_LOG_INFO(Editor, "Focused on entity %llu at (%.2f, %.2f, %.2f)",
+        (unsigned long long)entity, targetPos.x, targetPos.y, targetPos.z);
+}
+
 void EditorLayer::SaveScene(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
@@ -1103,78 +2642,836 @@ void EditorLayer::OpenScene(const std::string& path) {
     }
 }
 
-void EditorLayer::DrawOpenSceneDialog() {
-    ImGui::OpenPopup("Open Scene");
 
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+// ============================================================================
+// Character Controller Inspector Drawing
+// ============================================================================
 
-    if (ImGui::BeginPopupModal("Open Scene", &m_ShowOpenSceneDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter the path to a scene file (.enjin):");
-        ImGui::Separator();
+void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity);
+        if (!ctrl) return;
 
-        ImGui::InputText("Path", m_ScenePath, sizeof(m_ScenePath));
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
-        ImGui::Separator();
+        if (ImGui::TreeNode("Movement")) {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
+            ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
+            ImGui::DragFloat("Air Control", &ctrl->airControl, 0.05f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
 
-        if (ImGui::Button("Open", ImVec2(120, 0))) {
-            if (m_ScenePath[0] != '\0') {
-                OpenScene(m_ScenePath);
-                m_ShowOpenSceneDialog = false;
+        if (ImGui::TreeNode("Jumping")) {
+            ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 0.1f, 30.0f);
+            ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
+            ImGui::DragInt("Max Jumps", &ctrl->maxJumps, 1, 1, 5);
+            ImGui::DragFloat("Coyote Time", &ctrl->coyoteTime, 0.01f, 0.0f, 0.5f);
+            ImGui::DragFloat("Jump Buffer", &ctrl->jumpBufferTime, 0.01f, 0.0f, 0.5f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Wall Mechanics")) {
+            ImGui::Checkbox("Wall Jump", &ctrl->enableWallJump);
+            ImGui::Checkbox("Wall Slide", &ctrl->enableWallSlide);
+            if (ctrl->enableWallSlide) {
+                ImGui::DragFloat("Slide Speed", &ctrl->wallSlideSpeed, 0.1f, 0.1f, 10.0f);
             }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-            m_ShowOpenSceneDialog = false;
+            if (ctrl->enableWallJump) {
+                ImGui::DragFloat("Wall Jump Force", &ctrl->wallJumpForce, 0.1f, 0.1f, 20.0f);
+            }
+            ImGui::TreePop();
         }
 
-        ImGui::EndPopup();
+        // State display
+        ImGui::Separator();
+        ImGui::TextDisabled("State:");
+        ImGui::Text("Grounded: %s", ctrl->isGrounded ? "Yes" : "No");
+        ImGui::Text("Jumping: %s | Falling: %s", ctrl->isJumping ? "Yes" : "No", ctrl->isFalling ? "Yes" : "No");
+        ImGui::Text("Velocity: %.1f, %.1f", ctrl->velocity.x, ctrl->velocity.y);
     }
 }
 
-void EditorLayer::DrawSaveSceneDialog() {
-    ImGui::OpenPopup("Save Scene As");
+void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ctrl = m_World->GetComponent<ECS::TopDown2DController>(entity);
+        if (!ctrl) return;
 
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
-    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
-    if (ImGui::BeginPopupModal("Save Scene As", &m_ShowSaveSceneDialog, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enter the path to save the scene:");
-        ImGui::Separator();
+        ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+        ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+        ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
+        ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
 
-        // Pre-fill with current path if available
-        static bool initialized = false;
-        if (!initialized && !m_CurrentScenePath.empty()) {
-            strncpy(m_ScenePath, m_CurrentScenePath.c_str(), sizeof(m_ScenePath) - 1);
-            m_ScenePath[sizeof(m_ScenePath) - 1] = '\0';
-            initialized = true;
+        ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
+        if (ctrl->rotateToFaceMovement) {
+            ImGui::DragFloat("Rotation Speed", &ctrl->rotationSpeed, 10.0f, 0.0f, 1440.0f);
         }
 
-        ImGui::InputText("Path", m_ScenePath, sizeof(m_ScenePath));
+        if (ImGui::TreeNode("Dash")) {
+            ImGui::Checkbox("Enable Dash", &ctrl->enableDash);
+            if (ctrl->enableDash) {
+                ImGui::DragFloat("Dash Speed", &ctrl->dashSpeed, 0.5f, 5.0f, 50.0f);
+                ImGui::DragFloat("Dash Duration", &ctrl->dashDuration, 0.01f, 0.05f, 1.0f);
+                ImGui::DragFloat("Dash Cooldown", &ctrl->dashCooldown, 0.1f, 0.0f, 5.0f);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
 
-        ImGui::TextDisabled("(Use .enjin extension for scene files)");
+void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ctrl = m_World->GetComponent<ECS::TopDown3DController>(entity);
+        if (!ctrl) return;
+
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
+
+        if (ImGui::TreeNode("Movement")) {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
+            ImGui::DragFloat("Rotation Speed", &ctrl->rotationSpeed, 10.0f, 0.0f, 1440.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Camera")) {
+            ImGui::DragFloat("Camera Angle", &ctrl->cameraAngle, 1.0f, 0.0f, 90.0f);
+            ImGui::DragFloat("Camera Distance", &ctrl->cameraDistance, 0.5f, 5.0f, 50.0f);
+            ImGui::DragFloat("Camera Height", &ctrl->cameraHeight, 0.5f, 1.0f, 30.0f);
+            ImGui::Checkbox("Lock Camera To Player", &ctrl->lockCameraToPlayer);
+            ImGui::TreePop();
+        }
+
+        ImGui::Checkbox("Enable Click-To-Move", &ctrl->enableClickToMove);
+        ImGui::Checkbox("Enable Dash", &ctrl->enableDash);
+    }
+}
+
+void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ctrl = m_World->GetComponent<ECS::ThirdPersonController>(entity);
+        if (!ctrl) return;
+
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
+
+        if (ImGui::TreeNode("Movement")) {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
+            ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Rotation")) {
+            ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
+            ImGui::Checkbox("Rotate To Face Camera", &ctrl->rotateToFaceCamera);
+            ImGui::DragFloat("Rotation Speed", &ctrl->rotationSpeed, 10.0f, 0.0f, 1440.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Camera")) {
+            ImGui::DragFloat("Distance", &ctrl->cameraDistance, 0.1f, ctrl->cameraMinDistance, ctrl->cameraMaxDistance);
+            ImGui::DragFloat("Height", &ctrl->cameraHeight, 0.1f, 0.0f, 10.0f);
+            ImGui::DragFloat("Sensitivity", &ctrl->cameraSensitivity, 0.1f, 0.1f, 10.0f);
+            ImGui::DragFloat("Lerp Speed", &ctrl->cameraLerpSpeed, 0.5f, 1.0f, 50.0f);
+            ImGui::DragFloat("Pitch", &ctrl->cameraPitch, 1.0f, ctrl->cameraMinPitch, ctrl->cameraMaxPitch);
+            ImGui::Checkbox("Enable Collision", &ctrl->enableCameraCollision);
+            ImGui::TreePop();
+        }
+
+        ImGui::Checkbox("Enable Lock-On", &ctrl->enableLockOn);
 
         ImGui::Separator();
+        ImGui::TextDisabled("State:");
+        ImGui::Text("Grounded: %s | Sprinting: %s", ctrl->isGrounded ? "Yes" : "No", ctrl->isSprinting ? "Yes" : "No");
+    }
+}
 
-        if (ImGui::Button("Save", ImVec2(120, 0))) {
-            if (m_ScenePath[0] != '\0') {
-                std::string path = m_ScenePath;
-                // Add .enjin extension if not present
-                if (path.find(".enjin") == std::string::npos) {
-                    path += ".enjin";
-                }
-                SaveScene(path);
-                m_ShowSaveSceneDialog = false;
-                initialized = false;
-            }
+void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ctrl = m_World->GetComponent<ECS::FirstPersonController>(entity);
+        if (!ctrl) return;
+
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
+
+        if (ImGui::TreeNode("Movement")) {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
+            ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Mouse Look")) {
+            ImGui::DragFloat("Sensitivity", &ctrl->mouseSensitivity, 0.1f, 0.1f, 10.0f);
+            ImGui::Checkbox("Invert Y", &ctrl->invertY);
+            ImGui::DragFloat("Pitch", &ctrl->pitch, 1.0f, ctrl->minPitch, ctrl->maxPitch);
+            ImGui::DragFloat("Yaw", &ctrl->yaw, 1.0f, -180.0f, 180.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Crouching")) {
+            ImGui::Checkbox("Enable Crouch", &ctrl->enableCrouch);
+            ImGui::DragFloat("Standing Height", &ctrl->standingHeight, 0.1f, 0.5f, 3.0f);
+            ImGui::DragFloat("Crouching Height", &ctrl->crouchingHeight, 0.1f, 0.3f, 2.0f);
+            ImGui::DragFloat("Crouch Speed Mult", &ctrl->crouchSpeed, 0.1f, 0.1f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Head Bob")) {
+            ImGui::Checkbox("Enable Head Bob", &ctrl->enableHeadBob);
+            ImGui::DragFloat("Frequency", &ctrl->headBobFrequency, 0.5f, 1.0f, 20.0f);
+            ImGui::DragFloat("Amplitude", &ctrl->headBobAmplitude, 0.01f, 0.0f, 0.2f);
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("State:");
+        ImGui::Text("Grounded: %s | Crouching: %s | Sprinting: %s",
+            ctrl->isGrounded ? "Yes" : "No",
+            ctrl->isCrouching ? "Yes" : "No",
+            ctrl->isSprinting ? "Yes" : "No");
+    }
+}
+
+// ============================================================================
+// Gameplay Component Inspector Drawing
+// ============================================================================
+
+void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* health = m_World->GetComponent<ECS::HealthComponent>(entity);
+        if (!health) return;
+
+        // Health bar
+        f32 healthPercent = health->GetHealthPercent();
+        ImVec4 healthColor = healthPercent > 0.5f ? ImVec4(0.2f, 0.8f, 0.2f, 1.0f) :
+                             healthPercent > 0.25f ? ImVec4(0.8f, 0.8f, 0.2f, 1.0f) :
+                                                     ImVec4(0.8f, 0.2f, 0.2f, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, healthColor);
+        ImGui::ProgressBar(healthPercent, ImVec2(-1, 0),
+            (std::to_string((int)health->currentHealth) + " / " + std::to_string((int)health->maxHealth)).c_str());
+        ImGui::PopStyleColor();
+
+        ImGui::DragFloat("Max Health", &health->maxHealth, 1.0f, 1.0f, 10000.0f);
+        ImGui::DragFloat("Current Health", &health->currentHealth, 1.0f, 0.0f, health->maxHealth);
+
+        if (ImGui::TreeNode("Regeneration")) {
+            ImGui::DragFloat("Regen Rate (HP/s)", &health->regenRate, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Regen Delay", &health->regenDelay, 0.1f, 0.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Shield")) {
+            ImGui::DragFloat("Max Shield", &health->maxShield, 1.0f, 0.0f, 1000.0f);
+            ImGui::DragFloat("Current Shield", &health->currentShield, 1.0f, 0.0f, health->maxShield);
+            ImGui::DragFloat("Shield Regen", &health->shieldRegenRate, 0.5f, 0.0f, 100.0f);
+            ImGui::TreePop();
+        }
+
+        ImGui::Checkbox("Invulnerable", &health->isInvulnerable);
+        ImGui::DragFloat("Invuln Time After Hit", &health->invulnerabilityTime, 0.1f, 0.0f, 5.0f);
+
+        ImGui::Separator();
+        ImGui::Text("Status: %s", health->isDead ? "DEAD" : "Alive");
+    }
+}
+
+void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        if (!rb) return;
+
+        // Body type
+        const char* bodyTypes[] = { "Dynamic", "Kinematic", "Static" };
+        int currentType = static_cast<int>(rb->bodyType);
+        if (ImGui::Combo("Body Type", &currentType, bodyTypes, 3)) {
+            rb->bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(currentType);
+        }
+
+        ImGui::DragFloat("Mass", &rb->mass, 0.1f, 0.001f, 1000.0f);
+        ImGui::DragFloat("Drag", &rb->drag, 0.01f, 0.0f, 10.0f);
+        ImGui::DragFloat("Angular Drag", &rb->angularDrag, 0.01f, 0.0f, 10.0f);
+
+        ImGui::Checkbox("Use Gravity", &rb->useGravity);
+        if (rb->useGravity) {
+            ImGui::DragFloat("Gravity Scale", &rb->gravityScale, 0.1f, -10.0f, 10.0f);
+        }
+
+        if (ImGui::TreeNode("Constraints")) {
+            ImGui::Checkbox("Freeze X", &rb->freezePositionX);
+            ImGui::SameLine();
+            ImGui::Checkbox("Freeze Y", &rb->freezePositionY);
+            ImGui::SameLine();
+            ImGui::Checkbox("Freeze Z", &rb->freezePositionZ);
+
+            ImGui::Checkbox("Freeze Rot X", &rb->freezeRotationX);
+            ImGui::SameLine();
+            ImGui::Checkbox("Freeze Rot Y", &rb->freezeRotationY);
+            ImGui::SameLine();
+            ImGui::Checkbox("Freeze Rot Z", &rb->freezeRotationZ);
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Velocity: %.2f, %.2f, %.2f", rb->velocity.x, rb->velocity.y, rb->velocity.z);
+        ImGui::Text("Grounded: %s | Sleeping: %s", rb->isGrounded ? "Yes" : "No", rb->isSleeping ? "Yes" : "No");
+    }
+}
+
+void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Box Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* col = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
+        if (!col) return;
+
+        f32 center[3] = { col->center.x, col->center.y, col->center.z };
+        if (ImGui::DragFloat3("Center", center, 0.1f)) {
+            col->center = Math::Vector3(center[0], center[1], center[2]);
+        }
+
+        f32 size[3] = { col->size.x, col->size.y, col->size.z };
+        if (ImGui::DragFloat3("Size", size, 0.1f, 0.001f, 1000.0f)) {
+            col->size = Math::Vector3(size[0], size[1], size[2]);
+        }
+
+        ImGui::Checkbox("Is Trigger", &col->isTrigger);
+
+        if (ImGui::TreeNode("Physics Material")) {
+            ImGui::DragFloat("Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Audio Source", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+        if (!audio) return;
+
+        // Clip path (would need file browser in real implementation)
+        char pathBuffer[256];
+        strncpy(pathBuffer, audio->clipPath.c_str(), sizeof(pathBuffer) - 1);
+        pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+        if (ImGui::InputText("Clip Path", pathBuffer, sizeof(pathBuffer))) {
+            audio->clipPath = pathBuffer;
+        }
+
+        ImGui::DragFloat("Volume", &audio->volume, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("Pitch", &audio->pitch, 0.01f, 0.1f, 3.0f);
+
+        ImGui::Checkbox("Play On Awake", &audio->playOnAwake);
+        ImGui::Checkbox("Loop", &audio->loop);
+        ImGui::Checkbox("3D Sound", &audio->is3D);
+
+        if (audio->is3D) {
+            ImGui::DragFloat("Spatial Blend", &audio->spatialBlend, 0.05f, 0.0f, 1.0f);
+            ImGui::DragFloat("Min Distance", &audio->minDistance, 0.5f, 0.1f, 100.0f);
+            ImGui::DragFloat("Max Distance", &audio->maxDistance, 5.0f, audio->minDistance, 1000.0f);
+        }
+
+        ImGui::DragInt("Priority", &audio->priority, 1, 0, 255);
+
+        ImGui::Separator();
+        ImGui::Text("Playing: %s", audio->isPlaying ? "Yes" : "No");
+
+        if (ImGui::Button("Play")) {
+            audio->isPlaying = true;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
-            m_ShowSaveSceneDialog = false;
-            initialized = false;
+        if (ImGui::Button("Stop")) {
+            audio->isPlaying = false;
+            audio->playbackPosition = 0.0f;
+        }
+    }
+}
+
+void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
+        if (!sprite) return;
+
+        // Texture path
+        char pathBuffer[256];
+        strncpy(pathBuffer, sprite->texturePath.c_str(), sizeof(pathBuffer) - 1);
+        pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+        if (ImGui::InputText("Texture Path", pathBuffer, sizeof(pathBuffer))) {
+            sprite->texturePath = pathBuffer;
         }
 
-        ImGui::EndPopup();
+        // Source rectangle (for sprite sheets)
+        ImGui::Text("Source Rectangle:");
+        ImGui::DragFloat("Src X", &sprite->srcX, 1.0f, 0.0f, 4096.0f);
+        ImGui::DragFloat("Src Y", &sprite->srcY, 1.0f, 0.0f, 4096.0f);
+        ImGui::DragFloat("Src Width", &sprite->srcWidth, 1.0f, 0.0f, 4096.0f);
+        ImGui::DragFloat("Src Height", &sprite->srcHeight, 1.0f, 0.0f, 4096.0f);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Set to 0 to use full texture");
+        }
+
+        // Size
+        f32 size[2] = { sprite->size.x, sprite->size.y };
+        if (ImGui::DragFloat2("Size", size, 0.1f, 0.1f, 100.0f)) {
+            sprite->size = Math::Vector2(size[0], size[1]);
+        }
+
+        // Pivot
+        f32 pivot[2] = { sprite->pivot.x, sprite->pivot.y };
+        if (ImGui::DragFloat2("Pivot", pivot, 0.01f, 0.0f, 1.0f)) {
+            sprite->pivot = Math::Vector2(pivot[0], pivot[1]);
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("0,0 = top-left, 0.5,0.5 = center, 1,1 = bottom-right");
+        }
+
+        // Tint
+        f32 tint[3] = { sprite->tint.x, sprite->tint.y, sprite->tint.z };
+        if (ImGui::ColorEdit3("Tint", tint)) {
+            sprite->tint = Math::Vector3(tint[0], tint[1], tint[2]);
+        }
+
+        ImGui::DragFloat("Alpha", &sprite->alpha, 0.01f, 0.0f, 1.0f);
+
+        // Sorting
+        ImGui::DragInt("Sorting Layer", &sprite->sortingLayer, 1, -100, 100);
+        ImGui::DragInt("Order in Layer", &sprite->orderInLayer, 1, -1000, 1000);
+
+        // Flip
+        ImGui::Checkbox("Flip X", &sprite->flipX);
+        ImGui::SameLine();
+        ImGui::Checkbox("Flip Y", &sprite->flipY);
+
+        ImGui::Checkbox("Visible", &sprite->visible);
+    }
+}
+
+void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* anim = m_World->GetComponent<ECS::AnimatedSprite2DComponent>(entity);
+        if (!anim) return;
+
+        ImGui::Text("Frames: %zu", anim->frames.size());
+        ImGui::Text("Current Frame: %u", anim->currentFrame);
+        ImGui::Text("Frame Timer: %.2f", anim->frameTimer);
+
+        ImGui::Checkbox("Playing", &anim->playing);
+        ImGui::Checkbox("Loop", &anim->loop);
+        ImGui::DragFloat("Playback Speed", &anim->playbackSpeed, 0.1f, 0.1f, 10.0f);
+
+        if (anim->animationComplete) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Animation Complete");
+        }
+
+        // Frame editor
+        if (ImGui::TreeNode("Frames")) {
+            for (usize i = 0; i < anim->frames.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::TreeNode("Frame", "Frame %zu", i)) {
+                    ImGui::DragFloat("Src X", &anim->frames[i].srcX, 1.0f);
+                    ImGui::DragFloat("Src Y", &anim->frames[i].srcY, 1.0f);
+                    ImGui::DragFloat("Duration", &anim->frames[i].duration, 0.01f, 0.01f, 2.0f);
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+
+            if (ImGui::Button("Add Frame")) {
+                ECS::AnimatedSprite2DComponent::Frame frame;
+                frame.srcX = 0;
+                frame.srcY = 0;
+                frame.duration = 0.1f;
+                anim->frames.push_back(frame);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* tilemap = m_World->GetComponent<ECS::TilemapComponent>(entity);
+        if (!tilemap) return;
+
+        // Tileset path
+        char pathBuffer[256];
+        strncpy(pathBuffer, tilemap->tilesetPath.c_str(), sizeof(pathBuffer) - 1);
+        pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+        if (ImGui::InputText("Tileset Path", pathBuffer, sizeof(pathBuffer))) {
+            tilemap->tilesetPath = pathBuffer;
+        }
+
+        // Tile size
+        ImGui::DragFloat("Tile Width (px)", &tilemap->tileWidth, 1.0f, 1.0f, 256.0f);
+        ImGui::DragFloat("Tile Height (px)", &tilemap->tileHeight, 1.0f, 1.0f, 256.0f);
+
+        int cols = static_cast<int>(tilemap->tilesetColumns);
+        if (ImGui::DragInt("Tileset Columns", &cols, 1, 1, 64)) {
+            tilemap->tilesetColumns = static_cast<u32>(cols);
+        }
+
+        // World scale
+        ImGui::DragFloat("World Tile Width", &tilemap->worldTileWidth, 0.1f, 0.1f, 10.0f);
+        ImGui::DragFloat("World Tile Height", &tilemap->worldTileHeight, 0.1f, 0.1f, 10.0f);
+
+        // Map size
+        int w = static_cast<int>(tilemap->width);
+        int h = static_cast<int>(tilemap->height);
+        bool sizeChanged = false;
+        if (ImGui::DragInt("Map Width", &w, 1, 1, 256)) {
+            tilemap->width = static_cast<u32>(w);
+            sizeChanged = true;
+        }
+        if (ImGui::DragInt("Map Height", &h, 1, 1, 256)) {
+            tilemap->height = static_cast<u32>(h);
+            sizeChanged = true;
+        }
+        if (sizeChanged) {
+            tilemap->tiles.resize(tilemap->width * tilemap->height, -1);
+        }
+
+        ImGui::Checkbox("Has Collision", &tilemap->hasCollision);
+
+        ImGui::Text("Total Tiles: %zu", tilemap->tiles.size());
+    }
+}
+
+void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* sm = m_World->GetComponent<ECS::StateMachineComponent>(entity);
+        if (!sm) return;
+
+        // Current state (editable)
+        char stateBuffer[64];
+        strncpy(stateBuffer, sm->currentState.c_str(), sizeof(stateBuffer) - 1);
+        stateBuffer[sizeof(stateBuffer) - 1] = '\0';
+        if (ImGui::InputText("Current State", stateBuffer, sizeof(stateBuffer))) {
+            sm->SetState(stateBuffer);
+        }
+
+        ImGui::Text("Previous State: %s", sm->previousState.empty() ? "(none)" : sm->previousState.c_str());
+        ImGui::Text("Time in State: %.2f s", sm->stateTimer);
+
+        if (sm->stateJustChanged) {
+            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "State just changed!");
+        }
+
+        // Parameters
+        if (ImGui::TreeNode("Float Parameters")) {
+            for (auto& p : sm->floatParams) {
+                ImGui::DragFloat(p.first.c_str(), &p.second, 0.1f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Bool Parameters")) {
+            for (auto& p : sm->boolParams) {
+                ImGui::Checkbox(p.first.c_str(), &p.second);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* dialogue = m_World->GetComponent<ECS::DialogueComponent>(entity);
+        if (!dialogue) return;
+
+        // Speaker name
+        char nameBuffer[64];
+        strncpy(nameBuffer, dialogue->speakerName.c_str(), sizeof(nameBuffer) - 1);
+        nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+        if (ImGui::InputText("Speaker Name", nameBuffer, sizeof(nameBuffer))) {
+            dialogue->speakerName = nameBuffer;
+        }
+
+        // Portrait path
+        char portraitBuffer[256];
+        strncpy(portraitBuffer, dialogue->portraitPath.c_str(), sizeof(portraitBuffer) - 1);
+        portraitBuffer[sizeof(portraitBuffer) - 1] = '\0';
+        if (ImGui::InputText("Portrait Path", portraitBuffer, sizeof(portraitBuffer))) {
+            dialogue->portraitPath = portraitBuffer;
+        }
+
+        // Typewriter settings
+        ImGui::DragFloat("Char Delay", &dialogue->charDelay, 0.01f, 0.01f, 0.5f);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Seconds between characters (typewriter effect)");
+        }
+        ImGui::Checkbox("Play Type Sound", &dialogue->playTypeSound);
+
+        // Status
+        ImGui::Separator();
+        ImGui::Text("Lines: %zu", dialogue->dialogueLines.size());
+        ImGui::Text("Current Line: %u", dialogue->currentLine);
+        ImGui::Text("Typing: %s", dialogue->isTyping ? "Yes" : "No");
+        ImGui::Text("Waiting for Input: %s", dialogue->waitingForInput ? "Yes" : "No");
+
+        if (dialogue->IsComplete()) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Dialogue Complete");
+        }
+
+        // Preview current text
+        if (!dialogue->dialogueLines.empty()) {
+            ImGui::Separator();
+            ImGui::Text("Preview:");
+            ImGui::TextWrapped("%s", dialogue->GetVisibleText().c_str());
+        }
+
+        // Dialogue lines editor
+        if (ImGui::TreeNode("Dialogue Lines")) {
+            for (usize i = 0; i < dialogue->dialogueLines.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                char lineBuffer[512];
+                strncpy(lineBuffer, dialogue->dialogueLines[i].c_str(), sizeof(lineBuffer) - 1);
+                lineBuffer[sizeof(lineBuffer) - 1] = '\0';
+                if (ImGui::InputTextMultiline("##line", lineBuffer, sizeof(lineBuffer), ImVec2(-1, 60))) {
+                    dialogue->dialogueLines[i] = lineBuffer;
+                }
+                ImGui::PopID();
+            }
+
+            if (ImGui::Button("Add Line")) {
+                dialogue->dialogueLines.push_back("");
+            }
+            ImGui::TreePop();
+        }
+
+        // Choices editor
+        if (ImGui::TreeNode("Choices")) {
+            for (usize i = 0; i < dialogue->choices.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::TreeNode("Choice", "Choice %zu", i)) {
+                    char choiceBuffer[256];
+                    strncpy(choiceBuffer, dialogue->choices[i].text.c_str(), sizeof(choiceBuffer) - 1);
+                    choiceBuffer[sizeof(choiceBuffer) - 1] = '\0';
+                    if (ImGui::InputText("Text", choiceBuffer, sizeof(choiceBuffer))) {
+                        dialogue->choices[i].text = choiceBuffer;
+                    }
+
+                    char nextBuffer[64];
+                    strncpy(nextBuffer, dialogue->choices[i].nextDialogueId.c_str(), sizeof(nextBuffer) - 1);
+                    nextBuffer[sizeof(nextBuffer) - 1] = '\0';
+                    if (ImGui::InputText("Next Dialogue ID", nextBuffer, sizeof(nextBuffer))) {
+                        dialogue->choices[i].nextDialogueId = nextBuffer;
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+
+            if (ImGui::Button("Add Choice")) {
+                ECS::DialogueComponent::Choice choice;
+                choice.text = "Choice";
+                dialogue->choices.push_back(choice);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DuplicateEntity(ECS::Entity entity) {
+    if (!m_World || entity == ECS::INVALID_ENTITY) return;
+
+    // Create new entity
+    ECS::Entity newEntity = m_World->CreateEntity();
+
+    // Copy name component (with "(Copy)" suffix)
+    if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+        m_World->AddComponent<ECS::NameComponent>(newEntity, name->name + " (Copy)");
+    }
+
+    // Copy transform component (offset slightly so it's visible)
+    if (m_World->HasComponent<ECS::TransformComponent>(entity)) {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        auto& newTransform = m_World->AddComponent<ECS::TransformComponent>(newEntity);
+        newTransform.position = transform->position + Math::Vector3(0.5f, 0.0f, 0.5f);
+        newTransform.rotation = transform->rotation;
+        newTransform.scale = transform->scale;
+    }
+
+    // Copy mesh component
+    if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+        auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+        auto& newMesh = m_World->AddComponent<ECS::MeshComponent>(newEntity);
+        newMesh.vertices = mesh->vertices;
+        newMesh.indices = mesh->indices;
+    }
+
+    // Copy material component
+    if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
+        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
+        auto& newMat = m_World->AddComponent<ECS::MaterialComponent>(newEntity);
+        newMat.baseColor = mat->baseColor;
+        newMat.metallic = mat->metallic;
+        newMat.roughness = mat->roughness;
+        newMat.emissiveColor = mat->emissiveColor;
+        newMat.emissiveStrength = mat->emissiveStrength;
+        newMat.opacity = mat->opacity;
+        newMat.alphaCutoff = mat->alphaCutoff;
+        newMat.doubleSided = mat->doubleSided;
+    }
+
+    // Copy light component
+    if (m_World->HasComponent<ECS::LightComponent>(entity)) {
+        auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
+        auto& newLight = m_World->AddComponent<ECS::LightComponent>(newEntity);
+        newLight.type = light->type;
+        newLight.color = light->color;
+        newLight.intensity = light->intensity;
+        newLight.range = light->range;
+        newLight.castShadows = light->castShadows;
+    }
+
+    // Select the new entity
+    m_SelectedEntity = newEntity;
+    ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
+}
+
+void EditorLayer::DeleteSelectedEntity() {
+    if (!m_World || m_SelectedEntity == ECS::INVALID_ENTITY) return;
+
+    ECS::Entity toDelete = m_SelectedEntity;
+    m_SelectedEntity = ECS::INVALID_ENTITY;
+    m_World->DestroyEntity(toDelete);
+    ENJIN_LOG_INFO(Editor, "Deleted entity %llu", toDelete);
+}
+
+void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
+    if (!m_Camera || !m_Renderer || !m_World) {
+        return;
+    }
+
+    auto* camComp = m_World->GetComponent<ECS::CameraComponent>(cameraEntity);
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(cameraEntity);
+    if (!camComp || !transform) {
+        return;
+    }
+
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) {
+        return;
+    }
+
+    // Get editor camera matrices for projection
+    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+    Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+    projMat.m[5] *= -1.0f; // Flip Y for Vulkan
+    Math::Matrix4 viewProj = projMat * viewMat;
+
+    f32 screenWidth = static_cast<f32>(extent.width);
+    f32 screenHeight = static_cast<f32>(extent.height);
+
+    // Project world position to screen
+    auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
+        Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+        if (clipPos.w <= 0.001f) return false;
+        Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
+        if (ndc.z < 0.0f || ndc.z > 1.0f) return false; // Behind camera or too far
+        screenPos.x = (ndc.x + 1.0f) * 0.5f * screenWidth;
+        screenPos.y = (ndc.y + 1.0f) * 0.5f * screenHeight;
+        return true;
+    };
+
+    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
+
+    // Calculate camera orientation
+    Math::Vector3 camPos = transform->position;
+    Math::Vector3 forward = transform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Math::Vector3 up = transform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    Math::Vector3 right = transform->rotation.Rotate(Math::Vector3(1.0f, 0.0f, 0.0f));
+
+    // Frustum parameters
+    f32 fov = camComp->fieldOfView * (3.14159f / 180.0f);
+    f32 aspect = screenWidth / screenHeight;
+    f32 nearDist = camComp->nearPlane;
+    f32 farDist = Math::Min(camComp->farPlane, 50.0f); // Clamp far plane for visualization
+
+    // Calculate frustum dimensions at near and far planes
+    f32 nearHeight = 2.0f * Math::Tan(fov * 0.5f) * nearDist;
+    f32 nearWidth = nearHeight * aspect;
+    f32 farHeight = 2.0f * Math::Tan(fov * 0.5f) * farDist;
+    f32 farWidth = farHeight * aspect;
+
+    // Calculate frustum corner points
+    Math::Vector3 nearCenter = camPos + forward * nearDist;
+    Math::Vector3 farCenter = camPos + forward * farDist;
+
+    Math::Vector3 nearTopLeft = nearCenter + up * (nearHeight * 0.5f) - right * (nearWidth * 0.5f);
+    Math::Vector3 nearTopRight = nearCenter + up * (nearHeight * 0.5f) + right * (nearWidth * 0.5f);
+    Math::Vector3 nearBottomLeft = nearCenter - up * (nearHeight * 0.5f) - right * (nearWidth * 0.5f);
+    Math::Vector3 nearBottomRight = nearCenter - up * (nearHeight * 0.5f) + right * (nearWidth * 0.5f);
+
+    Math::Vector3 farTopLeft = farCenter + up * (farHeight * 0.5f) - right * (farWidth * 0.5f);
+    Math::Vector3 farTopRight = farCenter + up * (farHeight * 0.5f) + right * (farWidth * 0.5f);
+    Math::Vector3 farBottomLeft = farCenter - up * (farHeight * 0.5f) - right * (farWidth * 0.5f);
+    Math::Vector3 farBottomRight = farCenter - up * (farHeight * 0.5f) + right * (farWidth * 0.5f);
+
+    // Colors - yellow/orange for selected camera, gray for others
+    bool isSelected = (cameraEntity == m_SelectedEntity);
+    ImU32 frustumColor = isSelected ? IM_COL32(255, 200, 50, 180) : IM_COL32(150, 150, 150, 100);
+    ImU32 directionColor = isSelected ? IM_COL32(255, 100, 50, 255) : IM_COL32(200, 100, 50, 180);
+    f32 lineThickness = isSelected ? 2.0f : 1.0f;
+
+    // Draw frustum lines from camera position to far corners
+    auto drawLine3D = [&](const Math::Vector3& from, const Math::Vector3& to, ImU32 color, f32 thickness) {
+        ImVec2 screenFrom, screenTo;
+        if (worldToScreen(from, screenFrom) && worldToScreen(to, screenTo)) {
+            drawList->AddLine(screenFrom, screenTo, color, thickness);
+        }
+    };
+
+    // Draw edges from camera to near plane
+    drawLine3D(camPos, nearTopLeft, frustumColor, lineThickness);
+    drawLine3D(camPos, nearTopRight, frustumColor, lineThickness);
+    drawLine3D(camPos, nearBottomLeft, frustumColor, lineThickness);
+    drawLine3D(camPos, nearBottomRight, frustumColor, lineThickness);
+
+    // Draw near plane rectangle
+    drawLine3D(nearTopLeft, nearTopRight, frustumColor, lineThickness);
+    drawLine3D(nearTopRight, nearBottomRight, frustumColor, lineThickness);
+    drawLine3D(nearBottomRight, nearBottomLeft, frustumColor, lineThickness);
+    drawLine3D(nearBottomLeft, nearTopLeft, frustumColor, lineThickness);
+
+    // Draw far plane rectangle
+    drawLine3D(farTopLeft, farTopRight, frustumColor, lineThickness);
+    drawLine3D(farTopRight, farBottomRight, frustumColor, lineThickness);
+    drawLine3D(farBottomRight, farBottomLeft, frustumColor, lineThickness);
+    drawLine3D(farBottomLeft, farTopLeft, frustumColor, lineThickness);
+
+    // Draw edges from near to far plane
+    drawLine3D(nearTopLeft, farTopLeft, frustumColor, lineThickness);
+    drawLine3D(nearTopRight, farTopRight, frustumColor, lineThickness);
+    drawLine3D(nearBottomLeft, farBottomLeft, frustumColor, lineThickness);
+    drawLine3D(nearBottomRight, farBottomRight, frustumColor, lineThickness);
+
+    // Draw direction arrow (forward direction)
+    f32 arrowLength = 1.5f;
+    Math::Vector3 arrowEnd = camPos + forward * arrowLength;
+    drawLine3D(camPos, arrowEnd, directionColor, lineThickness + 1.0f);
+
+    // Draw up direction (small)
+    Math::Vector3 upEnd = camPos + up * 0.5f;
+    drawLine3D(camPos, upEnd, IM_COL32(50, 255, 50, 200), lineThickness);
+
+    // Draw camera icon (small box at camera position)
+    ImVec2 screenCamPos;
+    if (worldToScreen(camPos, screenCamPos)) {
+        f32 iconSize = isSelected ? 8.0f : 5.0f;
+        drawList->AddRectFilled(
+            ImVec2(screenCamPos.x - iconSize, screenCamPos.y - iconSize),
+            ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
+            isSelected ? IM_COL32(255, 200, 50, 255) : IM_COL32(150, 150, 150, 200)
+        );
+        drawList->AddRect(
+            ImVec2(screenCamPos.x - iconSize, screenCamPos.y - iconSize),
+            ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
+            IM_COL32(255, 255, 255, 255), 0.0f, 0, 1.0f
+        );
     }
 }
 
