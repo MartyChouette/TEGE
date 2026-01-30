@@ -12,8 +12,11 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_Camera = camera;
     m_CameraController = cameraController;
 
+    m_Physics.SetWorld(world);
+
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);
+    m_ControllerSystem.SetPhysics(&m_Physics);
     m_ControllerSystem.SetEnabled(false);
 
     ENJIN_LOG_INFO(Editor, "PlayMode initialized");
@@ -100,6 +103,8 @@ void PlayMode::Update(f32 deltaTime) {
 
     // Update controller system when playing
     if (m_State == PlayState::Playing) {
+        // Physics runs first to update rigidbody positions, then controllers overlay input
+        m_Physics.Update(deltaTime);
         m_ControllerSystem.Update(deltaTime);
     }
 }

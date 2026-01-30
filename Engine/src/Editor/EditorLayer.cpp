@@ -127,7 +127,8 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Gizmo mode shortcuts (1=translate, 2=rotate, 3=scale, 4=toggle space)
     // Using number keys to avoid conflict with WASD camera movement
-    if (!WantsKeyboardInput()) {
+    // Skip during play mode so keys go to game controllers
+    if (!WantsKeyboardInput() && m_PlayMode.IsStopped()) {
         if (Input::IsKeyPressed(KeyCode::Num1)) {
             m_GizmoOperation = GizmoOperation::Translate;
         }
@@ -766,6 +767,22 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::MenuItem("Ground Plane")) {
+                if (m_World) {
+                    ECS::Entity entity = m_World->CreateEntity();
+                    auto& transform = m_World->AddComponent<ECS::TransformComponent>(entity);
+                    transform.scale = Math::Vector3(50.0f, 1.0f, 50.0f);
+                    m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreatePlane(1.0f, 1.0f));
+                    auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
+                    material.baseColor = Math::Vector3(0.5f, 0.5f, 0.5f);
+                    m_World->AddComponent<ECS::NameComponent>(entity, "Ground");
+                    auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                    collider.size = Math::Vector3(50.0f, 0.1f, 50.0f);
+                    collider.center = Math::Vector3(0.0f, -0.05f, 0.0f);
+                    m_SelectedEntity = entity;
+                }
+            }
+            ImGui::Separator();
             if (ImGui::BeginMenu("Light")) {
                 if (ImGui::MenuItem("Directional Light")) {
                     if (m_World) {
@@ -937,7 +954,11 @@ void EditorLayer::DrawMenuBar() {
 }
 
 void EditorLayer::DrawHierarchyPanel() {
-    ImGui::Begin("Hierarchy");
+    ImGuiWindowFlags flags = 0;
+    if (!m_PlayMode.IsStopped()) {
+        flags |= ImGuiWindowFlags_NoInputs;
+    }
+    ImGui::Begin("Hierarchy", nullptr, flags);
 
     if (m_World) {
         // Get all entities
@@ -1020,7 +1041,11 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
 }
 
 void EditorLayer::DrawInspectorPanel() {
-    ImGui::Begin("Inspector");
+    ImGuiWindowFlags flags = 0;
+    if (!m_PlayMode.IsStopped()) {
+        flags |= ImGuiWindowFlags_NoInputs;
+    }
+    ImGui::Begin("Inspector", nullptr, flags);
 
     if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
         // Entity name (editable)

@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Physics/SimplePhysics.h"
 #include <string>
 
 namespace Enjin {
@@ -44,6 +45,9 @@ public:
     // Get controller system for external configuration
     ECS::ControllerSystem* GetControllerSystem() { return &m_ControllerSystem; }
 
+    // Get physics system
+    Physics::SimplePhysics* GetPhysics() { return &m_Physics; }
+
 private:
     void SaveEditorState();
     void RestoreEditorState();
@@ -56,6 +60,9 @@ private:
 
     // Controller system for runtime
     ECS::ControllerSystem m_ControllerSystem;
+
+    // Physics system
+    Physics::SimplePhysics m_Physics;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

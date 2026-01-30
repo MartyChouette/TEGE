@@ -114,6 +114,22 @@ bool ControllerSystem::IsDashPressed() {
     return Input::IsKeyPressed(KeyCode::LeftShift) || Input::IsKeyPressed(KeyCode::E);
 }
 
+bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) {
+    if (m_Physics) {
+        Physics::RaycastHit hit;
+        if (m_Physics->CheckGround(position, 1.0f, hit)) {
+            groundY = hit.point.y;
+            return true;
+        }
+    }
+    // Fallback: Y=0 plane
+    if (position.y <= 0.1f) {
+        groundY = 0.0f;
+        return true;
+    }
+    return false;
+}
+
 void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
@@ -185,10 +201,10 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
     transform.position.x += ctrl.velocity.x * dt;
     transform.position.y += ctrl.velocity.y * dt;
 
-    // Simple ground check (assumes ground at y = 0)
-    // In a real game, you'd use raycasting or collision detection
-    if (transform.position.y <= 0.0f && ctrl.velocity.y <= 0.0f) {
-        transform.position.y = 0.0f;
+    // Ground check via physics raycast with Y=0 fallback
+    f32 groundY = 0.0f;
+    if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+        transform.position.y = groundY;
         ctrl.velocity.y = 0.0f;
         ctrl.isGrounded = true;
         ctrl.isJumping = false;
@@ -430,15 +446,18 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // Apply velocity
     transform.position = transform.position + ctrl.velocity * dt;
 
-    // Simple ground check
-    if (transform.position.y <= 0.0f && ctrl.velocity.y <= 0.0f) {
-        transform.position.y = 0.0f;
-        ctrl.velocity.y = 0.0f;
-        ctrl.isGrounded = true;
-        ctrl.isJumping = false;
-        ctrl.isFalling = false;
-    } else if (ctrl.velocity.y < 0.0f) {
-        ctrl.isGrounded = false;
+    // Ground check via physics raycast with Y=0 fallback
+    {
+        f32 groundY = 0.0f;
+        if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+            transform.position.y = groundY;
+            ctrl.velocity.y = 0.0f;
+            ctrl.isGrounded = true;
+            ctrl.isJumping = false;
+            ctrl.isFalling = false;
+        } else if (ctrl.velocity.y < 0.0f) {
+            ctrl.isGrounded = false;
+        }
     }
 
     // Rotate character to face movement direction
@@ -556,15 +575,18 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     // Apply velocity
     transform.position = transform.position + ctrl.velocity * dt;
 
-    // Simple ground check
-    if (transform.position.y <= 0.0f && ctrl.velocity.y <= 0.0f) {
-        transform.position.y = 0.0f;
-        ctrl.velocity.y = 0.0f;
-        ctrl.isGrounded = true;
-        ctrl.isJumping = false;
-        ctrl.isFalling = false;
-    } else if (ctrl.velocity.y < 0.0f) {
-        ctrl.isGrounded = false;
+    // Ground check via physics raycast with Y=0 fallback
+    {
+        f32 groundY = 0.0f;
+        if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+            transform.position.y = groundY;
+            ctrl.velocity.y = 0.0f;
+            ctrl.isGrounded = true;
+            ctrl.isJumping = false;
+            ctrl.isFalling = false;
+        } else if (ctrl.velocity.y < 0.0f) {
+            ctrl.isGrounded = false;
+        }
     }
 
     // Head bob

@@ -173,6 +173,14 @@ bool VulkanContext::CreateLogicalDevice() {
     queueCreateInfo.pQueuePriorities = &queuePriority;
 
     VkPhysicalDeviceFeatures deviceFeatures{};
+    deviceFeatures.fillModeNonSolid = VK_TRUE;
+
+    // Enable wide lines for debug rendering if supported
+    VkPhysicalDeviceFeatures supportedFeatures;
+    vkGetPhysicalDeviceFeatures(m_PhysicalDevice, &supportedFeatures);
+    if (supportedFeatures.wideLines) {
+        deviceFeatures.wideLines = VK_TRUE;
+    }
 
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME

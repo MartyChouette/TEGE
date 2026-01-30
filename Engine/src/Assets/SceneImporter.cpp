@@ -5,7 +5,9 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Logging/Log.h"
+#include <cfloat>
 #include <filesystem>
 #include <algorithm>
 
@@ -92,7 +94,24 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         }
 
         if (!meshComp.vertices.empty()) {
+            // Compute AABB from vertex positions for auto-generated box collider
+            Math::Vector3 minBounds(FLT_MAX, FLT_MAX, FLT_MAX);
+            Math::Vector3 maxBounds(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            for (const auto& v : meshComp.vertices) {
+                if (v.position.x < minBounds.x) minBounds.x = v.position.x;
+                if (v.position.y < minBounds.y) minBounds.y = v.position.y;
+                if (v.position.z < minBounds.z) minBounds.z = v.position.z;
+                if (v.position.x > maxBounds.x) maxBounds.x = v.position.x;
+                if (v.position.y > maxBounds.y) maxBounds.y = v.position.y;
+                if (v.position.z > maxBounds.z) maxBounds.z = v.position.z;
+            }
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
+
+            // Add box collider from mesh AABB
+            auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
+            collider.center = (minBounds + maxBounds) * 0.5f;
+            collider.size = maxBounds - minBounds;
         }
     }
 
@@ -211,7 +230,24 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
 
         if (!meshComp.vertices.empty()) {
+            // Compute AABB from vertex positions for auto-generated box collider
+            Math::Vector3 minBounds(FLT_MAX, FLT_MAX, FLT_MAX);
+            Math::Vector3 maxBounds(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            for (const auto& v : meshComp.vertices) {
+                if (v.position.x < minBounds.x) minBounds.x = v.position.x;
+                if (v.position.y < minBounds.y) minBounds.y = v.position.y;
+                if (v.position.z < minBounds.z) minBounds.z = v.position.z;
+                if (v.position.x > maxBounds.x) maxBounds.x = v.position.x;
+                if (v.position.y > maxBounds.y) maxBounds.y = v.position.y;
+                if (v.position.z > maxBounds.z) maxBounds.z = v.position.z;
+            }
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
+
+            // Add box collider from mesh AABB
+            auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
+            collider.center = (minBounds + maxBounds) * 0.5f;
+            collider.size = maxBounds - minBounds;
 
             // Add material component if available and options allow
             if (options.importMaterials && materialIndex >= 0 &&
