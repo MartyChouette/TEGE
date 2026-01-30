@@ -7,6 +7,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
+#include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Effects/Weather.h"
@@ -21,6 +22,9 @@ namespace Enjin {
 // Forward declarations
 namespace Renderer {
     class PostProcessing;
+}
+namespace ECS {
+    class RenderSystem;
 }
 
 namespace Editor {
@@ -75,7 +79,8 @@ public:
     void Shutdown();
 
     void Update(f32 deltaTime);
-    void Render(VkCommandBuffer commandBuffer);
+    void RenderOffscreen(VkCommandBuffer commandBuffer);  // Call BEFORE main render pass
+    void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
     // Set the world to edit
     void SetWorld(ECS::World* world) { m_World = world; }
@@ -92,6 +97,9 @@ public:
     bool IsPlaying() const { return m_PlayMode.IsPlaying(); }
     bool IsPaused() const { return m_PlayMode.IsPaused(); }
     PlayMode& GetPlayMode() { return m_PlayMode; }
+
+    // Set render system for offscreen game camera rendering
+    void SetRenderSystem(ECS::RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
 
     // Set post-processing for the settings panel
     void SetPostProcessing(Renderer::PostProcessing* postProcessing) { m_PostProcessing = postProcessing; }
@@ -134,6 +142,8 @@ private:
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
+    void DrawWeatherZoneComponent(ECS::Entity entity);
+    void DrawWaterVolumeComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -168,6 +178,7 @@ private:
     ECS::World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Renderer::CameraController* m_CameraController = nullptr;
+    ECS::RenderSystem* m_RenderSystem = nullptr;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
 
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
@@ -230,7 +241,8 @@ private:
     // Docking layout
     bool m_DockingInitialized = false;
 
-    // Game View dimensions (for future render-to-texture implementation)
+    // Game View render target (offscreen rendering for game camera)
+    std::unique_ptr<Renderer::RenderTarget> m_GameViewRenderTarget;
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
 

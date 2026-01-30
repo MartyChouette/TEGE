@@ -161,6 +161,140 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 }
 
+void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
+    if (!target || !target->IsValid() || !camera || !m_Renderer || !m_Initialized || !m_Pipeline) {
+        return;
+    }
+
+    // Temporarily swap the camera so UpdateUniformBuffer uses the game camera
+    Renderer::Camera* prevCamera = m_Camera;
+    m_Camera = camera;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) {
+        m_Camera = prevCamera;
+        return;
+    }
+
+    // The render target's Begin/End are handled by the caller (EditorLayer::RenderOffscreen)
+    // We just need to bind our pipeline and draw within the active render pass
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    // Set viewport and scissor to match render target size
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(target->GetWidth());
+    viewport.height = static_cast<f32>(target->GetHeight());
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = { target->GetWidth(), target->GetHeight() };
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Render all entities with mesh and transform
+    const auto& entities = m_World->GetAllEntities();
+    for (Entity entity : entities) {
+        if (m_World->HasComponent<TransformComponent>(entity) &&
+            m_World->HasComponent<MeshComponent>(entity)) {
+
+            auto it = m_EntityRenderData.find(entity);
+            if (it == m_EntityRenderData.end()) {
+                SetupEntityBuffers(entity);
+                it = m_EntityRenderData.find(entity);
+                if (it == m_EntityRenderData.end()) continue;
+            }
+            EntityRenderData& renderData = it->second;
+
+            // Update UBOs for this entity (uses swapped m_Camera)
+            UpdateUniformBuffer(entity);
+
+            // Bind pipeline and descriptor set
+            m_Pipeline->Bind(commandBuffer);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+            // Re-set viewport/scissor (pipeline bind may reset dynamic state)
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            // Push constants
+            TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
+            Renderer::PushConstants pushConstants{};
+            pushConstants.model = transform->ToMatrix();
+
+            MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+            Renderer::Texture* boundTexture = nullptr;
+
+            if (material) {
+                pushConstants.baseColor = material->baseColor;
+                pushConstants.metallic = material->metallic;
+                pushConstants.emissiveColor = material->emissiveColor;
+                pushConstants.roughness = material->roughness;
+                pushConstants.emissiveStrength = material->emissiveStrength;
+                pushConstants.opacity = material->opacity;
+                pushConstants.alphaCutoff = material->alphaCutoff;
+
+                if (!material->baseColorTexturePath.empty()) {
+                    auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+                    if (tex && tex->IsValid()) {
+                        boundTexture = tex.get();
+                        material->baseColorTexture = 1;
+                    }
+                }
+
+                pushConstants.flags = 0;
+                if (material->doubleSided) pushConstants.flags |= 1;
+                if (material->castShadows) pushConstants.flags |= 2;
+                if (material->receiveShadows) pushConstants.flags |= 4;
+                pushConstants.flags |= (static_cast<i32>(material->alphaMode) << 8);
+                if (boundTexture != nullptr) pushConstants.flags |= (1 << 16);
+                if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
+                if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
+                if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
+                // Retro flags
+                if (material->flatShading) pushConstants.flags |= (1 << 20);
+                if (material->affineTexturing) pushConstants.flags |= (1 << 21);
+                if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
+                if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+                pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+            } else {
+                pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+                pushConstants.metallic = 0.0f;
+                pushConstants.emissiveColor = Math::Vector3(0.0f);
+                pushConstants.roughness = 0.5f;
+                pushConstants.emissiveStrength = 0.0f;
+                pushConstants.opacity = 1.0f;
+                pushConstants.alphaCutoff = 0.5f;
+                pushConstants.flags = 0;
+            }
+
+            if (boundTexture) {
+                UpdateTextureDescriptor(boundTexture);
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                sizeof(Renderer::PushConstants), &pushConstants);
+
+            VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+        }
+    }
+
+    // Restore previous camera
+    m_Camera = prevCamera;
+}
+
 void RenderSystem::OnEntityAdded(Entity entity) {
     SetupEntityBuffers(entity);
 }
@@ -559,7 +693,7 @@ void RenderSystem::CreateDefaultMesh() {
 
     // Add transform at origin
     TransformComponent& transform = m_World->AddComponent<TransformComponent>(m_DefaultEntity);
-    transform.position = Math::Vector3(0.0f, 0.5f, 0.0f);
+    transform.position = Math::Vector3(0.0f, 1.0f, 0.0f);
     transform.scale = Math::Vector3(1.0f);
 
     // Add sphere mesh using MeshFactory

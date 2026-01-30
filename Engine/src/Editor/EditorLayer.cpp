@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
@@ -241,12 +242,48 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         return;
     }
 
-    // Render to the offscreen target (before main render pass)
+    // Find active game camera entity
+    if (!m_World || !m_RenderSystem) {
+        return;
+    }
+
+    ECS::Entity gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
+    if (gameCameraEntity == ECS::INVALID_ENTITY) {
+        return;
+    }
+
+    auto* cameraComp = m_World->GetComponent<ECS::CameraComponent>(gameCameraEntity);
+    auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
+    if (!cameraComp || !cameraTransform) {
+        return;
+    }
+
+    // Build a temporary Camera object from the CameraComponent + TransformComponent
+    Renderer::Camera gameCamera;
+    f32 aspect = cameraComp->GetAspectRatio(m_GameViewWidth, m_GameViewHeight);
+
+    if (cameraComp->projectionType == ECS::ProjectionType::Perspective) {
+        gameCamera.SetPerspective(cameraComp->fieldOfView, aspect,
+                                   cameraComp->nearPlane, cameraComp->farPlane);
+    } else {
+        f32 halfH = cameraComp->orthoSize;
+        f32 halfW = halfH * aspect;
+        gameCamera.SetOrthographic(-halfW, halfW, -halfH, halfH,
+                                    cameraComp->nearPlane, cameraComp->farPlane);
+    }
+
+    // Set camera position and orientation from entity transform
+    gameCamera.SetPosition(cameraTransform->position);
+
+    // Compute forward/up from the entity's rotation quaternion
+    Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+    Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+    Math::Vector3 target = cameraTransform->position + forward;
+    gameCamera.SetLookAt(cameraTransform->position, target, up);
+
+    // Begin render target pass and render scene geometry
     m_GameViewRenderTarget->Begin(commandBuffer);
-
-    // TODO: Render scene geometry here using RenderSystem with custom camera/render pass
-    // For now, just clears to the background color
-
+    m_RenderSystem->RenderToTarget(m_GameViewRenderTarget.get(), &gameCamera);
     m_GameViewRenderTarget->End(commandBuffer);
 }
 

@@ -19,7 +19,7 @@ void CameraController::SyncFromCamera() {
     // Extract yaw and pitch from the camera's forward vector
     Math::Vector3 forward = m_Camera->GetForward();
 
-    // Pitch is the vertical angle - positive = looking up
+    // Pitch is the vertical angle
     // forward.y = sin(pitch) when cos(pitch) ≈ 1
     m_Pitch = Math::Degrees(Math::Asin(Math::Clamp(forward.y, -1.0f, 1.0f)));
 
@@ -122,7 +122,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         m_RightMouseHeld = false;
     }
 
-    // Movement with WASD/QE
+    // Movement - FPS-style: WASD on horizontal plane, Space/Ctrl for vertical
     f32 speed = m_MoveSpeed;
     if (Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift)) {
         speed *= m_SprintMultiplier;
@@ -130,24 +130,25 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 movement(0.0f, 0.0f, 0.0f);
 
-    // Calculate forward and right vectors on horizontal plane (FPS-style)
-    // This ensures WASD movement stays on the ground plane for intuitive controls
-    f32 yawRad = Math::Radians(m_Yaw);
+    // Project camera vectors onto the horizontal (XZ) plane for WASD movement
+    // Forward: flatten the camera's look direction to the ground plane
+    Math::Vector3 fullForward = m_Camera->GetForward();
+    Math::Vector3 forward(fullForward.x, 0.0f, fullForward.z);
+    f32 fwdLen = forward.Length();
+    if (fwdLen > 0.001f) {
+        forward = forward * (1.0f / fwdLen);
+    } else {
+        // Looking straight up/down: use up vector projected to XZ as forward
+        Math::Vector3 camUp = m_Camera->GetUp();
+        forward = Math::Vector3(camUp.x, 0.0f, camUp.z).Normalized();
+    }
 
-    // Horizontal forward vector (ignores pitch - FPS style ground movement)
-    Math::Vector3 forward;
-    forward.x = Math::Sin(yawRad);
-    forward.y = 0.0f;
-    forward.z = -Math::Cos(yawRad);
+    // Right: flatten the camera's right vector to the ground plane
+    Math::Vector3 fullRight = m_Camera->GetRight();
+    Math::Vector3 right(fullRight.x, 0.0f, fullRight.z);
+    right.Normalize();
 
-    // Right vector (perpendicular to forward on XZ plane)
-    Math::Vector3 right;
-    right.x = Math::Cos(yawRad);
-    right.y = 0.0f;
-    right.z = Math::Sin(yawRad);
-
-    // World up for vertical movement
-    Math::Vector3 up = Math::Vector3(0.0f, 1.0f, 0.0f);
+    Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 
     if (Input::IsKeyDown(KeyCode::W)) {
         movement = movement + forward;
@@ -161,11 +162,11 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     if (Input::IsKeyDown(KeyCode::D)) {
         movement = movement + right;
     }
-    if (Input::IsKeyDown(KeyCode::E) || Input::IsKeyDown(KeyCode::Space)) {
-        movement = movement + up;  // E or Space = move up
+    if (Input::IsKeyDown(KeyCode::Space)) {
+        movement = movement + worldUp;
     }
-    if (Input::IsKeyDown(KeyCode::Q)) {
-        movement = movement - up;  // Q = move down
+    if (Input::IsKeyDown(KeyCode::Q) || Input::IsKeyDown(KeyCode::LeftControl)) {
+        movement = movement - worldUp;
     }
 
     // Normalize and apply movement

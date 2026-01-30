@@ -10,6 +10,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/ShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
 #include <vulkan/vulkan.h>
@@ -40,6 +41,10 @@ public:
     void OnEntityRemoved(Entity entity) override;
 
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+
+    // Render all entities to an offscreen render target using a custom camera
+    // Must be called outside of the main render pass (before BeginMainRenderPass)
+    void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera);
 
 private:
     void RenderEntity(Entity entity);
