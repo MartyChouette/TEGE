@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <memory>
+#include <functional>
 
 /**
  * @file VulkanRenderer.h
@@ -71,6 +72,13 @@ public:
 
     void OnWindowResize(u32 width, u32 height);
 
+    // Flag set by window resize callback to trigger swapchain recreation
+    void SetFramebufferResized(bool resized) { m_FramebufferResized = resized; }
+
+    // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
+    using ResizeCallback = std::function<void(u32, u32)>;
+    void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }
+
 private:
     bool CreateSurface();
     bool CreateRenderPass();
@@ -101,6 +109,9 @@ private:
 
     bool m_IsFrameStarted = false;
     bool m_IsMainRenderPassActive = false;
+    bool m_FramebufferResized = false;
+
+    std::vector<ResizeCallback> m_ResizeCallbacks;
 };
 
 } // namespace Renderer

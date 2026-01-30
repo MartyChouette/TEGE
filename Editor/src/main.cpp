@@ -28,6 +28,13 @@ public:
             return;
         }
 
+        // Register window resize callback to proactively trigger swapchain recreation
+        GetWindow()->SetResizeCallback([this](Enjin::u32, Enjin::u32) {
+            if (m_Renderer) {
+                m_Renderer->SetFramebufferResized(true);
+            }
+        });
+
         // Setup camera
         m_Camera = std::make_unique<Enjin::Renderer::Camera>();
         m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
