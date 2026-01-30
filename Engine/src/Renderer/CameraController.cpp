@@ -106,10 +106,10 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         movement = movement + right;
     }
     if (Input::IsKeyDown(KeyCode::Space) || Input::IsKeyDown(KeyCode::E)) {
-        movement = movement + worldUp;
+        movement = movement - worldUp;
     }
     if (Input::IsKeyDown(KeyCode::Q) || Input::IsKeyDown(KeyCode::LeftControl)) {
-        movement = movement - worldUp;
+        movement = movement + worldUp;
     }
 
     // Normalize and apply movement
