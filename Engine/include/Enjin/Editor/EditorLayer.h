@@ -226,8 +226,8 @@ private:
 
     // Grid settings
     bool m_ShowGrid = true;
-    f32 m_GridSize = 20.0f;
-    i32 m_GridLines = 20;
+    f32 m_GridSize = 200.0f;
+    i32 m_GridLines = 200;
 
     // Play mode
     PlayMode m_PlayMode;

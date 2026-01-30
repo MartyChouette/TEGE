@@ -404,7 +404,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         if (extent.width > 0 && extent.height > 0) {
             Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
             Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
-            projMat.m[5] *= -1.0f;
             Math::Matrix4 viewProj = projMat * viewMat;
             f32 sw = static_cast<f32>(extent.width);
             f32 sh = static_cast<f32>(extent.height);
@@ -417,7 +416,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 f32 ndcZ = clipPos.z / clipPos.w;
                 if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
                 screenPos.x = (ndcX + 1.0f) * 0.5f * sw;
-                screenPos.y = (1.0f - ndcY) * 0.5f * sh;
+                screenPos.y = (ndcY + 1.0f) * 0.5f * sh;
                 return true;
             };
 
@@ -2138,8 +2137,8 @@ void EditorLayer::DrawSettingsPanel() {
     if (ImGui::CollapsingHeader("Grid", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Show Grid", &m_ShowGrid);
         if (m_ShowGrid) {
-            ImGui::DragFloat("Grid Size", &m_GridSize, 1.0f, 1.0f, 100.0f);
-            ImGui::DragInt("Grid Lines", &m_GridLines, 1, 5, 50);
+            ImGui::DragFloat("Grid Size", &m_GridSize, 1.0f, 1.0f, 500.0f);
+            ImGui::DragInt("Grid Lines", &m_GridLines, 1, 5, 400);
         }
     }
 
@@ -2888,7 +2887,6 @@ void EditorLayer::DrawGameViewPanel() {
                     gameCameraComp->nearPlane,
                     gameCameraComp->farPlane
                 );
-                projMat.m[5] *= -1.0f; // Flip Y for Vulkan-style
                 Math::Matrix4 viewProj = projMat * viewMat;
 
                 auto worldToPreview = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
@@ -2975,7 +2973,6 @@ void EditorLayer::DrawGameViewPanel() {
                     gameCameraComp->nearPlane,
                     gameCameraComp->farPlane
                 );
-                projMat.m[5] *= -1.0f;
                 Math::Matrix4 viewProj = projMat * viewMat;
 
                 auto worldToPreviewW = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
@@ -3347,9 +3344,6 @@ void EditorLayer::DrawGizmos() {
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
 
-    // Flip projection for Vulkan (Y is flipped compared to OpenGL)
-    projMat.m[5] *= -1.0f;
-
     // Build entity transform matrix
     Math::Matrix4 entityMat = Math::Matrix4::Translation(transform->position) *
                                transform->rotation.ToMatrix() *
@@ -3418,9 +3412,6 @@ void EditorLayer::DrawGrid() {
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
 
-    // Flip projection for Vulkan (Y is flipped compared to OpenGL)
-    projMat.m[5] *= -1.0f;
-
     Math::Matrix4 viewProj = projMat * viewMat;
 
     ImDrawList* drawList = ImGui::GetBackgroundDrawList();
@@ -3443,9 +3434,9 @@ void EditorLayer::DrawGrid() {
 
         // Convert NDC to screen coordinates
         // NDC X: -1 = left, +1 = right -> screen 0 to width
-        // NDC Y: +1 = top, -1 = bottom -> screen 0 to height (Y inverted for screen coords)
+        // NDC Y: -1 = top, +1 = bottom -> screen 0 to height (Vulkan clip convention)
         screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
-        screenPos.y = (1.0f - ndcY) * 0.5f * screenHeight;  // Invert Y for screen coords
+        screenPos.y = (ndcY + 1.0f) * 0.5f * screenHeight;
 
         return true;
     };
@@ -4330,7 +4321,6 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
     // Get editor camera matrices for projection
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
-    projMat.m[5] *= -1.0f; // Flip Y for Vulkan
     Math::Matrix4 viewProj = projMat * viewMat;
 
     f32 screenWidth = static_cast<f32>(extent.width);
@@ -4345,7 +4335,7 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
         f32 ndcZ = clipPos.z / clipPos.w;
         if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
         screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
-        screenPos.y = (1.0f - ndcY) * 0.5f * screenHeight;  // Invert Y for screen coords
+        screenPos.y = (ndcY + 1.0f) * 0.5f * screenHeight;
         return true;
     };
 

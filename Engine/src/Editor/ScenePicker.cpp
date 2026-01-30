@@ -19,7 +19,7 @@ Ray ScenePicker::ScreenToRay(const Renderer::Camera* camera, f32 screenX, f32 sc
 
     // Convert screen coords to NDC (-1 to 1)
     f32 ndcX = (2.0f * screenX) / viewportWidth - 1.0f;
-    f32 ndcY = 1.0f - (2.0f * screenY) / viewportHeight; // Flip Y
+    f32 ndcY = (2.0f * screenY) / viewportHeight - 1.0f; // Vulkan: Y down in clip space matches screen Y
 
     // Get inverse view-projection matrix
     Math::Matrix4 viewProj = camera->GetViewProjectionMatrix();
