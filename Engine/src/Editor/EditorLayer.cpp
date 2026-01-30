@@ -1803,6 +1803,81 @@ void EditorLayer::DrawSettingsPanel() {
         if (m_Camera) {
             Math::Vector3 pos = m_Camera->GetPosition();
             ImGui::Text("Position: %.2f, %.2f, %.2f", pos.x, pos.y, pos.z);
+
+            f32 yaw = m_CameraController ? m_CameraController->GetYaw() : 0.0f;
+            f32 pitch = m_CameraController ? m_CameraController->GetPitch() : 0.0f;
+            ImGui::Text("Yaw: %.1f  Pitch: %.1f", yaw, pitch);
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Game Camera:");
+
+        // Find the active game camera
+        ECS::Entity gameCamEntity = ECS::INVALID_ENTITY;
+        if (m_World) {
+            gameCamEntity = ECS::CameraManager::GetActiveCamera(m_World);
+        }
+
+        if (gameCamEntity != ECS::INVALID_ENTITY && m_Camera && m_CameraController) {
+            auto* gameCamComp = m_World->GetComponent<ECS::CameraComponent>(gameCamEntity);
+            auto* gameCamTransform = m_World->GetComponent<ECS::TransformComponent>(gameCamEntity);
+
+            if (gameCamComp && gameCamTransform) {
+                // Show current game camera info
+                std::string camName = "Game Camera";
+                if (m_World->HasComponent<ECS::NameComponent>(gameCamEntity)) {
+                    camName = m_World->GetComponent<ECS::NameComponent>(gameCamEntity)->name;
+                }
+                ImGui::Text("Active: %s", camName.c_str());
+
+                // Apply editor view to game camera
+                if (ImGui::Button("Apply Editor View to Game Camera")) {
+                    // Copy editor camera position
+                    gameCamTransform->position = m_Camera->GetPosition();
+
+                    // Copy editor camera rotation from yaw/pitch
+                    f32 yawRad = Math::Radians(m_CameraController->GetYaw());
+                    f32 pitchRad = Math::Radians(m_CameraController->GetPitch());
+                    Math::Quaternion yawQuat(Math::Vector3(0.0f, 1.0f, 0.0f), yawRad);
+                    Math::Quaternion pitchQuat(Math::Vector3(1.0f, 0.0f, 0.0f), pitchRad);
+                    gameCamTransform->rotation = yawQuat * pitchQuat;
+
+                    // Copy projection settings
+                    if (m_CameraController->IsOrthographic()) {
+                        gameCamComp->projectionType = ECS::ProjectionType::Orthographic;
+                        gameCamComp->orthoSize = m_CameraController->GetOrthoSize();
+                    } else {
+                        gameCamComp->projectionType = ECS::ProjectionType::Perspective;
+                        // Keep the game camera's own FOV
+                    }
+
+                    ENJIN_LOG_INFO(Editor, "Applied editor view to game camera '%s'", camName.c_str());
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy editor camera position, rotation, and projection to the active game camera");
+
+                // Apply game camera view to editor
+                if (ImGui::Button("Snap Editor to Game Camera")) {
+                    m_Camera->SetPosition(gameCamTransform->position);
+
+                    Math::Vector3 forward = gameCamTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+                    Math::Vector3 up = gameCamTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+                    m_Camera->SetLookAt(gameCamTransform->position,
+                                         gameCamTransform->position + forward, up);
+                    m_CameraController->SyncFromCamera();
+
+                    if (gameCamComp->projectionType == ECS::ProjectionType::Orthographic) {
+                        m_CameraController->SetOrthoSize(gameCamComp->orthoSize);
+                        m_CameraController->SetOrthographic(true);
+                    } else {
+                        m_CameraController->SetOrthographic(false);
+                    }
+
+                    ENJIN_LOG_INFO(Editor, "Snapped editor to game camera '%s'", camName.c_str());
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move editor camera to match the game camera's view");
+            }
+        } else {
+            ImGui::TextDisabled("No active game camera in scene");
         }
     }
 
@@ -1839,21 +1914,129 @@ void EditorLayer::DrawSettingsPanel() {
     }
 
     if (ImGui::CollapsingHeader("Rendering")) {
-        // TODO: Rendering settings (MSAA, shadows, etc.)
-        ImGui::TextDisabled("Rendering settings not yet implemented");
+        if (m_RenderSystem) {
+            // Shadows
+            bool shadows = m_RenderSystem->IsShadowsEnabled();
+            if (ImGui::Checkbox("Shadows", &shadows)) {
+                m_RenderSystem->SetShadowsEnabled(shadows);
+            }
+
+            // Backface culling
+            bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
+            if (ImGui::Checkbox("Backface Culling", &culling)) {
+                m_RenderSystem->SetBackfaceCullingEnabled(culling);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
+
+            // Wireframe
+            bool wireframe = m_RenderSystem->IsWireframeEnabled();
+            if (ImGui::Checkbox("Wireframe", &wireframe)) {
+                m_RenderSystem->SetWireframeEnabled(wireframe);
+            }
+
+            ImGui::Separator();
+
+            // Ambient lighting
+            Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
+            f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
+            if (ImGui::ColorEdit3("Ambient Color", ambient)) {
+                m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
+            }
+
+            f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
+            if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
+                m_RenderSystem->SetAmbientIntensity(ambientIntensity);
+            }
+        } else {
+            ImGui::TextDisabled("RenderSystem not available");
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Post-Processing:");
+
+        if (m_PostProcessing) {
+            auto& settings = m_PostProcessing->GetSettings();
+
+            // Tone mapping
+            const char* toneModes[] = { "None", "Reinhard", "Reinhard Ext", "ACES", "Uncharted 2", "AgX" };
+            int toneMode = static_cast<int>(settings.toneMappingMode);
+            if (ImGui::Combo("Tone Mapping", &toneMode, toneModes, 6)) {
+                settings.toneMappingMode = static_cast<u32>(toneMode);
+            }
+
+            ImGui::DragFloat("Exposure", &settings.exposure, 0.05f, 0.1f, 10.0f);
+            ImGui::DragFloat("Gamma", &settings.gamma, 0.05f, 0.5f, 3.0f);
+
+            // FXAA
+            bool fxaa = settings.fxaaEnabled != 0;
+            if (ImGui::Checkbox("FXAA", &fxaa)) {
+                settings.fxaaEnabled = fxaa ? 1 : 0;
+            }
+
+            // Bloom
+            bool bloom = settings.bloomEnabled != 0;
+            if (ImGui::Checkbox("Bloom", &bloom)) {
+                settings.bloomEnabled = bloom ? 1 : 0;
+            }
+            if (bloom) {
+                ImGui::DragFloat("Bloom Threshold", &settings.bloomThreshold, 0.05f, 0.0f, 5.0f);
+                ImGui::DragFloat("Bloom Intensity", &settings.bloomIntensity, 0.05f, 0.0f, 5.0f);
+            }
+
+            // Vignette
+            bool vignette = settings.vignetteEnabled != 0;
+            if (ImGui::Checkbox("Vignette", &vignette)) {
+                settings.vignetteEnabled = vignette ? 1 : 0;
+            }
+            if (vignette) {
+                ImGui::DragFloat("Vignette Intensity", &settings.vignetteIntensity, 0.05f, 0.0f, 3.0f);
+            }
+
+            // Film Grain
+            bool grain = settings.filmGrainEnabled != 0;
+            if (ImGui::Checkbox("Film Grain", &grain)) {
+                settings.filmGrainEnabled = grain ? 1 : 0;
+            }
+            if (grain) {
+                ImGui::DragFloat("Grain Intensity", &settings.filmGrainIntensity, 0.005f, 0.0f, 0.5f);
+            }
+
+            // Chromatic Aberration
+            bool chrAb = settings.chromaticAberrationEnabled != 0;
+            if (ImGui::Checkbox("Chromatic Aberration", &chrAb)) {
+                settings.chromaticAberrationEnabled = chrAb ? 1 : 0;
+            }
+            if (chrAb) {
+                ImGui::DragFloat("CA Intensity", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.1f);
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Color Grading:");
+            ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
+            ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.0f, 3.0f);
+            ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 3.0f);
+            f32 filter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
+            if (ImGui::ColorEdit3("Color Filter", filter)) {
+                settings.colorFilter = Math::Vector3(filter[0], filter[1], filter[2]);
+            }
+        } else {
+            ImGui::TextDisabled("PostProcessing not available");
+        }
     }
 
     if (ImGui::CollapsingHeader("Keyboard Shortcuts")) {
-        ImGui::BulletText("WASD - Move camera");
-        ImGui::BulletText("Right Mouse + Drag - Look around");
-        ImGui::BulletText("Middle Mouse + Drag - Orbit (with selection)");
-        ImGui::BulletText("Scroll Wheel - Zoom");
+        ImGui::BulletText("RMB + WASD - Fly camera (horizontal plane)");
+        ImGui::BulletText("Space / Q - Move up / down");
+        ImGui::BulletText("Shift - Sprint");
+        ImGui::BulletText("Left Ctrl - Move down (alt)");
+        ImGui::BulletText("RMB + Drag - Look around");
+        ImGui::BulletText("MMB + Drag - Orbit around selection");
+        ImGui::BulletText("Scroll Wheel - Adjust speed / zoom");
         ImGui::BulletText("F - Focus on selected entity");
         ImGui::BulletText("Delete - Delete selected entity");
         ImGui::BulletText("Ctrl+D - Duplicate entity");
         ImGui::BulletText("1/2/3 - Translate/Rotate/Scale gizmo");
         ImGui::BulletText("4 - Toggle Local/World space");
-        ImGui::BulletText("Double-click - Focus on entity");
     }
 
     ImGui::End();

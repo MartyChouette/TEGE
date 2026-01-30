@@ -46,6 +46,22 @@ public:
     // Must be called outside of the main render pass (before BeginMainRenderPass)
     void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera);
 
+    // Runtime rendering settings
+    bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
+    void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
+
+    bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
+    void SetBackfaceCullingEnabled(bool enabled);
+
+    bool IsWireframeEnabled() const { return m_WireframeMode; }
+    void SetWireframeEnabled(bool enabled);
+
+    f32 GetAmbientIntensity() const { return m_AmbientIntensity; }
+    void SetAmbientIntensity(f32 intensity) { m_AmbientIntensity = intensity; }
+
+    Math::Vector3 GetAmbientColor() const { return m_AmbientColor; }
+    void SetAmbientColor(const Math::Vector3& color) { m_AmbientColor = color; }
+
 private:
     void RenderEntity(Entity entity);
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
@@ -72,6 +88,10 @@ private:
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     bool m_ShadowsEnabled = true;
+    bool m_BackfaceCulling = false;
+    bool m_WireframeMode = false;
+    f32 m_AmbientIntensity = 1.0f;
+    Math::Vector3 m_AmbientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
 
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;

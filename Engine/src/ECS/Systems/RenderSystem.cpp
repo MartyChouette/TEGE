@@ -309,9 +309,9 @@ void RenderSystem::CreatePipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_NONE;  // Disable culling for now
+    config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
@@ -564,8 +564,8 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 
     // Update Lighting UBO with all lights in the scene
     LightingUBO lighting{};
-    lighting.ambientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
-    lighting.ambientIntensity = 1.0f;
+    lighting.ambientColor = m_AmbientColor;
+    lighting.ambientIntensity = m_AmbientIntensity;
     lighting.cameraPosition = m_Camera->GetPosition();
     lighting._pad0 = 0.0f;
     lighting.directionalLightCount = 0;
@@ -682,6 +682,26 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         materialGPU = MaterialGPU::FromComponent(defaultMat);
     }
     m_MaterialBuffers[currentFrame]->UploadData(&materialGPU, sizeof(materialGPU));
+}
+
+void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
+    if (m_BackfaceCulling == enabled) return;
+    m_BackfaceCulling = enabled;
+    // Recreate pipeline with new cull mode
+    if (m_Pipeline && m_Initialized) {
+        m_Pipeline.reset();
+        CreatePipeline();
+    }
+}
+
+void RenderSystem::SetWireframeEnabled(bool enabled) {
+    if (m_WireframeMode == enabled) return;
+    m_WireframeMode = enabled;
+    // Recreate pipeline with new polygon mode
+    if (m_Pipeline && m_Initialized) {
+        m_Pipeline.reset();
+        CreatePipeline();
+    }
 }
 
 void RenderSystem::CreateDefaultMesh() {
