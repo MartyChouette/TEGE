@@ -218,10 +218,10 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Ground plane entity creation (Entity > Ground Plane menu)
 - Editor input locking during play mode (NoInputs on panels, shortcut suppression)
 
-**Planned:**
-- AI/Navmesh integration (framework exists, needs gameplay logic)
-- Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
+**Next Up:**
 - Skeletal animation (framework exists, needs sampling/skinning)
+- Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
+- AI/Navmesh integration (framework exists, needs gameplay logic)
 
 ## Common Tasks
 
