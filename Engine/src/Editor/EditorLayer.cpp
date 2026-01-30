@@ -14,6 +14,9 @@
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/CameraTrigger.h"
+#include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -166,9 +169,44 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
+        // Save scene (Ctrl+S)
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::S)) {
+            if (!m_CurrentScenePath.empty()) {
+                SaveScene(m_CurrentScenePath);
+            } else {
+                // No path yet — open Save As dialog
+                std::vector<FileFilter> filters = {
+                    { "Enjin Scene", "*.enjin" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
+                if (!path.empty()) {
+                    SaveScene(path);
+                }
+            }
+        }
+
         // Focus on selected entity (F key)
         if (Input::IsKeyPressed(KeyCode::F) && m_SelectedEntity != ECS::INVALID_ENTITY) {
             FocusOnEntity(m_SelectedEntity);
+        }
+    }
+
+    // Focus mode toggle (F11) and exit (Escape)
+    // F11 toggles between editor view and fullscreen game view while playing
+    if (Input::IsKeyPressed(KeyCode::F11)) {
+        m_FocusMode = !m_FocusMode;
+        if (m_FocusMode && m_PlayMode.IsStopped()) {
+            m_PlayMode.Play();  // Auto-play when entering focus mode
+        }
+    }
+    if (Input::IsKeyPressed(KeyCode::Escape)) {
+        if (m_FocusMode) {
+            // Escape exits focus mode back to editor (game keeps playing)
+            m_FocusMode = false;
+        } else if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+            // Escape in editor view stops play mode
+            m_PlayMode.Stop();
         }
     }
 
@@ -254,12 +292,31 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         return;
     }
 
+    // In focus mode, render at full display resolution
+    if (m_FocusMode) {
+        ImGuiIO& io = ImGui::GetIO();
+        m_GameViewWidth = static_cast<u32>(io.DisplaySize.x);
+        m_GameViewHeight = static_cast<u32>(io.DisplaySize.y);
+    }
+
     // Resize render target if game view panel dimensions changed
     if (m_GameViewRenderTarget->GetWidth() != m_GameViewWidth ||
         m_GameViewRenderTarget->GetHeight() != m_GameViewHeight) {
         if (m_GameViewWidth > 0 && m_GameViewHeight > 0) {
             m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+            // Recreate effect pipelines for the (potentially new) render pass
+            if (m_RenderSystem) {
+                m_RenderSystem->RecreateEffectPipelinesForRenderPass(
+                    m_GameViewRenderTarget->GetRenderPass());
+            }
         }
+    }
+
+    // One-shot: update effect pipelines for the render target's render pass
+    if (!m_EffectPipelinesUpdated && m_RenderSystem && m_GameViewRenderTarget->IsValid()) {
+        m_RenderSystem->RecreateEffectPipelinesForRenderPass(
+            m_GameViewRenderTarget->GetRenderPass());
+        m_EffectPipelinesUpdated = true;
     }
 
     // Find game camera entity (use user-selected camera, or fall back to active camera)
@@ -281,6 +338,50 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
     if (gameCameraEntity == ECS::INVALID_ENTITY) {
         return;
+    }
+
+    // Camera zone detection: find the player entity and check CameraTrigger zones
+    m_CameraZoneOverride = ECS::INVALID_ENTITY;
+    {
+        // Find player entity (first entity with any CharacterController component)
+        ECS::Entity playerEntity = ECS::INVALID_ENTITY;
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<ECS::Platformer2DController>(entity) ||
+                m_World->HasComponent<ECS::TopDown2DController>(entity) ||
+                m_World->HasComponent<ECS::TopDown3DController>(entity) ||
+                m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
+                m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+                playerEntity = entity;
+                break;
+            }
+        }
+
+        if (playerEntity != ECS::INVALID_ENTITY) {
+            auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);
+            if (playerTransform) {
+                i32 bestCamPriority = INT_MIN;
+                for (ECS::Entity entity : m_World->GetAllEntities()) {
+                    if (!m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) continue;
+                    auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+                    auto* trigTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (trigger && trigTransform && trigger->priority > bestCamPriority) {
+                        if (trigger->ContainsPoint(trigTransform->position, playerTransform->position)) {
+                            // Validate the target camera exists
+                            if (trigger->targetCamera != ECS::INVALID_ENTITY &&
+                                m_World->HasComponent<ECS::CameraComponent>(trigger->targetCamera)) {
+                                m_CameraZoneOverride = trigger->targetCamera;
+                                bestCamPriority = trigger->priority;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Override game camera if a zone-driven camera was found
+        if (m_CameraZoneOverride != ECS::INVALID_ENTITY) {
+            gameCameraEntity = m_CameraZoneOverride;
+        }
     }
 
     auto* cameraComp = m_World->GetComponent<ECS::CameraComponent>(gameCameraEntity);
@@ -312,9 +413,179 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     Math::Vector3 target = cameraTransform->position + forward;
     gameCamera.SetLookAt(cameraTransform->position, target, up);
 
-    // Begin render target pass and render scene geometry
+    // Find active weather zone containing the game camera
+    ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+    i32 bestWeatherPriority = INT_MIN;
+
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                    activeWeatherZone = zone;
+                    bestWeatherPriority = zone->priority;
+                }
+            }
+        }
+    }
+
+    // Find active temperature zone containing the game camera
+    ECS::TemperatureZoneComponent* activeTempZone = nullptr;
+    i32 bestTempPriority = INT_MIN;
+
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
+            auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (zone && zoneTransform && zone->priority > bestTempPriority) {
+                if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                    activeTempZone = zone;
+                    bestTempPriority = zone->priority;
+                }
+            }
+        }
+    }
+
+    // Configure weather system from active zone
+    bool hasWeatherParticles = false;
+    bool isRain = false;
+    if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
+        Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
+
+        // Check if temperature zone overrides precipitation type
+        // Weather types: 2=Rain, 3=HeavyRain, 4=Snow, 6=Storm
+        bool hasPrecipitation = (activeWeatherZone->weatherType == 2 ||
+                                  activeWeatherZone->weatherType == 3 ||
+                                  activeWeatherZone->weatherType == 4 ||
+                                  activeWeatherZone->weatherType == 6);
+
+        if (hasPrecipitation && activeTempZone) {
+            f32 temp = activeTempZone->temperature;
+            if (temp <= 0.0f) {
+                // Freezing: force snow regardless of weather zone type
+                wType = Effects::WeatherType::Snow;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                f32 snowInt = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetSnowIntensity(snowInt);
+                isRain = false;
+            } else if (temp <= 5.0f) {
+                // Near-freezing: sleet mix (both rain and snow at reduced intensity)
+                f32 blend = temp / 5.0f;  // 0 at 0C, 1 at 5C
+                f32 baseIntensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                m_WeatherSystem.SetRainIntensity(baseIntensity * blend);
+                m_WeatherSystem.SetSnowIntensity(baseIntensity * (1.0f - blend));
+                isRain = (blend > 0.5f);
+            } else {
+                // Warm: force rain regardless of weather zone type
+                wType = (activeWeatherZone->weatherType == 6)
+                    ? Effects::WeatherType::Storm
+                    : Effects::WeatherType::Rain;
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+                f32 rainInt = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                m_WeatherSystem.SetRainIntensity(rainInt);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+                isRain = true;
+            }
+        } else {
+            // No temperature zone override - use weather zone as-is
+            m_WeatherSystem.SetWeather(wType, 0.1f);
+
+            if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                activeWeatherZone->weatherType == 6) {
+                m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+                isRain = true;
+            } else if (activeWeatherZone->weatherType == 4) {
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
+            } else {
+                m_WeatherSystem.SetRainIntensity(0.0f);
+                m_WeatherSystem.SetSnowIntensity(0.0f);
+            }
+        }
+        m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
+        m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
+        m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
+        m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
+
+        m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
+        m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
+        m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+
+        if (activeWeatherZone->lightningEnabled) {
+            m_WeatherSystem.SetLightningInterval(
+                activeWeatherZone->lightningMinInterval,
+                activeWeatherZone->lightningMaxInterval);
+        }
+
+        m_WeatherSystem.Update(m_LastDeltaTime, cameraTransform->position);
+
+        hasWeatherParticles = (activeWeatherZone->weatherType == 2 ||
+                               activeWeatherZone->weatherType == 3 ||
+                               activeWeatherZone->weatherType == 4 ||
+                               activeWeatherZone->weatherType == 6);
+
+        // Feed fog parameters to render system for shader-based fog
+        m_RenderSystem->SetFogParams(activeWeatherZone->fogDensity,
+                                     activeWeatherZone->fogStart,
+                                     activeWeatherZone->fogEnd, 0.1f);
+        m_RenderSystem->SetFogColor(activeWeatherZone->fogColor);
+
+        // Feed snow intensity for surface accumulation (temperature-aware)
+        f32 snowAccum = 0.0f;
+        if (activeTempZone && hasPrecipitation) {
+            // Temperature zone drives whether snow accumulates
+            if (activeTempZone->temperature <= 0.0f) {
+                f32 intensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                snowAccum = intensity;
+            } else if (activeTempZone->temperature <= 5.0f) {
+                f32 blend = activeTempZone->temperature / 5.0f;
+                f32 intensity = (activeWeatherZone->weatherType == 4)
+                    ? activeWeatherZone->snowIntensity
+                    : activeWeatherZone->rainIntensity;
+                snowAccum = intensity * (1.0f - blend);
+            }
+        } else if (activeWeatherZone->weatherType == 4) {
+            snowAccum = activeWeatherZone->snowIntensity;
+        }
+        m_RenderSystem->SetSnowIntensity(snowAccum);
+    } else {
+        m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+        m_WindSystem.ClearZoneOverride();
+        m_RenderSystem->SetFogParams(0.0f, 20.0f, 100.0f, 0.1f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.5f, 0.6f));
+        m_RenderSystem->SetSnowIntensity(0.0f);
+    }
+
+    // Notify render system whether rain is active (drives water ripple shader)
+    m_RenderSystem->SetRainActive(isRain);
+
+    // Begin render target pass and render scene geometry + effects
+    u32 rtWidth = m_GameViewRenderTarget->GetWidth();
+    u32 rtHeight = m_GameViewRenderTarget->GetHeight();
+
     m_GameViewRenderTarget->Begin(commandBuffer);
     m_RenderSystem->RenderToTarget(m_GameViewRenderTarget.get(), &gameCamera);
+
+    // Render grass inside the render target pass
+    m_RenderSystem->RenderGrass(rtWidth, rtHeight);
+
+    // Render weather particles inside the render target pass
+    if (hasWeatherParticles) {
+        m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+    }
+
     m_GameViewRenderTarget->End(commandBuffer);
 }
 
@@ -336,6 +607,29 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
 
     ImGuiIO& io = ImGui::GetIO();
+
+    // Focus mode: fullscreen game view, no editor panels
+    if (m_FocusMode) {
+        ImGuiWindowFlags focusFlags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+        ImGui::SetNextWindowPos(ImVec2(0, 0));
+        ImGui::SetNextWindowSize(io.DisplaySize);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::Begin("##FocusView", nullptr, focusFlags);
+        ImGui::PopStyleVar(2);
+
+        VkDescriptorSet texId = m_GameViewRenderTarget ? m_GameViewRenderTarget->GetImGuiTextureID() : VK_NULL_HANDLE;
+        if (texId != VK_NULL_HANDLE) {
+            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)),
+                         io.DisplaySize);
+        }
+
+        ImGui::End();
+        m_ImGuiLayer->EndFrame(commandBuffer);
+        return;
+    }
 
     // Menu bar
     DrawMenuBar();
@@ -883,6 +1177,24 @@ void EditorLayer::DrawMenuBar() {
                         m_SelectedEntity = entity;
                     }
                 }
+                if (ImGui::MenuItem("Camera Trigger")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::CameraTriggerComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Camera Trigger");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Temperature Zone")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::TemperatureZoneComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Temperature Zone");
+                        m_SelectedEntity = entity;
+                    }
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenu();
@@ -911,6 +1223,7 @@ void EditorLayer::DrawMenuBar() {
         if (m_PlayMode.IsStopped()) {
             if (ImGui::Button(" > Play ")) {
                 m_PlayMode.Play();
+                m_FocusMode = true;  // Auto-enter focus mode when playing
             }
         } else if (m_PlayMode.IsPlaying()) {
             if (ImGui::Button(" || Pause ")) {
@@ -919,6 +1232,7 @@ void EditorLayer::DrawMenuBar() {
         } else {  // Paused
             if (ImGui::Button(" > Resume ")) {
                 m_PlayMode.Resume();
+                m_FocusMode = true;  // Re-enter focus on resume
             }
         }
         ImGui::PopStyleColor();
@@ -929,6 +1243,7 @@ void EditorLayer::DrawMenuBar() {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
             if (ImGui::Button(" [] Stop ")) {
                 m_PlayMode.Stop();
+                m_FocusMode = false;  // Return to editor on stop
             }
             ImGui::PopStyleColor();
         }
@@ -1132,9 +1447,24 @@ void EditorLayer::DrawInspectorPanel() {
             DrawVegetationComponent(m_SelectedEntity);
         }
 
+        // Camera Trigger component
+        if (m_World->HasComponent<ECS::CameraTriggerComponent>(m_SelectedEntity)) {
+            DrawCameraTriggerComponent(m_SelectedEntity);
+        }
+
+        // Temperature Zone component
+        if (m_World->HasComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity)) {
+            DrawTemperatureZoneComponent(m_SelectedEntity);
+        }
+
         // Notes component
         if (m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
             DrawNotesComponent(m_SelectedEntity);
+        }
+
+        // Text component
+        if (m_World->HasComponent<ECS::TextComponent>(m_SelectedEntity)) {
+            DrawTextComponent(m_SelectedEntity);
         }
 
         // Character Controller components
@@ -1216,6 +1546,11 @@ void EditorLayer::DrawInspectorPanel() {
             if (!m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
                 if (ImGui::MenuItem("Notes")) {
                     m_World->AddComponent<ECS::NotesComponent>(m_SelectedEntity);
+                }
+            }
+            if (!m_World->HasComponent<ECS::TextComponent>(m_SelectedEntity)) {
+                if (ImGui::MenuItem("Text")) {
+                    m_World->AddComponent<ECS::TextComponent>(m_SelectedEntity);
                 }
             }
             ImGui::Separator();
@@ -1392,6 +1727,16 @@ void EditorLayer::DrawInspectorPanel() {
                         m_World->AddComponent<ECS::VegetationComponent>(m_SelectedEntity);
                     }
                 }
+                if (!m_World->HasComponent<ECS::CameraTriggerComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Camera Trigger")) {
+                        m_World->AddComponent<ECS::CameraTriggerComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Temperature Zone")) {
+                        m_World->AddComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity);
+                    }
+                }
                 ImGui::EndMenu();
             }
 
@@ -1472,7 +1817,16 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool meshOpen = ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MeshCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::MeshComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (meshOpen) {
         ECS::MeshComponent* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
         if (!mesh) return;
 
@@ -1482,7 +1836,16 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool matOpen = ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MaterialCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::MaterialComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (matOpen) {
         ECS::MaterialComponent* material = m_World->GetComponent<ECS::MaterialComponent>(entity);
         if (!material) return;
 
@@ -1595,7 +1958,16 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLightComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool lightOpen = ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("LightCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::LightComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (lightOpen) {
         ECS::LightComponent* light = m_World->GetComponent<ECS::LightComponent>(entity);
         if (!light) return;
 
@@ -1655,7 +2027,16 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool camOpen = ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("CameraCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::CameraComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (camOpen) {
         ECS::CameraComponent* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
         if (!camera) return;
 
@@ -1716,7 +2097,16 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool notesOpen = ImGui::CollapsingHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("NotesCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::NotesComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (notesOpen) {
         ECS::NotesComponent* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
         if (!notes) return;
 
@@ -1733,8 +2123,121 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawTextComponent(ECS::Entity entity) {
+    bool textOpen = ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TextCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TextComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (textOpen) {
+        ECS::TextComponent* text = m_World->GetComponent<ECS::TextComponent>(entity);
+        if (!text) return;
+
+        // Multi-line text input
+        static char textBuffer[8192];
+        strncpy(textBuffer, text->text.c_str(), sizeof(textBuffer) - 1);
+        textBuffer[sizeof(textBuffer) - 1] = '\0';
+
+        ImGui::TextDisabled("Text content (multi-line)");
+        if (ImGui::InputTextMultiline("##TextContent", textBuffer, sizeof(textBuffer),
+                                       ImVec2(-1, 120), ImGuiInputTextFlags_AllowTabInput)) {
+            text->text = textBuffer;
+            text->dirty = true;
+        }
+
+        // Font path with browse button
+        static char fontPathBuffer[512];
+        strncpy(fontPathBuffer, text->fontPath.c_str(), sizeof(fontPathBuffer) - 1);
+        fontPathBuffer[sizeof(fontPathBuffer) - 1] = '\0';
+
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 80);
+        if (ImGui::InputText("##FontPath", fontPathBuffer, sizeof(fontPathBuffer))) {
+            text->fontPath = fontPathBuffer;
+            text->dirty = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##Font")) {
+            std::string path = FileDialog::OpenFile("Select Font", {{ "Font Files", "*.ttf;*.otf" }});
+            if (!path.empty()) {
+                text->fontPath = path;
+                text->dirty = true;
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Font");
+
+        // Font size
+        if (ImGui::DragFloat("Font Size", &text->fontSize, 0.5f, 4.0f, 256.0f)) {
+            text->dirty = true;
+        }
+
+        // Texture dimensions
+        int texW = static_cast<int>(text->textureWidth);
+        int texH = static_cast<int>(text->textureHeight);
+        if (ImGui::DragInt("Texture Width", &texW, 16, 64, 4096)) {
+            text->textureWidth = static_cast<u32>(texW);
+            text->dirty = true;
+        }
+        if (ImGui::DragInt("Texture Height", &texH, 16, 64, 4096)) {
+            text->textureHeight = static_cast<u32>(texH);
+            text->dirty = true;
+        }
+
+        // Wrap width
+        if (ImGui::DragFloat("Wrap Width", &text->wrapWidth, 1.0f, 32.0f, 4096.0f)) {
+            text->dirty = true;
+        }
+
+        // Padding
+        if (ImGui::DragFloat("Padding X", &text->paddingX, 0.5f, 0.0f, 256.0f)) {
+            text->dirty = true;
+        }
+        if (ImGui::DragFloat("Padding Y", &text->paddingY, 0.5f, 0.0f, 256.0f)) {
+            text->dirty = true;
+        }
+
+        // Alignment
+        const char* alignItems[] = { "Left", "Center", "Right" };
+        int currentAlign = static_cast<int>(text->horizontalAlign);
+        if (ImGui::Combo("Alignment", &currentAlign, alignItems, 3)) {
+            text->horizontalAlign = static_cast<ECS::TextAlign>(currentAlign);
+            text->dirty = true;
+        }
+
+        // Text color
+        f32 textCol[3] = { text->textColor.x, text->textColor.y, text->textColor.z };
+        if (ImGui::ColorEdit3("Text Color", textCol)) {
+            text->textColor = Math::Vector3(textCol[0], textCol[1], textCol[2]);
+            text->dirty = true;
+        }
+
+        // Background color and opacity
+        f32 bgCol[3] = { text->bgColor.x, text->bgColor.y, text->bgColor.z };
+        if (ImGui::ColorEdit3("Background", bgCol)) {
+            text->bgColor = Math::Vector3(bgCol[0], bgCol[1], bgCol[2]);
+            text->dirty = true;
+        }
+        if (ImGui::DragFloat("BG Opacity", &text->bgOpacity, 0.01f, 0.0f, 1.0f)) {
+            text->dirty = true;
+        }
+    }
+}
+
 void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool wzOpen = ImGui::CollapsingHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("WeatherZoneCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::WeatherZoneComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (wzOpen) {
         ECS::WeatherZoneComponent* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
         if (!zone) return;
 
@@ -1796,7 +2299,16 @@ void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool wvOpen = ImGui::CollapsingHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("WaterVolumeCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::WaterVolumeComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (wvOpen) {
         ECS::WaterVolumeComponent* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
         if (!volume) return;
 
@@ -1826,7 +2338,16 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool gvOpen = ImGui::CollapsingHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("GrassVolumeCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::GrassVolumeComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (gvOpen) {
         ECS::GrassVolumeComponent* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
         if (!grass) return;
 
@@ -1868,7 +2389,16 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool vegOpen = ImGui::CollapsingHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("VegetationCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::VegetationComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (vegOpen) {
         ECS::VegetationComponent* veg = m_World->GetComponent<ECS::VegetationComponent>(entity);
         if (!veg) return;
 
@@ -1879,6 +2409,110 @@ void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
         ImGui::Spacing();
         ImGui::TextDisabled("Red vertex color channel = sway weight");
         ImGui::TextDisabled("Trunk (red=0) stays still, leaves (red=1) sway");
+    }
+}
+
+void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Camera Trigger", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+        if (!trigger) return;
+
+        // Half-extents
+        f32 halfExt[3] = { trigger->halfExtents.x, trigger->halfExtents.y, trigger->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents", halfExt, 0.5f, 0.1f, 500.0f)) {
+            trigger->halfExtents = Math::Vector3(halfExt[0], halfExt[1], halfExt[2]);
+        }
+
+        // Priority
+        ImGui::DragInt("Priority", &trigger->priority, 1, -100, 100);
+
+        // Blend time
+        ImGui::DragFloat("Blend Time", &trigger->blendTime, 0.05f, 0.0f, 5.0f, "%.2f s");
+
+        // Target camera dropdown
+        std::vector<ECS::Entity> cameraEntities;
+        if (m_World) {
+            for (ECS::Entity e : m_World->GetAllEntities()) {
+                if (m_World->HasComponent<ECS::CameraComponent>(e)) {
+                    cameraEntities.push_back(e);
+                }
+            }
+        }
+
+        std::string currentName = "(None)";
+        if (trigger->targetCamera != ECS::INVALID_ENTITY) {
+            if (m_World->HasComponent<ECS::NameComponent>(trigger->targetCamera)) {
+                currentName = m_World->GetComponent<ECS::NameComponent>(trigger->targetCamera)->name;
+            } else {
+                currentName = "Camera (Entity " + std::to_string(trigger->targetCamera) + ")";
+            }
+        }
+
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::BeginCombo("Target Camera", currentName.c_str())) {
+            // None option
+            if (ImGui::Selectable("(None)", trigger->targetCamera == ECS::INVALID_ENTITY)) {
+                trigger->targetCamera = ECS::INVALID_ENTITY;
+            }
+            for (ECS::Entity camEntity : cameraEntities) {
+                std::string name;
+                if (m_World->HasComponent<ECS::NameComponent>(camEntity)) {
+                    name = m_World->GetComponent<ECS::NameComponent>(camEntity)->name;
+                } else {
+                    name = "Camera (Entity " + std::to_string(camEntity) + ")";
+                }
+                bool isSelected = (camEntity == trigger->targetCamera);
+                if (ImGui::Selectable(name.c_str(), isSelected)) {
+                    trigger->targetCamera = camEntity;
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Zone activates target camera when player enters");
+
+        // Remove component button
+        if (ImGui::Button("Remove##CameraTrigger")) {
+            m_World->RemoveComponent<ECS::CameraTriggerComponent>(entity);
+        }
+    }
+}
+
+void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Temperature Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* tempZone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+        if (!tempZone) return;
+
+        // Half-extents
+        f32 halfExt[3] = { tempZone->halfExtents.x, tempZone->halfExtents.y, tempZone->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents##TempZone", halfExt, 0.5f, 0.1f, 500.0f)) {
+            tempZone->halfExtents = Math::Vector3(halfExt[0], halfExt[1], halfExt[2]);
+        }
+
+        // Temperature slider with color-coded display
+        ImGui::DragFloat("Temperature (C)", &tempZone->temperature, 0.5f, -40.0f, 50.0f, "%.1f");
+
+        // Visual temperature indicator
+        if (tempZone->IsFreezing()) {
+            ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 1.0f), "Freezing (Snow/Ice)");
+        } else if (tempZone->IsNearFreezing()) {
+            ImGui::TextColored(ImVec4(0.7f, 0.8f, 0.9f, 1.0f), "Near Freezing (Sleet/Mix)");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.4f, 1.0f), "Warm (Rain)");
+        }
+
+        // Priority
+        ImGui::DragInt("Priority##TempZone", &tempZone->priority, 1, -100, 100);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Affects precipitation type in overlapping weather zones");
+
+        // Remove component
+        if (ImGui::Button("Remove##TemperatureZone")) {
+            m_World->RemoveComponent<ECS::TemperatureZoneComponent>(entity);
+        }
     }
 }
 
@@ -2374,6 +3008,104 @@ void EditorLayer::DrawSettingsPanel() {
         }
     }
 
+    if (ImGui::CollapsingHeader("Gamepad")) {
+        // Global dead zone setting
+        f32 deadZone = Input::GetGamepadDeadZone();
+        if (ImGui::SliderFloat("Dead Zone", &deadZone, 0.01f, 0.5f, "%.2f")) {
+            Input::SetGamepadDeadZone(deadZone);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Analog stick dead zone threshold");
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Show status of each gamepad slot
+        for (i32 gp = 0; gp < 4; ++gp) {
+            bool connected = Input::IsGamepadConnected(gp);
+            ImGui::PushID(gp);
+
+            // Header with connection indicator
+            ImVec4 headerCol = connected ? ImVec4(0.2f, 0.6f, 0.2f, 1.0f) : ImVec4(0.4f, 0.4f, 0.4f, 1.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, headerCol);
+            char label[64];
+            if (connected) {
+                snprintf(label, sizeof(label), "Gamepad %d: %s", gp, Input::GetGamepadName(gp));
+            } else {
+                snprintf(label, sizeof(label), "Gamepad %d: Not Connected", gp);
+            }
+            bool open = ImGui::TreeNode(label);
+            ImGui::PopStyleColor();
+
+            if (open) {
+                if (connected) {
+                    // Stick visualization using progress bars
+                    Math::Vector2 leftStick = Input::GetGamepadLeftStick(gp);
+                    Math::Vector2 rightStick = Input::GetGamepadRightStick(gp);
+
+                    ImGui::Text("Left Stick:");
+                    ImGui::SameLine(120);
+                    ImGui::Text("X: %+.2f  Y: %+.2f", leftStick.x, leftStick.y);
+
+                    ImGui::Text("Right Stick:");
+                    ImGui::SameLine(120);
+                    ImGui::Text("X: %+.2f  Y: %+.2f", rightStick.x, rightStick.y);
+
+                    // Triggers
+                    f32 lt = Input::GetGamepadLeftTrigger(gp);
+                    f32 rt = Input::GetGamepadRightTrigger(gp);
+                    ImGui::Text("L Trigger:");
+                    ImGui::SameLine(120);
+                    ImGui::ProgressBar(lt, ImVec2(100, 14), "");
+                    ImGui::Text("R Trigger:");
+                    ImGui::SameLine(120);
+                    ImGui::ProgressBar(rt, ImVec2(100, 14), "");
+
+                    // Button states in a compact grid
+                    ImGui::Spacing();
+                    ImGui::Text("Buttons:");
+
+                    struct BtnInfo { const char* name; GamepadButton btn; };
+                    BtnInfo buttons[] = {
+                        {"A", GamepadButton::A}, {"B", GamepadButton::B},
+                        {"X", GamepadButton::X}, {"Y", GamepadButton::Y},
+                        {"LB", GamepadButton::LeftBumper}, {"RB", GamepadButton::RightBumper},
+                        {"Back", GamepadButton::Back}, {"Start", GamepadButton::Start},
+                    };
+
+                    for (int b = 0; b < 8; ++b) {
+                        bool pressed = Input::IsGamepadButtonDown(buttons[b].btn, gp);
+                        if (pressed) {
+                            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
+                        }
+                        ImGui::SmallButton(buttons[b].name);
+                        if (pressed) {
+                            ImGui::PopStyleColor();
+                        }
+                        if (b < 7 && (b % 4) != 3) ImGui::SameLine();
+                    }
+                } else {
+                    ImGui::TextDisabled("Connect a controller to see live input");
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+        ImGui::TextDisabled("Gamepad Button Mapping:");
+        ImGui::BulletText("Left Stick - Movement");
+        ImGui::BulletText("Right Stick - Camera look");
+        ImGui::BulletText("A - Jump");
+        ImGui::BulletText("B - Crouch");
+        ImGui::BulletText("LB / L3 - Sprint");
+        ImGui::BulletText("RB - Dash");
+        ImGui::BulletText("LT / RT - Move down / up (editor)");
+        ImGui::BulletText("D-pad Up/Down - Adjust editor speed");
+    }
+
     if (ImGui::CollapsingHeader("Keyboard Shortcuts")) {
         ImGui::BulletText("RMB + WASD - Fly camera (horizontal plane)");
         ImGui::BulletText("Space / Q - Move up / down");
@@ -2387,6 +3119,67 @@ void EditorLayer::DrawSettingsPanel() {
         ImGui::BulletText("Ctrl+D - Duplicate entity");
         ImGui::BulletText("1/2/3 - Translate/Rotate/Scale gizmo");
         ImGui::BulletText("4 - Toggle Local/World space");
+        ImGui::BulletText("Ctrl+S - Save scene");
+        ImGui::BulletText("F11 - Toggle focus mode");
+    }
+
+    if (ImGui::CollapsingHeader("Fonts")) {
+        static char bodyFontPath[512] = "";
+        static char headingFontPath[512] = "";
+        static char monoFontPath[512] = "";
+        static f32 bodySize = 15.0f;
+        static f32 headingSize = 20.0f;
+        static f32 monoSize = 14.0f;
+
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 80);
+        ImGui::InputText("##BodyFont", bodyFontPath, sizeof(bodyFontPath));
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##BodyFont")) {
+            std::string path = FileDialog::OpenFile("Select Font", {{ "Font Files", "*.ttf;*.otf" }});
+            if (!path.empty()) {
+                strncpy(bodyFontPath, path.c_str(), sizeof(bodyFontPath) - 1);
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Body");
+        ImGui::DragFloat("Body Size", &bodySize, 0.5f, 8.0f, 48.0f);
+
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 80);
+        ImGui::InputText("##HeadingFont", headingFontPath, sizeof(headingFontPath));
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##HeadingFont")) {
+            std::string path = FileDialog::OpenFile("Select Font", {{ "Font Files", "*.ttf;*.otf" }});
+            if (!path.empty()) {
+                strncpy(headingFontPath, path.c_str(), sizeof(headingFontPath) - 1);
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Heading");
+        ImGui::DragFloat("Heading Size", &headingSize, 0.5f, 8.0f, 64.0f);
+
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 80);
+        ImGui::InputText("##MonoFont", monoFontPath, sizeof(monoFontPath));
+        ImGui::SameLine();
+        if (ImGui::Button("Browse##MonoFont")) {
+            std::string path = FileDialog::OpenFile("Select Font", {{ "Font Files", "*.ttf;*.otf" }});
+            if (!path.empty()) {
+                strncpy(monoFontPath, path.c_str(), sizeof(monoFontPath) - 1);
+            }
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Mono");
+        ImGui::DragFloat("Mono Size", &monoSize, 0.5f, 8.0f, 48.0f);
+
+        if (ImGui::Button("Reload Fonts")) {
+            GUI::EditorFontConfig fontConfig;
+            fontConfig.bodyFontPath = bodyFontPath;
+            fontConfig.headingFontPath = headingFontPath;
+            fontConfig.monoFontPath = monoFontPath;
+            fontConfig.bodyFontSize = bodySize;
+            fontConfig.headingFontSize = headingSize;
+            fontConfig.monoFontSize = monoSize;
+            m_ImGuiLayer->ReloadFonts(fontConfig);
+        }
     }
 
     ImGui::End();
@@ -2801,6 +3594,13 @@ void EditorLayer::DrawGameViewPanel() {
             m_PlayMode.Play();
         }
     }
+    ImGui::SameLine();
+    if (ImGui::Button("Focus (F11)")) {
+        m_FocusMode = true;
+        if (m_PlayMode.IsStopped()) {
+            m_PlayMode.Play();
+        }
+    }
 
     // Camera selector dropdown (when multiple cameras exist)
     if (cameraEntities.size() > 1) {
@@ -2924,207 +3724,38 @@ void EditorLayer::DrawGameViewPanel() {
                 drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
             }
 
-            // Find weather zone and water volume entities that contain the camera
-            ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
-            ECS::TransformComponent* activeWeatherTransform = nullptr;
-            i32 bestWeatherPriority = INT_MIN;
+            // Weather/grass/fog are now rendered in RenderOffscreen() inside the render target pass.
+            // Here we only draw ImGui overlays (lightning flash, water).
 
-            ECS::WaterVolumeComponent* activeWaterVolume = nullptr;
-            ECS::TransformComponent* activeWaterTransform = nullptr;
-            i32 bestWaterPriority = INT_MIN;
+            // Find weather zone for lightning overlay
+            ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+            i32 bestWeatherPriority = INT_MIN;
 
             if (m_World && gameCameraTransform) {
                 for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    // Check weather zones
                     if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
                         auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
                         auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
                         if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
                             if (zone->ContainsPoint(zoneTransform->position, gameCameraTransform->position)) {
                                 activeWeatherZone = zone;
-                                activeWeatherTransform = zoneTransform;
                                 bestWeatherPriority = zone->priority;
                             }
                         }
                     }
-                    // Check water volumes
-                    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                        auto* volumeTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                        if (volume && volumeTransform && volume->priority > bestWaterPriority) {
-                            if (volume->ContainsPoint(volumeTransform->position, gameCameraTransform->position)) {
-                                activeWaterVolume = volume;
-                                activeWaterTransform = volumeTransform;
-                                bestWaterPriority = volume->priority;
-                            }
-                        }
-                    }
                 }
             }
 
-            // Render weather effects from active zone
-            if (activeWeatherZone && activeWeatherZone->weatherType > 0 && gameCameraComp && gameCameraTransform) {
-                // Set weather from zone component
-                Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
-                m_WeatherSystem.SetWeather(wType, 0.1f);
-
-                // Only set the particle intensity matching the weather type
-                // (Rain/HeavyRain/Storm = rain only, Snow = snow only, others = none)
-                if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
-                    activeWeatherZone->weatherType == 6) {
-                    m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
-                    m_WeatherSystem.SetSnowIntensity(0.0f);
-                } else if (activeWeatherZone->weatherType == 4) {
-                    m_WeatherSystem.SetRainIntensity(0.0f);
-                    m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
-                } else {
-                    m_WeatherSystem.SetRainIntensity(0.0f);
-                    m_WeatherSystem.SetSnowIntensity(0.0f);
-                }
-                m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
-                m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
-                m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
-                m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
-
-                // Wind: feed zone data into WindSystem, then let weather system query it
-                m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
-                m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
-                m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
-
-                // Lightning frequency
-                if (activeWeatherZone->lightningEnabled) {
-                    m_WeatherSystem.SetLightningInterval(
-                        activeWeatherZone->lightningMinInterval,
-                        activeWeatherZone->lightningMaxInterval);
-                }
-
-                m_WeatherSystem.Update(m_LastDeltaTime, gameCameraTransform->position);
-
-                // Build camera matrices for projection
-                Math::Vector3 forward = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-                Math::Vector3 up = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-                Math::Matrix4 viewMat = Math::Matrix4::LookAt(
-                    gameCameraTransform->position,
-                    gameCameraTransform->position + forward,
-                    up
-                );
-                f32 aspect = previewWidth / previewHeight;
-                Math::Matrix4 projMat = Math::Matrix4::Perspective(
-                    gameCameraComp->fieldOfView * (3.14159f / 180.0f),
-                    aspect,
-                    gameCameraComp->nearPlane,
-                    gameCameraComp->farPlane
-                );
-                Math::Matrix4 viewProj = projMat * viewMat;
-
-                auto worldToPreview = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
-                    Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
-                    if (clipPos.w <= 0.001f) return false;
-                    Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
-                    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f || ndc.z > 1.0f) {
-                        return false;
-                    }
-                    screenPos.x = p0.x + (ndc.x + 1.0f) * 0.5f * previewWidth;
-                    screenPos.y = p0.y + (ndc.y + 1.0f) * 0.5f * previewHeight;
-                    return true;
-                };
-
-                // Fog overlay
-                if (activeWeatherZone->fogDensity > 0.01f) {
-                    u8 fogAlpha = static_cast<u8>(activeWeatherZone->fogDensity * 150.0f);
-                    ImU32 fogOverlay = IM_COL32(
-                        static_cast<int>(activeWeatherZone->fogColor.x * 255),
-                        static_cast<int>(activeWeatherZone->fogColor.y * 255),
-                        static_cast<int>(activeWeatherZone->fogColor.z * 255),
-                        fogAlpha
-                    );
-                    drawList->AddRectFilled(p0, p1, fogOverlay);
-                }
-
-                // 3D weather particles are now rendered by WeatherRenderer via RenderSystem
-                // (called during the Vulkan render pass, not ImGui)
-                // The RenderSystem::RenderWeatherParticles() call happens in the main render loop
-                // Here we just trigger the render if RenderSystem is available
-                if (m_RenderSystem) {
-                    bool isRain = (activeWeatherZone->weatherType == 2 ||
-                                   activeWeatherZone->weatherType == 3 ||
-                                   activeWeatherZone->weatherType == 6);
-                    m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain);
-                }
-
-                // Lightning flash
-                if (activeWeatherZone->weatherType == 6 && activeWeatherZone->lightningEnabled &&
-                    m_WeatherSystem.IsLightningActive()) {
-                    f32 intensity = m_WeatherSystem.GetLightningIntensity();
-                    u8 flashAlpha = static_cast<u8>(intensity * 200.0f);
-                    ImU32 flashColor = IM_COL32(255, 255, 255, flashAlpha);
-                    drawList->AddRectFilled(p0, p1, flashColor);
-                }
-            } else {
-                // No active weather zone - clear weather and wind override
-                m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
-                m_WindSystem.ClearZoneOverride();
+            // Lightning flash overlay (ImGui, not Vulkan)
+            if (activeWeatherZone && activeWeatherZone->weatherType == 6 &&
+                activeWeatherZone->lightningEnabled && m_WeatherSystem.IsLightningActive()) {
+                f32 intensity = m_WeatherSystem.GetLightningIntensity();
+                u8 flashAlpha = static_cast<u8>(intensity * 200.0f);
+                ImU32 flashColor = IM_COL32(255, 255, 255, flashAlpha);
+                drawList->AddRectFilled(p0, p1, flashColor);
             }
 
-            // Render grass volumes (always, independent of weather zones)
-            if (m_RenderSystem) {
-                m_RenderSystem->RenderGrass();
-            }
-
-            // Draw water from active volume
-            if (activeWaterVolume && activeWaterTransform && gameCameraComp && gameCameraTransform) {
-                f32 waterY = activeWaterTransform->position.y; // Water surface at entity's Y
-
-                // Build camera matrices if not already built
-                Math::Vector3 forward = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
-                Math::Vector3 up = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
-                Math::Matrix4 viewMat = Math::Matrix4::LookAt(
-                    gameCameraTransform->position,
-                    gameCameraTransform->position + forward,
-                    up
-                );
-                f32 aspect = previewWidth / previewHeight;
-                Math::Matrix4 projMat = Math::Matrix4::Perspective(
-                    gameCameraComp->fieldOfView * (3.14159f / 180.0f),
-                    aspect,
-                    gameCameraComp->nearPlane,
-                    gameCameraComp->farPlane
-                );
-                Math::Matrix4 viewProj = projMat * viewMat;
-
-                auto worldToPreviewW = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
-                    Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
-                    if (clipPos.w <= 0.001f) return false;
-                    Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
-                    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f || ndc.z > 1.0f) {
-                        return false;
-                    }
-                    screenPos.x = p0.x + (ndc.x + 1.0f) * 0.5f * previewWidth;
-                    screenPos.y = p0.y + (ndc.y + 1.0f) * 0.5f * previewHeight;
-                    return true;
-                };
-
-                // Project water plane edges using volume bounds
-                f32 halfX = activeWaterVolume->halfExtents.x;
-                f32 halfZ = activeWaterVolume->halfExtents.z;
-                Math::Vector3 waterCenter = activeWaterTransform->position;
-                ImVec2 waterLeft, waterRight;
-                bool leftOk = worldToPreviewW(Math::Vector3(waterCenter.x - halfX, waterY, waterCenter.z), waterLeft);
-                bool rightOk = worldToPreviewW(Math::Vector3(waterCenter.x + halfX, waterY, waterCenter.z), waterRight);
-                if (leftOk && rightOk) {
-                    ImU32 waterCol = IM_COL32(
-                        static_cast<int>(activeWaterVolume->waterColor.x * 255),
-                        static_cast<int>(activeWaterVolume->waterColor.y * 255),
-                        static_cast<int>(activeWaterVolume->waterColor.z * 255),
-                        static_cast<int>(activeWaterVolume->opacity * 180)
-                    );
-                    drawList->AddRectFilled(
-                        ImVec2(p0.x, Math::Max(waterLeft.y, p0.y)),
-                        ImVec2(p1.x, p1.y),
-                        waterCol
-                    );
-                }
-            }
+            // Water is now rendered as a 3D mesh in RenderToTarget (no ImGui overlay needed)
 
             // Preview area border
             drawList->AddRect(p0, p1, IM_COL32(100, 100, 100, 255));
@@ -3536,12 +4167,14 @@ void EditorLayer::BuildGridMesh() {
     m_GridAxisZStart = m_GridRegularCount + 2;
     m_GridVertexCount = totalVertices;
 
-    // 16 floats per vertex: pos(3) normal(3) uv(2) color(4) tangent(4)
-    std::vector<f32> verts(totalVertices * 16, 0.0f);
+    // 24 floats per vertex: pos(3) normal(3) uv(2) color(4) tangent(4) boneWeights(4) boneIndices(4)
+    // Must match pipeline vertex stride (sizeof(f32) * 24 = 96 bytes)
+    constexpr u32 FLOATS_PER_VERT = 24;
+    std::vector<f32> verts(totalVertices * FLOATS_PER_VERT, 0.0f);
     u32 v = 0;
 
     auto addVert = [&](f32 x, f32 y, f32 z) {
-        usize base = static_cast<usize>(v) * 16;
+        usize base = static_cast<usize>(v) * FLOATS_PER_VERT;
         verts[base + 0] = x;
         verts[base + 1] = y;
         verts[base + 2] = z;
@@ -3550,6 +4183,7 @@ void EditorLayer::BuildGridMesh() {
         verts[base + 9]  = 1.0f; // vertex color G
         verts[base + 10] = 1.0f; // vertex color B
         verts[base + 11] = 1.0f; // vertex color A
+        // boneWeights (base+16..19) and boneIndices (base+20..23) stay zero
         v++;
     };
 
@@ -3717,12 +4351,43 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
 
         ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
+        if (ImGui::TreeNode("Input##Platformer2D")) {
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+                bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
+                ImGui::TextColored(connected ? ImVec4(0.3f,0.9f,0.3f,1) : ImVec4(0.9f,0.3f,0.3f,1),
+                    connected ? "Connected: %s" : "Not Connected", connected ? Input::GetGamepadName(ctrl->gamepadIndex) : "");
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Movement")) {
-            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
-            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
-            ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
-            ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
-            ImGui::DragFloat("Air Control", &ctrl->airControl, 0.05f, 0.0f, 1.0f);
+            // Movement mode toggle
+            const char* moveMode = ctrl->gridMovement ? "Grid (Tile-based)" : "Free";
+            if (ImGui::BeginCombo("Movement Mode##plat2d", moveMode)) {
+                if (ImGui::Selectable("Free", !ctrl->gridMovement)) ctrl->gridMovement = false;
+                if (ImGui::Selectable("Grid (Tile-based)", ctrl->gridMovement)) ctrl->gridMovement = true;
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Free: smooth continuous movement\nGrid: snap to tile cells");
+
+            if (ctrl->gridMovement) {
+                ImGui::DragFloat("Cell Size##plat2d", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
+                ImGui::DragFloat("Grid Move Speed##plat2d", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the entity moves between grid cells");
+            } else {
+                ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+                ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
+                ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
+                ImGui::DragFloat("Air Control", &ctrl->airControl, 0.05f, 0.0f, 1.0f);
+            }
             ImGui::TreePop();
         }
 
@@ -3763,10 +4428,42 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
 
         ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
-        ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
-        ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
-        ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
-        ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
+        if (ImGui::TreeNode("Input##TopDown2D")) {
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+                bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
+                ImGui::TextColored(connected ? ImVec4(0.3f,0.9f,0.3f,1) : ImVec4(0.9f,0.3f,0.3f,1),
+                    connected ? "Connected: %s" : "Not Connected", connected ? Input::GetGamepadName(ctrl->gamepadIndex) : "");
+            }
+            ImGui::TreePop();
+        }
+
+        // Movement mode toggle
+        {
+            const char* moveMode = ctrl->gridMovement ? "Grid (Tile-based)" : "Free";
+            if (ImGui::BeginCombo("Movement Mode##td2d", moveMode)) {
+                if (ImGui::Selectable("Free", !ctrl->gridMovement)) ctrl->gridMovement = false;
+                if (ImGui::Selectable("Grid (Tile-based)", ctrl->gridMovement)) ctrl->gridMovement = true;
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Free: smooth continuous movement\nGrid: snap to tile cells");
+        }
+
+        if (ctrl->gridMovement) {
+            ImGui::DragFloat("Cell Size##td2d", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
+            ImGui::DragFloat("Grid Move Speed##td2d", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+        } else {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            ImGui::DragFloat("Acceleration", &ctrl->acceleration, 1.0f, 1.0f, 200.0f);
+            ImGui::DragFloat("Deceleration", &ctrl->deceleration, 1.0f, 1.0f, 200.0f);
+        }
 
         ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
         if (ctrl->rotateToFaceMovement) {
@@ -3792,9 +4489,38 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
 
         ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
+        if (ImGui::TreeNode("Input##TopDown3D")) {
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+                bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
+                ImGui::TextColored(connected ? ImVec4(0.3f,0.9f,0.3f,1) : ImVec4(0.9f,0.3f,0.3f,1),
+                    connected ? "Connected: %s" : "Not Connected", connected ? Input::GetGamepadName(ctrl->gamepadIndex) : "");
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Movement")) {
-            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
-            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            const char* moveMode = ctrl->gridMovement ? "Grid (Tile-based)" : "Free";
+            if (ImGui::BeginCombo("Movement Mode##td3d", moveMode)) {
+                if (ImGui::Selectable("Free", !ctrl->gridMovement)) ctrl->gridMovement = false;
+                if (ImGui::Selectable("Grid (Tile-based)", ctrl->gridMovement)) ctrl->gridMovement = true;
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Free: smooth continuous movement\nGrid: snap to tile cells");
+
+            if (ctrl->gridMovement) {
+                ImGui::DragFloat("Cell Size##td3d", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
+                ImGui::DragFloat("Grid Move Speed##td3d", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+            } else {
+                ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            }
             ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
             ImGui::DragFloat("Rotation Speed", &ctrl->rotationSpeed, 10.0f, 0.0f, 1440.0f);
             ImGui::TreePop();
@@ -3820,9 +4546,38 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
 
         ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
+        if (ImGui::TreeNode("Input##ThirdPerson")) {
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+                bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
+                ImGui::TextColored(connected ? ImVec4(0.3f,0.9f,0.3f,1) : ImVec4(0.9f,0.3f,0.3f,1),
+                    connected ? "Connected: %s" : "Not Connected", connected ? Input::GetGamepadName(ctrl->gamepadIndex) : "");
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Movement")) {
-            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
-            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            const char* moveMode = ctrl->gridMovement ? "Grid (Tile-based)" : "Free";
+            if (ImGui::BeginCombo("Movement Mode##tps", moveMode)) {
+                if (ImGui::Selectable("Free", !ctrl->gridMovement)) ctrl->gridMovement = false;
+                if (ImGui::Selectable("Grid (Tile-based)", ctrl->gridMovement)) ctrl->gridMovement = true;
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Free: smooth continuous movement\nGrid: snap to tile cells");
+
+            if (ctrl->gridMovement) {
+                ImGui::DragFloat("Cell Size##tps", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
+                ImGui::DragFloat("Grid Move Speed##tps", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+            } else {
+                ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            }
             ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
             ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
             ImGui::TreePop();
@@ -3860,9 +4615,38 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 
         ImGui::Checkbox("Enabled", &ctrl->isEnabled);
 
+        if (ImGui::TreeNode("Input##FirstPerson")) {
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+                bool connected = Input::IsGamepadConnected(ctrl->gamepadIndex);
+                ImGui::TextColored(connected ? ImVec4(0.3f,0.9f,0.3f,1) : ImVec4(0.9f,0.3f,0.3f,1),
+                    connected ? "Connected: %s" : "Not Connected", connected ? Input::GetGamepadName(ctrl->gamepadIndex) : "");
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Movement")) {
-            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
-            ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            const char* moveMode = ctrl->gridMovement ? "Grid (Tile-based)" : "Free";
+            if (ImGui::BeginCombo("Movement Mode##fps", moveMode)) {
+                if (ImGui::Selectable("Free", !ctrl->gridMovement)) ctrl->gridMovement = false;
+                if (ImGui::Selectable("Grid (Tile-based)", ctrl->gridMovement)) ctrl->gridMovement = true;
+                ImGui::EndCombo();
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Free: smooth continuous movement\nGrid: snap to tile cells (dungeon crawler style)");
+
+            if (ctrl->gridMovement) {
+                ImGui::DragFloat("Cell Size##fps", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
+                ImGui::DragFloat("Grid Move Speed##fps", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+            } else {
+                ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+                ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            }
             ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
             ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
             ImGui::TreePop();
@@ -4406,6 +5190,18 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
     if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
         auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
         m_World->AddComponent<ECS::WaterVolumeComponent>(newEntity, *volume);
+    }
+
+    // Copy camera trigger component
+    if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
+        auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+        m_World->AddComponent<ECS::CameraTriggerComponent>(newEntity, *trigger);
+    }
+
+    // Copy temperature zone component
+    if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
+        auto* tempZone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+        m_World->AddComponent<ECS::TemperatureZoneComponent>(newEntity, *tempZone);
     }
 
     // Copy notes component

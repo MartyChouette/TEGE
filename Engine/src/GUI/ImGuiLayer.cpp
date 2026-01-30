@@ -16,7 +16,8 @@ ImGuiLayer::~ImGuiLayer() {
     Shutdown();
 }
 
-bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer) {
+bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer,
+                            const EditorFontConfig& fontConfig) {
     if (m_Initialized) {
         return true;
     }
@@ -26,6 +27,7 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer) 
         return false;
     }
 
+    m_Window = window;
     m_Renderer = renderer;
     Renderer::VulkanContext* context = renderer->GetContext();
 
@@ -100,6 +102,9 @@ bool ImGuiLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer) 
     colors[ImGuiCol_TextSelectedBg]       = ImVec4(0.35f, 0.45f, 0.65f, 0.50f);
     colors[ImGuiCol_DragDropTarget]       = ImVec4(0.45f, 0.65f, 0.95f, 0.90f);
 
+    // Load custom fonts (before backend init so atlas is ready)
+    LoadFonts(fontConfig);
+
     // Initialize GLFW backend
     GLFWwindow* glfwWindow = static_cast<GLFWwindow*>(window->GetNativeHandle());
     ImGui_ImplGlfw_InitForVulkan(glfwWindow, true);
@@ -150,8 +155,12 @@ void ImGuiLayer::Shutdown() {
     ImGui::DestroyContext();
     DestroyDescriptorPool();
 
+    m_BodyFont = nullptr;
+    m_HeadingFont = nullptr;
+    m_MonoFont = nullptr;
     m_Initialized = false;
     m_Renderer = nullptr;
+    m_Window = nullptr;
     ENJIN_LOG_INFO(Editor, "ImGui shut down");
 }
 
@@ -221,6 +230,64 @@ void ImGuiLayer::DestroyDescriptorPool() {
         vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
         m_DescriptorPool = VK_NULL_HANDLE;
     }
+}
+
+void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    m_BodyFont = nullptr;
+    m_HeadingFont = nullptr;
+    m_MonoFont = nullptr;
+
+    // Load body font (becomes the default ImGui font if loaded first)
+    if (!fontConfig.bodyFontPath.empty()) {
+        m_BodyFont = io.Fonts->AddFontFromFileTTF(fontConfig.bodyFontPath.c_str(), fontConfig.bodyFontSize);
+        if (!m_BodyFont) {
+            ENJIN_LOG_WARN(Editor, "Failed to load body font: %s, using default", fontConfig.bodyFontPath.c_str());
+        }
+    }
+
+    // If no body font loaded, add the default font so heading/mono are separate
+    if (!m_BodyFont) {
+        m_BodyFont = io.Fonts->AddFontDefault();
+    }
+
+    // Load heading font
+    if (!fontConfig.headingFontPath.empty()) {
+        m_HeadingFont = io.Fonts->AddFontFromFileTTF(fontConfig.headingFontPath.c_str(), fontConfig.headingFontSize);
+        if (!m_HeadingFont) {
+            ENJIN_LOG_WARN(Editor, "Failed to load heading font: %s", fontConfig.headingFontPath.c_str());
+        }
+    }
+
+    // Load monospace font
+    if (!fontConfig.monoFontPath.empty()) {
+        m_MonoFont = io.Fonts->AddFontFromFileTTF(fontConfig.monoFontPath.c_str(), fontConfig.monoFontSize);
+        if (!m_MonoFont) {
+            ENJIN_LOG_WARN(Editor, "Failed to load monospace font: %s", fontConfig.monoFontPath.c_str());
+        }
+    }
+
+    // Atlas builds automatically on first ImGui_ImplVulkan_NewFrame() call
+}
+
+void ImGuiLayer::ReloadFonts(const EditorFontConfig& fontConfig) {
+    if (!m_Initialized || !m_Renderer || !m_Renderer->GetContext()) {
+        return;
+    }
+
+    // Wait for GPU idle before rebuilding font atlas
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+
+    // Clear existing fonts and reload
+    ImGuiIO& io = ImGui::GetIO();
+    io.Fonts->Clear();
+    LoadFonts(fontConfig);
+
+    // Build the font atlas - backend auto-uploads on next NewFrame()
+    io.Fonts->Build();
+
+    ENJIN_LOG_INFO(Editor, "Reloaded editor fonts");
 }
 
 } // namespace GUI

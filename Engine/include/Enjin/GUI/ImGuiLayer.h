@@ -3,12 +3,25 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include <string>
+
+struct ImFont;
 
 namespace Enjin {
 
 class Window;
 
 namespace GUI {
+
+// Configuration for editor custom fonts
+struct EditorFontConfig {
+    std::string bodyFontPath;       // Path to body/UI font TTF/OTF (empty = default)
+    std::string headingFontPath;    // Path to heading font TTF/OTF (empty = default)
+    std::string monoFontPath;       // Path to monospace font TTF/OTF (empty = default)
+    f32 bodyFontSize = 15.0f;
+    f32 headingFontSize = 20.0f;
+    f32 monoFontSize = 14.0f;
+};
 
 // ImGui integration layer for Vulkan
 class ENJIN_API ImGuiLayer {
@@ -17,7 +30,8 @@ public:
     ~ImGuiLayer();
 
     // Initialize ImGui with Vulkan renderer
-    bool Initialize(Window* window, Renderer::VulkanRenderer* renderer);
+    bool Initialize(Window* window, Renderer::VulkanRenderer* renderer,
+                    const EditorFontConfig& fontConfig = EditorFontConfig{});
     void Shutdown();
 
     // Call at the beginning of each frame
@@ -33,14 +47,29 @@ public:
     // Show the demo window (useful for testing)
     void ShowDemoWindow(bool* open = nullptr);
 
+    // Custom font access (returns nullptr if not loaded, fall back to ImGui default)
+    ImFont* GetBodyFont() const { return m_BodyFont; }
+    ImFont* GetHeadingFont() const { return m_HeadingFont; }
+    ImFont* GetMonoFont() const { return m_MonoFont; }
+
+    // Reload fonts with new configuration (requires atlas rebuild)
+    void ReloadFonts(const EditorFontConfig& fontConfig);
+
 private:
     bool CreateDescriptorPool();
     void DestroyDescriptorPool();
+    void LoadFonts(const EditorFontConfig& fontConfig);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
+    Window* m_Window = nullptr;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
     bool m_Initialized = false;
     bool m_Enabled = true;
+
+    // Custom fonts
+    ImFont* m_BodyFont = nullptr;
+    ImFont* m_HeadingFont = nullptr;
+    ImFont* m_MonoFont = nullptr;
 };
 
 } // namespace GUI

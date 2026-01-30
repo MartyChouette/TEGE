@@ -144,10 +144,13 @@ private:
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
     void DrawNotesComponent(ECS::Entity entity);
+    void DrawTextComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
     void DrawGrassVolumeComponent(ECS::Entity entity);
     void DrawVegetationComponent(ECS::Entity entity);
+    void DrawCameraTriggerComponent(ECS::Entity entity);
+    void DrawTemperatureZoneComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -245,6 +248,15 @@ private:
 
     // Play mode
     PlayMode m_PlayMode;
+
+    // Focus mode (fullscreen game view, hides all editor panels)
+    bool m_FocusMode = false;
+
+    // Camera zone override (driven by CameraTriggerComponent)
+    ECS::Entity m_CameraZoneOverride = ECS::INVALID_ENTITY;
+
+    // Track whether effect pipelines have been updated for the render target's render pass
+    bool m_EffectPipelinesUpdated = false;
 
     // Splash screen
     bool m_ShowSplash = true;

@@ -13,7 +13,9 @@
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/ShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
+#include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Text.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/GrassRenderer.h"
@@ -75,13 +77,29 @@ public:
     void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
     Effects::WindSystem* GetWindSystem() const { return m_WindSystem; }
 
+    // Rain active state (drives water ripple effects in shader)
+    void SetRainActive(bool active) { m_RainActive = active; }
+    bool IsRainActive() const { return m_RainActive; }
+
     // Weather and grass renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
 
     // Render weather particles and grass (call after scene geometry in main render pass)
-    void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain);
-    void RenderGrass();
+    // viewportWidth/Height: 0 = swapchain, >0 = render target override
+    void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
+                                u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
+
+    // Recreate effect renderer pipelines for a specific render pass (e.g. render target)
+    void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass);
+
+    // Fog and snow parameters (set by editor, uploaded to LightingUBO)
+    void SetFogParams(f32 density, f32 start, f32 end, f32 heightFalloff) {
+        m_FogDensity = density; m_FogStart = start; m_FogEnd = end; m_FogHeightFalloff = heightFalloff;
+    }
+    void SetFogColor(const Math::Vector3& color) { m_FogColor = color; }
+    void SetSnowIntensity(f32 intensity) { m_SnowIntensity = intensity; }
 
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
@@ -92,6 +110,7 @@ private:
     void CreateDefaultMesh();
     void CreatePipeline();
     void CreateShadowPipeline();
+    void RecreatePipelines();
     void CreateUniformBuffers();
     void CreateDescriptorSets();
     void UpdateUniformBuffer(Entity entity);
@@ -119,12 +138,25 @@ private:
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
+    bool m_RainActive = false;
     f32 m_AmbientIntensity = 1.0f;
     Math::Vector3 m_AmbientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
+
+    // Fog parameters
+    f32 m_FogDensity = 0.0f;
+    f32 m_FogStart = 20.0f;
+    f32 m_FogEnd = 100.0f;
+    f32 m_FogHeightFalloff = 0.1f;
+    Math::Vector3 m_FogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
+    f32 m_SnowIntensity = 0.0f;
 
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
     std::unordered_map<std::string, std::shared_ptr<Renderer::Texture>> m_TextureCache;
+
+    // Text rendering
+    Renderer::TextRasterizer m_TextRasterizer;
+    std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_TextTextureCache;
 
     // Skeletal animation
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;

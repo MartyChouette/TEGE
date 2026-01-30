@@ -8,6 +8,10 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/CameraTrigger.h"
+#include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -150,6 +154,23 @@ json SerializeNotesComponent(const ECS::NotesComponent& notes) {
     return j;
 }
 
+json SerializeTextComponent(const ECS::TextComponent& text) {
+    json j;
+    j["text"] = text.text;
+    j["fontPath"] = text.fontPath;
+    j["fontSize"] = text.fontSize;
+    j["wrapWidth"] = text.wrapWidth;
+    j["textureWidth"] = text.textureWidth;
+    j["textureHeight"] = text.textureHeight;
+    j["textColor"] = SerializeVector3(text.textColor);
+    j["bgColor"] = SerializeVector3(text.bgColor);
+    j["bgOpacity"] = text.bgOpacity;
+    j["horizontalAlign"] = static_cast<i32>(text.horizontalAlign);
+    j["paddingX"] = text.paddingX;
+    j["paddingY"] = text.paddingY;
+    return j;
+}
+
 json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     json j;
     j["projectionType"] = static_cast<i32>(camera.projectionType);
@@ -272,6 +293,26 @@ ECS::NotesComponent DeserializeNotesComponent(const json& j) {
     return notes;
 }
 
+ECS::TextComponent DeserializeTextComponent(const json& j) {
+    ECS::TextComponent text;
+    text.text = j.value("text", std::string(""));
+    text.fontPath = j.value("fontPath", std::string(""));
+    text.fontSize = j.value("fontSize", 32.0f);
+    text.wrapWidth = j.value("wrapWidth", 512.0f);
+    text.textureWidth = j.value("textureWidth", 512u);
+    text.textureHeight = j.value("textureHeight", 512u);
+    if (j.contains("textColor")) text.textColor = DeserializeVector3(j["textColor"]);
+    if (j.contains("bgColor")) text.bgColor = DeserializeVector3(j["bgColor"]);
+    text.bgOpacity = j.value("bgOpacity", 1.0f);
+    if (j.contains("horizontalAlign")) {
+        text.horizontalAlign = static_cast<ECS::TextAlign>(j["horizontalAlign"].get<i32>());
+    }
+    text.paddingX = j.value("paddingX", 16.0f);
+    text.paddingY = j.value("paddingY", 16.0f);
+    text.dirty = true; // Re-rasterize on load
+    return text;
+}
+
 ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     ECS::CameraComponent camera;
     camera.projectionType = static_cast<ECS::ProjectionType>(j["projectionType"].get<i32>());
@@ -352,6 +393,262 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     return volume;
 }
 
+json SerializeCameraTriggerComponent(const ECS::CameraTriggerComponent& trigger) {
+    json j;
+    j["halfExtents"] = SerializeVector3(trigger.halfExtents);
+    j["targetCamera"] = static_cast<u64>(trigger.targetCamera);
+    j["priority"] = trigger.priority;
+    j["blendTime"] = trigger.blendTime;
+    return j;
+}
+
+ECS::CameraTriggerComponent DeserializeCameraTriggerComponent(const json& j) {
+    ECS::CameraTriggerComponent trigger;
+    trigger.halfExtents = DeserializeVector3(j["halfExtents"]);
+    trigger.targetCamera = j["targetCamera"].get<u64>();
+    trigger.priority = j["priority"].get<i32>();
+    trigger.blendTime = j["blendTime"].get<f32>();
+    return trigger;
+}
+
+json SerializeTemperatureZoneComponent(const ECS::TemperatureZoneComponent& zone) {
+    json j;
+    j["halfExtents"] = SerializeVector3(zone.halfExtents);
+    j["temperature"] = zone.temperature;
+    j["priority"] = zone.priority;
+    return j;
+}
+
+ECS::TemperatureZoneComponent DeserializeTemperatureZoneComponent(const json& j) {
+    ECS::TemperatureZoneComponent zone;
+    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    zone.temperature = j["temperature"].get<f32>();
+    zone.priority = j["priority"].get<i32>();
+    return zone;
+}
+
+// Base controller fields helper
+json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
+    json j;
+    j["moveSpeed"] = base.moveSpeed;
+    j["sprintMultiplier"] = base.sprintMultiplier;
+    j["isEnabled"] = base.isEnabled;
+    j["useWASD"] = base.useWASD;
+    j["useArrowKeys"] = base.useArrowKeys;
+    j["useGamepad"] = base.useGamepad;
+    j["gamepadIndex"] = base.gamepadIndex;
+    j["gamepadLookSensitivity"] = base.gamepadLookSensitivity;
+    j["gridMovement"] = base.gridMovement;
+    j["gridCellSize"] = base.gridCellSize;
+    j["gridMoveSpeed"] = base.gridMoveSpeed;
+    return j;
+}
+
+void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base) {
+    if (j.contains("moveSpeed")) base.moveSpeed = j["moveSpeed"].get<f32>();
+    if (j.contains("sprintMultiplier")) base.sprintMultiplier = j["sprintMultiplier"].get<f32>();
+    if (j.contains("isEnabled")) base.isEnabled = j["isEnabled"].get<bool>();
+    if (j.contains("useWASD")) base.useWASD = j["useWASD"].get<bool>();
+    if (j.contains("useArrowKeys")) base.useArrowKeys = j["useArrowKeys"].get<bool>();
+    if (j.contains("useGamepad")) base.useGamepad = j["useGamepad"].get<bool>();
+    if (j.contains("gamepadIndex")) base.gamepadIndex = j["gamepadIndex"].get<i32>();
+    if (j.contains("gamepadLookSensitivity")) base.gamepadLookSensitivity = j["gamepadLookSensitivity"].get<f32>();
+    if (j.contains("gridMovement")) base.gridMovement = j["gridMovement"].get<bool>();
+    if (j.contains("gridCellSize")) base.gridCellSize = j["gridCellSize"].get<f32>();
+    if (j.contains("gridMoveSpeed")) base.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();
+}
+
+json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["jumpForce"] = ctrl.jumpForce;
+    j["gravity"] = ctrl.gravity;
+    j["maxJumps"] = ctrl.maxJumps;
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["airControl"] = ctrl.airControl;
+    j["coyoteTime"] = ctrl.coyoteTime;
+    j["jumpBufferTime"] = ctrl.jumpBufferTime;
+    j["enableWallJump"] = ctrl.enableWallJump;
+    j["enableWallSlide"] = ctrl.enableWallSlide;
+    j["wallSlideSpeed"] = ctrl.wallSlideSpeed;
+    j["wallJumpForce"] = ctrl.wallJumpForce;
+    return j;
+}
+
+ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
+    ECS::Platformer2DController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("jumpForce")) ctrl.jumpForce = j["jumpForce"].get<f32>();
+    if (j.contains("gravity")) ctrl.gravity = j["gravity"].get<f32>();
+    if (j.contains("maxJumps")) ctrl.maxJumps = j["maxJumps"].get<i32>();
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("airControl")) ctrl.airControl = j["airControl"].get<f32>();
+    if (j.contains("coyoteTime")) ctrl.coyoteTime = j["coyoteTime"].get<f32>();
+    if (j.contains("jumpBufferTime")) ctrl.jumpBufferTime = j["jumpBufferTime"].get<f32>();
+    if (j.contains("enableWallJump")) ctrl.enableWallJump = j["enableWallJump"].get<bool>();
+    if (j.contains("enableWallSlide")) ctrl.enableWallSlide = j["enableWallSlide"].get<bool>();
+    if (j.contains("wallSlideSpeed")) ctrl.wallSlideSpeed = j["wallSlideSpeed"].get<f32>();
+    if (j.contains("wallJumpForce")) ctrl.wallJumpForce = j["wallJumpForce"].get<f32>();
+    return ctrl;
+}
+
+json SerializeTopDown2D(const ECS::TopDown2DController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
+    j["rotationSpeed"] = ctrl.rotationSpeed;
+    j["enableDash"] = ctrl.enableDash;
+    j["dashSpeed"] = ctrl.dashSpeed;
+    j["dashDuration"] = ctrl.dashDuration;
+    j["dashCooldown"] = ctrl.dashCooldown;
+    return j;
+}
+
+ECS::TopDown2DController DeserializeTopDown2D(const json& j) {
+    ECS::TopDown2DController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
+    if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
+    if (j.contains("enableDash")) ctrl.enableDash = j["enableDash"].get<bool>();
+    if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
+    if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
+    if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
+    return ctrl;
+}
+
+json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
+    j["rotationSpeed"] = ctrl.rotationSpeed;
+    j["cameraAngle"] = ctrl.cameraAngle;
+    j["cameraDistance"] = ctrl.cameraDistance;
+    j["cameraHeight"] = ctrl.cameraHeight;
+    j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
+    j["enableClickToMove"] = ctrl.enableClickToMove;
+    j["enableDash"] = ctrl.enableDash;
+    j["dashSpeed"] = ctrl.dashSpeed;
+    j["dashDuration"] = ctrl.dashDuration;
+    j["dashCooldown"] = ctrl.dashCooldown;
+    return j;
+}
+
+ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
+    ECS::TopDown3DController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
+    if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
+    if (j.contains("cameraAngle")) ctrl.cameraAngle = j["cameraAngle"].get<f32>();
+    if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
+    if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
+    if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = j["lockCameraToPlayer"].get<bool>();
+    if (j.contains("enableClickToMove")) ctrl.enableClickToMove = j["enableClickToMove"].get<bool>();
+    if (j.contains("enableDash")) ctrl.enableDash = j["enableDash"].get<bool>();
+    if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
+    if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
+    if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
+    return ctrl;
+}
+
+json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["jumpForce"] = ctrl.jumpForce;
+    j["gravity"] = ctrl.gravity;
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
+    j["rotateToFaceCamera"] = ctrl.rotateToFaceCamera;
+    j["rotationSpeed"] = ctrl.rotationSpeed;
+    j["cameraDistance"] = ctrl.cameraDistance;
+    j["cameraHeight"] = ctrl.cameraHeight;
+    j["cameraMinDistance"] = ctrl.cameraMinDistance;
+    j["cameraMaxDistance"] = ctrl.cameraMaxDistance;
+    j["cameraPitch"] = ctrl.cameraPitch;
+    j["cameraYaw"] = ctrl.cameraYaw;
+    j["cameraMinPitch"] = ctrl.cameraMinPitch;
+    j["cameraMaxPitch"] = ctrl.cameraMaxPitch;
+    j["cameraSensitivity"] = ctrl.cameraSensitivity;
+    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
+    j["enableCameraCollision"] = ctrl.enableCameraCollision;
+    j["enableLockOn"] = ctrl.enableLockOn;
+    return j;
+}
+
+ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
+    ECS::ThirdPersonController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("jumpForce")) ctrl.jumpForce = j["jumpForce"].get<f32>();
+    if (j.contains("gravity")) ctrl.gravity = j["gravity"].get<f32>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
+    if (j.contains("rotateToFaceCamera")) ctrl.rotateToFaceCamera = j["rotateToFaceCamera"].get<bool>();
+    if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
+    if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
+    if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
+    if (j.contains("cameraMinDistance")) ctrl.cameraMinDistance = j["cameraMinDistance"].get<f32>();
+    if (j.contains("cameraMaxDistance")) ctrl.cameraMaxDistance = j["cameraMaxDistance"].get<f32>();
+    if (j.contains("cameraPitch")) ctrl.cameraPitch = j["cameraPitch"].get<f32>();
+    if (j.contains("cameraYaw")) ctrl.cameraYaw = j["cameraYaw"].get<f32>();
+    if (j.contains("cameraMinPitch")) ctrl.cameraMinPitch = j["cameraMinPitch"].get<f32>();
+    if (j.contains("cameraMaxPitch")) ctrl.cameraMaxPitch = j["cameraMaxPitch"].get<f32>();
+    if (j.contains("cameraSensitivity")) ctrl.cameraSensitivity = j["cameraSensitivity"].get<f32>();
+    if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
+    if (j.contains("enableCameraCollision")) ctrl.enableCameraCollision = j["enableCameraCollision"].get<bool>();
+    if (j.contains("enableLockOn")) ctrl.enableLockOn = j["enableLockOn"].get<bool>();
+    return ctrl;
+}
+
+json SerializeFirstPerson(const ECS::FirstPersonController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["jumpForce"] = ctrl.jumpForce;
+    j["gravity"] = ctrl.gravity;
+    j["mouseSensitivity"] = ctrl.mouseSensitivity;
+    j["minPitch"] = ctrl.minPitch;
+    j["maxPitch"] = ctrl.maxPitch;
+    j["invertY"] = ctrl.invertY;
+    j["enableHeadBob"] = ctrl.enableHeadBob;
+    j["headBobFrequency"] = ctrl.headBobFrequency;
+    j["headBobAmplitude"] = ctrl.headBobAmplitude;
+    j["enableCrouch"] = ctrl.enableCrouch;
+    j["standingHeight"] = ctrl.standingHeight;
+    j["crouchingHeight"] = ctrl.crouchingHeight;
+    j["crouchSpeed"] = ctrl.crouchSpeed;
+    j["sprintFOVIncrease"] = ctrl.sprintFOVIncrease;
+    return j;
+}
+
+ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
+    ECS::FirstPersonController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("jumpForce")) ctrl.jumpForce = j["jumpForce"].get<f32>();
+    if (j.contains("gravity")) ctrl.gravity = j["gravity"].get<f32>();
+    if (j.contains("mouseSensitivity")) ctrl.mouseSensitivity = j["mouseSensitivity"].get<f32>();
+    if (j.contains("minPitch")) ctrl.minPitch = j["minPitch"].get<f32>();
+    if (j.contains("maxPitch")) ctrl.maxPitch = j["maxPitch"].get<f32>();
+    if (j.contains("invertY")) ctrl.invertY = j["invertY"].get<bool>();
+    if (j.contains("enableHeadBob")) ctrl.enableHeadBob = j["enableHeadBob"].get<bool>();
+    if (j.contains("headBobFrequency")) ctrl.headBobFrequency = j["headBobFrequency"].get<f32>();
+    if (j.contains("headBobAmplitude")) ctrl.headBobAmplitude = j["headBobAmplitude"].get<f32>();
+    if (j.contains("enableCrouch")) ctrl.enableCrouch = j["enableCrouch"].get<bool>();
+    if (j.contains("standingHeight")) ctrl.standingHeight = j["standingHeight"].get<f32>();
+    if (j.contains("crouchingHeight")) ctrl.crouchingHeight = j["crouchingHeight"].get<f32>();
+    if (j.contains("crouchSpeed")) ctrl.crouchSpeed = j["crouchSpeed"].get<f32>();
+    if (j.contains("sprintFOVIncrease")) ctrl.sprintFOVIncrease = j["sprintFOVIncrease"].get<f32>();
+    return ctrl;
+}
+
 } // anonymous namespace
 
 SceneSerializer::SceneSerializer(ECS::World* world)
@@ -425,6 +722,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["notes"] = SerializeNotesComponent(*notes);
             }
 
+            if (m_World->HasComponent<ECS::TextComponent>(entity)) {
+                const auto* text = m_World->GetComponent<ECS::TextComponent>(entity);
+                entityJson["text"] = SerializeTextComponent(*text);
+            }
+
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
                 const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
                 entityJson["camera"] = SerializeCameraComponent(*camera);
@@ -438,6 +740,33 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
                 const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
+            }
+
+            if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
+                const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+                entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
+            }
+
+            if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+                entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
+            }
+
+            // Character controllers
+            if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
+                entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::TopDown2DController>(entity)) {
+                entityJson["topDown2D"] = SerializeTopDown2D(*m_World->GetComponent<ECS::TopDown2DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::TopDown3DController>(entity)) {
+                entityJson["topDown3D"] = SerializeTopDown3D(*m_World->GetComponent<ECS::TopDown3DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
+                entityJson["thirdPerson"] = SerializeThirdPerson(*m_World->GetComponent<ECS::ThirdPersonController>(entity));
+            }
+            if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+                entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
 
             entitiesArray.push_back(entityJson);
@@ -572,6 +901,11 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::NotesComponent>(entity, notes);
             }
 
+            if (entityJson.contains("text")) {
+                auto text = DeserializeTextComponent(entityJson["text"]);
+                m_World->AddComponent<ECS::TextComponent>(entity, text);
+            }
+
             if (entityJson.contains("camera")) {
                 auto camera = DeserializeCameraComponent(entityJson["camera"]);
                 m_World->AddComponent<ECS::CameraComponent>(entity, camera);
@@ -585,6 +919,33 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("waterVolume")) {
                 auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
+            }
+
+            if (entityJson.contains("cameraTrigger")) {
+                auto trigger = DeserializeCameraTriggerComponent(entityJson["cameraTrigger"]);
+                m_World->AddComponent<ECS::CameraTriggerComponent>(entity, trigger);
+            }
+
+            if (entityJson.contains("temperatureZone")) {
+                auto zone = DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]);
+                m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
+            }
+
+            // Character controllers
+            if (entityJson.contains("platformer2D")) {
+                m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
+            }
+            if (entityJson.contains("topDown2D")) {
+                m_World->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(entityJson["topDown2D"]));
+            }
+            if (entityJson.contains("topDown3D")) {
+                m_World->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(entityJson["topDown3D"]));
+            }
+            if (entityJson.contains("thirdPerson")) {
+                m_World->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(entityJson["thirdPerson"]));
+            }
+            if (entityJson.contains("firstPerson")) {
+                m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
             }
         }
 
@@ -650,6 +1011,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["notes"] = SerializeNotesComponent(*notes);
             }
 
+            if (m_World->HasComponent<ECS::TextComponent>(entity)) {
+                const auto* text = m_World->GetComponent<ECS::TextComponent>(entity);
+                entityJson["text"] = SerializeTextComponent(*text);
+            }
+
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
                 const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
                 entityJson["camera"] = SerializeCameraComponent(*camera);
@@ -663,6 +1029,33 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
                 const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
+            }
+
+            if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
+                const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
+                entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
+            }
+
+            if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+                entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
+            }
+
+            // Character controllers
+            if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
+                entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::TopDown2DController>(entity)) {
+                entityJson["topDown2D"] = SerializeTopDown2D(*m_World->GetComponent<ECS::TopDown2DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::TopDown3DController>(entity)) {
+                entityJson["topDown3D"] = SerializeTopDown3D(*m_World->GetComponent<ECS::TopDown3DController>(entity));
+            }
+            if (m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
+                entityJson["thirdPerson"] = SerializeThirdPerson(*m_World->GetComponent<ECS::ThirdPersonController>(entity));
+            }
+            if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+                entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
 
             entitiesArray.push_back(entityJson);
@@ -752,6 +1145,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::NotesComponent>(entity, notes);
             }
 
+            if (entityJson.contains("text")) {
+                auto text = DeserializeTextComponent(entityJson["text"]);
+                m_World->AddComponent<ECS::TextComponent>(entity, text);
+            }
+
             if (entityJson.contains("camera")) {
                 auto camera = DeserializeCameraComponent(entityJson["camera"]);
                 m_World->AddComponent<ECS::CameraComponent>(entity, camera);
@@ -765,6 +1163,33 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("waterVolume")) {
                 auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
+            }
+
+            if (entityJson.contains("cameraTrigger")) {
+                auto trigger = DeserializeCameraTriggerComponent(entityJson["cameraTrigger"]);
+                m_World->AddComponent<ECS::CameraTriggerComponent>(entity, trigger);
+            }
+
+            if (entityJson.contains("temperatureZone")) {
+                auto zone = DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]);
+                m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
+            }
+
+            // Character controllers
+            if (entityJson.contains("platformer2D")) {
+                m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
+            }
+            if (entityJson.contains("topDown2D")) {
+                m_World->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(entityJson["topDown2D"]));
+            }
+            if (entityJson.contains("topDown3D")) {
+                m_World->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(entityJson["topDown3D"]));
+            }
+            if (entityJson.contains("thirdPerson")) {
+                m_World->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(entityJson["thirdPerson"]));
+            }
+            if (entityJson.contains("firstPerson")) {
+                m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
             }
         }
 

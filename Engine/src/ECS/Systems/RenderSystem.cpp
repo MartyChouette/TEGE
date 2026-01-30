@@ -162,6 +162,10 @@ void RenderSystem::Shutdown() {
     m_ShadowPipeline.reset();
     m_ShadowMap.reset();
 
+    // Clean up text texture cache and rasterizer
+    m_TextTextureCache.clear();
+    m_TextRasterizer.ClearFontCache();
+
     // Clean up textures and bone buffer
     m_DefaultWhiteTexture.reset();
     m_DefaultBoneBuffer.reset();
@@ -331,6 +335,34 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
             }
 
+            // Set water surface flag for water volume entities
+            if (m_World->HasComponent<WaterVolumeComponent>(entity)) {
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
+                if (m_RainActive) {
+                    pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+                }
+            }
+
+            // Rasterize text texture if entity has a TextComponent
+            TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+            if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+                auto pixels = m_TextRasterizer.Rasterize(*textComp);
+                if (!pixels.empty()) {
+                    auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+                    if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
+                        m_TextTextureCache[entity] = textTex;
+                    }
+                }
+                textComp->dirty = false;
+            }
+
+            // If entity has a text texture, override the base color texture
+            auto textTexIt = m_TextTextureCache.find(entity);
+            if (textComp && textTexIt != m_TextTextureCache.end() && textTexIt->second && textTexIt->second->IsValid()) {
+                boundTexture = textTexIt->second.get();
+                pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
+            }
+
             if (boundTexture) {
                 UpdateTextureDescriptor(boundTexture);
             } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
@@ -397,6 +429,7 @@ void RenderSystem::OnEntityAdded(Entity entity) {
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
     m_EntityRenderData.erase(entity);
+    m_TextTextureCache.erase(entity);
 }
 
 void RenderSystem::CreatePipeline() {
@@ -898,6 +931,10 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         lighting.windData = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 
+    // Fog parameters
+    lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
+    lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
+
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 
     // Update Material UBO
@@ -919,20 +956,35 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
     if (m_BackfaceCulling == enabled) return;
     m_BackfaceCulling = enabled;
-    // Recreate pipeline with new cull mode
-    if (m_Pipeline && m_Initialized) {
-        m_Pipeline.reset();
-        CreatePipeline();
-    }
+    RecreatePipelines();
 }
 
 void RenderSystem::SetWireframeEnabled(bool enabled) {
     if (m_WireframeMode == enabled) return;
     m_WireframeMode = enabled;
-    // Recreate pipeline with new polygon mode
-    if (m_Pipeline && m_Initialized) {
-        m_Pipeline.reset();
-        CreatePipeline();
+    RecreatePipelines();
+}
+
+void RenderSystem::RecreatePipelines() {
+    if (!m_Pipeline || !m_Initialized) return;
+
+    // Wait for GPU to finish all in-flight work before destroying pipelines
+    if (m_Renderer && m_Renderer->GetContext()) {
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    }
+
+    // Destroy all pipelines that share the descriptor set layout
+    m_LinePipeline.reset();
+    m_ShadowPipeline.reset();
+    m_Pipeline.reset();
+
+    // Recreate main pipeline (creates new descriptor set layout)
+    CreatePipeline();
+
+    // Recreate dependent pipelines that share the layout
+    if (m_Pipeline) {
+        CreateLinePipeline();
+        CreateShadowPipeline();
     }
 }
 
@@ -1085,6 +1137,34 @@ void RenderSystem::RenderEntity(Entity entity) {
     VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
     if (vegComp) {
         pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
+    }
+
+    // Set water surface flag for water volume entities
+    if (m_World->HasComponent<WaterVolumeComponent>(entity)) {
+        pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
+        if (m_RainActive) {
+            pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+        }
+    }
+
+    // Rasterize text texture if entity has a TextComponent
+    TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+    if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+        auto pixels = m_TextRasterizer.Rasterize(*textComp);
+        if (!pixels.empty()) {
+            auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+            if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
+                m_TextTextureCache[entity] = textTex;
+            }
+        }
+        textComp->dirty = false;
+    }
+
+    // If entity has a text texture, override the base color texture
+    auto textTexIt = m_TextTextureCache.find(entity);
+    if (textComp && textTexIt != m_TextTextureCache.end() && textTexIt->second && textTexIt->second->IsValid()) {
+        boundTexture = textTexIt->second.get();
+        pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
     }
 
     // Update texture descriptor if entity has a texture
@@ -1393,6 +1473,8 @@ void RenderSystem::EnsureWaterMeshes() {
         m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
 
         // Add material with water visual properties
+        // Alpha mode is Opaque so water writes depth (occluding rain particles behind it).
+        // Visual transparency comes from vertex color alpha + opacity push constant in the shader.
         MaterialComponent material;
         material.baseColor = waterVol->waterColor;
         material.opacity = waterVol->opacity;
@@ -1400,6 +1482,7 @@ void RenderSystem::EnsureWaterMeshes() {
         material.metallic = 0.3f;
         material.roughness = 0.1f;
         material.castShadows = false;
+        material.alphaMode = static_cast<MaterialComponent::AlphaMode>(0);  // Opaque — writes depth
 
         m_World->AddComponent<MaterialComponent>(entity, material);
 
@@ -1410,24 +1493,39 @@ void RenderSystem::EnsureWaterMeshes() {
     }
 }
 
-void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain) {
+void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
+                                           u32 viewportWidth, u32 viewportHeight) {
     if (!m_WeatherRenderer || !m_Renderer || !m_Initialized) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_WeatherRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, weather, isRain);
+    m_WeatherRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, weather, isRain,
+                              viewportWidth, viewportHeight);
 }
 
-void RenderSystem::RenderGrass() {
+void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
     if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_GrassRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World);
+    m_GrassRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+                            viewportWidth, viewportHeight);
+}
+
+void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass) {
+    if (!m_Pipeline) return;
+    VkDescriptorSetLayout layout = m_Pipeline->GetDescriptorSetLayout();
+
+    if (m_WeatherRenderer) {
+        m_WeatherRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+    if (m_GrassRenderer) {
+        m_GrassRenderer->RecreateForRenderPass(renderPass, layout);
+    }
 }
 
 } // namespace ECS
