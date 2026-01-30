@@ -1,9 +1,11 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Core/Concepts.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Component.h"
 #include "Enjin/ECS/System.h"
+#include <concepts>
 #include <unordered_map>
 #include <memory>
 
@@ -19,7 +21,7 @@ namespace ECS {
 
 /**
  * @brief The World class manages the entire ECS state
- * 
+ *
  * It acts as the container for all entities, components, and systems.
  * It provides methods to create/destroy entities and access components.
  */
@@ -47,8 +49,8 @@ public:
      */
     bool IsValid(Entity entity) const;
 
-    // Component management
-    template<typename T>
+    // Component management — all template methods constrained with IsComponent concept
+    template<IsComponent T>
     T& AddComponent(Entity entity, const T& component = T{}) {
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
@@ -61,7 +63,7 @@ public:
         return comp;
     }
 
-    template<typename T>
+    template<IsComponent T>
     void RemoveComponent(Entity entity) {
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
@@ -70,13 +72,13 @@ public:
         }
     }
 
-    template<typename T>
+    template<IsComponent T>
     T* GetComponent(Entity entity) {
         auto storage = GetOrCreateStorage<T>();
         return storage->Get(entity);
     }
 
-    template<typename T>
+    template<IsComponent T>
     const T* GetComponent(Entity entity) const {
         auto storage = GetStorage<T>();
         if (!storage) {
@@ -85,7 +87,7 @@ public:
         return storage->Get(entity);
     }
 
-    template<typename T>
+    template<IsComponent T>
     bool HasComponent(Entity entity) const {
         auto storage = GetStorage<T>();
         if (!storage) {
@@ -94,8 +96,9 @@ public:
         return storage->Has(entity);
     }
 
-    // System management
+    // System management — constrained via requires clause
     template<typename T, typename... Args>
+        requires IsSystem<T> && std::derived_from<T, ISystem>
     T* RegisterSystem(Args&&... args) {
         return m_SystemManager->RegisterSystem<T>(std::forward<Args>(args)...);
     }
@@ -130,16 +133,16 @@ private:
         virtual void Remove(Entity entity) = 0;
     };
 
-    template<typename T>
+    template<IsComponent T>
     struct StorageWrapper : public StorageBase {
         ComponentStorage<T> storage;
-        
+
         void Remove(Entity entity) override {
             storage.Remove(entity);
         }
     };
 
-    template<typename T>
+    template<IsComponent T>
     ComponentStorage<T>* GetOrCreateStorage() {
         ComponentTypeId typeId = ComponentRegistry::GetTypeId<T>();
         auto it = m_ComponentStorages.find(typeId);
@@ -152,7 +155,7 @@ private:
         return &static_cast<StorageWrapper<T>*>(it->second.get())->storage;
     }
 
-    template<typename T>
+    template<IsComponent T>
     const ComponentStorage<T>* GetStorage() const {
         ComponentTypeId typeId = ComponentRegistry::GetTypeId<T>();
         auto it = m_ComponentStorages.find(typeId);

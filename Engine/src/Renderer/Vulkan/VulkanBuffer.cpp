@@ -23,11 +23,17 @@ bool VulkanBuffer::Create(usize size, VkBufferUsageFlags usageFlags, bool hostVi
     m_UsageFlags = usageFlags;
     m_HostVisible = hostVisible;
 
-    VkBufferCreateInfo bufferInfo{};
-    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-    bufferInfo.size = size;
-    bufferInfo.usage = usageFlags;
-    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    // C++20 Designated Initializer — readable Vulkan buffer creation
+    VkBufferCreateInfo bufferInfo{
+        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .size = size,
+        .usage = usageFlags,
+        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+        .queueFamilyIndexCount = 0,
+        .pQueueFamilyIndices = nullptr
+    };
 
     VkResult result = vkCreateBuffer(m_Context->GetDevice(), &bufferInfo, nullptr, &m_Buffer);
     if (result != VK_SUCCESS) {
@@ -140,14 +146,17 @@ bool VulkanBuffer::AllocateMemory(VkMemoryPropertyFlags properties) {
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(m_Context->GetDevice(), m_Buffer, &memRequirements);
 
-    VkMemoryAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-    allocInfo.allocationSize = memRequirements.size;
-    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
-
-    if (allocInfo.memoryTypeIndex == UINT32_MAX) {
+    u32 memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+    if (memoryTypeIndex == UINT32_MAX) {
         return false;
     }
+
+    VkMemoryAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .allocationSize = memRequirements.size,
+        .memoryTypeIndex = memoryTypeIndex
+    };
 
     VkResult result = vkAllocateMemory(m_Context->GetDevice(), &allocInfo, nullptr, &m_Memory);
     if (result != VK_SUCCESS) {

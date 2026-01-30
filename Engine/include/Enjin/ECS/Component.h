@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Core/Concepts.h"
 #include "Enjin/ECS/Entity.h"
 #include <typeindex>
 #include <unordered_map>
@@ -20,7 +21,7 @@ struct ENJIN_API IComponent {
 // Component registry - manages component type IDs
 class ENJIN_API ComponentRegistry {
 public:
-    template<typename T>
+    template<IsComponent T>
     static ComponentTypeId GetTypeId() {
         static ComponentTypeId id = s_NextComponentId++;
         return id;
@@ -33,7 +34,8 @@ private:
 };
 
 // Component storage - Structure of Arrays (SoA) for cache efficiency
-template<typename T>
+// T must satisfy the IsComponent concept (default-constructible + destructible)
+template<IsComponent T>
 class ComponentStorage {
 public:
     T& Add(Entity entity) {

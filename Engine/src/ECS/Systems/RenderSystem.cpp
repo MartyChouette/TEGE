@@ -182,18 +182,20 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     // Set viewport and scissor to match render target size
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<f32>(target->GetWidth());
-    viewport.height = static_cast<f32>(target->GetHeight());
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    VkViewport viewport{
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<f32>(target->GetWidth()),
+        .height = static_cast<f32>(target->GetHeight()),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = { target->GetWidth(), target->GetHeight() };
+    VkRect2D scissor{
+        .offset = { 0, 0 },
+        .extent = { target->GetWidth(), target->GetHeight() }
+    };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Render all entities with mesh and transform
@@ -407,17 +409,19 @@ void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
     // Create descriptor pool (3 UBOs + 4 combined image samplers per frame)
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
-    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = framesInFlight * 3;
-    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = framesInFlight * 4;  // base color + shadow map + height map + normal map
+    std::array<VkDescriptorPoolSize, 2> poolSizes = {{
+        { .type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,          .descriptorCount = framesInFlight * 3 },
+        { .type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,  .descriptorCount = framesInFlight * 4 }
+    }};
 
-    VkDescriptorPoolCreateInfo poolInfo{};
-    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
-    poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = framesInFlight;
+    VkDescriptorPoolCreateInfo poolInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
+        .pNext = nullptr,
+        .flags = 0,
+        .maxSets = framesInFlight,
+        .poolSizeCount = static_cast<u32>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data()
+    };
 
     VkResult result = vkCreateDescriptorPool(
         m_Renderer->GetContext()->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool);
@@ -430,11 +434,13 @@ void RenderSystem::CreateDescriptorSets() {
     std::vector<VkDescriptorSetLayout> layouts(framesInFlight, m_Pipeline->GetDescriptorSetLayout());
     m_DescriptorSets.resize(framesInFlight);
 
-    VkDescriptorSetAllocateInfo allocInfo{};
-    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    allocInfo.descriptorPool = m_DescriptorPool;
-    allocInfo.descriptorSetCount = framesInFlight;
-    allocInfo.pSetLayouts = layouts.data();
+    VkDescriptorSetAllocateInfo allocInfo{
+        .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO,
+        .pNext = nullptr,
+        .descriptorPool = m_DescriptorPool,
+        .descriptorSetCount = framesInFlight,
+        .pSetLayouts = layouts.data()
+    };
 
     result = vkAllocateDescriptorSets(
         m_Renderer->GetContext()->GetDevice(), &allocInfo, m_DescriptorSets.data());
@@ -445,119 +451,145 @@ void RenderSystem::CreateDescriptorSets() {
 
     // Update descriptor sets with all UBOs and default texture
     for (u32 i = 0; i < framesInFlight; ++i) {
-        std::array<VkDescriptorBufferInfo, 3> bufferInfos{};
-
-        // MVP UBO
-        bufferInfos[0].buffer = m_UniformBuffers[i]->GetBuffer();
-        bufferInfos[0].offset = 0;
-        bufferInfos[0].range = sizeof(Renderer::UniformBufferObject);
-
-        // Lighting UBO (multi-light)
-        bufferInfos[1].buffer = m_LightingBuffers[i]->GetBuffer();
-        bufferInfos[1].offset = 0;
-        bufferInfos[1].range = sizeof(LightingUBO);
-
-        // Material UBO
-        bufferInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
-        bufferInfos[2].offset = 0;
-        bufferInfos[2].range = sizeof(MaterialGPU);
+        // C++20 Designated Initializers — buffer descriptor info
+        std::array<VkDescriptorBufferInfo, 3> bufferInfos = {{
+            {   // MVP UBO
+                .buffer = m_UniformBuffers[i]->GetBuffer(),
+                .offset = 0,
+                .range = sizeof(Renderer::UniformBufferObject)
+            },
+            {   // Lighting UBO (multi-light)
+                .buffer = m_LightingBuffers[i]->GetBuffer(),
+                .offset = 0,
+                .range = sizeof(LightingUBO)
+            },
+            {   // Material UBO
+                .buffer = m_MaterialBuffers[i]->GetBuffer(),
+                .offset = 0,
+                .range = sizeof(MaterialGPU)
+            }
+        }};
 
         // Default texture (binding 3)
         VkDescriptorImageInfo imageInfo{};
         if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
             imageInfo = m_DefaultWhiteTexture->GetDescriptorInfo();
         } else {
-            // Fallback - shouldn't happen but be safe
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = VK_NULL_HANDLE;
-            imageInfo.sampler = VK_NULL_HANDLE;
+            imageInfo = {
+                .sampler = VK_NULL_HANDLE,
+                .imageView = VK_NULL_HANDLE,
+                .imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+            };
         }
 
         // Shadow map (binding 4)
         VkDescriptorImageInfo shadowImageInfo{};
         if (m_ShadowMap && m_ShadowsEnabled) {
-            shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            shadowImageInfo.imageView = m_ShadowMap->GetDepthImageView();
-            shadowImageInfo.sampler = m_ShadowMap->GetShadowSampler();
+            shadowImageInfo = {
+                .sampler = m_ShadowMap->GetShadowSampler(),
+                .imageView = m_ShadowMap->GetDepthImageView(),
+                .imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
+            };
         } else {
-            // Use default white texture as fallback (will return 1.0 = no shadow)
             shadowImageInfo = imageInfo;
         }
 
         // Height map (binding 5) - default to white texture (no displacement)
         VkDescriptorImageInfo heightImageInfo = imageInfo;
 
-        // Normal map (binding 6) - default to flat normal (white = (0.5,0.5,1) encoded)
+        // Normal map (binding 6) - default to flat normal
         VkDescriptorImageInfo normalMapInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
-
-        // MVP descriptor
-        descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[0].dstSet = m_DescriptorSets[i];
-        descriptorWrites[0].dstBinding = 0;
-        descriptorWrites[0].dstArrayElement = 0;
-        descriptorWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[0].descriptorCount = 1;
-        descriptorWrites[0].pBufferInfo = &bufferInfos[0];
-
-        // Lighting descriptor
-        descriptorWrites[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[1].dstSet = m_DescriptorSets[i];
-        descriptorWrites[1].dstBinding = 1;
-        descriptorWrites[1].dstArrayElement = 0;
-        descriptorWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[1].descriptorCount = 1;
-        descriptorWrites[1].pBufferInfo = &bufferInfos[1];
-
-        // Material descriptor
-        descriptorWrites[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[2].dstSet = m_DescriptorSets[i];
-        descriptorWrites[2].dstBinding = 2;
-        descriptorWrites[2].dstArrayElement = 0;
-        descriptorWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        descriptorWrites[2].descriptorCount = 1;
-        descriptorWrites[2].pBufferInfo = &bufferInfos[2];
-
-        // Base color texture descriptor
-        descriptorWrites[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[3].dstSet = m_DescriptorSets[i];
-        descriptorWrites[3].dstBinding = 3;
-        descriptorWrites[3].dstArrayElement = 0;
-        descriptorWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[3].descriptorCount = 1;
-        descriptorWrites[3].pImageInfo = &imageInfo;
-
-        // Shadow map descriptor
-        descriptorWrites[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[4].dstSet = m_DescriptorSets[i];
-        descriptorWrites[4].dstBinding = 4;
-        descriptorWrites[4].dstArrayElement = 0;
-        descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[4].descriptorCount = 1;
-        descriptorWrites[4].pImageInfo = &shadowImageInfo;
-
-        // Height map descriptor
-        descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[5].dstSet = m_DescriptorSets[i];
-        descriptorWrites[5].dstBinding = 5;
-        descriptorWrites[5].dstArrayElement = 0;
-        descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[5].descriptorCount = 1;
-        descriptorWrites[5].pImageInfo = &heightImageInfo;
-
-        // Normal map descriptor
-        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        descriptorWrites[6].dstSet = m_DescriptorSets[i];
-        descriptorWrites[6].dstBinding = 6;
-        descriptorWrites[6].dstArrayElement = 0;
-        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-        descriptorWrites[6].descriptorCount = 1;
-        descriptorWrites[6].pImageInfo = &normalMapInfo;
+        // C++20 Designated Initializers — descriptor writes as a clean array
+        std::array<VkWriteDescriptorSet, 7> descriptorWrites = {{
+            {   // Binding 0: MVP UBO
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 0,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pImageInfo = nullptr,
+                .pBufferInfo = &bufferInfos[0],
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 1: Lighting UBO
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pImageInfo = nullptr,
+                .pBufferInfo = &bufferInfos[1],
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 2: Material UBO
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 2,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+                .pImageInfo = nullptr,
+                .pBufferInfo = &bufferInfos[2],
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 3: Base color texture
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 3,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &imageInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 4: Shadow map
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 4,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &shadowImageInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 5: Height map
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 5,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &heightImageInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            },
+            {   // Binding 6: Normal map
+                .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+                .pNext = nullptr,
+                .dstSet = m_DescriptorSets[i],
+                .dstBinding = 6,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                .pImageInfo = &normalMapInfo,
+                .pBufferInfo = nullptr,
+                .pTexelBufferView = nullptr
+            }
+        }};
 
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
-    }
 }
 
 void RenderSystem::SetupEntityBuffers(Entity entity) {
@@ -828,18 +860,20 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Set viewport and scissor
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
+    VkViewport viewport{
+        .x = 0.0f,
+        .y = 0.0f,
+        .width = static_cast<f32>(extent.width),
+        .height = static_cast<f32>(extent.height),
+        .minDepth = 0.0f,
+        .maxDepth = 1.0f
+    };
     vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
 
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = extent;
+    VkRect2D scissor{
+        .offset = { 0, 0 },
+        .extent = extent
+    };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Push model matrix and material for this entity
@@ -1049,18 +1083,20 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
     }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
-    // Update binding 3 (base color texture) with the new texture
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
-    descriptorWrite.dstBinding = 3;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
+    VkWriteDescriptorSet descriptorWrite{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+        .dstSet = m_DescriptorSets[currentFrame],
+        .dstBinding = 3,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
+    };
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
@@ -1071,17 +1107,20 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
     }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
-    descriptorWrite.dstBinding = 5;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
+    VkWriteDescriptorSet descriptorWrite{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+        .dstSet = m_DescriptorSets[currentFrame],
+        .dstBinding = 5,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
+    };
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }
@@ -1092,17 +1131,20 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
     }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
     VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
 
-    VkWriteDescriptorSet descriptorWrite{};
-    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
-    descriptorWrite.dstBinding = 6;
-    descriptorWrite.dstArrayElement = 0;
-    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    descriptorWrite.descriptorCount = 1;
-    descriptorWrite.pImageInfo = &imageInfo;
+    VkWriteDescriptorSet descriptorWrite{
+        .sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
+        .pNext = nullptr,
+        .dstSet = m_DescriptorSets[currentFrame],
+        .dstBinding = 6,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        .pImageInfo = &imageInfo,
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr
+    };
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }

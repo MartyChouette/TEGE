@@ -1,8 +1,10 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Core/Concepts.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Component.h"
+#include <concepts>
 #include <vector>
 #include <memory>
 
@@ -27,10 +29,10 @@ public:
     SystemManager();
     ~SystemManager();
 
+    // Register a system — T must satisfy IsSystem (has Update(f32)) and derive from ISystem
     template<typename T, typename... Args>
+        requires IsSystem<T> && std::derived_from<T, ISystem>
     T* RegisterSystem(Args&&... args) {
-        static_assert(std::is_base_of_v<ISystem, T>, "T must inherit from ISystem");
-        
         auto system = std::make_unique<T>(std::forward<Args>(args)...);
         T* ptr = system.get();
         m_Systems.push_back(std::move(system));
