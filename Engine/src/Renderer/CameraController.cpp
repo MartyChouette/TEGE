@@ -58,19 +58,25 @@ void CameraController::Update(f32 deltaTime) {
 }
 
 void CameraController::UpdateFlyMode(f32 deltaTime) {
-    // Capture mouse and always apply mouse look
-    if (!m_MouseCapturedByUs) {
-        Input::SetMouseCaptured(true);
-        m_MouseCapturedByUs = true;
-        SyncFromCamera();
-    }
+    // Hold right mouse button to look around
+    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
 
-    // Mouse look - always active
-    Math::Vector2 mouseDelta = Input::GetMouseDelta();
-    m_Yaw -= mouseDelta.x * m_LookSensitivity;
-    m_Pitch += mouseDelta.y * m_LookSensitivity;
-    m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
-    ApplyRotation();
+    if (rightMouseDown) {
+        if (!m_MouseCapturedByUs) {
+            Input::SetMouseCaptured(true);
+            m_MouseCapturedByUs = true;
+            SyncFromCamera();
+        }
+
+        Math::Vector2 mouseDelta = Input::GetMouseDelta();
+        m_Yaw -= mouseDelta.x * m_LookSensitivity;
+        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+        ApplyRotation();
+    } else if (m_MouseCapturedByUs) {
+        Input::SetMouseCaptured(false);
+        m_MouseCapturedByUs = false;
+    }
 
     // Movement - FPS-style: WASD on horizontal plane, Space/Ctrl for vertical
     f32 speed = m_MoveSpeed;
@@ -125,17 +131,24 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 void CameraController::UpdateOrbitMode(f32 deltaTime) {
     (void)deltaTime;
 
-    // Capture mouse and always apply orbit rotation
-    if (!m_MouseCapturedByUs) {
-        Input::SetMouseCaptured(true);
-        m_MouseCapturedByUs = true;
-        SyncFromCamera();
-    }
+    // Hold right mouse button to orbit
+    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
 
-    Math::Vector2 mouseDelta = Input::GetMouseDelta();
-    m_Yaw -= mouseDelta.x * m_LookSensitivity;
-    m_Pitch += mouseDelta.y * m_LookSensitivity;
-    m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+    if (rightMouseDown) {
+        if (!m_MouseCapturedByUs) {
+            Input::SetMouseCaptured(true);
+            m_MouseCapturedByUs = true;
+            SyncFromCamera();
+        }
+
+        Math::Vector2 mouseDelta = Input::GetMouseDelta();
+        m_Yaw -= mouseDelta.x * m_LookSensitivity;
+        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+    } else if (m_MouseCapturedByUs) {
+        Input::SetMouseCaptured(false);
+        m_MouseCapturedByUs = false;
+    }
 
     // Middle mouse to pan
     bool middleMouseDown = Input::IsMouseButtonDown(MouseButton::Middle);

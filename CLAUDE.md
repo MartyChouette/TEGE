@@ -145,7 +145,8 @@ struct PushConstants {
   - `WASD` - Fly camera movement
   - `Space`/`E` - Move up, `Q`/`Ctrl` - Move down
   - `Shift` - Sprint
-  - Mouse - Free look (always active)
+  - Hold RMB + Mouse - Look around
+  - Left-click - Select entity, Double-click - Focus on entity
   - Scroll - Adjust move speed
 
 ### Effects Systems
