@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 5> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 6> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -106,6 +106,13 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[4].descriptorCount = 1;
     bindings[4].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[4].pImmutableSamplers = nullptr;
+
+    // Sampler binding 5: height map for parallax mapping (fragment shader)
+    bindings[5].binding = 5;
+    bindings[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[5].descriptorCount = 1;
+    bindings[5].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[5].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -172,13 +179,13 @@ bool VulkanPipeline::CreatePipeline(
         shaderStages.push_back(fragShaderStageInfo);
     }
 
-    // Vertex input - position, normal, UV, color
+    // Vertex input - position, normal, UV, color, tangent
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(f32) * 12; // vec3 pos + vec3 normal + vec2 uv + vec4 color
+    bindingDescription.stride = sizeof(f32) * 16; // vec3 pos + vec3 normal + vec2 uv + vec4 color + vec4 tangent
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 5> attributeDescriptions{};
     // Position (location 0)
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
@@ -199,6 +206,11 @@ bool VulkanPipeline::CreatePipeline(
     attributeDescriptions[3].location = 3;
     attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions[3].offset = sizeof(f32) * 8;
+    // Tangent (location 4)
+    attributeDescriptions[4].binding = 0;
+    attributeDescriptions[4].location = 4;
+    attributeDescriptions[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[4].offset = sizeof(f32) * 12;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

@@ -1467,6 +1467,25 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        // Parallax / Height mapping
+        if (ImGui::TreeNode("Parallax Mapping")) {
+            char heightPath[256];
+            strncpy(heightPath, material->heightTexturePath.c_str(), sizeof(heightPath) - 1);
+            heightPath[sizeof(heightPath) - 1] = '\0';
+            if (ImGui::InputText("Height Map Path", heightPath, sizeof(heightPath))) {
+                material->heightTexturePath = heightPath;
+                if (material->heightTexturePath.empty()) {
+                    material->heightTexture = -1;
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Path to grayscale height map texture");
+
+            ImGui::DragFloat("Parallax Scale", &material->parallaxScale, 0.001f, 0.0f, 0.2f, "%.3f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Height displacement intensity (0.03-0.05 typical)");
+
+            ImGui::TreePop();
+        }
+
         // Retro rendering effects (per-material)
         if (ImGui::TreeNode("Retro Effects")) {
             ImGui::Checkbox("Flat Shading", &material->flatShading);

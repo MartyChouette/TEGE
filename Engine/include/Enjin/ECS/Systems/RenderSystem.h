@@ -100,6 +100,7 @@ private:
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);
     void UpdateTextureDescriptor(Renderer::Texture* texture);
+    void UpdateHeightTextureDescriptor(Renderer::Texture* texture);
     
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;

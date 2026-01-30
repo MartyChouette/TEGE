@@ -15,6 +15,7 @@ struct ENJIN_API MeshComponent : public IComponent {
         Math::Vector3 normal;
         Math::Vector2 uv;
         Math::Vector4 color = Math::Vector4(1.0f, 1.0f, 1.0f, 1.0f); // vertex color (default white)
+        Math::Vector4 tangent = Math::Vector4(0.0f, 0.0f, 0.0f, 1.0f); // xyz=tangent dir, w=handedness
     };
 
     std::vector<Vertex> vertices;

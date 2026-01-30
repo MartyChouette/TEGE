@@ -91,6 +91,9 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["receiveShadows"] = material.receiveShadows;
     j["alphaMode"] = static_cast<i32>(material.alphaMode);
     j["alphaCutoff"] = material.alphaCutoff;
+    // Height/parallax mapping
+    j["heightTexturePath"] = material.heightTexturePath;
+    j["parallaxScale"] = material.parallaxScale;
     // Retro rendering flags
     j["flatShading"] = material.flatShading;
     j["affineTexturing"] = material.affineTexturing;
@@ -212,6 +215,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.receiveShadows = j["receiveShadows"].get<bool>();
     material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(j["alphaMode"].get<i32>());
     material.alphaCutoff = j["alphaCutoff"].get<f32>();
+    // Height/parallax mapping (optional, added in later versions)
+    if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
+    if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
     // Retro rendering flags (optional, added in later versions)
     if (j.contains("flatShading")) material.flatShading = j["flatShading"].get<bool>();
     if (j.contains("affineTexturing")) material.affineTexturing = j["affineTexturing"].get<bool>();

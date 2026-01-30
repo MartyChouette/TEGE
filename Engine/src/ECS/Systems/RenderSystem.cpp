@@ -256,12 +256,15 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
                 if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
                 if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
+                // Height texture flag
+                if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
                 // Retro flags
                 if (material->flatShading) pushConstants.flags |= (1 << 20);
                 if (material->affineTexturing) pushConstants.flags |= (1 << 21);
                 if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+                pushConstants.parallaxScale = material->parallaxScale;
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -271,12 +274,24 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.opacity = 1.0f;
                 pushConstants.alphaCutoff = 0.5f;
                 pushConstants.flags = 0;
+                pushConstants.parallaxScale = 0.0f;
             }
 
             if (boundTexture) {
                 UpdateTextureDescriptor(boundTexture);
             } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
                 UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            // Bind height map texture if available
+            if (material && !material->heightTexturePath.empty()) {
+                auto heightTex = GetOrLoadTexture(material->heightTexturePath);
+                if (heightTex && heightTex->IsValid()) {
+                    material->heightTexture = 1;
+                    UpdateHeightTextureDescriptor(heightTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateHeightTextureDescriptor(m_DefaultWhiteTexture.get());
             }
 
             vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
@@ -380,12 +395,12 @@ void RenderSystem::CreateUniformBuffers() {
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool (3 UBOs + 2 combined image samplers per frame)
+    // Create descriptor pool (3 UBOs + 3 combined image samplers per frame)
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = framesInFlight * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = framesInFlight * 2;  // base color + shadow map
+    poolSizes[1].descriptorCount = framesInFlight * 3;  // base color + shadow map + height map
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -458,7 +473,10 @@ void RenderSystem::CreateDescriptorSets() {
             shadowImageInfo = imageInfo;
         }
 
-        std::array<VkWriteDescriptorSet, 5> descriptorWrites{};
+        // Height map (binding 5) - default to white texture (no displacement)
+        VkDescriptorImageInfo heightImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 6> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -504,6 +522,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[4].descriptorCount = 1;
         descriptorWrites[4].pImageInfo = &shadowImageInfo;
+
+        // Height map descriptor
+        descriptorWrites[5].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[5].dstSet = m_DescriptorSets[i];
+        descriptorWrites[5].dstBinding = 5;
+        descriptorWrites[5].dstArrayElement = 0;
+        descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[5].descriptorCount = 1;
+        descriptorWrites[5].pImageInfo = &heightImageInfo;
 
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -828,6 +855,14 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
         if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
         if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
+        if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
+        // Retro flags
+        if (material->flatShading) pushConstants.flags |= (1 << 20);
+        if (material->affineTexturing) pushConstants.flags |= (1 << 21);
+        if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
+        if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+        pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+        pushConstants.parallaxScale = material->parallaxScale;
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -838,6 +873,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.opacity = 1.0f;
         pushConstants.alphaCutoff = 0.5f;
         pushConstants.flags = 0;
+        pushConstants.parallaxScale = 0.0f;
     }
 
     // Update texture descriptor if entity has a texture
@@ -998,6 +1034,27 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
     descriptorWrite.dstBinding = 3;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
+    if (!texture || !texture->IsValid()) {
+        return;
+    }
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = 5;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;

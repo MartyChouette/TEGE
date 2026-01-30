@@ -8,6 +8,7 @@ layout(location = 2) in vec2 fragUV;
 layout(location = 3) in vec4 fragPosLightSpace;
 layout(location = 4) in vec4 fragVertColor;
 layout(location = 5) in float fragClipW;
+layout(location = 6) in vec4 fragTangent;
 
 layout(location = 0) out vec4 outColor;
 
@@ -79,7 +80,11 @@ layout(push_constant) uniform PushConstants {
     float emissiveStrength;
     float opacity;
     float alphaCutoff;
-    int flags;  // bits 0-7: render flags, 8-9: alpha mode, 16-19: texture flags, 20-31: retro
+    int flags;  // bits 0-7: render flags, 8-9: alpha mode, 10: height tex, 16-19: texture flags, 20-31: retro
+    float parallaxScale;
+    float _pad0;
+    float _pad1;
+    float _pad2;
 } material;
 
 // Material flag bits
@@ -90,6 +95,9 @@ layout(push_constant) uniform PushConstants {
 #define FLAG_HAS_NORMAL_TEX     (1 << 17)
 #define FLAG_HAS_METALLIC_TEX   (1 << 18)
 #define FLAG_HAS_EMISSIVE_TEX   (1 << 19)
+
+// Height texture flag
+#define FLAG_HAS_HEIGHT_TEX     (1 << 10)
 
 // Retro flag bits (must match vertex shader and C++ Material.h)
 #define FLAG_FLAT_SHADING       (1 << 20)
@@ -102,6 +110,9 @@ layout(binding = 3) uniform sampler2D baseColorTexture;
 
 // Shadow map sampler (binding 4)
 layout(binding = 4) uniform sampler2DShadow shadowMap;
+
+// Height map sampler for parallax mapping (binding 5)
+layout(binding = 5) uniform sampler2D heightMap;
 
 // Calculate shadow factor using PCF (Percentage Closer Filtering)
 float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
@@ -162,6 +173,39 @@ float calcAttenuation(float distance, float constant, float linear, float quadra
     return 1.0 / (constant + linear * distance + quadratic * distance * distance);
 }
 
+// Parallax Occlusion Mapping - ray marches through the height map
+vec2 parallaxOcclusionMapping(vec2 texCoords, vec3 viewDirTangent) {
+    // Adaptive layer count: more layers at grazing angles for quality
+    const float minLayers = 8.0;
+    const float maxLayers = 32.0;
+    float numLayers = mix(maxLayers, minLayers, abs(dot(vec3(0, 0, 1), viewDirTangent)));
+
+    float layerDepth = 1.0 / numLayers;
+    float currentLayerDepth = 0.0;
+
+    // Direction to shift UV per layer (scaled by parallax amount)
+    vec2 P = viewDirTangent.xy * material.parallaxScale;
+    vec2 deltaTexCoords = P / numLayers;
+
+    vec2 currentTexCoords = texCoords;
+    float currentDepthMapValue = texture(heightMap, currentTexCoords).r;
+
+    // Step through layers until we find the intersection
+    while (currentLayerDepth < currentDepthMapValue) {
+        currentTexCoords -= deltaTexCoords;
+        currentDepthMapValue = texture(heightMap, currentTexCoords).r;
+        currentLayerDepth += layerDepth;
+    }
+
+    // Interpolate between previous and current position for smoother result
+    vec2 prevTexCoords = currentTexCoords + deltaTexCoords;
+    float afterDepth = currentDepthMapValue - currentLayerDepth;
+    float beforeDepth = texture(heightMap, prevTexCoords).r - currentLayerDepth + layerDepth;
+    float weight = afterDepth / (afterDepth - beforeDepth);
+
+    return prevTexCoords * weight + currentTexCoords * (1.0 - weight);
+}
+
 // 4x4 Bayer dither matrix for stipple transparency
 float bayerDither4x4(ivec2 pos) {
     const int pattern[16] = int[16](
@@ -177,6 +221,24 @@ float bayerDither4x4(ivec2 pos) {
 void main() {
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
+
+    // Parallax Occlusion Mapping: offset UV using height map before any texture sampling
+    if ((material.flags & FLAG_HAS_HEIGHT_TEX) != 0 && material.parallaxScale > 0.0) {
+        // Build TBN matrix from interpolated normal and tangent
+        vec3 N = normalize(fragNormal);
+        vec3 T = normalize(fragTangent.xyz);
+        // Re-orthogonalize tangent (Gram-Schmidt)
+        T = normalize(T - dot(T, N) * N);
+        vec3 B = cross(N, T) * fragTangent.w; // w = handedness
+        mat3 TBN = mat3(T, B, N);
+        mat3 TBN_inv = transpose(TBN); // transpose = inverse for orthonormal basis
+
+        // View direction in tangent space
+        vec3 viewDirWorld = normalize(lighting.cameraPos - fragWorldPos);
+        vec3 viewDirTangent = normalize(TBN_inv * viewDirWorld);
+
+        uv = parallaxOcclusionMapping(uv, viewDirTangent);
+    }
 
     // Choose normal: flat shading uses face normal from derivatives
     vec3 normal;

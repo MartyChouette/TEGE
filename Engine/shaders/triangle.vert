@@ -6,6 +6,7 @@ layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) in vec4 inColor;
+layout(location = 4) in vec4 inTangent;
 
 // Push constant for per-object model matrix + material flags
 layout(push_constant) uniform PushConstants {
@@ -18,6 +19,10 @@ layout(push_constant) uniform PushConstants {
     float opacity;
     float alphaCutoff;
     int flags;
+    float parallaxScale;
+    float _pad0;
+    float _pad1;
+    float _pad2;
 } pushConstants;
 
 // Uniform buffer for view/projection (shared across all objects)
@@ -50,6 +55,7 @@ layout(location = 2) out vec2 fragUV;
 layout(location = 3) out vec4 fragPosLightSpace;
 layout(location = 4) out vec4 fragVertColor;
 layout(location = 5) out float fragClipW;
+layout(location = 6) out vec4 fragTangent;
 
 // Retro flag bits (must match C++ Material.h)
 #define FLAG_FLAT_SHADING     (1 << 20)
@@ -95,6 +101,10 @@ void main() {
 
     // Pass through vertex color
     fragVertColor = inColor;
+
+    // Transform tangent to world space and pass through (w = handedness)
+    vec3 worldTangent = normalize(normalMatrix * inTangent.xyz);
+    fragTangent = vec4(worldTangent, inTangent.w);
 
     // Calculate position in light space for shadow mapping
     fragPosLightSpace = lighting.lightSpaceMatrix * worldPos;

@@ -42,6 +42,11 @@ struct MaterialComponent {
     enum class AlphaMode { Opaque, Mask, Blend } alphaMode = AlphaMode::Opaque;
     f32 alphaCutoff = 0.5f;
 
+    // Height/parallax mapping
+    i32 heightTexture = -1;
+    std::string heightTexturePath;
+    f32 parallaxScale = 0.05f;
+
     // Retro rendering flags (per-material)
     bool flatShading = false;
     bool affineTexturing = false;
@@ -79,11 +84,12 @@ struct alignas(16) MaterialGPU {
         if (mat.receiveShadows) gpu.flags |= 4;
         gpu.flags |= (static_cast<i32>(mat.alphaMode) << 8);
 
-        // Texture flags (bits 16-19)
+        // Texture flags (bits 16-19, bit 10 for height)
         if (mat.baseColorTexture >= 0) gpu.flags |= (1 << 16);
         if (mat.normalTexture >= 0) gpu.flags |= (1 << 17);
         if (mat.metallicRoughnessTexture >= 0) gpu.flags |= (1 << 18);
         if (mat.emissiveTexture >= 0) gpu.flags |= (1 << 19);
+        if (mat.heightTexture >= 0) gpu.flags |= (1 << 10);
 
         // Retro flags (bits 20-23)
         if (mat.flatShading) gpu.flags |= (1 << 20);
@@ -101,6 +107,7 @@ struct alignas(16) MaterialGPU {
     static constexpr i32 FLAG_HAS_NORMAL_TEXTURE = (1 << 17);
     static constexpr i32 FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE = (1 << 18);
     static constexpr i32 FLAG_HAS_EMISSIVE_TEXTURE = (1 << 19);
+    static constexpr i32 FLAG_HAS_HEIGHT_TEXTURE = (1 << 10);
 
     // Retro flag bit positions
     static constexpr i32 FLAG_FLAT_SHADING = (1 << 20);

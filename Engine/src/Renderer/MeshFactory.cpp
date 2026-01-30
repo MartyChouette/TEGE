@@ -469,9 +469,7 @@ void MeshFactory::CalculateTangents(ECS::MeshComponent& mesh) {
         tan1[i2] = tan1[i2] + tangent;
     }
 
-    // Gram-Schmidt orthogonalize tangent against normal and normalize
-    // Store in vertex color.xyz (repurposed as tangent when needed)
-    // Note: Proper tangent storage would need a separate tangent field in Vertex
+    // Gram-Schmidt orthogonalize tangent against normal and store in vertex tangent field
     for (usize i = 0; i < vertCount; ++i) {
         const Math::Vector3& n = mesh.vertices[i].normal;
         const Math::Vector3& t = tan1[i];
@@ -494,8 +492,9 @@ void MeshFactory::CalculateTangents(ECS::MeshComponent& mesh) {
             len = Math::Sqrt(ortho.x * ortho.x + ortho.y * ortho.y + ortho.z * ortho.z);
             if (len > 1e-6f) ortho = ortho * (1.0f / len);
         }
-        // Store tangent for now (when a proper tangent field is added, move this there)
-        (void)ortho;
+
+        // w = handedness (sign of cross(n, t) · bitangent)
+        mesh.vertices[i].tangent = Math::Vector4(ortho.x, ortho.y, ortho.z, 1.0f);
     }
 }
 
