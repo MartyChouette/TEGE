@@ -25,32 +25,22 @@ public:
     void RegisterFunction(const std::string& name, std::function<void(f32)> func);
     void RegisterFunction(const std::string& name, std::function<f32()> func);
 
-    // Script API - functions available to scripts
-    namespace ScriptAPI {
-        // Material manipulation
-        void SetMaterialParam(const std::string& materialName, const std::string& paramName, f32 value);
-        void SetMaterialParam(const std::string& materialName, const std::string& paramName, const Math::Vector4& value);
-        void ReloadMaterial(const std::string& materialName);
-        
-        // Pipeline state
-        void SetLineWidth(f32 width);
-        void SetDepthTest(bool enable);
-        void SetCullMode(const std::string& mode); // "none", "front", "back", "both"
-        
-        // Hooks
-        void RegisterHook(const std::string& eventType, const std::string& hookName);
-        
-        // Debug
-        void EnableWireframe(bool enable);
-        void EnableDebugVisualization(bool enable);
-    }
+    // Script API - built-in commands available to scripts
+    void API_SetMaterialParam(const std::string& materialName, const std::string& paramName, f32 value);
+    void API_SetMaterialParamVec4(const std::string& materialName, const std::string& paramName, const Math::Vector4& value);
+    void API_ReloadMaterial(const std::string& materialName);
+    void API_SetLineWidth(f32 width);
+    void API_SetDepthTest(bool enable);
+    void API_SetCullMode(const std::string& mode); // "none", "front", "back", "both"
+    void API_EnableWireframe(bool enable);
 
 private:
     RenderPipeline* m_Pipeline = nullptr;
-    std::unordered_map<std::string, std::function<void()>> m_Functions;
-    
-    // Script engine would be initialized here
-    // For now, we provide the interface
+    std::unordered_map<std::string, std::function<void()>> m_VoidFunctions;
+    std::unordered_map<std::string, std::function<void(f32)>> m_FloatFunctions;
+    std::unordered_map<std::string, std::function<f32()>> m_RetFloatFunctions;
+
+    bool ParseAndExecuteLine(const std::string& line);
 };
 
 } // namespace Renderer

@@ -13,6 +13,15 @@ namespace Physics {
 class RigidBody;
 class Collider;
 
+// Collision pair result
+struct CollisionPair {
+    usize bodyA = 0;
+    usize bodyB = 0;
+    Math::Vector3 normal;       // From A to B
+    f32 penetration = 0.0f;
+    Math::Vector3 contactPoint;
+};
+
 /**
  * @brief Physics World
  * 
@@ -75,15 +84,17 @@ public:
 private:
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
     std::vector<std::shared_ptr<RigidBody>> m_RigidBodies;
-    
+    std::vector<CollisionPair> m_CollisionPairs;
+
     void Integrate(f32 deltaTime);
     void DetectCollisions();
     void ResolveCollisions();
+
+    bool TestSphereSphere(usize a, usize b, CollisionPair& pair);
+    bool TestAABBAABB(usize a, usize b, CollisionPair& pair);
+    bool TestSphereAABB(usize sphereIdx, usize boxIdx, CollisionPair& pair);
 };
 
-/**
- * @brief Rigid Body
- */
 class ENJIN_API RigidBody {
 public:
     RigidBody();
@@ -98,14 +109,38 @@ public:
     f32 GetMass() const { return m_Mass; }
     void SetMass(f32 mass) { m_Mass = mass; }
 
+    f32 GetInverseMass() const { return m_IsStatic ? 0.0f : (m_Mass > 0.0f ? 1.0f / m_Mass : 0.0f); }
+
     bool IsStatic() const { return m_IsStatic; }
     void SetStatic(bool isStatic) { m_IsStatic = isStatic; }
+
+    f32 GetBoundingRadius() const { return m_BoundingRadius; }
+    void SetBoundingRadius(f32 radius) { m_BoundingRadius = radius; }
+
+    Math::Vector3 GetHalfExtents() const { return m_HalfExtents; }
+    void SetHalfExtents(const Math::Vector3& half) { m_HalfExtents = half; }
+
+    f32 GetRestitution() const { return m_Restitution; }
+    void SetRestitution(f32 e) { m_Restitution = e; }
+
+    f32 GetFriction() const { return m_Friction; }
+    void SetFriction(f32 f) { m_Friction = f; }
+
+    enum class Shape : u8 { Sphere, Box };
+    Shape GetShape() const { return m_Shape; }
+    void SetShape(Shape s) { m_Shape = s; }
 
 private:
     Math::Vector3 m_Position = Math::Vector3(0.0f);
     Math::Vector3 m_Velocity = Math::Vector3(0.0f);
     f32 m_Mass = 1.0f;
     bool m_IsStatic = false;
+
+    Shape m_Shape = Shape::Sphere;
+    f32 m_BoundingRadius = 0.5f;
+    Math::Vector3 m_HalfExtents = Math::Vector3(0.5f, 0.5f, 0.5f);
+    f32 m_Restitution = 0.3f;
+    f32 m_Friction = 0.5f;
 };
 
 } // namespace Physics

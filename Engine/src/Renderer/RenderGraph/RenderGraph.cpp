@@ -144,32 +144,114 @@ ResourceHandle RenderGraph::GetResourceHandle(const std::string& name) const {
 }
 
 void RenderGraph::ResolveDependencies() {
-    // Build dependency graph
-    // For each pass, determine what resources it needs and what it produces
-    // This is simplified - in production you'd do more sophisticated analysis
-    
-    for (auto& pass : m_Passes) {
-        // Inputs create dependencies on previous passes that output them
-        // Outputs mark this pass as producer
-        // This is a simplified version - full implementation would track read/write dependencies
+    // Build producer map: resource handle -> index of the pass that writes it
+    m_ResourceProducer.clear();
+    m_PassDependencies.clear();
+    m_PassDependencies.resize(m_Passes.size());
+
+    for (usize i = 0; i < m_Passes.size(); ++i) {
+        auto* pass = m_Passes[i].get();
+
+        // Outputs and storage images mark this pass as producer
+        for (ResourceHandle h : pass->GetOutputs()) {
+            m_ResourceProducer[h] = static_cast<u32>(i);
+        }
+        for (ResourceHandle h : pass->GetStorageImages()) {
+            m_ResourceProducer[h] = static_cast<u32>(i);
+        }
+        for (ResourceHandle h : pass->GetStorageBuffers()) {
+            m_ResourceProducer[h] = static_cast<u32>(i);
+        }
+    }
+
+    // Build dependency edges: if pass i reads a resource produced by pass j, then i depends on j
+    for (usize i = 0; i < m_Passes.size(); ++i) {
+        auto* pass = m_Passes[i].get();
+        auto addDep = [&](ResourceHandle h) {
+            auto it = m_ResourceProducer.find(h);
+            if (it != m_ResourceProducer.end() && it->second != static_cast<u32>(i)) {
+                // Avoid duplicate dependencies
+                auto& deps = m_PassDependencies[i];
+                u32 producer = it->second;
+                bool found = false;
+                for (u32 d : deps) {
+                    if (d == producer) { found = true; break; }
+                }
+                if (!found) deps.push_back(producer);
+            }
+        };
+
+        for (ResourceHandle h : pass->GetInputs()) addDep(h);
+        for (ResourceHandle h : pass->GetSampledImages()) addDep(h);
+        for (ResourceHandle h : pass->GetUniformBuffers()) addDep(h);
     }
 }
 
 void RenderGraph::TopologicalSort() {
-    // Simple topological sort based on resource dependencies
-    // In production, you'd use Kahn's algorithm or DFS
-    
+    // Kahn's algorithm for topological ordering
+    usize n = m_Passes.size();
     m_OrderedPasses.clear();
-    m_OrderedPasses.reserve(m_Passes.size());
-    
-    // For now, just use insertion order
-    // Full implementation would sort based on dependencies
-    for (auto& pass : m_Passes) {
-        m_OrderedPasses.push_back(pass.get());
+    m_OrderedPasses.reserve(n);
+
+    // Compute in-degree for each pass
+    std::vector<u32> inDegree(n, 0);
+    for (usize i = 0; i < n; ++i) {
+        for (u32 dep : m_PassDependencies[i]) {
+            (void)dep;
+            // dep -> i edge means i has +1 in-degree
+        }
     }
-    
-    // Assign order
-    for (u32 i = 0; i < m_OrderedPasses.size(); ++i) {
+    // Actually count properly: for each pass i, each dependency in m_PassDependencies[i] is an incoming edge
+    for (usize i = 0; i < n; ++i) {
+        inDegree[i] = static_cast<u32>(m_PassDependencies[i].size());
+    }
+
+    // Start with passes that have no dependencies
+    std::queue<u32> ready;
+    for (u32 i = 0; i < static_cast<u32>(n); ++i) {
+        if (inDegree[i] == 0) {
+            ready.push(i);
+        }
+    }
+
+    // Build adjacency list (forward edges: producer -> dependents)
+    std::vector<std::vector<u32>> dependents(n);
+    for (usize i = 0; i < n; ++i) {
+        for (u32 dep : m_PassDependencies[i]) {
+            dependents[dep].push_back(static_cast<u32>(i));
+        }
+    }
+
+    while (!ready.empty()) {
+        u32 current = ready.front();
+        ready.pop();
+        m_OrderedPasses.push_back(m_Passes[current].get());
+
+        for (u32 dependent : dependents[current]) {
+            inDegree[dependent]--;
+            if (inDegree[dependent] == 0) {
+                ready.push(dependent);
+            }
+        }
+    }
+
+    // If not all passes are ordered, there's a cycle - fall back to insertion order for remaining
+    if (m_OrderedPasses.size() < n) {
+        ENJIN_LOG_WARN(Renderer, "Render graph has cyclic dependencies, using fallback ordering for %zu passes",
+                       n - m_OrderedPasses.size());
+        for (auto& pass : m_Passes) {
+            bool found = false;
+            for (auto* ordered : m_OrderedPasses) {
+                if (ordered == pass.get()) { found = true; break; }
+            }
+            if (!found) {
+                m_OrderedPasses.push_back(pass.get());
+            }
+        }
+    }
+
+    // Assign execution order
+    for (u32 i = 0; i < static_cast<u32>(m_OrderedPasses.size()); ++i) {
         m_OrderedPasses[i]->SetOrder(i);
     }
 }

@@ -28,10 +28,17 @@ public:
             return;
         }
 
+        // Register window resize callback to proactively trigger swapchain recreation
+        GetWindow()->SetResizeCallback([this](Enjin::u32, Enjin::u32) {
+            if (m_Renderer) {
+                m_Renderer->SetFramebufferResized(true);
+            }
+        });
+
         // Setup camera
         m_Camera = std::make_unique<Enjin::Renderer::Camera>();
         m_Camera->SetPerspective(45.0f, 16.0f / 9.0f, 0.1f, 1000.0f);
-        m_Camera->SetPosition(Enjin::Math::Vector3(0.0f, 2.0f, 5.0f));
+        m_Camera->SetPosition(Enjin::Math::Vector3(0.0f, 2.5f, 7.0f));
 
         // Setup camera controller
         m_CameraController = std::make_unique<Enjin::Renderer::CameraController>(m_Camera.get());
@@ -55,6 +62,7 @@ public:
             m_EditorLayer->SetWorld(m_World.get());
             m_EditorLayer->SetCamera(m_Camera.get());
             m_EditorLayer->SetCameraController(m_CameraController.get());
+            m_EditorLayer->SetRenderSystem(m_RenderSystem);
         }
 
         ENJIN_LOG_INFO(Editor, "Editor initialized - Use RMB + WASD to fly, scroll to adjust speed");
@@ -112,13 +120,19 @@ public:
             m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
         }
 
-        // Render scene
+        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+
+        // Render offscreen targets (before main render pass)
+        if (m_EditorLayer && cmd != VK_NULL_HANDLE) {
+            m_EditorLayer->RenderOffscreen(cmd);
+        }
+
+        // Render scene (starts main render pass)
         if (m_World) {
             m_World->Update(0.0f);
         }
 
-        // Render editor UI
-        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+        // Render editor UI (within main render pass)
         if (m_EditorLayer && cmd != VK_NULL_HANDLE) {
             m_EditorLayer->Render(cmd);
         }

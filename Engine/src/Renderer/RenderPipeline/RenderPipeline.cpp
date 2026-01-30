@@ -1,9 +1,12 @@
 #include "Enjin/Renderer/RenderPipeline/RenderPipeline.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Core/Assert.h"
 #include <algorithm>
+#include <fstream>
+#include <sstream>
 
 namespace Enjin {
 namespace Renderer {
@@ -193,14 +196,46 @@ void RenderPipeline::ReloadMaterial(u32 id) {
 
 void RenderPipeline::ReloadShader(const std::string& shaderPath) {
     ENJIN_LOG_INFO(Renderer, "Reloading shader: %s", shaderPath.c_str());
-    
-    // Trigger shader reload event
+
+    // Read shader source from file
+    std::ifstream file(shaderPath);
+    if (!file.is_open()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to open shader file for reload: %s", shaderPath.c_str());
+        return;
+    }
+
+    std::string source((std::istreambuf_iterator<char>(file)),
+                        std::istreambuf_iterator<char>());
+    file.close();
+
+    if (source.empty()) {
+        ENJIN_LOG_ERROR(Renderer, "Shader file is empty: %s", shaderPath.c_str());
+        return;
+    }
+
+    // Determine shader stage from file extension
+    VkShaderStageFlagBits stage = VK_SHADER_STAGE_VERTEX_BIT;
+    if (shaderPath.find(".frag") != std::string::npos) {
+        stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    } else if (shaderPath.find(".comp") != std::string::npos) {
+        stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    } else if (shaderPath.find(".geom") != std::string::npos) {
+        stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+    }
+
+    // Compile GLSL to SPIR-V using the shader compiler
+    std::vector<u32> spirv;
+    if (!ShaderCompiler::CompileGLSL(source, stage, spirv)) {
+        ENJIN_LOG_ERROR(Renderer, "Shader compilation failed during hot-reload: %s", shaderPath.c_str());
+        return;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Shader recompiled successfully: %s (%zu SPIR-V words)", shaderPath.c_str(), spirv.size());
+
+    // Trigger shader reload event for systems to pick up the new SPIR-V
     RenderEvent event{RenderEventType::Custom};
     event.data = const_cast<char*>(shaderPath.c_str());
     DispatchEvent(event);
-    
-    // In full implementation, would reload shader module here
-    // For now, just log - actual reload would be in VulkanShader
 }
 
 void RenderPipeline::ReloadAllShaders() {

@@ -35,6 +35,13 @@ public:
     Math::Vector3 GetRight() const;
     Math::Vector3 GetUp() const;
 
+    // Projection getters
+    f32 GetFOV() const { return m_Fov; }
+    f32 GetAspect() const { return m_Aspect; }
+    f32 GetNearPlane() const { return m_NearPlane; }
+    f32 GetFarPlane() const { return m_FarPlane; }
+    bool IsPerspective() const { return m_IsPerspective; }
+
 private:
     void UpdateViewMatrix();
 

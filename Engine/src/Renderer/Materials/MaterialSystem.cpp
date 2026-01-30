@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace Enjin {
 namespace Renderer {
@@ -137,13 +138,64 @@ const MaterialParam* MaterialInstance::GetParameter(const std::string& name) con
 }
 
 void MaterialInstance::UpdateUniforms(VkCommandBuffer cmd, u32 frameIndex) {
-    (void)cmd;
     (void)frameIndex;
-    // Update uniform buffers with material parameters
-    // This would be implemented when integrated with renderer
-    if (m_Dirty) {
-        m_Dirty = false;
+
+    if (!m_Dirty || cmd == VK_NULL_HANDLE) {
+        return;
     }
+
+    // Build push constants from material parameters
+    // Layout matches PushConstants struct (model matrix is set externally):
+    //   baseColor (vec3), metallic (float), emissiveColor (vec3), roughness (float),
+    //   emissiveStrength, opacity, alphaCutoff, flags
+    struct MaterialPushData {
+        alignas(16) Math::Vector3 baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        f32 metallic = 0.0f;
+        alignas(16) Math::Vector3 emissiveColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        f32 roughness = 0.5f;
+        f32 emissiveStrength = 0.0f;
+        f32 opacity = 1.0f;
+        f32 alphaCutoff = 0.5f;
+        i32 flags = 0;
+    };
+
+    MaterialPushData data;
+
+    // Map named parameters to push constant fields
+    if (auto* p = GetParameter("baseColor")) {
+        if (p->type == MaterialParamType::Vector4) {
+            data.baseColor = Math::Vector3(p->vec4Value.x, p->vec4Value.y, p->vec4Value.z);
+        }
+    }
+    if (auto* p = GetParameter("metallic")) {
+        if (p->type == MaterialParamType::Float) data.metallic = p->floatValue;
+    }
+    if (auto* p = GetParameter("roughness")) {
+        if (p->type == MaterialParamType::Float) data.roughness = p->floatValue;
+    }
+    if (auto* p = GetParameter("emissiveColor")) {
+        if (p->type == MaterialParamType::Vector4) {
+            data.emissiveColor = Math::Vector3(p->vec4Value.x, p->vec4Value.y, p->vec4Value.z);
+        }
+    }
+    if (auto* p = GetParameter("emissiveStrength")) {
+        if (p->type == MaterialParamType::Float) data.emissiveStrength = p->floatValue;
+    }
+    if (auto* p = GetParameter("opacity")) {
+        if (p->type == MaterialParamType::Float) data.opacity = p->floatValue;
+    }
+    if (auto* p = GetParameter("alphaCutoff")) {
+        if (p->type == MaterialParamType::Float) data.alphaCutoff = p->floatValue;
+    }
+
+    // Push material data (offset past model matrix at 64 bytes)
+    if (m_Pipeline) {
+        vkCmdPushConstants(cmd, m_Pipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            sizeof(Math::Matrix4), sizeof(MaterialPushData), &data);
+    }
+
+    m_Dirty = false;
 }
 
 MaterialSystem::MaterialSystem() {
@@ -402,7 +454,52 @@ void MaterialSystem::ReloadAllMaterials() {
 void MaterialSystem::WatchMaterialFiles(bool enable) {
     m_FileWatching = enable;
     ENJIN_LOG_INFO(Renderer, "Material file watching: %s", enable ? "enabled" : "disabled");
-    // File watcher implementation would go here
+
+    if (enable) {
+        // Build list of files to watch from all materials
+        m_WatchedFiles.clear();
+        for (u32 i = 0; i < static_cast<u32>(m_Materials.size()); ++i) {
+            if (!m_Materials[i]) continue;
+            const auto& def = m_Materials[i]->GetDefinition();
+            if (def.filePath.empty()) continue;
+
+            WatchedFile wf;
+            wf.path = def.filePath;
+            wf.materialId = i;
+            wf.lastModTime = 0;
+
+            // Get initial modification time
+            std::error_code ec;
+            auto modTime = std::filesystem::last_write_time(def.filePath, ec);
+            if (!ec) {
+                wf.lastModTime = modTime.time_since_epoch().count();
+            }
+
+            m_WatchedFiles.push_back(wf);
+        }
+        ENJIN_LOG_INFO(Renderer, "Watching %zu material files", m_WatchedFiles.size());
+    } else {
+        m_WatchedFiles.clear();
+    }
+}
+
+void MaterialSystem::PollFileChanges() {
+    if (!m_FileWatching) return;
+
+    for (auto& wf : m_WatchedFiles) {
+        std::error_code ec;
+        auto modTime = std::filesystem::last_write_time(wf.path, ec);
+        if (ec) continue;
+
+        i64 currentModTime = modTime.time_since_epoch().count();
+        if (currentModTime != wf.lastModTime && wf.lastModTime != 0) {
+            wf.lastModTime = currentModTime;
+            ENJIN_LOG_INFO(Renderer, "Material file changed: %s, reloading...", wf.path.c_str());
+            ReloadMaterial(wf.materialId);
+        } else {
+            wf.lastModTime = currentModTime;
+        }
+    }
 }
 
 void MaterialSystem::ForEachMaterial(std::function<void(MaterialInstance*)> callback) {

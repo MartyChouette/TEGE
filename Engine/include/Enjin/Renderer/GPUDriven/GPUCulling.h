@@ -30,15 +30,26 @@ struct ENJIN_API BoundingBox {
     }
 };
 
-// Object data for GPU culling
+// Object data for GPU culling (layout matches GLSL std430)
 struct CullableObject {
-    BoundingBox bounds;
-    Math::Matrix4 transform;
-    u32 meshIndex = 0;
-    u32 materialIndex = 0;
-    u32 indexCount = 0;
-    u32 indexOffset = 0;
-    u32 vertexOffset = 0;
+    // Bounds as vec4 for GPU alignment (xyz = value, w = padding)
+    Math::Vector4 boundsMin;   // offset 0,  16 bytes
+    Math::Vector4 boundsMax;   // offset 16, 16 bytes
+    Math::Matrix4 transform;   // offset 32, 64 bytes
+    u32 meshIndex = 0;         // offset 96
+    u32 materialIndex = 0;     // offset 100
+    u32 indexCount = 0;        // offset 104
+    u32 indexOffset = 0;       // offset 108
+    u32 vertexOffset = 0;      // offset 112
+    u32 _pad0 = 0;             // offset 116 (pad to 16-byte boundary)
+    u32 _pad1 = 0;             // offset 120
+    u32 _pad2 = 0;             // offset 124
+
+    // Helper to set bounds from BoundingBox
+    void SetBounds(const BoundingBox& box) {
+        boundsMin = Math::Vector4(box.min.x, box.min.y, box.min.z, 0.0f);
+        boundsMax = Math::Vector4(box.max.x, box.max.y, box.max.z, 0.0f);
+    }
 };
 
 // GPU frustum culling system

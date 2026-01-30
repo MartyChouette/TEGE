@@ -14,14 +14,28 @@ enum class CameraMode {
     FirstPerson // First-person style
 };
 
+// View presets for quick camera positioning
+enum class ViewPreset {
+    Perspective,  // Free perspective view
+    Top,          // Looking down (-Y)
+    Bottom,       // Looking up (+Y)
+    Front,        // Looking at -Z
+    Back,         // Looking at +Z
+    Right,        // Looking at -X
+    Left          // Looking at +X
+};
+
 // Fly camera controller - uses Input system
 class ENJIN_API CameraController {
 public:
     CameraController(Camera* camera = nullptr);
     ~CameraController() = default;
 
-    void SetCamera(Camera* camera) { m_Camera = camera; }
+    void SetCamera(Camera* camera) { m_Camera = camera; SyncFromCamera(); }
     Camera* GetCamera() const { return m_Camera; }
+
+    // Sync yaw/pitch from current camera orientation (call after setting camera position/rotation externally)
+    void SyncFromCamera();
 
     void Update(f32 deltaTime);
 
@@ -53,6 +67,16 @@ public:
     f32 GetYaw() const { return m_Yaw; }
     f32 GetPitch() const { return m_Pitch; }
 
+    // View presets
+    void SetViewPreset(ViewPreset preset);
+    ViewPreset GetViewPreset() const { return m_ViewPreset; }
+
+    // Orthographic mode
+    void SetOrthographic(bool ortho);
+    bool IsOrthographic() const { return m_IsOrthographic; }
+    void SetOrthoSize(f32 size) { m_OrthoSize = size; }
+    f32 GetOrthoSize() const { return m_OrthoSize; }
+
 private:
     void UpdateFlyMode(f32 deltaTime);
     void UpdateOrbitMode(f32 deltaTime);
@@ -80,6 +104,13 @@ private:
 
     // State
     bool m_RightMouseHeld = false;
+    bool m_MiddleMouseHeld = false;
+    bool m_MiddleMouseOrbiting = false;
+
+    // View preset and orthographic
+    ViewPreset m_ViewPreset = ViewPreset::Perspective;
+    bool m_IsOrthographic = false;
+    f32 m_OrthoSize = 10.0f;  // Orthographic view size
 };
 
 } // namespace Renderer

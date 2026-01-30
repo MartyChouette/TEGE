@@ -99,6 +99,12 @@ struct alignas(16) LightingUBO {
     u32 spotLightCount;
     u32 _pad1;
 
+    // Shadow mapping data
+    Math::Matrix4 lightSpaceMatrix;  // Light view-projection matrix
+    f32 shadowBias;                  // Depth bias for shadow acne
+    i32 shadowEnabled;               // 1 = shadows enabled
+    f32 _shadowPad[2];               // Padding for alignment
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

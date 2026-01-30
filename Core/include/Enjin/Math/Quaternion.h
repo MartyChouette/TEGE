@@ -68,7 +68,7 @@ struct ENJIN_API Quaternion {
     }
 
     Vector3 Rotate(const Vector3& v) const {
-        Quaternion qv(0.0f, v.x, v.y, v.z);
+        Quaternion qv(v.x, v.y, v.z, 0.0f);
         Quaternion result = (*this) * qv * Inverse();
         return Vector3(result.x, result.y, result.z);
     }
@@ -112,6 +112,25 @@ struct ENJIN_API Quaternion {
         return Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
+    // Convert quaternion to euler angles (radians, XYZ order)
+    Vector3 ToEuler() const {
+        Vector3 euler;
+        // Roll (X)
+        f32 sinr_cosp = 2.0f * (w * x + y * z);
+        f32 cosr_cosp = 1.0f - 2.0f * (x * x + y * y);
+        euler.x = Atan2(sinr_cosp, cosr_cosp);
+        // Pitch (Y)
+        f32 sinp = 2.0f * (w * y - z * x);
+        if (sinp >= 1.0f) euler.y = 1.5707963f;       // +pi/2
+        else if (sinp <= -1.0f) euler.y = -1.5707963f; // -pi/2
+        else euler.y = Asin(sinp);
+        // Yaw (Z)
+        f32 siny_cosp = 2.0f * (w * z + x * y);
+        f32 cosy_cosp = 1.0f - 2.0f * (y * y + z * z);
+        euler.z = Atan2(siny_cosp, cosy_cosp);
+        return euler;
+    }
+
     static Quaternion FromEuler(const Vector3& euler) {
         f32 halfX = euler.x * 0.5f;
         f32 halfY = euler.y * 0.5f;
@@ -124,12 +143,58 @@ struct ENJIN_API Quaternion {
         f32 cz = Cos(halfZ);
         f32 sz = Sin(halfZ);
 
+        // ZYX intrinsic rotation order (matches ToEuler extraction)
         return Quaternion(
-            cx * cy * sz + sx * sy * cz,
-            sx * cy * cz - cx * sy * sz,
-            cx * sy * cz + sx * cy * sz,
-            cx * cy * cz - sx * sy * sz
+            cz * cy * sx - sz * sy * cx,
+            cz * sy * cx + sz * cy * sx,
+            sz * cy * cx - cz * sy * sx,
+            cz * cy * cx + sz * sy * sx
         );
+    }
+
+    // Alias for ToMatrix to match expected API
+    Matrix4 ToMatrix4() const { return ToMatrix(); }
+
+    // Spherical linear interpolation
+    static Quaternion Slerp(const Quaternion& a, const Quaternion& b, f32 t) {
+        // Compute dot product
+        f32 dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+
+        Quaternion end = b;
+        // If negative dot, negate one to take shorter path
+        if (dot < 0.0f) {
+            dot = -dot;
+            end = Quaternion(-b.x, -b.y, -b.z, -b.w);
+        }
+
+        // If quaternions are very close, use linear interpolation
+        if (dot > 0.9995f) {
+            Quaternion result(
+                a.x + t * (end.x - a.x),
+                a.y + t * (end.y - a.y),
+                a.z + t * (end.z - a.z),
+                a.w + t * (end.w - a.w)
+            );
+            return result.Normalized();
+        }
+
+        // Compute slerp
+        f32 theta = Acos(dot);
+        f32 sinTheta = Sin(theta);
+        f32 wa = Sin((1.0f - t) * theta) / sinTheta;
+        f32 wb = Sin(t * theta) / sinTheta;
+
+        return Quaternion(
+            wa * a.x + wb * end.x,
+            wa * a.y + wb * end.y,
+            wa * a.z + wb * end.z,
+            wa * a.w + wb * end.w
+        );
+    }
+
+    // Dot product
+    f32 Dot(const Quaternion& other) const {
+        return x * other.x + y * other.y + z * other.z + w * other.w;
     }
 };
 

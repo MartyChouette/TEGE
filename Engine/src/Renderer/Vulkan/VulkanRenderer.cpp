@@ -269,6 +269,13 @@ void VulkanRenderer::DestroySyncObjects() {
 bool VulkanRenderer::AcquireNextImage() {
     vkWaitForFences(m_Context->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame], VK_TRUE, UINT64_MAX);
 
+    // Proactive resize: callback set the flag before this frame
+    if (m_FramebufferResized) {
+        m_FramebufferResized = false;
+        OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
+        return false;
+    }
+
     VkResult result = vkAcquireNextImageKHR(
         m_Context->GetDevice(),
         m_Swapchain->GetSwapchain(),
@@ -279,11 +286,17 @@ bool VulkanRenderer::AcquireNextImage() {
     );
 
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        // Swapchain needs to be recreated
         OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
         return false;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         ENJIN_LOG_ERROR(Renderer, "Failed to acquire swapchain image: %d", result);
+        return false;
+    }
+
+    // Bounds check after potential swapchain image count change
+    if (m_CurrentImageIndex >= static_cast<u32>(m_ImagesInFlight.size())) {
+        ENJIN_LOG_WARN(Renderer, "Image index %u out of bounds, triggering resize", m_CurrentImageIndex);
+        OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
         return false;
     }
 
@@ -328,7 +341,8 @@ void VulkanRenderer::SubmitCommandBuffer() {
     presentInfo.pImageIndices = &m_CurrentImageIndex;
 
     VkResult result = vkQueuePresentKHR(m_Context->GetPresentQueue(), &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_FramebufferResized) {
+        m_FramebufferResized = false;
         OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
     } else if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to present swapchain image: %d", result);
@@ -338,13 +352,17 @@ void VulkanRenderer::SubmitCommandBuffer() {
 }
 
 bool VulkanRenderer::BeginFrame() {
+    // Skip rendering while window is minimized (0x0 framebuffer)
+    if (m_Window->GetWidth() == 0 || m_Window->GetHeight() == 0) {
+        return false;
+    }
+
     if (m_IsFrameStarted) {
         ENJIN_LOG_WARN(Renderer, "BeginFrame called while frame already in progress");
         return false;
     }
 
     if (!AcquireNextImage()) {
-        ENJIN_LOG_WARN(Renderer, "BeginFrame: AcquireNextImage failed");
         return false;
     }
 
@@ -357,6 +375,23 @@ bool VulkanRenderer::BeginFrame() {
     }
 
     m_IsFrameStarted = true;
+    m_IsMainRenderPassActive = false;
+
+    // Note: Main render pass is NOT started here anymore.
+    // Call BeginMainRenderPass() after any pre-render passes (shadow, etc.)
+    return true;
+}
+
+void VulkanRenderer::BeginMainRenderPass() {
+    if (!m_IsFrameStarted) {
+        ENJIN_LOG_WARN(Renderer, "BeginMainRenderPass called without BeginFrame");
+        return;
+    }
+
+    if (m_IsMainRenderPassActive) {
+        ENJIN_LOG_WARN(Renderer, "BeginMainRenderPass called while already active");
+        return;
+    }
 
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -373,7 +408,7 @@ bool VulkanRenderer::BeginFrame() {
     renderPassInfo.pClearValues = clearValues.data();
 
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    return true;
+    m_IsMainRenderPassActive = true;
 }
 
 void VulkanRenderer::EndFrame() {
@@ -382,7 +417,10 @@ void VulkanRenderer::EndFrame() {
         return;
     }
 
-    vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
+    if (m_IsMainRenderPassActive) {
+        vkCmdEndRenderPass(m_CommandBuffers[m_CurrentFrame]);
+        m_IsMainRenderPassActive = false;
+    }
 
     if (vkEndCommandBuffer(m_CommandBuffers[m_CurrentFrame]) != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to record command buffer");
@@ -399,18 +437,36 @@ VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
 
 void VulkanRenderer::OnWindowResize(u32 width, u32 height) {
     if (width == 0 || height == 0) {
+        // Window is minimized; mark for resize when restored
+        m_FramebufferResized = true;
         return;
     }
 
     vkDeviceWaitIdle(m_Context->GetDevice());
 
-    m_Swapchain->Recreate(width, height);
-    m_Swapchain->RecreateFramebuffers();
+    // Reset frame state - any in-progress frame is now invalid
+    m_IsFrameStarted = false;
+    m_IsMainRenderPassActive = false;
 
-    // Recreate command buffers if needed
+    // Recreate swapchain (Recreate() handles framebuffers internally)
+    m_Swapchain->Recreate(width, height);
+
+    // Resize images-in-flight tracking to match new swapchain image count
+    m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
+
+    // Recreate command buffers
     vkFreeCommandBuffers(m_Context->GetDevice(), m_CommandPool,
         static_cast<u32>(m_CommandBuffers.size()), m_CommandBuffers.data());
     CreateCommandBuffers();
+
+    m_FramebufferResized = false;
+
+    // Notify external systems (post-processing, etc.)
+    for (auto& callback : m_ResizeCallbacks) {
+        callback(width, height);
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Window resized to %ux%u", width, height);
 }
 
 } // namespace Renderer

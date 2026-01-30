@@ -62,24 +62,46 @@ EnjinEngine/
 ### Phase 5: Advanced Rendering 🚧
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)
 - [x] Alpha cutoff / transparency support
+- [x] Multiple Light Sources (point, spot, directional)
+- [x] Post-Processing Effects (bloom, tone mapping, vignette, color grading)
+- [x] Retro Effects (PSX, CRT, dithering, vertex jitter)
+- [x] Weather System (rain, snow, fog)
+- [x] Water Rendering (waves, reflections, caustics)
 - [ ] Shadow Mapping (infrastructure created)
 - [ ] Texture Support (albedo, normal, roughness maps)
-- [ ] Multiple Light Sources (point, spot, directional)
 - [ ] Environment Mapping / Skybox
-- [ ] Post-Processing Effects (bloom, tone mapping)
 
-### Phase 6: Production Features
-- [ ] Scene Serialization (JSON save/load)
+### Phase 6: Production Features 🚧
+- [x] Scene Serialization (JSON save/load)
 - [ ] Undo/Redo System
 - [ ] Asset Hot-Reloading
 - [ ] Prefab System
 
-### Phase 7: Licensable Features
+### Phase 7: Animation & Audio ✅
+- [x] 2D Sprite Animation (frame-based, flipbook)
+- [x] 3D Skeletal Animation (bone hierarchy, skinning)
+- [x] Animation Blending & State Machines
+- [x] Audio System (basic)
+- [x] FMOD Integration Hooks
+- [x] Wwise Integration Hooks
+
+### Phase 8: AI & Procedural Generation ✅
+- [x] Spline System (Linear, Bezier, Catmull-Rom, B-Spline)
+- [x] Enemy AI Behaviors (patrol, chase, flee, attack patterns)
+- [x] AI State Machines (FSM with transitions)
+- [x] 2D Procedural Level Generation (prefab-based with marked openings)
+- [x] 3D Procedural Level Generation (room/corridor system)
+- [x] Navmesh Generation & Pathfinding (A* pathfinding, path following)
+
+### Phase 6 (continued): Production Features 🚧
+- [x] Undo/Redo System (command pattern)
+- [x] Prefab System (save/load entity templates)
+- [ ] Asset Hot-Reloading
+
+### Phase 9: Licensable Features 🚧
 - [ ] Scripting Language (Lua or C# binding)
-- [ ] Physics Integration (Jolt or custom)
-- [ ] Audio System
-- [ ] Animation System
-- [ ] Networking
+- [x] Physics Integration (simple built-in)
+- [ ] Networking (client-server, peer-to-peer)
 
 ## Editor Controls
 

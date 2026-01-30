@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <memory>
+#include <functional>
 
 /**
  * @file VulkanRenderer.h
@@ -42,16 +43,25 @@ public:
 
     /**
      * @brief Begin a new frame
-     * Acquire next image and begin command buffer recording
+     * Acquire next image and begin command buffer recording.
+     * Does NOT start the main render pass - call BeginMainRenderPass() for that.
      * @return true if a new frame was started, false otherwise
      */
     bool BeginFrame();
+
+    /**
+     * @brief Begin the main render pass
+     * Call this after BeginFrame() and any pre-render passes (shadow, etc.)
+     */
+    void BeginMainRenderPass();
 
     /**
      * @brief End the current frame
      * End command buffer recording and submit to queue
      */
     void EndFrame();
+
+    bool IsMainRenderPassActive() const { return m_IsMainRenderPassActive; }
 
     VkCommandBuffer GetCurrentCommandBuffer() const;
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
@@ -61,6 +71,13 @@ public:
     u32 GetCurrentFrameIndex() const { return m_CurrentFrame; }
 
     void OnWindowResize(u32 width, u32 height);
+
+    // Flag set by window resize callback to trigger swapchain recreation
+    void SetFramebufferResized(bool resized) { m_FramebufferResized = resized; }
+
+    // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
+    using ResizeCallback = std::function<void(u32, u32)>;
+    void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }
 
 private:
     bool CreateSurface();
@@ -91,6 +108,10 @@ private:
     static constexpr u32 MAX_FRAMES_IN_FLIGHT = 2;
 
     bool m_IsFrameStarted = false;
+    bool m_IsMainRenderPassActive = false;
+    bool m_FramebufferResized = false;
+
+    std::vector<ResizeCallback> m_ResizeCallbacks;
 };
 
 } // namespace Renderer

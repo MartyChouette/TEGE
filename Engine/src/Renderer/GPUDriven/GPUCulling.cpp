@@ -199,7 +199,30 @@ bool GPUCullingSystem::ExecuteCulling(
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 
     outIndirectDrawBuffer = m_IndirectDrawBuffer->GetBuffer();
-    outDrawCount = m_ObjectCount; // Actual visible count would be in visibility buffer
+
+    // Read back visibility buffer to count visible objects
+    // Note: This requires a GPU->CPU sync which can stall. In production,
+    // use an atomic counter in the compute shader or query the count from
+    // the previous frame to avoid the stall.
+    u32 visibleCount = 0;
+    void* mapped = m_VisibilityBuffer->Map();
+    if (mapped) {
+        const u32* visibility = static_cast<const u32*>(mapped);
+        for (u32 i = 0; i < m_ObjectCount; ++i) {
+            if (visibility[i] != 0) {
+                visibleCount++;
+            }
+        }
+        m_VisibilityBuffer->Unmap();
+    } else {
+        // Fallback: assume all visible if readback fails
+        visibleCount = m_ObjectCount;
+    }
+
+    outDrawCount = m_ObjectCount; // Use full count for indirect draw (culled entries have instanceCount=0)
+    m_Stats.totalObjects = m_ObjectCount;
+    m_Stats.visibleObjects = visibleCount;
+    m_Stats.culledObjects = m_ObjectCount - visibleCount;
 
     return true;
 }

@@ -43,6 +43,12 @@ void VulkanSwapchain::Recreate(u32 width, u32 height) {
     DestroyDepthResources();
     DestroyImageViews();
 
+    // Destroy old swapchain before creating new one to prevent resource leak
+    if (m_Swapchain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(m_Context->GetDevice(), m_Swapchain, nullptr);
+        m_Swapchain = VK_NULL_HANDLE;
+    }
+
     if (!CreateSwapchain(m_Surface, width, height) || !CreateImageViews()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain");
         return;

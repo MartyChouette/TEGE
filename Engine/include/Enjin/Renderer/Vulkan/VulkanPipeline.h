@@ -12,27 +12,32 @@
 namespace Enjin {
 namespace Renderer {
 
-// Uniform buffer object for MVP matrices
+// Uniform buffer object for view/projection matrices (shared across all objects)
 struct UniformBufferObject {
-    alignas(16) Math::Matrix4 model;
     alignas(16) Math::Matrix4 view;
     alignas(16) Math::Matrix4 proj;
 };
 
-// Lighting uniform buffer object
-struct LightingUBO {
-    alignas(16) Math::Vector3 ambientColor;
-    alignas(4) f32 ambientIntensity;
-    alignas(16) Math::Vector3 cameraPos;
-    alignas(4) f32 _pad0;
-    alignas(16) Math::Vector3 lightDir;
-    alignas(4) f32 lightIntensity;
-    alignas(16) Math::Vector3 lightColor;
-    alignas(4) f32 shadowBias;           // Shadow depth bias
-    alignas(16) Math::Matrix4 lightSpaceMatrix; // Light view-projection matrix for shadows
-    alignas(4) i32 shadowEnabled;        // 1 = shadows enabled, 0 = disabled
-    alignas(4) f32 _pad1[3];             // Padding for alignment
+// Push constants for per-object data (model matrix + material)
+struct PushConstants {
+    alignas(16) Math::Matrix4 model;
+    // Material data (must match fragment shader)
+    alignas(16) Math::Vector3 baseColor;
+    f32 metallic;
+    alignas(16) Math::Vector3 emissiveColor;
+    f32 roughness;
+    f32 emissiveStrength;
+    f32 opacity;
+    f32 alphaCutoff;
+    i32 flags;
+    f32 parallaxScale;
+    f32 _pad0 = 0.0f;
+    f32 _pad1 = 0.0f;
+    f32 _pad2 = 0.0f;
 };
+
+// Note: LightingUBO is defined in Enjin/ECS/Components/Light.h
+// Use ECS::LightingUBO for multi-light support
 
 // Graphics pipeline configuration
 struct PipelineConfig {
@@ -44,6 +49,12 @@ struct PipelineConfig {
     VkFrontFace frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     VkPolygonMode polygonMode = VK_POLYGON_MODE_FILL;
     VkSampleCountFlagBits msaaSamples = VK_SAMPLE_COUNT_1_BIT;
+    // Depth bias for shadow mapping
+    bool depthBiasEnable = false;
+    f32 depthBiasConstant = 0.0f;
+    f32 depthBiasSlope = 0.0f;
+    // For depth-only passes (no color attachment)
+    bool hasColorAttachment = true;
 };
 
 // Graphics pipeline wrapper
@@ -57,6 +68,15 @@ public:
         VulkanShader* vertexShader,
         VulkanShader* fragmentShader
     );
+
+    // Create pipeline with external descriptor set layout (for sharing layouts)
+    bool CreateWithLayout(
+        const PipelineConfig& config,
+        VulkanShader* vertexShader,
+        VulkanShader* fragmentShader,
+        VkDescriptorSetLayout sharedLayout
+    );
+
     void Destroy();
 
     void Bind(VkCommandBuffer commandBuffer);
@@ -74,6 +94,7 @@ private:
     VkPipeline m_Pipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
+    bool m_OwnsDescriptorSetLayout = true;  // False when using external layout
 };
 
 } // namespace Renderer

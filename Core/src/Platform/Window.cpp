@@ -87,7 +87,10 @@ public:
 
 private:
     void SetupCallbacks() {
-        glfwSetWindowSizeCallback(m_Window, [](GLFWwindow* window, int width, int height) {
+        // Use framebuffer size callback (pixel dimensions) rather than window size
+        // callback (screen coordinates) - Vulkan needs pixel dimensions, and this
+        // also fires on HiDPI monitor changes where only DPI scale changes.
+        glfwSetFramebufferSizeCallback(m_Window, [](GLFWwindow* window, int width, int height) {
             GLFWWindow* self = static_cast<GLFWWindow*>(glfwGetWindowUserPointer(window));
             if (self && self->m_ResizeCallback) {
                 self->m_ResizeCallback(static_cast<u32>(width), static_cast<u32>(height));
