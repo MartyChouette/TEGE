@@ -41,6 +41,13 @@ struct MaterialComponent {
     // Alpha mode
     enum class AlphaMode { Opaque, Mask, Blend } alphaMode = AlphaMode::Opaque;
     f32 alphaCutoff = 0.5f;
+
+    // Retro rendering flags (per-material)
+    bool flatShading = false;
+    bool affineTexturing = false;
+    bool vertexSnapping = false;
+    bool stippleTransparency = false;
+    u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 };
 
 // GPU-aligned material data for shader upload
@@ -78,6 +85,14 @@ struct alignas(16) MaterialGPU {
         if (mat.metallicRoughnessTexture >= 0) gpu.flags |= (1 << 18);
         if (mat.emissiveTexture >= 0) gpu.flags |= (1 << 19);
 
+        // Retro flags (bits 20-23)
+        if (mat.flatShading) gpu.flags |= (1 << 20);
+        if (mat.affineTexturing) gpu.flags |= (1 << 21);
+        if (mat.vertexSnapping) gpu.flags |= (1 << 22);
+        if (mat.stippleTransparency) gpu.flags |= (1 << 23);
+        // Vertex snap resolution packed into bits 24-31
+        gpu.flags |= (static_cast<i32>(mat.vertexSnapResolution) << 24);
+
         return gpu;
     }
 
@@ -86,6 +101,12 @@ struct alignas(16) MaterialGPU {
     static constexpr i32 FLAG_HAS_NORMAL_TEXTURE = (1 << 17);
     static constexpr i32 FLAG_HAS_METALLIC_ROUGHNESS_TEXTURE = (1 << 18);
     static constexpr i32 FLAG_HAS_EMISSIVE_TEXTURE = (1 << 19);
+
+    // Retro flag bit positions
+    static constexpr i32 FLAG_FLAT_SHADING = (1 << 20);
+    static constexpr i32 FLAG_AFFINE_TEXTURING = (1 << 21);
+    static constexpr i32 FLAG_VERTEX_SNAPPING = (1 << 22);
+    static constexpr i32 FLAG_STIPPLE_TRANSPARENCY = (1 << 23);
 };
 
 } // namespace ECS

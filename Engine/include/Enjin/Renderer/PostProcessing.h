@@ -101,6 +101,30 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 screenHeight = 1080;
     alignas(4) f32 _pad6;
     alignas(4) f32 _pad7;
+
+    // Retro: Dithering
+    alignas(4) u32 ditherEnabled = 0;
+    alignas(4) u32 ditherPattern = 0;     // 0=Bayer2x2, 1=Bayer4x4, 2=Bayer8x8
+    alignas(4) f32 ditherStrength = 1.0f;
+    alignas(4) f32 _retroPad0 = 0.0f;
+
+    // Retro: Color quantization
+    alignas(4) u32 colorQuantEnabled = 0;
+    alignas(4) u32 colorBitDepth = 8;     // bits per channel (5=PS1, 8=modern)
+    alignas(4) f32 _retroPad1 = 0.0f;
+    alignas(4) f32 _retroPad2 = 0.0f;
+
+    // Retro: Resolution downscaling
+    alignas(4) u32 resDownscaleEnabled = 0;
+    alignas(4) u32 internalWidth = 320;
+    alignas(4) u32 internalHeight = 240;
+    alignas(4) u32 usePointFiltering = 1;
+
+    // CRT scanlines
+    alignas(4) u32 crtEnabled = 0;
+    alignas(4) f32 scanlineIntensity = 0.3f;
+    alignas(4) f32 scanlineWidth = 1.0f;
+    alignas(4) f32 crtCurvature = 0.0f;
 };
 
 // Post-processing manager

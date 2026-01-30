@@ -6,6 +6,8 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -38,6 +40,14 @@ Math::Vector2 DeserializeVector2(const json& j) {
 
 Math::Vector3 DeserializeVector3(const json& j) {
     return Math::Vector3(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>());
+}
+
+json SerializeVector4(const Math::Vector4& v) {
+    return json::array({v.x, v.y, v.z, v.w});
+}
+
+Math::Vector4 DeserializeVector4(const json& j) {
+    return Math::Vector4(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
 }
 
 Math::Quaternion DeserializeQuaternion(const json& j) {
@@ -81,6 +91,12 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["receiveShadows"] = material.receiveShadows;
     j["alphaMode"] = static_cast<i32>(material.alphaMode);
     j["alphaCutoff"] = material.alphaCutoff;
+    // Retro rendering flags
+    j["flatShading"] = material.flatShading;
+    j["affineTexturing"] = material.affineTexturing;
+    j["vertexSnapping"] = material.vertexSnapping;
+    j["stippleTransparency"] = material.stippleTransparency;
+    j["vertexSnapResolution"] = material.vertexSnapResolution;
     return j;
 }
 
@@ -96,6 +112,10 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
             vertex["position"] = SerializeVector3(v.position);
             vertex["normal"] = SerializeVector3(v.normal);
             vertex["uv"] = SerializeVector2(v.uv);
+            // Only serialize color if non-default (white)
+            if (v.color.x != 1.0f || v.color.y != 1.0f || v.color.z != 1.0f || v.color.w != 1.0f) {
+                vertex["color"] = SerializeVector4(v.color);
+            }
             vertices.push_back(vertex);
         }
         j["vertices"] = vertices;
@@ -192,6 +212,12 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.receiveShadows = j["receiveShadows"].get<bool>();
     material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(j["alphaMode"].get<i32>());
     material.alphaCutoff = j["alphaCutoff"].get<f32>();
+    // Retro rendering flags (optional, added in later versions)
+    if (j.contains("flatShading")) material.flatShading = j["flatShading"].get<bool>();
+    if (j.contains("affineTexturing")) material.affineTexturing = j["affineTexturing"].get<bool>();
+    if (j.contains("vertexSnapping")) material.vertexSnapping = j["vertexSnapping"].get<bool>();
+    if (j.contains("stippleTransparency")) material.stippleTransparency = j["stippleTransparency"].get<bool>();
+    if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     return material;
 }
 
@@ -204,6 +230,9 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
             vertex.position = DeserializeVector3(v["position"]);
             vertex.normal = DeserializeVector3(v["normal"]);
             vertex.uv = DeserializeVector2(v["uv"]);
+            if (v.contains("color")) {
+                vertex.color = DeserializeVector4(v["color"]);
+            }
             mesh.vertices.push_back(vertex);
         }
     }
@@ -255,6 +284,66 @@ ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     camera.viewportHeight = j["viewportHeight"].get<f32>();
     camera.cullingMask = j["cullingMask"].get<u32>();
     return camera;
+}
+
+json SerializeWeatherZoneComponent(const ECS::WeatherZoneComponent& zone) {
+    json j;
+    j["halfExtents"] = SerializeVector3(zone.halfExtents);
+    j["weatherType"] = zone.weatherType;
+    j["rainIntensity"] = zone.rainIntensity;
+    j["snowIntensity"] = zone.snowIntensity;
+    j["fogDensity"] = zone.fogDensity;
+    j["fogColor"] = SerializeVector3(zone.fogColor);
+    j["fogStart"] = zone.fogStart;
+    j["fogEnd"] = zone.fogEnd;
+    j["lightningEnabled"] = zone.lightningEnabled;
+    j["lightningMinInterval"] = zone.lightningMinInterval;
+    j["lightningMaxInterval"] = zone.lightningMaxInterval;
+    j["windDirection"] = SerializeVector3(zone.windDirection);
+    j["windStrength"] = zone.windStrength;
+    j["priority"] = zone.priority;
+    return j;
+}
+
+ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
+    ECS::WeatherZoneComponent zone;
+    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    zone.weatherType = j["weatherType"].get<u32>();
+    zone.rainIntensity = j["rainIntensity"].get<f32>();
+    zone.snowIntensity = j["snowIntensity"].get<f32>();
+    zone.fogDensity = j["fogDensity"].get<f32>();
+    zone.fogColor = DeserializeVector3(j["fogColor"]);
+    zone.fogStart = j["fogStart"].get<f32>();
+    zone.fogEnd = j["fogEnd"].get<f32>();
+    zone.lightningEnabled = j["lightningEnabled"].get<bool>();
+    if (j.contains("lightningMinInterval")) zone.lightningMinInterval = j["lightningMinInterval"].get<f32>();
+    if (j.contains("lightningMaxInterval")) zone.lightningMaxInterval = j["lightningMaxInterval"].get<f32>();
+    if (j.contains("windDirection")) zone.windDirection = DeserializeVector3(j["windDirection"]);
+    if (j.contains("windStrength")) zone.windStrength = j["windStrength"].get<f32>();
+    zone.priority = j["priority"].get<i32>();
+    return zone;
+}
+
+json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
+    json j;
+    j["halfExtents"] = SerializeVector3(volume.halfExtents);
+    j["waterColor"] = SerializeVector3(volume.waterColor);
+    j["opacity"] = volume.opacity;
+    j["waveSpeed"] = volume.waveSpeed;
+    j["waveHeight"] = volume.waveHeight;
+    j["priority"] = volume.priority;
+    return j;
+}
+
+ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
+    ECS::WaterVolumeComponent volume;
+    volume.halfExtents = DeserializeVector3(j["halfExtents"]);
+    volume.waterColor = DeserializeVector3(j["waterColor"]);
+    volume.opacity = j["opacity"].get<f32>();
+    volume.waveSpeed = j["waveSpeed"].get<f32>();
+    volume.waveHeight = j["waveHeight"].get<f32>();
+    volume.priority = j["priority"].get<i32>();
+    return volume;
 }
 
 } // anonymous namespace
@@ -333,6 +422,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
                 const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
                 entityJson["camera"] = SerializeCameraComponent(*camera);
+            }
+
+            if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                entityJson["weatherZone"] = SerializeWeatherZoneComponent(*zone);
+            }
+
+            if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
             }
 
             entitiesArray.push_back(entityJson);
@@ -471,6 +570,16 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 auto camera = DeserializeCameraComponent(entityJson["camera"]);
                 m_World->AddComponent<ECS::CameraComponent>(entity, camera);
             }
+
+            if (entityJson.contains("weatherZone")) {
+                auto zone = DeserializeWeatherZoneComponent(entityJson["weatherZone"]);
+                m_World->AddComponent<ECS::WeatherZoneComponent>(entity, zone);
+            }
+
+            if (entityJson.contains("waterVolume")) {
+                auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
+                m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
+            }
         }
 
         result.success = true;
@@ -538,6 +647,16 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
                 const auto* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
                 entityJson["camera"] = SerializeCameraComponent(*camera);
+            }
+
+            if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                entityJson["weatherZone"] = SerializeWeatherZoneComponent(*zone);
+            }
+
+            if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
             }
 
             entitiesArray.push_back(entityJson);
@@ -630,6 +749,16 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("camera")) {
                 auto camera = DeserializeCameraComponent(entityJson["camera"]);
                 m_World->AddComponent<ECS::CameraComponent>(entity, camera);
+            }
+
+            if (entityJson.contains("weatherZone")) {
+                auto zone = DeserializeWeatherZoneComponent(entityJson["weatherZone"]);
+                m_World->AddComponent<ECS::WeatherZoneComponent>(entity, zone);
+            }
+
+            if (entityJson.contains("waterVolume")) {
+                auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
+                m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
             }
         }
 

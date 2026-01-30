@@ -1,7 +1,7 @@
 #version 450
 
 // Post-Processing Fragment Shader
-// Applies various effects: tone mapping, bloom, vignette, color grading, FXAA
+// Applies various effects: tone mapping, bloom, vignette, color grading, FXAA, retro effects
 
 layout(location = 0) in vec2 fragUV;
 layout(location = 0) out vec4 outColor;
@@ -60,6 +60,30 @@ layout(binding = 1) uniform PostProcessSettings {
     uint screenHeight;
     float _pad6;
     float _pad7;
+
+    // Retro: Dithering
+    uint ditherEnabled;
+    uint ditherPattern;       // 0=Bayer2x2, 1=Bayer4x4, 2=Bayer8x8
+    float ditherStrength;
+    float _retroPad0;
+
+    // Retro: Color quantization
+    uint colorQuantEnabled;
+    uint colorBitDepth;       // bits per channel
+    float _retroPad1;
+    float _retroPad2;
+
+    // Retro: Resolution downscaling
+    uint resDownscaleEnabled;
+    uint internalWidth;
+    uint internalHeight;
+    uint usePointFiltering;
+
+    // CRT scanlines
+    uint crtEnabled;
+    float scanlineIntensity;
+    float scanlineWidth;
+    float crtCurvature;
 } settings;
 
 // Tone mapping mode constants
@@ -272,8 +296,117 @@ vec3 applyFXAA(vec2 uv) {
     return rgbB;
 }
 
+// ============================================================
+// Retro post-processing effects
+// ============================================================
+
+// Resolution downscaling: snap UV to lower-resolution pixel grid
+vec2 applyResolutionDownscale(vec2 uv) {
+    if (settings.resDownscaleEnabled == 0) return uv;
+
+    float iw = float(settings.internalWidth);
+    float ih = float(settings.internalHeight);
+
+    // Snap to internal resolution grid
+    uv = floor(uv * vec2(iw, ih)) / vec2(iw, ih);
+    // Center within the texel
+    uv += 0.5 / vec2(iw, ih);
+
+    return uv;
+}
+
+// Ordered dithering using Bayer matrices
+vec3 applyDithering(vec3 color, vec2 screenPos) {
+    if (settings.ditherEnabled == 0) return color;
+
+    float threshold = 0.0;
+    ivec2 pos = ivec2(screenPos);
+
+    if (settings.ditherPattern == 0) {
+        // Bayer 2x2
+        const float bayer2[4] = float[4](0.0, 2.0, 3.0, 1.0);
+        int idx = (pos.x % 2) + (pos.y % 2) * 2;
+        threshold = bayer2[idx] / 4.0 - 0.5;
+    } else if (settings.ditherPattern == 1) {
+        // Bayer 4x4
+        const float bayer4[16] = float[16](
+             0.0,  8.0,  2.0, 10.0,
+            12.0,  4.0, 14.0,  6.0,
+             3.0, 11.0,  1.0,  9.0,
+            15.0,  7.0, 13.0,  5.0
+        );
+        int idx = (pos.x % 4) + (pos.y % 4) * 4;
+        threshold = bayer4[idx] / 16.0 - 0.5;
+    } else {
+        // Bayer 8x8
+        const float bayer8[64] = float[64](
+             0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
+            48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+            12.0, 44.0,  4.0, 36.0, 14.0, 46.0,  6.0, 38.0,
+            60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+             3.0, 35.0, 11.0, 43.0,  1.0, 33.0,  9.0, 41.0,
+            51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+            15.0, 47.0,  7.0, 39.0, 13.0, 45.0,  5.0, 37.0,
+            63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0
+        );
+        int idx = (pos.x % 8) + (pos.y % 8) * 8;
+        threshold = bayer8[idx] / 64.0 - 0.5;
+    }
+
+    // Apply dither as an offset before quantization
+    color += threshold * settings.ditherStrength / max(float(settings.colorBitDepth), 5.0);
+
+    return color;
+}
+
+// Color quantization: reduce to N-bit color
+vec3 applyColorQuantization(vec3 color) {
+    if (settings.colorQuantEnabled == 0) return color;
+
+    float levels = pow(2.0, float(settings.colorBitDepth)) - 1.0;
+    color = floor(color * levels + 0.5) / levels;
+
+    return clamp(color, 0.0, 1.0);
+}
+
+// CRT scanlines + optional barrel distortion
+vec3 applyCRT(vec3 color, vec2 uv) {
+    if (settings.crtEnabled == 0) return color;
+
+    // Scanlines
+    float screenY = uv.y * float(settings.screenHeight);
+    float scanline = sin(screenY * 3.14159 / settings.scanlineWidth);
+    scanline = scanline * scanline; // square for sharper lines
+    color *= 1.0 - scanline * settings.scanlineIntensity;
+
+    // Barrel distortion (CRT curvature)
+    if (settings.crtCurvature > 0.0) {
+        vec2 centered = uv * 2.0 - 1.0;
+        float r2 = dot(centered, centered);
+        float distortion = 1.0 + r2 * settings.crtCurvature;
+        vec2 distorted = centered * distortion;
+        // Darken edges that fall outside the screen
+        if (abs(distorted.x) > 1.0 || abs(distorted.y) > 1.0) {
+            color *= 0.0;
+        }
+    }
+
+    return color;
+}
+
 void main() {
     vec2 uv = fragUV;
+
+    // Resolution downscale: snap UV at the very start so all sampling uses the low-res grid
+    uv = applyResolutionDownscale(uv);
+
+    // CRT barrel distortion: warp UV before sampling if curvature is enabled
+    if (settings.crtEnabled != 0 && settings.crtCurvature > 0.0) {
+        vec2 centered = uv * 2.0 - 1.0;
+        float r2 = dot(centered, centered);
+        centered *= 1.0 + r2 * settings.crtCurvature;
+        uv = centered * 0.5 + 0.5;
+    }
 
     // Sample scene with optional FXAA or chromatic aberration
     vec3 color;
@@ -297,8 +430,18 @@ void main() {
     // Apply film grain
     color = applyFilmGrain(color, uv);
 
+    // Retro: dithering (apply before quantization for best results)
+    vec2 screenPos = fragUV * vec2(settings.screenWidth, settings.screenHeight);
+    color = applyDithering(color, screenPos);
+
+    // Retro: color quantization
+    color = applyColorQuantization(color);
+
     // Gamma correction
     color = pow(color, vec3(1.0 / settings.gamma));
+
+    // CRT scanlines (applied after gamma, as the last effect)
+    color = applyCRT(color, fragUV);
 
     outColor = vec4(color, 1.0);
 }

@@ -1,11 +1,13 @@
 #version 450
 
-// Lit Mesh Fragment Shader with Multi-light and Shadow Support
+// Lit Mesh Fragment Shader with Multi-light, Shadow, and Retro Effect Support
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragUV;
 layout(location = 3) in vec4 fragPosLightSpace;
+layout(location = 4) in vec4 fragVertColor;
+layout(location = 5) in float fragClipW;
 
 layout(location = 0) out vec4 outColor;
 
@@ -77,7 +79,7 @@ layout(push_constant) uniform PushConstants {
     float emissiveStrength;
     float opacity;
     float alphaCutoff;
-    int flags;  // bits 0-7: render flags, 8-9: alpha mode, 16-19: texture flags
+    int flags;  // bits 0-7: render flags, 8-9: alpha mode, 16-19: texture flags, 20-31: retro
 } material;
 
 // Material flag bits
@@ -88,6 +90,12 @@ layout(push_constant) uniform PushConstants {
 #define FLAG_HAS_NORMAL_TEX     (1 << 17)
 #define FLAG_HAS_METALLIC_TEX   (1 << 18)
 #define FLAG_HAS_EMISSIVE_TEX   (1 << 19)
+
+// Retro flag bits (must match vertex shader and C++ Material.h)
+#define FLAG_FLAT_SHADING       (1 << 20)
+#define FLAG_AFFINE_TEXTURING   (1 << 21)
+#define FLAG_VERTEX_SNAPPING    (1 << 22)
+#define FLAG_STIPPLE_TRANS      (1 << 23)
 
 // Base color texture sampler (binding 3)
 layout(binding = 3) uniform sampler2D baseColorTexture;
@@ -154,8 +162,32 @@ float calcAttenuation(float distance, float constant, float linear, float quadra
     return 1.0 / (constant + linear * distance + quadratic * distance * distance);
 }
 
+// 4x4 Bayer dither matrix for stipple transparency
+float bayerDither4x4(ivec2 pos) {
+    const int pattern[16] = int[16](
+         0,  8,  2, 10,
+        12,  4, 14,  6,
+         3, 11,  1,  9,
+        15,  7, 13,  5
+    );
+    int idx = (pos.x % 4) + (pos.y % 4) * 4;
+    return float(pattern[idx]) / 16.0;
+}
+
 void main() {
-    vec3 normal = normalize(fragNormal);
+    // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
+    vec2 uv = fragUV / fragClipW;
+
+    // Choose normal: flat shading uses face normal from derivatives
+    vec3 normal;
+    if ((material.flags & FLAG_FLAT_SHADING) != 0) {
+        vec3 dFdxPos = dFdx(fragWorldPos);
+        vec3 dFdyPos = dFdy(fragWorldPos);
+        normal = normalize(cross(dFdxPos, dFdyPos));
+    } else {
+        normal = normalize(fragNormal);
+    }
+
     vec3 viewDir = normalize(lighting.cameraPos - fragWorldPos);
 
     // Material properties - sample textures when available
@@ -165,9 +197,12 @@ void main() {
 
     // Sample base color texture if available
     if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
-        vec4 texColor = texture(baseColorTexture, fragUV);
+        vec4 texColor = texture(baseColorTexture, uv);
         albedo *= texColor.rgb;
     }
+
+    // Multiply with vertex color (baked shadows / per-vertex lighting)
+    albedo *= fragVertColor.rgb;
 
     // Convert roughness to shininess for Blinn-Phong
     float shininess = max(2.0, (2.0 / (roughness * roughness + 0.0001)) - 2.0);
@@ -254,13 +289,22 @@ void main() {
     result = pow(result, vec3(1.0 / 2.2));
 
     // Alpha handling
-    float alpha = material.opacity;
+    float alpha = material.opacity * fragVertColor.a;
     int alphaMode = (material.flags >> 8) & 0x3;
     if (alphaMode == 1) { // Mask mode
         if (alpha < material.alphaCutoff) {
             discard;
         }
         alpha = 1.0;
+    }
+
+    // Stipple transparency: screen-door dither pattern for alpha
+    if ((material.flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
+        float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+        if (alpha < threshold) {
+            discard;
+        }
+        alpha = 1.0; // surviving fragments are fully opaque
     }
 
     outColor = vec4(result, alpha);

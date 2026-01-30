@@ -10,6 +10,8 @@
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
@@ -24,6 +26,7 @@
 #include <filesystem>
 #include <cstdio>
 #include <cstring>
+#include <climits>
 
 namespace Enjin {
 namespace Editor {
@@ -48,7 +51,15 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Initialize play mode (will be fully set up when SetWorld/SetCamera are called)
 
     // Initialize weather system with more particles for better visibility
-    m_WeatherSystem.Initialize(2000);  // 2000 max particles for denser effects
+    m_WeatherSystem.Initialize(8000);  // Large pool for dense rain/snow
+
+    // Render target for Game View (offscreen rendering)
+    // Fixed size - no resize during frame to avoid Vulkan sync issues
+    m_GameViewRenderTarget = std::make_unique<Renderer::RenderTarget>();
+    if (!m_GameViewRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
+        ENJIN_LOG_WARN(Editor, "Failed to create Game View render target");
+        m_GameViewRenderTarget.reset();
+    }
 
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
@@ -61,6 +72,12 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // Destroy render target before ImGui (it uses ImGui textures)
+    if (m_GameViewRenderTarget) {
+        m_GameViewRenderTarget->Destroy();
+        m_GameViewRenderTarget.reset();
+    }
+
     if (m_ImGuiLayer) {
         m_ImGuiLayer->Shutdown();
         m_ImGuiLayer.reset();
@@ -165,6 +182,72 @@ void EditorLayer::Update(f32 deltaTime) {
         m_EditorFadeIn += deltaTime * 2.0f;
         if (m_EditorFadeIn > 1.0f) m_EditorFadeIn = 1.0f;
     }
+
+    // Sync RetroEffects settings to PostProcessSettings each frame
+    if (m_PostProcessing && m_RetroEffects.IsEnabled()) {
+        auto& settings = m_PostProcessing->GetSettings();
+
+        // Dithering
+        auto ditherPattern = m_RetroEffects.GetDitherPattern();
+        settings.ditherEnabled = (ditherPattern != Effects::DitherPattern::None) ? 1 : 0;
+        if (settings.ditherEnabled) {
+            // Map enum to shader pattern index (0=Bayer2x2, 1=Bayer4x4, 2=Bayer8x8)
+            switch (ditherPattern) {
+                case Effects::DitherPattern::Bayer2x2: settings.ditherPattern = 0; break;
+                case Effects::DitherPattern::Bayer4x4: settings.ditherPattern = 1; break;
+                default: settings.ditherPattern = 2; break; // Bayer8x8 and others
+            }
+            settings.ditherStrength = 1.0f;
+        }
+
+        // Color quantization
+        auto colorMode = m_RetroEffects.GetColorMode();
+        settings.colorQuantEnabled = (colorMode != Effects::ColorMode::TrueColor) ? 1 : 0;
+        if (settings.colorQuantEnabled) {
+            switch (colorMode) {
+                case Effects::ColorMode::HighColor:  settings.colorBitDepth = 5; break;
+                case Effects::ColorMode::Palette256:  settings.colorBitDepth = 3; break;
+                case Effects::ColorMode::Palette16:   settings.colorBitDepth = 2; break;
+                case Effects::ColorMode::Monochrome:  settings.colorBitDepth = 1; break;
+                default: settings.colorBitDepth = 8; break;
+            }
+        }
+
+        // Resolution downscaling
+        auto& res = m_RetroEffects.GetResolution();
+        settings.resDownscaleEnabled = 1;
+        settings.internalWidth = res.renderWidth;
+        settings.internalHeight = res.renderHeight;
+        settings.usePointFiltering = res.pointFiltering ? 1 : 0;
+
+        // CRT
+        auto& crt = m_RetroEffects.GetCRTSettings();
+        settings.crtEnabled = crt.enabled ? 1 : 0;
+        settings.scanlineIntensity = crt.scanlineIntensity;
+        settings.scanlineWidth = crt.scanlineWidth;
+        settings.crtCurvature = crt.curvedScreen ? crt.curvature : 0.0f;
+    } else if (m_PostProcessing) {
+        // When retro effects are disabled, clear the retro post-process fields
+        auto& settings = m_PostProcessing->GetSettings();
+        settings.ditherEnabled = 0;
+        settings.colorQuantEnabled = 0;
+        settings.resDownscaleEnabled = 0;
+        settings.crtEnabled = 0;
+    }
+}
+
+void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
+    if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
+        return;
+    }
+
+    // Render to the offscreen target (before main render pass)
+    m_GameViewRenderTarget->Begin(commandBuffer);
+
+    // TODO: Render scene geometry here using RenderSystem with custom camera/render pass
+    // For now, just clears to the background color
+
+    m_GameViewRenderTarget->End(commandBuffer);
 }
 
 void EditorLayer::Render(VkCommandBuffer commandBuffer) {
@@ -186,33 +269,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     ImGuiIO& io = ImGui::GetIO();
 
-    // Set up default window positions on first run (simulated docking)
-    if (!m_DockingInitialized) {
-        m_DockingInitialized = true;
-
-        f32 screenW = io.DisplaySize.x;
-        f32 screenH = io.DisplaySize.y;
-        f32 menuBarH = 20.0f;
-
-        // Left panel (Hierarchy) - 20% width
-        f32 leftW = screenW * 0.18f;
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(leftW, screenH - menuBarH), ImGuiCond_Always);
-
-        // Right panel (Inspector) - 22% width
-        f32 rightW = screenW * 0.22f;
-        f32 rightX = screenW - rightW;
-
-        // Bottom panel (Console) - 25% height
-        f32 bottomH = screenH * 0.22f;
-        f32 bottomY = screenH - bottomH;
-        f32 centerW = screenW - leftW - rightW;
-
-        // Position windows
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(leftW, screenH - menuBarH - bottomH), ImGuiCond_FirstUseEver);
-    }
-
     // Menu bar
     DrawMenuBar();
 
@@ -226,7 +282,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     f32 centerW = screenW - leftW - rightW;
     f32 centerH = screenH - menuBarH - bottomH;
 
-    // Panels with initial positions
+    // Panels with initial positions (user can freely move/resize after first launch)
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
         ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(leftW, centerH), ImGuiCond_FirstUseEver);
@@ -281,6 +337,92 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         for (ECS::Entity entity : m_World->GetAllEntities()) {
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
                 DrawCameraFrustum(entity);
+            }
+        }
+    }
+
+    // Draw wireframe bounding boxes for weather zones and water volumes
+    if (m_World && m_Camera && m_Renderer) {
+        auto extent = m_Renderer->GetSwapchainExtent();
+        if (extent.width > 0 && extent.height > 0) {
+            Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+            Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+            projMat.m[5] *= -1.0f;
+            Math::Matrix4 viewProj = projMat * viewMat;
+            f32 sw = static_cast<f32>(extent.width);
+            f32 sh = static_cast<f32>(extent.height);
+
+            auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
+                Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+                if (clipPos.w <= 0.001f) return false;
+                f32 ndcX = clipPos.x / clipPos.w;
+                f32 ndcY = clipPos.y / clipPos.w;
+                f32 ndcZ = clipPos.z / clipPos.w;
+                if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
+                screenPos.x = (ndcX + 1.0f) * 0.5f * sw;
+                screenPos.y = (1.0f - ndcY) * 0.5f * sh;
+                return true;
+            };
+
+            auto drawLine3D = [&](ImDrawList* dl, const Math::Vector3& from, const Math::Vector3& to, ImU32 color, f32 thickness) {
+                ImVec2 screenFrom, screenTo;
+                if (worldToScreen(from, screenFrom) && worldToScreen(to, screenTo)) {
+                    dl->AddLine(screenFrom, screenTo, color, thickness);
+                }
+            };
+
+            auto drawWireBox = [&](ImDrawList* dl, const Math::Vector3& center, const Math::Vector3& halfExt, ImU32 color, f32 thickness) {
+                // 8 corners of the AABB
+                Math::Vector3 corners[8] = {
+                    center + Math::Vector3(-halfExt.x, -halfExt.y, -halfExt.z),
+                    center + Math::Vector3( halfExt.x, -halfExt.y, -halfExt.z),
+                    center + Math::Vector3( halfExt.x, -halfExt.y,  halfExt.z),
+                    center + Math::Vector3(-halfExt.x, -halfExt.y,  halfExt.z),
+                    center + Math::Vector3(-halfExt.x,  halfExt.y, -halfExt.z),
+                    center + Math::Vector3( halfExt.x,  halfExt.y, -halfExt.z),
+                    center + Math::Vector3( halfExt.x,  halfExt.y,  halfExt.z),
+                    center + Math::Vector3(-halfExt.x,  halfExt.y,  halfExt.z),
+                };
+                // 12 edges: bottom 4, top 4, vertical 4
+                drawLine3D(dl, corners[0], corners[1], color, thickness);
+                drawLine3D(dl, corners[1], corners[2], color, thickness);
+                drawLine3D(dl, corners[2], corners[3], color, thickness);
+                drawLine3D(dl, corners[3], corners[0], color, thickness);
+                drawLine3D(dl, corners[4], corners[5], color, thickness);
+                drawLine3D(dl, corners[5], corners[6], color, thickness);
+                drawLine3D(dl, corners[6], corners[7], color, thickness);
+                drawLine3D(dl, corners[7], corners[4], color, thickness);
+                drawLine3D(dl, corners[0], corners[4], color, thickness);
+                drawLine3D(dl, corners[1], corners[5], color, thickness);
+                drawLine3D(dl, corners[2], corners[6], color, thickness);
+                drawLine3D(dl, corners[3], corners[7], color, thickness);
+            };
+
+            ImDrawList* bgDrawList = ImGui::GetBackgroundDrawList();
+
+            for (ECS::Entity entity : m_World->GetAllEntities()) {
+                // Weather zone wireframe (light blue)
+                if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                    auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (zone && transform) {
+                        bool isSelected = (entity == m_SelectedEntity);
+                        ImU32 color = isSelected ? IM_COL32(100, 180, 255, 200) : IM_COL32(100, 180, 255, 80);
+                        f32 thickness = isSelected ? 2.0f : 1.0f;
+                        drawWireBox(bgDrawList, transform->position, zone->halfExtents, color, thickness);
+                    }
+                }
+                // Water volume wireframe (cyan/teal)
+                if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                    auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (volume && transform) {
+                        bool isSelected = (entity == m_SelectedEntity);
+                        ImU32 color = isSelected ? IM_COL32(50, 220, 200, 200) : IM_COL32(50, 220, 200, 80);
+                        f32 thickness = isSelected ? 2.0f : 1.0f;
+                        drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
+                    }
+                }
             }
         }
     }
@@ -405,7 +547,9 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
-                // Application exit handled by main loop
+                if (m_Window) {
+                    m_Window->Close();
+                }
             }
             ImGui::EndMenu();
         }
@@ -628,6 +772,27 @@ void EditorLayer::DrawMenuBar() {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Effects")) {
+                if (ImGui::MenuItem("Weather Zone")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::WeatherZoneComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Weather Zone");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                if (ImGui::MenuItem("Water Volume")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::WaterVolumeComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Water Volume");
+                        m_SelectedEntity = entity;
+                    }
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenu();
         }
 
@@ -818,6 +983,16 @@ void EditorLayer::DrawInspectorPanel() {
         // Camera component
         if (m_World->HasComponent<ECS::CameraComponent>(m_SelectedEntity)) {
             DrawCameraComponent(m_SelectedEntity);
+        }
+
+        // Weather Zone component
+        if (m_World->HasComponent<ECS::WeatherZoneComponent>(m_SelectedEntity)) {
+            DrawWeatherZoneComponent(m_SelectedEntity);
+        }
+
+        // Water Volume component
+        if (m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
+            DrawWaterVolumeComponent(m_SelectedEntity);
         }
 
         // Notes component
@@ -1058,6 +1233,21 @@ void EditorLayer::DrawInspectorPanel() {
                 ImGui::EndMenu();
             }
 
+            // Effects submenu
+            if (ImGui::BeginMenu("Effects")) {
+                if (!m_World->HasComponent<ECS::WeatherZoneComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Weather Zone")) {
+                        m_World->AddComponent<ECS::WeatherZoneComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Water Volume")) {
+                        m_World->AddComponent<ECS::WaterVolumeComponent>(m_SelectedEntity);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
             // 2D Graphics submenu
             if (ImGui::BeginMenu("2D Graphics")) {
                 if (!m_World->HasComponent<ECS::Sprite2DComponent>(m_SelectedEntity)) {
@@ -1118,11 +1308,12 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
             transform->position = Math::Vector3(pos[0], pos[1], pos[2]);
         }
 
-        // Rotation (as euler angles for simplicity)
-        // TODO: Convert quaternion to euler and back
-        f32 rot[3] = { 0, 0, 0 }; // Simplified
+        // Rotation (euler angles in degrees)
+        Math::Vector3 eulerRad = transform->rotation.ToEuler();
+        f32 rot[3] = { Math::Degrees(eulerRad.x), Math::Degrees(eulerRad.y), Math::Degrees(eulerRad.z) };
         if (ImGui::DragFloat3("Rotation", rot, 1.0f)) {
-            // transform->rotation = Math::Quaternion::FromEuler(...)
+            transform->rotation = Math::Quaternion::FromEuler(
+                Math::Vector3(Math::Radians(rot[0]), Math::Radians(rot[1]), Math::Radians(rot[2])));
         }
 
         // Scale
@@ -1190,6 +1381,31 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::Text("Normal: %d", material->normalTexture);
             ImGui::Text("Metallic/Roughness: %d", material->metallicRoughnessTexture);
             ImGui::Text("Emissive: %d", material->emissiveTexture);
+            ImGui::TreePop();
+        }
+
+        // Retro rendering effects (per-material)
+        if (ImGui::TreeNode("Retro Effects")) {
+            ImGui::Checkbox("Flat Shading", &material->flatShading);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use face normals for faceted look");
+
+            ImGui::Checkbox("Affine Texturing", &material->affineTexturing);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("PS1-style texture warping (no perspective correction)");
+
+            ImGui::Checkbox("Vertex Snapping", &material->vertexSnapping);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("PS1-style vertex wobble from low-precision coordinates");
+
+            if (material->vertexSnapping) {
+                int snapRes = static_cast<int>(material->vertexSnapResolution);
+                if (ImGui::SliderInt("Snap Resolution", &snapRes, 80, 320)) {
+                    material->vertexSnapResolution = static_cast<u8>(snapRes);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more wobble (PS1 ~160)");
+            }
+
+            ImGui::Checkbox("Stipple Transparency", &material->stippleTransparency);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-door transparency using dither pattern");
+
             ImGui::TreePop();
         }
     }
@@ -1313,65 +1529,6 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
-        ImGui::Separator();
-
-        // Weather effects (per-camera)
-        if (ImGui::TreeNode("Weather Effects")) {
-            ImGui::Checkbox("Enable Weather", &camera->weatherEnabled);
-
-            if (camera->weatherEnabled) {
-                const char* weatherTypes[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
-                int currentWeather = static_cast<int>(camera->weatherType);
-                if (ImGui::Combo("Weather Type", &currentWeather, weatherTypes, 7)) {
-                    camera->weatherType = static_cast<u32>(currentWeather);
-                }
-
-                // Show relevant controls based on weather type
-                if (camera->weatherType == 2 || camera->weatherType == 3 || camera->weatherType == 6) {
-                    // Rain/HeavyRain/Storm
-                    ImGui::SliderFloat("Rain Intensity", &camera->rainIntensity, 0.0f, 1.0f);
-                }
-                if (camera->weatherType == 4) {
-                    // Snow
-                    ImGui::SliderFloat("Snow Intensity", &camera->snowIntensity, 0.0f, 1.0f);
-                }
-                if (camera->weatherType == 6) {
-                    // Storm - lightning toggle
-                    ImGui::Checkbox("Lightning Enabled", &camera->lightningEnabled);
-                }
-
-                // Fog settings (available in fog/cloudy/storm)
-                if (camera->weatherType >= 1) {
-                    ImGui::Spacing();
-                    ImGui::Text("Fog Settings");
-                    ImGui::SliderFloat("Fog Density", &camera->fogDensity, 0.0f, 1.0f);
-                    f32 fogCol[3] = { camera->fogColor.x, camera->fogColor.y, camera->fogColor.z };
-                    if (ImGui::ColorEdit3("Fog Color", fogCol)) {
-                        camera->fogColor = Math::Vector3(fogCol[0], fogCol[1], fogCol[2]);
-                    }
-                    ImGui::DragFloat("Fog Start", &camera->fogStart, 1.0f, 0.0f, camera->fogEnd);
-                    ImGui::DragFloat("Fog End", &camera->fogEnd, 1.0f, camera->fogStart, 500.0f);
-                }
-            }
-            ImGui::TreePop();
-        }
-
-        // Water effects (per-camera)
-        if (ImGui::TreeNode("Water Effects")) {
-            ImGui::Checkbox("Enable Water", &camera->waterEnabled);
-
-            if (camera->waterEnabled) {
-                ImGui::DragFloat("Water Level (Y)", &camera->waterLevel, 0.1f, -100.0f, 100.0f);
-                f32 waterCol[3] = { camera->waterColor.x, camera->waterColor.y, camera->waterColor.z };
-                if (ImGui::ColorEdit3("Water Color", waterCol)) {
-                    camera->waterColor = Math::Vector3(waterCol[0], waterCol[1], waterCol[2]);
-                }
-                ImGui::SliderFloat("Water Opacity", &camera->waterOpacity, 0.0f, 1.0f);
-                ImGui::DragFloat("Wave Speed", &camera->waveSpeed, 0.1f, 0.0f, 10.0f);
-                ImGui::DragFloat("Wave Height", &camera->waveHeight, 0.01f, 0.0f, 2.0f);
-            }
-            ImGui::TreePop();
-        }
     }
 }
 
@@ -1390,6 +1547,98 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
                                        ImVec2(-1, 100), ImGuiInputTextFlags_AllowTabInput)) {
             notes->notes = notesBuffer;
         }
+    }
+}
+
+void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::WeatherZoneComponent* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+        if (!zone) return;
+
+        // Bounding box
+        f32 extents[3] = { zone->halfExtents.x, zone->halfExtents.y, zone->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents", extents, 0.5f, 0.1f, 500.0f)) {
+            zone->halfExtents = Math::Vector3(extents[0], extents[1], extents[2]);
+        }
+        ImGui::DragInt("Priority", &zone->priority, 1, -100, 100);
+
+        ImGui::Separator();
+
+        // Weather type
+        const char* weatherTypes[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
+        int currentWeather = static_cast<int>(zone->weatherType);
+        if (ImGui::Combo("Weather Type", &currentWeather, weatherTypes, 7)) {
+            zone->weatherType = static_cast<u32>(currentWeather);
+        }
+
+        // Show relevant controls based on weather type
+        if (zone->weatherType == 2 || zone->weatherType == 3 || zone->weatherType == 6) {
+            ImGui::SliderFloat("Rain Intensity", &zone->rainIntensity, 0.0f, 1.0f);
+        }
+        if (zone->weatherType == 4) {
+            ImGui::SliderFloat("Snow Intensity", &zone->snowIntensity, 0.0f, 1.0f);
+        }
+        if (zone->weatherType == 6) {
+            ImGui::Checkbox("Lightning Enabled", &zone->lightningEnabled);
+            if (zone->lightningEnabled) {
+                ImGui::DragFloat("Lightning Min Interval", &zone->lightningMinInterval, 0.1f, 0.1f, zone->lightningMaxInterval);
+                ImGui::DragFloat("Lightning Max Interval", &zone->lightningMaxInterval, 0.1f, zone->lightningMinInterval, 60.0f);
+            }
+        }
+
+        // Wind settings (for rain/snow/storm)
+        if (zone->weatherType >= 2 && zone->weatherType != 5) {
+            ImGui::Spacing();
+            ImGui::Text("Wind");
+            f32 windDir[3] = { zone->windDirection.x, zone->windDirection.y, zone->windDirection.z };
+            if (ImGui::DragFloat3("Wind Direction", windDir, 0.05f, -1.0f, 1.0f)) {
+                zone->windDirection = Math::Vector3(windDir[0], windDir[1], windDir[2]);
+            }
+            ImGui::DragFloat("Wind Strength", &zone->windStrength, 0.1f, 0.0f, 20.0f);
+        }
+
+        // Fog settings
+        if (zone->weatherType >= 1) {
+            ImGui::Spacing();
+            ImGui::Text("Fog Settings");
+            ImGui::SliderFloat("Fog Density", &zone->fogDensity, 0.0f, 1.0f);
+            f32 fogCol[3] = { zone->fogColor.x, zone->fogColor.y, zone->fogColor.z };
+            if (ImGui::ColorEdit3("Fog Color", fogCol)) {
+                zone->fogColor = Math::Vector3(fogCol[0], fogCol[1], fogCol[2]);
+            }
+            ImGui::DragFloat("Fog Start", &zone->fogStart, 1.0f, 0.0f, zone->fogEnd);
+            ImGui::DragFloat("Fog End", &zone->fogEnd, 1.0f, zone->fogStart, 500.0f);
+        }
+    }
+}
+
+void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::WaterVolumeComponent* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+        if (!volume) return;
+
+        // Bounding box
+        f32 extents[3] = { volume->halfExtents.x, volume->halfExtents.y, volume->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents", extents, 0.5f, 0.1f, 500.0f)) {
+            volume->halfExtents = Math::Vector3(extents[0], extents[1], extents[2]);
+        }
+        ImGui::DragInt("Priority", &volume->priority, 1, -100, 100);
+
+        ImGui::Separator();
+
+        // Water settings
+        f32 waterCol[3] = { volume->waterColor.x, volume->waterColor.y, volume->waterColor.z };
+        if (ImGui::ColorEdit3("Water Color", waterCol)) {
+            volume->waterColor = Math::Vector3(waterCol[0], waterCol[1], waterCol[2]);
+        }
+        ImGui::SliderFloat("Opacity", &volume->opacity, 0.0f, 1.0f);
+        ImGui::DragFloat("Wave Speed", &volume->waveSpeed, 0.1f, 0.0f, 10.0f);
+        ImGui::DragFloat("Wave Height", &volume->waveHeight, 0.01f, 0.0f, 2.0f);
+
+        // Info
+        ImGui::Spacing();
+        ImGui::TextDisabled("Water surface is at entity's Y position");
+        ImGui::TextDisabled("Half Extents define the area and depth");
     }
 }
 
@@ -1813,20 +2062,64 @@ void EditorLayer::DrawEffectsPanel() {
         }
     }
 
-    // === WEATHER & WATER (Per-Camera) ===
+    // === WEATHER & WATER (Entity-Based Zones) ===
     if (ImGui::CollapsingHeader("Weather & Water")) {
-        ImGui::TextWrapped("Weather and Water effects are now configured per-camera.");
+        ImGui::TextWrapped("Weather and Water are entity-based game objects with bounding boxes.");
         ImGui::Spacing();
-        ImGui::TextWrapped("To add effects:");
-        ImGui::BulletText("Select a Camera entity");
-        ImGui::BulletText("In Inspector, expand 'Weather Effects' or 'Water Effects'");
-        ImGui::BulletText("Enable and configure the effects");
-        ImGui::BulletText("View results in Game View panel");
+        ImGui::TextWrapped("Create via Entity > Effects menu, or add components to existing entities.");
         ImGui::Spacing();
 
-        // Show particle count for debugging
+        // List weather zones
+        const char* weatherTypeNames[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
+        u32 weatherZoneCount = 0;
+        u32 waterVolumeCount = 0;
+        if (m_World) {
+            if (ImGui::TreeNode("Weather Zones")) {
+                for (ECS::Entity entity : m_World->GetAllEntities()) {
+                    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                        weatherZoneCount++;
+                        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                        const char* label = name ? name->name.c_str() : "Unnamed";
+                        const char* typeName = (zone->weatherType < 7) ? weatherTypeNames[zone->weatherType] : "Unknown";
+
+                        ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
+                        if (ImGui::IsItemClicked()) {
+                            m_SelectedEntity = entity;
+                        }
+                    }
+                }
+                if (weatherZoneCount == 0) {
+                    ImGui::TextDisabled("No weather zones in scene");
+                }
+                ImGui::TreePop();
+            }
+
+            if (ImGui::TreeNode("Water Volumes")) {
+                for (ECS::Entity entity : m_World->GetAllEntities()) {
+                    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                        waterVolumeCount++;
+                        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                        const char* label = name ? name->name.c_str() : "Unnamed";
+                        f32 surfaceY = transform ? transform->position.y : 0.0f;
+
+                        ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
+                        if (ImGui::IsItemClicked()) {
+                            m_SelectedEntity = entity;
+                        }
+                    }
+                }
+                if (waterVolumeCount == 0) {
+                    ImGui::TextDisabled("No water volumes in scene");
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::Spacing();
         ImGui::Text("Active Particles: %u / 2000", m_WeatherSystem.GetActiveParticleCount());
-
         if (m_WeatherSystem.IsLightningActive()) {
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "LIGHTNING ACTIVE!");
         }
@@ -1942,7 +2235,7 @@ void EditorLayer::DrawGameViewPanel() {
 
         ImGui::Separator();
 
-        // Game View Preview placeholder
+        // Game View Preview
         ImVec2 availSize = ImGui::GetContentRegionAvail();
         if (availSize.x > 0 && availSize.y > 0) {
             // Calculate aspect ratio for preview area (default 16:9)
@@ -1954,7 +2247,15 @@ void EditorLayer::DrawGameViewPanel() {
                 previewWidth = previewHeight * gameAspect;
             }
 
-            // Draw placeholder rectangle (actual render-to-texture would go here)
+            // Update desired render target size (actual resize deferred to RenderOffscreen)
+            u32 targetW = static_cast<u32>(previewWidth);
+            u32 targetH = static_cast<u32>(previewHeight);
+            if (targetW > 0 && targetH > 0) {
+                m_GameViewWidth = targetW;
+                m_GameViewHeight = targetH;
+            }
+
+            // Center the preview
             ImVec2 pos = ImGui::GetCursorScreenPos();
             ImVec2 center((availSize.x - previewWidth) * 0.5f, 0);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center.x);
@@ -1963,22 +2264,91 @@ void EditorLayer::DrawGameViewPanel() {
             ImVec2 p0(pos.x + center.x, pos.y);
             ImVec2 p1(p0.x + previewWidth, p0.y + previewHeight);
 
-            // Dark background for preview area
-            drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
+            // Display render target texture or fallback dark rect
+            VkDescriptorSet texId = m_GameViewRenderTarget ? m_GameViewRenderTarget->GetImGuiTextureID() : VK_NULL_HANDLE;
+            bool usedImage = false;
+            if (texId != VK_NULL_HANDLE) {
+                ImGui::SetCursorPosX(ImGui::GetCursorPosX() + center.x);
+                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)),
+                             ImVec2(previewWidth, previewHeight));
+                usedImage = true;
+            } else {
+                drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
+            }
 
-            // Render weather effects if camera has them enabled
-            if (gameCameraComp && gameCameraComp->weatherEnabled && gameCameraTransform) {
-                // Set weather type and intensity from camera component
-                Effects::WeatherType wType = static_cast<Effects::WeatherType>(gameCameraComp->weatherType);
-                m_WeatherSystem.SetWeather(wType, 0.1f); // Quick transition for preview
-                m_WeatherSystem.SetRainIntensity(gameCameraComp->rainIntensity);
-                m_WeatherSystem.SetSnowIntensity(gameCameraComp->snowIntensity);
-                m_WeatherSystem.SetFogDensity(gameCameraComp->fogDensity);
-                m_WeatherSystem.SetFogColor(gameCameraComp->fogColor);
-                m_WeatherSystem.SetFogStart(gameCameraComp->fogStart);
-                m_WeatherSystem.SetFogEnd(gameCameraComp->fogEnd);
+            // Find weather zone and water volume entities that contain the camera
+            ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
+            ECS::TransformComponent* activeWeatherTransform = nullptr;
+            i32 bestWeatherPriority = INT_MIN;
 
-                // Update weather system with camera position
+            ECS::WaterVolumeComponent* activeWaterVolume = nullptr;
+            ECS::TransformComponent* activeWaterTransform = nullptr;
+            i32 bestWaterPriority = INT_MIN;
+
+            if (m_World && gameCameraTransform) {
+                for (ECS::Entity entity : m_World->GetAllEntities()) {
+                    // Check weather zones
+                    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                        if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+                            if (zone->ContainsPoint(zoneTransform->position, gameCameraTransform->position)) {
+                                activeWeatherZone = zone;
+                                activeWeatherTransform = zoneTransform;
+                                bestWeatherPriority = zone->priority;
+                            }
+                        }
+                    }
+                    // Check water volumes
+                    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                        auto* volumeTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                        if (volume && volumeTransform && volume->priority > bestWaterPriority) {
+                            if (volume->ContainsPoint(volumeTransform->position, gameCameraTransform->position)) {
+                                activeWaterVolume = volume;
+                                activeWaterTransform = volumeTransform;
+                                bestWaterPriority = volume->priority;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Render weather effects from active zone
+            if (activeWeatherZone && activeWeatherZone->weatherType > 0 && gameCameraComp && gameCameraTransform) {
+                // Set weather from zone component
+                Effects::WeatherType wType = static_cast<Effects::WeatherType>(activeWeatherZone->weatherType);
+                m_WeatherSystem.SetWeather(wType, 0.1f);
+
+                // Only set the particle intensity matching the weather type
+                // (Rain/HeavyRain/Storm = rain only, Snow = snow only, others = none)
+                if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                    activeWeatherZone->weatherType == 6) {
+                    m_WeatherSystem.SetRainIntensity(activeWeatherZone->rainIntensity);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                } else if (activeWeatherZone->weatherType == 4) {
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(activeWeatherZone->snowIntensity);
+                } else {
+                    m_WeatherSystem.SetRainIntensity(0.0f);
+                    m_WeatherSystem.SetSnowIntensity(0.0f);
+                }
+                m_WeatherSystem.SetFogDensity(activeWeatherZone->fogDensity);
+                m_WeatherSystem.SetFogColor(activeWeatherZone->fogColor);
+                m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
+                m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
+
+                // Wind
+                m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
+                m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
+
+                // Lightning frequency
+                if (activeWeatherZone->lightningEnabled) {
+                    m_WeatherSystem.SetLightningInterval(
+                        activeWeatherZone->lightningMinInterval,
+                        activeWeatherZone->lightningMaxInterval);
+                }
+
                 m_WeatherSystem.Update(m_LastDeltaTime, gameCameraTransform->position);
 
                 // Build camera matrices for projection
@@ -1999,7 +2369,6 @@ void EditorLayer::DrawGameViewPanel() {
                 projMat.m[5] *= -1.0f; // Flip Y for Vulkan-style
                 Math::Matrix4 viewProj = projMat * viewMat;
 
-                // Project world position to screen within preview bounds
                 auto worldToPreview = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
                     Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
                     if (clipPos.w <= 0.001f) return false;
@@ -2012,13 +2381,13 @@ void EditorLayer::DrawGameViewPanel() {
                     return true;
                 };
 
-                // Draw fog overlay first (if enabled)
-                if (gameCameraComp->fogDensity > 0.01f) {
-                    u8 fogAlpha = static_cast<u8>(gameCameraComp->fogDensity * 150.0f);
+                // Fog overlay
+                if (activeWeatherZone->fogDensity > 0.01f) {
+                    u8 fogAlpha = static_cast<u8>(activeWeatherZone->fogDensity * 150.0f);
                     ImU32 fogOverlay = IM_COL32(
-                        static_cast<int>(gameCameraComp->fogColor.x * 255),
-                        static_cast<int>(gameCameraComp->fogColor.y * 255),
-                        static_cast<int>(gameCameraComp->fogColor.z * 255),
+                        static_cast<int>(activeWeatherZone->fogColor.x * 255),
+                        static_cast<int>(activeWeatherZone->fogColor.y * 255),
+                        static_cast<int>(activeWeatherZone->fogColor.z * 255),
                         fogAlpha
                     );
                     drawList->AddRectFilled(p0, p1, fogOverlay);
@@ -2032,24 +2401,19 @@ void EditorLayer::DrawGameViewPanel() {
 
                     ImVec2 screenPos;
                     if (worldToPreview(particle.position, screenPos)) {
-                        // Clip to preview bounds
                         if (screenPos.x >= p0.x && screenPos.x <= p1.x &&
                             screenPos.y >= p0.y && screenPos.y <= p1.y) {
+                            f32 size = particle.size * 4.0f;
 
-                            f32 size = particle.size * 4.0f; // Scale for visibility
-
-                            // Color based on weather type
-                            if (gameCameraComp->weatherType == 2 || gameCameraComp->weatherType == 3 ||
-                                gameCameraComp->weatherType == 6) {
-                                // Rain/HeavyRain/Storm - blue streaks
+                            if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
+                                activeWeatherZone->weatherType == 6) {
                                 ImU32 color = IM_COL32(120, 160, 220, static_cast<int>(particle.alpha * 220));
                                 drawList->AddLine(
                                     screenPos,
                                     ImVec2(screenPos.x - 1.0f, screenPos.y - size * 6.0f),
                                     color, 2.0f
                                 );
-                            } else if (gameCameraComp->weatherType == 4) {
-                                // Snow - white circles
+                            } else if (activeWeatherZone->weatherType == 4) {
                                 ImU32 color = IM_COL32(255, 255, 255, static_cast<int>(particle.alpha * 255));
                                 drawList->AddCircleFilled(screenPos, size * 1.5f, color);
                             }
@@ -2057,58 +2421,118 @@ void EditorLayer::DrawGameViewPanel() {
                     }
                 }
 
-                // Lightning flash (only in storms and if enabled)
-                if (gameCameraComp->weatherType == 6 && gameCameraComp->lightningEnabled &&
+                // Lightning flash
+                if (activeWeatherZone->weatherType == 6 && activeWeatherZone->lightningEnabled &&
                     m_WeatherSystem.IsLightningActive()) {
                     f32 intensity = m_WeatherSystem.GetLightningIntensity();
                     u8 flashAlpha = static_cast<u8>(intensity * 200.0f);
                     ImU32 flashColor = IM_COL32(255, 255, 255, flashAlpha);
                     drawList->AddRectFilled(p0, p1, flashColor);
                 }
+            } else {
+                // No active weather zone - clear weather
+                m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+            }
 
-                // Draw water plane if enabled
-                if (gameCameraComp->waterEnabled) {
-                    // Simple water line at the water level
-                    f32 waterY = gameCameraComp->waterLevel;
-                    // Project water plane corners
-                    ImVec2 waterLeft, waterRight;
-                    bool leftOk = worldToPreview(Math::Vector3(-100, waterY, 0), waterLeft);
-                    bool rightOk = worldToPreview(Math::Vector3(100, waterY, 0), waterRight);
-                    if (leftOk && rightOk) {
-                        ImU32 waterCol = IM_COL32(
-                            static_cast<int>(gameCameraComp->waterColor.x * 255),
-                            static_cast<int>(gameCameraComp->waterColor.y * 255),
-                            static_cast<int>(gameCameraComp->waterColor.z * 255),
-                            static_cast<int>(gameCameraComp->waterOpacity * 180)
-                        );
-                        // Fill from water line to bottom
-                        drawList->AddRectFilled(
-                            ImVec2(p0.x, Math::Max(waterLeft.y, p0.y)),
-                            ImVec2(p1.x, p1.y),
-                            waterCol
-                        );
+            // Draw water from active volume
+            if (activeWaterVolume && activeWaterTransform && gameCameraComp && gameCameraTransform) {
+                f32 waterY = activeWaterTransform->position.y; // Water surface at entity's Y
+
+                // Build camera matrices if not already built
+                Math::Vector3 forward = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+                Math::Vector3 up = gameCameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+                Math::Matrix4 viewMat = Math::Matrix4::LookAt(
+                    gameCameraTransform->position,
+                    gameCameraTransform->position + forward,
+                    up
+                );
+                f32 aspect = previewWidth / previewHeight;
+                Math::Matrix4 projMat = Math::Matrix4::Perspective(
+                    gameCameraComp->fieldOfView * (3.14159f / 180.0f),
+                    aspect,
+                    gameCameraComp->nearPlane,
+                    gameCameraComp->farPlane
+                );
+                projMat.m[5] *= -1.0f;
+                Math::Matrix4 viewProj = projMat * viewMat;
+
+                auto worldToPreviewW = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
+                    Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
+                    if (clipPos.w <= 0.001f) return false;
+                    Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
+                    if (ndc.x < -1.0f || ndc.x > 1.0f || ndc.y < -1.0f || ndc.y > 1.0f || ndc.z < 0.0f || ndc.z > 1.0f) {
+                        return false;
                     }
+                    screenPos.x = p0.x + (ndc.x + 1.0f) * 0.5f * previewWidth;
+                    screenPos.y = p0.y + (ndc.y + 1.0f) * 0.5f * previewHeight;
+                    return true;
+                };
+
+                // Project water plane edges using volume bounds
+                f32 halfX = activeWaterVolume->halfExtents.x;
+                f32 halfZ = activeWaterVolume->halfExtents.z;
+                Math::Vector3 waterCenter = activeWaterTransform->position;
+                ImVec2 waterLeft, waterRight;
+                bool leftOk = worldToPreviewW(Math::Vector3(waterCenter.x - halfX, waterY, waterCenter.z), waterLeft);
+                bool rightOk = worldToPreviewW(Math::Vector3(waterCenter.x + halfX, waterY, waterCenter.z), waterRight);
+                if (leftOk && rightOk) {
+                    ImU32 waterCol = IM_COL32(
+                        static_cast<int>(activeWaterVolume->waterColor.x * 255),
+                        static_cast<int>(activeWaterVolume->waterColor.y * 255),
+                        static_cast<int>(activeWaterVolume->waterColor.z * 255),
+                        static_cast<int>(activeWaterVolume->opacity * 180)
+                    );
+                    drawList->AddRectFilled(
+                        ImVec2(p0.x, Math::Max(waterLeft.y, p0.y)),
+                        ImVec2(p1.x, p1.y),
+                        waterCol
+                    );
                 }
             }
 
             // Preview area border
             drawList->AddRect(p0, p1, IM_COL32(100, 100, 100, 255));
 
-            // Center text
+            // Status text overlay
             const char* previewText = isPlaying ? "Game Running" : "Game Preview";
-            if (gameCameraComp && gameCameraComp->weatherEnabled) {
+            if (activeWeatherZone && activeWeatherZone->weatherType > 0) {
                 previewText = isPlaying ? "Game Running (Weather Active)" : "Preview (Weather Active)";
             }
             ImVec2 textSize = ImGui::CalcTextSize(previewText);
             ImVec2 textPos((p0.x + p1.x - textSize.x) * 0.5f, p0.y + 10);
             drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
 
-            // Reserve space
-            ImGui::Dummy(ImVec2(previewWidth, previewHeight));
+            // Debug: zone detection status at bottom of preview
+            char debugBuf[128];
+            if (activeWeatherZone) {
+                const char* wNames[] = {"Clear","Cloudy","Rain","HeavyRain","Snow","Fog","Storm"};
+                const char* wn = (activeWeatherZone->weatherType < 7) ? wNames[activeWeatherZone->weatherType] : "?";
+                snprintf(debugBuf, sizeof(debugBuf), "Zone: %s | Particles: %u", wn, m_WeatherSystem.GetActiveParticleCount());
+            } else {
+                snprintf(debugBuf, sizeof(debugBuf), "No weather zone at camera");
+            }
+            ImVec2 dbgSize = ImGui::CalcTextSize(debugBuf);
+            ImVec2 dbgPos((p0.x + p1.x - dbgSize.x) * 0.5f, p1.y - 20);
+            drawList->AddText(dbgPos, IM_COL32(180, 180, 100, 200), debugBuf);
+
+            // Reserve space only if we didn't use ImGui::Image (which reserves its own)
+            if (!usedImage) {
+                ImGui::Dummy(ImVec2(previewWidth, previewHeight));
+            }
         }
 
         ImGui::Spacing();
-        ImGui::TextDisabled("Note: Full render-to-texture preview coming soon!");
+
+        // Debug info: show zone detection status
+        if (gameCameraTransform) {
+            ImGui::TextDisabled("Camera pos: (%.1f, %.1f, %.1f)",
+                gameCameraTransform->position.x, gameCameraTransform->position.y, gameCameraTransform->position.z);
+        } else if (!gameCameraComp) {
+            ImGui::TextDisabled("No camera entity in scene");
+        }
+        if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
+            ImGui::TextDisabled("Render target unavailable - using fallback preview");
+        }
     }
 
     ImGui::End();
@@ -3327,6 +3751,30 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
         newLight.castShadows = light->castShadows;
     }
 
+    // Copy camera component
+    if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+        auto* cam = m_World->GetComponent<ECS::CameraComponent>(entity);
+        m_World->AddComponent<ECS::CameraComponent>(newEntity, *cam);
+    }
+
+    // Copy weather zone component
+    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+        m_World->AddComponent<ECS::WeatherZoneComponent>(newEntity, *zone);
+    }
+
+    // Copy water volume component
+    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+        m_World->AddComponent<ECS::WaterVolumeComponent>(newEntity, *volume);
+    }
+
+    // Copy notes component
+    if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
+        auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
+        m_World->AddComponent<ECS::NotesComponent>(newEntity, *notes);
+    }
+
     // Select the new entity
     m_SelectedEntity = newEntity;
     ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
@@ -3366,14 +3814,16 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
     f32 screenWidth = static_cast<f32>(extent.width);
     f32 screenHeight = static_cast<f32>(extent.height);
 
-    // Project world position to screen
+    // Project world position to screen (must match DrawGrid's worldToScreen)
     auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
         Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
         if (clipPos.w <= 0.001f) return false;
-        Math::Vector3 ndc(clipPos.x / clipPos.w, clipPos.y / clipPos.w, clipPos.z / clipPos.w);
-        if (ndc.z < 0.0f || ndc.z > 1.0f) return false; // Behind camera or too far
-        screenPos.x = (ndc.x + 1.0f) * 0.5f * screenWidth;
-        screenPos.y = (ndc.y + 1.0f) * 0.5f * screenHeight;
+        f32 ndcX = clipPos.x / clipPos.w;
+        f32 ndcY = clipPos.y / clipPos.w;
+        f32 ndcZ = clipPos.z / clipPos.w;
+        if (ndcZ < 0.0f || ndcZ > 1.0f) return false;
+        screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
+        screenPos.y = (1.0f - ndcY) * 0.5f * screenHeight;  // Invert Y for screen coords
         return true;
     };
 

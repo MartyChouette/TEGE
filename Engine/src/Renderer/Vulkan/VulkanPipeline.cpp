@@ -172,13 +172,13 @@ bool VulkanPipeline::CreatePipeline(
         shaderStages.push_back(fragShaderStageInfo);
     }
 
-    // Vertex input - position, normal, UV
+    // Vertex input - position, normal, UV, color
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(f32) * 8; // vec3 pos + vec3 normal + vec2 uv
+    bindingDescription.stride = sizeof(f32) * 12; // vec3 pos + vec3 normal + vec2 uv + vec4 color
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 3> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 4> attributeDescriptions{};
     // Position (location 0)
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
@@ -194,6 +194,11 @@ bool VulkanPipeline::CreatePipeline(
     attributeDescriptions[2].location = 2;
     attributeDescriptions[2].format = VK_FORMAT_R32G32_SFLOAT;
     attributeDescriptions[2].offset = sizeof(f32) * 6;
+    // Vertex color (location 3)
+    attributeDescriptions[3].binding = 0;
+    attributeDescriptions[3].location = 3;
+    attributeDescriptions[3].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[3].offset = sizeof(f32) * 8;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
