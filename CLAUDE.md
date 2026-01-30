@@ -154,7 +154,7 @@ struct PushConstants {
 ### Assets
 
 - **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene
-- **`SceneImporter`** - Converts GLTFScene to ECS entities
+- **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders from mesh AABBs
 
 ## Shader Workflow
 
@@ -207,6 +207,11 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Cross-platform file dialogs (Win32, macOS osascript, Linux zenity/kdialog)
 - Render scripting system (command-based DSL)
 - GLSL runtime shader compilation
+- Wireframe rendering (fillModeNonSolid + wideLines support)
+- Physics-integrated ground detection (raycast-based with Y=0 fallback)
+- Auto-generated box colliders on model import (AABB from mesh vertices)
+- Ground plane entity creation (Entity > Ground Plane menu)
+- Editor input locking during play mode (NoInputs on panels, shortcut suppression)
 
 **Planned:**
 - AI/Navmesh integration (framework exists, needs gameplay logic)
