@@ -39,3 +39,15 @@ external/
 # Generated files
 *.spv
 *.pdb
+
+# Shader temp/intermediate files
+Engine/shaders/temp_*
+Engine/shaders/*_data.txt
+
+# Claude Code
+.claude/
+
+# Misc
+nul
+Fox.glb
+Tithe/
