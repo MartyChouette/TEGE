@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Physics/SimplePhysics.h"
 
 namespace Enjin {
 namespace ECS {
@@ -17,6 +18,7 @@ public:
 
     void SetWorld(World* world) { m_World = world; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+    void SetPhysics(Physics::SimplePhysics* physics) { m_Physics = physics; }
 
     // Enable/disable all controller updates (e.g., when in editor mode vs play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
@@ -39,9 +41,11 @@ private:
     bool IsSprintHeld();
     bool IsCrouchPressed();
     bool IsDashPressed();
+    bool CheckGround(const Math::Vector3& position, f32& groundY);
 
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
+    Physics::SimplePhysics* m_Physics = nullptr;
     bool m_Enabled = false;  // Disabled by default (editor mode)
 };
 
