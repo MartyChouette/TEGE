@@ -138,13 +138,64 @@ const MaterialParam* MaterialInstance::GetParameter(const std::string& name) con
 }
 
 void MaterialInstance::UpdateUniforms(VkCommandBuffer cmd, u32 frameIndex) {
-    (void)cmd;
     (void)frameIndex;
-    // Update uniform buffers with material parameters
-    // This would be implemented when integrated with renderer
-    if (m_Dirty) {
-        m_Dirty = false;
+
+    if (!m_Dirty || cmd == VK_NULL_HANDLE) {
+        return;
     }
+
+    // Build push constants from material parameters
+    // Layout matches PushConstants struct (model matrix is set externally):
+    //   baseColor (vec3), metallic (float), emissiveColor (vec3), roughness (float),
+    //   emissiveStrength, opacity, alphaCutoff, flags
+    struct MaterialPushData {
+        alignas(16) Math::Vector3 baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        f32 metallic = 0.0f;
+        alignas(16) Math::Vector3 emissiveColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+        f32 roughness = 0.5f;
+        f32 emissiveStrength = 0.0f;
+        f32 opacity = 1.0f;
+        f32 alphaCutoff = 0.5f;
+        i32 flags = 0;
+    };
+
+    MaterialPushData data;
+
+    // Map named parameters to push constant fields
+    if (auto* p = GetParameter("baseColor")) {
+        if (p->type == MaterialParamType::Vector4) {
+            data.baseColor = Math::Vector3(p->vec4Value.x, p->vec4Value.y, p->vec4Value.z);
+        }
+    }
+    if (auto* p = GetParameter("metallic")) {
+        if (p->type == MaterialParamType::Float) data.metallic = p->floatValue;
+    }
+    if (auto* p = GetParameter("roughness")) {
+        if (p->type == MaterialParamType::Float) data.roughness = p->floatValue;
+    }
+    if (auto* p = GetParameter("emissiveColor")) {
+        if (p->type == MaterialParamType::Vector4) {
+            data.emissiveColor = Math::Vector3(p->vec4Value.x, p->vec4Value.y, p->vec4Value.z);
+        }
+    }
+    if (auto* p = GetParameter("emissiveStrength")) {
+        if (p->type == MaterialParamType::Float) data.emissiveStrength = p->floatValue;
+    }
+    if (auto* p = GetParameter("opacity")) {
+        if (p->type == MaterialParamType::Float) data.opacity = p->floatValue;
+    }
+    if (auto* p = GetParameter("alphaCutoff")) {
+        if (p->type == MaterialParamType::Float) data.alphaCutoff = p->floatValue;
+    }
+
+    // Push material data (offset past model matrix at 64 bytes)
+    if (m_Pipeline) {
+        vkCmdPushConstants(cmd, m_Pipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+            sizeof(Math::Matrix4), sizeof(MaterialPushData), &data);
+    }
+
+    m_Dirty = false;
 }
 
 MaterialSystem::MaterialSystem() {
