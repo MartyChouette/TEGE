@@ -118,7 +118,7 @@ private:
     f32 m_WindStrength = 1.0f;
 
     // Spawn area
-    f32 m_SpawnRadius = 30.0f;
+    f32 m_SpawnRadius = 50.0f;
     f32 m_SpawnHeight = 20.0f;
 
     // Lightning

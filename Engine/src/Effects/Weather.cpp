@@ -125,8 +125,13 @@ void WeatherSystem::SpawnRainParticle(const Math::Vector3& cameraPos) {
     f32 dist = RandomFloat(0, m_SpawnRadius);
 
     p.position.x = cameraPos.x + Math::Cos(angle) * dist;
-    p.position.y = cameraPos.y + m_SpawnHeight;
     p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+
+    // Distribute vertically so the volume is pre-filled with falling rain.
+    // Bias toward the top so most drops enter naturally from above.
+    f32 t = RandomFloat(0.0f, 1.0f);
+    t = t * t;  // Quadratic bias — ~75% spawn in upper half
+    p.position.y = cameraPos.y + m_SpawnHeight - t * m_SpawnHeight * 2.0f;
 
     // Rain falls fast with slight wind influence
     p.velocity.x = m_WindDirection.x * m_WindStrength * 2.0f;
@@ -147,8 +152,12 @@ void WeatherSystem::SpawnSnowParticle(const Math::Vector3& cameraPos) {
     f32 dist = RandomFloat(0, m_SpawnRadius);
 
     p.position.x = cameraPos.x + Math::Cos(angle) * dist;
-    p.position.y = cameraPos.y + m_SpawnHeight;
     p.position.z = cameraPos.z + Math::Sin(angle) * dist;
+
+    // Distribute vertically — gentler bias for snow since it falls slower
+    f32 t = RandomFloat(0.0f, 1.0f);
+    t = t * t;
+    p.position.y = cameraPos.y + m_SpawnHeight - t * m_SpawnHeight * 2.0f;
 
     // Snow falls slowly, drifts more with wind
     p.velocity.x = m_WindDirection.x * m_WindStrength * 3.0f + RandomFloat(-0.5f, 0.5f);
@@ -177,9 +186,9 @@ void WeatherSystem::UpdateParticles(f32 deltaTime, const Math::Vector3& cameraPo
 
         // Check if particle should be removed
         bool remove = p.lifetime <= 0.0f ||
-                      p.position.y < cameraPos.y - 10.0f ||  // Below camera
-                      Math::Abs(p.position.x - cameraPos.x) > m_SpawnRadius * 1.5f ||
-                      Math::Abs(p.position.z - cameraPos.z) > m_SpawnRadius * 1.5f;
+                      p.position.y < cameraPos.y - m_SpawnHeight ||  // Below camera (full fall distance)
+                      Math::Abs(p.position.x - cameraPos.x) > m_SpawnRadius * 3.0f ||
+                      Math::Abs(p.position.z - cameraPos.z) > m_SpawnRadius * 3.0f;
 
         if (remove) {
             // Swap with last and decrement
