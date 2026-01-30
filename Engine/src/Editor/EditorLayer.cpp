@@ -1458,10 +1458,27 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::DragFloat("Alpha Cutoff", &material->alphaCutoff, 0.01f, 0.0f, 1.0f);
         }
 
-        // Texture indices (read-only info for now)
+        // Texture paths
         if (ImGui::TreeNode("Textures")) {
-            ImGui::Text("Base Color: %d", material->baseColorTexture);
-            ImGui::Text("Normal: %d", material->normalTexture);
+            // Base color texture path
+            char basePath[256];
+            strncpy(basePath, material->baseColorTexturePath.c_str(), sizeof(basePath) - 1);
+            basePath[sizeof(basePath) - 1] = '\0';
+            if (ImGui::InputText("Base Color", basePath, sizeof(basePath))) {
+                material->baseColorTexturePath = basePath;
+                if (material->baseColorTexturePath.empty()) material->baseColorTexture = -1;
+            }
+
+            // Normal map texture path
+            char normalPath[256];
+            strncpy(normalPath, material->normalTexturePath.c_str(), sizeof(normalPath) - 1);
+            normalPath[sizeof(normalPath) - 1] = '\0';
+            if (ImGui::InputText("Normal Map", normalPath, sizeof(normalPath))) {
+                material->normalTexturePath = normalPath;
+                if (material->normalTexturePath.empty()) material->normalTexture = -1;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tangent-space normal map (RGB encoded)");
+
             ImGui::Text("Metallic/Roughness: %d", material->metallicRoughnessTexture);
             ImGui::Text("Emissive: %d", material->emissiveTexture);
             ImGui::TreePop();

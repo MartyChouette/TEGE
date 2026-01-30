@@ -89,8 +89,8 @@ enjin/
 - **`ECS::Entity`** - Just a u64 ID
 - **Components:**
   - `TransformComponent` - position, rotation (Euler), scale
-  - `MeshComponent` - vertices (position, normal, UV), indices
-  - `MaterialComponent` - PBR properties (baseColor, metallic, roughness, emissive)
+  - `MeshComponent` - vertices (position, normal, UV, color, tangent), indices
+  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags
   - `LightComponent` - Light data (direction, color, intensity)
   - `NameComponent` - Entity name string
   - `CameraComponent` - In-game cameras with projection, weather/water settings
@@ -105,31 +105,31 @@ enjin/
 - **`VulkanBuffer`** - GPU buffers (vertex, index, uniform)
 - **`RenderSystem`** - ECS system that renders all entities with Mesh+Transform
 
-### Uniform Buffer Objects (Shader Bindings)
+### Descriptor Bindings
+
+```
+Binding 0: View/Projection UBO (vertex shader)
+Binding 1: Lighting UBO with multi-light arrays (vertex + fragment)
+Binding 2: Material UBO (fragment shader)
+Binding 3: Base color texture sampler (fragment shader)
+Binding 4: Shadow map sampler (fragment shader)
+Binding 5: Height map for parallax mapping (fragment shader)
+Binding 6: Normal map (fragment shader)
+```
+
+### Push Constants (128 bytes, per-object)
 
 ```cpp
-// Binding 0: MVP matrices (vertex shader)
-struct UniformBufferObject {
-    Matrix4 model, view, proj;
-};
-
-// Binding 1: Lighting (fragment shader)
-struct LightingUBO {
-    Vector3 ambientColor; f32 ambientIntensity;
-    Vector3 cameraPos;    f32 _pad0;
-    Vector3 lightDir;     f32 lightIntensity;
-    Vector3 lightColor;   f32 shadowBias;
-    Matrix4 lightSpaceMatrix;
-    i32 shadowEnabled;    f32 _pad1[3];
-};
-
-// Binding 2: Material (fragment shader)
-struct MaterialGPU {
-    Vector3 baseColor;    f32 metallic;
-    Vector3 emissiveColor; f32 roughness;
+struct PushConstants {
+    Matrix4 model;          // 64 bytes
+    Vector3 baseColor;      // + metallic = 16 bytes
+    Vector3 emissiveColor;  // + roughness = 16 bytes
     f32 emissiveStrength, opacity, alphaCutoff;
-    i32 flags;
+    i32 flags;              // bit field: render/alpha/texture/retro flags
+    f32 parallaxScale;      // + padding = 16 bytes
 };
+// flags layout: bits 0-2 render, 8-9 alpha mode, 10 height tex,
+//   16-19 texture flags, 20-23 retro flags, 24-31 snap resolution
 ```
 
 ### Editor
@@ -184,24 +184,34 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - PBR material system
 - Fly camera controller
 - Scene serialization (save/load JSON)
-- Post-processing effects (bloom, vignette, color grading)
+- Post-processing effects (bloom, vignette, color grading, FXAA, film grain)
 - Weather effects (rain, snow, fog, storm with toggleable lightning)
-- Water effects (3D water plane)
+- Water effects (3D water plane with Gerstner waves)
 - Camera component for in-game cameras
 - Camera frustum visualization in editor
 - Play mode (play/pause/stop)
-- Native file dialogs (Windows)
-- Multiple light sources support
-
-**In Progress:**
+- Native file dialogs (Windows, macOS, Linux)
+- Multiple light sources support (directional, point, spot)
+- Shadow mapping with PCF filtering
 - Render-to-texture for Game View (offscreen rendering)
-- Shadow mapping (infrastructure created, shader integration pending)
+- Retro rendering effects (per-material flat shading, affine texturing, vertex snapping, stipple transparency)
+- Retro post-processing (dithering, color quantization, resolution downscaling, CRT scanlines)
+- Vertex colors for baked lighting/shadows
+- Normal mapping (tangent-space, per-material)
+- Parallax occlusion mapping (height map ray marching)
+- Physics collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
+- Render graph with topological sorting
+- Deferred rendering framework
+- GPU-driven frustum culling
+- Material system with file watching and hot-reload
+- Cross-platform file dialogs (Win32, macOS osascript, Linux zenity/kdialog)
+- Render scripting system (command-based DSL)
+- GLSL runtime shader compilation
 
 **Planned:**
-- Texture support improvements
-- AI/Navmesh integration
-- Audio system integration
-- Skeletal animation
+- AI/Navmesh integration (framework exists, needs gameplay logic)
+- Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
+- Skeletal animation (framework exists, needs sampling/skinning)
 
 ## Common Tasks
 

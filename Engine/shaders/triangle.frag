@@ -114,6 +114,9 @@ layout(binding = 4) uniform sampler2DShadow shadowMap;
 // Height map sampler for parallax mapping (binding 5)
 layout(binding = 5) uniform sampler2D heightMap;
 
+// Normal map sampler (binding 6)
+layout(binding = 6) uniform sampler2D normalMap;
+
 // Calculate shadow factor using PCF (Percentage Closer Filtering)
 float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     // Check if shadows are enabled
@@ -240,12 +243,23 @@ void main() {
         uv = parallaxOcclusionMapping(uv, viewDirTangent);
     }
 
-    // Choose normal: flat shading uses face normal from derivatives
+    // Choose normal: flat shading, normal map, or interpolated vertex normal
     vec3 normal;
     if ((material.flags & FLAG_FLAT_SHADING) != 0) {
         vec3 dFdxPos = dFdx(fragWorldPos);
         vec3 dFdyPos = dFdy(fragWorldPos);
         normal = normalize(cross(dFdxPos, dFdyPos));
+    } else if ((material.flags & FLAG_HAS_NORMAL_TEX) != 0) {
+        // Sample normal map and transform from tangent space to world space
+        vec3 N = normalize(fragNormal);
+        vec3 T = normalize(fragTangent.xyz);
+        T = normalize(T - dot(T, N) * N); // Re-orthogonalize
+        vec3 B = cross(N, T) * fragTangent.w;
+        mat3 TBN = mat3(T, B, N);
+
+        // Normal map is stored as [0,1], remap to [-1,1]
+        vec3 sampledNormal = texture(normalMap, uv).rgb * 2.0 - 1.0;
+        normal = normalize(TBN * sampledNormal);
     } else {
         normal = normalize(fragNormal);
     }

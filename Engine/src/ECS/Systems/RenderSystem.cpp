@@ -294,6 +294,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 UpdateHeightTextureDescriptor(m_DefaultWhiteTexture.get());
             }
 
+            // Bind normal map texture if available
+            if (material && !material->normalTexturePath.empty()) {
+                auto normalTex = GetOrLoadTexture(material->normalTexturePath);
+                if (normalTex && normalTex->IsValid()) {
+                    material->normalTexture = 1;
+                    UpdateNormalMapDescriptor(normalTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+            }
+
             vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                 sizeof(Renderer::PushConstants), &pushConstants);
@@ -395,12 +406,12 @@ void RenderSystem::CreateUniformBuffers() {
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool (3 UBOs + 3 combined image samplers per frame)
+    // Create descriptor pool (3 UBOs + 4 combined image samplers per frame)
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = framesInFlight * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = framesInFlight * 3;  // base color + shadow map + height map
+    poolSizes[1].descriptorCount = framesInFlight * 4;  // base color + shadow map + height map + normal map
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -476,7 +487,10 @@ void RenderSystem::CreateDescriptorSets() {
         // Height map (binding 5) - default to white texture (no displacement)
         VkDescriptorImageInfo heightImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 6> descriptorWrites{};
+        // Normal map (binding 6) - default to flat normal (white = (0.5,0.5,1) encoded)
+        VkDescriptorImageInfo normalMapInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -531,6 +545,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         descriptorWrites[5].descriptorCount = 1;
         descriptorWrites[5].pImageInfo = &heightImageInfo;
+
+        // Normal map descriptor
+        descriptorWrites[6].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[6].dstSet = m_DescriptorSets[i];
+        descriptorWrites[6].dstBinding = 6;
+        descriptorWrites[6].dstArrayElement = 0;
+        descriptorWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[6].descriptorCount = 1;
+        descriptorWrites[6].pImageInfo = &normalMapInfo;
 
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -1055,6 +1078,27 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
     descriptorWrite.dstBinding = 5;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
+    if (!texture || !texture->IsValid()) {
+        return;
+    }
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = 6;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;

@@ -101,6 +101,7 @@ private:
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);
     void UpdateTextureDescriptor(Renderer::Texture* texture);
     void UpdateHeightTextureDescriptor(Renderer::Texture* texture);
+    void UpdateNormalMapDescriptor(Renderer::Texture* texture);
     
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
