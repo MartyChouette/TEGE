@@ -26,15 +26,22 @@ public:
     bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
     void Shutdown();
 
+    // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
+    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+
     // Render all grass volumes in the scene
+    // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
-                ECS::World* world);
+                ECS::World* world,
+                u32 viewportWidth = 0,
+                u32 viewportHeight = 0);
 
 private:
     void CreateBladeMesh();
     void CreatePipeline(VkDescriptorSetLayout sharedLayout);
+    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
 

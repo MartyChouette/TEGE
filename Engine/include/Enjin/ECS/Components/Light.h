@@ -108,6 +108,10 @@ struct alignas(16) LightingUBO {
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time
 
+    // Fog parameters
+    alignas(16) Math::Vector4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
+    alignas(16) Math::Vector4 fogColorSnow;  // xyz=fog color, w=snow intensity
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

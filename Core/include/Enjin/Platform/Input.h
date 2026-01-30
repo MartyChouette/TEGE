@@ -90,7 +90,38 @@ enum class MouseButton : i32 {
     Button8 = 7
 };
 
-// Input system - provides keyboard and mouse input state
+// Gamepad buttons (matching GLFW gamepad buttons - Xbox layout)
+enum class GamepadButton : i32 {
+    A = 0,              // Cross (PlayStation)
+    B = 1,              // Circle
+    X = 2,              // Square
+    Y = 3,              // Triangle
+    LeftBumper = 4,     // L1
+    RightBumper = 5,    // R1
+    Back = 6,           // Select / Share
+    Start = 7,          // Options
+    Guide = 8,          // PS / Xbox button
+    LeftStick = 9,      // L3
+    RightStick = 10,    // R3
+    DPadUp = 11,
+    DPadRight = 12,
+    DPadDown = 13,
+    DPadLeft = 14,
+    Count = 15
+};
+
+// Gamepad axes (matching GLFW gamepad axes)
+enum class GamepadAxis : i32 {
+    LeftX = 0,
+    LeftY = 1,
+    RightX = 2,
+    RightY = 3,
+    LeftTrigger = 4,    // L2 (-1 released, +1 pressed)
+    RightTrigger = 5,   // R2
+    Count = 6
+};
+
+// Input system - provides keyboard, mouse, and gamepad input state
 class ENJIN_API Input {
 public:
     // Initialize the input system with a window
@@ -127,6 +158,36 @@ public:
     // Cursor visibility
     static void SetCursorVisible(bool visible);
     static bool IsCursorVisible();
+
+    // --- Gamepad ---
+
+    // Connection state (checks joystick slot 0 by default, supports up to 4)
+    static bool IsGamepadConnected(i32 gamepadIndex = 0);
+    static const char* GetGamepadName(i32 gamepadIndex = 0);
+
+    // Button queries (gamepad index 0 by default)
+    static bool IsGamepadButtonDown(GamepadButton button, i32 gamepadIndex = 0);
+    static bool IsGamepadButtonPressed(GamepadButton button, i32 gamepadIndex = 0);
+    static bool IsGamepadButtonReleased(GamepadButton button, i32 gamepadIndex = 0);
+
+    // Axis queries (-1.0 to +1.0, triggers: -1.0 released, +1.0 pressed)
+    // Dead zone is applied automatically
+    static f32 GetGamepadAxis(GamepadAxis axis, i32 gamepadIndex = 0);
+
+    // Convenience: get stick as Vector2 with dead zone applied
+    static Math::Vector2 GetGamepadLeftStick(i32 gamepadIndex = 0);
+    static Math::Vector2 GetGamepadRightStick(i32 gamepadIndex = 0);
+
+    // Convenience: get trigger as 0-1 range (remapped from -1..+1)
+    static f32 GetGamepadLeftTrigger(i32 gamepadIndex = 0);
+    static f32 GetGamepadRightTrigger(i32 gamepadIndex = 0);
+
+    // Dead zone (default 0.15)
+    static void SetGamepadDeadZone(f32 deadZone);
+    static f32 GetGamepadDeadZone();
+
+    // Any gamepad input detected this frame (for auto-switching UI prompts)
+    static bool IsGamepadActive(i32 gamepadIndex = 0);
 
 private:
     Input() = default;

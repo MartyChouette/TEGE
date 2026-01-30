@@ -36,18 +36,25 @@ public:
     bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
     void Shutdown();
 
+    // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
+    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+
     // Upload particle data and render instanced billboards
     // Call within an active render pass, after scene geometry (for depth testing)
+    // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 const WeatherSystem& weather,
-                bool isRain);
+                bool isRain,
+                u32 viewportWidth = 0,
+                u32 viewportHeight = 0);
 
 private:
     void CreateQuadBuffers();
     void CreateInstanceBuffer();
     void CreatePipeline(VkDescriptorSetLayout sharedLayout);
+    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
     Renderer::VulkanRenderer* m_Renderer = nullptr;
 

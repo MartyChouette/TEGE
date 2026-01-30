@@ -89,6 +89,19 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
         if (Input::IsKeyDown(KeyCode::Right)) input.x += 1.0f;
     }
 
+    if (controller.useGamepad && Input::IsGamepadConnected(controller.gamepadIndex)) {
+        // Left stick for movement
+        Math::Vector2 stick = Input::GetGamepadLeftStick(controller.gamepadIndex);
+        input.x += stick.x;
+        input.y -= stick.y;  // GLFW Y is inverted (down = positive)
+
+        // D-pad as digital movement
+        if (Input::IsGamepadButtonDown(GamepadButton::DPadUp, controller.gamepadIndex))    input.y += 1.0f;
+        if (Input::IsGamepadButtonDown(GamepadButton::DPadDown, controller.gamepadIndex))  input.y -= 1.0f;
+        if (Input::IsGamepadButtonDown(GamepadButton::DPadLeft, controller.gamepadIndex))  input.x -= 1.0f;
+        if (Input::IsGamepadButtonDown(GamepadButton::DPadRight, controller.gamepadIndex)) input.x += 1.0f;
+    }
+
     // Normalize diagonal movement
     f32 length = input.Length();
     if (length > 1.0f) {
@@ -99,19 +112,48 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
 }
 
 bool ControllerSystem::IsJumpPressed() {
-    return Input::IsKeyPressed(KeyCode::Space);
+    bool pressed = Input::IsKeyPressed(KeyCode::Space);
+    // Check all connected gamepads for A button (jump)
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::A, gp)) {
+            pressed = true;
+        }
+    }
+    return pressed;
 }
 
 bool ControllerSystem::IsSprintHeld() {
-    return Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
+    bool held = Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp)) {
+            // Left stick click or left bumper for sprint
+            if (Input::IsGamepadButtonDown(GamepadButton::LeftStick, gp) ||
+                Input::IsGamepadButtonDown(GamepadButton::LeftBumper, gp)) {
+                held = true;
+            }
+        }
+    }
+    return held;
 }
 
 bool ControllerSystem::IsCrouchPressed() {
-    return Input::IsKeyPressed(KeyCode::LeftControl) || Input::IsKeyPressed(KeyCode::C);
+    bool pressed = Input::IsKeyPressed(KeyCode::LeftControl) || Input::IsKeyPressed(KeyCode::C);
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::B, gp)) {
+            pressed = true;
+        }
+    }
+    return pressed;
 }
 
 bool ControllerSystem::IsDashPressed() {
-    return Input::IsKeyPressed(KeyCode::LeftShift) || Input::IsKeyPressed(KeyCode::E);
+    bool pressed = Input::IsKeyPressed(KeyCode::LeftShift) || Input::IsKeyPressed(KeyCode::E);
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::RightBumper, gp)) {
+            pressed = true;
+        }
+    }
+    return pressed;
 }
 
 bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) {
@@ -130,10 +172,93 @@ bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) 
     return false;
 }
 
+bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, TransformComponent& transform,
+                                          const Math::Vector2& input, f32 dt) {
+    if (!ctrl.gridMovement) return false;
+
+    f32 cellSize = ctrl.gridCellSize;
+
+    if (ctrl.gridMoving) {
+        // Currently moving between cells - advance the interpolation
+        ctrl.gridMoveProgress += ctrl.gridMoveSpeed * dt;
+        if (ctrl.gridMoveProgress >= 1.0f) {
+            // Arrived at target cell
+            ctrl.gridMoveProgress = 1.0f;
+            transform.position = ctrl.gridMoveTarget;
+            ctrl.gridMoving = false;
+        } else {
+            // Lerp between start and target
+            f32 t = ctrl.gridMoveProgress;
+            // Smooth step for nicer feel
+            t = t * t * (3.0f - 2.0f * t);
+            transform.position.x = ctrl.gridMoveStart.x + (ctrl.gridMoveTarget.x - ctrl.gridMoveStart.x) * t;
+            transform.position.z = ctrl.gridMoveStart.z + (ctrl.gridMoveTarget.z - ctrl.gridMoveStart.z) * t;
+        }
+        return true;
+    }
+
+    // Not currently moving - check for new input to start a cell move
+    if (Math::Abs(input.x) < 0.3f && Math::Abs(input.y) < 0.3f) {
+        return true;  // No input, stay put (but still handled by grid system)
+    }
+
+    // Determine dominant direction (4-directional)
+    f32 dx = 0.0f, dz = 0.0f;
+    if (Math::Abs(input.x) > Math::Abs(input.y)) {
+        dx = input.x > 0.0f ? cellSize : -cellSize;
+    } else {
+        dz = input.y > 0.0f ? cellSize : -cellSize;
+    }
+
+    // Snap current position to nearest grid cell first
+    f32 ox = ctrl.gridOrigin.x;
+    f32 oz = ctrl.gridOrigin.z;
+    f32 snappedX = Math::Round((transform.position.x - ox) / cellSize) * cellSize + ox;
+    f32 snappedZ = Math::Round((transform.position.z - oz) / cellSize) * cellSize + oz;
+    transform.position.x = snappedX;
+    transform.position.z = snappedZ;
+
+    // Set up move to next cell
+    ctrl.gridMoveStart = transform.position;
+    ctrl.gridMoveTarget = transform.position;
+    ctrl.gridMoveTarget.x += dx;
+    ctrl.gridMoveTarget.z += dz;
+    ctrl.gridMoveProgress = 0.0f;
+    ctrl.gridMoving = true;
+
+    return true;
+}
+
 void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
     Math::Vector2 input = GetMovementInput(ctrl);
+
+    // Grid movement override (2D: uses X axis for horizontal, keeps Y for jump/gravity)
+    if (ctrl.gridMovement && !ctrl.gridMoving && Math::Abs(input.x) > 0.3f) {
+        f32 cellSize = ctrl.gridCellSize;
+        f32 ox = ctrl.gridOrigin.x;
+        f32 snappedX = Math::Round((transform.position.x - ox) / cellSize) * cellSize + ox;
+        transform.position.x = snappedX;
+        ctrl.gridMoveStart = transform.position;
+        ctrl.gridMoveTarget = transform.position;
+        ctrl.gridMoveTarget.x += (input.x > 0.0f ? cellSize : -cellSize);
+        ctrl.gridMoveProgress = 0.0f;
+        ctrl.gridMoving = true;
+    }
+    if (ctrl.gridMovement && ctrl.gridMoving) {
+        ctrl.gridMoveProgress += ctrl.gridMoveSpeed * dt;
+        if (ctrl.gridMoveProgress >= 1.0f) {
+            transform.position.x = ctrl.gridMoveTarget.x;
+            ctrl.gridMoving = false;
+        } else {
+            f32 t = ctrl.gridMoveProgress;
+            t = t * t * (3.0f - 2.0f * t);
+            transform.position.x = ctrl.gridMoveStart.x + (ctrl.gridMoveTarget.x - ctrl.gridMoveStart.x) * t;
+        }
+        // Still apply gravity/jump below, skip horizontal free movement
+        input.x = 0.0f;
+    }
 
     // Horizontal movement (X axis for 2D platformer)
     f32 targetSpeedX = input.x * ctrl.moveSpeed;
@@ -224,6 +349,23 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
 void ControllerSystem::UpdateTopDown2D(Entity entity, TopDown2DController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
+    // Grid movement takes full control of position (XZ plane)
+    if (ctrl.gridMovement) {
+        Math::Vector2 input = GetMovementInput(ctrl);
+        if (UpdateGridMovement(ctrl, transform, input, dt)) {
+            // Update facing even in grid mode
+            if (ctrl.rotateToFaceMovement && ctrl.gridMoving) {
+                Math::Vector3 dir = ctrl.gridMoveTarget - ctrl.gridMoveStart;
+                if (dir.x != 0.0f || dir.z != 0.0f) {
+                    f32 targetAngle = Math::Degrees(Math::Atan2(dir.x, dir.z));
+                    ctrl.facingAngle = targetAngle;
+                    transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.facingAngle));
+                }
+            }
+            return;
+        }
+    }
+
     // Handle dash cooldown
     if (ctrl.dashCooldownTimer > 0.0f) {
         ctrl.dashCooldownTimer -= dt;
@@ -283,6 +425,22 @@ void ControllerSystem::UpdateTopDown2D(Entity entity, TopDown2DController& ctrl,
 
 void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
+
+    // Grid movement takes full control of position (XZ plane)
+    if (ctrl.gridMovement) {
+        Math::Vector2 input = GetMovementInput(ctrl);
+        if (UpdateGridMovement(ctrl, transform, input, dt)) {
+            // Camera follow in grid mode
+            if (ctrl.lockCameraToPlayer && m_Camera) {
+                f32 camAngleRad = Math::Radians(ctrl.cameraAngle);
+                Math::Vector3 camOffset(0.0f, ctrl.cameraHeight, ctrl.cameraDistance);
+                Math::Vector3 camPos = transform.position + camOffset;
+                m_Camera->SetPosition(camPos);
+                m_Camera->SetLookAt(camPos, transform.position, Math::Vector3(0, 1, 0));
+            }
+            return;
+        }
+    }
 
     // Handle dash cooldown
     if (ctrl.dashCooldownTimer > 0.0f) {
@@ -387,6 +545,16 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
     }
 
+    // Gamepad right stick for camera orbit
+    if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+        Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
+        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+            ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
+        }
+    }
+
     // Scroll to adjust camera distance
     Math::Vector2 scroll = Input::GetScrollDelta();
     if (scroll.y != 0.0f) {
@@ -396,6 +564,34 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
 
     // Get input relative to camera
     Math::Vector2 input = GetMovementInput(ctrl);
+
+    // Grid movement override (XZ plane, still allows camera orbit + jump/gravity)
+    if (ctrl.gridMovement) {
+        if (UpdateGridMovement(ctrl, transform, input, dt)) {
+            // Still update camera orbit even in grid mode
+            f32 yawRad2 = Math::Radians(ctrl.cameraYaw);
+            f32 pitchRad2 = Math::Radians(ctrl.cameraPitch);
+            Math::Vector3 camOffset;
+            camOffset.x = Math::Cos(pitchRad2) * Math::Sin(yawRad2) * ctrl.cameraDistance;
+            camOffset.y = Math::Sin(pitchRad2) * ctrl.cameraDistance + ctrl.cameraHeight;
+            camOffset.z = Math::Cos(pitchRad2) * Math::Cos(yawRad2) * ctrl.cameraDistance;
+            if (m_Camera) {
+                Math::Vector3 camPos = transform.position + camOffset;
+                m_Camera->SetPosition(camPos);
+                m_Camera->SetLookAt(camPos, transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0),
+                                    Math::Vector3(0, 1, 0));
+            }
+            // Rotate character to face movement direction
+            if (ctrl.rotateToFaceMovement && ctrl.gridMoving) {
+                Math::Vector3 dir = ctrl.gridMoveTarget - ctrl.gridMoveStart;
+                if (dir.x != 0.0f || dir.z != 0.0f) {
+                    f32 angle = Math::Atan2(dir.x, dir.z);
+                    transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), angle);
+                }
+            }
+            return;
+        }
+    }
 
     // Transform input to be relative to camera direction
     f32 yawRad = Math::Radians(ctrl.cameraYaw);
@@ -511,6 +707,20 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
     }
 
+    // Gamepad right stick for look
+    if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+        Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
+        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+            ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            if (ctrl.invertY) {
+                ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            } else {
+                ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            }
+            ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
+        }
+    }
+
     // Crouch toggle
     if (ctrl.enableCrouch && IsCrouchPressed()) {
         ctrl.isCrouching = !ctrl.isCrouching;
@@ -522,6 +732,27 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
 
     // Get input
     Math::Vector2 input = GetMovementInput(ctrl);
+
+    // Grid movement override (XZ plane, still allows look + jump/gravity)
+    if (ctrl.gridMovement) {
+        if (UpdateGridMovement(ctrl, transform, input, dt)) {
+            // Camera follows position in grid mode
+            if (m_Camera) {
+                Math::Vector3 eyePos = transform.position;
+                eyePos.y += ctrl.currentHeight;
+                m_Camera->SetPosition(eyePos);
+                // Apply look rotation
+                f32 yr = Math::Radians(ctrl.yaw);
+                f32 pr = Math::Radians(ctrl.pitch);
+                Math::Vector3 fwd;
+                fwd.x = -Math::Sin(yr) * Math::Cos(pr);
+                fwd.y = Math::Sin(pr);
+                fwd.z = -Math::Cos(yr) * Math::Cos(pr);
+                m_Camera->SetLookAt(eyePos, eyePos + fwd, Math::Vector3(0, 1, 0));
+            }
+            return;
+        }
+    }
 
     // Transform input to world space based on yaw
     f32 yawRad = Math::Radians(ctrl.yaw);

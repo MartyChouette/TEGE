@@ -49,6 +49,8 @@ layout(binding = 1) uniform LightingUBO {
     int shadowEnabled;
     vec2 _shadowPad;
     vec4 windData;  // xyz = wind direction * strength, w = time
+    vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
+    vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     // Note: light arrays follow but we only need lightSpaceMatrix and windData in vertex shader
 } lighting;
 
@@ -65,9 +67,11 @@ layout(location = 4) out vec4 fragVertColor;
 layout(location = 5) out float fragClipW;
 layout(location = 6) out vec4 fragTangent;
 
-// Retro flag bits (must match C++ Material.h)
+// Flag bits (must match C++ Material.h and RenderSystem.cpp)
 #define FLAG_SKINNED          (1 << 3)
 #define FLAG_WIND_SWAY        (1 << 4)
+#define FLAG_WATER_SURFACE    (1 << 5)
+#define FLAG_RAIN_RIPPLES     (1 << 6)
 #define FLAG_FLAT_SHADING     (1 << 20)
 #define FLAG_AFFINE_TEXTURING (1 << 21)
 #define FLAG_VERTEX_SNAPPING  (1 << 22)
@@ -112,6 +116,23 @@ void main() {
         sway += windDir * swayWeight * sin(phase2) * 0.15;
 
         worldPos.xyz += sway;
+    }
+
+    // Water surface wave displacement (gentle Gerstner-lite)
+    if ((pushConstants.flags & FLAG_WATER_SURFACE) != 0) {
+        float waterTime = lighting.windData.w;
+        vec3 windDir = lighting.windData.xyz;
+        float windMag = length(windDir) + 0.01;
+
+        // Wave 1: slow, broad swell along wind direction
+        float phase1 = dot(worldPos.xz, windDir.xz * 0.3) + waterTime * 1.2;
+        float wave1 = sin(phase1) * 0.15 * windMag;
+
+        // Wave 2: faster cross-wave for visual interest
+        float phase2 = dot(worldPos.xz, vec2(-windDir.z, windDir.x) * 0.5) + waterTime * 2.0;
+        float wave2 = sin(phase2) * 0.08 * windMag;
+
+        worldPos.y += wave1 + wave2;
     }
 
     fragWorldPos = worldPos.xyz;

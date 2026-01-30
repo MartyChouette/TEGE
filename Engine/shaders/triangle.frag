@@ -66,6 +66,8 @@ layout(binding = 1) uniform LightingUBO {
     int shadowEnabled;
     vec2 _shadowPad;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
+    vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
+    vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -99,6 +101,10 @@ layout(push_constant) uniform PushConstants {
 
 // Height texture flag
 #define FLAG_HAS_HEIGHT_TEX     (1 << 10)
+
+// Water/rain flag bits
+#define FLAG_WATER_SURFACE      (1 << 5)
+#define FLAG_RAIN_RIPPLES       (1 << 6)
 
 // Retro flag bits (must match vertex shader and C++ Material.h)
 #define FLAG_FLAT_SHADING       (1 << 20)
@@ -265,6 +271,69 @@ void main() {
         normal = normalize(fragNormal);
     }
 
+    // Water surface: rain ripple normal perturbation — individual drop ripples
+    if ((material.flags & FLAG_WATER_SURFACE) != 0 && (material.flags & FLAG_RAIN_RIPPLES) != 0) {
+        float waterTime = lighting.windData.w;
+        vec2 worldXZ = fragWorldPos.xz;
+
+        // Pseudo-random hash helpers
+        #define HASH2(p) fract(sin(vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))))*43758.5453)
+        #define HASH1(p) fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453)
+
+        vec2 rippleOffset = vec2(0.0);
+
+        // Sample multiple grid layers at different scales for density
+        for (int layer = 0; layer < 3; ++layer) {
+            float scale = 1.2 + float(layer) * 0.7;  // Different grid sizes
+            vec2 gridUV = worldXZ * scale;
+            vec2 cellId = floor(gridUV);
+
+            // Check this cell and 8 neighbours for nearby ripple centers
+            for (int dy = -1; dy <= 1; ++dy) {
+                for (int dx = -1; dx <= 1; ++dx) {
+                    vec2 neighbor = cellId + vec2(float(dx), float(dy));
+
+                    // Random drop position within this cell
+                    vec2 rnd = HASH2(neighbor + float(layer) * 53.0);
+                    vec2 dropPos = (neighbor + rnd) / scale;
+
+                    // Random drop timing: each drop has its own phase
+                    float dropPhase = HASH1(neighbor + float(layer) * 71.0);
+                    float dropInterval = 1.8 + dropPhase * 1.4;  // 1.8-3.2 seconds per drop cycle
+                    float localTime = mod(waterTime + dropPhase * dropInterval, dropInterval);
+
+                    // Ripple age: 0 at impact, grows with time
+                    float age = localTime;
+                    float maxAge = dropInterval * 0.85;  // Ripple fades before next drop
+
+                    if (age < maxAge) {
+                        float dist = length(worldXZ - dropPos);
+
+                        // Expanding ring radius
+                        float ringRadius = age * 1.5;
+                        float ringDist = abs(dist - ringRadius);
+
+                        // Sharp ring that fades with age
+                        float ring = exp(-ringDist * 12.0) * (1.0 - age / maxAge);
+
+                        // Only affect nearby fragments (cull distant ripples)
+                        ring *= smoothstep(2.0, 0.0, dist);
+
+                        // Direction from center
+                        vec2 dir = (worldXZ - dropPos) / max(dist, 0.001);
+                        rippleOffset += dir * ring * 0.12;
+                    }
+                }
+            }
+        }
+
+        #undef HASH2
+        #undef HASH1
+
+        // Perturb the normal with accumulated ripple offset
+        normal = normalize(normal + vec3(rippleOffset.x, 0.0, rippleOffset.y));
+    }
+
     vec3 viewDir = normalize(lighting.cameraPos - fragWorldPos);
 
     // Material properties - sample textures when available
@@ -359,11 +428,47 @@ void main() {
         }
     }
 
+    // Water surface: fresnel-like reflective sheen
+    if ((material.flags & FLAG_WATER_SURFACE) != 0) {
+        float NdotV = max(dot(normal, viewDir), 0.0);
+        // Schlick fresnel: more reflective at glancing angles
+        float fresnel = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
+        // Blend toward sky/specular color at glancing angles
+        vec3 skyColor = vec3(0.4, 0.5, 0.7);
+        result = mix(result, skyColor, fresnel * 0.6);
+    }
+
     // Add emission
     result += material.emissiveColor * material.emissiveStrength;
 
+    // Snow accumulation: whiten upward-facing surfaces based on snow intensity
+    float snowIntensity = lighting.fogColorSnow.w;
+    if (snowIntensity > 0.0) {
+        float snowCoverage = snowIntensity * smoothstep(0.3, 0.8, normal.y);
+        result = mix(result, vec3(0.95, 0.97, 1.0), snowCoverage);
+    }
+
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
+
+    // Height-based distance fog (volumetric feel: thicker near ground, thins at height)
+    float fogDensity = lighting.fogParams.x;
+    if (fogDensity > 0.0) {
+        float fogStart = lighting.fogParams.y;
+        float fogEnd = lighting.fogParams.z;
+        float fogHeightFalloff = lighting.fogParams.w;
+
+        float dist = length(lighting.cameraPos - fragWorldPos);
+        float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+        fogFactor *= fogDensity;
+
+        // Height falloff: fog thins as Y increases above ground
+        float heightFog = exp(-max(fragWorldPos.y, 0.0) * fogHeightFalloff);
+        fogFactor *= heightFog;
+
+        vec3 fogColor = lighting.fogColorSnow.xyz;
+        result = mix(result, fogColor, fogFactor);
+    }
 
     // Alpha handling
     float alpha = material.opacity * fragVertColor.a;

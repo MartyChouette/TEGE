@@ -78,9 +78,24 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         m_MouseCapturedByUs = false;
     }
 
+    // Gamepad right stick for camera look (always active, no button hold required)
+    if (Input::IsGamepadConnected()) {
+        Math::Vector2 rightStick = Input::GetGamepadRightStick();
+        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+            m_Yaw -= rightStick.x * m_LookSensitivity * 80.0f * deltaTime;
+            m_Pitch += rightStick.y * m_LookSensitivity * 80.0f * deltaTime;
+            m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+            ApplyRotation();
+        }
+    }
+
     // Movement - FPS-style: WASD on horizontal plane, Space/Ctrl for vertical
     f32 speed = m_MoveSpeed;
     if (Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift)) {
+        speed *= m_SprintMultiplier;
+    }
+    // Gamepad sprint: left stick click
+    if (Input::IsGamepadConnected() && Input::IsGamepadButtonDown(GamepadButton::LeftStick)) {
         speed *= m_SprintMultiplier;
     }
 
@@ -112,6 +127,20 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
         movement = movement - worldUp;
     }
 
+    // Gamepad left stick for movement
+    if (Input::IsGamepadConnected()) {
+        Math::Vector2 leftStick = Input::GetGamepadLeftStick();
+        if (leftStick.x != 0.0f || leftStick.y != 0.0f) {
+            movement = movement + right * leftStick.x;
+            movement = movement - forward * leftStick.y;  // Y inverted: up = forward
+        }
+        // Triggers for vertical movement (RT = up, LT = down)
+        f32 rt = Input::GetGamepadRightTrigger();
+        f32 lt = Input::GetGamepadLeftTrigger();
+        if (rt > 0.1f) movement = movement + worldUp * rt;
+        if (lt > 0.1f) movement = movement - worldUp * lt;
+    }
+
     // Normalize and apply movement
     f32 length = movement.Length();
     if (length > 0.001f) {
@@ -125,6 +154,17 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     if (scroll.y != 0.0f) {
         m_MoveSpeed *= (1.0f + scroll.y * 0.1f);
         m_MoveSpeed = Math::Clamp(m_MoveSpeed, 0.1f, 100.0f);
+    }
+    // Gamepad: D-pad up/down to adjust speed
+    if (Input::IsGamepadConnected()) {
+        if (Input::IsGamepadButtonPressed(GamepadButton::DPadUp)) {
+            m_MoveSpeed *= 1.5f;
+            m_MoveSpeed = Math::Clamp(m_MoveSpeed, 0.1f, 100.0f);
+        }
+        if (Input::IsGamepadButtonPressed(GamepadButton::DPadDown)) {
+            m_MoveSpeed *= 0.67f;
+            m_MoveSpeed = Math::Clamp(m_MoveSpeed, 0.1f, 100.0f);
+        }
     }
 }
 

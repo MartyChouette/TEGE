@@ -109,6 +109,18 @@ void GrassRenderer::CreateBladeMesh() {
     m_BladeIndexBuffer->UploadData(indices, sizeof(indices));
 }
 
+void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return;
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+
+    CreatePipelineWithPass(renderPass, sharedLayout);
+    if (!m_Pipeline) {
+        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to recreate pipeline for render pass");
+    }
+}
+
 void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
@@ -169,10 +181,73 @@ void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     }
 }
 
+void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    // Reuse existing shaders if loaded, otherwise load them
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::GrassVertexShaderData),
+            Renderer::ShaderData::GrassVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass vertex shader");
+            return;
+        }
+    }
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::GrassFragmentShaderData),
+            Renderer::ShaderData::GrassFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to load grass fragment shader");
+            return;
+        }
+    }
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(f32) * 5;
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(f32) * 3;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = renderPass;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = false;
+    config.customVertexInput = &vertexInput;
+
+    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: Failed to create grass pipeline");
+        m_Pipeline.reset();
+    }
+}
+
 void GrassRenderer::Render(VkCommandBuffer commandBuffer,
                             const std::vector<VkDescriptorSet>& descriptorSets,
                             u32 currentFrame,
-                            ECS::World* world) {
+                            ECS::World* world,
+                            u32 viewportWidth,
+                            u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
     const auto& entities = world->GetAllEntities();
@@ -193,7 +268,14 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
                 m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
-            VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+            // Use override dimensions if provided, else swapchain
+            VkExtent2D extent;
+            if (viewportWidth > 0 && viewportHeight > 0) {
+                extent.width = viewportWidth;
+                extent.height = viewportHeight;
+            } else {
+                extent = m_Renderer->GetSwapchainExtent();
+            }
             VkViewport viewport{};
             viewport.x = 0.0f;
             viewport.y = 0.0f;

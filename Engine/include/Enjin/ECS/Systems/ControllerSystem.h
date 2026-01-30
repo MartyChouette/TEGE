@@ -43,6 +43,10 @@ private:
     bool IsDashPressed();
     bool CheckGround(const Math::Vector3& position, f32& groundY);
 
+    // Grid movement: returns true if grid movement handled the position update (caller should skip free movement)
+    bool UpdateGridMovement(CharacterControllerBase& controller, TransformComponent& transform,
+                           const Math::Vector2& input, f32 dt);
+
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Physics::SimplePhysics* m_Physics = nullptr;

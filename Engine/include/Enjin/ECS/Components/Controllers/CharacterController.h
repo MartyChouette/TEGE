@@ -21,7 +21,21 @@ struct CharacterControllerBase {
     // Input mapping (can be remapped)
     bool useWASD = true;       // Use WASD keys
     bool useArrowKeys = false; // Use arrow keys
-    bool useGamepad = false;   // Use gamepad (future)
+    bool useGamepad = false;   // Use gamepad input
+    i32 gamepadIndex = 0;      // Which gamepad (0-3)
+
+    // Gamepad settings
+    f32 gamepadLookSensitivity = 2.0f;  // Right stick look speed
+
+    // Grid/tile-based movement (alternative to free movement)
+    bool gridMovement = false;          // Snap to grid cells instead of free movement
+    f32 gridCellSize = 1.0f;            // Size of each grid cell in world units
+    f32 gridMoveSpeed = 8.0f;           // Speed of lerp between cells (cells/sec)
+    f32 gridMoveProgress = 0.0f;        // 0-1 interpolation between cells
+    Math::Vector3 gridOrigin = Math::Vector3(0.0f, 0.0f, 0.0f);    // Grid origin offset
+    Math::Vector3 gridMoveStart = Math::Vector3(0.0f, 0.0f, 0.0f); // Start position of current move
+    Math::Vector3 gridMoveTarget = Math::Vector3(0.0f, 0.0f, 0.0f);// Target position of current move
+    bool gridMoving = false;            // Currently transitioning between cells
 };
 
 // 2D Platformer Controller (side-scrolling with gravity and jumping)

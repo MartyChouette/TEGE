@@ -86,7 +86,20 @@ void WeatherRenderer::CreateInstanceBuffer() {
     }
 }
 
-void WeatherRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+void WeatherRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return;
+
+    // Wait for GPU to finish using the old pipeline
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+
+    CreatePipelineWithPass(renderPass, sharedLayout);
+    if (!m_Pipeline) {
+        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: Failed to recreate pipeline for render pass");
+    }
+}
+
+void WeatherRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
     // Load shaders
     m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
     if (!m_VertexShader->LoadFromSPIRV(
@@ -155,7 +168,7 @@ void WeatherRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     vertexInput.pVertexAttributeDescriptions = attrs.data();
 
     Renderer::PipelineConfig config;
-    config.renderPass = m_Renderer->GetRenderPass();
+    config.renderPass = renderPass;
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = false;   // Particles don't write depth
@@ -172,11 +185,17 @@ void WeatherRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     }
 }
 
+void WeatherRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    CreatePipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
+}
+
 void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
                               const std::vector<VkDescriptorSet>& descriptorSets,
                               u32 currentFrame,
                               const WeatherSystem& weather,
-                              bool isRain) {
+                              bool isRain,
+                              u32 viewportWidth,
+                              u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline) return;
 
     u32 particleCount = weather.GetActiveParticleCount();
@@ -218,8 +237,14 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
         m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
 
-    // Set viewport and scissor
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    // Set viewport and scissor (use override dimensions if provided, else swapchain)
+    VkExtent2D extent;
+    if (viewportWidth > 0 && viewportHeight > 0) {
+        extent.width = viewportWidth;
+        extent.height = viewportHeight;
+    } else {
+        extent = m_Renderer->GetSwapchainExtent();
+    }
     VkViewport viewport{};
     viewport.x = 0.0f;
     viewport.y = 0.0f;

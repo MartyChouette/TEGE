@@ -58,6 +58,8 @@ layout(binding = 1) uniform LightingUBO {
     int shadowEnabled;
     vec2 _shadowPad;
     vec4 windData;
+    vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
+    vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -81,8 +83,21 @@ layout(push_constant) uniform PushConstants {
 } material;
 
 void main() {
-    // Lerp between base and tip color
-    vec3 albedo = mix(material.baseColor, material.tipColor, fragHeightFraction);
+    // Snow: blend tip color toward white based on snow intensity
+    float snowIntensity = lighting.fogColorSnow.w;
+    vec3 tipColor = material.tipColor;
+    if (snowIntensity > 0.0) {
+        tipColor = mix(tipColor, vec3(0.95, 0.97, 1.0), snowIntensity);
+    }
+
+    // Lerp between base and (possibly snowy) tip color
+    vec3 albedo = mix(material.baseColor, tipColor, fragHeightFraction);
+
+    // Also whiten the base color slightly when snow is heavy
+    if (snowIntensity > 0.5) {
+        float baseCoverage = (snowIntensity - 0.5) * 2.0; // 0..1 when intensity is 0.5..1.0
+        albedo = mix(albedo, vec3(0.9, 0.92, 0.95), baseCoverage * 0.3);
+    }
 
     vec3 normal = normalize(fragNormal);
 
@@ -107,6 +122,24 @@ void main() {
 
     // Gamma correction
     result = pow(result, vec3(1.0 / 2.2));
+
+    // Height-based distance fog
+    float fogDensity = lighting.fogParams.x;
+    if (fogDensity > 0.0) {
+        float fogStart = lighting.fogParams.y;
+        float fogEnd = lighting.fogParams.z;
+        float fogHeightFalloff = lighting.fogParams.w;
+
+        float dist = length(lighting.cameraPos - fragWorldPos);
+        float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+        fogFactor *= fogDensity;
+
+        float heightFog = exp(-max(fragWorldPos.y, 0.0) * fogHeightFalloff);
+        fogFactor *= heightFog;
+
+        vec3 fogColor = lighting.fogColorSnow.xyz;
+        result = mix(result, fogColor, fogFactor);
+    }
 
     outColor = vec4(result, 1.0);
 }
