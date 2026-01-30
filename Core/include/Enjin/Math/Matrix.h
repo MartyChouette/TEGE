@@ -1,8 +1,6 @@
 #pragma once
 
 #include "Enjin/Math/Vector.h"
-#include "Enjin/Memory/Memory.h"
-#include <cstring>
 
 namespace Enjin {
 namespace Math {
@@ -15,22 +13,20 @@ struct Matrix4;
 struct ENJIN_API Matrix4 {
     f32 m[16]; // Column-major: m[0-3] = col0, m[4-7] = col1, etc.
 
-    Matrix4() {
-        MemoryZero(m, sizeof(m));
+    constexpr Matrix4() : m{} {
         m[0] = m[5] = m[10] = m[15] = 1.0f; // Identity
     }
 
-    explicit Matrix4(f32 diagonal) {
-        MemoryZero(m, sizeof(m));
+    explicit constexpr Matrix4(f32 diagonal) : m{} {
         m[0] = m[5] = m[10] = m[15] = diagonal;
     }
 
-    Matrix4(
+    constexpr Matrix4(
         f32 m00, f32 m01, f32 m02, f32 m03,
         f32 m10, f32 m11, f32 m12, f32 m13,
         f32 m20, f32 m21, f32 m22, f32 m23,
         f32 m30, f32 m31, f32 m32, f32 m33
-    ) {
+    ) : m{} {
         // Column 0
         m[0] = m00; m[4] = m01; m[8]  = m02; m[12] = m03;
         // Column 1
@@ -42,14 +38,14 @@ struct ENJIN_API Matrix4 {
     }
 
     // Accessors (column-major)
-    f32& operator()(usize row, usize col) { return m[col * 4 + row]; }
-    const f32& operator()(usize row, usize col) const { return m[col * 4 + row]; }
+    constexpr f32& operator()(usize row, usize col) { return m[col * 4 + row]; }
+    constexpr const f32& operator()(usize row, usize col) const { return m[col * 4 + row]; }
 
-    f32* Data() { return m; }
-    const f32* Data() const { return m; }
+    constexpr f32* Data() { return m; }
+    constexpr const f32* Data() const { return m; }
 
     // Operators
-    Matrix4 operator+(const Matrix4& other) const {
+    constexpr Matrix4 operator+(const Matrix4& other) const {
         Matrix4 result;
         for (usize i = 0; i < 16; ++i) {
             result.m[i] = m[i] + other.m[i];
@@ -57,7 +53,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 operator-(const Matrix4& other) const {
+    constexpr Matrix4 operator-(const Matrix4& other) const {
         Matrix4 result;
         for (usize i = 0; i < 16; ++i) {
             result.m[i] = m[i] - other.m[i];
@@ -65,7 +61,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 operator*(const Matrix4& other) const {
+    constexpr Matrix4 operator*(const Matrix4& other) const {
         Matrix4 result;
         for (usize col = 0; col < 4; ++col) {
             for (usize row = 0; row < 4; ++row) {
@@ -78,7 +74,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Vector4 operator*(const Vector4& v) const {
+    constexpr Vector4 operator*(const Vector4& v) const {
         return Vector4(
             m[0] * v.x + m[4] * v.y + m[8]  * v.z + m[12] * v.w,
             m[1] * v.x + m[5] * v.y + m[9]  * v.z + m[13] * v.w,
@@ -87,7 +83,7 @@ struct ENJIN_API Matrix4 {
         );
     }
 
-    Matrix4 operator*(f32 scalar) const {
+    constexpr Matrix4 operator*(f32 scalar) const {
         Matrix4 result;
         for (usize i = 0; i < 16; ++i) {
             result.m[i] = m[i] * scalar;
@@ -95,17 +91,17 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4& operator*=(const Matrix4& other) {
+    constexpr Matrix4& operator*=(const Matrix4& other) {
         *this = *this * other;
         return *this;
     }
 
     // Static factory functions
-    static Matrix4 Identity() {
+    static constexpr Matrix4 Identity() {
         return Matrix4(1.0f);
     }
 
-    static Matrix4 Translation(const Vector3& translation) {
+    static constexpr Matrix4 Translation(const Vector3& translation) {
         Matrix4 result = Identity();
         result.m[12] = translation.x;
         result.m[13] = translation.y;
@@ -147,7 +143,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    static Matrix4 Scale(const Vector3& scale) {
+    static constexpr Matrix4 Scale(const Vector3& scale) {
         Matrix4 result = Identity();
         result.m[0] = scale.x;
         result.m[5] = scale.y;
@@ -170,7 +166,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    static Matrix4 Orthographic(f32 left, f32 right, f32 bottom, f32 top, f32 nearPlane, f32 farPlane) {
+    static constexpr Matrix4 Orthographic(f32 left, f32 right, f32 bottom, f32 top, f32 nearPlane, f32 farPlane) {
         Matrix4 result = Identity();
         result.m[0] = 2.0f / (right - left);
         result.m[5] = 2.0f / (top - bottom);
@@ -202,7 +198,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 Transposed() const {
+    constexpr Matrix4 Transposed() const {
         Matrix4 result;
         for (usize row = 0; row < 4; ++row) {
             for (usize col = 0; col < 4; ++col) {
@@ -212,7 +208,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 Inverse() const {
+    constexpr Matrix4 Inverse() const {
         // Full 4x4 matrix inversion using cofactors
         f32 a00 = m[0], a01 = m[4], a02 = m[8],  a03 = m[12];
         f32 a10 = m[1], a11 = m[5], a12 = m[9],  a13 = m[13];
@@ -262,7 +258,7 @@ struct ENJIN_API Matrix4 {
         return result;
     }
 
-    Matrix4 Inverted() const {
+    constexpr Matrix4 Inverted() const {
         return Inverse();
     }
 };

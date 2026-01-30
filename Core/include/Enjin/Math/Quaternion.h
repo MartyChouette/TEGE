@@ -10,8 +10,8 @@ namespace Math {
 struct ENJIN_API Quaternion {
     f32 x, y, z, w;
 
-    Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
-    Quaternion(f32 x, f32 y, f32 z, f32 w) : x(x), y(y), z(z), w(w) {}
+    constexpr Quaternion() : x(0.0f), y(0.0f), z(0.0f), w(1.0f) {}
+    constexpr Quaternion(f32 x, f32 y, f32 z, f32 w) : x(x), y(y), z(z), w(w) {}
     Quaternion(const Vector3& axis, f32 angle) {
         f32 halfAngle = angle * 0.5f;
         f32 s = Sin(halfAngle);
@@ -23,11 +23,11 @@ struct ENJIN_API Quaternion {
     }
 
     // Operators
-    Quaternion operator+(const Quaternion& other) const {
+    constexpr Quaternion operator+(const Quaternion& other) const {
         return Quaternion(x + other.x, y + other.y, z + other.z, w + other.w);
     }
 
-    Quaternion operator*(const Quaternion& other) const {
+    constexpr Quaternion operator*(const Quaternion& other) const {
         return Quaternion(
             w * other.x + x * other.w + y * other.z - z * other.y,
             w * other.y - x * other.z + y * other.w + z * other.x,
@@ -36,17 +36,17 @@ struct ENJIN_API Quaternion {
         );
     }
 
-    Quaternion operator*(f32 scalar) const {
+    constexpr Quaternion operator*(f32 scalar) const {
         return Quaternion(x * scalar, y * scalar, z * scalar, w * scalar);
     }
 
-    Quaternion& operator*=(const Quaternion& other) {
+    constexpr Quaternion& operator*=(const Quaternion& other) {
         *this = *this * other;
         return *this;
     }
 
     // Functions
-    f32 LengthSquared() const { return x * x + y * y + z * z + w * w; }
+    constexpr f32 LengthSquared() const { return x * x + y * y + z * z + w * w; }
     f32 Length() const { return Sqrt(LengthSquared()); }
     Quaternion Normalized() const {
         f32 len = Length();
@@ -54,11 +54,11 @@ struct ENJIN_API Quaternion {
     }
     void Normalize() { *this = Normalized(); }
 
-    Quaternion Conjugate() const {
+    constexpr Quaternion Conjugate() const {
         return Quaternion(-x, -y, -z, w);
     }
 
-    Quaternion Inverse() const {
+    constexpr Quaternion Inverse() const {
         f32 lenSq = LengthSquared();
         if (lenSq > EPSILON) {
             Quaternion conj = Conjugate();
@@ -67,13 +67,13 @@ struct ENJIN_API Quaternion {
         return Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
-    Vector3 Rotate(const Vector3& v) const {
+    constexpr Vector3 Rotate(const Vector3& v) const {
         Quaternion qv(v.x, v.y, v.z, 0.0f);
         Quaternion result = (*this) * qv * Inverse();
         return Vector3(result.x, result.y, result.z);
     }
 
-    Matrix4 ToMatrix() const {
+    constexpr Matrix4 ToMatrix() const {
         f32 xx = x * x;
         f32 yy = y * y;
         f32 zz = z * z;
@@ -108,7 +108,7 @@ struct ENJIN_API Quaternion {
         return result;
     }
 
-    static Quaternion Identity() {
+    static constexpr Quaternion Identity() {
         return Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
@@ -121,8 +121,8 @@ struct ENJIN_API Quaternion {
         euler.x = Atan2(sinr_cosp, cosr_cosp);
         // Pitch (Y)
         f32 sinp = 2.0f * (w * y - z * x);
-        if (sinp >= 1.0f) euler.y = 1.5707963f;       // +pi/2
-        else if (sinp <= -1.0f) euler.y = -1.5707963f; // -pi/2
+        if (sinp >= 1.0f) euler.y = PI_HALF;        // +pi/2
+        else if (sinp <= -1.0f) euler.y = -PI_HALF; // -pi/2
         else euler.y = Asin(sinp);
         // Yaw (Z)
         f32 siny_cosp = 2.0f * (w * z + x * y);
@@ -153,7 +153,7 @@ struct ENJIN_API Quaternion {
     }
 
     // Alias for ToMatrix to match expected API
-    Matrix4 ToMatrix4() const { return ToMatrix(); }
+    constexpr Matrix4 ToMatrix4() const { return ToMatrix(); }
 
     // Spherical linear interpolation
     static Quaternion Slerp(const Quaternion& a, const Quaternion& b, f32 t) {
@@ -193,7 +193,7 @@ struct ENJIN_API Quaternion {
     }
 
     // Dot product
-    f32 Dot(const Quaternion& other) const {
+    constexpr f32 Dot(const Quaternion& other) const {
         return x * other.x + y * other.y + z * other.z + w * other.w;
     }
 };

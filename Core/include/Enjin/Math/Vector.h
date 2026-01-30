@@ -15,80 +15,80 @@ struct Vector4;
 struct ENJIN_API Vector2 {
     f32 x, y;
 
-    Vector2() : x(0.0f), y(0.0f) {}
-    Vector2(f32 x, f32 y) : x(x), y(y) {}
-    explicit Vector2(f32 scalar) : x(scalar), y(scalar) {}
+    constexpr Vector2() : x(0.0f), y(0.0f) {}
+    constexpr Vector2(f32 x, f32 y) : x(x), y(y) {}
+    explicit constexpr Vector2(f32 scalar) : x(scalar), y(scalar) {}
 
     // Operators
-    Vector2 operator+(const Vector2& other) const { return Vector2(x + other.x, y + other.y); }
-    Vector2 operator-(const Vector2& other) const { return Vector2(x - other.x, y - other.y); }
-    Vector2 operator*(f32 scalar) const { return Vector2(x * scalar, y * scalar); }
-    Vector2 operator/(f32 scalar) const { return Vector2(x / scalar, y / scalar); }
-    Vector2 operator-() const { return Vector2(-x, -y); }
+    constexpr Vector2 operator+(const Vector2& other) const { return Vector2(x + other.x, y + other.y); }
+    constexpr Vector2 operator-(const Vector2& other) const { return Vector2(x - other.x, y - other.y); }
+    constexpr Vector2 operator*(f32 scalar) const { return Vector2(x * scalar, y * scalar); }
+    constexpr Vector2 operator/(f32 scalar) const { return Vector2(x / scalar, y / scalar); }
+    constexpr Vector2 operator-() const { return Vector2(-x, -y); }
 
-    Vector2& operator+=(const Vector2& other) { x += other.x; y += other.y; return *this; }
-    Vector2& operator-=(const Vector2& other) { x -= other.x; y -= other.y; return *this; }
-    Vector2& operator*=(f32 scalar) { x *= scalar; y *= scalar; return *this; }
-    Vector2& operator/=(f32 scalar) { x /= scalar; y /= scalar; return *this; }
+    constexpr Vector2& operator+=(const Vector2& other) { x += other.x; y += other.y; return *this; }
+    constexpr Vector2& operator-=(const Vector2& other) { x -= other.x; y -= other.y; return *this; }
+    constexpr Vector2& operator*=(f32 scalar) { x *= scalar; y *= scalar; return *this; }
+    constexpr Vector2& operator/=(f32 scalar) { x /= scalar; y /= scalar; return *this; }
 
-    bool operator==(const Vector2& other) const {
+    constexpr bool operator==(const Vector2& other) const {
         return IsEqual(x, other.x) && IsEqual(y, other.y);
     }
-    bool operator!=(const Vector2& other) const { return !(*this == other); }
+    constexpr bool operator!=(const Vector2& other) const { return !(*this == other); }
 
     f32& operator[](usize index) { return (&x)[index]; }
     const f32& operator[](usize index) const { return (&x)[index]; }
 
     // Functions
-    f32 LengthSquared() const { return x * x + y * y; }
+    constexpr f32 LengthSquared() const { return x * x + y * y; }
     f32 Length() const { return Sqrt(LengthSquared()); }
     Vector2 Normalized() const {
         f32 len = Length();
         return len > EPSILON ? (*this / len) : Vector2(0.0f);
     }
     void Normalize() { *this = Normalized(); }
-    f32 Dot(const Vector2& other) const { return x * other.x + y * other.y; }
+    constexpr f32 Dot(const Vector2& other) const { return x * other.x + y * other.y; }
 };
 
 // Vector3 - 3D vector
 struct ENJIN_API Vector3 {
     f32 x, y, z;
 
-    Vector3() : x(0.0f), y(0.0f), z(0.0f) {}
-    Vector3(f32 x, f32 y, f32 z) : x(x), y(y), z(z) {}
-    explicit Vector3(f32 scalar) : x(scalar), y(scalar), z(scalar) {}
-    Vector3(const Vector2& v, f32 z) : x(v.x), y(v.y), z(z) {}
+    constexpr Vector3() : x(0.0f), y(0.0f), z(0.0f) {}
+    constexpr Vector3(f32 x, f32 y, f32 z) : x(x), y(y), z(z) {}
+    explicit constexpr Vector3(f32 scalar) : x(scalar), y(scalar), z(scalar) {}
+    constexpr Vector3(const Vector2& v, f32 z) : x(v.x), y(v.y), z(z) {}
 
     // Operators
-    Vector3 operator+(const Vector3& other) const { return Vector3(x + other.x, y + other.y, z + other.z); }
-    Vector3 operator-(const Vector3& other) const { return Vector3(x - other.x, y - other.y, z - other.z); }
-    Vector3 operator*(f32 scalar) const { return Vector3(x * scalar, y * scalar, z * scalar); }
-    Vector3 operator/(f32 scalar) const { return Vector3(x / scalar, y / scalar, z / scalar); }
-    Vector3 operator-() const { return Vector3(-x, -y, -z); }
+    constexpr Vector3 operator+(const Vector3& other) const { return Vector3(x + other.x, y + other.y, z + other.z); }
+    constexpr Vector3 operator-(const Vector3& other) const { return Vector3(x - other.x, y - other.y, z - other.z); }
+    constexpr Vector3 operator*(f32 scalar) const { return Vector3(x * scalar, y * scalar, z * scalar); }
+    constexpr Vector3 operator/(f32 scalar) const { return Vector3(x / scalar, y / scalar, z / scalar); }
+    constexpr Vector3 operator-() const { return Vector3(-x, -y, -z); }
 
-    Vector3& operator+=(const Vector3& other) { x += other.x; y += other.y; z += other.z; return *this; }
-    Vector3& operator-=(const Vector3& other) { x -= other.x; y -= other.y; z -= other.z; return *this; }
-    Vector3& operator*=(f32 scalar) { x *= scalar; y *= scalar; z *= scalar; return *this; }
-    Vector3& operator/=(f32 scalar) { x /= scalar; y /= scalar; z /= scalar; return *this; }
+    constexpr Vector3& operator+=(const Vector3& other) { x += other.x; y += other.y; z += other.z; return *this; }
+    constexpr Vector3& operator-=(const Vector3& other) { x -= other.x; y -= other.y; z -= other.z; return *this; }
+    constexpr Vector3& operator*=(f32 scalar) { x *= scalar; y *= scalar; z *= scalar; return *this; }
+    constexpr Vector3& operator/=(f32 scalar) { x /= scalar; y /= scalar; z /= scalar; return *this; }
 
-    bool operator==(const Vector3& other) const {
+    constexpr bool operator==(const Vector3& other) const {
         return IsEqual(x, other.x) && IsEqual(y, other.y) && IsEqual(z, other.z);
     }
-    bool operator!=(const Vector3& other) const { return !(*this == other); }
+    constexpr bool operator!=(const Vector3& other) const { return !(*this == other); }
 
     f32& operator[](usize index) { return (&x)[index]; }
     const f32& operator[](usize index) const { return (&x)[index]; }
 
     // Functions
-    f32 LengthSquared() const { return x * x + y * y + z * z; }
+    constexpr f32 LengthSquared() const { return x * x + y * y + z * z; }
     f32 Length() const { return Sqrt(LengthSquared()); }
     Vector3 Normalized() const {
         f32 len = Length();
         return len > EPSILON ? (*this / len) : Vector3(0.0f);
     }
     void Normalize() { *this = Normalized(); }
-    f32 Dot(const Vector3& other) const { return x * other.x + y * other.y + z * other.z; }
-    Vector3 Cross(const Vector3& other) const {
+    constexpr f32 Dot(const Vector3& other) const { return x * other.x + y * other.y + z * other.z; }
+    constexpr Vector3 Cross(const Vector3& other) const {
         return Vector3(
             y * other.z - z * other.y,
             z * other.x - x * other.z,
@@ -101,41 +101,41 @@ struct ENJIN_API Vector3 {
 struct ENJIN_API Vector4 {
     f32 x, y, z, w;
 
-    Vector4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
-    Vector4(f32 x, f32 y, f32 z, f32 w) : x(x), y(y), z(z), w(w) {}
-    explicit Vector4(f32 scalar) : x(scalar), y(scalar), z(scalar), w(scalar) {}
-    Vector4(const Vector3& v, f32 w) : x(v.x), y(v.y), z(v.z), w(w) {}
-    Vector4(const Vector2& v, f32 z, f32 w) : x(v.x), y(v.y), z(z), w(w) {}
+    constexpr Vector4() : x(0.0f), y(0.0f), z(0.0f), w(0.0f) {}
+    constexpr Vector4(f32 x, f32 y, f32 z, f32 w) : x(x), y(y), z(z), w(w) {}
+    explicit constexpr Vector4(f32 scalar) : x(scalar), y(scalar), z(scalar), w(scalar) {}
+    constexpr Vector4(const Vector3& v, f32 w) : x(v.x), y(v.y), z(v.z), w(w) {}
+    constexpr Vector4(const Vector2& v, f32 z, f32 w) : x(v.x), y(v.y), z(z), w(w) {}
 
     // Operators
-    Vector4 operator+(const Vector4& other) const { return Vector4(x + other.x, y + other.y, z + other.z, w + other.w); }
-    Vector4 operator-(const Vector4& other) const { return Vector4(x - other.x, y - other.y, z - other.z, w - other.w); }
-    Vector4 operator*(f32 scalar) const { return Vector4(x * scalar, y * scalar, z * scalar, w * scalar); }
-    Vector4 operator/(f32 scalar) const { return Vector4(x / scalar, y / scalar, z / scalar, w / scalar); }
-    Vector4 operator-() const { return Vector4(-x, -y, -z, -w); }
+    constexpr Vector4 operator+(const Vector4& other) const { return Vector4(x + other.x, y + other.y, z + other.z, w + other.w); }
+    constexpr Vector4 operator-(const Vector4& other) const { return Vector4(x - other.x, y - other.y, z - other.z, w - other.w); }
+    constexpr Vector4 operator*(f32 scalar) const { return Vector4(x * scalar, y * scalar, z * scalar, w * scalar); }
+    constexpr Vector4 operator/(f32 scalar) const { return Vector4(x / scalar, y / scalar, z / scalar, w / scalar); }
+    constexpr Vector4 operator-() const { return Vector4(-x, -y, -z, -w); }
 
-    Vector4& operator+=(const Vector4& other) { x += other.x; y += other.y; z += other.z; w += other.w; return *this; }
-    Vector4& operator-=(const Vector4& other) { x -= other.x; y -= other.y; z -= other.z; w -= other.w; return *this; }
-    Vector4& operator*=(f32 scalar) { x *= scalar; y *= scalar; z *= scalar; w *= scalar; return *this; }
-    Vector4& operator/=(f32 scalar) { x /= scalar; y /= scalar; z /= scalar; w /= scalar; return *this; }
+    constexpr Vector4& operator+=(const Vector4& other) { x += other.x; y += other.y; z += other.z; w += other.w; return *this; }
+    constexpr Vector4& operator-=(const Vector4& other) { x -= other.x; y -= other.y; z -= other.z; w -= other.w; return *this; }
+    constexpr Vector4& operator*=(f32 scalar) { x *= scalar; y *= scalar; z *= scalar; w *= scalar; return *this; }
+    constexpr Vector4& operator/=(f32 scalar) { x /= scalar; y /= scalar; z /= scalar; w /= scalar; return *this; }
 
-    bool operator==(const Vector4& other) const {
+    constexpr bool operator==(const Vector4& other) const {
         return IsEqual(x, other.x) && IsEqual(y, other.y) && IsEqual(z, other.z) && IsEqual(w, other.w);
     }
-    bool operator!=(const Vector4& other) const { return !(*this == other); }
+    constexpr bool operator!=(const Vector4& other) const { return !(*this == other); }
 
     f32& operator[](usize index) { return (&x)[index]; }
     const f32& operator[](usize index) const { return (&x)[index]; }
 
     // Functions
-    f32 LengthSquared() const { return x * x + y * y + z * z + w * w; }
+    constexpr f32 LengthSquared() const { return x * x + y * y + z * z + w * w; }
     f32 Length() const { return Sqrt(LengthSquared()); }
     Vector4 Normalized() const {
         f32 len = Length();
         return len > EPSILON ? (*this / len) : Vector4(0.0f);
     }
     void Normalize() { *this = Normalized(); }
-    f32 Dot(const Vector4& other) const { return x * other.x + y * other.y + z * other.z + w * other.w; }
+    constexpr f32 Dot(const Vector4& other) const { return x * other.x + y * other.y + z * other.z + w * other.w; }
 };
 
 // Type aliases
