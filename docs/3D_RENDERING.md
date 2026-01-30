@@ -41,8 +41,8 @@ Application
 
 ### VulkanPipeline
 - Complete graphics pipeline creation
-- Vertex input layout (position, normal, UV)
-- Descriptor set layout for uniforms
+- Vertex input layout (position, normal, UV, color, tangent, boneWeights, boneIndices)
+- Descriptor set layout for uniforms, samplers, and storage buffers
 - Configurable rasterization, blending, etc.
 
 ### Camera
@@ -143,16 +143,45 @@ When you run the triangle example, you should see:
 - Proper perspective projection
 - Camera positioned at (0, 0, -3) looking at origin
 
+## Skeletal Animation
+
+The renderer supports GPU-accelerated skeletal animation:
+
+- **Bone data in vertices**: Each vertex carries 4 bone weights (Vector4) and 4 bone indices (u32[4])
+- **Bone matrix SSBO**: Per-entity storage buffer (binding 7) uploads skinning matrices each frame
+- **Vertex shader skinning**: When `FLAG_SKINNED` (bit 3) is set, the shader computes a weighted blend of bone matrices and transforms position, normal, and tangent before the model transform
+- **Static mesh compatibility**: Vertices default to zero bone weights; the shader skips skinning when `weightSum == 0`
+- **Auto-play**: Skinned glTF models automatically begin playing their first animation on import
+
+### Importing a Skinned Model
+
+```cpp
+SceneImporter::ImportOptions options;
+options.scale = 1.0f;
+auto result = SceneImporter::ImportGLTF("path/to/character.glb", m_World, options);
+// Skinned meshes automatically get SkeletonComponent + AnimatorComponent
+// First animation auto-plays in a loop
+```
+
+### Manual Animation Control
+
+```cpp
+// Get the animator component
+auto* animComp = world->GetComponent<AnimatorComponent>(entity);
+if (animComp) {
+    animComp->animator.Play("Walk");
+    animComp->animator.CrossFade("Run", 0.3f);
+    animComp->animator.SetSpeed(1.5f);
+}
+```
+
 ## Next Steps
 
 To enhance the 3D rendering:
 
-1. **Depth Buffer** - Add depth testing for proper 3D rendering
-2. **Textures** - Add texture support to shaders
-3. **Lighting** - Implement Phong/Blinn-Phong lighting
-4. **Multiple Objects** - Render multiple entities efficiently
-5. **Material System** - Add material components for different shaders
-6. **Model Loading** - Load 3D models (glTF/OBJ) into mesh components
+1. **Shadow pass skinning** - Duplicate skinning in shadow vertex shader for correct skinned shadows
+2. **Animation blending** - Expose AnimationStateMachine parameters in editor
+3. **Per-entity descriptor sets** - Optimize bone SSBO binding for high entity counts
 
 ## Performance Considerations
 
@@ -163,9 +192,7 @@ To enhance the 3D rendering:
 
 ## Known Limitations
 
-1. **No Depth Buffer**: Currently disabled (can enable in PipelineConfig)
-2. **Host-Visible Buffers**: Using CPU-accessible memory (slower but simpler)
-3. **Single Pipeline**: All entities use the same shader
-4. **No Texture Support**: Only vertex colors for now
-
-These can be addressed as the engine matures!
+1. **Host-Visible Buffers**: Using CPU-accessible memory (slower but simpler)
+2. **Single Pipeline**: All entities use the same shader
+3. **Shadow pass skinning**: Skinned meshes cast T-pose shadows (skinning not applied in shadow vertex shader)
+4. **Bone limit**: 256 bones per skeleton (standard glTF limit, 16 KB SSBO per entity)

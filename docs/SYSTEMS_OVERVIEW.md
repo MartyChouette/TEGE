@@ -64,7 +64,15 @@
    - System (logic)
    - TransformComponent
    - MeshComponent
+   - SkeletonComponent, AnimatorComponent
    - RenderSystem
+
+2. **Animation System** (`Engine/Animation/`)
+   - Sprite animation (SpriteAnimator, frame-based)
+   - Skeletal animation (SkeletalAnimator, bone tracks, keyframe sampling)
+   - AnimationStateMachine (state-based transitions with parameters)
+   - GPU skinning via bone matrix SSBO (binding 7)
+   - Auto-import from glTF skins and animations
 
 2. **Time System** (`Engine/Time/`)
    - TimeOfDay (day/night cycle)
@@ -212,6 +220,7 @@ while (running) {
 | Bindless Resources | ✅ Complete | Yes |
 | Rendering Techniques | ✅ Complete | Yes |
 | ECS System | ✅ Complete | Yes |
+| Animation System | ✅ Complete | Yes |
 | Time System | ✅ Complete | Yes |
 | Weather System | ✅ Complete | Yes |
 | Physics System | ✅ Complete | Yes |

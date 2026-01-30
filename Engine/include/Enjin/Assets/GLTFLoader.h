@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Quaternion.h"
+#include "Enjin/Math/Matrix.h"
 #include <string>
 #include <vector>
 
@@ -15,6 +16,9 @@ struct GLTFVertex {
     Math::Vector3 normal;
     Math::Vector2 texCoord;
     Math::Vector4 tangent;
+    // Skeletal animation bone data
+    Math::Vector4 boneWeights;
+    u32 boneIndices[4] = {0, 0, 0, 0};
 };
 
 // Primitive/submesh data
@@ -61,10 +65,34 @@ struct GLTFImage {
 struct GLTFNode {
     std::string name;
     i32 meshIndex = -1;
+    i32 skinIndex = -1;
     Math::Vector3 translation = Math::Vector3(0.0f);
     Math::Quaternion rotation = Math::Quaternion::Identity();
     Math::Vector3 scale = Math::Vector3(1.0f);
     std::vector<i32> children;
+};
+
+// Skin data (skeleton binding)
+struct GLTFSkin {
+    std::string name;
+    std::vector<i32> jointNodeIndices;
+    std::vector<Math::Matrix4> inverseBindMatrices;
+    i32 skeletonRootNode = -1;
+};
+
+// Animation channel (single property track for a target node)
+struct GLTFAnimationChannel {
+    i32 targetNode = -1;
+    enum class Path : u8 { Translation, Rotation, Scale } path = Path::Translation;
+    std::vector<f32> times;
+    std::vector<f32> values;  // 3 floats for T/S, 4 floats for R (xyzw)
+};
+
+// Complete animation clip
+struct GLTFAnimation {
+    std::string name;
+    f32 duration = 0.0f;
+    std::vector<GLTFAnimationChannel> channels;
 };
 
 // Complete glTF scene data
@@ -74,6 +102,8 @@ struct GLTFScene {
     std::vector<GLTFImage> images;
     std::vector<GLTFNode> nodes;
     std::vector<i32> rootNodes;
+    std::vector<GLTFSkin> skins;
+    std::vector<GLTFAnimation> animations;
     std::string basePath;  // Directory containing the glTF file
 };
 

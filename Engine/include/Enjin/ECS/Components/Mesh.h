@@ -16,6 +16,9 @@ struct ENJIN_API MeshComponent : public IComponent {
         Math::Vector2 uv;
         Math::Vector4 color = Math::Vector4(1.0f, 1.0f, 1.0f, 1.0f); // vertex color (default white)
         Math::Vector4 tangent = Math::Vector4(0.0f, 0.0f, 0.0f, 1.0f); // xyz=tangent dir, w=handedness
+        // Skeletal animation bone data
+        Math::Vector4 boneWeights = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        u32 boneIndices[4] = {0, 0, 0, 0};
     };
 
     std::vector<Vertex> vertices;

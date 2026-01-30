@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 7> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 8> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -120,6 +120,13 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[6].descriptorCount = 1;
     bindings[6].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[6].pImmutableSamplers = nullptr;
+
+    // SSBO binding 7: bone matrices for skeletal animation (vertex shader)
+    bindings[7].binding = 7;
+    bindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[7].descriptorCount = 1;
+    bindings[7].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings[7].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -186,13 +193,13 @@ bool VulkanPipeline::CreatePipeline(
         shaderStages.push_back(fragShaderStageInfo);
     }
 
-    // Vertex input - position, normal, UV, color, tangent
+    // Vertex input - position, normal, UV, color, tangent, boneWeights, boneIndices
     VkVertexInputBindingDescription bindingDescription{};
     bindingDescription.binding = 0;
-    bindingDescription.stride = sizeof(f32) * 16; // vec3 pos + vec3 normal + vec2 uv + vec4 color + vec4 tangent
+    bindingDescription.stride = sizeof(f32) * 24; // vec3 pos + vec3 normal + vec2 uv + vec4 color + vec4 tangent + vec4 boneWeights + uvec4 boneIndices = 96 bytes
     bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
 
-    std::array<VkVertexInputAttributeDescription, 5> attributeDescriptions{};
+    std::array<VkVertexInputAttributeDescription, 7> attributeDescriptions{};
     // Position (location 0)
     attributeDescriptions[0].binding = 0;
     attributeDescriptions[0].location = 0;
@@ -218,6 +225,16 @@ bool VulkanPipeline::CreatePipeline(
     attributeDescriptions[4].location = 4;
     attributeDescriptions[4].format = VK_FORMAT_R32G32B32A32_SFLOAT;
     attributeDescriptions[4].offset = sizeof(f32) * 12;
+    // Bone weights (location 5)
+    attributeDescriptions[5].binding = 0;
+    attributeDescriptions[5].location = 5;
+    attributeDescriptions[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attributeDescriptions[5].offset = sizeof(f32) * 16;
+    // Bone indices (location 6)
+    attributeDescriptions[6].binding = 0;
+    attributeDescriptions[6].location = 6;
+    attributeDescriptions[6].format = VK_FORMAT_R32G32B32A32_UINT;
+    attributeDescriptions[6].offset = sizeof(f32) * 20;
 
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;

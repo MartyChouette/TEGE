@@ -1,12 +1,14 @@
 #version 450
 
-// Lit Mesh Vertex Shader with Shadow Support and Retro Effects
+// Lit Mesh Vertex Shader with Shadow Support, Retro Effects, and Skeletal Animation
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
 layout(location = 2) in vec2 inUV;
 layout(location = 3) in vec4 inColor;
 layout(location = 4) in vec4 inTangent;
+layout(location = 5) in vec4 inBoneWeights;
+layout(location = 6) in uvec4 inBoneIndices;
 
 // Push constant for per-object model matrix + material flags
 layout(push_constant) uniform PushConstants {
@@ -49,6 +51,11 @@ layout(binding = 1) uniform LightingUBO {
     // Note: light arrays follow but we only need lightSpaceMatrix in vertex shader
 } lighting;
 
+// Bone matrix SSBO for skeletal animation
+layout(std430, binding = 7) readonly buffer BoneMatrixSSBO {
+    mat4 boneMatrices[];
+};
+
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragUV;
@@ -58,14 +65,34 @@ layout(location = 5) out float fragClipW;
 layout(location = 6) out vec4 fragTangent;
 
 // Retro flag bits (must match C++ Material.h)
+#define FLAG_SKINNED          (1 << 3)
 #define FLAG_FLAT_SHADING     (1 << 20)
 #define FLAG_AFFINE_TEXTURING (1 << 21)
 #define FLAG_VERTEX_SNAPPING  (1 << 22)
 #define FLAG_STIPPLE_TRANS    (1 << 23)
 
 void main() {
+    vec3 skinnedPos = inPosition;
+    vec3 skinnedNormal = inNormal;
+    vec3 skinnedTangent = inTangent.xyz;
+
+    // Apply skeletal skinning if enabled and vertex has bone weights
+    if ((pushConstants.flags & FLAG_SKINNED) != 0) {
+        float weightSum = inBoneWeights.x + inBoneWeights.y + inBoneWeights.z + inBoneWeights.w;
+        if (weightSum > 0.0) {
+            mat4 skinMatrix = inBoneWeights.x * boneMatrices[inBoneIndices.x]
+                            + inBoneWeights.y * boneMatrices[inBoneIndices.y]
+                            + inBoneWeights.z * boneMatrices[inBoneIndices.z]
+                            + inBoneWeights.w * boneMatrices[inBoneIndices.w];
+
+            skinnedPos = (skinMatrix * vec4(inPosition, 1.0)).xyz;
+            skinnedNormal = mat3(skinMatrix) * inNormal;
+            skinnedTangent = mat3(skinMatrix) * inTangent.xyz;
+        }
+    }
+
     // Transform vertex position to world space
-    vec4 worldPos = pushConstants.model * vec4(inPosition, 1.0);
+    vec4 worldPos = pushConstants.model * vec4(skinnedPos, 1.0);
     fragWorldPos = worldPos.xyz;
 
     // Transform to clip space
@@ -88,7 +115,7 @@ void main() {
 
     // Transform normal to world space (using normal matrix)
     mat3 normalMatrix = transpose(inverse(mat3(pushConstants.model)));
-    fragNormal = normalize(normalMatrix * inNormal);
+    fragNormal = normalize(normalMatrix * skinnedNormal);
 
     // Pass through UV - for affine texturing, multiply by w to undo perspective correction
     if ((pushConstants.flags & FLAG_AFFINE_TEXTURING) != 0) {
@@ -103,7 +130,7 @@ void main() {
     fragVertColor = inColor;
 
     // Transform tangent to world space and pass through (w = handedness)
-    vec3 worldTangent = normalize(normalMatrix * inTangent.xyz);
+    vec3 worldTangent = normalize(normalMatrix * skinnedTangent);
     fragTangent = vec4(worldTangent, inTangent.w);
 
     // Calculate position in light space for shadow mapping

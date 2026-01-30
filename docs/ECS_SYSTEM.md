@@ -71,9 +71,19 @@ world.Update(deltaTime); // Updates all systems
 - `ToMatrix()` - Converts to transformation matrix
 
 ### MeshComponent
-- Vertices (vector of Vertex structs)
+- Vertices (vector of Vertex structs: position, normal, UV, color, tangent, boneWeights, boneIndices)
 - Indices (vector of u32)
 - `IsValid()` - Checks if mesh has data
+
+### SkeletonComponent
+- `skeleton` (shared_ptr to `Animation::Skeleton`) - Shared skeleton data with bones, bind poses, inverse bind matrices
+
+### AnimatorComponent
+- `animator` (`SkeletalAnimator`) - Drives animation sampling and pose computation
+- `stateMachine` (`AnimationStateMachine`) - State-based animation transitions
+- `matricesDirty` (bool) - Signals that skinning matrices need GPU upload
+- `Initialize(skeleton)` - Binds skeleton to animator and state machine
+- `Update(deltaTime)` - Ticks state machine and animator, marks matrices dirty
 
 ## Implemented Systems
 

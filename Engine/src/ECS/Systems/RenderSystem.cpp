@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -88,6 +89,16 @@ void RenderSystem::Initialize() {
         m_DefaultWhiteTexture.reset();
     }
 
+    // Create default bone buffer (single identity matrix for static meshes)
+    m_DefaultBoneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (m_DefaultBoneBuffer->Create(sizeof(Math::Matrix4), Renderer::BufferUsage::Storage, true)) {
+        Math::Matrix4 identity = Math::Matrix4::Identity();
+        m_DefaultBoneBuffer->UploadData(&identity, sizeof(Math::Matrix4));
+    } else {
+        ENJIN_LOG_WARN(Renderer, "Failed to create default bone buffer");
+        m_DefaultBoneBuffer.reset();
+    }
+
     // Create uniform buffers and descriptor sets
     CreateUniformBuffers();
     CreateDescriptorSets();
@@ -131,8 +142,9 @@ void RenderSystem::Shutdown() {
     m_ShadowPipeline.reset();
     m_ShadowMap.reset();
 
-    // Clean up textures
+    // Clean up textures and bone buffer
     m_DefaultWhiteTexture.reset();
+    m_DefaultBoneBuffer.reset();
 
     // Clean up pipeline
     m_Pipeline.reset();
@@ -143,10 +155,17 @@ void RenderSystem::Shutdown() {
 }
 
 void RenderSystem::Update(f32 deltaTime) {
-    (void)deltaTime;
-
     if (!m_Renderer || !m_Initialized) {
         return;
+    }
+
+    // Update skeletal animators
+    const auto& allEntities = m_World->GetAllEntities();
+    for (Entity entity : allEntities) {
+        AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        if (animComp) {
+            animComp->Update(deltaTime);
+        }
     }
 
     // Shadow pass first (if enabled) - runs before main render pass
@@ -309,6 +328,22 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
             } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
                 UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            // Upload bone matrices for skinned meshes
+            AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+                const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+                if (!skinningMatrices.empty()) {
+                    renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                        skinningMatrices.size() * sizeof(Math::Matrix4));
+                    UpdateBoneDescriptor(renderData.boneBuffer.get());
+                    pushConstants.flags |= (1 << 3); // FLAG_SKINNED
+                }
+            } else {
+                if (m_DefaultBoneBuffer) {
+                    UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+                }
             }
 
             vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
@@ -484,12 +519,14 @@ void RenderSystem::CreateUniformBuffers() {
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool (3 UBOs + 4 combined image samplers per frame)
-    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    // Create descriptor pool (3 UBOs + 4 combined image samplers + 1 SSBO per frame)
+    std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = framesInFlight * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = framesInFlight * 4;  // base color + shadow map + height map + normal map
+    poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    poolSizes[2].descriptorCount = framesInFlight * 1;  // bone matrices SSBO
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -568,7 +605,15 @@ void RenderSystem::CreateDescriptorSets() {
         // Normal map (binding 6) - default to flat normal (white = (0.5,0.5,1) encoded)
         VkDescriptorImageInfo normalMapInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 7> descriptorWrites{};
+        // Bone matrices SSBO (binding 7) - default identity
+        VkDescriptorBufferInfo boneBufferInfo{};
+        if (m_DefaultBoneBuffer) {
+            boneBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            boneBufferInfo.offset = 0;
+            boneBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        std::array<VkWriteDescriptorSet, 8> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -633,6 +678,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[6].descriptorCount = 1;
         descriptorWrites[6].pImageInfo = &normalMapInfo;
 
+        // Bone matrices SSBO descriptor
+        descriptorWrites[7].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[7].dstSet = m_DescriptorSets[i];
+        descriptorWrites[7].dstBinding = 7;
+        descriptorWrites[7].dstArrayElement = 0;
+        descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[7].descriptorCount = 1;
+        descriptorWrites[7].pBufferInfo = &boneBufferInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -673,6 +727,20 @@ void RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     renderData.indexCount = static_cast<u32>(mesh->indices.size());
+
+    // Create bone SSBO if entity has a skeleton for animation
+    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    if (animComp && animComp->animator.GetSkeleton()) {
+        usize boneCount = animComp->animator.GetSkeleton()->bones.size();
+        if (boneCount > 0) {
+            usize boneBufferSize = boneCount * sizeof(Math::Matrix4);
+            renderData.boneBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            if (!renderData.boneBuffer->Create(boneBufferSize, Renderer::BufferUsage::Storage, true)) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create bone buffer for entity %llu", entity);
+                renderData.boneBuffer.reset();
+            }
+        }
+    }
 }
 
 void RenderSystem::UpdateUniformBuffer(Entity entity) {
@@ -985,6 +1053,23 @@ void RenderSystem::RenderEntity(Entity entity) {
         UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
     }
 
+    // Upload bone matrices for skinned meshes
+    AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+    if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+        const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+        if (!skinningMatrices.empty()) {
+            renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                skinningMatrices.size() * sizeof(Math::Matrix4));
+            UpdateBoneDescriptor(renderData.boneBuffer.get());
+            pushConstants.flags |= (1 << 3); // FLAG_SKINNED
+        }
+    } else {
+        // Bind default bone buffer for static meshes
+        if (m_DefaultBoneBuffer) {
+            UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+        }
+    }
+
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
@@ -1181,6 +1266,28 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
     descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
+    if (!boneBuffer) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = boneBuffer->GetBuffer();
+    bufferInfo.offset = 0;
+    bufferInfo.range = boneBuffer->GetSize();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = 7;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
 }

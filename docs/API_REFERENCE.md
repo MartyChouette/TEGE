@@ -138,6 +138,63 @@ RenderSystem* render = world.RegisterSystem<RenderSystem>(&world, &renderer);
 world.Update(deltaTime);
 ```
 
+## Animation System
+
+```cpp
+// Skeletal animation is set up automatically when importing skinned glTF models.
+// For manual control:
+
+// Access animator on a skinned entity
+AnimatorComponent* animComp = world.GetComponent<AnimatorComponent>(entity);
+if (animComp) {
+    // Play an animation by name
+    animComp->animator.Play("Walk");
+
+    // Cross-fade between animations
+    animComp->animator.CrossFade("Run", 0.3f);
+
+    // Adjust playback speed
+    animComp->animator.SetSpeed(1.5f);
+
+    // Query state
+    bool playing = animComp->animator.IsPlaying();
+    bool blending = animComp->animator.IsBlending();
+    f32 progress = animComp->animator.GetNormalizedTime();
+
+    // Get bone world transform (for attachments, IK)
+    Math::Matrix4 handTransform = animComp->animator.GetBoneWorldTransform("Hand_R");
+
+    // Override bone rotation (procedural animation, IK)
+    animComp->animator.SetBoneLocalRotation("Head", lookAtRotation);
+}
+
+// State machine for animation transitions
+AnimatorComponent* animComp = world.GetComponent<AnimatorComponent>(entity);
+if (animComp) {
+    auto& sm = animComp->stateMachine;
+    sm.SetDefaultState("Idle");
+
+    Animation::AnimationState idleState;
+    idleState.name = "Idle";
+    idleState.animationName = "Idle";
+    sm.AddState(idleState);
+
+    Animation::AnimationState walkState;
+    walkState.name = "Walk";
+    walkState.animationName = "Walk";
+    sm.AddState(walkState);
+
+    Animation::AnimationTransition toWalk;
+    toWalk.fromState = "Idle";
+    toWalk.toState = "Walk";
+    toWalk.blendTime = 0.2f;
+    sm.AddTransition(toWalk);
+
+    // Drive transitions with parameters
+    sm.SetBool("isWalking", true);
+}
+```
+
 ## Time System
 
 ```cpp

@@ -86,46 +86,33 @@ Engine/shaders/
     triangle.frag
 ```
 
-## Example Shaders
+## Current Vertex Input Layout
 
-### triangle.vert
-```glsl
-#version 450
-layout(location = 0) in vec3 inPosition;
-layout(location = 1) in vec3 inNormal;
-layout(location = 2) in vec2 inUV;
+The vertex shader accepts the following inputs (96 bytes per vertex):
 
-layout(binding = 0) uniform UniformBufferObject {
-    mat4 model;
-    mat4 view;
-    mat4 proj;
-} ubo;
+| Location | Type | Attribute |
+|----------|------|-----------|
+| 0 | vec3 | Position |
+| 1 | vec3 | Normal |
+| 2 | vec2 | UV |
+| 3 | vec4 | Vertex Color |
+| 4 | vec4 | Tangent (xyz=dir, w=handedness) |
+| 5 | vec4 | Bone Weights |
+| 6 | uvec4 | Bone Indices |
 
-layout(location = 0) out vec3 fragColor;
+## Descriptor Bindings
 
-void main() {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPosition, 1.0);
-    fragColor = vec3(1.0, 0.0, 0.0); // Red color
-}
-```
-
-### triangle.frag
-```glsl
-#version 450
-layout(location = 0) in vec3 fragColor;
-layout(location = 0) out vec4 outColor;
-
-void main() {
-    outColor = vec4(fragColor, 1.0);
-}
-```
+| Binding | Type | Stage | Purpose |
+|---------|------|-------|---------|
+| 0 | Uniform Buffer | Vertex | View/Projection matrices |
+| 1 | Uniform Buffer | Vertex+Fragment | Lighting data |
+| 2 | Uniform Buffer | Fragment | Material data |
+| 3 | Combined Image Sampler | Fragment | Base color texture |
+| 4 | Combined Image Sampler | Fragment | Shadow map |
+| 5 | Combined Image Sampler | Fragment | Height map |
+| 6 | Combined Image Sampler | Fragment | Normal map |
+| 7 | Storage Buffer | Vertex | Bone matrices (skeletal animation) |
 
 ## Note on Current Implementation
 
-The current `ShaderData.cpp` contains placeholder SPIR-V data. For a working triangle, you should:
-
-1. Compile the shaders above using `glslc`
-2. Replace the placeholder data in `ShaderData.cpp` with the actual compiled SPIR-V
-3. Or implement runtime compilation using shaderc
-
-The shader structure is correct - you just need valid SPIR-V bytecode!
+The `ShaderData.h` file contains compiled SPIR-V bytecode embedded as C++ arrays. After modifying any shader, recompile with `glslangValidator` and regenerate the header. The engine loads shaders from these embedded arrays at startup.

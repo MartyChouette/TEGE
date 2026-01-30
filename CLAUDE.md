@@ -48,11 +48,11 @@ enjin/
 ├── Engine/                  # Engine layer
 │   ├── include/Enjin/
 │   │   ├── AI/             # AIBehaviors, Navmesh (stubs)
-│   │   ├── Animation/      # Animation system (stub)
+│   │   ├── Animation/      # Sprite + skeletal animation framework
 │   │   ├── Assets/         # GLTFLoader, SceneImporter, Prefab
 │   │   ├── Audio/          # AudioSystem, SimpleAudio (stubs)
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # Transform, Mesh, Light, Material, Camera, Controllers
+│   │   │   ├── Components/ # Transform, Mesh, Light, Material, Camera, Skeleton, Controllers
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Editor/         # EditorLayer, PlayMode, UndoRedo
 │   │   ├── Effects/        # Weather, Water, RetroEffects
@@ -89,12 +89,14 @@ enjin/
 - **`ECS::Entity`** - Just a u64 ID
 - **Components:**
   - `TransformComponent` - position, rotation (Euler), scale
-  - `MeshComponent` - vertices (position, normal, UV, color, tangent), indices
+  - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
   - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags
   - `LightComponent` - Light data (direction, color, intensity)
   - `NameComponent` - Entity name string
   - `CameraComponent` - In-game cameras with projection, weather/water settings
   - `NotesComponent` - Text annotations for entities
+  - `SkeletonComponent` - Shared skeleton data for skinned meshes
+  - `AnimatorComponent` - Skeletal animation playback (SkeletalAnimator + AnimationStateMachine)
   - `CharacterController` - Various movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
 
 ### Renderer
@@ -102,8 +104,8 @@ enjin/
 - **`VulkanContext`** - Vulkan instance, device, queues
 - **`VulkanRenderer`** - Main renderer, swapchain management
 - **`VulkanPipeline`** - Graphics pipeline with descriptor sets
-- **`VulkanBuffer`** - GPU buffers (vertex, index, uniform)
-- **`RenderSystem`** - ECS system that renders all entities with Mesh+Transform
+- **`VulkanBuffer`** - GPU buffers (vertex, index, uniform, storage)
+- **`RenderSystem`** - ECS system that renders all entities with Mesh+Transform, drives skeletal animation
 
 ### Descriptor Bindings
 
@@ -115,6 +117,7 @@ Binding 3: Base color texture sampler (fragment shader)
 Binding 4: Shadow map sampler (fragment shader)
 Binding 5: Height map for parallax mapping (fragment shader)
 Binding 6: Normal map (fragment shader)
+Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
 ```
 
 ### Push Constants (128 bytes, per-object)
@@ -128,7 +131,7 @@ struct PushConstants {
     i32 flags;              // bit field: render/alpha/texture/retro flags
     f32 parallaxScale;      // + padding = 16 bytes
 };
-// flags layout: bits 0-2 render, 8-9 alpha mode, 10 height tex,
+// flags layout: bits 0-2 render, 3 skinned, 8-9 alpha mode, 10 height tex,
 //   16-19 texture flags, 20-23 retro flags, 24-31 snap resolution
 ```
 
@@ -158,8 +161,8 @@ struct PushConstants {
 
 ### Assets
 
-- **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene
-- **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders from mesh AABBs
+- **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
+- **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes
 
 ## Shader Workflow
 
@@ -217,9 +220,9 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Auto-generated box colliders on model import (AABB from mesh vertices)
 - Ground plane entity creation (Entity > Ground Plane menu)
 - Editor input locking during play mode (NoInputs on panels, shortcut suppression)
+- Skeletal animation (glTF skin/joint/animation import, GPU skinning via bone SSBO, auto-play)
 
 **Next Up:**
-- Skeletal animation (framework exists, needs sampling/skinning)
 - Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
 - AI/Navmesh integration (framework exists, needs gameplay logic)
 

@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Logging/Log.h"
 #include <cfloat>
 #include <filesystem>
@@ -82,6 +83,12 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 vertex.position = gltfVert.position;
                 vertex.normal = gltfVert.normal;
                 vertex.uv = gltfVert.texCoord;
+                vertex.tangent = gltfVert.tangent;
+                vertex.boneWeights = gltfVert.boneWeights;
+                vertex.boneIndices[0] = gltfVert.boneIndices[0];
+                vertex.boneIndices[1] = gltfVert.boneIndices[1];
+                vertex.boneIndices[2] = gltfVert.boneIndices[2];
+                vertex.boneIndices[3] = gltfVert.boneIndices[3];
                 meshComp.vertices.push_back(vertex);
             }
 
@@ -112,6 +119,147 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
             collider.center = (minBounds + maxBounds) * 0.5f;
             collider.size = maxBounds - minBounds;
+        }
+    }
+
+    // Set up skeleton and animator if this node has a skin
+    if (node.skinIndex >= 0 && node.skinIndex < static_cast<i32>(scene.skins.size())) {
+        const GLTFSkin& skin = scene.skins[node.skinIndex];
+
+        // Build skeleton from skin data
+        auto skeleton = std::make_shared<Animation::Skeleton>();
+        skeleton->name = skin.name.empty() ? "Skeleton" : skin.name;
+        skeleton->bones.resize(skin.jointNodeIndices.size());
+
+        // Build a lookup: node index -> joint index (for finding parent bones)
+        std::unordered_map<i32, i32> nodeToJoint;
+        for (i32 j = 0; j < static_cast<i32>(skin.jointNodeIndices.size()); ++j) {
+            nodeToJoint[skin.jointNodeIndices[j]] = j;
+        }
+
+        for (usize j = 0; j < skin.jointNodeIndices.size(); ++j) {
+            i32 jointNodeIdx = skin.jointNodeIndices[j];
+            Animation::Bone& bone = skeleton->bones[j];
+
+            if (jointNodeIdx >= 0 && jointNodeIdx < static_cast<i32>(scene.nodes.size())) {
+                const GLTFNode& jointNode = scene.nodes[jointNodeIdx];
+                bone.name = jointNode.name;
+                bone.bindPosition = jointNode.translation;
+                bone.bindRotation = jointNode.rotation;
+                bone.bindScale = jointNode.scale;
+            }
+
+            if (j < skin.inverseBindMatrices.size()) {
+                bone.inverseBindMatrix = skin.inverseBindMatrices[j];
+            }
+
+            // Find parent: walk the glTF node hierarchy to find which joint is the parent
+            bone.parentIndex = -1;
+            if (jointNodeIdx >= 0) {
+                // Search all nodes for one whose children list contains this joint node
+                for (usize n = 0; n < scene.nodes.size(); ++n) {
+                    const GLTFNode& potentialParent = scene.nodes[n];
+                    for (i32 childIdx : potentialParent.children) {
+                        if (childIdx == jointNodeIdx) {
+                            auto parentIt = nodeToJoint.find(static_cast<i32>(n));
+                            if (parentIt != nodeToJoint.end()) {
+                                bone.parentIndex = parentIt->second;
+                            }
+                            break;
+                        }
+                    }
+                    if (bone.parentIndex >= 0) break;
+                }
+            }
+        }
+
+        // Add skeleton component
+        auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
+        skelComp.skeleton = skeleton;
+
+        // Add animator component
+        auto& animComp = world->AddComponent<ECS::AnimatorComponent>(entity);
+        animComp.Initialize(skeleton);
+
+        // Convert glTF animations to skeletal animations
+        for (const auto& gltfAnim : scene.animations) {
+            Animation::SkeletalAnimation skelAnim;
+            skelAnim.name = gltfAnim.name;
+            skelAnim.duration = gltfAnim.duration;
+
+            for (const auto& channel : gltfAnim.channels) {
+                if (channel.targetNode < 0) continue;
+
+                // Find which bone this channel targets
+                auto jointIt = nodeToJoint.find(channel.targetNode);
+                if (jointIt == nodeToJoint.end()) continue;
+                i32 boneIndex = jointIt->second;
+
+                // Find or create a track for this bone
+                Animation::BoneTrack* track = nullptr;
+                for (auto& t : skelAnim.tracks) {
+                    if (t.boneIndex == boneIndex) {
+                        track = &t;
+                        break;
+                    }
+                }
+                if (!track) {
+                    skelAnim.tracks.push_back({});
+                    track = &skelAnim.tracks.back();
+                    track->boneIndex = boneIndex;
+                    if (boneIndex >= 0 && boneIndex < static_cast<i32>(skeleton->bones.size())) {
+                        track->boneName = skeleton->bones[boneIndex].name;
+                    }
+                }
+
+                switch (channel.path) {
+                    case GLTFAnimationChannel::Path::Translation: {
+                        track->positionTimes = channel.times;
+                        track->positions.resize(channel.times.size());
+                        for (usize k = 0; k < channel.times.size(); ++k) {
+                            track->positions[k] = Math::Vector3(
+                                channel.values[k * 3 + 0],
+                                channel.values[k * 3 + 1],
+                                channel.values[k * 3 + 2]);
+                        }
+                        break;
+                    }
+                    case GLTFAnimationChannel::Path::Rotation: {
+                        track->rotationTimes = channel.times;
+                        track->rotations.resize(channel.times.size());
+                        for (usize k = 0; k < channel.times.size(); ++k) {
+                            track->rotations[k] = Math::Quaternion(
+                                channel.values[k * 4 + 0],
+                                channel.values[k * 4 + 1],
+                                channel.values[k * 4 + 2],
+                                channel.values[k * 4 + 3]);
+                        }
+                        break;
+                    }
+                    case GLTFAnimationChannel::Path::Scale: {
+                        track->scaleTimes = channel.times;
+                        track->scales.resize(channel.times.size());
+                        for (usize k = 0; k < channel.times.size(); ++k) {
+                            track->scales[k] = Math::Vector3(
+                                channel.values[k * 3 + 0],
+                                channel.values[k * 3 + 1],
+                                channel.values[k * 3 + 2]);
+                        }
+                        break;
+                    }
+                }
+            }
+
+            if (!skelAnim.tracks.empty()) {
+                animComp.animator.AddAnimation(skelAnim);
+            }
+        }
+
+        // Auto-play first animation
+        if (!scene.animations.empty()) {
+            animComp.animator.Play(scene.animations[0].name);
+            ENJIN_LOG_INFO(Asset, "Auto-playing animation '%s' on entity '%s'",
+                scene.animations[0].name.c_str(), node.name.c_str());
         }
     }
 

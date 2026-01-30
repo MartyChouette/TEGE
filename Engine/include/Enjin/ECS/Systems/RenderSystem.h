@@ -13,6 +13,7 @@
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/ShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
@@ -24,6 +25,7 @@ namespace ECS {
 struct EntityRenderData {
     std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> boneBuffer;
     u32 indexCount = 0;
 };
 
@@ -104,6 +106,10 @@ private:
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
     std::unordered_map<std::string, std::shared_ptr<Renderer::Texture>> m_TextureCache;
+
+    // Skeletal animation
+    std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
+    void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
 
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);

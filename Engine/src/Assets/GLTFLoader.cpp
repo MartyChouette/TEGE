@@ -185,6 +185,23 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                             cgltf_accessor_read_float(accessor, v, &vertex.tangent.x, 4);
                             break;
                         }
+                        case cgltf_attribute_type_joints: {
+                            if (attr.index == 0) {
+                                cgltf_uint joints[4] = {0, 0, 0, 0};
+                                cgltf_accessor_read_uint(accessor, v, joints, 4);
+                                vertex.boneIndices[0] = static_cast<u32>(joints[0]);
+                                vertex.boneIndices[1] = static_cast<u32>(joints[1]);
+                                vertex.boneIndices[2] = static_cast<u32>(joints[2]);
+                                vertex.boneIndices[3] = static_cast<u32>(joints[3]);
+                            }
+                            break;
+                        }
+                        case cgltf_attribute_type_weights: {
+                            if (attr.index == 0) {
+                                cgltf_accessor_read_float(accessor, v, &vertex.boneWeights.x, 4);
+                            }
+                            break;
+                        }
                         default:
                             break;
                     }
@@ -264,13 +281,120 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
         }
     }
 
+    // Load skins
+    outScene.skins.resize(data->skins_count);
+    for (cgltf_size s = 0; s < data->skins_count; ++s) {
+        cgltf_skin& srcSkin = data->skins[s];
+        GLTFSkin& dstSkin = outScene.skins[s];
+
+        if (srcSkin.name) {
+            dstSkin.name = srcSkin.name;
+        }
+
+        if (srcSkin.skeleton) {
+            dstSkin.skeletonRootNode = static_cast<i32>(cgltf_node_index(data, srcSkin.skeleton));
+        }
+
+        // Joint node indices
+        dstSkin.jointNodeIndices.resize(srcSkin.joints_count);
+        for (cgltf_size j = 0; j < srcSkin.joints_count; ++j) {
+            dstSkin.jointNodeIndices[j] = static_cast<i32>(cgltf_node_index(data, srcSkin.joints[j]));
+        }
+
+        // Inverse bind matrices
+        if (srcSkin.inverse_bind_matrices) {
+            cgltf_accessor* ibmAccessor = srcSkin.inverse_bind_matrices;
+            dstSkin.inverseBindMatrices.resize(ibmAccessor->count);
+            for (cgltf_size j = 0; j < ibmAccessor->count; ++j) {
+                cgltf_accessor_read_float(ibmAccessor, j,
+                    dstSkin.inverseBindMatrices[j].m, 16);
+            }
+        } else {
+            // Default to identity if no inverse bind matrices
+            dstSkin.inverseBindMatrices.resize(srcSkin.joints_count, Math::Matrix4::Identity());
+        }
+    }
+
+    // Set skinIndex on nodes that reference a skin
+    for (cgltf_size n = 0; n < data->nodes_count; ++n) {
+        if (data->nodes[n].skin) {
+            outScene.nodes[n].skinIndex = static_cast<i32>(cgltf_skin_index(data, data->nodes[n].skin));
+        }
+    }
+
+    // Load animations
+    outScene.animations.resize(data->animations_count);
+    for (cgltf_size a = 0; a < data->animations_count; ++a) {
+        cgltf_animation& srcAnim = data->animations[a];
+        GLTFAnimation& dstAnim = outScene.animations[a];
+
+        if (srcAnim.name) {
+            dstAnim.name = srcAnim.name;
+        } else {
+            dstAnim.name = "Animation_" + std::to_string(a);
+        }
+
+        dstAnim.duration = 0.0f;
+        dstAnim.channels.resize(srcAnim.channels_count);
+
+        for (cgltf_size c = 0; c < srcAnim.channels_count; ++c) {
+            cgltf_animation_channel& srcChannel = srcAnim.channels[c];
+            GLTFAnimationChannel& dstChannel = dstAnim.channels[c];
+
+            if (srcChannel.target_node) {
+                dstChannel.targetNode = static_cast<i32>(cgltf_node_index(data, srcChannel.target_node));
+            }
+
+            switch (srcChannel.target_path) {
+                case cgltf_animation_path_type_translation:
+                    dstChannel.path = GLTFAnimationChannel::Path::Translation;
+                    break;
+                case cgltf_animation_path_type_rotation:
+                    dstChannel.path = GLTFAnimationChannel::Path::Rotation;
+                    break;
+                case cgltf_animation_path_type_scale:
+                    dstChannel.path = GLTFAnimationChannel::Path::Scale;
+                    break;
+                default:
+                    continue;
+            }
+
+            cgltf_animation_sampler& sampler = *srcChannel.sampler;
+
+            // Read keyframe times from input accessor
+            cgltf_accessor* inputAccessor = sampler.input;
+            dstChannel.times.resize(inputAccessor->count);
+            for (cgltf_size k = 0; k < inputAccessor->count; ++k) {
+                cgltf_accessor_read_float(inputAccessor, k, &dstChannel.times[k], 1);
+                if (dstChannel.times[k] > dstAnim.duration) {
+                    dstAnim.duration = dstChannel.times[k];
+                }
+            }
+
+            // Read keyframe values from output accessor
+            cgltf_accessor* outputAccessor = sampler.output;
+            cgltf_size componentCount = (dstChannel.path == GLTFAnimationChannel::Path::Rotation) ? 4 : 3;
+            dstChannel.values.resize(outputAccessor->count * componentCount);
+            for (cgltf_size k = 0; k < outputAccessor->count; ++k) {
+                cgltf_accessor_read_float(outputAccessor, k,
+                    &dstChannel.values[k * componentCount],
+                    static_cast<cgltf_size>(componentCount));
+            }
+        }
+
+        ENJIN_LOG_INFO(Asset, "  Animation '%s': %.2fs, %zu channels",
+            dstAnim.name.c_str(), dstAnim.duration, dstAnim.channels.size());
+    }
+
     cgltf_free(data);
 
-    ENJIN_LOG_INFO(Asset, "Loaded glTF: %s (%zu meshes, %zu materials, %zu nodes)",
+    ENJIN_LOG_INFO(Asset, "Loaded glTF: %s (%zu meshes, %zu materials, %zu nodes, %zu skins, %zu animations)",
         filepath.c_str(),
         outScene.meshes.size(),
         outScene.materials.size(),
-        outScene.nodes.size());
+        outScene.nodes.size(),
+        outScene.skins.size(),
+        outScene.animations.size());
 
     return true;
 }
