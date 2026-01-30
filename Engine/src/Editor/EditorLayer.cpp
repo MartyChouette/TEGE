@@ -242,12 +242,31 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         return;
     }
 
-    // Find active game camera entity
+    // Resize render target if game view panel dimensions changed
+    if (m_GameViewRenderTarget->GetWidth() != m_GameViewWidth ||
+        m_GameViewRenderTarget->GetHeight() != m_GameViewHeight) {
+        if (m_GameViewWidth > 0 && m_GameViewHeight > 0) {
+            m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+        }
+    }
+
+    // Find game camera entity (use user-selected camera, or fall back to active camera)
     if (!m_World || !m_RenderSystem) {
         return;
     }
 
-    ECS::Entity gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
+    ECS::Entity gameCameraEntity = m_SelectedGameCamera;
+    // Validate selected camera still exists and has a CameraComponent
+    if (gameCameraEntity != ECS::INVALID_ENTITY) {
+        if (!m_World->HasComponent<ECS::CameraComponent>(gameCameraEntity)) {
+            gameCameraEntity = ECS::INVALID_ENTITY;
+            m_SelectedGameCamera = ECS::INVALID_ENTITY;
+        }
+    }
+    // Fall back to active camera if no selection
+    if (gameCameraEntity == ECS::INVALID_ENTITY) {
+        gameCameraEntity = ECS::CameraManager::GetActiveCamera(m_World);
+    }
     if (gameCameraEntity == ECS::INVALID_ENTITY) {
         return;
     }
@@ -835,7 +854,7 @@ void EditorLayer::DrawMenuBar() {
 
         if (ImGui::BeginMenu("Help")) {
             if (ImGui::MenuItem("About Enjin")) {
-                // TODO: About dialog
+                m_ShowAboutDialog = true;
             }
             ImGui::EndMenu();
         }
@@ -887,6 +906,33 @@ void EditorLayer::DrawMenuBar() {
         }
 
         ImGui::EndMainMenuBar();
+    }
+
+    // About dialog
+    if (m_ShowAboutDialog) {
+        ImGui::OpenPopup("About Enjin");
+        m_ShowAboutDialog = false;
+    }
+    if (ImGui::BeginPopupModal("About Enjin", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enjin Engine");
+        ImGui::Separator();
+        ImGui::Text("Version 0.1.0 (Development)");
+        ImGui::Spacing();
+        ImGui::Text("A game engine built with C++20 and Vulkan.");
+        ImGui::Spacing();
+        ImGui::Text("Third-Party Libraries:");
+        ImGui::BulletText("Vulkan SDK - Graphics API");
+        ImGui::BulletText("GLFW - Window/Input");
+        ImGui::BulletText("Dear ImGui - Editor UI");
+        ImGui::BulletText("ImGuizmo - Transform Gizmos");
+        ImGui::BulletText("Assimp - 3D Model Import");
+        ImGui::BulletText("stb_image - Image Loading");
+        ImGui::Spacing();
+        ImGui::Separator();
+        if (ImGui::Button("OK", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 }
 
@@ -1698,7 +1744,7 @@ void EditorLayer::DrawConsolePanel() {
                          ImGuiInputTextFlags_EnterReturnsTrue)) {
         if (inputBuf[0] != '\0') {
             m_ConsoleLog.push_back(std::string("> ") + inputBuf);
-            // TODO: Execute console command
+            ExecuteConsoleCommand(std::string(inputBuf));
             inputBuf[0] = '\0';
         }
         ImGui::SetKeyboardFocusHere(-1);
@@ -1714,8 +1760,122 @@ void EditorLayer::DrawConsolePanel() {
 void EditorLayer::DrawAssetBrowserPanel() {
     ImGui::Begin("Asset Browser");
 
-    ImGui::TextDisabled("Asset browser not yet implemented");
-    // TODO: Show directory tree, file icons, drag & drop support
+    // Initialize browse path to current working directory
+    if (m_AssetBrowserPath.empty()) {
+        m_AssetBrowserPath = ".";
+    }
+
+    // Navigation bar
+    ImGui::Text("Path: %s", m_AssetBrowserPath.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Up")) {
+        // Go up one directory
+        auto pos = m_AssetBrowserPath.find_last_of("/\\");
+        if (pos != std::string::npos && pos > 0) {
+            m_AssetBrowserPath = m_AssetBrowserPath.substr(0, pos);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Refresh")) {
+        // Just re-scan (the loop below does it each frame, but this clears selection)
+        m_AssetBrowserSelected.clear();
+    }
+
+    ImGui::Separator();
+
+    // Import buttons
+    if (ImGui::Button("Import Model...")) {
+        std::vector<FileFilter> filters = {
+            { "3D Models", "*.gltf;*.glb;*.fbx;*.obj" },
+            { "All Files", "*.*" }
+        };
+        std::string path = FileDialog::OpenFile("Import Model", filters);
+        if (!path.empty()) {
+            ImportModel(path);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Open Scene...")) {
+        std::vector<FileFilter> filters = {
+            { "Enjin Scene", "*.enjin;*.json" },
+            { "All Files", "*.*" }
+        };
+        std::string path = FileDialog::OpenFile("Open Scene", filters);
+        if (!path.empty()) {
+            OpenScene(path);
+        }
+    }
+
+    ImGui::Separator();
+
+    // File listing
+    ImGui::BeginChild("FileList", ImVec2(0, 0), true);
+
+    // List directories and files using std::filesystem
+    try {
+        namespace fs = std::filesystem;
+        fs::path browsePath(m_AssetBrowserPath);
+
+        if (fs::exists(browsePath) && fs::is_directory(browsePath)) {
+            // Directories first
+            for (const auto& entry : fs::directory_iterator(browsePath)) {
+                if (entry.is_directory()) {
+                    std::string name = "[DIR] " + entry.path().filename().string();
+                    if (ImGui::Selectable(name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick)) {
+                        if (ImGui::IsMouseDoubleClicked(0)) {
+                            m_AssetBrowserPath = entry.path().string();
+                        }
+                    }
+                }
+            }
+
+            // Then files
+            for (const auto& entry : fs::directory_iterator(browsePath)) {
+                if (!entry.is_regular_file()) continue;
+
+                std::string ext = entry.path().extension().string();
+                std::string filename = entry.path().filename().string();
+
+                // Color-code by file type
+                bool isModel = (ext == ".gltf" || ext == ".glb" || ext == ".fbx" || ext == ".obj");
+                bool isScene = (ext == ".enjin" || ext == ".json");
+                bool isShader = (ext == ".vert" || ext == ".frag" || ext == ".glsl" || ext == ".spv");
+                bool isImage = (ext == ".png" || ext == ".jpg" || ext == ".tga" || ext == ".bmp");
+
+                if (isModel) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                else if (isScene) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+                else if (isShader) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.8f, 0.4f, 1.0f));
+                else if (isImage) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.6f, 1.0f, 1.0f));
+
+                bool selected = (m_AssetBrowserSelected == entry.path().string());
+                if (ImGui::Selectable(filename.c_str(), selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+                    m_AssetBrowserSelected = entry.path().string();
+
+                    if (ImGui::IsMouseDoubleClicked(0)) {
+                        // Double-click: import models, open scenes
+                        if (isModel) {
+                            ImportModel(entry.path().string());
+                        } else if (isScene) {
+                            OpenScene(entry.path().string());
+                        }
+                    }
+                }
+
+                if (isModel || isScene || isShader || isImage) {
+                    ImGui::PopStyleColor();
+                }
+            }
+        } else {
+            ImGui::TextDisabled("Directory not found");
+            if (ImGui::Button("Reset to Project Root")) {
+                m_AssetBrowserPath = ".";
+            }
+        }
+    } catch (...) {
+        ImGui::TextDisabled("Error reading directory");
+    }
+
+    ImGui::EndChild();
 
     ImGui::End();
 }
@@ -1812,50 +1972,83 @@ void EditorLayer::DrawSettingsPanel() {
         ImGui::Separator();
         ImGui::Text("Game Camera:");
 
-        // Find the active game camera
-        ECS::Entity gameCamEntity = ECS::INVALID_ENTITY;
+        // Gather all cameras for the selector
+        std::vector<ECS::Entity> settingsCameraEntities;
         if (m_World) {
-            gameCamEntity = ECS::CameraManager::GetActiveCamera(m_World);
+            for (ECS::Entity entity : m_World->GetAllEntities()) {
+                if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
+                    settingsCameraEntities.push_back(entity);
+                }
+            }
         }
 
-        if (gameCamEntity != ECS::INVALID_ENTITY && m_Camera && m_CameraController) {
+        // Camera selector (shared with game view)
+        if (!settingsCameraEntities.empty() && m_Camera && m_CameraController) {
+            // Validate selection
+            if (m_SelectedGameCamera == ECS::INVALID_ENTITY) {
+                m_SelectedGameCamera = settingsCameraEntities[0];
+            }
+
+            // Dropdown to pick camera
+            if (settingsCameraEntities.size() > 1) {
+                std::string currentName = "None";
+                if (m_SelectedGameCamera != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(m_SelectedGameCamera)) {
+                    currentName = m_World->GetComponent<ECS::NameComponent>(m_SelectedGameCamera)->name;
+                } else if (m_SelectedGameCamera != ECS::INVALID_ENTITY) {
+                    currentName = "Camera " + std::to_string(m_SelectedGameCamera);
+                }
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::BeginCombo("##SettingsCamSelect", currentName.c_str())) {
+                    for (ECS::Entity camEnt : settingsCameraEntities) {
+                        std::string name;
+                        if (m_World->HasComponent<ECS::NameComponent>(camEnt)) {
+                            name = m_World->GetComponent<ECS::NameComponent>(camEnt)->name;
+                        } else {
+                            name = "Camera " + std::to_string(camEnt);
+                        }
+                        bool selected = (camEnt == m_SelectedGameCamera);
+                        if (ImGui::Selectable(name.c_str(), selected)) {
+                            m_SelectedGameCamera = camEnt;
+                        }
+                        if (selected) ImGui::SetItemDefaultFocus();
+                    }
+                    ImGui::EndCombo();
+                }
+            }
+
+            ECS::Entity gameCamEntity = m_SelectedGameCamera;
             auto* gameCamComp = m_World->GetComponent<ECS::CameraComponent>(gameCamEntity);
             auto* gameCamTransform = m_World->GetComponent<ECS::TransformComponent>(gameCamEntity);
 
             if (gameCamComp && gameCamTransform) {
-                // Show current game camera info
                 std::string camName = "Game Camera";
                 if (m_World->HasComponent<ECS::NameComponent>(gameCamEntity)) {
                     camName = m_World->GetComponent<ECS::NameComponent>(gameCamEntity)->name;
                 }
-                ImGui::Text("Active: %s", camName.c_str());
+                ImGui::Text("Selected: %s", camName.c_str());
 
-                // Apply editor view to game camera
+                // Apply editor view to game camera (ONE-SHOT)
                 if (ImGui::Button("Apply Editor View to Game Camera")) {
-                    // Copy editor camera position
                     gameCamTransform->position = m_Camera->GetPosition();
 
-                    // Copy editor camera rotation from yaw/pitch
                     f32 yawRad = Math::Radians(m_CameraController->GetYaw());
                     f32 pitchRad = Math::Radians(m_CameraController->GetPitch());
                     Math::Quaternion yawQuat(Math::Vector3(0.0f, 1.0f, 0.0f), yawRad);
                     Math::Quaternion pitchQuat(Math::Vector3(1.0f, 0.0f, 0.0f), pitchRad);
                     gameCamTransform->rotation = yawQuat * pitchQuat;
 
-                    // Copy projection settings
                     if (m_CameraController->IsOrthographic()) {
                         gameCamComp->projectionType = ECS::ProjectionType::Orthographic;
                         gameCamComp->orthoSize = m_CameraController->GetOrthoSize();
                     } else {
                         gameCamComp->projectionType = ECS::ProjectionType::Perspective;
-                        // Keep the game camera's own FOV
                     }
 
                     ENJIN_LOG_INFO(Editor, "Applied editor view to game camera '%s'", camName.c_str());
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Copy editor camera position, rotation, and projection to the active game camera");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("One-shot: copies current editor position/rotation to the game camera");
 
-                // Apply game camera view to editor
+                // Apply game camera view to editor (ONE-SHOT)
                 if (ImGui::Button("Snap Editor to Game Camera")) {
                     m_Camera->SetPosition(gameCamTransform->position);
 
@@ -1874,10 +2067,10 @@ void EditorLayer::DrawSettingsPanel() {
 
                     ENJIN_LOG_INFO(Editor, "Snapped editor to game camera '%s'", camName.c_str());
                 }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Move editor camera to match the game camera's view");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("One-shot: moves editor camera to match the game camera's view");
             }
         } else {
-            ImGui::TextDisabled("No active game camera in scene");
+            ImGui::TextDisabled("No game camera in scene");
         }
     }
 
@@ -2365,20 +2558,36 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::PopStyleColor(2);
     }
 
-    // Find a camera entity in the scene
-    ECS::Entity gameCameraEntity = ECS::INVALID_ENTITY;
-    ECS::CameraComponent* gameCameraComp = nullptr;
-    ECS::TransformComponent* gameCameraTransform = nullptr;
-
+    // Gather all camera entities in the scene
+    std::vector<ECS::Entity> cameraEntities;
     if (m_World) {
         for (ECS::Entity entity : m_World->GetAllEntities()) {
             if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                gameCameraEntity = entity;
-                gameCameraComp = m_World->GetComponent<ECS::CameraComponent>(entity);
-                gameCameraTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                break;  // Use first camera found
+                cameraEntities.push_back(entity);
             }
         }
+    }
+
+    // Validate current selection
+    if (m_SelectedGameCamera != ECS::INVALID_ENTITY) {
+        bool found = false;
+        for (ECS::Entity e : cameraEntities) {
+            if (e == m_SelectedGameCamera) { found = true; break; }
+        }
+        if (!found) m_SelectedGameCamera = ECS::INVALID_ENTITY;
+    }
+
+    // Auto-select first camera if nothing selected
+    if (m_SelectedGameCamera == ECS::INVALID_ENTITY && !cameraEntities.empty()) {
+        m_SelectedGameCamera = cameraEntities[0];
+    }
+
+    ECS::Entity gameCameraEntity = m_SelectedGameCamera;
+    ECS::CameraComponent* gameCameraComp = nullptr;
+    ECS::TransformComponent* gameCameraTransform = nullptr;
+    if (gameCameraEntity != ECS::INVALID_ENTITY && m_World) {
+        gameCameraComp = m_World->GetComponent<ECS::CameraComponent>(gameCameraEntity);
+        gameCameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
     }
 
     // Show play mode status
@@ -2403,6 +2612,38 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::SameLine();
         if (ImGui::Button("Play")) {
             m_PlayMode.Play();
+        }
+    }
+
+    // Camera selector dropdown (when multiple cameras exist)
+    if (cameraEntities.size() > 1) {
+        std::string currentName = "None";
+        if (m_SelectedGameCamera != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(m_SelectedGameCamera)) {
+            currentName = m_World->GetComponent<ECS::NameComponent>(m_SelectedGameCamera)->name;
+        } else if (m_SelectedGameCamera != ECS::INVALID_ENTITY) {
+            currentName = "Camera (Entity " + std::to_string(m_SelectedGameCamera) + ")";
+        }
+
+        ImGui::SetNextItemWidth(200);
+        if (ImGui::BeginCombo("Camera", currentName.c_str())) {
+            for (ECS::Entity camEntity : cameraEntities) {
+                std::string name;
+                if (m_World->HasComponent<ECS::NameComponent>(camEntity)) {
+                    name = m_World->GetComponent<ECS::NameComponent>(camEntity)->name;
+                } else {
+                    name = "Camera (Entity " + std::to_string(camEntity) + ")";
+                }
+
+                bool isSelected = (camEntity == m_SelectedGameCamera);
+                if (ImGui::Selectable(name.c_str(), isSelected)) {
+                    m_SelectedGameCamera = camEntity;
+                    gameCameraEntity = camEntity;
+                    gameCameraComp = m_World->GetComponent<ECS::CameraComponent>(camEntity);
+                    gameCameraTransform = m_World->GetComponent<ECS::TransformComponent>(camEntity);
+                }
+                if (isSelected) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
         }
     }
 
@@ -4142,6 +4383,158 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
             ImVec2(screenCamPos.x + iconSize, screenCamPos.y + iconSize),
             IM_COL32(255, 255, 255, 255), 0.0f, 0, 1.0f
         );
+    }
+}
+
+void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
+    // Tokenize
+    std::istringstream iss(command);
+    std::string cmd;
+    iss >> cmd;
+
+    // Convert to lowercase for matching
+    std::string cmdLower = cmd;
+    for (auto& c : cmdLower) c = static_cast<char>(std::tolower(c));
+
+    if (cmdLower == "help") {
+        m_ConsoleLog.push_back("Available commands:");
+        m_ConsoleLog.push_back("  help              - Show this help");
+        m_ConsoleLog.push_back("  clear             - Clear console");
+        m_ConsoleLog.push_back("  list              - List all entities");
+        m_ConsoleLog.push_back("  select <id>       - Select entity by ID");
+        m_ConsoleLog.push_back("  create <name>     - Create empty entity");
+        m_ConsoleLog.push_back("  delete            - Delete selected entity");
+        m_ConsoleLog.push_back("  pos <x> <y> <z>   - Set selected entity position");
+        m_ConsoleLog.push_back("  wireframe         - Toggle wireframe mode");
+        m_ConsoleLog.push_back("  shadows           - Toggle shadows");
+        m_ConsoleLog.push_back("  stats             - Show scene statistics");
+        m_ConsoleLog.push_back("  save <path>       - Save scene");
+        m_ConsoleLog.push_back("  load <path>       - Load scene");
+    } else if (cmdLower == "clear") {
+        m_ConsoleLog.clear();
+    } else if (cmdLower == "list") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        const auto& entities = m_World->GetAllEntities();
+        m_ConsoleLog.push_back("Entities (" + std::to_string(entities.size()) + "):");
+        for (ECS::Entity entity : entities) {
+            std::string name = "Entity " + std::to_string(entity);
+            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+                name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
+            }
+            std::string line = "  [" + std::to_string(entity) + "] " + name;
+            if (entity == m_SelectedEntity) line += " (selected)";
+            m_ConsoleLog.push_back(line);
+        }
+    } else if (cmdLower == "select") {
+        u64 id = 0;
+        if (iss >> id) {
+            m_SelectedEntity = static_cast<ECS::Entity>(id);
+            m_ConsoleLog.push_back("Selected entity " + std::to_string(id));
+        } else {
+            m_ConsoleLog.push_back("Usage: select <entity_id>");
+        }
+    } else if (cmdLower == "create") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        std::string name;
+        std::getline(iss >> std::ws, name);
+        if (name.empty()) name = "New Entity";
+        ECS::Entity entity = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(entity, name);
+        m_World->AddComponent<ECS::TransformComponent>(entity);
+        m_SelectedEntity = entity;
+        m_ConsoleLog.push_back("Created entity [" + std::to_string(entity) + "] '" + name + "'");
+    } else if (cmdLower == "delete") {
+        if (m_SelectedEntity == ECS::INVALID_ENTITY) {
+            m_ConsoleLog.push_back("No entity selected");
+        } else {
+            u64 id = m_SelectedEntity;
+            DeleteSelectedEntity();
+            m_ConsoleLog.push_back("Deleted entity " + std::to_string(id));
+        }
+    } else if (cmdLower == "pos") {
+        if (m_SelectedEntity == ECS::INVALID_ENTITY || !m_World) {
+            m_ConsoleLog.push_back("No entity selected");
+            return;
+        }
+        f32 x, y, z;
+        if (iss >> x >> y >> z) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
+            if (transform) {
+                transform->position = Math::Vector3(x, y, z);
+                m_ConsoleLog.push_back("Set position to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
+            } else {
+                m_ConsoleLog.push_back("Selected entity has no transform");
+            }
+        } else {
+            m_ConsoleLog.push_back("Usage: pos <x> <y> <z>");
+        }
+    } else if (cmdLower == "wireframe") {
+        if (m_RenderSystem) {
+            bool enabled = !m_RenderSystem->IsWireframeEnabled();
+            m_RenderSystem->SetWireframeEnabled(enabled);
+            m_ConsoleLog.push_back(std::string("Wireframe ") + (enabled ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "shadows") {
+        if (m_RenderSystem) {
+            bool enabled = !m_RenderSystem->IsShadowsEnabled();
+            m_RenderSystem->SetShadowsEnabled(enabled);
+            m_ConsoleLog.push_back(std::string("Shadows ") + (enabled ? "ON" : "OFF"));
+        }
+    } else if (cmdLower == "stats") {
+        if (!m_World) {
+            m_ConsoleLog.push_back("Error: No world loaded");
+            return;
+        }
+        const auto& entities = m_World->GetAllEntities();
+        u32 meshCount = 0, lightCount = 0, cameraCount = 0;
+        u32 totalVerts = 0, totalTris = 0;
+        for (ECS::Entity entity : entities) {
+            if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+                meshCount++;
+                auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+                totalVerts += static_cast<u32>(mesh->vertices.size());
+                totalTris += static_cast<u32>(mesh->indices.size()) / 3;
+            }
+            if (m_World->HasComponent<ECS::LightComponent>(entity)) lightCount++;
+            if (m_World->HasComponent<ECS::CameraComponent>(entity)) cameraCount++;
+        }
+        m_ConsoleLog.push_back("Scene Statistics:");
+        m_ConsoleLog.push_back("  Entities: " + std::to_string(entities.size()));
+        m_ConsoleLog.push_back("  Meshes: " + std::to_string(meshCount) + " (" + std::to_string(totalVerts) + " verts, " + std::to_string(totalTris) + " tris)");
+        m_ConsoleLog.push_back("  Lights: " + std::to_string(lightCount));
+        m_ConsoleLog.push_back("  Cameras: " + std::to_string(cameraCount));
+        m_ConsoleLog.push_back("  FPS: " + std::to_string(static_cast<int>(1.0f / m_LastDeltaTime)));
+    } else if (cmdLower == "save") {
+        std::string path;
+        iss >> path;
+        if (path.empty()) {
+            m_ConsoleLog.push_back("Usage: save <filepath>");
+        } else {
+            SaveScene(path);
+            m_ConsoleLog.push_back("Saved scene to " + path);
+        }
+    } else if (cmdLower == "load") {
+        std::string path;
+        iss >> path;
+        if (path.empty()) {
+            m_ConsoleLog.push_back("Usage: load <filepath>");
+        } else {
+            OpenScene(path);
+            m_ConsoleLog.push_back("Loaded scene from " + path);
+        }
+    } else {
+        m_ConsoleLog.push_back("Unknown command: " + cmd + " (type 'help' for commands)");
+    }
+
+    // Trim console log
+    while (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
+        m_ConsoleLog.erase(m_ConsoleLog.begin());
     }
 }
 

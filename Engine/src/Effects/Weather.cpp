@@ -58,15 +58,15 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
                 targetFog = 0.2f;
                 break;
             case WeatherType::Rain:
-                targetRain = 0.5f;
+                targetRain = 0.6f;
                 targetFog = 0.3f;
                 break;
             case WeatherType::HeavyRain:
                 targetRain = 1.0f;
-                targetFog = 0.5f;
+                targetFog = 0.6f;
                 break;
             case WeatherType::Snow:
-                targetSnow = 0.7f;
+                targetSnow = 1.0f;
                 targetFog = 0.4f;
                 break;
             case WeatherType::Fog:
@@ -74,7 +74,7 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
                 break;
             case WeatherType::Storm:
                 targetRain = 1.0f;
-                targetFog = 0.6f;
+                targetFog = 0.7f;
                 break;
         }
 
@@ -87,8 +87,8 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
     UpdateParticles(deltaTime, cameraPos);
 
     // Spawn new particles based on intensity
-    f32 rainRate = m_RainIntensity * 200.0f;  // Particles per second
-    f32 snowRate = m_SnowIntensity * 100.0f;
+    f32 rainRate = m_RainIntensity * 800.0f;  // Particles per second (dense rain)
+    f32 snowRate = m_SnowIntensity * 400.0f;  // Dense snow
 
     m_SpawnAccumulator += deltaTime;
     f32 spawnInterval = 1.0f / Math::Max(rainRate + snowRate, 1.0f);
@@ -103,8 +103,11 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
         }
     }
 
+    // Clear the one-frame fire flag at the start of each update
+    m_LightningJustFired = false;
+
     // Update lightning
-    if (m_CurrentWeather == WeatherType::Storm) {
+    if (m_CurrentWeather == WeatherType::Storm || m_TargetWeather == WeatherType::Storm) {
         UpdateLightning(deltaTime);
     } else {
         m_LightningActive = false;
@@ -197,12 +200,13 @@ void WeatherSystem::UpdateLightning(f32 deltaTime) {
         if (m_LightningIntensity <= 0.0f) {
             m_LightningActive = false;
             m_LightningIntensity = 0.0f;
-            m_NextLightningTime = RandomFloat(3.0f, 15.0f);
+            m_NextLightningTime = RandomFloat(m_LightningMinInterval, m_LightningMaxInterval);
             m_LightningTimer = 0.0f;
         }
     } else if (m_LightningTimer >= m_NextLightningTime) {
         // Trigger lightning
         m_LightningActive = true;
+        m_LightningJustFired = true;  // One-frame flag for sound/event hookup
         m_LightningIntensity = RandomFloat(0.5f, 1.0f);
     }
 }

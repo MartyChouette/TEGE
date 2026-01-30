@@ -332,10 +332,22 @@ void SkeletalAnimator::Update(f32 deltaTime) {
             }
             break;
         case PlayMode::PingPong:
-            // TODO: Implement ping-pong
-            while (m_CurrentTime >= duration) {
-                m_CurrentTime -= duration;
+            if (m_PingPongForward) {
+                if (m_CurrentTime >= duration) {
+                    m_CurrentTime = 2.0f * duration - m_CurrentTime;
+                    m_PingPongForward = false;
+                }
+            } else {
+                // Playing backward: time was decremented by speed*dt
+                // We advanced forward by dt, but in reverse we need to go backward
+                // Undo the forward advance and subtract instead
+                m_CurrentTime -= 2.0f * dt;
+                if (m_CurrentTime <= 0.0f) {
+                    m_CurrentTime = -m_CurrentTime;
+                    m_PingPongForward = true;
+                }
             }
+            m_CurrentTime = Math::Clamp(m_CurrentTime, 0.0f, duration);
             break;
         case PlayMode::ClampForever:
             if (m_CurrentTime >= duration) {

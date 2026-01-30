@@ -2,6 +2,8 @@
 #include "Enjin/Math/Math.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <chrono>
@@ -329,7 +331,31 @@ bool LevelGenerator::CanPlaceRoom(const RoomPrefab& prefab, const Math::Vector3&
         }
     }
 
-    (void)rotation; // TODO: Proper rotated collision
+    // Rotated AABB collision: compute oriented bounding box corners and check separating axes
+    // For Y-axis rotation, transform half-extents by rotation angle
+    f32 rotRad = Math::Radians(rotation);
+    f32 cosR = Math::Cos(rotRad);
+    f32 sinR = Math::Sin(rotRad);
+
+    // Compute axis-aligned bounding box of rotated room
+    f32 rotHalfX = Math::Abs(halfSize.x * cosR) + Math::Abs(halfSize.z * sinR);
+    f32 rotHalfZ = Math::Abs(halfSize.x * sinR) + Math::Abs(halfSize.z * cosR);
+
+    for (const auto& placed : m_PlacedRooms) {
+        Math::Vector3 placedHalfSize = placed.prefab->size * 0.5f;
+        f32 pRotRad = Math::Radians(placed.rotation);
+        f32 pCos = Math::Cos(pRotRad);
+        f32 pSin = Math::Sin(pRotRad);
+        f32 pRotHalfX = Math::Abs(placedHalfSize.x * pCos) + Math::Abs(placedHalfSize.z * pSin);
+        f32 pRotHalfZ = Math::Abs(placedHalfSize.x * pSin) + Math::Abs(placedHalfSize.z * pCos);
+
+        // AABB overlap test with rotated extents
+        if (Math::Abs(position.x - placed.position.x) < rotHalfX + pRotHalfX &&
+            Math::Abs(position.y - placed.position.y) < halfSize.y + placedHalfSize.y &&
+            Math::Abs(position.z - placed.position.z) < rotHalfZ + pRotHalfZ) {
+            return false;
+        }
+    }
     return true;
 }
 
@@ -519,7 +545,41 @@ void LevelGenerator::InstantiateInWorld(ECS::World* world) {
         transform.rotation = Math::Quaternion::FromEuler(Math::Vector3(0, Math::Radians(room.rotation), 0));
         transform.scale = Math::Vector3(1, 1, 1);
 
-        // TODO: Load scene/mesh from prefab paths
+        // Load scene or mesh from prefab paths
+        if (!room.prefab->scenePath.empty()) {
+            // Load scene file additively (keeps existing entities)
+            Scene::SceneSerializer serializer(world);
+            auto sceneResult = serializer.LoadAdditive(room.prefab->scenePath);
+            if (sceneResult.success) {
+                ENJIN_LOG_INFO(Procedural, "Loaded scene '%s' for room '%s'",
+                    room.prefab->scenePath.c_str(), room.prefab->name.c_str());
+            } else {
+                ENJIN_LOG_WARN(Procedural, "Failed to load scene '%s' for room '%s': %s",
+                    room.prefab->scenePath.c_str(), room.prefab->name.c_str(),
+                    sceneResult.error.c_str());
+            }
+        } else if (!room.prefab->meshPath.empty()) {
+            // Import 3D model using auto-detection
+            Assets::ImportOptions importOpts;
+            importOpts.scale = 1.0f;
+            auto importResult = Assets::SceneImporter::Import(room.prefab->meshPath, world, importOpts);
+            if (importResult.success) {
+                // Set the imported root entity's transform to match room placement
+                if (importResult.rootEntity != ECS::INVALID_ENTITY) {
+                    auto* rootTransform = world->GetComponent<ECS::TransformComponent>(importResult.rootEntity);
+                    if (rootTransform) {
+                        rootTransform->position = room.position;
+                        rootTransform->rotation = transform.rotation;
+                    }
+                }
+                ENJIN_LOG_INFO(Procedural, "Imported mesh '%s' for room '%s'",
+                    room.prefab->meshPath.c_str(), room.prefab->name.c_str());
+            } else {
+                ENJIN_LOG_WARN(Procedural, "Failed to import mesh '%s' for room '%s': %s",
+                    room.prefab->meshPath.c_str(), room.prefab->name.c_str(),
+                    importResult.errorMessage.c_str());
+            }
+        }
     }
 }
 
@@ -539,7 +599,38 @@ bool LevelGenerator::ValidateLevel() const {
     if (m_PlacedRooms.size() < m_Settings.minRooms) return false;
 
     // Check required room types
-    // TODO: Implement
+    if (m_Settings.requireBossRoom) {
+        bool hasBoss = false;
+        for (const auto& room : m_PlacedRooms) {
+            if (room.prefab && room.prefab->category == "boss") {
+                hasBoss = true;
+                break;
+            }
+        }
+        if (!hasBoss) return false;
+    }
+
+    if (m_Settings.requireTreasureRoom) {
+        u32 treasureCount = 0;
+        for (const auto& room : m_PlacedRooms) {
+            if (room.prefab && room.prefab->category == "treasure") {
+                treasureCount++;
+            }
+        }
+        if (treasureCount < m_Settings.minTreasureRooms) return false;
+    }
+
+    // Check per-prefab min/max count constraints
+    std::unordered_map<std::string, u32> prefabCounts;
+    for (const auto& room : m_PlacedRooms) {
+        if (room.prefab) {
+            prefabCounts[room.prefab->id]++;
+        }
+    }
+    for (const auto& prefab : m_Prefabs) {
+        u32 count = prefabCounts.count(prefab.id) ? prefabCounts[prefab.id] : 0;
+        if (count < prefab.minCount) return false;
+    }
 
     return true;
 }

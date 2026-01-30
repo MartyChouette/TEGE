@@ -297,6 +297,9 @@ private:
     f32 m_BlendTime = 0.0f;
     f32 m_BlendProgress = 1.0f;
 
+    // PingPong direction (true = forward, false = reverse)
+    bool m_PingPongForward = true;
+
     EventCallback m_OnEvent;
 };
 

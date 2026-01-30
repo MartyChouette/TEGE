@@ -90,12 +90,54 @@ Math::Vector3 Navmesh::GetNearestPoint(const Math::Vector3& point) const {
     if (polyId == 0) return point;
 
     const NavPolygon* poly = GetPolygon(polyId);
-    if (!poly) return point;
+    if (!poly || poly->vertices.size() < 3) return point;
 
-    // Project point onto polygon plane and clamp to edges
-    // Simplified: return center for now
-    // TODO: Proper projection
-    return poly->center;
+    // Check if point is inside the polygon (projected onto the polygon's plane)
+    if (PointInPolygon(point, *poly)) {
+        // Project point onto the polygon plane
+        // Compute plane normal from first 3 vertices
+        Math::Vector3 v0 = poly->vertices[1] - poly->vertices[0];
+        Math::Vector3 v1 = poly->vertices[2] - poly->vertices[0];
+        Math::Vector3 normal = v0.Cross(v1);
+        f32 nLen = normal.Length();
+        if (nLen > 1e-6f) {
+            normal = normal * (1.0f / nLen);
+            // Project point onto plane: p' = p - dot(p - v0, n) * n
+            Math::Vector3 diff = point - poly->vertices[0];
+            f32 dist = diff.x * normal.x + diff.y * normal.y + diff.z * normal.z;
+            return Math::Vector3(point.x - normal.x * dist,
+                                 point.y - normal.y * dist,
+                                 point.z - normal.z * dist);
+        }
+        return poly->center;
+    }
+
+    // Point is outside polygon - find closest point on polygon edges
+    f32 bestDist = std::numeric_limits<f32>::max();
+    Math::Vector3 bestPoint = poly->center;
+
+    for (usize i = 0; i < poly->vertices.size(); ++i) {
+        const Math::Vector3& a = poly->vertices[i];
+        const Math::Vector3& b = poly->vertices[(i + 1) % poly->vertices.size()];
+
+        // Closest point on line segment a-b to point
+        Math::Vector3 ab = b - a;
+        Math::Vector3 ap = point - a;
+        f32 abLenSq = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z;
+        f32 t = 0.0f;
+        if (abLenSq > 1e-8f) {
+            t = (ap.x * ab.x + ap.y * ab.y + ap.z * ab.z) / abLenSq;
+            t = Math::Clamp(t, 0.0f, 1.0f);
+        }
+        Math::Vector3 closest(a.x + ab.x * t, a.y + ab.y * t, a.z + ab.z * t);
+        f32 dist = NavmeshUtils::DistanceSquared(point, closest);
+        if (dist < bestDist) {
+            bestDist = dist;
+            bestPoint = closest;
+        }
+    }
+
+    return bestPoint;
 }
 
 bool Navmesh::IsPointOnNavmesh(const Math::Vector3& point) const {
@@ -156,9 +198,7 @@ void Navmesh::Clear() {
 
 bool Navmesh::Raycast(const Math::Vector3& start, const Math::Vector3& end,
                      Math::Vector3& hitPoint, u32& hitPolygonId) const {
-    // Simple raycast - check intersection with each polygon
-    // TODO: Use spatial acceleration structure
-
+    // Ray-polygon intersection using Moller-Trumbore for triangulated polygons
     f32 closestT = std::numeric_limits<f32>::max();
     bool hit = false;
 
@@ -168,13 +208,44 @@ bool Navmesh::Raycast(const Math::Vector3& start, const Math::Vector3& end,
     dir = dir * (1.0f / length);
 
     for (const auto& poly : m_Polygons) {
-        // Check ray-polygon intersection
-        // Simplified: just check if ray crosses the polygon's bounding area
-        // TODO: Proper ray-polygon intersection
+        if (poly.vertices.size() < 3) continue;
+
+        // Triangulate polygon (fan from vertex 0) and test each triangle
+        for (usize i = 1; i + 1 < poly.vertices.size(); ++i) {
+            const Math::Vector3& v0 = poly.vertices[0];
+            const Math::Vector3& v1 = poly.vertices[i];
+            const Math::Vector3& v2 = poly.vertices[i + 1];
+
+            // Moller-Trumbore ray-triangle intersection
+            Math::Vector3 edge1 = v1 - v0;
+            Math::Vector3 edge2 = v2 - v0;
+            Math::Vector3 h = dir.Cross(edge2);
+            f32 a = edge1.x * h.x + edge1.y * h.y + edge1.z * h.z;
+
+            if (Math::Abs(a) < 1e-7f) continue; // Ray parallel to triangle
+
+            f32 f = 1.0f / a;
+            Math::Vector3 s = start - v0;
+            f32 u = f * (s.x * h.x + s.y * h.y + s.z * h.z);
+            if (u < 0.0f || u > 1.0f) continue;
+
+            Math::Vector3 q = s.Cross(edge1);
+            f32 v = f * (dir.x * q.x + dir.y * q.y + dir.z * q.z);
+            if (v < 0.0f || u + v > 1.0f) continue;
+
+            f32 t = f * (edge2.x * q.x + edge2.y * q.y + edge2.z * q.z);
+            if (t > 0.0f && t < closestT && t <= length) {
+                closestT = t;
+                hitPolygonId = poly.id;
+                hit = true;
+            }
+        }
     }
 
     if (hit) {
-        hitPoint = start + dir * closestT;
+        hitPoint = Math::Vector3(start.x + dir.x * closestT,
+                                  start.y + dir.y * closestT,
+                                  start.z + dir.z * closestT);
     }
 
     return hit;
@@ -436,8 +507,8 @@ void Pathfinder::SmoothPath(PathResult& path) {
 }
 
 void Pathfinder::StringPull(PathResult& path) {
-    // Simple string pulling - remove unnecessary waypoints
-    if (path.waypoints.size() < 3) return;
+    // String pulling - remove unnecessary waypoints using line-of-sight checks
+    if (path.waypoints.size() < 3 || !m_Navmesh) return;
 
     std::vector<Math::Vector3> pulled;
     pulled.push_back(path.waypoints.front());
@@ -446,13 +517,23 @@ void Pathfinder::StringPull(PathResult& path) {
     while (current < path.waypoints.size() - 1) {
         usize farthest = current + 1;
 
-        // Find farthest visible waypoint
+        // Find farthest visible waypoint via navmesh raycast
         for (usize i = current + 2; i < path.waypoints.size(); ++i) {
-            // TODO: Proper visibility check using raycast
-            // For now, just check if distance is reasonable
-            f32 dist = NavmeshUtils::Distance(path.waypoints[current], path.waypoints[i]);
-            if (dist < 20.0f) {
+            Math::Vector3 hitPoint;
+            u32 hitPolyId = 0;
+            bool blocked = m_Navmesh->Raycast(path.waypoints[current], path.waypoints[i],
+                                               hitPoint, hitPolyId);
+            if (!blocked) {
+                // No obstruction - this waypoint is reachable directly
                 farthest = i;
+            } else {
+                // Check if the hit point is very close to the target (within tolerance)
+                f32 dist = NavmeshUtils::Distance(hitPoint, path.waypoints[i]);
+                if (dist < 0.5f) {
+                    farthest = i;
+                } else {
+                    break; // Can't see past this point
+                }
             }
         }
 

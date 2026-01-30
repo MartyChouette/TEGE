@@ -211,6 +211,8 @@ struct AudioSourceComponent {
     // State
     bool isPlaying = false;
     f32 playbackPosition = 0.0f;
+    u32 soundHandle = 0;        // Handle from SimpleAudio (0 = invalid)
+    bool awakeTriggered = false; // Whether playOnAwake has fired
 
     // Priority (lower = higher priority when too many sounds)
     i32 priority = 128;

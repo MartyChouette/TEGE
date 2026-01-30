@@ -48,25 +48,6 @@ struct ENJIN_API CameraComponent {
     // Rendering options
     u32 cullingMask = 0xFFFFFFFF;  // Layers to render
 
-    // === Weather Effects (per-camera) ===
-    bool weatherEnabled = false;
-    u32 weatherType = 0;          // 0=Clear, 1=Cloudy, 2=Rain, 3=HeavyRain, 4=Snow, 5=Fog, 6=Storm
-    f32 rainIntensity = 0.7f;     // 0-1
-    f32 snowIntensity = 0.7f;     // 0-1
-    f32 fogDensity = 0.0f;        // 0-1
-    Math::Vector3 fogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
-    f32 fogStart = 20.0f;
-    f32 fogEnd = 100.0f;
-    bool lightningEnabled = true; // Can disable lightning flash in storms
-
-    // === Water Effects (per-camera) ===
-    bool waterEnabled = false;
-    f32 waterLevel = 0.0f;        // Y position of water plane
-    Math::Vector3 waterColor = Math::Vector3(0.1f, 0.3f, 0.5f);
-    f32 waterOpacity = 0.7f;
-    f32 waveSpeed = 1.0f;
-    f32 waveHeight = 0.2f;
-
     // Helper to get aspect ratio from viewport
     f32 GetAspectRatio(u32 screenWidth, u32 screenHeight) const {
         f32 width = viewportWidth * static_cast<f32>(screenWidth);

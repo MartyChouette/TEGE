@@ -1,5 +1,9 @@
 # CLAUDE.md - Enjin Engine Project Context
 
+## Git Commit Rules
+
+- **NEVER include a Co-Authored-By line in commits.** No byline, no attribution footer. Just the commit message.
+
 ## Overview
 
 Enjin is a proprietary, licensable game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering capabilities.

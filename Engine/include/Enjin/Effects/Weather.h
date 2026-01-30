@@ -77,6 +77,16 @@ public:
     bool IsLightningActive() const { return m_LightningActive; }
     f32 GetLightningIntensity() const { return m_LightningIntensity; }
 
+    // Lightning frequency control
+    void SetLightningInterval(f32 minSeconds, f32 maxSeconds) {
+        m_LightningMinInterval = Math::Max(0.1f, minSeconds);
+        m_LightningMaxInterval = Math::Max(m_LightningMinInterval, maxSeconds);
+    }
+
+    // Returns true for exactly one frame when lightning fires.
+    // Game code can poll this to trigger a sound effect or other event.
+    bool LightningJustFired() const { return m_LightningJustFired; }
+
 private:
     void SpawnRainParticle(const Math::Vector3& cameraPos);
     void SpawnSnowParticle(const Math::Vector3& cameraPos);
@@ -113,9 +123,12 @@ private:
 
     // Lightning
     bool m_LightningActive = false;
+    bool m_LightningJustFired = false;  // True for one frame when lightning triggers
     f32 m_LightningIntensity = 0.0f;
     f32 m_LightningTimer = 0.0f;
     f32 m_NextLightningTime = 5.0f;
+    f32 m_LightningMinInterval = 2.0f;
+    f32 m_LightningMaxInterval = 10.0f;
 
     // Spawn timing
     f32 m_SpawnAccumulator = 0.0f;

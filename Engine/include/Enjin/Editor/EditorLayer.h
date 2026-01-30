@@ -191,6 +191,7 @@ private:
     // Panel state
     bool m_ShowDemoWindow = false;
     bool m_ShowStatsOverlay = true;
+    bool m_ShowAboutDialog = false;
 
     // Scene state
     std::string m_CurrentScenePath;
@@ -246,6 +247,9 @@ private:
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
 
+    // Selected game camera entity (user can pick which camera to use)
+    ECS::Entity m_SelectedGameCamera = ECS::INVALID_ENTITY;
+
     // Effects systems (global, rendered in game view)
     Effects::WeatherSystem m_WeatherSystem;
     Effects::Water3D m_Water3D;
@@ -253,6 +257,13 @@ private:
 
     // Draw camera frustum gizmo in editor view
     void DrawCameraFrustum(ECS::Entity cameraEntity);
+
+    // Console command execution
+    void ExecuteConsoleCommand(const std::string& command);
+
+    // Asset browser state
+    std::string m_AssetBrowserPath;  // Current browsing directory
+    std::string m_AssetBrowserSelected; // Currently selected file
 };
 
 } // namespace Editor

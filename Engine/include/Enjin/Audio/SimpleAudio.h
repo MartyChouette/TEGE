@@ -102,8 +102,20 @@ private:
 
     f32 m_MasterVolume = 1.0f;
 
-    // Audio clips (placeholder - actual implementation would store audio data)
-    std::unordered_map<AudioClipHandle, std::string> m_Clips;
+    // Loaded audio clip data
+    struct AudioClipData {
+        std::string filepath;
+        std::vector<u8> pcmData;       // Raw PCM samples
+        u32 sampleRate = 44100;
+        u16 channels = 1;
+        u16 bitsPerSample = 16;
+        f32 duration = 0.0f;           // Duration in seconds
+        bool loaded = false;           // True if PCM data is loaded
+    };
+
+    bool LoadWAV(const std::string& filepath, AudioClipData& clip);
+
+    std::unordered_map<AudioClipHandle, AudioClipData> m_Clips;
     AudioClipHandle m_NextClipHandle = 1;
 
     // Playing sounds
