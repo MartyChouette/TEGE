@@ -138,11 +138,15 @@ struct PushConstants {
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select)
 - **`PlayMode`** - Play/Pause/Stop game preview controls
 - **Keyboard shortcuts:**
-  - `W` - Translate gizmo
-  - `E` - Rotate gizmo
-  - `R` - Scale gizmo
-  - `Q` - Toggle local/world space
-  - `WASD` + mouse drag - Fly camera
+  - `1` - Translate gizmo
+  - `2` - Rotate gizmo
+  - `3` - Scale gizmo
+  - `4` - Toggle local/world space
+  - `WASD` - Fly camera movement
+  - `Space` - Move up, `Q`/`Ctrl` - Move down
+  - `Shift` - Sprint
+  - Mouse - Free look (always active)
+  - Scroll - Adjust move speed
 
 ### Effects Systems
 

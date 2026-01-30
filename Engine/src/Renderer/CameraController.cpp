@@ -36,6 +36,11 @@ void CameraController::SyncFromCamera() {
 
 void CameraController::Update(f32 deltaTime) {
     if (!m_Camera || !m_Enabled) {
+        // Release mouse when controller is disabled
+        if (m_MouseCapturedByUs) {
+            Input::SetMouseCaptured(false);
+            m_MouseCapturedByUs = false;
+        }
         return;
     }
 
@@ -53,74 +58,19 @@ void CameraController::Update(f32 deltaTime) {
 }
 
 void CameraController::UpdateFlyMode(f32 deltaTime) {
-    // Check if middle mouse is held for orbit around target
-    bool middleMouseDown = Input::IsMouseButtonDown(MouseButton::Middle);
-
-    if (middleMouseDown) {
-        if (!m_MiddleMouseHeld) {
-            // Just pressed - start orbiting
-            Input::SetMouseCaptured(true);
-            m_MiddleMouseHeld = true;
-            m_MiddleMouseOrbiting = true;
-
-            // Calculate current orbit distance from target
-            Math::Vector3 toCamera = m_Camera->GetPosition() - m_OrbitTarget;
-            m_OrbitDistance = toCamera.Length();
-            if (m_OrbitDistance < 0.1f) m_OrbitDistance = 5.0f;
-        }
-
-        // Orbit around target with mouse delta - Unity/Blender style
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
-        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
-
-        // Calculate camera position from orbit parameters
-        f32 yawRad = Math::Radians(m_Yaw);
-        f32 pitchRad = Math::Radians(m_Pitch);
-
-        Math::Vector3 offset;
-        offset.x = Math::Cos(pitchRad) * Math::Cos(yawRad) * m_OrbitDistance;
-        offset.y = Math::Sin(pitchRad) * m_OrbitDistance;
-        offset.z = Math::Cos(pitchRad) * Math::Sin(yawRad) * m_OrbitDistance;
-
-        Math::Vector3 cameraPos = m_OrbitTarget + offset;
-        m_Camera->SetPosition(cameraPos);
-        m_Camera->SetLookAt(cameraPos, m_OrbitTarget, Math::Vector3(0.0f, 1.0f, 0.0f));
-        return; // Skip fly mode controls while orbiting
-    } else if (m_MiddleMouseHeld) {
-        // Just released - stop orbiting
-        Input::SetMouseCaptured(false);
-        m_MiddleMouseHeld = false;
-        m_MiddleMouseOrbiting = false;
+    // Capture mouse and always apply mouse look
+    if (!m_MouseCapturedByUs) {
+        Input::SetMouseCaptured(true);
+        m_MouseCapturedByUs = true;
+        SyncFromCamera();
     }
 
-    // Check if right mouse is held for look control
-    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
-
-    if (rightMouseDown) {
-        if (!m_RightMouseHeld) {
-            // Just pressed - capture mouse and sync orientation
-            Input::SetMouseCaptured(true);
-            m_RightMouseHeld = true;
-            SyncFromCamera();  // Sync yaw/pitch from current camera before taking control
-        }
-
-        // Look around with mouse delta - Unity/Blender style
-        // Mouse right = look right, Mouse up = look up
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
-
-        // Clamp pitch to prevent flipping
-        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
-
-        ApplyRotation();
-    } else if (m_RightMouseHeld) {
-        // Just released - release mouse
-        Input::SetMouseCaptured(false);
-        m_RightMouseHeld = false;
-    }
+    // Mouse look - always active
+    Math::Vector2 mouseDelta = Input::GetMouseDelta();
+    m_Yaw -= mouseDelta.x * m_LookSensitivity;
+    m_Pitch += mouseDelta.y * m_LookSensitivity;
+    m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+    ApplyRotation();
 
     // Movement - FPS-style: WASD on horizontal plane, Space/Ctrl for vertical
     f32 speed = m_MoveSpeed;
@@ -188,25 +138,19 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 void CameraController::UpdateOrbitMode(f32 deltaTime) {
     (void)deltaTime;
 
-    bool rightMouseDown = Input::IsMouseButtonDown(MouseButton::Right);
-
-    if (rightMouseDown) {
-        if (!m_RightMouseHeld) {
-            Input::SetMouseCaptured(true);
-            m_RightMouseHeld = true;
-        }
-
-        // Orbit with mouse delta - Unity/Blender style
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
-        m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
-    } else if (m_RightMouseHeld) {
-        Input::SetMouseCaptured(false);
-        m_RightMouseHeld = false;
+    // Capture mouse and always apply orbit rotation
+    if (!m_MouseCapturedByUs) {
+        Input::SetMouseCaptured(true);
+        m_MouseCapturedByUs = true;
+        SyncFromCamera();
     }
 
-    // Middle mouse or Shift+RMB to pan
+    Math::Vector2 mouseDelta = Input::GetMouseDelta();
+    m_Yaw -= mouseDelta.x * m_LookSensitivity;
+    m_Pitch += mouseDelta.y * m_LookSensitivity;
+    m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
+
+    // Middle mouse to pan
     bool middleMouseDown = Input::IsMouseButtonDown(MouseButton::Middle);
     if (middleMouseDown) {
         Math::Vector2 mouseDelta = Input::GetMouseDelta();

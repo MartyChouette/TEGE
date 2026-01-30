@@ -103,9 +103,7 @@ private:
     f32 m_MaxOrbitDistance = 100.0f;
 
     // State
-    bool m_RightMouseHeld = false;
-    bool m_MiddleMouseHeld = false;
-    bool m_MiddleMouseOrbiting = false;
+    bool m_MouseCapturedByUs = false;
 
     // View preset and orthographic
     ViewPreset m_ViewPreset = ViewPreset::Perspective;
