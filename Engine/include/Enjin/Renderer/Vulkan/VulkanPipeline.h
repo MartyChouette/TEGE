@@ -57,6 +57,9 @@ struct PipelineConfig {
     bool hasColorAttachment = true;
     // Alpha blending (src alpha, one-minus-src-alpha)
     bool alphaBlend = false;
+    // Custom vertex input state (for instanced pipelines with non-standard vertex layouts)
+    // When non-null, replaces the default mesh vertex input
+    const VkPipelineVertexInputStateCreateInfo* customVertexInput = nullptr;
 };
 
 // Graphics pipeline wrapper

@@ -113,6 +113,12 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 if (v.position.z > maxBounds.z) maxBounds.z = v.position.z;
             }
 
+            ENJIN_LOG_INFO(Asset, "Mesh '%s': %zu vertices, %zu indices, bounds [%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f] (size %.1fx%.1fx%.1f)",
+                name.c_str(), meshComp.vertices.size(), meshComp.indices.size(),
+                minBounds.x, minBounds.y, minBounds.z,
+                maxBounds.x, maxBounds.y, maxBounds.z,
+                maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z);
+
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Add box collider from mesh AABB

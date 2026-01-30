@@ -65,6 +65,7 @@ layout(binding = 1) uniform LightingUBO {
     float shadowBias;
     int shadowEnabled;
     vec2 _shadowPad;
+    vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];

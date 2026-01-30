@@ -1,0 +1,71 @@
+#pragma once
+
+#include "Enjin/Platform/Platform.h"
+#include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Matrix.h"
+#include "Enjin/Effects/Weather.h"
+#include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
+#include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#include "Enjin/Renderer/Camera.h"
+#include <vulkan/vulkan.h>
+#include <vector>
+#include <memory>
+
+namespace Enjin {
+namespace Effects {
+
+// Per-instance particle data uploaded to GPU each frame
+struct ParticleInstanceData {
+    Math::Vector3 position;   // World position
+    f32 size;                 // Billboard size
+    f32 alpha;                // Opacity
+    f32 stretchDirX;          // Stretch direction X (screen space)
+    f32 stretchDirY;          // Stretch direction Y
+    f32 stretch;              // Stretch factor (1.0 = circle, >1 = elongated)
+};
+
+// 3D billboard particle renderer for weather effects
+// Replaces ImGui 2D overlay with proper Vulkan instanced rendering
+class ENJIN_API WeatherRenderer {
+public:
+    WeatherRenderer() = default;
+    ~WeatherRenderer();
+
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    void Shutdown();
+
+    // Upload particle data and render instanced billboards
+    // Call within an active render pass, after scene geometry (for depth testing)
+    void Render(VkCommandBuffer commandBuffer,
+                const std::vector<VkDescriptorSet>& descriptorSets,
+                u32 currentFrame,
+                const WeatherSystem& weather,
+                bool isRain);
+
+private:
+    void CreateQuadBuffers();
+    void CreateInstanceBuffer();
+    void CreatePipeline(VkDescriptorSetLayout sharedLayout);
+
+    Renderer::VulkanRenderer* m_Renderer = nullptr;
+
+    // Shared quad mesh (4 vertices, 6 indices)
+    std::unique_ptr<Renderer::VulkanBuffer> m_QuadVertexBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> m_QuadIndexBuffer;
+
+    // Per-instance buffer (updated each frame)
+    std::unique_ptr<Renderer::VulkanBuffer> m_InstanceBuffer;
+    static constexpr u32 MAX_PARTICLES = 8000;
+
+    // Pipeline
+    std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
+    std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+
+    bool m_Initialized = false;
+};
+
+} // namespace Effects
+} // namespace Enjin

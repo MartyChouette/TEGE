@@ -14,6 +14,9 @@
 #include "Enjin/Renderer/ShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Effects/Wind.h"
+#include "Enjin/Effects/WeatherRenderer.h"
+#include "Enjin/Effects/GrassRenderer.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
@@ -68,6 +71,21 @@ public:
     Math::Vector3 GetAmbientColor() const { return m_AmbientColor; }
     void SetAmbientColor(const Math::Vector3& color) { m_AmbientColor = color; }
 
+    // Wind system (shared, not owned)
+    void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
+    Effects::WindSystem* GetWindSystem() const { return m_WindSystem; }
+
+    // Weather and grass renderers (initialized after main pipeline)
+    Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
+    Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
+
+    // Render weather particles and grass (call after scene geometry in main render pass)
+    void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain);
+    void RenderGrass();
+
+    // Access descriptor sets for sub-renderers
+    const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
+
 private:
     void RenderEntity(Entity entity);
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
@@ -100,6 +118,7 @@ private:
     bool m_ShadowsEnabled = true;
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
+    Effects::WindSystem* m_WindSystem = nullptr;
     f32 m_AmbientIntensity = 1.0f;
     Math::Vector3 m_AmbientColor = Math::Vector3(0.1f, 0.1f, 0.15f);
 
@@ -110,6 +129,13 @@ private:
     // Skeletal animation
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
+
+    // Weather particle and grass renderers
+    std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
+    std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
+
+    // Water surface mesh generation
+    void EnsureWaterMeshes();
 
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);

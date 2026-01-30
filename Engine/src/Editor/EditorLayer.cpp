@@ -12,6 +12,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -53,6 +55,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 
     // Initialize weather system with more particles for better visibility
     m_WeatherSystem.Initialize(8000);  // Large pool for dense rain/snow
+
+    // Wind system is always running (affects weather, vegetation, grass)
+    // Will be connected to RenderSystem when SetRenderSystem is called
 
     // Render target for Game View (offscreen rendering)
     // Fixed size - no resize during frame to avoid Vulkan sync issues
@@ -105,6 +110,12 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
     m_FrameTimeAvg = sum / static_cast<f32>(FRAME_TIME_HISTORY_SIZE);
+
+    // Update wind system (always ticks, affects weather + vegetation + grass)
+    m_WindSystem.Update(deltaTime);
+    if (m_RenderSystem && !m_RenderSystem->GetWindSystem()) {
+        m_RenderSystem->SetWindSystem(&m_WindSystem);
+    }
 
     // Camera controller handles its own input - only fully disable when typing in a text field
     // The camera controller checks for right-mouse before looking, so it's OK to leave it enabled
@@ -863,6 +874,15 @@ void EditorLayer::DrawMenuBar() {
                         m_SelectedEntity = entity;
                     }
                 }
+                if (ImGui::MenuItem("Grass Volume")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::GrassVolumeComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Grass Volume");
+                        m_SelectedEntity = entity;
+                    }
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenu();
@@ -1100,6 +1120,16 @@ void EditorLayer::DrawInspectorPanel() {
         // Water Volume component
         if (m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
             DrawWaterVolumeComponent(m_SelectedEntity);
+        }
+
+        // Grass Volume component
+        if (m_World->HasComponent<ECS::GrassVolumeComponent>(m_SelectedEntity)) {
+            DrawGrassVolumeComponent(m_SelectedEntity);
+        }
+
+        // Vegetation component
+        if (m_World->HasComponent<ECS::VegetationComponent>(m_SelectedEntity)) {
+            DrawVegetationComponent(m_SelectedEntity);
         }
 
         // Notes component
@@ -1350,6 +1380,16 @@ void EditorLayer::DrawInspectorPanel() {
                 if (!m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("Water Volume")) {
                         m_World->AddComponent<ECS::WaterVolumeComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::GrassVolumeComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Grass Volume")) {
+                        m_World->AddComponent<ECS::GrassVolumeComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::VegetationComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Vegetation")) {
+                        m_World->AddComponent<ECS::VegetationComponent>(m_SelectedEntity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1782,6 +1822,63 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
         ImGui::Spacing();
         ImGui::TextDisabled("Water surface is at entity's Y position");
         ImGui::TextDisabled("Half Extents define the area and depth");
+    }
+}
+
+void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::GrassVolumeComponent* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
+        if (!grass) return;
+
+        f32 extents[3] = { grass->halfExtents.x, grass->halfExtents.y, grass->halfExtents.z };
+        if (ImGui::DragFloat3("Half Extents", extents, 0.5f, 0.1f, 500.0f)) {
+            grass->halfExtents = Math::Vector3(extents[0], extents[1], extents[2]);
+        }
+
+        int density = static_cast<int>(grass->density);
+        if (ImGui::DragInt("Density", &density, 100, 100, 50000)) {
+            grass->density = static_cast<u32>(density);
+        }
+
+        ImGui::Separator();
+
+        // Blade geometry
+        ImGui::DragFloat("Blade Height", &grass->bladeHeight, 0.01f, 0.01f, 2.0f);
+        ImGui::DragFloat("Height Variance", &grass->bladeHeightVariance, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("Blade Width", &grass->bladeWidth, 0.005f, 0.005f, 0.5f);
+
+        ImGui::Separator();
+
+        // Colors
+        f32 baseCol[3] = { grass->baseColor.x, grass->baseColor.y, grass->baseColor.z };
+        if (ImGui::ColorEdit3("Base Color", baseCol)) {
+            grass->baseColor = Math::Vector3(baseCol[0], baseCol[1], baseCol[2]);
+        }
+        f32 tipCol[3] = { grass->tipColor.x, grass->tipColor.y, grass->tipColor.z };
+        if (ImGui::ColorEdit3("Tip Color", tipCol)) {
+            grass->tipColor = Math::Vector3(tipCol[0], tipCol[1], tipCol[2]);
+        }
+
+        ImGui::Separator();
+        ImGui::DragFloat("Wind Sway", &grass->windSwayStrength, 0.05f, 0.0f, 5.0f);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Grass sits on the XZ plane at entity's Y position");
+    }
+}
+
+void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ECS::VegetationComponent* veg = m_World->GetComponent<ECS::VegetationComponent>(entity);
+        if (!veg) return;
+
+        ImGui::DragFloat("Sway Strength", &veg->swayStrength, 0.05f, 0.0f, 5.0f);
+        ImGui::DragFloat("Sway Frequency", &veg->swayFrequency, 0.05f, 0.0f, 5.0f);
+        ImGui::Checkbox("Use Vertex Color Weight", &veg->useVertexColorWeight);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Red vertex color channel = sway weight");
+        ImGui::TextDisabled("Trunk (red=0) stays still, leaves (red=1) sway");
     }
 }
 
@@ -2592,9 +2689,39 @@ void EditorLayer::DrawEffectsPanel() {
         }
 
         ImGui::Spacing();
-        ImGui::Text("Active Particles: %u / 2000", m_WeatherSystem.GetActiveParticleCount());
+        ImGui::Text("Active Particles: %u / 8000", m_WeatherSystem.GetActiveParticleCount());
         if (m_WeatherSystem.IsLightningActive()) {
             ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "LIGHTNING ACTIVE!");
+        }
+    }
+
+    // === WIND ===
+    if (ImGui::CollapsingHeader("Wind")) {
+        ImGui::TextWrapped("Global wind affects weather particles, vegetation sway, and grass.");
+        ImGui::Spacing();
+
+        Effects::WindParams params = m_WindSystem.GetGlobalParams();
+        bool changed = false;
+
+        float dir[3] = { params.direction.x, params.direction.y, params.direction.z };
+        if (ImGui::DragFloat3("Direction", dir, 0.01f, -1.0f, 1.0f)) {
+            params.direction = Math::Vector3(dir[0], dir[1], dir[2]);
+            // Normalize if non-zero
+            f32 len = params.direction.Length();
+            if (len > 0.001f) params.direction = params.direction * (1.0f / len);
+            changed = true;
+        }
+        if (ImGui::DragFloat("Strength", &params.strength, 0.05f, 0.0f, 10.0f)) changed = true;
+        if (ImGui::DragFloat("Gust Strength", &params.gustStrength, 0.05f, 0.0f, 5.0f)) changed = true;
+        if (ImGui::DragFloat("Gust Frequency", &params.gustFrequency, 0.01f, 0.0f, 2.0f, "%.2f Hz")) changed = true;
+        if (ImGui::DragFloat("Turbulence", &params.turbulence, 0.01f, 0.0f, 2.0f)) changed = true;
+
+        if (changed) {
+            m_WindSystem.SetGlobalWind(params);
+        }
+
+        if (m_WindSystem.HasZoneOverride()) {
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.3f, 1.0f), "Zone override active");
         }
     }
 
@@ -2859,7 +2986,8 @@ void EditorLayer::DrawGameViewPanel() {
                 m_WeatherSystem.SetFogStart(activeWeatherZone->fogStart);
                 m_WeatherSystem.SetFogEnd(activeWeatherZone->fogEnd);
 
-                // Wind
+                // Wind: feed zone data into WindSystem, then let weather system query it
+                m_WindSystem.SetZoneOverride(activeWeatherZone->windDirection, activeWeatherZone->windStrength);
                 m_WeatherSystem.SetWindDirection(activeWeatherZone->windDirection);
                 m_WeatherSystem.SetWindStrength(activeWeatherZone->windStrength);
 
@@ -2913,32 +3041,15 @@ void EditorLayer::DrawGameViewPanel() {
                     drawList->AddRectFilled(p0, p1, fogOverlay);
                 }
 
-                // Draw particles
-                const auto& particles = m_WeatherSystem.GetParticles();
-                for (u32 i = 0; i < m_WeatherSystem.GetActiveParticleCount(); ++i) {
-                    const auto& particle = particles[i];
-                    if (particle.lifetime <= 0.0f) continue;
-
-                    ImVec2 screenPos;
-                    if (worldToPreview(particle.position, screenPos)) {
-                        if (screenPos.x >= p0.x && screenPos.x <= p1.x &&
-                            screenPos.y >= p0.y && screenPos.y <= p1.y) {
-                            f32 size = particle.size * 4.0f;
-
-                            if (activeWeatherZone->weatherType == 2 || activeWeatherZone->weatherType == 3 ||
-                                activeWeatherZone->weatherType == 6) {
-                                ImU32 color = IM_COL32(120, 160, 220, static_cast<int>(particle.alpha * 220));
-                                drawList->AddLine(
-                                    screenPos,
-                                    ImVec2(screenPos.x - 1.0f, screenPos.y - size * 6.0f),
-                                    color, 2.0f
-                                );
-                            } else if (activeWeatherZone->weatherType == 4) {
-                                ImU32 color = IM_COL32(255, 255, 255, static_cast<int>(particle.alpha * 255));
-                                drawList->AddCircleFilled(screenPos, size * 1.5f, color);
-                            }
-                        }
-                    }
+                // 3D weather particles are now rendered by WeatherRenderer via RenderSystem
+                // (called during the Vulkan render pass, not ImGui)
+                // The RenderSystem::RenderWeatherParticles() call happens in the main render loop
+                // Here we just trigger the render if RenderSystem is available
+                if (m_RenderSystem) {
+                    bool isRain = (activeWeatherZone->weatherType == 2 ||
+                                   activeWeatherZone->weatherType == 3 ||
+                                   activeWeatherZone->weatherType == 6);
+                    m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain);
                 }
 
                 // Lightning flash
@@ -2950,8 +3061,14 @@ void EditorLayer::DrawGameViewPanel() {
                     drawList->AddRectFilled(p0, p1, flashColor);
                 }
             } else {
-                // No active weather zone - clear weather
+                // No active weather zone - clear weather and wind override
                 m_WeatherSystem.SetWeather(Effects::WeatherType::Clear, 0.5f);
+                m_WindSystem.ClearZoneOverride();
+            }
+
+            // Render grass volumes (always, independent of weather zones)
+            if (m_RenderSystem) {
+                m_RenderSystem->RenderGrass();
             }
 
             // Draw water from active volume

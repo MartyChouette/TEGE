@@ -48,7 +48,8 @@ layout(binding = 1) uniform LightingUBO {
     float shadowBias;
     int shadowEnabled;
     vec2 _shadowPad;
-    // Note: light arrays follow but we only need lightSpaceMatrix in vertex shader
+    vec4 windData;  // xyz = wind direction * strength, w = time
+    // Note: light arrays follow but we only need lightSpaceMatrix and windData in vertex shader
 } lighting;
 
 // Bone matrix SSBO for skeletal animation
@@ -66,6 +67,7 @@ layout(location = 6) out vec4 fragTangent;
 
 // Retro flag bits (must match C++ Material.h)
 #define FLAG_SKINNED          (1 << 3)
+#define FLAG_WIND_SWAY        (1 << 4)
 #define FLAG_FLAT_SHADING     (1 << 20)
 #define FLAG_AFFINE_TEXTURING (1 << 21)
 #define FLAG_VERTEX_SNAPPING  (1 << 22)
@@ -93,6 +95,25 @@ void main() {
 
     // Transform vertex position to world space
     vec4 worldPos = pushConstants.model * vec4(skinnedPos, 1.0);
+
+    // Wind sway for vegetation (trees, bushes)
+    // Uses vertex color red channel as sway weight (trunk=0, leaves=1)
+    if ((pushConstants.flags & FLAG_WIND_SWAY) != 0) {
+        vec3 windDir = lighting.windData.xyz;
+        float windTime = lighting.windData.w;
+        float swayWeight = inColor.r;  // red = sway amplitude
+
+        // Primary sway (slow, large movement)
+        float phase = dot(worldPos.xz, vec2(0.1)) + windTime * 1.5;
+        vec3 sway = windDir * swayWeight * sin(phase) * 0.5;
+
+        // Secondary sway (faster, smaller — leaf/branch detail)
+        float phase2 = dot(worldPos.xz, vec2(0.3, 0.7)) + windTime * 3.0;
+        sway += windDir * swayWeight * sin(phase2) * 0.15;
+
+        worldPos.xyz += sway;
+    }
+
     fragWorldPos = worldPos.xyz;
 
     // Transform to clip space

@@ -105,6 +105,9 @@ struct alignas(16) LightingUBO {
     i32 shadowEnabled;               // 1 = shadows enabled
     f32 _shadowPad[2];               // Padding for alignment
 
+    // Wind data for vegetation/weather shaders
+    alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

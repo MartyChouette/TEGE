@@ -13,6 +13,7 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/RetroEffects.h"
 #include <string>
 #include <functional>
@@ -145,6 +146,8 @@ private:
     void DrawNotesComponent(ECS::Entity entity);
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
+    void DrawGrassVolumeComponent(ECS::Entity entity);
+    void DrawVegetationComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -262,6 +265,7 @@ private:
     ECS::Entity m_SelectedGameCamera = ECS::INVALID_ENTITY;
 
     // Effects systems (global, rendered in game view)
+    Effects::WindSystem m_WindSystem;
     Effects::WeatherSystem m_WeatherSystem;
     Effects::Water3D m_Water3D;
     Effects::RetroEffects m_RetroEffects;

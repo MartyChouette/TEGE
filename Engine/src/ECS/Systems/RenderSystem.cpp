@@ -3,6 +3,8 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -106,6 +108,20 @@ void RenderSystem::Initialize() {
     // Create default sphere mesh
     CreateDefaultMesh();
 
+    // Initialize weather particle renderer
+    m_WeatherRenderer = std::make_unique<Effects::WeatherRenderer>();
+    if (!m_WeatherRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "WeatherRenderer initialization failed, 3D particles disabled");
+        m_WeatherRenderer.reset();
+    }
+
+    // Initialize grass renderer
+    m_GrassRenderer = std::make_unique<Effects::GrassRenderer>();
+    if (!m_GrassRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "GrassRenderer initialization failed, grass disabled");
+        m_GrassRenderer.reset();
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -135,6 +151,10 @@ void RenderSystem::Shutdown() {
     m_MaterialBuffers.clear();
     m_DescriptorSets.clear();
 
+    // Clean up weather and grass renderers
+    m_WeatherRenderer.reset();
+    m_GrassRenderer.reset();
+
     // Clean up line pipeline
     m_LinePipeline.reset();
 
@@ -158,6 +178,9 @@ void RenderSystem::Update(f32 deltaTime) {
     if (!m_Renderer || !m_Initialized) {
         return;
     }
+
+    // Auto-create meshes for water volume entities that don't have one yet
+    EnsureWaterMeshes();
 
     // Update skeletal animators
     const auto& allEntities = m_World->GetAllEntities();
@@ -300,6 +323,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.alphaCutoff = 0.5f;
                 pushConstants.flags = 0;
                 pushConstants.parallaxScale = 0.0f;
+            }
+
+            // Set wind sway flag for vegetation entities
+            VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
+            if (vegComp) {
+                pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
             }
 
             if (boundTexture) {
@@ -862,6 +891,13 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     lighting._shadowPad[0] = 0.0f;
     lighting._shadowPad[1] = 0.0f;
 
+    // Upload wind data from WindSystem
+    if (m_WindSystem) {
+        lighting.windData = m_WindSystem->GetWindVector();
+    } else {
+        lighting.windData = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 
     // Update Material UBO
@@ -1043,6 +1079,12 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.alphaCutoff = 0.5f;
         pushConstants.flags = 0;
         pushConstants.parallaxScale = 0.0f;
+    }
+
+    // Set wind sway flag for vegetation entities
+    VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
+    if (vegComp) {
+        pushConstants.flags |= (1 << 4); // FLAG_WIND_SWAY
     }
 
     // Update texture descriptor if entity has a texture
@@ -1290,6 +1332,102 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     descriptorWrite.pBufferInfo = &bufferInfo;
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::EnsureWaterMeshes() {
+    const auto& entities = m_World->GetAllEntities();
+    for (Entity entity : entities) {
+        if (!m_World->HasComponent<WaterVolumeComponent>(entity)) continue;
+        if (m_World->HasComponent<MeshComponent>(entity)) continue;
+
+        auto* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+        if (!waterVol) continue;
+
+        // Create a subdivided plane mesh for the water surface
+        MeshComponent mesh;
+        f32 hx = waterVol->halfExtents.x;
+        f32 hz = waterVol->halfExtents.z;
+
+        const u32 segsX = 16;
+        const u32 segsZ = 16;
+
+        for (u32 zi = 0; zi <= segsZ; ++zi) {
+            for (u32 xi = 0; xi <= segsX; ++xi) {
+                MeshComponent::Vertex v;
+                f32 u = static_cast<f32>(xi) / segsX;
+                f32 vt = static_cast<f32>(zi) / segsZ;
+                v.position = Math::Vector3(
+                    -hx + u * 2.0f * hx,
+                    0.0f,
+                    -hz + vt * 2.0f * hz
+                );
+                v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
+                v.uv = Math::Vector2(u, vt);
+                v.color = Math::Vector4(
+                    waterVol->waterColor.x,
+                    waterVol->waterColor.y,
+                    waterVol->waterColor.z,
+                    waterVol->opacity
+                );
+                mesh.vertices.push_back(v);
+            }
+        }
+
+        for (u32 zi = 0; zi < segsZ; ++zi) {
+            for (u32 xi = 0; xi < segsX; ++xi) {
+                u32 tl = zi * (segsX + 1) + xi;
+                u32 tr = tl + 1;
+                u32 bl = (zi + 1) * (segsX + 1) + xi;
+                u32 br = bl + 1;
+
+                mesh.indices.push_back(tl);
+                mesh.indices.push_back(bl);
+                mesh.indices.push_back(tr);
+
+                mesh.indices.push_back(tr);
+                mesh.indices.push_back(bl);
+                mesh.indices.push_back(br);
+            }
+        }
+
+        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+
+        // Add material with water visual properties
+        MaterialComponent material;
+        material.baseColor = waterVol->waterColor;
+        material.opacity = waterVol->opacity;
+        material.doubleSided = true;
+        material.metallic = 0.3f;
+        material.roughness = 0.1f;
+        material.castShadows = false;
+
+        m_World->AddComponent<MaterialComponent>(entity, material);
+
+        SetupEntityBuffers(entity);
+
+        ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
+            entity, hx * 2.0f, hz * 2.0f);
+    }
+}
+
+void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain) {
+    if (!m_WeatherRenderer || !m_Renderer || !m_Initialized) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_WeatherRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, weather, isRain);
+}
+
+void RenderSystem::RenderGrass() {
+    if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_GrassRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World);
 }
 
 } // namespace ECS
