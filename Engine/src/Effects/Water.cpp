@@ -139,9 +139,25 @@ bool Water2D::IsUnderwater(const Math::Vector2& point) const {
 
 // Water Interaction
 void WaterInteraction::SpawnSplash(const SplashSettings& settings) {
-    (void)settings;
-    // Splash would be handled by particle system
-    // This is a placeholder for the API
+    // A splash creates a ripple at the impact point
+    // The visual splash particles would be handled by a particle system if available,
+    // but the water surface effect is represented as ripples
+    RippleSettings ripple;
+    ripple.position = settings.position;
+    ripple.amplitude = settings.size * 0.5f;
+    ripple.maxRadius = settings.size * 3.0f;
+    ripple.duration = settings.duration;
+    SpawnRipple(ripple);
+
+    // For larger splashes, add secondary ripples
+    if (settings.particleCount > 5) {
+        RippleSettings secondary;
+        secondary.position = settings.position;
+        secondary.amplitude = settings.size * 0.25f;
+        secondary.maxRadius = settings.size * 5.0f;
+        secondary.duration = settings.duration * 1.5f;
+        SpawnRipple(secondary);
+    }
 }
 
 void WaterInteraction::SpawnRipple(const RippleSettings& settings) {

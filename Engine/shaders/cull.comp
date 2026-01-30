@@ -5,16 +5,19 @@
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Input: Objects to cull
+// Input: Objects to cull (layout matches C++ CullableObject, std430)
 struct CullableObject {
-    vec4 boundsMin;      // xyz = min, w = unused
-    vec4 boundsMax;      // xyz = max, w = unused
+    vec4 boundsMin;      // xyz = min, w = padding
+    vec4 boundsMax;      // xyz = max, w = padding
     mat4 transform;      // Object transform
     uint meshIndex;
     uint materialIndex;
     uint indexCount;
     uint indexOffset;
     uint vertexOffset;
+    uint _pad0;
+    uint _pad1;
+    uint _pad2;
 };
 
 layout(set = 0, binding = 0) readonly buffer ObjectBuffer {

@@ -130,8 +130,16 @@ private:
     std::vector<std::unique_ptr<MaterialInstance>> m_Materials;
     std::unordered_map<std::string, u32> m_MaterialNameMap;
     bool m_FileWatching = false;
-    
-    // File watcher would be implemented here
+
+    // File modification time tracking for hot-reload
+    struct WatchedFile {
+        std::string path;
+        u32 materialId = 0;
+        i64 lastModTime = 0; // Filesystem modification time
+    };
+    std::vector<WatchedFile> m_WatchedFiles;
+
+    void PollFileChanges();
 };
 
 } // namespace Renderer

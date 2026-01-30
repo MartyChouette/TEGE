@@ -2,6 +2,7 @@
 #include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 
 namespace Enjin {
 namespace Audio {
@@ -342,10 +343,41 @@ void AudioManager::Update() {
 
     m_Backend->Update();
 
+    // Calculate deltaTime using internal clock
+    auto now = std::chrono::steady_clock::now();
+    f32 deltaTime = 0.0f;
+    if (m_LastUpdateTime.time_since_epoch().count() > 0) {
+        deltaTime = std::chrono::duration<f32>(now - m_LastUpdateTime).count();
+        deltaTime = std::clamp(deltaTime, 0.0f, 0.1f); // Cap at 100ms to avoid huge jumps
+    }
+    m_LastUpdateTime = now;
+
     // Handle music fade
-    if (m_MusicFadeTime > 0.0f && m_MusicFadeProgress < 1.0f) {
-        // Note: deltaTime would need to be passed in or tracked
-        // For now, this is a simplified implementation
+    if (m_MusicFadeTime > 0.0f && m_MusicFadeProgress < 1.0f && m_MusicChannel != INVALID_CHANNEL) {
+        m_MusicFadeProgress += deltaTime / m_MusicFadeTime;
+        m_MusicFadeProgress = std::clamp(m_MusicFadeProgress, 0.0f, 1.0f);
+
+        f32 volume;
+        if (m_MusicFadingOut) {
+            volume = AudioUtils::CrossfadeVolume(m_MusicFadeProgress, false) * m_MusicTargetVolume;
+        } else {
+            volume = AudioUtils::CrossfadeVolume(m_MusicFadeProgress, true) * m_MusicTargetVolume;
+        }
+
+        m_Backend->SetChannelVolume(m_MusicChannel, volume);
+
+        // Fade complete
+        if (m_MusicFadeProgress >= 1.0f) {
+            if (m_MusicFadingOut) {
+                m_Backend->Stop(m_MusicChannel);
+                m_MusicChannel = INVALID_CHANNEL;
+                if (m_CurrentMusic != INVALID_SOUND) {
+                    m_Backend->UnloadSound(m_CurrentMusic);
+                    m_CurrentMusic = INVALID_SOUND;
+                }
+            }
+            m_MusicFadeTime = 0.0f;
+        }
     }
 }
 

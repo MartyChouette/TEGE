@@ -8,6 +8,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cctype>
+#include <filesystem>
 
 namespace Enjin {
 namespace Renderer {
@@ -402,7 +403,52 @@ void MaterialSystem::ReloadAllMaterials() {
 void MaterialSystem::WatchMaterialFiles(bool enable) {
     m_FileWatching = enable;
     ENJIN_LOG_INFO(Renderer, "Material file watching: %s", enable ? "enabled" : "disabled");
-    // File watcher implementation would go here
+
+    if (enable) {
+        // Build list of files to watch from all materials
+        m_WatchedFiles.clear();
+        for (u32 i = 0; i < static_cast<u32>(m_Materials.size()); ++i) {
+            if (!m_Materials[i]) continue;
+            const auto& def = m_Materials[i]->GetDefinition();
+            if (def.filePath.empty()) continue;
+
+            WatchedFile wf;
+            wf.path = def.filePath;
+            wf.materialId = i;
+            wf.lastModTime = 0;
+
+            // Get initial modification time
+            std::error_code ec;
+            auto modTime = std::filesystem::last_write_time(def.filePath, ec);
+            if (!ec) {
+                wf.lastModTime = modTime.time_since_epoch().count();
+            }
+
+            m_WatchedFiles.push_back(wf);
+        }
+        ENJIN_LOG_INFO(Renderer, "Watching %zu material files", m_WatchedFiles.size());
+    } else {
+        m_WatchedFiles.clear();
+    }
+}
+
+void MaterialSystem::PollFileChanges() {
+    if (!m_FileWatching) return;
+
+    for (auto& wf : m_WatchedFiles) {
+        std::error_code ec;
+        auto modTime = std::filesystem::last_write_time(wf.path, ec);
+        if (ec) continue;
+
+        i64 currentModTime = modTime.time_since_epoch().count();
+        if (currentModTime != wf.lastModTime && wf.lastModTime != 0) {
+            wf.lastModTime = currentModTime;
+            ENJIN_LOG_INFO(Renderer, "Material file changed: %s, reloading...", wf.path.c_str());
+            ReloadMaterial(wf.materialId);
+        } else {
+            wf.lastModTime = currentModTime;
+        }
+    }
 }
 
 void MaterialSystem::ForEachMaterial(std::function<void(MaterialInstance*)> callback) {

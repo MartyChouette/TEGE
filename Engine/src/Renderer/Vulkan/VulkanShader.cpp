@@ -3,6 +3,8 @@
 #include "Enjin/Core/Assert.h"
 #include <fstream>
 #include <cstring>
+#include <cstdio>
+#include <filesystem>
 
 namespace Enjin {
 namespace Renderer {
@@ -65,13 +67,77 @@ void VulkanShader::Destroy() {
 namespace ShaderCompiler {
 
 bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::vector<u32>& spirv) {
-    // For now, we'll use a simple approach:
-    // Try to load pre-compiled SPIR-V or use inline shaders
-    // Full shaderc integration would go here
-    
-    // This is a placeholder - in production you'd use shaderc library
-    ENJIN_LOG_WARN(Renderer, "GLSL compilation not yet implemented - use pre-compiled SPIR-V");
-    return false;
+    // Determine file extension based on shader stage
+    const char* ext = ".glsl";
+    switch (stage) {
+        case VK_SHADER_STAGE_VERTEX_BIT:   ext = ".vert"; break;
+        case VK_SHADER_STAGE_FRAGMENT_BIT: ext = ".frag"; break;
+        case VK_SHADER_STAGE_COMPUTE_BIT:  ext = ".comp"; break;
+        case VK_SHADER_STAGE_GEOMETRY_BIT: ext = ".geom"; break;
+        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:    ext = ".tesc"; break;
+        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT: ext = ".tese"; break;
+        default: break;
+    }
+
+    // Create temp files for source and output
+    namespace fs = std::filesystem;
+    fs::path tempDir = fs::temp_directory_path();
+    fs::path srcPath = tempDir / ("enjin_shader_temp" + std::string(ext));
+    fs::path spvPath = tempDir / "enjin_shader_temp.spv";
+
+    // Write GLSL source to temp file
+    {
+        std::ofstream srcFile(srcPath, std::ios::out);
+        if (!srcFile.is_open()) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create temp shader file: %s", srcPath.string().c_str());
+            return false;
+        }
+        srcFile << source;
+    }
+
+    // Try glslangValidator first, then glslc
+    std::string command;
+#ifdef _WIN32
+    // Suppress console window and redirect stderr
+    command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+#else
+    command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+#endif
+
+    int result = std::system(command.c_str());
+
+    // Fallback to glslc if glslangValidator failed
+    if (result != 0) {
+#ifdef _WIN32
+        command = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+#else
+        command = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+#endif
+        result = std::system(command.c_str());
+    }
+
+    // Clean up source file
+    std::error_code ec;
+    fs::remove(srcPath, ec);
+
+    if (result != 0) {
+        ENJIN_LOG_ERROR(Renderer, "GLSL compilation failed (ensure glslangValidator or glslc is in PATH)");
+        fs::remove(spvPath, ec);
+        return false;
+    }
+
+    // Read compiled SPIR-V
+    if (!LoadSPIRV(spvPath.string(), spirv)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to read compiled SPIR-V from: %s", spvPath.string().c_str());
+        fs::remove(spvPath, ec);
+        return false;
+    }
+
+    // Clean up output file
+    fs::remove(spvPath, ec);
+
+    ENJIN_LOG_INFO(Renderer, "GLSL compiled to SPIR-V (%zu words)", spirv.size());
+    return true;
 }
 
 bool LoadSPIRV(const std::string& filepath, std::vector<u32>& spirv) {

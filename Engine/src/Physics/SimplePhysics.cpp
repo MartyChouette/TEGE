@@ -42,13 +42,54 @@ void SimplePhysics::Update(f32 deltaTime) {
         // Update position
         transform->position = transform->position + rb->velocity * deltaTime;
 
-        // Simple ground check (assume ground at Y=0)
-        if (transform->position.y <= 0.0f && rb->velocity.y <= 0.0f) {
+        // Ground check using actual colliders via downward raycast
+        rb->isGrounded = false;
+        AABB entityBounds = GetEntityAABB(entity);
+        f32 groundCheckDist = 0.1f; // Skin distance below entity
+
+        if (entityBounds.GetSize().y > 0) {
+            // Cast ray from bottom-center of entity downward
+            Ray groundRay;
+            groundRay.origin = Math::Vector3(
+                transform->position.x,
+                entityBounds.min.y + 0.01f,
+                transform->position.z
+            );
+            groundRay.direction = Math::Vector3(0, -1, 0);
+
+            // Check against all other entities with colliders
+            for (ECS::Entity other : m_World->GetAllEntities()) {
+                if (other == entity) continue;
+                AABB otherBounds = GetEntityAABB(other);
+                if (otherBounds.GetSize().x <= 0) continue;
+
+                // Quick AABB overlap test for the ground check region
+                AABB checkRegion = AABB::FromCenterSize(
+                    Math::Vector3(transform->position.x, entityBounds.min.y - groundCheckDist * 0.5f, transform->position.z),
+                    Math::Vector3(entityBounds.GetSize().x * 0.8f, groundCheckDist, entityBounds.GetSize().z * 0.8f)
+                );
+
+                if (checkRegion.Intersects(otherBounds)) {
+                    // Snap to surface and zero downward velocity
+                    f32 groundY = otherBounds.max.y;
+                    f32 entityHalfHeight = entityBounds.GetSize().y * 0.5f;
+                    if (transform->position.y - entityHalfHeight < groundY + groundCheckDist) {
+                        transform->position.y = groundY + entityHalfHeight;
+                        if (rb->velocity.y < 0.0f) {
+                            rb->velocity.y = 0.0f;
+                        }
+                        rb->isGrounded = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Fallback: ground plane at Y=0 if no colliders detected ground
+        if (!rb->isGrounded && transform->position.y <= 0.0f && rb->velocity.y <= 0.0f) {
             transform->position.y = 0.0f;
             rb->velocity.y = 0.0f;
             rb->isGrounded = true;
-        } else {
-            rb->isGrounded = false;
         }
     }
 }

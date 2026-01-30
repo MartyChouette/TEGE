@@ -169,6 +169,10 @@ private:
     std::unordered_map<std::string, ResourceHandle> m_ResourceNameMap;
     std::vector<RenderPassNode*> m_OrderedPasses;
     bool m_Built = false;
+
+    // Dependency graph data (populated by ResolveDependencies)
+    std::unordered_map<ResourceHandle, u32> m_ResourceProducer; // resource -> pass index
+    std::vector<std::vector<u32>> m_PassDependencies;           // pass -> [dependency pass indices]
 };
 
 } // namespace Renderer

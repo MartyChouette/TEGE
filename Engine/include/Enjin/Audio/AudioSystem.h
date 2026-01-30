@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <chrono>
 
 namespace Enjin {
 namespace Audio {
@@ -338,6 +339,9 @@ private:
 
     f32 m_MasterVolume = 1.0f;
     AudioListener m_Listener;
+
+    // Internal time tracking for deltaTime calculation
+    std::chrono::steady_clock::time_point m_LastUpdateTime{};
 };
 
 // ============================================================================
