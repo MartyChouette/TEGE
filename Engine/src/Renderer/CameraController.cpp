@@ -80,23 +80,10 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
     Math::Vector3 movement(0.0f, 0.0f, 0.0f);
 
-    // Project camera vectors onto the horizontal (XZ) plane for WASD movement
-    // Forward: flatten the camera's look direction to the ground plane
-    Math::Vector3 fullForward = m_Camera->GetForward();
-    Math::Vector3 forward(fullForward.x, 0.0f, fullForward.z);
-    f32 fwdLen = forward.Length();
-    if (fwdLen > 0.001f) {
-        forward = forward * (1.0f / fwdLen);
-    } else {
-        // Looking straight up/down: use up vector projected to XZ as forward
-        Math::Vector3 camUp = m_Camera->GetUp();
-        forward = Math::Vector3(camUp.x, 0.0f, camUp.z).Normalized();
-    }
-
-    // Right: flatten the camera's right vector to the ground plane
-    Math::Vector3 fullRight = m_Camera->GetRight();
-    Math::Vector3 right(fullRight.x, 0.0f, fullRight.z);
-    right.Normalize();
+    // Compute forward/right directly from yaw so movement always matches look direction
+    f32 yawRad = Math::Radians(m_Yaw);
+    Math::Vector3 forward(-Math::Sin(yawRad), 0.0f, -Math::Cos(yawRad));
+    Math::Vector3 right(Math::Cos(yawRad), 0.0f, -Math::Sin(yawRad));
 
     Math::Vector3 worldUp(0.0f, 1.0f, 0.0f);
 
