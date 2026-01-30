@@ -161,7 +161,7 @@ struct ENJIN_API Matrix4 {
 
         Matrix4 result;
         result.m[0] = 1.0f / (aspect * tanHalfFov);
-        result.m[5] = 1.0f / tanHalfFov;
+        result.m[5] = -1.0f / tanHalfFov;  // Negated for Vulkan (clip Y points down)
         result.m[10] = -(farPlane + nearPlane) / range;
         result.m[11] = -1.0f;
         result.m[14] = -(2.0f * farPlane * nearPlane) / range;
