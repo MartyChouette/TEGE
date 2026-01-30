@@ -55,6 +55,8 @@ struct PipelineConfig {
     f32 depthBiasSlope = 0.0f;
     // For depth-only passes (no color attachment)
     bool hasColorAttachment = true;
+    // Alpha blending (src alpha, one-minus-src-alpha)
+    bool alphaBlend = false;
 };
 
 // Graphics pipeline wrapper

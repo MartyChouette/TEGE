@@ -3344,6 +3344,9 @@ void EditorLayer::DrawGizmos() {
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
 
+    // ImGuizmo expects OpenGL Y-up convention; undo the Vulkan negate baked into Perspective
+    projMat.m[5] *= -1.0f;
+
     // Build entity transform matrix
     Math::Matrix4 entityMat = Math::Matrix4::Translation(transform->position) *
                                transform->rotation.ToMatrix() *
@@ -3398,91 +3401,97 @@ void EditorLayer::DrawGizmos() {
     }
 }
 
-void EditorLayer::DrawGrid() {
-    if (!m_Camera || !m_Renderer) {
-        return;
-    }
+void EditorLayer::BuildGridMesh() {
+    if (!m_Renderer) return;
 
-    auto extent = m_Renderer->GetSwapchainExtent();
-    if (extent.width == 0 || extent.height == 0) {
-        return;
-    }
-
-    // Get camera matrices
-    Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
-    Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
-
-    Math::Matrix4 viewProj = projMat * viewMat;
-
-    ImDrawList* drawList = ImGui::GetBackgroundDrawList();
-    f32 screenWidth = static_cast<f32>(extent.width);
-    f32 screenHeight = static_cast<f32>(extent.height);
-
-    // Helper lambda to project 3D point to screen space
-    auto worldToScreen = [&](const Math::Vector3& worldPos, ImVec2& screenPos) -> bool {
-        // Transform to clip space using proper matrix * vector
-        Math::Vector4 clipPos = viewProj * Math::Vector4(worldPos.x, worldPos.y, worldPos.z, 1.0f);
-
-        // Behind camera check
-        if (clipPos.w <= 0.001f) {
-            return false;
-        }
-
-        // Perspective divide to NDC [-1, 1]
-        f32 ndcX = clipPos.x / clipPos.w;
-        f32 ndcY = clipPos.y / clipPos.w;
-
-        // Convert NDC to screen coordinates
-        // NDC X: -1 = left, +1 = right -> screen 0 to width
-        // NDC Y: -1 = top, +1 = bottom -> screen 0 to height (Vulkan clip convention)
-        screenPos.x = (ndcX + 1.0f) * 0.5f * screenWidth;
-        screenPos.y = (ndcY + 1.0f) * 0.5f * screenHeight;
-
-        return true;
-    };
-
-    // Helper to clip line to screen bounds and draw
-    auto drawGridLine = [&](const Math::Vector3& p1, const Math::Vector3& p2, ImU32 color, f32 thickness) {
-        ImVec2 screen1, screen2;
-        bool v1 = worldToScreen(p1, screen1);
-        bool v2 = worldToScreen(p2, screen2);
-
-        if (v1 && v2) {
-            // Both points visible - draw the line
-            drawList->AddLine(screen1, screen2, color, thickness);
-        }
-    };
-
-    // Grid parameters
     f32 halfExtent = m_GridSize * 0.5f;
     f32 step = m_GridSize / static_cast<f32>(m_GridLines);
+    i32 halfLines = m_GridLines / 2;
 
-    // Colors
-    ImU32 gridColor = IM_COL32(60, 60, 60, 120);
-    ImU32 axisColorX = IM_COL32(180, 60, 60, 200);  // Red for X axis
-    ImU32 axisColorZ = IM_COL32(60, 60, 180, 200);  // Blue for Z axis
+    // Count lines: (gridLines+1) per axis, minus 1 axis line each = regular lines
+    // Layout: [regular lines] [X axis] [Z axis]
+    u32 regularPerAxis = static_cast<u32>(m_GridLines); // lines excluding i=0
+    u32 regularLines = regularPerAxis * 2;
+    u32 totalVertices = (regularLines + 2) * 2; // +2 for axis lines, *2 verts per line
 
-    // Draw lines parallel to X axis (at different Z positions)
-    for (i32 i = -m_GridLines / 2; i <= m_GridLines / 2; ++i) {
+    m_GridRegularCount = regularLines * 2;
+    m_GridAxisXStart = m_GridRegularCount;
+    m_GridAxisZStart = m_GridRegularCount + 2;
+    m_GridVertexCount = totalVertices;
+
+    // 16 floats per vertex: pos(3) normal(3) uv(2) color(4) tangent(4)
+    std::vector<f32> verts(totalVertices * 16, 0.0f);
+    u32 v = 0;
+
+    auto addVert = [&](f32 x, f32 y, f32 z) {
+        usize base = static_cast<usize>(v) * 16;
+        verts[base + 0] = x;
+        verts[base + 1] = y;
+        verts[base + 2] = z;
+        verts[base + 4] = 1.0f; // normal Y
+        verts[base + 8]  = 1.0f; // vertex color R
+        verts[base + 9]  = 1.0f; // vertex color G
+        verts[base + 10] = 1.0f; // vertex color B
+        verts[base + 11] = 1.0f; // vertex color A
+        v++;
+    };
+
+    // Regular lines (skip i=0 which is the axis)
+    // X-parallel lines
+    for (i32 i = -halfLines; i <= halfLines; ++i) {
+        if (i == 0) continue;
         f32 z = static_cast<f32>(i) * step;
-        Math::Vector3 start(-halfExtent, 0.0f, z);
-        Math::Vector3 end(halfExtent, 0.0f, z);
-
-        ImU32 color = (i == 0) ? axisColorX : gridColor;
-        f32 thickness = (i == 0) ? 2.0f : 1.0f;
-        drawGridLine(start, end, color, thickness);
+        addVert(-halfExtent, 0.0f, z);
+        addVert( halfExtent, 0.0f, z);
     }
-
-    // Draw lines parallel to Z axis (at different X positions)
-    for (i32 i = -m_GridLines / 2; i <= m_GridLines / 2; ++i) {
+    // Z-parallel lines
+    for (i32 i = -halfLines; i <= halfLines; ++i) {
+        if (i == 0) continue;
         f32 x = static_cast<f32>(i) * step;
-        Math::Vector3 start(x, 0.0f, -halfExtent);
-        Math::Vector3 end(x, 0.0f, halfExtent);
-
-        ImU32 color = (i == 0) ? axisColorZ : gridColor;
-        f32 thickness = (i == 0) ? 2.0f : 1.0f;
-        drawGridLine(start, end, color, thickness);
+        addVert(x, 0.0f, -halfExtent);
+        addVert(x, 0.0f,  halfExtent);
     }
+
+    // X axis line (at z=0, runs along X)
+    addVert(-halfExtent, 0.0f, 0.0f);
+    addVert( halfExtent, 0.0f, 0.0f);
+
+    // Z axis line (at x=0, runs along Z)
+    addVert(0.0f, 0.0f, -halfExtent);
+    addVert(0.0f, 0.0f,  halfExtent);
+
+    usize bufferSize = verts.size() * sizeof(f32);
+    m_GridVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    m_GridVertexBuffer->Create(bufferSize, Renderer::BufferUsage::Vertex, true);
+    m_GridVertexBuffer->UploadData(verts.data(), bufferSize);
+
+    m_BuiltGridSize = m_GridSize;
+    m_BuiltGridLines = m_GridLines;
+}
+
+void EditorLayer::DrawGrid() {
+    if (!m_ShowGrid || !m_Camera || !m_Renderer || !m_RenderSystem) {
+        return;
+    }
+
+    // Rebuild mesh when grid settings change
+    if (!m_GridVertexBuffer || m_GridSize != m_BuiltGridSize || m_GridLines != m_BuiltGridLines) {
+        BuildGridMesh();
+    }
+
+    if (!m_GridVertexBuffer || m_GridVertexCount == 0) return;
+
+    // Regular grid lines (gray, semi-transparent)
+    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), m_GridRegularCount,
+        0, Math::Vector3(0.22f, 0.22f, 0.22f), 0.47f);
+
+    // X axis (red)
+    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+        m_GridAxisXStart, Math::Vector3(0.7f, 0.24f, 0.24f), 0.8f);
+
+    // Z axis (blue)
+    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+        m_GridAxisZStart, Math::Vector3(0.24f, 0.24f, 0.7f), 0.8f);
 }
 
 void EditorLayer::FocusOnEntity(ECS::Entity entity) {

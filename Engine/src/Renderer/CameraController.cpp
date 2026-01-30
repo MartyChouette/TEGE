@@ -70,7 +70,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch -= mouseDelta.y * m_LookSensitivity;
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
         ApplyRotation();
     } else if (m_MouseCapturedByUs) {
@@ -143,7 +143,7 @@ void CameraController::UpdateOrbitMode(f32 deltaTime) {
 
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         m_Yaw -= mouseDelta.x * m_LookSensitivity;
-        m_Pitch += mouseDelta.y * m_LookSensitivity;
+        m_Pitch -= mouseDelta.y * m_LookSensitivity;
         m_Pitch = Math::Clamp(m_Pitch, -89.0f, 89.0f);
     } else if (m_MouseCapturedByUs) {
         Input::SetMouseCaptured(false);

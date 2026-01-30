@@ -61,6 +61,9 @@ void RenderSystem::Initialize() {
     // Create pipeline
     CreatePipeline();
 
+    // Create line pipeline for editor grid rendering
+    CreateLinePipeline();
+
     // Create shadow map
     m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_Renderer->GetContext());
     Renderer::ShadowMapConfig shadowConfig;
@@ -120,6 +123,9 @@ void RenderSystem::Shutdown() {
     m_LightingBuffers.clear();
     m_MaterialBuffers.clear();
     m_DescriptorSets.clear();
+
+    // Clean up line pipeline
+    m_LinePipeline.reset();
 
     // Clean up shadow resources
     m_ShadowPipeline.reset();
@@ -370,6 +376,78 @@ void RenderSystem::CreateShadowPipeline() {
         m_ShadowPipeline.reset();
         m_ShadowsEnabled = false;
     }
+}
+
+void RenderSystem::CreateLinePipeline() {
+    if (!m_Pipeline) return;
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_Renderer->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    config.depthTest = true;
+    config.depthWrite = false;
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = true;
+
+    m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_LinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(),
+            m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create line pipeline");
+        m_LinePipeline.reset();
+    }
+}
+
+void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
+                                    u32 firstVertex, const Math::Vector3& color, f32 opacity) {
+    if (!m_LinePipeline || !m_Renderer || !vertexBuffer || vertexCount == 0) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    m_LinePipeline->Bind(commandBuffer);
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_LinePipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    Renderer::PushConstants pc{};
+    pc.model = Math::Matrix4::Identity();
+    pc.baseColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+    pc.metallic = 0.0f;
+    pc.emissiveColor = color;
+    pc.roughness = 1.0f;
+    pc.emissiveStrength = 1.0f;
+    pc.opacity = opacity;
+    pc.alphaCutoff = 0.0f;
+    pc.flags = 0;
+    pc.parallaxScale = 0.0f;
+
+    vkCmdPushConstants(commandBuffer, m_LinePipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkBuffer buffers[] = {vertexBuffer->GetBuffer()};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, buffers, offsets);
+
+    vkCmdDraw(commandBuffer, vertexCount, 1, firstVertex, 0);
 }
 
 void RenderSystem::CreateUniformBuffers() {

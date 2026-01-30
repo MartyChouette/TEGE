@@ -56,6 +56,10 @@ public:
     bool IsWireframeEnabled() const { return m_WireframeMode; }
     void SetWireframeEnabled(bool enabled);
 
+    // Render line-list geometry with depth testing (for editor overlays)
+    void RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
+                         u32 firstVertex, const Math::Vector3& color, f32 opacity);
+
     f32 GetAmbientIntensity() const { return m_AmbientIntensity; }
     void SetAmbientIntensity(f32 intensity) { m_AmbientIntensity = intensity; }
 
@@ -83,6 +87,10 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+
+    // Line rendering (editor grid)
+    std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
+    void CreateLinePipeline();
 
     // Shadow mapping
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;

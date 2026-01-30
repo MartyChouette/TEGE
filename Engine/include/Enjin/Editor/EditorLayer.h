@@ -5,6 +5,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Renderer/RenderTarget.h"
@@ -228,6 +229,16 @@ private:
     bool m_ShowGrid = true;
     f32 m_GridSize = 200.0f;
     i32 m_GridLines = 200;
+
+    // Grid 3D mesh (rendered with depth testing)
+    std::unique_ptr<Renderer::VulkanBuffer> m_GridVertexBuffer;
+    u32 m_GridVertexCount = 0;
+    u32 m_GridRegularCount = 0;  // Vertices for regular lines
+    u32 m_GridAxisXStart = 0;    // First vertex of X axis line
+    u32 m_GridAxisZStart = 0;    // First vertex of Z axis line
+    f32 m_BuiltGridSize = 0.0f;
+    i32 m_BuiltGridLines = 0;
+    void BuildGridMesh();
 
     // Play mode
     PlayMode m_PlayMode;
