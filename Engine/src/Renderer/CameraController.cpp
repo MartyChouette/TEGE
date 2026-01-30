@@ -99,7 +99,7 @@ void CameraController::UpdateFlyMode(f32 deltaTime) {
     if (Input::IsKeyDown(KeyCode::D)) {
         movement = movement + right;
     }
-    if (Input::IsKeyDown(KeyCode::Space)) {
+    if (Input::IsKeyDown(KeyCode::Space) || Input::IsKeyDown(KeyCode::E)) {
         movement = movement + worldUp;
     }
     if (Input::IsKeyDown(KeyCode::Q) || Input::IsKeyDown(KeyCode::LeftControl)) {

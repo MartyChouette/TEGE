@@ -143,7 +143,7 @@ struct PushConstants {
   - `3` - Scale gizmo
   - `4` - Toggle local/world space
   - `WASD` - Fly camera movement
-  - `Space` - Move up, `Q`/`Ctrl` - Move down
+  - `Space`/`E` - Move up, `Q`/`Ctrl` - Move down
   - `Shift` - Sprint
   - Mouse - Free look (always active)
   - Scroll - Adjust move speed
