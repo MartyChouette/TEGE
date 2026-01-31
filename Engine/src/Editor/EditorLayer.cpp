@@ -110,6 +110,26 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
 
+    // Initialize in-game pause menu system
+    m_GameMenu.SetInputMap(&m_InputMap);
+    m_GameMenu.SetEditorSettings(&m_EditorSettings);
+    m_GameMenu.SetCallback([this](const std::string& action) {
+        if (action == "resume") {
+            m_GameMenu.HideAll();
+            m_PlayMode.Resume();
+            if (m_FocusMode) Input::SetMouseCaptured(true);
+        } else if (action == "options") {
+            m_GameMenu.ShowScreen(GUI::MenuScreen::Options);
+        } else if (action == "how_to_play") {
+            m_GameMenu.ShowScreen(GUI::MenuScreen::HowToPlay);
+        } else if (action == "quit_to_menu") {
+            m_GameMenu.HideAll();
+            m_PlayMode.Stop();
+        } else if (action == "quit") {
+            if (m_Window) m_Window->Close();
+        }
+    });
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
 }
@@ -306,16 +326,22 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
     if (Input::IsKeyPressed(KeyCode::Escape)) {
-        if (m_GameViewMouseCaptured) {
-            // First Escape: release Game View mouse capture (game keeps playing)
+        if (m_GameViewMouseCaptured || (m_FocusMode && Input::IsMouseCaptured())) {
+            // First ESC: release mouse capture so cursor is visible for menu
             m_GameViewMouseCaptured = false;
             Input::SetMouseCaptured(false);
-        } else if (m_FocusMode) {
-            // Escape exits focus mode back to editor (game keeps playing)
-            m_FocusMode = false;
-            Input::SetMouseCaptured(false);
-        } else if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
-            // Escape in editor view stops play mode
+        } else if (m_GameMenu.IsMenuOpen()) {
+            // Menu is open: close it and resume the game
+            m_GameMenu.HideAll();
+            m_PlayMode.Resume();
+            if (m_FocusMode) Input::SetMouseCaptured(true);
+        } else if (m_PlayMode.IsPlaying()) {
+            // Playing (focus or editor): open pause menu and pause game
+            m_GameMenu.ShowScreen(GUI::MenuScreen::PauseMenu);
+            m_PlayMode.Pause();
+            if (m_FocusMode) Input::SetMouseCaptured(false);
+        } else if (m_PlayMode.IsPaused() && !m_GameMenu.IsMenuOpen()) {
+            // Paused without menu (fallback): stop play mode
             m_PlayMode.Stop();
         }
     }
@@ -354,6 +380,11 @@ void EditorLayer::Update(f32 deltaTime) {
     if (m_GameViewMouseCaptured && m_PlayMode.IsStopped()) {
         m_GameViewMouseCaptured = false;
         Input::SetMouseCaptured(false);
+    }
+
+    // Safety net: close pause menu if play mode stopped (e.g. via toolbar button)
+    if (m_GameMenu.IsMenuOpen() && m_PlayMode.IsStopped()) {
+        m_GameMenu.HideAll();
     }
 
     // Update post-processing time for animated effects (film grain, etc.)
@@ -751,6 +782,50 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->SetSnowIntensity(0.0f);
     }
 
+    // Water freeze/thaw driven by temperature zones
+    for (ECS::Entity waterEntity : m_World->GetAllEntities()) {
+        if (!m_World->HasComponent<ECS::WaterVolumeComponent>(waterEntity)) continue;
+        auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
+        auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
+        if (!waterVol || !waterTransform) continue;
+
+        // Find highest-priority temperature zone containing this water entity
+        ECS::TemperatureZoneComponent* waterTempZone = nullptr;
+        i32 bestWaterTempPri = INT_MIN;
+        for (ECS::Entity tzEntity : m_World->GetAllEntities()) {
+            if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(tzEntity)) continue;
+            auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
+            auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
+            if (tz && tzTransform && tz->priority > bestWaterTempPri) {
+                if (tz->ContainsPoint(tzTransform->position, waterTransform->position)) {
+                    waterTempZone = tz;
+                    bestWaterTempPri = tz->priority;
+                }
+            }
+        }
+
+        if (waterTempZone && waterTempZone->IsFreezing()) {
+            // Freezing: increase freeze progress
+            waterVol->freezeProgress += waterVol->freezeRate * m_LastDeltaTime;
+            if (waterVol->freezeProgress > 1.0f) waterVol->freezeProgress = 1.0f;
+        } else if (waterTempZone && waterTempZone->IsNearFreezing()) {
+            // Near-freezing (0-5C): lerp toward partial freeze (0.3)
+            f32 target = 0.3f;
+            if (waterVol->freezeProgress < target) {
+                waterVol->freezeProgress += waterVol->freezeRate * 0.5f * m_LastDeltaTime;
+                if (waterVol->freezeProgress > target) waterVol->freezeProgress = target;
+            } else {
+                waterVol->freezeProgress -= waterVol->thawRate * 0.5f * m_LastDeltaTime;
+                if (waterVol->freezeProgress < target) waterVol->freezeProgress = target;
+            }
+        } else {
+            // Warm or no zone: thaw
+            waterVol->freezeProgress -= waterVol->thawRate * m_LastDeltaTime;
+            if (waterVol->freezeProgress < 0.0f) waterVol->freezeProgress = 0.0f;
+        }
+        waterVol->isFrozen = (waterVol->freezeProgress >= 0.99f);
+    }
+
     // World Time System: advance clock and update sun/ambient
     if (m_WorldTimeEnabled) {
         m_WorldTime.Update(m_LastDeltaTime);
@@ -885,6 +960,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         }
 
         ImGui::End();
+
+        // Render pause menu overlay on top of fullscreen game view
+        if (m_GameMenu.IsMenuOpen()) {
+            m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
+        }
+
         m_ImGuiLayer->EndFrame(commandBuffer);
         return;
     }
@@ -1092,6 +1173,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::Begin("##FadeOverlay", nullptr, overlayFlags);
         ImGui::End();
         ImGui::PopStyleColor();
+    }
+
+    // Render pause menu overlay on top of editor panels
+    if (m_GameMenu.IsMenuOpen()) {
+        m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
     }
 
     m_ImGuiLayer->EndFrame(commandBuffer);
@@ -3154,6 +3240,25 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
             if (ImGui::ColorEdit3("Shore Color", shoreCol)) {
                 volume->shoreColor = Math::Vector3(shoreCol[0], shoreCol[1], shoreCol[2]);
             }
+        }
+
+        ImGui::Separator();
+
+        // Freeze Settings
+        if (ImGui::TreeNodeEx("Freeze Settings", ImGuiTreeNodeFlags_DefaultOpen)) {
+            f32 iceCol[3] = { volume->iceColor.x, volume->iceColor.y, volume->iceColor.z };
+            if (ImGui::ColorEdit3("Ice Color", iceCol)) {
+                volume->iceColor = Math::Vector3(iceCol[0], iceCol[1], iceCol[2]);
+            }
+            ImGui::SliderFloat("Ice Opacity", &volume->iceOpacity, 0.0f, 1.0f);
+            ImGui::DragFloat("Freeze Rate", &volume->freezeRate, 0.01f, 0.01f, 5.0f, "%.2f");
+            ImGui::DragFloat("Thaw Rate", &volume->thawRate, 0.01f, 0.01f, 5.0f, "%.2f");
+
+            // Read-only freeze progress indicator
+            ImGui::Spacing();
+            ImGui::ProgressBar(volume->freezeProgress, ImVec2(-1, 0),
+                volume->isFrozen ? "Frozen" : (volume->freezeProgress > 0.01f ? "Freezing..." : "Liquid"));
+            ImGui::TreePop();
         }
 
         // Regenerate mesh if extents or water type changed

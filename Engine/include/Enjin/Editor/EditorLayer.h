@@ -13,6 +13,7 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/GUI/GameMenus.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -401,6 +402,9 @@ private:
 
     // Input action map for remappable input
     InputSystem::InputActionMap m_InputMap;
+
+    // In-game pause/system menu
+    GUI::GameMenuSystem m_GameMenu;
 };
 
 } // namespace Editor

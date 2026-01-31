@@ -554,19 +554,29 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Set water surface flag for water volume entities
             WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
             if (waterVol) {
-                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
-                if (m_RainActive) {
-                    pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+                if (waterVol->freezeProgress < 0.99f) {
+                    pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE (wave animation)
                 }
-                if (waterVol->enableShore) {
+                if (m_RainActive && waterVol->freezeProgress < 0.5f) {
+                    pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES (no ripples on ice)
+                }
+                if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
                     pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
                     pushConstants.shoreWidth = waterVol->shoreWidth;
-                    pushConstants.foamIntensity = waterVol->foamIntensity;
+                    pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
                     pushConstants.foamScale = waterVol->foamScale;
                 }
                 if (waterVol->waterType == WaterType::Ocean) {
                     pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN
                 }
+                // Lerp base color toward ice color as water freezes
+                f32 fp = waterVol->freezeProgress;
+                pushConstants.baseColor = Math::Vector3(
+                    pushConstants.baseColor.x * (1.0f - fp) + waterVol->iceColor.x * fp,
+                    pushConstants.baseColor.y * (1.0f - fp) + waterVol->iceColor.y * fp,
+                    pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
+                );
+                pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
             }
 
             // Rasterize text texture if entity has a TextComponent
@@ -1412,19 +1422,29 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Set water surface flag for water volume entities
     WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
     if (waterVol) {
-        pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
-        if (m_RainActive) {
-            pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+        if (waterVol->freezeProgress < 0.99f) {
+            pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE (wave animation)
         }
-        if (waterVol->enableShore) {
+        if (m_RainActive && waterVol->freezeProgress < 0.5f) {
+            pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES (no ripples on ice)
+        }
+        if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
             pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
             pushConstants.shoreWidth = waterVol->shoreWidth;
-            pushConstants.foamIntensity = waterVol->foamIntensity;
+            pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
             pushConstants.foamScale = waterVol->foamScale;
         }
         if (waterVol->waterType == WaterType::Ocean) {
             pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN
         }
+        // Lerp base color toward ice color as water freezes
+        f32 fp = waterVol->freezeProgress;
+        pushConstants.baseColor = Math::Vector3(
+            pushConstants.baseColor.x * (1.0f - fp) + waterVol->iceColor.x * fp,
+            pushConstants.baseColor.y * (1.0f - fp) + waterVol->iceColor.y * fp,
+            pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
+        );
+        pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
     }
 
     // Rasterize text texture if entity has a TextComponent

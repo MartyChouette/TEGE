@@ -44,6 +44,16 @@ struct ENJIN_API WaterVolumeComponent {
     // Higher priority volumes override lower ones when overlapping
     i32 priority = 0;
 
+    // Freeze state (runtime — driven by temperature zones each frame)
+    f32 freezeProgress = 0.0f;      // 0 = liquid, 1 = frozen solid
+    bool isFrozen = false;           // Convenience: true when freezeProgress >= 0.99
+
+    // Freeze tuning (authored, serialized)
+    f32 freezeRate = 0.3f;          // How fast it freezes (per second)
+    f32 thawRate = 0.5f;            // How fast it thaws (per second)
+    Math::Vector3 iceColor = Math::Vector3(0.7f, 0.85f, 0.95f);  // Frozen surface color
+    f32 iceOpacity = 0.95f;         // Frozen surface opacity
+
     // Dirty flag: set to false to force mesh regeneration
     bool meshCreated = false;
 

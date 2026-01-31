@@ -398,6 +398,10 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     j["foamScale"] = volume.foamScale;
     j["shoreColor"] = SerializeVector3(volume.shoreColor);
     j["priority"] = volume.priority;
+    j["iceColor"] = SerializeVector3(volume.iceColor);
+    j["iceOpacity"] = volume.iceOpacity;
+    j["freezeRate"] = volume.freezeRate;
+    j["thawRate"] = volume.thawRate;
     return j;
 }
 
@@ -415,6 +419,10 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
     if (j.contains("shoreColor")) volume.shoreColor = DeserializeVector3(j["shoreColor"]);
     volume.priority = j["priority"].get<i32>();
+    if (j.contains("iceColor")) volume.iceColor = DeserializeVector3(j["iceColor"]);
+    if (j.contains("iceOpacity")) volume.iceOpacity = j["iceOpacity"].get<f32>();
+    if (j.contains("freezeRate")) volume.freezeRate = j["freezeRate"].get<f32>();
+    if (j.contains("thawRate")) volume.thawRate = j["thawRate"].get<f32>();
     return volume;
 }
 
