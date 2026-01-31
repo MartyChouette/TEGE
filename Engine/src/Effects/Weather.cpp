@@ -86,9 +86,9 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
     // Update particles
     UpdateParticles(deltaTime, cameraPos);
 
-    // Spawn new particles based on intensity
-    f32 rainRate = m_RainIntensity * 800.0f;  // Particles per second (dense rain)
-    f32 snowRate = m_SnowIntensity * 400.0f;  // Dense snow
+    // Spawn new particles based on intensity (rates tuned for visual quality vs performance)
+    f32 rainRate = m_RainIntensity * 400.0f;  // Particles per second
+    f32 snowRate = m_SnowIntensity * 200.0f;
 
     m_SpawnAccumulator += deltaTime;
     f32 spawnInterval = 1.0f / Math::Max(rainRate + snowRate, 1.0f);

@@ -2,9 +2,76 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
+#include <cmath>
 
 namespace Enjin {
 namespace ECS {
+
+void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, const Math::Vector3& target, const Math::Vector3& up) {
+    // When a game camera entity is set, write to its TransformComponent so the
+    // game view (which renders from CameraComponent entities) sees the update.
+    // The editor Camera object stays untouched.
+    if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
+        auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
+        if (camTransform) {
+            camTransform->position = position;
+            // Compute rotation quaternion from look-at direction
+            Math::Vector3 fwd = target - position;
+            f32 fwdLen = fwd.Length();
+            if (fwdLen > 1e-6f) {
+                fwd = fwd * (1.0f / fwdLen);
+                // Camera looks down -Z, so forward in camera space is -Z
+                // We need: rotation * (0,0,-1) = fwd => rotation * (0,0,1) = -fwd
+                Math::Vector3 right = up.Cross(fwd);
+                f32 rightLen = right.Length();
+                if (rightLen > 1e-6f) {
+                    right = right * (1.0f / rightLen);
+                    Math::Vector3 correctedUp = fwd.Cross(right);
+                    // Convert rotation matrix to quaternion (Shepperd's method)
+                    // Matrix columns: right, correctedUp, -forward (camera convention)
+                    f32 m00 = right.x,        m01 = correctedUp.x, m02 = -fwd.x;
+                    f32 m10 = right.y,        m11 = correctedUp.y, m12 = -fwd.y;
+                    f32 m20 = right.z,        m21 = correctedUp.z, m22 = -fwd.z;
+                    f32 trace = m00 + m11 + m22;
+                    f32 qx, qy, qz, qw;
+                    if (trace > 0.0f) {
+                        f32 s = std::sqrt(trace + 1.0f) * 2.0f;
+                        qw = 0.25f * s;
+                        qx = (m12 - m21) / s;
+                        qy = (m20 - m02) / s;
+                        qz = (m01 - m10) / s;
+                    } else if (m00 > m11 && m00 > m22) {
+                        f32 s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+                        qw = (m12 - m21) / s;
+                        qx = 0.25f * s;
+                        qy = (m01 + m10) / s;
+                        qz = (m20 + m02) / s;
+                    } else if (m11 > m22) {
+                        f32 s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+                        qw = (m20 - m02) / s;
+                        qx = (m01 + m10) / s;
+                        qy = 0.25f * s;
+                        qz = (m12 + m21) / s;
+                    } else {
+                        f32 s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+                        qw = (m01 - m10) / s;
+                        qx = (m20 + m02) / s;
+                        qy = (m12 + m21) / s;
+                        qz = 0.25f * s;
+                    }
+                    camTransform->rotation = Math::Quaternion(qx, qy, qz, qw).Normalized();
+                }
+            }
+            return;
+        }
+    }
+
+    // Fallback: update the editor camera directly (original behavior)
+    if (m_Camera) {
+        m_Camera->SetPosition(position);
+        m_Camera->SetLookAt(position, target, up);
+    }
+}
 
 void ControllerSystem::Update(f32 deltaTime) {
     if (!m_Enabled || !m_World) {
@@ -533,8 +600,7 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
     }
 
     // Update camera position (if we have access to it)
-    if (m_Camera && ctrl.lockCameraToPlayer) {
-        f32 camAngleRad = Math::Radians(ctrl.cameraAngle);
+    if ((m_Camera || m_GameCameraEntity != INVALID_ENTITY) && ctrl.lockCameraToPlayer) {
         Math::Vector3 cameraOffset(
             0.0f,
             ctrl.cameraHeight,
@@ -542,8 +608,7 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         );
 
         Math::Vector3 cameraPos = transform.position + cameraOffset;
-        m_Camera->SetPosition(cameraPos);
-        m_Camera->SetLookAt(cameraPos, transform.position, Math::Vector3(0, 1, 0));
+        UpdateGameCameraTransform(cameraPos, transform.position, Math::Vector3(0, 1, 0));
     }
 }
 
@@ -590,11 +655,11 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             camOffset.x = Math::Cos(pitchRad2) * Math::Sin(yawRad2) * ctrl.cameraDistance;
             camOffset.y = Math::Sin(pitchRad2) * ctrl.cameraDistance + ctrl.cameraHeight;
             camOffset.z = Math::Cos(pitchRad2) * Math::Cos(yawRad2) * ctrl.cameraDistance;
-            if (m_Camera) {
+            {
                 Math::Vector3 camPos = transform.position + camOffset;
-                m_Camera->SetPosition(camPos);
-                m_Camera->SetLookAt(camPos, transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0),
-                                    Math::Vector3(0, 1, 0));
+                UpdateGameCameraTransform(camPos,
+                    transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0),
+                    Math::Vector3(0, 1, 0));
             }
             // Rotate character to face movement direction
             if (ctrl.rotateToFaceMovement && ctrl.gridMoving) {
@@ -685,7 +750,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     }
 
     // Update camera position
-    if (m_Camera) {
+    {
         f32 pitchRad = Math::Radians(ctrl.cameraPitch);
         f32 yawRad2 = Math::Radians(ctrl.cameraYaw);
 
@@ -697,12 +762,17 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         Math::Vector3 targetCameraPos = transform.position + cameraOffset;
         Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0);
 
-        // Smooth camera follow
-        Math::Vector3 currentPos = m_Camera->GetPosition();
+        // Smooth camera follow: read current pos from entity or editor camera
+        Math::Vector3 currentPos = targetCameraPos;
+        if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
+            auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
+            if (camTransform) currentPos = camTransform->position;
+        } else if (m_Camera) {
+            currentPos = m_Camera->GetPosition();
+        }
         Math::Vector3 newPos = currentPos + (targetCameraPos - currentPos) * Math::Min(ctrl.cameraLerpSpeed * dt, 1.0f);
 
-        m_Camera->SetPosition(newPos);
-        m_Camera->SetLookAt(newPos, lookTarget, Math::Vector3(0, 1, 0));
+        UpdateGameCameraTransform(newPos, lookTarget, Math::Vector3(0, 1, 0));
     }
 }
 
@@ -752,10 +822,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     if (ctrl.gridMovement) {
         if (UpdateGridMovement(ctrl, transform, input, dt)) {
             // Camera follows position in grid mode
-            if (m_Camera) {
+            {
                 Math::Vector3 eyePos = transform.position;
                 eyePos.y += ctrl.currentHeight;
-                m_Camera->SetPosition(eyePos);
                 // Apply look rotation
                 f32 yr = Math::Radians(ctrl.yaw);
                 f32 pr = Math::Radians(ctrl.pitch);
@@ -763,7 +832,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 fwd.x = -Math::Sin(yr) * Math::Cos(pr);
                 fwd.y = Math::Sin(pr);
                 fwd.z = -Math::Cos(yr) * Math::Cos(pr);
-                m_Camera->SetLookAt(eyePos, eyePos + fwd, Math::Vector3(0, 1, 0));
+                UpdateGameCameraTransform(eyePos, eyePos + fwd, Math::Vector3(0, 1, 0));
             }
             return;
         }
@@ -841,7 +910,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     }
 
     // Update camera (first person camera IS the player's eyes)
-    if (m_Camera) {
+    {
         Math::Vector3 eyePos = transform.position;
         eyePos.y += ctrl.currentHeight;
 
@@ -859,8 +928,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         lookDir.y = Math::Sin(pitchRad);
         lookDir.z = Math::Cos(pitchRad) * -Math::Cos(yawRad2);
 
-        m_Camera->SetPosition(eyePos);
-        m_Camera->SetLookAt(eyePos, eyePos + lookDir, Math::Vector3(0, 1, 0));
+        UpdateGameCameraTransform(eyePos, eyePos + lookDir, Math::Vector3(0, 1, 0));
     }
 
     // Update entity rotation to match yaw (body rotation)

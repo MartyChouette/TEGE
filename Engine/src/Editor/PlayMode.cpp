@@ -1,4 +1,5 @@
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
@@ -19,6 +20,10 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_ControllerSystem.SetPhysics(&m_Physics);
     m_ControllerSystem.SetEnabled(false);
 
+    m_FlowerSystem.SetWorld(world);
+    m_FlowerSystem.SetCamera(camera);
+    m_FlowerSystem.SetEnabled(false);
+
     ENJIN_LOG_INFO(Editor, "PlayMode initialized");
 }
 
@@ -30,8 +35,13 @@ void PlayMode::Play() {
     // Save current editor state
     SaveEditorState();
 
-    // Enable controller system
+    // Find the active game camera entity so controllers drive it instead of the editor camera
+    ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
+    m_ControllerSystem.SetGameCameraEntity(gameCam);
+
+    // Enable controller system and flower system
     m_ControllerSystem.SetEnabled(true);
+    m_FlowerSystem.SetEnabled(true);
 
     // Disable editor camera controller
     if (m_CameraController) {
@@ -51,6 +61,7 @@ void PlayMode::Pause() {
     }
 
     m_ControllerSystem.SetEnabled(false);
+    m_FlowerSystem.SetEnabled(false);
     Input::SetMouseCaptured(false);
 
     m_State = PlayState::Paused;
@@ -63,6 +74,7 @@ void PlayMode::Resume() {
     }
 
     m_ControllerSystem.SetEnabled(true);
+    m_FlowerSystem.SetEnabled(true);
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
     m_State = PlayState::Playing;
@@ -74,8 +86,10 @@ void PlayMode::Stop() {
         return;
     }
 
-    // Disable controller system
+    // Disable controller and flower systems
     m_ControllerSystem.SetEnabled(false);
+    m_ControllerSystem.SetGameCameraEntity(ECS::INVALID_ENTITY);
+    m_FlowerSystem.SetEnabled(false);
 
     // Re-enable editor camera controller
     if (m_CameraController) {
@@ -100,6 +114,7 @@ void PlayMode::Update(f32 deltaTime) {
         // Physics runs first to update rigidbody positions, then controllers overlay input
         m_Physics.Update(deltaTime);
         m_ControllerSystem.Update(deltaTime);
+        m_FlowerSystem.Update(deltaTime);
     }
 }
 

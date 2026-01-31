@@ -22,6 +22,11 @@ public:
     void SetPhysics(Physics::SimplePhysics* physics) { m_Physics = physics; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
 
+    // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
+    // The game view renders from CameraComponent entities, so this keeps the editor camera untouched.
+    void SetGameCameraEntity(Entity entity) { m_GameCameraEntity = entity; }
+    Entity GetGameCameraEntity() const { return m_GameCameraEntity; }
+
     // Reduced motion (disables head bob, FOV effects)
     void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
     bool GetReducedMotion() const { return m_ReducedMotion; }
@@ -53,10 +58,14 @@ private:
     bool UpdateGridMovement(CharacterControllerBase& controller, TransformComponent& transform,
                            const Math::Vector2& input, f32 dt);
 
+    // Helper: update game camera entity transform to match position/lookAt
+    void UpdateGameCameraTransform(const Math::Vector3& position, const Math::Vector3& target, const Math::Vector3& up);
+
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Physics::SimplePhysics* m_Physics = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
+    Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_Enabled = false;  // Disabled by default (editor mode)
     bool m_ReducedMotion = false;
 };

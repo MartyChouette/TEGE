@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include <string>
 
@@ -45,6 +46,9 @@ public:
     // Get controller system for external configuration
     ECS::ControllerSystem* GetControllerSystem() { return &m_ControllerSystem; }
 
+    // Get flower system
+    ECS::FlowerSystem* GetFlowerSystem() { return &m_FlowerSystem; }
+
     // Get physics system
     Physics::SimplePhysics* GetPhysics() { return &m_Physics; }
 
@@ -60,6 +64,9 @@ private:
 
     // Controller system for runtime
     ECS::ControllerSystem m_ControllerSystem;
+
+    // Flower system for runtime
+    ECS::FlowerSystem m_FlowerSystem;
 
     // Physics system
     Physics::SimplePhysics m_Physics;

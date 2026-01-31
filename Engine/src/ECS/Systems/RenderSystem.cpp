@@ -9,6 +9,7 @@
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
+#include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -277,6 +278,15 @@ void RenderSystem::Update(f32 deltaTime) {
                     }
                     m_EntityRenderData.erase(entity);
                     terrain2d->meshDirty = false;
+                }
+            }
+
+            // JellyMesh dirty check (flower system vertex deformation)
+            if (m_World->HasComponent<JellyMeshComponent>(entity)) {
+                auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
+                if (jelly && jelly->meshDirty) {
+                    m_EntityRenderData.erase(entity);
+                    jelly->meshDirty = false;
                 }
             }
         }
@@ -1774,8 +1784,8 @@ void RenderSystem::EnsureWaterMeshes() {
         f32 hx = waterVol->halfExtents.x;
         f32 hz = waterVol->halfExtents.z;
 
-        const u32 segsX = 32;
-        const u32 segsZ = 32;
+        const u32 segsX = 20;
+        const u32 segsZ = 20;
 
         for (u32 zi = 0; zi <= segsZ; ++zi) {
             for (u32 xi = 0; xi <= segsX; ++xi) {

@@ -210,30 +210,33 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
         if (instanceCount == 0) return;
     }
 
-    // Build instance data (reuse cached vector to avoid per-frame allocation)
+    // Build instance data — filter out dead particles so we only upload live ones
     m_InstanceDataCache.resize(instanceCount);
+    u32 liveCount = 0;
     for (u32 i = 0; i < instanceCount; ++i) {
         const auto& p = particles[i];
         if (p.lifetime <= 0.0f) continue;
 
-        m_InstanceDataCache[i].position = p.position;
-        m_InstanceDataCache[i].size = p.size * 2.0f;
-        m_InstanceDataCache[i].alpha = p.alpha;
+        m_InstanceDataCache[liveCount].position = p.position;
+        m_InstanceDataCache[liveCount].size = p.size * 2.0f;
+        m_InstanceDataCache[liveCount].alpha = p.alpha;
 
         if (isRain && !m_ReducedMotion) {
-            // Reduced motion: disable rain stretch (makes it less visually intense)
-            m_InstanceDataCache[i].stretch = 6.0f;
-            m_InstanceDataCache[i].stretchDirX = 0.0f;
-            m_InstanceDataCache[i].stretchDirY = 1.0f;
+            m_InstanceDataCache[liveCount].stretch = 6.0f;
+            m_InstanceDataCache[liveCount].stretchDirX = 0.0f;
+            m_InstanceDataCache[liveCount].stretchDirY = 1.0f;
         } else {
-            m_InstanceDataCache[i].stretch = 1.0f;
-            m_InstanceDataCache[i].stretchDirX = 0.0f;
-            m_InstanceDataCache[i].stretchDirY = 0.0f;
+            m_InstanceDataCache[liveCount].stretch = 1.0f;
+            m_InstanceDataCache[liveCount].stretchDirX = 0.0f;
+            m_InstanceDataCache[liveCount].stretchDirY = 0.0f;
         }
+        liveCount++;
     }
 
-    // Upload instance data
-    m_InstanceBuffer->UploadData(m_InstanceDataCache.data(), instanceCount * sizeof(ParticleInstanceData));
+    if (liveCount == 0) return;
+
+    // Upload only live particle data (avoids wasting bandwidth on dead entries)
+    m_InstanceBuffer->UploadData(m_InstanceDataCache.data(), liveCount * sizeof(ParticleInstanceData));
 
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);
@@ -288,8 +291,8 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
 
-    // Draw instanced: 6 indices per quad, instanceCount instances
-    vkCmdDrawIndexed(commandBuffer, 6, instanceCount, 0, 0, 0);
+    // Draw instanced: 6 indices per quad, liveCount instances
+    vkCmdDrawIndexed(commandBuffer, 6, liveCount, 0, 0, 0);
 }
 
 } // namespace Effects

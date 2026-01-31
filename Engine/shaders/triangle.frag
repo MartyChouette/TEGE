@@ -249,7 +249,9 @@ void main() {
     vec2 uv = fragUV / fragClipW;
 
     // Parallax Occlusion Mapping: offset UV using height map before any texture sampling
-    if ((material.flags & FLAG_HAS_HEIGHT_TEX) != 0 && material.parallaxScale > 0.0) {
+    // Skip for water surfaces — POM is expensive and adds little visual value on water
+    if ((material.flags & FLAG_HAS_HEIGHT_TEX) != 0 && material.parallaxScale > 0.0
+        && (material.flags & FLAG_WATER_SURFACE) == 0) {
         // Build TBN matrix from interpolated normal and tangent
         vec3 N = normalize(fragNormal);
         vec3 T = normalize(fragTangent.xyz);
@@ -288,6 +290,7 @@ void main() {
     }
 
     // Water surface: rain ripple normal perturbation — individual drop ripples
+    // Optimized: 2 layers (down from 3), 5 neighbors (skip corners), early distance exit
     if ((material.flags & FLAG_WATER_SURFACE) != 0 && (material.flags & FLAG_RAIN_RIPPLES) != 0) {
         float waterTime = lighting.windData.w;
         vec2 worldXZ = fragWorldPos.xz;
@@ -298,47 +301,48 @@ void main() {
 
         vec2 rippleOffset = vec2(0.0);
 
-        // Sample multiple grid layers at different scales for density
-        for (int layer = 0; layer < 3; ++layer) {
-            float scale = 1.2 + float(layer) * 0.7;  // Different grid sizes
+        // 5-tap neighbor offsets: center + 4 cardinal directions (skip corners)
+        const vec2 neighborOffsets[5] = vec2[5](
+            vec2(0, 0), vec2(-1, 0), vec2(1, 0), vec2(0, -1), vec2(0, 1)
+        );
+
+        // 2 grid layers (was 3) — still looks dense enough with 2 overlapping scales
+        for (int layer = 0; layer < 2; ++layer) {
+            float scale = 1.2 + float(layer) * 0.9;
             vec2 gridUV = worldXZ * scale;
             vec2 cellId = floor(gridUV);
 
-            // Check this cell and 8 neighbours for nearby ripple centers
-            for (int dy = -1; dy <= 1; ++dy) {
-                for (int dx = -1; dx <= 1; ++dx) {
-                    vec2 neighbor = cellId + vec2(float(dx), float(dy));
+            // Check center cell + 4 cardinal neighbors (10 evaluations vs. 18)
+            for (int n = 0; n < 5; ++n) {
+                vec2 neighbor = cellId + neighborOffsets[n];
 
-                    // Random drop position within this cell
-                    vec2 rnd = HASH2(neighbor + float(layer) * 53.0);
-                    vec2 dropPos = (neighbor + rnd) / scale;
+                // Random drop position within this cell
+                vec2 rnd = HASH2(neighbor + float(layer) * 53.0);
+                vec2 dropPos = (neighbor + rnd) / scale;
 
-                    // Random drop timing: each drop has its own phase
-                    float dropPhase = HASH1(neighbor + float(layer) * 71.0);
-                    float dropInterval = 1.8 + dropPhase * 1.4;  // 1.8-3.2 seconds per drop cycle
-                    float localTime = mod(waterTime + dropPhase * dropInterval, dropInterval);
+                // Early distance check — skip if fragment is too far from this drop
+                float dist = length(worldXZ - dropPos);
+                if (dist > 2.0) continue;
 
-                    // Ripple age: 0 at impact, grows with time
-                    float age = localTime;
-                    float maxAge = dropInterval * 0.85;  // Ripple fades before next drop
+                // Random drop timing: each drop has its own phase
+                float dropPhase = HASH1(neighbor + float(layer) * 71.0);
+                float dropInterval = 1.8 + dropPhase * 1.4;
+                float localTime = mod(waterTime + dropPhase * dropInterval, dropInterval);
 
-                    if (age < maxAge) {
-                        float dist = length(worldXZ - dropPos);
+                float age = localTime;
+                float maxAge = dropInterval * 0.85;
 
-                        // Expanding ring radius
-                        float ringRadius = age * 1.5;
-                        float ringDist = abs(dist - ringRadius);
+                if (age < maxAge) {
+                    // Expanding ring radius
+                    float ringRadius = age * 1.5;
+                    float ringDist = abs(dist - ringRadius);
 
-                        // Sharp ring that fades with age
-                        float ring = exp(-ringDist * 12.0) * (1.0 - age / maxAge);
+                    // Sharp ring that fades with age
+                    float ring = exp(-ringDist * 12.0) * (1.0 - age / maxAge);
+                    ring *= smoothstep(2.0, 0.0, dist);
 
-                        // Only affect nearby fragments (cull distant ripples)
-                        ring *= smoothstep(2.0, 0.0, dist);
-
-                        // Direction from center
-                        vec2 dir = (worldXZ - dropPos) / max(dist, 0.001);
-                        rippleOffset += dir * ring * 0.12;
-                    }
+                    vec2 dir = (worldXZ - dropPos) / max(dist, 0.001);
+                    rippleOffset += dir * ring * 0.12;
                 }
             }
         }

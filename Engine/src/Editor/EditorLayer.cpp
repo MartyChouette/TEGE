@@ -23,6 +23,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
@@ -305,7 +306,11 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
     if (Input::IsKeyPressed(KeyCode::Escape)) {
-        if (m_FocusMode) {
+        if (m_GameViewMouseCaptured) {
+            // First Escape: release Game View mouse capture (game keeps playing)
+            m_GameViewMouseCaptured = false;
+            Input::SetMouseCaptured(false);
+        } else if (m_FocusMode) {
             // Escape exits focus mode back to editor (game keeps playing)
             m_FocusMode = false;
             Input::SetMouseCaptured(false);
@@ -315,14 +320,41 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Game View click-to-capture: when playing, clicking the Game View image
+    // captures the mouse so FPS/TPS controllers receive mouse delta for look
+    if (!m_FocusMode && !m_GameViewMouseCaptured &&
+        (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) &&
+        m_GameViewHovered && Input::IsMouseButtonPressed(MouseButton::Left)) {
+        if (SceneHasMouseLookController()) {
+            m_GameViewMouseCaptured = true;
+            Input::SetMouseCaptured(true);
+        }
+    }
+
     // Handle viewport picking (left-click to select, but not when using gizmo)
     // Only allow picking in editor mode, not play mode
     if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped()) {
         HandleViewportPicking();
     }
 
+    // Pass game view bounds and render system to FlowerSystem each frame
+    {
+        auto* flowerSys = m_PlayMode.GetFlowerSystem();
+        flowerSys->SetGameViewBounds(m_GameViewImageMinX, m_GameViewImageMinY,
+                                     m_GameViewImageMaxX, m_GameViewImageMaxY);
+        flowerSys->SetRenderTargetSize(m_GameViewWidth, m_GameViewHeight);
+        flowerSys->SetRenderSystem(m_RenderSystem);
+        flowerSys->SetGameCameraEntity(m_SelectedGameCamera);
+    }
+
     // Update play mode
     m_PlayMode.Update(deltaTime);
+
+    // Safety net: release mouse capture if play mode stopped
+    if (m_GameViewMouseCaptured && m_PlayMode.IsStopped()) {
+        m_GameViewMouseCaptured = false;
+        Input::SetMouseCaptured(false);
+    }
 
     // Update post-processing time for animated effects (film grain, etc.)
     if (m_PostProcessing) {
@@ -2226,6 +2258,20 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::SpawnPointComponent>(m_SelectedEntity)) {
             DrawSpawnPointComponent(m_SelectedEntity);
+        }
+
+        // Flower components
+        if (m_World->HasComponent<ECS::JellyMeshComponent>(m_SelectedEntity)) {
+            DrawJellyMeshComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TetherComponent>(m_SelectedEntity)) {
+            DrawTetherComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::GrabbableComponent>(m_SelectedEntity)) {
+            DrawGrabbableComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::FlowerStemComponent>(m_SelectedEntity)) {
+            DrawFlowerStemComponent(m_SelectedEntity);
         }
 
         ImGui::Separator();
@@ -5167,6 +5213,23 @@ void EditorLayer::DrawGameViewPanel() {
         }
     }
 
+    // Evaluate Flower button (shown when playing and a FlowerStemComponent exists)
+    if (isPlaying && m_World) {
+        bool hasFlowerStem = false;
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
+                hasFlowerStem = true;
+                break;
+            }
+        }
+        if (hasFlowerStem) {
+            ImGui::SameLine();
+            if (ImGui::Button("Evaluate Flower")) {
+                m_PlayMode.GetFlowerSystem()->Evaluate();
+            }
+        }
+    }
+
     // Camera selector dropdown (when multiple cameras exist)
     if (cameraEntities.size() > 1) {
         std::string currentName = "None";
@@ -5285,6 +5348,11 @@ void EditorLayer::DrawGameViewPanel() {
                 ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId)),
                              ImVec2(previewWidth, previewHeight));
                 usedImage = true;
+                m_GameViewImageMinX = p0.x;
+                m_GameViewImageMinY = p0.y;
+                m_GameViewImageMaxX = p1.x;
+                m_GameViewImageMaxY = p1.y;
+                m_GameViewHovered = ImGui::IsItemHovered();
             } else {
                 drawList->AddRectFilled(p0, p1, IM_COL32(20, 20, 30, 255));
             }
@@ -5334,6 +5402,20 @@ void EditorLayer::DrawGameViewPanel() {
             ImVec2 textPos((p0.x + p1.x - textSize.x) * 0.5f, p0.y + 10);
             drawList->AddText(textPos, IM_COL32(200, 200, 200, 200), previewText);
 
+            // Interaction hint during play mode (centered near bottom of preview)
+            if (isPlaying && SceneHasMouseLookController()) {
+                const char* hintText = m_GameViewMouseCaptured
+                    ? "Press ESC to release cursor"
+                    : "Click to capture mouse";
+                ImVec2 hintSize = ImGui::CalcTextSize(hintText);
+                ImVec2 hintPos((p0.x + p1.x - hintSize.x) * 0.5f, p1.y - 40);
+                // Semi-transparent background pill
+                ImVec2 pillMin(hintPos.x - 8, hintPos.y - 4);
+                ImVec2 pillMax(hintPos.x + hintSize.x + 8, hintPos.y + hintSize.y + 4);
+                drawList->AddRectFilled(pillMin, pillMax, IM_COL32(0, 0, 0, 140), 6.0f);
+                drawList->AddText(hintPos, IM_COL32(255, 255, 255, 200), hintText);
+            }
+
             // Debug: zone detection status at bottom of preview
             char debugBuf[128];
             if (activeWeatherZone) {
@@ -5350,6 +5432,7 @@ void EditorLayer::DrawGameViewPanel() {
             // Reserve space only if we didn't use ImGui::Image (which reserves its own)
             if (!usedImage) {
                 ImGui::Dummy(ImVec2(previewWidth, previewHeight));
+                m_GameViewHovered = false;
             }
         }
 
@@ -8478,17 +8561,18 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
         }
 
-        // Flower stem
+        // Flower stem (accessible to petal/leaf loops for tethering)
+        ECS::Entity stemEntity = m_World->CreateEntity();
         {
-            ECS::Entity stem = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(stem, "Flower_Stem");
-            auto& st = m_World->AddComponent<ECS::TransformComponent>(stem);
+            m_World->AddComponent<ECS::NameComponent>(stemEntity, "Flower_Stem");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(stemEntity);
             st.position = Math::Vector3(0.0f, 0.8f, 0.0f);
             st.scale = Math::Vector3(0.08f, 1.6f, 0.08f);
-            auto& smat = m_World->AddComponent<ECS::MaterialComponent>(stem);
+            auto& smat = m_World->AddComponent<ECS::MaterialComponent>(stemEntity);
             smat.baseColor = Math::Vector3(0.2f, 0.5f, 0.15f);
             smat.roughness = 0.8f;
-            m_World->AddComponent<ECS::MeshComponent>(stem, Renderer::MeshFactory::CreateCube(1.0f));
+            m_World->AddComponent<ECS::MeshComponent>(stemEntity, Renderer::MeshFactory::CreateCube(1.0f));
+            m_World->AddComponent<ECS::FlowerStemComponent>(stemEntity);
         }
 
         // Petals (arranged radially)
@@ -8519,6 +8603,16 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pickup.value = withered ? 5.0f : 10.0f;
             auto& tag = m_World->AddComponent<ECS::TagComponent>(petal);
             tag.tags.push_back(withered ? "withered" : "healthy");
+
+            // Flower interaction components
+            auto& jelly = m_World->AddComponent<ECS::JellyMeshComponent>(petal);
+            jelly.springStiffness = 80.0f;
+            auto& tether = m_World->AddComponent<ECS::TetherComponent>(petal);
+            tether.stemEntity = stemEntity;
+            tether.breakDistance = 1.2f;
+            tether.tensionRamp = 2.5f;
+            auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
+            grab.pullForce = 12.0f;
         }
 
         // Leaves along the stem
@@ -8543,6 +8637,16 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pickup.value = witheredLeaf ? 5.0f : 10.0f;
             auto& tag = m_World->AddComponent<ECS::TagComponent>(leaf);
             tag.tags.push_back(witheredLeaf ? "withered" : "healthy");
+
+            // Flower interaction components
+            auto& jelly = m_World->AddComponent<ECS::JellyMeshComponent>(leaf);
+            jelly.springStiffness = 60.0f;
+            auto& tether = m_World->AddComponent<ECS::TetherComponent>(leaf);
+            tether.stemEntity = stemEntity;
+            tether.breakDistance = 1.0f;
+            tether.tensionRamp = 2.0f;
+            auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
+            grab.pullForce = 15.0f;
         }
 
         // Camera
@@ -8574,7 +8678,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             lc.castShadows = true;
         }
 
-        // Score text
+        // Score text with score_display tag
         {
             ECS::Entity scoreText = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(scoreText, "Score Display");
@@ -8584,6 +8688,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             text.text = "Petals: 0/10 | Leaves: 0/5 | Score: 0";
             text.fontSize = 24.0f;
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            auto& scoreTag = m_World->AddComponent<ECS::TagComponent>(scoreText);
+            scoreTag.tags.push_back("score_display");
         }
     }
 
@@ -8680,6 +8786,17 @@ void EditorLayer::ImportModel(const std::string& path) {
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_ERROR(Editor, "Failed to import %s: %s", path.c_str(), result.errorMessage.c_str());
     }
+}
+
+bool EditorLayer::SceneHasMouseLookController() const {
+    if (!m_World) return false;
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<ECS::FirstPersonController>(entity) ||
+            m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 void EditorLayer::HandleViewportPicking() {
@@ -10546,6 +10663,114 @@ void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("SpawnPointContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 m_World->RemoveComponent<ECS::SpawnPointComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawJellyMeshComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Jelly Mesh", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* jelly = m_World->GetComponent<ECS::JellyMeshComponent>(entity);
+        if (!jelly) return;
+
+        ImGui::SliderFloat("Spring Stiffness##Jelly", &jelly->springStiffness, 1.0f, 200.0f);
+        ImGui::SliderFloat("Damping##Jelly", &jelly->damping, 0.1f, 20.0f);
+        ImGui::SliderFloat("Max Stretch##Jelly", &jelly->maxStretch, 0.01f, 2.0f);
+
+        if (jelly->initialized) {
+            ImGui::TextDisabled("Vertices: %zu", jelly->restPositions.size());
+        } else {
+            ImGui::TextDisabled("Not initialized (waiting for play mode)");
+        }
+
+        if (ImGui::BeginPopupContextItem("JellyMeshContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::JellyMeshComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Tether", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* tether = m_World->GetComponent<ECS::TetherComponent>(entity);
+        if (!tether) return;
+
+        // Stem entity picker (show name if available)
+        char stemLabel[128] = "None";
+        if (tether->stemEntity != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(tether->stemEntity)) {
+            auto* name = m_World->GetComponent<ECS::NameComponent>(tether->stemEntity);
+            snprintf(stemLabel, sizeof(stemLabel), "%s (%llu)", name->name.c_str(), (unsigned long long)tether->stemEntity);
+        } else if (tether->stemEntity != ECS::INVALID_ENTITY) {
+            snprintf(stemLabel, sizeof(stemLabel), "Entity %llu", (unsigned long long)tether->stemEntity);
+        }
+        ImGui::Text("Stem: %s", stemLabel);
+
+        ImGui::DragFloat3("Attach Local Pos", &tether->attachLocalPos.x, 0.01f);
+        ImGui::SliderFloat("Rest Length (0=auto)", &tether->restLength, 0.0f, 5.0f);
+        ImGui::SliderFloat("Stiffness##Tether", &tether->tetherStiffness, 1.0f, 200.0f);
+        ImGui::SliderFloat("Damping##Tether", &tether->tetherDamping, 0.1f, 20.0f);
+        ImGui::SliderFloat("Break Distance", &tether->breakDistance, 0.1f, 5.0f);
+        ImGui::SliderFloat("Tension Ramp", &tether->tensionRamp, 0.5f, 5.0f);
+
+        // Read-only tension bar
+        ImGui::ProgressBar(tether->currentTension, ImVec2(-1, 0), tether->isBroken ? "BROKEN" : nullptr);
+        if (tether->isBroken) {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Tether is broken");
+        }
+
+        if (ImGui::BeginPopupContextItem("TetherContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::TetherComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Grabbable", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* grab = m_World->GetComponent<ECS::GrabbableComponent>(entity);
+        if (!grab) return;
+
+        ImGui::SliderFloat("Pull Force", &grab->pullForce, 1.0f, 50.0f);
+        ImGui::SliderFloat("Grab Radius", &grab->grabRadius, 0.1f, 5.0f);
+
+        if (grab->isGrabbed) {
+            ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Currently grabbed");
+        }
+
+        if (ImGui::BeginPopupContextItem("GrabbableContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::GrabbableComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Flower Stem", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* stem = m_World->GetComponent<ECS::FlowerStemComponent>(entity);
+        if (!stem) return;
+
+        ImGui::SliderFloat("Healthy Bonus", &stem->healthyBonus, 0.0f, 50.0f);
+        ImGui::SliderFloat("Withered Penalty", &stem->witheredPenalty, 0.0f, 50.0f);
+
+        ImGui::Separator();
+        ImGui::Text("Parts Removed: %d", stem->partsRemoved);
+        ImGui::Text("Healthy: %d  Withered: %d", stem->healthyRemoved, stem->witheredRemoved);
+        if (stem->evaluated) {
+            ImGui::Text("Score: %.1f", stem->score);
+        } else {
+            ImGui::TextDisabled("Not evaluated yet");
+        }
+
+        if (ImGui::BeginPopupContextItem("FlowerStemContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::FlowerStemComponent>(entity);
             }
             ImGui::EndPopup();
         }

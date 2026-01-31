@@ -216,6 +216,12 @@ private:
     void DrawTagComponent(ECS::Entity entity);
     void DrawSpawnPointComponent(ECS::Entity entity);
 
+    // Flower components
+    void DrawJellyMeshComponent(ECS::Entity entity);
+    void DrawTetherComponent(ECS::Entity entity);
+    void DrawGrabbableComponent(ECS::Entity entity);
+    void DrawFlowerStemComponent(ECS::Entity entity);
+
     // Scene management
     void SaveScene(const std::string& path);
     void OpenScene(const std::string& path);
@@ -253,6 +259,7 @@ private:
     // Helper methods
     void ImportModel(const std::string& path);
     void HandleViewportPicking();
+    bool SceneHasMouseLookController() const;
     void DrawGizmos();
     void DrawGrid();
     void FocusOnEntity(ECS::Entity entity);  // Center camera on entity
@@ -382,6 +389,12 @@ private:
     UndoRedoManager m_UndoRedo;
     Math::Matrix4 m_GizmoStartTransform;
     bool m_GizmoDragging = false;
+
+    // Game View mouse interaction during play mode
+    bool m_GameViewMouseCaptured = false;
+    f32 m_GameViewImageMinX = 0.0f, m_GameViewImageMinY = 0.0f;
+    f32 m_GameViewImageMaxX = 0.0f, m_GameViewImageMaxY = 0.0f;
+    bool m_GameViewHovered = false;
 
     // Accessibility settings (persistent)
     EditorSettings m_EditorSettings;
