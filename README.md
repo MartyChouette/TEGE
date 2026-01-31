@@ -69,7 +69,7 @@ EnjinEngine/
 - [x] Water Rendering (waves, reflections, caustics)
 - [ ] Shadow Mapping (infrastructure created)
 - [ ] Texture Support (albedo, normal, roughness maps)
-- [ ] Environment Mapping / Skybox
+- [x] Environment Mapping / Skybox
 
 ### Phase 6: Production Features 🚧
 - [x] Scene Serialization (JSON save/load)
@@ -116,6 +116,26 @@ EnjinEngine/
 | Scale Gizmo | `R` |
 | Toggle Local/World | `Q` |
 | Import Model | File > Import Model |
+
+## Skybox
+
+The engine includes a dedicated Skybox panel (View > Skybox) for configuring the scene background.
+
+**Supported types:**
+- **None** - No skybox rendered
+- **Procedural** - Gradient sky with configurable top, horizon, and bottom colors plus sun direction
+- **Solid Color** - Single flat color fill
+- **Cubemap** - Six-face cubemap with individual texture paths (Right, Left, Top, Bottom, Front, Back)
+
+**Procedural presets:**
+Quick-apply presets that configure colors and sun direction in one click:
+- **Midday** - Bright blue sky with overhead sun
+- **Sunset** - Warm orange horizon with low sun
+- **Dawn** - Soft pinks and purples with rising sun
+- **Night** - Deep dark sky with sun below horizon
+- **Overcast** - Flat grey tones with diffused light
+
+All non-None types support a rotation slider (0-360 degrees) around the Y axis. Skybox configuration is persisted with scene save/load, including sun direction.
 
 ## Building
 
