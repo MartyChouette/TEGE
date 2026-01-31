@@ -978,11 +978,19 @@ void RenderSystem::RecreatePipelines() {
     m_ShadowPipeline.reset();
     m_Pipeline.reset();
 
+    // Destroy old descriptor pool (implicitly frees all descriptor sets allocated from it)
+    if (m_DescriptorPool != VK_NULL_HANDLE && m_Renderer && m_Renderer->GetContext()) {
+        vkDestroyDescriptorPool(m_Renderer->GetContext()->GetDevice(), m_DescriptorPool, nullptr);
+        m_DescriptorPool = VK_NULL_HANDLE;
+        m_DescriptorSets.clear();
+    }
+
     // Recreate main pipeline (creates new descriptor set layout)
     CreatePipeline();
 
-    // Recreate dependent pipelines that share the layout
+    // Recreate descriptor sets with the new pipeline's layout, then dependent pipelines
     if (m_Pipeline) {
+        CreateDescriptorSets();
         CreateLinePipeline();
         CreateShadowPipeline();
     }

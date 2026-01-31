@@ -1581,6 +1581,63 @@ void PostProcessing::Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFrame
         0, 0, nullptr, 0, nullptr, 1, &barrier);
 }
 
+void PostProcessing::ApplyToCurrentPass(VkCommandBuffer cmd, u32 width, u32 height) {
+    if (!m_Initialized || m_Pipeline == VK_NULL_HANDLE) {
+        return;
+    }
+
+    // Update settings with current screen dimensions
+    m_Settings.screenWidth = width;
+    m_Settings.screenHeight = height;
+
+    // Update uniform buffer with current settings
+    UpdateUniformBuffer();
+
+    // Set viewport and scissor for the output dimensions
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(width);
+    viewport.height = static_cast<f32>(height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(cmd, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = {width, height};
+    vkCmdSetScissor(cmd, 0, 1, &scissor);
+
+    // Bind post-process pipeline and descriptor set
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_PipelineLayout,
+        0, 1, &m_DescriptorSet, 0, nullptr);
+
+    // Draw fullscreen triangle
+    vkCmdDraw(cmd, 3, 1, 0, 0);
+}
+
+void PostProcessing::UpdateSourceImage(VkImageView imageView, VkSampler sampler) {
+    if (!m_Initialized || !m_Context || m_DescriptorSet == VK_NULL_HANDLE) {
+        return;
+    }
+
+    VkDescriptorImageInfo imageInfo{};
+    imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    imageInfo.imageView = imageView;
+    imageInfo.sampler = sampler;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_DescriptorSet;
+    write.dstBinding = 0;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    write.descriptorCount = 1;
+    write.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(), 1, &write, 0, nullptr);
+}
+
 void PostProcessing::SetEffectEnabled(PostProcessEffect effect, bool enabled) {
     if (enabled) {
         m_EnabledEffects = m_EnabledEffects | effect;

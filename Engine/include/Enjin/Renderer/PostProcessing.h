@@ -140,8 +140,15 @@ public:
     // Resize handling
     void OnResize(u32 width, u32 height);
 
-    // Apply post-processing to a rendered image
+    // Apply post-processing to a rendered image (uses internal scene render target)
     void Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFramebuffer targetFramebuffer);
+
+    // Apply post-processing within an already-active render pass using an external source image.
+    // Call UpdateSourceImage() first to bind the source texture, then call this inside a render pass.
+    void ApplyToCurrentPass(VkCommandBuffer cmd, u32 width, u32 height);
+
+    // Update the source image that post-processing reads from (rebinds descriptor set binding 0)
+    void UpdateSourceImage(VkImageView imageView, VkSampler sampler);
 
     // Settings
     PostProcessSettings& GetSettings() { return m_Settings; }

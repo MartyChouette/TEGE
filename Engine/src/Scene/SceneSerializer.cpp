@@ -10,6 +10,7 @@
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Logging/Log.h"
@@ -427,6 +428,30 @@ ECS::TemperatureZoneComponent DeserializeTemperatureZoneComponent(const json& j)
     return zone;
 }
 
+json SerializeGravityZoneComponent(const ECS::GravityZoneComponent& zone) {
+    json j;
+    j["shape"] = static_cast<u32>(zone.shape);
+    j["mode"] = static_cast<u32>(zone.mode);
+    j["halfExtents"] = SerializeVector3(zone.halfExtents);
+    j["gravityDirection"] = SerializeVector3(zone.gravityDirection);
+    j["gravityStrength"] = zone.gravityStrength;
+    j["priority"] = zone.priority;
+    j["isActive"] = zone.isActive;
+    return j;
+}
+
+ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
+    ECS::GravityZoneComponent zone;
+    if (j.contains("shape")) zone.shape = static_cast<ECS::GravityZoneShape>(j["shape"].get<u32>());
+    if (j.contains("mode")) zone.mode = static_cast<ECS::GravityZoneMode>(j["mode"].get<u32>());
+    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    zone.gravityDirection = DeserializeVector3(j["gravityDirection"]);
+    zone.gravityStrength = j["gravityStrength"].get<f32>();
+    zone.priority = j["priority"].get<i32>();
+    if (j.contains("isActive")) zone.isActive = j["isActive"].get<bool>();
+    return zone;
+}
+
 // Base controller fields helper
 json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     json j;
@@ -752,6 +777,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
             }
 
+            if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
+                entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
+            }
+
             // Character controllers
             if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
                 entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
@@ -931,6 +961,11 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("gravityZone")) {
+                auto zone = DeserializeGravityZoneComponent(entityJson["gravityZone"]);
+                m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
+            }
+
             // Character controllers
             if (entityJson.contains("platformer2D")) {
                 m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
@@ -1039,6 +1074,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
                 const auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
                 entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*zone);
+            }
+
+            if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
+                const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
+                entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
             }
 
             // Character controllers
@@ -1173,6 +1213,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("temperatureZone")) {
                 auto zone = DeserializeTemperatureZoneComponent(entityJson["temperatureZone"]);
                 m_World->AddComponent<ECS::TemperatureZoneComponent>(entity, zone);
+            }
+
+            if (entityJson.contains("gravityZone")) {
+                auto zone = DeserializeGravityZoneComponent(entityJson["gravityZone"]);
+                m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
             // Character controllers

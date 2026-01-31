@@ -221,10 +221,26 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Ground plane entity creation (Entity > Ground Plane menu)
 - Editor input locking during play mode (NoInputs on panels, shortcut suppression)
 - Skeletal animation (glTF skin/joint/animation import, GPU skinning via bone SSBO, auto-play)
+- Wind system with instanced grass and vegetation sway
+- Character controllers (Platformer 2D, Top-Down 2D/3D, Third Person, First Person)
+- Camera presets auto-configured per controller type
+- Gravity zones (per-entity gravity override with directional/point/zero-G modes)
+- Temperature zones (heat/cold environmental effects)
+- Camera trigger zones (camera override volumes)
+- In-game text rendering (TextComponent with stb_truetype rasterization to texture)
+- Entity clipboard (Cut/Copy/Paste via JSON serialization)
+- Startup template selector (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third Person, 3D First Person)
+- Custom template save/load from templates/ directory
+- Scene management system (SceneManager with project manifests, scene lists, build indices)
+- Scene transitions (Instant, Fade Black, Fade White, Cross Fade with configurable duration)
+- Project file format (.enjinproject JSON manifest)
+- Full inspector UI for all gameplay components (40+ component types)
+- Procedural level generation with room prefab system (JSON load/save, weighted selection)
 
 **Next Up:**
 - Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
 - AI/Navmesh integration (framework exists, needs gameplay logic)
+- Game build pipeline (packaging scenes + assets for standalone distribution)
 
 ## Common Tasks
 

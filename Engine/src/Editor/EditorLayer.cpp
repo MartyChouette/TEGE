@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
@@ -62,12 +63,37 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Wind system is always running (affects weather, vegetation, grass)
     // Will be connected to RenderSystem when SetRenderSystem is called
 
-    // Render target for Game View (offscreen rendering)
-    // Fixed size - no resize during frame to avoid Vulkan sync issues
+    // Render targets for Game View (offscreen rendering)
+    // Scene RT: raw scene output (input to post-processing)
+    // Game View RT: final post-processed output (displayed in ImGui)
+    m_SceneRenderTarget = std::make_unique<Renderer::RenderTarget>();
+    if (!m_SceneRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
+        ENJIN_LOG_WARN(Editor, "Failed to create Scene render target");
+        m_SceneRenderTarget.reset();
+    }
+
     m_GameViewRenderTarget = std::make_unique<Renderer::RenderTarget>();
     if (!m_GameViewRenderTarget->Create(renderer, m_GameViewWidth, m_GameViewHeight)) {
         ENJIN_LOG_WARN(Editor, "Failed to create Game View render target");
         m_GameViewRenderTarget.reset();
+    }
+
+    // Post-processing pipeline (applies effects from scene RT to game view RT)
+    if (m_GameViewRenderTarget && m_GameViewRenderTarget->IsValid()) {
+        m_PostProcessing = std::make_unique<Renderer::PostProcessing>();
+        if (!m_PostProcessing->Initialize(renderer->GetContext(),
+                m_GameViewRenderTarget->GetRenderPass(),
+                m_GameViewWidth, m_GameViewHeight)) {
+            ENJIN_LOG_WARN(Editor, "Failed to initialize post-processing");
+            m_PostProcessing.reset();
+        } else {
+            // Point post-processing at the scene render target's image
+            if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+                m_PostProcessing->UpdateSourceImage(
+                    m_SceneRenderTarget->GetColorImageView(),
+                    m_SceneRenderTarget->GetSampler());
+            }
+        }
     }
 
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
@@ -81,7 +107,17 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
-    // Destroy render target before ImGui (it uses ImGui textures)
+    // Destroy post-processing before render targets
+    if (m_PostProcessing) {
+        m_PostProcessing->Shutdown();
+        m_PostProcessing.reset();
+    }
+
+    // Destroy render targets before ImGui (they use ImGui textures)
+    if (m_SceneRenderTarget) {
+        m_SceneRenderTarget->Destroy();
+        m_SceneRenderTarget.reset();
+    }
     if (m_GameViewRenderTarget) {
         m_GameViewRenderTarget->Destroy();
         m_GameViewRenderTarget.reset();
@@ -114,18 +150,20 @@ void EditorLayer::Update(f32 deltaTime) {
     }
     m_FrameTimeAvg = sum / static_cast<f32>(FRAME_TIME_HISTORY_SIZE);
 
+    // Update scene transitions (fade in/out between scenes)
+    m_SceneManager.UpdateTransition(deltaTime);
+
     // Update wind system (always ticks, affects weather + vegetation + grass)
     m_WindSystem.Update(deltaTime);
     if (m_RenderSystem && !m_RenderSystem->GetWindSystem()) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
 
-    // Camera controller handles its own input - only fully disable when typing in a text field
-    // The camera controller checks for right-mouse before looking, so it's OK to leave it enabled
+    // Camera controller handles its own input - disable during play mode, text input, or gizmo use
     if (m_CameraController) {
-        // Only disable when user is typing in a text field or using gizmo
         bool usingGizmo = ImGuizmo::IsUsing();
-        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo);
+        bool inPlayMode = !m_PlayMode.IsStopped();
+        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && !inPlayMode);
 
         // Set orbit target to selected entity position for MMB orbit
         if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
@@ -219,6 +257,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Update play mode
     m_PlayMode.Update(deltaTime);
 
+    // Update post-processing time for animated effects (film grain, etc.)
+    if (m_PostProcessing) {
+        m_PostProcessing->Update(deltaTime);
+    }
+
     // Weather is now updated per-camera in Game View panel (see DrawGameViewPanel)
 
     // Update splash screen timer
@@ -226,6 +269,7 @@ void EditorLayer::Update(f32 deltaTime) {
         m_SplashTimer += deltaTime;
         if (m_SplashTimer >= m_SplashDuration) {
             m_ShowSplash = false;
+            LoadCustomTemplates();
             m_EditorFadeIn = 0.0f;  // Start editor fade-in
         }
     } else if (m_EditorFadeIn < 1.0f) {
@@ -299,23 +343,40 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_GameViewHeight = static_cast<u32>(io.DisplaySize.y);
     }
 
-    // Resize render target if game view panel dimensions changed
+    // Resize render targets if game view panel dimensions changed
     if (m_GameViewRenderTarget->GetWidth() != m_GameViewWidth ||
         m_GameViewRenderTarget->GetHeight() != m_GameViewHeight) {
         if (m_GameViewWidth > 0 && m_GameViewHeight > 0) {
+            if (m_SceneRenderTarget) {
+                m_SceneRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+            }
             m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
-            // Recreate effect pipelines for the (potentially new) render pass
+
+            // Determine which render pass to use for effect pipelines
+            VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
+                ? m_SceneRenderTarget->GetRenderPass()
+                : m_GameViewRenderTarget->GetRenderPass();
+
             if (m_RenderSystem) {
-                m_RenderSystem->RecreateEffectPipelinesForRenderPass(
-                    m_GameViewRenderTarget->GetRenderPass());
+                m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+            }
+
+            // Update post-processing: rebind source image and resize
+            if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+                m_PostProcessing->OnResize(m_GameViewWidth, m_GameViewHeight);
+                m_PostProcessing->UpdateSourceImage(
+                    m_SceneRenderTarget->GetColorImageView(),
+                    m_SceneRenderTarget->GetSampler());
             }
         }
     }
 
-    // One-shot: update effect pipelines for the render target's render pass
-    if (!m_EffectPipelinesUpdated && m_RenderSystem && m_GameViewRenderTarget->IsValid()) {
-        m_RenderSystem->RecreateEffectPipelinesForRenderPass(
-            m_GameViewRenderTarget->GetRenderPass());
+    // One-shot: update effect pipelines for the appropriate render target's render pass
+    if (!m_EffectPipelinesUpdated && m_RenderSystem) {
+        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
+            ? m_SceneRenderTarget->GetRenderPass()
+            : m_GameViewRenderTarget->GetRenderPass();
+        m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
         m_EffectPipelinesUpdated = true;
     }
 
@@ -571,22 +632,32 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Notify render system whether rain is active (drives water ripple shader)
     m_RenderSystem->SetRainActive(isRain);
 
-    // Begin render target pass and render scene geometry + effects
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
 
-    m_GameViewRenderTarget->Begin(commandBuffer);
-    m_RenderSystem->RenderToTarget(m_GameViewRenderTarget.get(), &gameCamera);
+    bool usePostProcessing = m_PostProcessing && m_PostProcessing->IsInitialized() &&
+                             m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
 
-    // Render grass inside the render target pass
+    // Choose render target: scene RT when post-processing is active, game view RT otherwise
+    Renderer::RenderTarget* sceneTarget = usePostProcessing
+        ? m_SceneRenderTarget.get()
+        : m_GameViewRenderTarget.get();
+
+    // Render scene + effects into the chosen target
+    sceneTarget->Begin(commandBuffer);
+    m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
     m_RenderSystem->RenderGrass(rtWidth, rtHeight);
-
-    // Render weather particles inside the render target pass
     if (hasWeatherParticles) {
         m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
     }
+    sceneTarget->End(commandBuffer);
 
-    m_GameViewRenderTarget->End(commandBuffer);
+    // Apply post-processing: read from scene RT, write to game view RT
+    if (usePostProcessing) {
+        m_GameViewRenderTarget->Begin(commandBuffer);
+        m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
+        m_GameViewRenderTarget->End(commandBuffer);
+    }
 }
 
 void EditorLayer::Render(VkCommandBuffer commandBuffer) {
@@ -602,6 +673,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // During splash screen, only render the splash
     if (m_ShowSplash) {
         DrawSplashScreen();
+        m_ImGuiLayer->EndFrame(commandBuffer);
+        return;
+    }
+
+    // Template selector (shown after splash, before editor)
+    if (m_ShowTemplateSelector) {
+        DrawTemplateSelector();
         m_ImGuiLayer->EndFrame(commandBuffer);
         return;
     }
@@ -684,6 +762,19 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
         DrawGameViewPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
+        ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), ImGuiCond_FirstUseEver);
+        DrawSceneListPanel();
+    }
+
+    // Draw scene transition overlay (fade to/from black/white)
+    if (m_SceneManager.IsTransitioning()) {
+        f32 alpha = m_SceneManager.GetTransitionAlpha();
+        ImU32 color = IM_COL32(0, 0, 0, static_cast<u8>(alpha * 255));
+        ImGui::GetForegroundDrawList()->AddRectFilled(
+            ImVec2(0, 0), io.DisplaySize, color);
     }
 
     // Draw gizmos for selected entity
@@ -855,6 +946,7 @@ void EditorLayer::DrawMenuBar() {
                     m_World->Clear();
                     m_SelectedEntity = ECS::INVALID_ENTITY;
                     m_CurrentScenePath.clear();
+                    m_ShowTemplateSelector = true;
                     ENJIN_LOG_INFO(Editor, "Created new scene");
                 }
             }
@@ -895,6 +987,65 @@ void EditorLayer::DrawMenuBar() {
                     SaveScene(path);
                 }
             }
+            if (ImGui::MenuItem("Save as Template...")) {
+                ImGui::OpenPopup("SaveTemplatePopup");
+            }
+            // The popup must be at this scope level to persist across frames
+            ImGui::Separator();
+
+            // Project operations
+            if (ImGui::MenuItem("New Project...")) {
+                m_SceneManager.NewProject("Untitled Project");
+                if (m_World) {
+                    m_World->Clear();
+                    m_SelectedEntity = ECS::INVALID_ENTITY;
+                    m_CurrentScenePath.clear();
+                    m_ShowTemplateSelector = true;
+                }
+                ENJIN_LOG_INFO(Editor, "Created new project");
+            }
+            if (ImGui::MenuItem("Open Project...")) {
+                std::vector<FileFilter> filters = {
+                    { "Enjin Project", "*.enjinproject" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::OpenFile("Open Project", filters);
+                if (!path.empty()) {
+                    if (m_SceneManager.LoadProject(path)) {
+                        ENJIN_LOG_INFO(Editor, "Loaded project: %s", m_SceneManager.GetProjectName().c_str());
+                        // Auto-load start scene if available
+                        if (m_SceneManager.GetSceneCount() > 0) {
+                            m_SceneManager.LoadStartScene();
+                        }
+                    }
+                }
+            }
+            if (ImGui::MenuItem("Save Project")) {
+                if (m_SceneManager.GetProjectPath().empty()) {
+                    std::vector<FileFilter> filters = {
+                        { "Enjin Project", "*.enjinproject" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
+                    if (!path.empty()) {
+                        m_SceneManager.SaveProject(path);
+                    }
+                } else {
+                    m_SceneManager.SaveProject();
+                }
+            }
+            if (ImGui::MenuItem("Save Project As...")) {
+                std::vector<FileFilter> filters = {
+                    { "Enjin Project", "*.enjinproject" },
+                    { "All Files", "*.*" }
+                };
+                std::string defaultName = m_SceneManager.GetProjectPath().empty() ? "project.enjinproject" :
+                    std::filesystem::path(m_SceneManager.GetProjectPath()).filename().string();
+                std::string path = FileDialog::SaveFile("Save Project As", filters, "", defaultName);
+                if (!path.empty()) {
+                    m_SceneManager.SaveProject(path);
+                }
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
                 std::vector<FileFilter> filters = {
@@ -916,12 +1067,38 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("Edit")) {
-            if (ImGui::MenuItem("Undo", "Ctrl+Z")) {}
-            if (ImGui::MenuItem("Redo", "Ctrl+Y")) {}
+            ImGui::MenuItem("Undo", "Ctrl+Z", false, false);  // Not yet implemented
+            ImGui::MenuItem("Redo", "Ctrl+Y", false, false);  // Not yet implemented
             ImGui::Separator();
-            if (ImGui::MenuItem("Cut", "Ctrl+X")) {}
-            if (ImGui::MenuItem("Copy", "Ctrl+C")) {}
-            if (ImGui::MenuItem("Paste", "Ctrl+V")) {}
+            bool hasSelection = m_SelectedEntity != ECS::INVALID_ENTITY && m_World;
+            if (ImGui::MenuItem("Cut", "Ctrl+X", false, hasSelection)) {
+                Scene::SceneSerializer serializer(m_World);
+                Scene::SerializationOptions opts;
+                opts.includeVertexData = true;
+                m_ClipboardEntityJson = serializer.SaveToString(opts);
+                m_ClipboardIsCut = true;
+                m_ClipboardSourceEntity = m_SelectedEntity;
+                DeleteSelectedEntity();
+            }
+            if (ImGui::MenuItem("Copy", "Ctrl+C", false, hasSelection)) {
+                Scene::SceneSerializer serializer(m_World);
+                Scene::SerializationOptions opts;
+                opts.includeVertexData = true;
+                m_ClipboardEntityJson = serializer.SaveToString(opts);
+                m_ClipboardIsCut = false;
+                m_ClipboardSourceEntity = m_SelectedEntity;
+            }
+            if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_ClipboardEntityJson.empty())) {
+                Scene::SceneSerializer serializer(m_World);
+                auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
+                if (result.success && result.rootEntity != ECS::INVALID_ENTITY) {
+                    m_SelectedEntity = result.rootEntity;
+                }
+                if (m_ClipboardIsCut) {
+                    m_ClipboardEntityJson.clear();
+                    m_ClipboardIsCut = false;
+                }
+            }
             ImGui::EndMenu();
         }
 
@@ -958,6 +1135,10 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Game View", nullptr, &gameView)) {
                 SetPanelVisibility(EditorPanel::GameView, gameView);
+            }
+            bool sceneList = IsPanelVisible(EditorPanel::SceneList);
+            if (ImGui::MenuItem("Scene List", nullptr, &sceneList)) {
+                SetPanelVisibility(EditorPanel::SceneList, sceneList);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
@@ -1285,6 +1466,30 @@ void EditorLayer::DrawMenuBar() {
         }
         ImGui::EndPopup();
     }
+
+    // Save as Template dialog
+    if (ImGui::BeginPopupModal("SaveTemplatePopup", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Save current scene as a reusable template.");
+        ImGui::Separator();
+
+        static char templateNameBuf[128] = "My Template";
+        ImGui::InputText("Template Name", templateNameBuf, sizeof(templateNameBuf));
+
+        ImGui::Spacing();
+        if (ImGui::Button("Save", ImVec2(120, 0))) {
+            std::string name(templateNameBuf);
+            if (!name.empty()) {
+                SaveCustomTemplate(name);
+                m_ConsoleLog.push_back("[Template] Saved template: " + name);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
 void EditorLayer::DrawHierarchyPanel() {
@@ -1457,6 +1662,11 @@ void EditorLayer::DrawInspectorPanel() {
             DrawTemperatureZoneComponent(m_SelectedEntity);
         }
 
+        // Gravity Zone component
+        if (m_World->HasComponent<ECS::GravityZoneComponent>(m_SelectedEntity)) {
+            DrawGravityZoneComponent(m_SelectedEntity);
+        }
+
         // Notes component
         if (m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
             DrawNotesComponent(m_SelectedEntity);
@@ -1494,8 +1704,57 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::BoxColliderComponent>(m_SelectedEntity)) {
             DrawBoxColliderComponent(m_SelectedEntity);
         }
+        if (m_World->HasComponent<ECS::SphereColliderComponent>(m_SelectedEntity)) {
+            DrawSphereColliderComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity)) {
+            DrawCapsuleColliderComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TriggerZoneComponent>(m_SelectedEntity)) {
+            DrawTriggerZoneComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::DamageComponent>(m_SelectedEntity)) {
+            DrawDamageComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::InteractableComponent>(m_SelectedEntity)) {
+            DrawInteractableComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::PickupComponent>(m_SelectedEntity)) {
+            DrawPickupComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::InventoryComponent>(m_SelectedEntity)) {
+            DrawInventoryComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::TimerComponent>(m_SelectedEntity)) {
+            DrawTimerComponent(m_SelectedEntity);
+        }
         if (m_World->HasComponent<ECS::AudioSourceComponent>(m_SelectedEntity)) {
             DrawAudioSourceComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::AudioListenerComponent>(m_SelectedEntity)) {
+            DrawAudioListenerComponent(m_SelectedEntity);
+        }
+
+        // AI components
+        if (m_World->HasComponent<ECS::AIControllerComponent>(m_SelectedEntity)) {
+            DrawAIControllerComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::FollowTargetComponent>(m_SelectedEntity)) {
+            DrawFollowTargetComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::LookAtTargetComponent>(m_SelectedEntity)) {
+            DrawLookAtTargetComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::WaypointComponent>(m_SelectedEntity)) {
+            DrawWaypointComponent(m_SelectedEntity);
+        }
+
+        // Visual components
+        if (m_World->HasComponent<ECS::BillboardComponent>(m_SelectedEntity)) {
+            DrawBillboardComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity)) {
+            DrawParticleEmitterComponent(m_SelectedEntity);
         }
 
         // 2D components
@@ -1511,8 +1770,19 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::StateMachineComponent>(m_SelectedEntity)) {
             DrawStateMachineComponent(m_SelectedEntity);
         }
+        if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity)) {
+            DrawCamera2DBoundsComponent(m_SelectedEntity);
+        }
         if (m_World->HasComponent<ECS::DialogueComponent>(m_SelectedEntity)) {
             DrawDialogueComponent(m_SelectedEntity);
+        }
+
+        // Other components
+        if (m_World->HasComponent<ECS::TagComponent>(m_SelectedEntity)) {
+            DrawTagComponent(m_SelectedEntity);
+        }
+        if (m_World->HasComponent<ECS::SpawnPointComponent>(m_SelectedEntity)) {
+            DrawSpawnPointComponent(m_SelectedEntity);
         }
 
         ImGui::Separator();
@@ -1560,26 +1830,31 @@ void EditorLayer::DrawInspectorPanel() {
                 if (!m_World->HasComponent<ECS::Platformer2DController>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("2D Platformer")) {
                         m_World->AddComponent<ECS::Platformer2DController>(m_SelectedEntity);
+                        SetupCameraForController(m_SelectedEntity, "Platformer2D");
                     }
                 }
                 if (!m_World->HasComponent<ECS::TopDown2DController>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("2D Top-Down")) {
                         m_World->AddComponent<ECS::TopDown2DController>(m_SelectedEntity);
+                        SetupCameraForController(m_SelectedEntity, "TopDown2D");
                     }
                 }
                 if (!m_World->HasComponent<ECS::TopDown3DController>(m_SelectedEntity)) {
-                    if (ImGui::MenuItem("3D Top-Down")) {
+                    if (ImGui::MenuItem("3D Top-Down (Isometric)")) {
                         m_World->AddComponent<ECS::TopDown3DController>(m_SelectedEntity);
+                        SetupCameraForController(m_SelectedEntity, "TopDown3D");
                     }
                 }
                 if (!m_World->HasComponent<ECS::ThirdPersonController>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("3D Third Person")) {
                         m_World->AddComponent<ECS::ThirdPersonController>(m_SelectedEntity);
+                        SetupCameraForController(m_SelectedEntity, "ThirdPerson");
                     }
                 }
                 if (!m_World->HasComponent<ECS::FirstPersonController>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("3D First Person")) {
                         m_World->AddComponent<ECS::FirstPersonController>(m_SelectedEntity);
+                        SetupCameraForController(m_SelectedEntity, "FirstPerson");
                     }
                 }
                 ImGui::EndMenu();
@@ -1735,6 +2010,11 @@ void EditorLayer::DrawInspectorPanel() {
                 if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity)) {
                     if (ImGui::MenuItem("Temperature Zone")) {
                         m_World->AddComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::GravityZoneComponent>(m_SelectedEntity)) {
+                    if (ImGui::MenuItem("Gravity Zone")) {
+                        m_World->AddComponent<ECS::GravityZoneComponent>(m_SelectedEntity);
                     }
                 }
                 ImGui::EndMenu();
@@ -2516,6 +2796,99 @@ void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Gravity Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
+        if (!zone) return;
+
+        ImGui::Checkbox("Active##GravZone", &zone->isActive);
+
+        // Shape selector
+        const char* shapes[] = { "Box", "Sphere" };
+        int shapeIdx = static_cast<int>(zone->shape);
+        if (ImGui::Combo("Shape##GravZone", &shapeIdx, shapes, 2)) {
+            zone->shape = static_cast<ECS::GravityZoneShape>(shapeIdx);
+        }
+
+        if (zone->shape == ECS::GravityZoneShape::Sphere) {
+            // Sphere: single radius
+            f32 radius = zone->halfExtents.x;
+            if (ImGui::DragFloat("Radius##GravZone", &radius, 0.5f, 0.1f, 500.0f)) {
+                zone->halfExtents = Math::Vector3(radius, radius, radius);
+            }
+        } else {
+            // Box: half-extents
+            f32 halfExt[3] = { zone->halfExtents.x, zone->halfExtents.y, zone->halfExtents.z };
+            if (ImGui::DragFloat3("Half Extents##GravZone", halfExt, 0.5f, 0.1f, 500.0f)) {
+                zone->halfExtents = Math::Vector3(halfExt[0], halfExt[1], halfExt[2]);
+            }
+        }
+
+        // Mode selector
+        const char* modes[] = { "Directional", "Point (Planetary)" };
+        int modeIdx = static_cast<int>(zone->mode);
+        if (ImGui::Combo("Mode##GravZone", &modeIdx, modes, 2)) {
+            zone->mode = static_cast<ECS::GravityZoneMode>(modeIdx);
+        }
+
+        if (zone->mode == ECS::GravityZoneMode::Directional) {
+            // Gravity direction
+            f32 dir[3] = { zone->gravityDirection.x, zone->gravityDirection.y, zone->gravityDirection.z };
+            if (ImGui::DragFloat3("Direction##GravZone", dir, 0.01f, -1.0f, 1.0f)) {
+                zone->gravityDirection = Math::Vector3(dir[0], dir[1], dir[2]);
+                f32 len = zone->gravityDirection.Length();
+                if (len > 0.001f) {
+                    zone->gravityDirection = zone->gravityDirection * (1.0f / len);
+                }
+            }
+
+            // Quick direction presets
+            ImGui::Text("Presets:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Down")) { zone->gravityDirection = Math::Vector3(0, -1, 0); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Up")) { zone->gravityDirection = Math::Vector3(0, 1, 0); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Left")) { zone->gravityDirection = Math::Vector3(-1, 0, 0); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Right")) { zone->gravityDirection = Math::Vector3(1, 0, 0); }
+        } else {
+            ImGui::TextDisabled("Gravity pulls toward this entity's position");
+            ImGui::TextDisabled("(Mario Galaxy-style planetary gravity)");
+
+            // For sphere shape + point mode, this is a classic planetary body
+            if (zone->shape == ECS::GravityZoneShape::Sphere) {
+                ImGui::TextDisabled("Tip: Use Sphere shape for natural planet gravity");
+            }
+        }
+
+        // Gravity strength
+        ImGui::DragFloat("Strength##GravZone", &zone->gravityStrength, 0.1f, 0.0f, 100.0f, "%.2f m/s^2");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Zero-G")) { zone->gravityStrength = 0.0f; }
+
+        // Planet presets (for point mode)
+        if (zone->mode == ECS::GravityZoneMode::Point) {
+            ImGui::Text("Planet Presets:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Earth##PP")) { zone->gravityStrength = 9.81f; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Moon##PP")) { zone->gravityStrength = 1.62f; }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Jupiter##PP")) { zone->gravityStrength = 24.79f; }
+        }
+
+        // Priority
+        ImGui::DragInt("Priority##GravZone", &zone->priority, 1, -100, 100);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Higher priority zones override lower ones when overlapping");
+
+        // Remove component
+        if (ImGui::Button("Remove##GravityZone")) {
+            m_World->RemoveComponent<ECS::GravityZoneComponent>(entity);
+        }
+    }
+}
+
 void EditorLayer::DrawConsolePanel() {
     ImGui::Begin("Console");
 
@@ -3006,6 +3379,33 @@ void EditorLayer::DrawSettingsPanel() {
         } else {
             ImGui::TextDisabled("PostProcessing not available");
         }
+    }
+
+    if (ImGui::CollapsingHeader("Physics")) {
+        Physics::SimplePhysics* physics = m_PlayMode.GetPhysics();
+        Math::Vector3 gravity = physics->GetGravity();
+
+        f32 grav[3] = { gravity.x, gravity.y, gravity.z };
+        if (ImGui::DragFloat3("Global Gravity", grav, 0.1f, -100.0f, 100.0f)) {
+            physics->SetGravity(Math::Vector3(grav[0], grav[1], grav[2]));
+        }
+
+        // Quick presets
+        ImGui::Text("Presets:");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Earth")) { physics->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Moon")) { physics->SetGravity(Math::Vector3(0.0f, -1.62f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Mars")) { physics->SetGravity(Math::Vector3(0.0f, -3.72f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Zero")) { physics->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f)); }
+
+        f32 strength = physics->GetGravity().Length();
+        ImGui::TextDisabled("Strength: %.2f m/s^2", strength);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
     }
 
     if (ImGui::CollapsingHeader("Gamepad")) {
@@ -3805,6 +4205,230 @@ void EditorLayer::DrawGameViewPanel() {
     ImGui::End();
 }
 
+void EditorLayer::DrawSceneListPanel() {
+    ImGui::Begin("Scene List", nullptr, ImGuiWindowFlags_None);
+
+    // Project header
+    ImGui::Text("Project: %s", m_SceneManager.GetProjectName().c_str());
+    if (!m_SceneManager.GetProjectPath().empty()) {
+        ImGui::TextDisabled("%s", m_SceneManager.GetProjectPath().c_str());
+    } else {
+        ImGui::TextDisabled("(No project file)");
+    }
+    ImGui::Separator();
+
+    // Project name editing
+    static char projectNameBuf[256] = {};
+    if (projectNameBuf[0] == '\0') {
+        std::strncpy(projectNameBuf, m_SceneManager.GetProjectName().c_str(), sizeof(projectNameBuf) - 1);
+    }
+    if (ImGui::InputText("Project Name", projectNameBuf, sizeof(projectNameBuf), ImGuiInputTextFlags_EnterReturnsTrue)) {
+        m_SceneManager.SetProjectName(projectNameBuf);
+    }
+    ImGui::Separator();
+
+    // Scene list header with add button
+    ImGui::Text("Scenes (%zu)", m_SceneManager.GetSceneCount());
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ Add Current Scene")) {
+        // Add current scene to the project
+        std::string sceneName = "Unnamed Scene";
+        if (!m_CurrentScenePath.empty()) {
+            sceneName = std::filesystem::path(m_CurrentScenePath).stem().string();
+        }
+        std::string scenePath = m_CurrentScenePath;
+        if (scenePath.empty()) {
+            // Prompt to save first
+            std::vector<FileFilter> filters = {
+                { "Enjin Scene", "*.enjin" },
+                { "All Files", "*.*" }
+            };
+            scenePath = FileDialog::SaveFile("Save Scene to Add", filters, "", "scene.enjin");
+            if (!scenePath.empty()) {
+                SaveScene(scenePath);
+                sceneName = std::filesystem::path(scenePath).stem().string();
+            }
+        }
+        if (!scenePath.empty()) {
+            // Use path relative to project root if possible
+            std::string relativePath = scenePath;
+            std::string projectRoot = m_SceneManager.GetProjectPath().empty() ? "" :
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+            if (!projectRoot.empty()) {
+                std::filesystem::path absScene = std::filesystem::absolute(scenePath);
+                std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
+                auto rel = std::filesystem::relative(absScene, absRoot);
+                if (!rel.empty() && rel.string().find("..") == std::string::npos) {
+                    relativePath = rel.string();
+                }
+            }
+            m_SceneManager.AddScene(sceneName, relativePath);
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ Add Scene File...")) {
+        std::vector<FileFilter> filters = {
+            { "Enjin Scene", "*.enjin" },
+            { "All Files", "*.*" }
+        };
+        std::string path = FileDialog::OpenFile("Add Scene to Project", filters);
+        if (!path.empty()) {
+            std::string name = std::filesystem::path(path).stem().string();
+            std::string relativePath = path;
+            std::string projectRoot = m_SceneManager.GetProjectPath().empty() ? "" :
+                std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+            if (!projectRoot.empty()) {
+                std::filesystem::path absScene = std::filesystem::absolute(path);
+                std::filesystem::path absRoot = std::filesystem::absolute(projectRoot);
+                auto rel = std::filesystem::relative(absScene, absRoot);
+                if (!rel.empty() && rel.string().find("..") == std::string::npos) {
+                    relativePath = rel.string();
+                }
+            }
+            m_SceneManager.AddScene(name, relativePath);
+        }
+    }
+
+    ImGui::Separator();
+
+    // Scene list
+    auto& scenes = m_SceneManager.GetScenes();
+    i32 removeIndex = -1;
+    i32 moveFromIdx = -1;
+    i32 moveToIdx = -1;
+    i32 setStartIdx = -1;
+
+    for (usize i = 0; i < scenes.size(); ++i) {
+        auto& scene = scenes[i];
+        ImGui::PushID(static_cast<int>(i));
+
+        // Build index badge
+        if (scene.isStartScene) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.2f, 1.0f, 0.2f, 1.0f));
+            ImGui::Text("[Start]");
+            ImGui::PopStyleColor();
+        } else {
+            ImGui::Text("[%d]", scene.buildIndex);
+        }
+        ImGui::SameLine();
+
+        // Selectable scene name
+        bool isCurrent = (m_SceneManager.GetCurrentSceneName() == scene.name);
+        if (isCurrent) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.9f, 0.3f, 1.0f));
+        }
+
+        bool selected = false;
+        if (ImGui::Selectable(scene.name.c_str(), &selected, ImGuiSelectableFlags_AllowDoubleClick)) {
+            if (ImGui::IsMouseDoubleClicked(0)) {
+                // Double click to load scene
+                m_SceneManager.LoadScene(scene.name);
+            }
+        }
+        if (isCurrent) {
+            ImGui::PopStyleColor();
+        }
+
+        // Tooltip showing file path
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Path: %s\nBuild Index: %d\nDouble-click to load", scene.path.c_str(), scene.buildIndex);
+        }
+
+        // Context menu
+        if (ImGui::BeginPopupContextItem("SceneContextMenu")) {
+            if (ImGui::MenuItem("Load")) {
+                m_SceneManager.LoadScene(scene.name);
+            }
+            if (ImGui::MenuItem("Load Additive")) {
+                m_SceneManager.LoadSceneAdditive(scene.name);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Set as Start Scene")) {
+                setStartIdx = static_cast<i32>(i);
+            }
+            ImGui::Separator();
+            if (i > 0 && ImGui::MenuItem("Move Up")) {
+                moveFromIdx = static_cast<i32>(i);
+                moveToIdx = static_cast<i32>(i - 1);
+            }
+            if (i < scenes.size() - 1 && ImGui::MenuItem("Move Down")) {
+                moveFromIdx = static_cast<i32>(i);
+                moveToIdx = static_cast<i32>(i + 1);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Remove from Project")) {
+                removeIndex = static_cast<i32>(i);
+            }
+            ImGui::EndPopup();
+        }
+
+        ImGui::PopID();
+    }
+
+    // Apply deferred operations
+    if (setStartIdx >= 0) {
+        m_SceneManager.SetStartScene(static_cast<usize>(setStartIdx));
+    }
+    if (moveFromIdx >= 0 && moveToIdx >= 0) {
+        m_SceneManager.MoveScene(static_cast<usize>(moveFromIdx), static_cast<usize>(moveToIdx));
+    }
+    if (removeIndex >= 0) {
+        m_SceneManager.RemoveScene(static_cast<usize>(removeIndex));
+    }
+
+    ImGui::Separator();
+
+    // Auto-assign build indices button
+    if (ImGui::Button("Auto-Assign Build Indices")) {
+        m_SceneManager.AutoAssignBuildIndices();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Save Project")) {
+        if (m_SceneManager.GetProjectPath().empty()) {
+            std::vector<FileFilter> filters = {
+                { "Enjin Project", "*.enjinproject" },
+                { "All Files", "*.*" }
+            };
+            std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
+            if (!path.empty()) {
+                m_SceneManager.SaveProject(path);
+            }
+        } else {
+            m_SceneManager.SaveProject();
+        }
+    }
+
+    ImGui::Separator();
+
+    // Scene transition controls
+    ImGui::Text("Scene Transitions");
+    static int transType = 0;
+    ImGui::Combo("Transition", &transType, "Instant\0Fade Black\0Fade White\0Cross Fade\0");
+    static float transDuration = 0.5f;
+    ImGui::SliderFloat("Duration", &transDuration, 0.1f, 3.0f, "%.1f s");
+
+    if (m_SceneManager.IsTransitioning()) {
+        ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "Transitioning... (%.0f%%)",
+            m_SceneManager.GetTransitionAlpha() * 100.0f);
+    }
+
+    // Quick load buttons for each scene
+    if (scenes.size() > 0) {
+        ImGui::Text("Quick Load:");
+        for (usize i = 0; i < scenes.size(); ++i) {
+            if (i > 0) ImGui::SameLine();
+            ImGui::PushID(static_cast<int>(i) + 1000);
+            if (ImGui::SmallButton(scenes[i].name.c_str())) {
+                Scene::TransitionType tt = static_cast<Scene::TransitionType>(transType);
+                m_SceneManager.LoadSceneWithTransition(scenes[i].name, tt, transDuration);
+            }
+            ImGui::PopID();
+        }
+    }
+
+    ImGui::End();
+}
+
 void EditorLayer::DrawStatsOverlay() {
     const float DISTANCE = 10.0f;
     ImGuiIO& io = ImGui::GetIO();
@@ -3974,6 +4598,407 @@ void EditorLayer::DrawSplashScreen() {
 
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
+}
+
+void EditorLayer::DrawTemplateSelector() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Full-screen dark background
+    ImGui::SetNextWindowPos(ImVec2(0, 0));
+    ImGui::SetNextWindowSize(io.DisplaySize);
+    ImGui::SetNextWindowBgAlpha(0.97f);
+
+    ImGuiWindowFlags bgFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.08f, 0.08f, 0.10f, 1.0f));
+
+    if (ImGui::Begin("##TemplateBackground", nullptr, bgFlags)) {
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+        // Title
+        const char* title = "NEW PROJECT";
+        ImVec2 titleSize = ImGui::CalcTextSize(title);
+        f32 titleScale = 2.0f;
+        ImVec2 titlePos(io.DisplaySize.x * 0.5f - titleSize.x * titleScale * 0.5f, 40.0f);
+        drawList->AddText(nullptr, 14.0f * titleScale, titlePos,
+            IM_COL32(200, 210, 255, 255), title);
+
+        const char* subtitle = "Choose a template to get started, or select a saved template";
+        ImVec2 subtitleSize = ImGui::CalcTextSize(subtitle);
+        drawList->AddText(
+            ImVec2(io.DisplaySize.x * 0.5f - subtitleSize.x * 0.5f, 40.0f + 14.0f * titleScale + 15.0f),
+            IM_COL32(120, 130, 160, 200), subtitle);
+
+        // Template card layout
+        struct TemplateInfo {
+            const char* id;
+            const char* name;
+            const char* description;
+            ImVec4 accentColor;
+        };
+
+        TemplateInfo builtinTemplates[] = {
+            { "blank",       "Blank",           "Empty scene\nStart from scratch",                    ImVec4(0.5f, 0.5f, 0.5f, 1.0f) },
+            { "platformer",  "2D Platformer",   "Side-scrolling\nOrtho camera + player",              ImVec4(0.3f, 0.8f, 0.3f, 1.0f) },
+            { "topdown2d",   "2D Top-Down",     "Top-down view\nOrtho camera + player",               ImVec4(0.3f, 0.6f, 0.9f, 1.0f) },
+            { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f) },
+            { "thirdperson", "3D Third Person",  "Over-the-shoulder\nPerspective + player",            ImVec4(0.8f, 0.3f, 0.3f, 1.0f) },
+            { "firstperson", "3D First Person",  "Eye-level FPS\nPerspective + player",                ImVec4(0.7f, 0.3f, 0.8f, 1.0f) },
+        };
+        int builtinCount = 6;
+
+        f32 cardW = 180.0f;
+        f32 cardH = 140.0f;
+        f32 cardPad = 15.0f;
+        f32 startY = 130.0f;
+
+        // Calculate total cards per row
+        int totalCards = builtinCount + static_cast<int>(m_CustomTemplateNames.size());
+        f32 totalWidth = totalCards * (cardW + cardPad) - cardPad;
+        f32 maxRowWidth = io.DisplaySize.x - 60.0f;
+
+        // Layout cards in rows
+        int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
+        if (cardsPerRow < 1) cardsPerRow = 1;
+
+        bool templateChosen = false;
+        std::string chosenTemplate;
+
+        // Draw builtin templates
+        for (int i = 0; i < builtinCount; ++i) {
+            int row = i / cardsPerRow;
+            int col = i % cardsPerRow;
+            int itemsInRow = (row < (builtinCount + (int)m_CustomTemplateNames.size()) / cardsPerRow)
+                ? cardsPerRow
+                : ((builtinCount + (int)m_CustomTemplateNames.size()) % cardsPerRow);
+            if (itemsInRow == 0) itemsInRow = cardsPerRow;
+
+            f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
+            f32 rowStartX = (io.DisplaySize.x - rowWidth) * 0.5f;
+
+            ImVec2 cardPos(rowStartX + col * (cardW + cardPad), startY + row * (cardH + cardPad));
+            ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
+
+            // Hit test
+            bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
+                           io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
+
+            // Card background
+            ImU32 bgCol = hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255);
+            drawList->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+
+            // Accent bar at top
+            ImVec4 accent = builtinTemplates[i].accentColor;
+            ImU32 accentCol = IM_COL32(
+                (int)(accent.x * 255), (int)(accent.y * 255),
+                (int)(accent.z * 255), hovered ? 255 : 180);
+            drawList->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+
+            // Border
+            ImU32 borderCol = hovered ? accentCol : IM_COL32(60, 65, 80, 150);
+            drawList->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
+
+            // Template name
+            ImVec2 nameSize = ImGui::CalcTextSize(builtinTemplates[i].name);
+            drawList->AddText(
+                ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 18.0f),
+                IM_COL32(220, 225, 245, 255), builtinTemplates[i].name);
+
+            // Description (centered, multi-line)
+            const char* desc = builtinTemplates[i].description;
+            // Split by \n and draw each line
+            std::string descStr(desc);
+            f32 lineY = cardPos.y + 50.0f;
+            std::istringstream iss(descStr);
+            std::string line;
+            while (std::getline(iss, line, '\n')) {
+                ImVec2 lineSize = ImGui::CalcTextSize(line.c_str());
+                drawList->AddText(
+                    ImVec2(cardPos.x + (cardW - lineSize.x) * 0.5f, lineY),
+                    IM_COL32(140, 145, 165, 200), line.c_str());
+                lineY += 18.0f;
+            }
+
+            // Click handler
+            if (hovered && ImGui::IsMouseClicked(0)) {
+                templateChosen = true;
+                chosenTemplate = builtinTemplates[i].id;
+            }
+        }
+
+        // Draw custom templates
+        for (int i = 0; i < static_cast<int>(m_CustomTemplateNames.size()); ++i) {
+            int idx = builtinCount + i;
+            int row = idx / cardsPerRow;
+            int col = idx % cardsPerRow;
+            int totalInRow = cardsPerRow;
+            int remaining = totalCards - row * cardsPerRow;
+            if (remaining < cardsPerRow) totalInRow = remaining;
+
+            f32 rowWidth = totalInRow * (cardW + cardPad) - cardPad;
+            f32 rowStartX = (io.DisplaySize.x - rowWidth) * 0.5f;
+
+            ImVec2 cardPos(rowStartX + col * (cardW + cardPad), startY + row * (cardH + cardPad));
+            ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
+
+            bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
+                           io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
+
+            ImU32 bgCol = hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255);
+            drawList->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+
+            // Custom template accent (teal)
+            ImU32 accentCol = hovered ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
+            drawList->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+
+            ImU32 borderCol = hovered ? accentCol : IM_COL32(60, 65, 80, 150);
+            drawList->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
+
+            // Name
+            ImVec2 nameSize = ImGui::CalcTextSize(m_CustomTemplateNames[i].c_str());
+            drawList->AddText(
+                ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 18.0f),
+                IM_COL32(220, 225, 245, 255), m_CustomTemplateNames[i].c_str());
+
+            // "Custom Template" label
+            const char* customLabel = "Custom Template";
+            ImVec2 labelSize = ImGui::CalcTextSize(customLabel);
+            drawList->AddText(
+                ImVec2(cardPos.x + (cardW - labelSize.x) * 0.5f, cardPos.y + 55.0f),
+                IM_COL32(0, 180, 160, 200), customLabel);
+
+            if (hovered && ImGui::IsMouseClicked(0)) {
+                templateChosen = true;
+                chosenTemplate = "custom:" + std::to_string(i);
+            }
+        }
+
+        // Bottom bar with "Save Current as Template" and "Open Scene" buttons
+        f32 bottomY = io.DisplaySize.y - 60.0f;
+        drawList->AddLine(ImVec2(30, bottomY - 15), ImVec2(io.DisplaySize.x - 30, bottomY - 15),
+            IM_COL32(60, 65, 80, 150), 1.0f);
+
+        // Position buttons
+        ImGui::SetCursorPos(ImVec2(io.DisplaySize.x * 0.5f - 170.0f, bottomY));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.16f, 0.2f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.22f, 0.24f, 0.3f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.2f, 0.25f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.75f, 0.78f, 0.85f, 1.0f));
+
+        if (ImGui::Button("Open Existing Scene...", ImVec2(160, 30))) {
+            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
+            std::string path = FileDialog::OpenFile("Open Scene", filters);
+            if (!path.empty()) {
+                m_ShowTemplateSelector = false;
+                OpenScene(path);
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Skip (Empty Scene)", ImVec2(160, 30))) {
+            m_ShowTemplateSelector = false;
+        }
+
+        ImGui::PopStyleColor(4);
+
+        // Apply chosen template
+        if (templateChosen) {
+            m_ShowTemplateSelector = false;
+            ApplyTemplate(chosenTemplate);
+        }
+    }
+    ImGui::End();
+
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+}
+
+void EditorLayer::ApplyTemplate(const std::string& templateId) {
+    if (!m_World) return;
+
+    // Clear existing scene
+    m_World->Clear();
+    m_SelectedEntity = ECS::INVALID_ENTITY;
+
+    // Handle custom templates
+    if (templateId.substr(0, 7) == "custom:") {
+        int idx = std::stoi(templateId.substr(7));
+        if (idx >= 0 && idx < static_cast<int>(m_CustomTemplatePaths.size())) {
+            OpenScene(m_CustomTemplatePaths[idx]);
+        }
+        return;
+    }
+
+    if (templateId == "blank") {
+        // Just a directional light so the scene isn't dark
+        ECS::Entity light = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(light, "Directional Light");
+        auto& lightTransform = m_World->AddComponent<ECS::TransformComponent>(light);
+        lightTransform.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+        lightTransform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+        auto& lightComp = m_World->AddComponent<ECS::LightComponent>(light);
+        lightComp.type = ECS::LightType::Directional;
+        lightComp.intensity = 1.0f;
+        return;
+    }
+
+    // --- Common setup: ground plane ---
+    auto createGround = [&]() -> ECS::Entity {
+        ECS::Entity ground = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+        auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+        gt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        gt.scale = Math::Vector3(50.0f, 0.1f, 50.0f);
+        auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+        gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+        gmat.roughness = 0.9f;
+
+        // Create a simple cube mesh for the ground
+        m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+
+        auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
+        col.size = Math::Vector3(50.0f, 0.1f, 50.0f);
+        return ground;
+    };
+
+    // --- Common: directional light ---
+    auto createLight = [&]() -> ECS::Entity {
+        ECS::Entity light = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+        auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+        lt.position = Math::Vector3(0.0f, 15.0f, 10.0f);
+        lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+        auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+        lc.type = ECS::LightType::Directional;
+        lc.intensity = 1.0f;
+        lc.castShadows = true;
+        return light;
+    };
+
+    // --- Common: player entity with mesh ---
+    auto createPlayer = [&](const std::string& name) -> ECS::Entity {
+        ECS::Entity player = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(player, name);
+        auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+        pt.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+        auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
+        pmat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
+        m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCube(1.0f));
+        return player;
+    };
+
+    createLight();
+
+    if (templateId == "platformer") {
+        createGround();
+        ECS::Entity player = createPlayer("Player");
+        auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.jumpForce = 10.0f;
+        SetupCameraForController(player, "Platformer2D");
+
+    } else if (templateId == "topdown2d") {
+        createGround();
+        ECS::Entity player = createPlayer("Player");
+        auto& ctrl = m_World->AddComponent<ECS::TopDown2DController>(player);
+        ctrl.moveSpeed = 5.0f;
+        SetupCameraForController(player, "TopDown2D");
+
+    } else if (templateId == "isometric") {
+        createGround();
+        ECS::Entity player = createPlayer("Player");
+        auto& ctrl = m_World->AddComponent<ECS::TopDown3DController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.cameraAngle = 45.0f;
+        ctrl.cameraDistance = 15.0f;
+        SetupCameraForController(player, "TopDown3D");
+
+    } else if (templateId == "thirdperson") {
+        createGround();
+        ECS::Entity player = createPlayer("Player");
+        auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.cameraDistance = 5.0f;
+        ctrl.cameraHeight = 2.0f;
+        SetupCameraForController(player, "ThirdPerson");
+
+    } else if (templateId == "firstperson") {
+        createGround();
+        ECS::Entity player = createPlayer("Player");
+        auto* pt = m_World->GetComponent<ECS::TransformComponent>(player);
+        if (pt) pt->position.y = 1.7f;  // Eye height
+        auto& ctrl = m_World->AddComponent<ECS::FirstPersonController>(player);
+        ctrl.moveSpeed = 5.0f;
+        ctrl.mouseSensitivity = 0.15f;
+        SetupCameraForController(player, "FirstPerson");
+    }
+
+    m_CurrentScenePath.clear();
+    ENJIN_LOG_INFO(Editor, "Applied template: %s", templateId.c_str());
+}
+
+void EditorLayer::SaveCustomTemplate(const std::string& name) {
+    if (!m_World) return;
+
+    // Create templates directory next to the executable
+    std::filesystem::path templateDir = "templates";
+    std::filesystem::create_directories(templateDir);
+
+    // Sanitize name for filename
+    std::string safeName = name;
+    for (char& c : safeName) {
+        if (c == ' ' || c == '/' || c == '\\' || c == ':' || c == '*' ||
+            c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
+            c = '_';
+        }
+    }
+
+    std::string filepath = (templateDir / (safeName + ".enjin")).string();
+
+    Scene::SceneSerializer serializer(m_World);
+    Scene::SerializationOptions opts;
+    opts.includeVertexData = true;
+    auto result = serializer.Save(filepath, opts);
+
+    if (result.success) {
+        // Add to the custom templates list if not already present
+        bool found = false;
+        for (const auto& n : m_CustomTemplateNames) {
+            if (n == name) { found = true; break; }
+        }
+        if (!found) {
+            m_CustomTemplateNames.push_back(name);
+            m_CustomTemplatePaths.push_back(filepath);
+        }
+        ENJIN_LOG_INFO(Editor, "Saved custom template: %s -> %s", name.c_str(), filepath.c_str());
+    }
+}
+
+void EditorLayer::LoadCustomTemplates() {
+    m_CustomTemplateNames.clear();
+    m_CustomTemplatePaths.clear();
+
+    std::filesystem::path templateDir = "templates";
+    if (!std::filesystem::exists(templateDir)) return;
+
+    for (const auto& entry : std::filesystem::directory_iterator(templateDir)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".enjin") {
+            std::string name = entry.path().stem().string();
+            // Replace underscores with spaces for display
+            for (char& c : name) {
+                if (c == '_') c = ' ';
+            }
+            m_CustomTemplateNames.push_back(name);
+            m_CustomTemplatePaths.push_back(entry.path().string());
+        }
+    }
+
+    if (!m_CustomTemplateNames.empty()) {
+        ENJIN_LOG_INFO(Editor, "Found %zu custom templates", m_CustomTemplateNames.size());
+    }
 }
 
 void EditorLayer::ImportModel(const std::string& path) {
@@ -5120,6 +6145,721 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
     }
 }
 
+void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Sphere Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* col = m_World->GetComponent<ECS::SphereColliderComponent>(entity);
+        if (!col) return;
+
+        f32 center[3] = { col->center.x, col->center.y, col->center.z };
+        if (ImGui::DragFloat3("Center", center, 0.1f)) {
+            col->center = Math::Vector3(center[0], center[1], center[2]);
+        }
+
+        ImGui::DragFloat("Radius", &col->radius, 0.05f, 0.001f, 1000.0f);
+        ImGui::Checkbox("Is Trigger", &col->isTrigger);
+
+        if (ImGui::TreeNode("Physics Material")) {
+            ImGui::DragFloat("Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Collision Filtering")) {
+            int layer = static_cast<int>(col->layer);
+            if (ImGui::InputInt("Layer", &layer)) {
+                col->layer = static_cast<u32>(layer);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("SphereColliderContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::SphereColliderComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Capsule Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* col = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity);
+        if (!col) return;
+
+        f32 center[3] = { col->center.x, col->center.y, col->center.z };
+        if (ImGui::DragFloat3("Center", center, 0.1f)) {
+            col->center = Math::Vector3(center[0], center[1], center[2]);
+        }
+
+        ImGui::DragFloat("Radius", &col->radius, 0.05f, 0.001f, 100.0f);
+        ImGui::DragFloat("Height", &col->height, 0.1f, 0.001f, 100.0f);
+
+        const char* directions[] = { "X", "Y", "Z" };
+        int dir = static_cast<int>(col->direction);
+        if (ImGui::Combo("Direction", &dir, directions, 3)) {
+            col->direction = static_cast<ECS::CapsuleColliderComponent::Direction>(dir);
+        }
+
+        ImGui::Checkbox("Is Trigger", &col->isTrigger);
+
+        if (ImGui::TreeNode("Physics Material")) {
+            ImGui::DragFloat("Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("CapsuleColliderContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::CapsuleColliderComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawTriggerZoneComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Trigger Zone", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* zone = m_World->GetComponent<ECS::TriggerZoneComponent>(entity);
+        if (!zone) return;
+
+        const char* shapes[] = { "Box", "Sphere" };
+        int shape = static_cast<int>(zone->shape);
+        if (ImGui::Combo("Shape", &shape, shapes, 2)) {
+            zone->shape = static_cast<ECS::TriggerZoneComponent::Shape>(shape);
+        }
+
+        if (zone->shape == ECS::TriggerZoneComponent::Shape::Box) {
+            f32 size[3] = { zone->boxSize.x, zone->boxSize.y, zone->boxSize.z };
+            if (ImGui::DragFloat3("Box Size", size, 0.1f, 0.01f, 1000.0f)) {
+                zone->boxSize = Math::Vector3(size[0], size[1], size[2]);
+            }
+        } else {
+            ImGui::DragFloat("Sphere Radius", &zone->sphereRadius, 0.1f, 0.01f, 1000.0f);
+        }
+
+        ImGui::Checkbox("Trigger Once", &zone->triggerOnce);
+        if (zone->triggerOnce) {
+            ImGui::SameLine();
+            ImGui::Text("(%s)", zone->hasTriggered ? "Triggered" : "Not triggered");
+        }
+
+        ImGui::Text("Entities Inside: %zu", zone->entitiesInside.size());
+
+        if (ImGui::BeginPopupContextItem("TriggerZoneContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::TriggerZoneComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Damage", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* dmg = m_World->GetComponent<ECS::DamageComponent>(entity);
+        if (!dmg) return;
+
+        ImGui::DragFloat("Damage", &dmg->damage, 0.5f, 0.0f, 10000.0f);
+        ImGui::DragFloat("Knockback Force", &dmg->knockbackForce, 0.5f, 0.0f, 1000.0f);
+
+        const char* types[] = { "Physical", "Fire", "Ice", "Electric", "Poison", "Magic" };
+        int type = static_cast<int>(dmg->type);
+        if (ImGui::Combo("Damage Type", &type, types, 6)) {
+            dmg->type = static_cast<ECS::DamageComponent::DamageType>(type);
+        }
+
+        ImGui::Checkbox("Destroy On Hit", &dmg->destroyOnHit);
+        ImGui::Checkbox("Damage Once Per Entity", &dmg->damageOnce);
+
+        if (!dmg->damageOnce) {
+            ImGui::DragFloat("Damage Interval", &dmg->damageInterval, 0.1f, 0.0f, 10.0f);
+        }
+
+        if (ImGui::BeginPopupContextItem("DamageContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::DamageComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Interactable", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* inter = m_World->GetComponent<ECS::InteractableComponent>(entity);
+        if (!inter) return;
+
+        char promptBuffer[256];
+        strncpy(promptBuffer, inter->promptText.c_str(), sizeof(promptBuffer) - 1);
+        promptBuffer[sizeof(promptBuffer) - 1] = '\0';
+        if (ImGui::InputText("Prompt Text", promptBuffer, sizeof(promptBuffer))) {
+            inter->promptText = promptBuffer;
+        }
+
+        ImGui::DragFloat("Interaction Range", &inter->interactionRange, 0.1f, 0.1f, 50.0f);
+        ImGui::Checkbox("Requires Look At", &inter->requiresLookAt);
+        if (inter->requiresLookAt) {
+            ImGui::DragFloat("Look At Angle", &inter->lookAtAngle, 1.0f, 1.0f, 180.0f);
+        }
+
+        ImGui::Checkbox("Enabled", &inter->isEnabled);
+        ImGui::Checkbox("Single Use", &inter->singleUse);
+        if (inter->singleUse) {
+            ImGui::SameLine();
+            ImGui::Text("(%s)", inter->hasBeenUsed ? "Used" : "Available");
+        }
+
+        ImGui::Checkbox("Highlight On Hover", &inter->highlightOnHover);
+        if (inter->highlightOnHover) {
+            f32 col[3] = { inter->highlightColor.x, inter->highlightColor.y, inter->highlightColor.z };
+            if (ImGui::ColorEdit3("Highlight Color", col)) {
+                inter->highlightColor = Math::Vector3(col[0], col[1], col[2]);
+            }
+        }
+
+        if (ImGui::BeginPopupContextItem("InteractableContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::InteractableComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawPickupComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Pickup", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* pickup = m_World->GetComponent<ECS::PickupComponent>(entity);
+        if (!pickup) return;
+
+        const char* types[] = { "Health", "Ammo", "Coin", "Key", "Powerup", "Custom" };
+        int type = static_cast<int>(pickup->type);
+        if (ImGui::Combo("Pickup Type", &type, types, 6)) {
+            pickup->type = static_cast<ECS::PickupComponent::PickupType>(type);
+        }
+
+        ImGui::DragFloat("Value", &pickup->value, 0.5f, 0.0f, 10000.0f);
+
+        if (pickup->type == ECS::PickupComponent::PickupType::Custom) {
+            char idBuffer[128];
+            strncpy(idBuffer, pickup->customId.c_str(), sizeof(idBuffer) - 1);
+            idBuffer[sizeof(idBuffer) - 1] = '\0';
+            if (ImGui::InputText("Custom ID", idBuffer, sizeof(idBuffer))) {
+                pickup->customId = idBuffer;
+            }
+        }
+
+        ImGui::DragFloat("Pickup Range", &pickup->pickupRange, 0.1f, 0.1f, 50.0f);
+        ImGui::Checkbox("Destroy On Pickup", &pickup->destroyOnPickup);
+
+        if (ImGui::TreeNode("Magnet")) {
+            ImGui::Checkbox("Magnet To Player", &pickup->magnetToPlayer);
+            if (pickup->magnetToPlayer) {
+                ImGui::DragFloat("Magnet Range", &pickup->magnetRange, 0.5f, 0.1f, 50.0f);
+                ImGui::DragFloat("Magnet Speed", &pickup->magnetSpeed, 0.5f, 0.1f, 100.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Respawn")) {
+            ImGui::Checkbox("Can Respawn", &pickup->canRespawn);
+            if (pickup->canRespawn) {
+                ImGui::DragFloat("Respawn Time", &pickup->respawnTime, 0.5f, 0.0f, 300.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Visual")) {
+            ImGui::DragFloat("Bob Speed", &pickup->bobSpeed, 0.1f, 0.0f, 10.0f);
+            ImGui::DragFloat("Bob Height", &pickup->bobHeight, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Rotation Speed", &pickup->rotationSpeed, 5.0f, 0.0f, 720.0f);
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Status: %s", pickup->isCollected ? "Collected" : "Available");
+
+        if (ImGui::BeginPopupContextItem("PickupContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::PickupComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawInventoryComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Inventory", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* inv = m_World->GetComponent<ECS::InventoryComponent>(entity);
+        if (!inv) return;
+
+        int maxSlots = static_cast<int>(inv->maxSlots);
+        if (ImGui::InputInt("Max Slots", &maxSlots)) {
+            inv->maxSlots = static_cast<usize>(maxSlots > 0 ? maxSlots : 1);
+        }
+
+        ImGui::DragInt("Coins", &inv->coins, 1, 0, 999999);
+        ImGui::DragInt("Gems", &inv->gems, 1, 0, 999999);
+
+        if (ImGui::TreeNode("Keys")) {
+            for (usize i = 0; i < inv->keys.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                char keyBuffer[128];
+                strncpy(keyBuffer, inv->keys[i].c_str(), sizeof(keyBuffer) - 1);
+                keyBuffer[sizeof(keyBuffer) - 1] = '\0';
+                if (ImGui::InputText("##key", keyBuffer, sizeof(keyBuffer))) {
+                    inv->keys[i] = keyBuffer;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) {
+                    inv->keys.erase(inv->keys.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::SmallButton("Add Key")) {
+                inv->keys.push_back("new_key");
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Slots")) {
+            ImGui::Text("Used: %zu / %zu", inv->slots.size(), inv->maxSlots);
+            for (usize i = 0; i < inv->slots.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto& slot = inv->slots[i];
+                ImGui::Text("[%zu] %s x%d (max %d)", i, slot.itemId.c_str(), slot.quantity, slot.maxStack);
+                ImGui::PopID();
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("InventoryContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::InventoryComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Timer", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* timer = m_World->GetComponent<ECS::TimerComponent>(entity);
+        if (!timer) return;
+
+        ImGui::DragFloat("Duration", &timer->duration, 0.1f, 0.01f, 3600.0f);
+        ImGui::Checkbox("Loop", &timer->loop);
+        ImGui::Checkbox("Auto Start", &timer->autoStart);
+
+        // Progress bar
+        f32 progress = timer->GetProgress();
+        ImGui::ProgressBar(progress, ImVec2(-1, 0),
+            (std::to_string((int)(timer->GetRemaining() * 10) / 10.0f) + "s remaining").c_str());
+
+        ImGui::Separator();
+        ImGui::Text("Running: %s", timer->isRunning ? "Yes" : "No");
+        ImGui::Text("Loop Count: %d", timer->loopCount);
+        ImGui::Text("Complete: %s", timer->IsComplete() ? "Yes" : "No");
+
+        if (ImGui::BeginPopupContextItem("TimerContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::TimerComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawAudioListenerComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Audio Listener", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
+        if (!listener) return;
+
+        ImGui::Checkbox("Active", &listener->isActive);
+        ImGui::DragFloat("Volume Scale", &listener->volumeScale, 0.01f, 0.0f, 2.0f);
+
+        if (ImGui::BeginPopupContextItem("AudioListenerContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::AudioListenerComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("AI Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* ai = m_World->GetComponent<ECS::AIControllerComponent>(entity);
+        if (!ai) return;
+
+        const char* states[] = { "Idle", "Patrol", "Chase", "Attack", "Flee", "Dead" };
+        int state = static_cast<int>(ai->currentState);
+        if (ImGui::Combo("Current State", &state, states, 6)) {
+            ai->currentState = static_cast<ECS::AIControllerComponent::AIState>(state);
+        }
+
+        if (ImGui::TreeNode("Detection")) {
+            ImGui::DragFloat("Detection Range", &ai->detectionRange, 0.5f, 0.0f, 200.0f);
+            ImGui::DragFloat("Attack Range", &ai->attackRange, 0.5f, 0.0f, 50.0f);
+            ImGui::DragFloat("Lose Target Range", &ai->loseTargetRange, 0.5f, 0.0f, 300.0f);
+            ImGui::DragFloat("Field of View", &ai->fieldOfView, 1.0f, 0.0f, 360.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Movement")) {
+            ImGui::DragFloat("Move Speed", &ai->moveSpeed, 0.1f, 0.0f, 50.0f);
+            ImGui::DragFloat("Turn Speed", &ai->turnSpeed, 5.0f, 0.0f, 720.0f);
+            ImGui::DragFloat("Stopping Distance", &ai->stoppingDistance, 0.1f, 0.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Attack")) {
+            ImGui::DragFloat("Attack Cooldown", &ai->attackCooldown, 0.1f, 0.0f, 30.0f);
+            ImGui::DragFloat("Attack Damage", &ai->attackDamage, 0.5f, 0.0f, 1000.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Patrol")) {
+            ImGui::DragFloat("Wait Time", &ai->patrolWaitTime, 0.1f, 0.0f, 30.0f);
+            ImGui::Text("Patrol Points: %zu", ai->patrolPoints.size());
+            ImGui::Text("Current Index: %zu", ai->currentPatrolIndex);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("AIControllerContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::AIControllerComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Follow Target", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* follow = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
+        if (!follow) return;
+
+        ImGui::Text("Target Entity: %llu", (unsigned long long)follow->target);
+        ImGui::DragFloat("Follow Distance", &follow->followDistance, 0.1f, 0.0f, 100.0f);
+        ImGui::DragFloat("Min Distance", &follow->minDistance, 0.1f, 0.0f, follow->followDistance);
+        ImGui::DragFloat("Max Distance", &follow->maxDistance, 0.5f, follow->followDistance, 1000.0f);
+        ImGui::DragFloat("Move Speed", &follow->moveSpeed, 0.1f, 0.0f, 50.0f);
+        ImGui::DragFloat("Smooth Time", &follow->smoothTime, 0.01f, 0.0f, 5.0f);
+
+        ImGui::Checkbox("Match Target Rotation", &follow->matchTargetRotation);
+        if (follow->matchTargetRotation) {
+            ImGui::DragFloat("Rotation Speed", &follow->rotationSpeed, 5.0f, 0.0f, 720.0f);
+        }
+
+        f32 offset[3] = { follow->offset.x, follow->offset.y, follow->offset.z };
+        if (ImGui::DragFloat3("Offset", offset, 0.1f)) {
+            follow->offset = Math::Vector3(offset[0], offset[1], offset[2]);
+        }
+        ImGui::Checkbox("Use Local Offset", &follow->useLocalOffset);
+
+        if (ImGui::BeginPopupContextItem("FollowTargetContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::FollowTargetComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Look At Target", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* lookAt = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
+        if (!lookAt) return;
+
+        ImGui::Checkbox("Use World Position", &lookAt->useWorldTarget);
+        if (lookAt->useWorldTarget) {
+            f32 target[3] = { lookAt->worldTarget.x, lookAt->worldTarget.y, lookAt->worldTarget.z };
+            if (ImGui::DragFloat3("World Target", target, 0.1f)) {
+                lookAt->worldTarget = Math::Vector3(target[0], target[1], target[2]);
+            }
+        } else {
+            ImGui::Text("Target Entity: %llu", (unsigned long long)lookAt->target);
+        }
+
+        ImGui::DragFloat("Rotation Speed", &lookAt->rotationSpeed, 5.0f, 0.0f, 720.0f);
+        ImGui::Checkbox("Instant", &lookAt->instant);
+
+        if (ImGui::TreeNode("Constraints")) {
+            ImGui::Checkbox("Constrain X", &lookAt->constrainX);
+            ImGui::Checkbox("Constrain Y", &lookAt->constrainY);
+            ImGui::Checkbox("Constrain Z", &lookAt->constrainZ);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Limits")) {
+            ImGui::DragFloat("Min Yaw", &lookAt->minYaw, 1.0f, -180.0f, lookAt->maxYaw);
+            ImGui::DragFloat("Max Yaw", &lookAt->maxYaw, 1.0f, lookAt->minYaw, 180.0f);
+            ImGui::DragFloat("Min Pitch", &lookAt->minPitch, 1.0f, -89.0f, lookAt->maxPitch);
+            ImGui::DragFloat("Max Pitch", &lookAt->maxPitch, 1.0f, lookAt->minPitch, 89.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("LookAtTargetContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::LookAtTargetComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Waypoint", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* wp = m_World->GetComponent<ECS::WaypointComponent>(entity);
+        if (!wp) return;
+
+        char idBuffer[128];
+        strncpy(idBuffer, wp->waypointId.c_str(), sizeof(idBuffer) - 1);
+        idBuffer[sizeof(idBuffer) - 1] = '\0';
+        if (ImGui::InputText("Waypoint ID", idBuffer, sizeof(idBuffer))) {
+            wp->waypointId = idBuffer;
+        }
+
+        ImGui::InputInt("Index", &wp->index);
+        ImGui::Text("Next Waypoint: %llu", (unsigned long long)wp->nextWaypoint);
+        ImGui::DragFloat("Wait Time", &wp->waitTime, 0.1f, 0.0f, 60.0f);
+        ImGui::DragFloat("Radius", &wp->radius, 0.05f, 0.01f, 10.0f);
+
+        if (ImGui::BeginPopupContextItem("WaypointContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::WaypointComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawBillboardComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Billboard", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* bb = m_World->GetComponent<ECS::BillboardComponent>(entity);
+        if (!bb) return;
+
+        ImGui::Checkbox("Face Camera", &bb->faceCamera);
+        ImGui::Checkbox("Lock Y Axis", &bb->lockY);
+        ImGui::DragFloat("Rotation Offset", &bb->rotationOffset, 1.0f, -180.0f, 180.0f);
+
+        if (ImGui::BeginPopupContextItem("BillboardContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::BillboardComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Particle Emitter", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* emitter = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
+        if (!emitter) return;
+
+        ImGui::Checkbox("Playing", &emitter->isPlaying);
+        ImGui::Checkbox("Play On Awake", &emitter->playOnAwake);
+        ImGui::Checkbox("Loop", &emitter->loop);
+
+        if (ImGui::TreeNode("Emission")) {
+            ImGui::DragFloat("Rate (per sec)", &emitter->emissionRate, 0.5f, 0.0f, 1000.0f);
+            ImGui::DragInt("Burst Count", &emitter->burstCount, 1, 0, 100);
+            if (emitter->burstCount > 0) {
+                ImGui::DragFloat("Burst Interval", &emitter->burstInterval, 0.1f, 0.0f, 30.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Particle Properties")) {
+            ImGui::DragFloat("Lifetime", &emitter->lifetime, 0.1f, 0.01f, 60.0f);
+            ImGui::DragFloat("Lifetime Variance", &emitter->lifetimeVariance, 0.1f, 0.0f, emitter->lifetime);
+            ImGui::DragFloat("Start Speed", &emitter->startSpeed, 0.1f, 0.0f, 100.0f);
+            ImGui::DragFloat("Speed Variance", &emitter->speedVariance, 0.1f, 0.0f, emitter->startSpeed);
+            ImGui::DragFloat("Start Size", &emitter->startSize, 0.01f, 0.001f, 10.0f);
+            ImGui::DragFloat("End Size", &emitter->endSize, 0.01f, 0.0f, 10.0f);
+            ImGui::DragFloat("Start Alpha", &emitter->startAlpha, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("End Alpha", &emitter->endAlpha, 0.01f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Colors")) {
+            f32 startCol[3] = { emitter->startColor.x, emitter->startColor.y, emitter->startColor.z };
+            if (ImGui::ColorEdit3("Start Color", startCol)) {
+                emitter->startColor = Math::Vector3(startCol[0], startCol[1], startCol[2]);
+            }
+            f32 endCol[3] = { emitter->endColor.x, emitter->endColor.y, emitter->endColor.z };
+            if (ImGui::ColorEdit3("End Color", endCol)) {
+                emitter->endColor = Math::Vector3(endCol[0], endCol[1], endCol[2]);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Shape")) {
+            const char* shapes[] = { "Point", "Sphere", "Hemisphere", "Cone", "Box" };
+            int shape = static_cast<int>(emitter->shape);
+            if (ImGui::Combo("Shape", &shape, shapes, 5)) {
+                emitter->shape = static_cast<ECS::ParticleEmitterComponent::EmitterShape>(shape);
+            }
+            ImGui::DragFloat("Shape Radius", &emitter->shapeRadius, 0.05f, 0.0f, 50.0f);
+            if (emitter->shape == ECS::ParticleEmitterComponent::EmitterShape::Cone) {
+                ImGui::DragFloat("Cone Angle", &emitter->coneAngle, 1.0f, 0.0f, 90.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Forces")) {
+            f32 gravity[3] = { emitter->gravity.x, emitter->gravity.y, emitter->gravity.z };
+            if (ImGui::DragFloat3("Gravity", gravity, 0.1f)) {
+                emitter->gravity = Math::Vector3(gravity[0], gravity[1], gravity[2]);
+            }
+            ImGui::DragFloat("Drag", &emitter->drag, 0.01f, 0.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Texture")) {
+            char pathBuffer[256];
+            strncpy(pathBuffer, emitter->texturePath.c_str(), sizeof(pathBuffer) - 1);
+            pathBuffer[sizeof(pathBuffer) - 1] = '\0';
+            if (ImGui::InputText("Texture Path", pathBuffer, sizeof(pathBuffer))) {
+                emitter->texturePath = pathBuffer;
+            }
+            ImGui::DragInt("Sheet X", &emitter->textureSheetX, 1, 1, 16);
+            ImGui::DragInt("Sheet Y", &emitter->textureSheetY, 1, 1, 16);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("ParticleEmitterContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::ParticleEmitterComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Camera 2D Bounds", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* bounds = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity);
+        if (!bounds) return;
+
+        ImGui::Checkbox("Use Bounds", &bounds->useBounds);
+        if (bounds->useBounds) {
+            f32 minB[2] = { bounds->minBounds.x, bounds->minBounds.y };
+            if (ImGui::DragFloat2("Min Bounds", minB, 0.5f)) {
+                bounds->minBounds = Math::Vector2(minB[0], minB[1]);
+            }
+            f32 maxB[2] = { bounds->maxBounds.x, bounds->maxBounds.y };
+            if (ImGui::DragFloat2("Max Bounds", maxB, 0.5f)) {
+                bounds->maxBounds = Math::Vector2(maxB[0], maxB[1]);
+            }
+            ImGui::DragFloat("Padding", &bounds->boundsPadding, 0.1f, 0.0f, 100.0f);
+        }
+
+        ImGui::Text("Follow Target: %llu", (unsigned long long)bounds->followTarget);
+        ImGui::DragFloat("Follow Smoothing", &bounds->followSmoothing, 0.1f, 0.1f, 50.0f);
+
+        f32 offset[2] = { bounds->followOffset.x, bounds->followOffset.y };
+        if (ImGui::DragFloat2("Follow Offset", offset, 0.1f)) {
+            bounds->followOffset = Math::Vector2(offset[0], offset[1]);
+        }
+
+        if (ImGui::TreeNode("Zoom")) {
+            ImGui::DragFloat("Min Zoom", &bounds->minZoom, 0.05f, 0.1f, bounds->maxZoom);
+            ImGui::DragFloat("Max Zoom", &bounds->maxZoom, 0.05f, bounds->minZoom, 10.0f);
+            ImGui::DragFloat("Current Zoom", &bounds->currentZoom, 0.05f, bounds->minZoom, bounds->maxZoom);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("Camera2DBoundsContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::Camera2DBoundsComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawTagComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Tags", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* tags = m_World->GetComponent<ECS::TagComponent>(entity);
+        if (!tags) return;
+
+        for (usize i = 0; i < tags->tags.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            char tagBuffer[128];
+            strncpy(tagBuffer, tags->tags[i].c_str(), sizeof(tagBuffer) - 1);
+            tagBuffer[sizeof(tagBuffer) - 1] = '\0';
+            if (ImGui::InputText("##tag", tagBuffer, sizeof(tagBuffer))) {
+                tags->tags[i] = tagBuffer;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                tags->tags.erase(tags->tags.begin() + i);
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+        }
+
+        if (ImGui::Button("Add Tag")) {
+            tags->tags.push_back("new_tag");
+        }
+
+        if (ImGui::BeginPopupContextItem("TagContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::TagComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Spawn Point", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* spawn = m_World->GetComponent<ECS::SpawnPointComponent>(entity);
+        if (!spawn) return;
+
+        char idBuffer[128];
+        strncpy(idBuffer, spawn->spawnId.c_str(), sizeof(idBuffer) - 1);
+        idBuffer[sizeof(idBuffer) - 1] = '\0';
+        if (ImGui::InputText("Spawn ID", idBuffer, sizeof(idBuffer))) {
+            spawn->spawnId = idBuffer;
+        }
+
+        char prefabBuffer[256];
+        strncpy(prefabBuffer, spawn->prefabToSpawn.c_str(), sizeof(prefabBuffer) - 1);
+        prefabBuffer[sizeof(prefabBuffer) - 1] = '\0';
+        if (ImGui::InputText("Prefab To Spawn", prefabBuffer, sizeof(prefabBuffer))) {
+            spawn->prefabToSpawn = prefabBuffer;
+        }
+
+        ImGui::Checkbox("Spawn On Start", &spawn->spawnOnStart);
+        ImGui::DragFloat("Spawn Delay", &spawn->spawnDelay, 0.1f, 0.0f, 60.0f);
+        ImGui::DragFloat("Respawn Time", &spawn->respawnTime, 0.5f, 0.0f, 300.0f);
+
+        int maxSpawns = spawn->maxSpawns;
+        if (ImGui::InputInt("Max Spawns (-1 = unlimited)", &maxSpawns)) {
+            spawn->maxSpawns = maxSpawns;
+        }
+
+        ImGui::DragFloat("Spawn Radius", &spawn->spawnRadius, 0.1f, 0.0f, 50.0f);
+        ImGui::Checkbox("Random Rotation", &spawn->randomRotation);
+
+        ImGui::Separator();
+        ImGui::Text("Current Spawns: %d", spawn->currentSpawns);
+        ImGui::Text("Active Entities: %zu", spawn->spawnedEntities.size());
+
+        if (ImGui::BeginPopupContextItem("SpawnPointContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::SpawnPointComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
 void EditorLayer::DuplicateEntity(ECS::Entity entity) {
     if (!m_World || entity == ECS::INVALID_ENTITY) return;
 
@@ -5357,6 +7097,95 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
             IM_COL32(255, 255, 255, 255), 0.0f, 0, 1.0f
         );
     }
+}
+
+void EditorLayer::SetupCameraForController(ECS::Entity controllerEntity, const std::string& controllerType) {
+    if (!m_World) return;
+
+    // Check if a game camera already exists
+    ECS::Entity existingCamera = ECS::CameraManager::GetActiveCamera(m_World);
+
+    // Get the controller entity's transform for positioning the camera relative to it
+    auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(controllerEntity);
+    Math::Vector3 playerPos = playerTransform ? playerTransform->position : Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    // Create a camera entity if none exists
+    ECS::Entity cameraEntity;
+    if (existingCamera == ECS::INVALID_ENTITY) {
+        cameraEntity = m_World->CreateEntity();
+        auto& name = m_World->AddComponent<ECS::NameComponent>(cameraEntity);
+        name.name = "Game Camera";
+        m_World->AddComponent<ECS::TransformComponent>(cameraEntity);
+        m_World->AddComponent<ECS::CameraComponent>(cameraEntity);
+        ENJIN_LOG_INFO(Editor, "Auto-created Game Camera for %s controller", controllerType.c_str());
+    } else {
+        cameraEntity = existingCamera;
+    }
+
+    auto* camTransform = m_World->GetComponent<ECS::TransformComponent>(cameraEntity);
+    auto* camComp = m_World->GetComponent<ECS::CameraComponent>(cameraEntity);
+    if (!camTransform || !camComp) return;
+
+    // Configure camera based on controller type
+    if (controllerType == "Platformer2D") {
+        // Side-scroller: orthographic, looking along -Z, offset behind player
+        camComp->projectionType = ECS::ProjectionType::Orthographic;
+        camComp->orthoSize = 8.0f;
+        camComp->nearPlane = 0.1f;
+        camComp->farPlane = 100.0f;
+        camTransform->position = playerPos + Math::Vector3(0.0f, 0.0f, 15.0f);
+        camTransform->rotation = Math::Quaternion::Identity();
+    } else if (controllerType == "TopDown2D") {
+        // Top-down: orthographic, looking straight down
+        camComp->projectionType = ECS::ProjectionType::Orthographic;
+        camComp->orthoSize = 10.0f;
+        camComp->nearPlane = 0.1f;
+        camComp->farPlane = 100.0f;
+        camTransform->position = playerPos + Math::Vector3(0.0f, 20.0f, 0.0f);
+        // Look down: rotate -90 degrees around X axis
+        camTransform->rotation = Math::Quaternion(
+            Math::Vector3(1.0f, 0.0f, 0.0f), Math::Radians(-90.0f));
+    } else if (controllerType == "TopDown3D") {
+        // Isometric/CRPG: perspective, ~45° angle looking down and slightly behind
+        camComp->projectionType = ECS::ProjectionType::Perspective;
+        camComp->fieldOfView = 50.0f;
+        camComp->nearPlane = 0.1f;
+        camComp->farPlane = 500.0f;
+        f32 distance = 15.0f;
+        f32 angle = Math::Radians(45.0f);
+        camTransform->position = playerPos + Math::Vector3(
+            0.0f,
+            distance * Math::Sin(angle),
+            distance * Math::Cos(angle));
+        // Look down at 45 degrees
+        camTransform->rotation = Math::Quaternion(
+            Math::Vector3(1.0f, 0.0f, 0.0f), -angle);
+    } else if (controllerType == "ThirdPerson") {
+        // Over-the-shoulder: perspective, behind and above player
+        camComp->projectionType = ECS::ProjectionType::Perspective;
+        camComp->fieldOfView = 60.0f;
+        camComp->nearPlane = 0.1f;
+        camComp->farPlane = 1000.0f;
+        camTransform->position = playerPos + Math::Vector3(0.0f, 3.0f, 6.0f);
+        // Slight downward angle
+        camTransform->rotation = Math::Quaternion(
+            Math::Vector3(1.0f, 0.0f, 0.0f), Math::Radians(-15.0f));
+    } else if (controllerType == "FirstPerson") {
+        // First-person: perspective, at player eye height
+        camComp->projectionType = ECS::ProjectionType::Perspective;
+        camComp->fieldOfView = 75.0f;
+        camComp->nearPlane = 0.05f;
+        camComp->farPlane = 1000.0f;
+        camTransform->position = playerPos + Math::Vector3(0.0f, 1.7f, 0.0f);
+        camTransform->rotation = Math::Quaternion::Identity();
+    }
+
+    // Make sure the camera is active
+    camComp->isActive = true;
+    camComp->priority = 10;
+
+    // Select the camera so the user can adjust it
+    m_SelectedGameCamera = cameraEntity;
 }
 
 void EditorLayer::ExecuteConsoleCommand(const std::string& command) {

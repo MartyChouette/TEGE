@@ -2,336 +2,338 @@
 
 ## Overview
 
-This guide covers all major systems in Enjin Engine and how to use them together.
+This guide covers all major systems in Enjin Engine and how to use them from the editor and from code.
 
-## System Integration
+## Editor Overview
 
-### Initialization Order
+### Startup Flow
 
-```cpp
-// 1. Initialize core systems
-Logger::Get().Initialize();
-Window* window = CreateWindow({1280, 720, "Enjin Engine"});
+When you launch the editor, you will see:
 
-// 2. Initialize renderer
-VulkanRenderer renderer;
-renderer.Initialize(window);
+1. **Splash Screen** - Engine logo, fades after 3 seconds
+2. **Template Selector** - Choose a project template or open an existing scene
+3. **Editor** - Full editor with all panels
 
-RenderPipeline pipeline(&renderer);
-pipeline.Initialize();
+### Template Selector
 
-// 3. Initialize rendering techniques
-RenderingTechniqueManager techniques;
-techniques.RegisterTechnique(std::make_unique<ForwardRendering>());
-techniques.SwitchTechnique("ForwardRendering");
-techniques.InitializeCurrent(&renderer, &pipeline);
+The template selector appears after the splash screen and offers:
 
-// 4. Initialize game systems
-TimeOfDay timeOfDay;
-timeOfDay.SetTime(12.0f); // Noon
-timeOfDay.SetDayLength(300.0f); // 5 minutes = 24 hours
+| Template | Description |
+|----------|-------------|
+| Blank | Empty scene with just a directional light |
+| 2D Platformer | Side-scrolling setup with Platformer2D controller |
+| 2D Top-Down | Overhead camera with TopDown2D controller |
+| 3D Isometric | Fixed-angle 3D camera with TopDown3D controller |
+| 3D Third Person | Over-the-shoulder camera with ThirdPerson controller |
+| 3D First Person | FPS-style camera with FirstPerson controller |
 
-WeatherSystem weather;
-weather.Initialize();
-weather.SetWeather(WeatherType::Clear);
+Each template creates a ground plane, directional light, player entity with the appropriate controller, and a camera configured for that game type.
 
-PhysicsWorld physics;
-physics.Initialize();
-physics.SetGravity(Math::Vector3(0, -9.81f, 0));
+You can also:
+- **Open an existing scene** from disk
+- **Skip** to an empty scene
+- Load **custom templates** saved from `File > Save as Template...`
 
-WaterRenderer water;
-water.Initialize(&renderer);
-water.SetWaterLevel(0.0f);
+### Editor Panels
 
-// 5. Initialize GUI
-ShaderGUI shaderGUI;
-shaderGUI.Initialize();
-```
+Toggle panels from `View` menu:
 
-### Main Loop
+- **Hierarchy** - Entity tree view, right-click to add/delete/duplicate
+- **Inspector** - Component editor for selected entity
+- **Console** - Log output and command input
+- **Asset Browser** - Browse project files
+- **Settings** - Grid, gizmo, and editor settings
+- **Post Processing** - Bloom, vignette, color grading, FXAA, film grain
+- **Effects (Retro)** - CRT, pixelation, dithering, color quantization
+- **Game View** - Rendered game camera preview with play/pause/stop
+- **Scene List** - Project scene management (add, reorder, load scenes)
+- **Stats Overlay** - FPS, frame time graph, draw calls
 
-```cpp
-while (running) {
-    f32 deltaTime = GetDeltaTime();
-    
-    // Update systems
-    timeOfDay.Update(deltaTime);
-    weather.Update(deltaTime);
-    physics.Step(deltaTime);
-    
-    // Render
-    renderer.BeginFrame();
-    
-    // Update lighting based on time of day
-    UpdateLighting(timeOfDay);
-    
-    // Render with current technique
-    techniques.Render(deltaTime);
-    
-    // Render water
-    water.Render(deltaTime, cameraPosition);
-    
-    // Render GUI
-    shaderGUI.Render();
-    
-    renderer.EndFrame();
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `1` | Translate gizmo |
+| `2` | Rotate gizmo |
+| `3` | Scale gizmo |
+| `4` | Toggle local/world space |
+| `WASD` | Fly camera movement |
+| `Space`/`E` | Move up |
+| `Q`/`Ctrl` | Move down |
+| `Shift` | Sprint |
+| Hold RMB + Mouse | Look around |
+| Left-click | Select entity |
+| Double-click | Focus on entity |
+| Scroll | Adjust move speed |
+| `Ctrl+N` | New scene |
+| `Ctrl+O` | Open scene |
+| `Ctrl+S` | Save scene |
+| `Ctrl+I` | Import model |
+| `Ctrl+X/C/V` | Cut/Copy/Paste entity |
+
+## Scene Management
+
+### Project Files
+
+Enjin uses `.enjinproject` files to manage multi-scene projects. A project file is a JSON manifest listing all scenes with their build indices.
+
+```json
+{
+  "projectName": "My Game",
+  "version": "1.0",
+  "scenes": [
+    { "name": "Main Menu", "path": "scenes/menu.enjin", "buildIndex": 0, "isStartScene": true },
+    { "name": "Level 1", "path": "scenes/level1.enjin", "buildIndex": 1, "isStartScene": false },
+    { "name": "Level 2", "path": "scenes/level2.enjin", "buildIndex": 2, "isStartScene": false }
+  ]
 }
 ```
 
-## Rendering Techniques
+### Using the Scene List Panel
 
-### Switching Techniques
+1. Open `View > Scene List`
+2. **Add scenes**: Click `+ Add Current Scene` or `+ Add Scene File...`
+3. **Reorder**: Right-click a scene > Move Up/Down
+4. **Set start scene**: Right-click > Set as Start Scene
+5. **Load a scene**: Double-click or right-click > Load
+6. **Load additive**: Right-click > Load Additive (keeps existing entities)
+7. **Save project**: Click Save Project button or `File > Save Project`
 
-```cpp
-// Register techniques
-techniques.RegisterTechnique(std::make_unique<ForwardRendering>());
-techniques.RegisterTechnique(std::make_unique<DeferredRendering>());
-techniques.RegisterTechnique(std::make_unique<ClusteredForward>());
+### Scene Transitions
 
-// Switch at runtime
-techniques.SwitchTechnique("DeferredRendering");
+The Scene List panel includes transition controls:
 
-// Get current technique
-RenderingTechnique* current = techniques.GetCurrentTechnique();
-```
+- **Instant** - Immediate scene swap
+- **Fade Black** - Fade to black, load, fade in
+- **Fade White** - Fade to white, load, fade in
+- **Cross Fade** - Overlap old and new scenes
 
-### Creating Custom Techniques
+Set the duration with the slider (0.1s to 3.0s). Click a scene's Quick Load button to load with the selected transition.
 
-```cpp
-class MyCustomTechnique : public RenderingTechnique {
-public:
-    MyCustomTechnique() : RenderingTechnique("MyCustom") {}
-    
-    bool Initialize(VulkanRenderer* renderer, RenderPipeline* pipeline) override {
-        // Setup custom rendering
-        return true;
-    }
-    
-    void Render(f32 deltaTime) override {
-        // Custom rendering logic
-    }
-};
-
-// Register
-techniques.RegisterTechnique(std::make_unique<MyCustomTechnique>());
-```
-
-## Day/Night Cycle
-
-### Basic Usage
+### Scene Management from Code
 
 ```cpp
-TimeOfDay time;
+// Get the scene manager from EditorLayer
+Scene::SceneManager& manager = editor.GetSceneManager();
 
-// Set time
-time.SetTime(6.0f);  // 6 AM (sunrise)
-time.SetTime(12.0f); // Noon
-time.SetTime(18.0f); // 6 PM (sunset)
-time.SetTime(0.0f);  // Midnight
+// Load a project
+manager.LoadProject("path/to/project.enjinproject");
 
-// Set day length (real-world seconds)
-time.SetDayLength(300.0f); // 5 minutes = 24 hours game time
+// Load scenes
+manager.LoadScene("Level 1");
+manager.LoadSceneByIndex(2);
+manager.LoadStartScene();
+manager.LoadSceneAdditive("HUD Overlay");
 
-// Update
-time.Update(deltaTime);
+// Transitions
+manager.LoadSceneWithTransition("Level 2", Scene::TransitionType::FadeBlack, 0.5f);
 
-// Get lighting values
-Math::Vector3 sunDir = time.GetSunDirection();
-Math::Vector3 sunColor = time.GetSunColor();
-Math::Vector4 skyColor = time.GetSkyColor();
-f32 sunIntensity = time.GetSunIntensity();
+// Update transition each frame
+manager.UpdateTransition(deltaTime);
+
+// Callbacks
+manager.SetOnSceneLoaded([](const std::string& name) {
+    // Scene loaded
+});
+manager.SetOnSceneUnloaded([](const std::string& name) {
+    // Scene unloaded
+});
 ```
 
-### Integration with Lighting
+## ECS Components
+
+### Core Components
+
+| Component | Description |
+|-----------|-------------|
+| TransformComponent | Position, rotation (Euler), scale |
+| NameComponent | Entity display name |
+| MeshComponent | Vertex/index data for rendering |
+| MaterialComponent | PBR material properties and textures |
+| LightComponent | Directional, point, or spot light |
+| CameraComponent | In-game camera with projection settings |
+| NotesComponent | Text annotations |
+| TextComponent | 3D text rendered to texture via stb_truetype |
+
+### Controller Components
+
+| Component | Description |
+|-----------|-------------|
+| Platformer2DController | Side-scrolling movement (jump, run, wall slide) |
+| TopDown2DController | Overhead 2D movement |
+| TopDown3DController | Isometric/top-down 3D movement |
+| ThirdPersonController | Over-the-shoulder camera and movement |
+| FirstPersonController | FPS-style camera and movement |
+
+Adding a controller via `Entity > Add Component` auto-creates a configured camera entity.
+
+### Physics Components
+
+| Component | Description |
+|-----------|-------------|
+| RigidbodyComponent | Mass, velocity, gravity, drag, constraints |
+| BoxColliderComponent | Axis-aligned box collision |
+| SphereColliderComponent | Sphere collision with radius |
+| CapsuleColliderComponent | Capsule collision (radius + height) |
+| TriggerZoneComponent | Non-physical trigger volume with callbacks |
+
+### Environment Components
+
+| Component | Description |
+|-----------|-------------|
+| WeatherZoneComponent | Local weather override (rain, snow, fog) |
+| WaterVolumeComponent | Water plane with wave parameters |
+| GrassVolumeComponent | Instanced grass rendering volume |
+| VegetationComponent | Vegetation sway affected by wind |
+| TemperatureZoneComponent | Heat/cold zone with damage over time |
+| GravityZoneComponent | Gravity override (directional, point, zero-G) |
+| CameraTriggerComponent | Camera override when player enters volume |
+
+### Gameplay Components
+
+| Component | Description |
+|-----------|-------------|
+| HealthComponent | HP, max HP, invincibility, regeneration |
+| DamageComponent | Damage amount, type, cooldown |
+| InteractableComponent | Interact prompt, range, callback type |
+| PickupComponent | Collectible item (health, ammo, key, coin, custom) |
+| InventoryComponent | Item slots with max capacity |
+| TimerComponent | Countdown/stopwatch with auto-reset |
+| AudioSourceComponent | 3D audio with volume, pitch, spatial settings |
+| AudioListenerComponent | Audio listener position |
+| TagComponent | String tags and layer for entity classification |
+| SpawnPointComponent | Respawn location with team/priority |
+
+### AI Components
+
+| Component | Description |
+|-----------|-------------|
+| AIControllerComponent | Behavior type (idle, patrol, chase, flee, wander) |
+| FollowTargetComponent | Follow a target entity with speed/distance |
+| LookAtTargetComponent | Rotate to face a target entity |
+| WaypointComponent | Patrol waypoints with wait times |
+
+### Visual Components
+
+| Component | Description |
+|-----------|-------------|
+| BillboardComponent | Always-face-camera sprite |
+| ParticleEmitterComponent | Particle system (burst/continuous, gravity, color) |
+| Sprite2DComponent | 2D sprite with atlas support |
+| AnimatedSprite2DComponent | Animated sprite with frame timing |
+| TilemapComponent | Tile-based level with collision |
+| Camera2DBoundsComponent | 2D camera boundary constraints |
+
+### Other Components
+
+| Component | Description |
+|-----------|-------------|
+| StateMachineComponent | Named states with transition rules |
+| DialogueComponent | Branching dialogue with NPC name and choices |
+| SkeletonComponent | Skeletal animation bone hierarchy |
+| AnimatorComponent | Animation playback and state machine |
+
+## Effects Systems
+
+### Wind System
+
+The wind system runs globally and affects weather particles, vegetation sway, and instanced grass. It is always active.
+
+### Weather System
+
+Configured globally in the Effects panel or per-zone via WeatherZoneComponent:
+
+- **Rain** - Particle-based with configurable density
+- **Snow** - Slower particles with drift
+- **Fog** - Distance-based fog with density control
+- **Storm** - Rain + lightning flashes
+
+### Water System
+
+3D water planes with Gerstner wave simulation. Configure via WaterVolumeComponent on entities or the global Water3D system.
+
+### Retro Effects
+
+Per-material and post-processing retro rendering:
+- Flat shading (removes smooth interpolation)
+- Affine texture mapping (PS1-style warping)
+- Vertex snapping (low-poly jitter)
+- Stipple transparency
+- CRT scanlines, dithering, color quantization
+
+### Post-Processing
+
+Available in the Post Processing panel:
+- Bloom (threshold, intensity, radius)
+- Vignette (intensity, radius)
+- Color grading (exposure, contrast, saturation, temperature)
+- FXAA anti-aliasing
+- Film grain (intensity, speed)
+
+## Scene Serialization
+
+Scenes are saved as `.enjin` JSON files. All component types are serialized including transforms, meshes, materials, lights, controllers, gameplay components, environment zones, and more.
 
 ```cpp
-void UpdateLighting(const TimeOfDay& time) {
-    // Update directional light (sun)
-    DirectionalLight sun;
-    sun.direction = time.GetSunDirection();
-    sun.color = time.GetSunColor();
-    sun.intensity = time.GetSunIntensity();
-    
-    // Update ambient light
-    AmbientLight ambient;
-    ambient.color = time.GetAmbientColor();
-    
-    // Update sky
-    SkyRenderer::SetSkyColor(time.GetSkyColor());
-}
+// Save
+Scene::SceneSerializer serializer(world);
+Scene::SerializationOptions opts;
+opts.includeVertexData = true;
+serializer.Save("scene.enjin", opts);
+
+// Load (clears world)
+auto result = serializer.Load("scene.enjin", true);
+
+// Load additive (keeps existing entities)
+auto result = serializer.LoadAdditive("scene.enjin");
+
+// Serialize to/from string (for clipboard)
+std::string json = serializer.SaveToString(opts);
+auto result = serializer.LoadFromString(json, false);
 ```
 
-## Weather System
+## Procedural Generation
 
-### Basic Usage
+The `LevelGenerator` supports room-based procedural levels:
 
 ```cpp
-WeatherSystem weather;
-weather.Initialize();
+Procedural::LevelGenerator gen;
+gen.LoadPrefabsFromFile("prefabs/rooms.json");
 
-// Set weather
-weather.SetWeather(WeatherType::Rain, 0.8f); // Heavy rain
-weather.SetWeather(WeatherType::Snow, 0.5f); // Light snow
-weather.SetWeather(WeatherType::Fog, 1.0f);   // Dense fog
-weather.SetWeather(WeatherType::Clear, 0.0f); // Clear sky
+// Generate a level
+gen.Generate(seed, roomCount);
 
-// Set wind
-weather.SetWindDirection(Math::Vector3(1.0f, 0.0f, 0.5f));
-weather.SetWindSpeed(5.0f);
-
-// Update
-weather.Update(deltaTime);
-
-// Get fog parameters
-f32 fogDensity = weather.GetFogDensity();
-Math::Vector3 fogColor = weather.GetFogColor();
+// Save/load prefab definitions
+gen.SavePrefabsToFile("prefabs/rooms.json");
 ```
 
-### Weather Transitions
-
-```cpp
-// Smoothly transition weather
-void TransitionWeather(WeatherSystem& weather, WeatherType target, f32 duration) {
-    // Weather system automatically transitions intensity
-    weather.SetWeather(target, 1.0f);
-    // Transition happens over time in Update()
-}
-```
-
-## Physics System
-
-### Basic Usage
-
-```cpp
-PhysicsWorld physics;
-physics.Initialize();
-physics.SetGravity(Math::Vector3(0, -9.81f, 0));
-
-// Create rigid body
-auto body = std::make_shared<RigidBody>();
-body->SetPosition(Math::Vector3(0, 10, 0));
-body->SetMass(1.0f);
-body->SetStatic(false);
-
-// Add to world
-physics.AddRigidBody(body);
-
-// Step simulation
-physics.Step(deltaTime);
-
-// Get updated position
-Math::Vector3 pos = body->GetPosition();
-```
-
-## Water System
-
-### Basic Usage
-
-```cpp
-WaterRenderer water;
-water.Initialize(&renderer);
-
-// Set water level
-water.SetWaterLevel(0.0f);
-
-// Set wave parameters
-water.SetWaveAmplitude(0.5f);
-water.SetWaveFrequency(1.0f);
-water.SetWaveSpeed(1.0f);
-
-// Render
-water.Render(deltaTime, cameraPosition);
-```
-
-## Shader GUI
-
-### Basic Usage
-
-```cpp
-ShaderGUI gui;
-gui.Initialize();
-
-// Register materials for editing
-gui.RegisterMaterial(materialInstance);
-
-// Show/hide editors
-gui.ShowMaterialEditor(true);
-gui.ShowShaderEditor(true);
-
-// Render GUI (in render loop)
-gui.Render();
-```
-
-## Complete Example
-
-```cpp
-class GameApplication : public Application {
-    VulkanRenderer renderer;
-    RenderPipeline pipeline;
-    RenderingTechniqueManager techniques;
-    TimeOfDay timeOfDay;
-    WeatherSystem weather;
-    PhysicsWorld physics;
-    WaterRenderer water;
-    ShaderGUI gui;
-    
-    void Initialize() override {
-        // Initialize all systems
-        renderer.Initialize(GetWindow());
-        pipeline.Initialize();
-        
-        techniques.RegisterTechnique(std::make_unique<ForwardRendering>());
-        techniques.SwitchTechnique("ForwardRendering");
-        techniques.InitializeCurrent(&renderer, &pipeline);
-        
-        timeOfDay.SetTime(12.0f);
-        weather.Initialize();
-        physics.Initialize();
-        water.Initialize(&renderer);
-        gui.Initialize();
-    }
-    
-    void Update(f32 deltaTime) override {
-        timeOfDay.Update(deltaTime);
-        weather.Update(deltaTime);
-        physics.Step(deltaTime);
-    }
-    
-    void Render() override {
-        renderer.BeginFrame();
-        
-        // Update lighting
-        UpdateLighting(timeOfDay);
-        
-        // Render
-        techniques.Render(deltaTime);
-        water.Render(deltaTime, cameraPosition);
-        gui.Render();
-        
-        renderer.EndFrame();
-    }
-};
-```
+Room prefabs are defined in JSON with connection points, size constraints, weights, and tags.
 
 ## System Dependencies
 
 ```
 Application
     ├── Renderer (VulkanRenderer)
-    │   ├── RenderPipeline
-    │   │   └── RenderingTechniqueManager
-    │   ├── GPU Culling
-    │   └── Bindless Resources
-    ├── TimeOfDay
-    │   └── Lighting System
-    ├── WeatherSystem
-    │   └── Particle Systems
-    ├── PhysicsWorld
-    │   └── Rigid Bodies
-    ├── WaterRenderer
-    │   └── Renderer
-    └── ShaderGUI
-        └── MaterialSystem
+    │   ├── RenderSystem (ECS rendering)
+    │   ├── PostProcessing (bloom, vignette, etc.)
+    │   └── RenderTarget (offscreen Game View)
+    ├── ECS World
+    │   ├── TransformComponent + MeshComponent + MaterialComponent
+    │   ├── LightComponent (multi-light UBO)
+    │   ├── CameraComponent (in-game cameras)
+    │   ├── CharacterControllers (5 types)
+    │   └── Gameplay/Physics/AI/Environment components
+    ├── Editor
+    │   ├── EditorLayer (ImGui panels)
+    │   ├── PlayMode (play/pause/stop)
+    │   ├── SceneManager (multi-scene projects)
+    │   └── Template Selector (startup)
+    ├── Effects
+    │   ├── WindSystem (global wind)
+    │   ├── WeatherSystem (rain, snow, fog, storm)
+    │   ├── Water3D (Gerstner waves)
+    │   └── RetroEffects (CRT, dithering)
+    └── Scene
+        ├── SceneSerializer (save/load)
+        └── SceneManager (project manifests, transitions)
 ```
-
-All systems are designed to work together seamlessly!

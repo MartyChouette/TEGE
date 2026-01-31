@@ -1,45 +1,24 @@
-# Getting Started - Making Enjin Engine Run
+# Getting Started with Enjin Engine
 
-## Step-by-Step Guide
+## Prerequisites
 
-### Step 1: Install Dependencies
+- C++20 compatible compiler (MSVC 2022, GCC 12+, Clang 14+)
+- CMake 3.20+
+- Vulkan SDK
+- GLFW3
 
-**⚠️ IMPORTANT: See [INSTALL_DEPENDENCIES.md](INSTALL_DEPENDENCIES.md) for detailed, up-to-date instructions!**
+## Building
 
-Quick check:
-```bash
-./scripts/check_dependencies.sh
-```
-
-Quick install (Ubuntu/Debian):
-```bash
-sudo apt-get update
-sudo apt-get install -y \
-    build-essential \
-    cmake \
-    libvulkan-dev \
-    libglfw3-dev \
-    glslang-tools
-```
-
-**If packages aren't available**, see:
-- [INSTALL_DEPENDENCIES.md](INSTALL_DEPENDENCIES.md) - Complete guide with alternatives
-- [MINIMAL_SETUP.md](MINIMAL_SETUP.md) - If you can't install everything
-
-### Step 2: Compile Shaders
+### Windows (Visual Studio)
 
 ```bash
-# Use the provided script
-./scripts/compile_shaders.sh
-
-# Or manually:
-cd Engine/shaders
-glslc triangle.vert -o triangle.vert.spv
-glslc triangle.frag -o triangle.frag.spv
-glslc cull.comp -o cull.comp.spv
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Release
 ```
 
-### Step 3: Build the Engine
+### Linux/Mac
 
 ```bash
 mkdir build
@@ -48,59 +27,94 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc)
 ```
 
-### Step 4: Run
+## Running the Editor
 
 ```bash
-# Make sure shaders are in the right place
-# The engine looks for shaders relative to the executable
-cd bin
-./EnjinEditor
+# Windows
+./build/bin/Release/EnjinEditor.exe
+
+# Linux/Mac
+./build/bin/EnjinEditor
 ```
 
-## Expected Output
+## First Launch
 
-If everything works:
-- ✅ Window opens
-- ✅ Vulkan initializes
-- ✅ Swapchain created
-- ✅ Red triangle renders
+1. **Splash Screen** appears for 3 seconds
+2. **Template Selector** lets you pick a starting point:
+   - **Blank** - Empty scene with a light
+   - **2D Platformer** - Side-scrolling game setup
+   - **2D Top-Down** - Overhead 2D game setup
+   - **3D Isometric** - Fixed-angle 3D setup
+   - **3D Third Person** - Over-the-shoulder camera
+   - **3D First Person** - FPS-style camera
+   - Or open an existing `.enjin` scene file
+3. **Editor** opens with all panels
+
+## Editor Quick Start
+
+### Creating Entities
+
+- `Entity > Create Empty` - New empty entity with transform
+- `Entity > 3D Object` - Cube, Sphere, Plane, Cylinder, Cone
+- `Entity > 2D Object` - Quad, Sprite
+- `Entity > Light` - Directional, Point, or Spot light
+- `Entity > Camera` - In-game camera
+
+### Adding Components
+
+Select an entity in the Hierarchy, then in the Inspector panel use `Add Component` to attach:
+- Physics (Rigidbody, Colliders, Triggers)
+- Controllers (Platformer, Top-Down, Third/First Person)
+- Gameplay (Health, Damage, Pickup, Inventory, Timer)
+- Environment (Weather Zone, Water, Grass, Gravity Zone)
+- AI (AI Controller, Follow/LookAt Target, Waypoints)
+- Visual (Billboard, Particles, Sprites, Tilemap)
+
+### Importing 3D Models
+
+`File > Import Model...` (Ctrl+I) to load `.gltf` or `.glb` files. Models are automatically converted to entities with meshes, materials, and (if present) skeletal animation.
+
+### Scene Management
+
+Save scenes as `.enjin` files (`Ctrl+S`). For multi-scene projects:
+1. Open `View > Scene List`
+2. Create a project (`File > New Project...`)
+3. Add scenes to the project
+4. Set a start scene
+5. Save the project as `.enjinproject`
+
+Scenes can be loaded with transitions (fade to black, fade to white, cross fade) via the Scene List panel.
+
+### Play Mode
+
+Use the Game View panel controls:
+- **Play** - Start game preview (controllers become active)
+- **Pause** - Freeze game state
+- **Stop** - Return to editor state
+
+### Keyboard Shortcuts
+
+| Key | Action |
+|-----|--------|
+| `1/2/3` | Translate/Rotate/Scale gizmo |
+| `4` | Toggle local/world space |
+| `WASD` | Fly camera |
+| `Shift` | Sprint |
+| `Ctrl+S` | Save scene |
+| `Ctrl+O` | Open scene |
+| `Ctrl+I` | Import model |
+| `Ctrl+X/C/V` | Cut/Copy/Paste entity |
 
 ## Troubleshooting
 
-### "Shader file not found"
-- Make sure `.spv` files are in `Engine/shaders/` directory
-- Or copy them to the same directory as the executable
-
 ### "Vulkan not found"
-- Install Vulkan SDK
-- Set `VULKAN_SDK` environment variable
+- Install the Vulkan SDK and ensure `VULKAN_SDK` is set
 
-### "GLFW not found"
-- Install GLFW3 development package
-- Or build from source
+### Build errors
+- Verify C++20 support in your compiler
+- Check CMake version is 3.20+
+- Run `cmake ..` again after adding new source files
 
-### Build Errors
-- Check C++ compiler is C++20 compatible
-- Ensure all dependencies are installed
-- Check CMake version (3.20+)
-
-## What Works Now
-
-After completing these steps:
-- ✅ Window creation
-- ✅ Vulkan initialization
-- ✅ Basic triangle rendering
-- ✅ ECS system
-- ✅ Day/night cycle (time calculations)
-- ⚠️ GPU culling (CPU fallback if shader not compiled)
-- ⚠️ Other systems (interfaces ready, implementations pending)
-
-## Next Steps After It Runs
-
-1. **Verify Triangle Renders** - Should see red triangle
-2. **Add More Objects** - Test ECS system
-3. **Test Day/Night** - See time affect lighting
-4. **Compile Compute Shader** - Enable GPU culling
-5. **Add Features** - Implement weather, physics, etc.
-
-The foundation is ready - now make it run!
+### No window appears
+- Check GPU has Vulkan support
+- Update GPU drivers

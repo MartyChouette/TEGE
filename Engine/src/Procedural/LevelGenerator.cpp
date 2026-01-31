@@ -5,8 +5,10 @@
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Logging/Log.h"
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <chrono>
+#include <fstream>
 
 namespace Enjin {
 namespace Procedural {
@@ -57,6 +59,194 @@ const RoomPrefab* LevelGenerator::GetPrefab(const std::string& id) const {
         if (p.id == id) return &p;
     }
     return nullptr;
+}
+
+bool LevelGenerator::LoadPrefabsFromFile(const std::string& filepath) {
+    try {
+        std::ifstream file(filepath);
+        if (!file.is_open()) {
+            ENJIN_LOG_ERROR(Procedural, "Failed to open prefabs file: %s", filepath.c_str());
+            return false;
+        }
+
+        nlohmann::json root;
+        file >> root;
+        file.close();
+
+        if (!root.contains("prefabs") || !root["prefabs"].is_array()) {
+            ENJIN_LOG_ERROR(Procedural, "Invalid prefabs file format: %s", filepath.c_str());
+            return false;
+        }
+
+        for (const auto& prefabJson : root["prefabs"]) {
+            RoomPrefab prefab;
+            prefab.id = prefabJson.value("id", "");
+            prefab.name = prefabJson.value("name", prefab.id);
+            prefab.category = prefabJson.value("category", "default");
+
+            if (prefabJson.contains("size") && prefabJson["size"].is_array()) {
+                prefab.size = Math::Vector3(
+                    prefabJson["size"][0].get<f32>(),
+                    prefabJson["size"][1].get<f32>(),
+                    prefabJson["size"][2].get<f32>());
+            }
+            if (prefabJson.contains("origin") && prefabJson["origin"].is_array()) {
+                prefab.origin = Math::Vector3(
+                    prefabJson["origin"][0].get<f32>(),
+                    prefabJson["origin"][1].get<f32>(),
+                    prefabJson["origin"][2].get<f32>());
+            }
+
+            prefab.meshPath = prefabJson.value("meshPath", "");
+            prefab.scenePath = prefabJson.value("scenePath", "");
+            prefab.weight = prefabJson.value("weight", 1.0f);
+            prefab.minCount = prefabJson.value("minCount", 0u);
+            prefab.maxCount = prefabJson.value("maxCount", UINT32_MAX);
+            prefab.allowRotation = prefabJson.value("allowRotation", true);
+            prefab.allowMirror = prefabJson.value("allowMirror", false);
+            prefab.minDistanceFromStart = prefabJson.value("minDistanceFromStart", 0u);
+            prefab.maxDistanceFromStart = prefabJson.value("maxDistanceFromStart", UINT32_MAX);
+
+            if (prefabJson.contains("tags") && prefabJson["tags"].is_array()) {
+                for (const auto& tag : prefabJson["tags"]) {
+                    prefab.tags.push_back(tag.get<std::string>());
+                }
+            }
+
+            if (prefabJson.contains("connections") && prefabJson["connections"].is_array()) {
+                for (const auto& connJson : prefabJson["connections"]) {
+                    ConnectionPoint conn;
+                    conn.id = connJson.value("id", "");
+                    conn.type = connJson.value("type", "default");
+                    conn.required = connJson.value("required", false);
+                    if (connJson.contains("position") && connJson["position"].is_array()) {
+                        conn.localPosition = Math::Vector3(
+                            connJson["position"][0].get<f32>(),
+                            connJson["position"][1].get<f32>(),
+                            connJson["position"][2].get<f32>());
+                    }
+                    if (connJson.contains("size") && connJson["size"].is_array()) {
+                        conn.size = Math::Vector2(
+                            connJson["size"][0].get<f32>(),
+                            connJson["size"][1].get<f32>());
+                    }
+                    std::string dirStr = connJson.value("direction", "north");
+                    if (dirStr == "north") conn.direction = ConnectionDirection::North;
+                    else if (dirStr == "south") conn.direction = ConnectionDirection::South;
+                    else if (dirStr == "east") conn.direction = ConnectionDirection::East;
+                    else if (dirStr == "west") conn.direction = ConnectionDirection::West;
+                    else if (dirStr == "up") conn.direction = ConnectionDirection::Up;
+                    else if (dirStr == "down") conn.direction = ConnectionDirection::Down;
+
+                    prefab.connections.push_back(conn);
+                }
+            }
+
+            AddPrefab(prefab);
+        }
+
+        ENJIN_LOG_INFO(Procedural, "Loaded %zu prefabs from %s",
+            root["prefabs"].size(), filepath.c_str());
+        return true;
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Procedural, "Error loading prefabs: %s", e.what());
+        return false;
+    }
+}
+
+bool LevelGenerator::SavePrefabsToFile(const std::string& filepath) const {
+    try {
+        nlohmann::json root;
+        nlohmann::json prefabsArray = nlohmann::json::array();
+
+        for (const auto& prefab : m_Prefabs) {
+            nlohmann::json prefabJson;
+            prefabJson["id"] = prefab.id;
+            prefabJson["name"] = prefab.name;
+            prefabJson["category"] = prefab.category;
+            prefabJson["size"] = nlohmann::json::array({prefab.size.x, prefab.size.y, prefab.size.z});
+            prefabJson["origin"] = nlohmann::json::array({prefab.origin.x, prefab.origin.y, prefab.origin.z});
+            prefabJson["meshPath"] = prefab.meshPath;
+            prefabJson["scenePath"] = prefab.scenePath;
+            prefabJson["weight"] = prefab.weight;
+            prefabJson["minCount"] = prefab.minCount;
+            prefabJson["maxCount"] = prefab.maxCount;
+            prefabJson["allowRotation"] = prefab.allowRotation;
+            prefabJson["allowMirror"] = prefab.allowMirror;
+            prefabJson["minDistanceFromStart"] = prefab.minDistanceFromStart;
+            prefabJson["maxDistanceFromStart"] = prefab.maxDistanceFromStart;
+
+            if (!prefab.tags.empty()) {
+                prefabJson["tags"] = prefab.tags;
+            }
+
+            nlohmann::json connsArray = nlohmann::json::array();
+            for (const auto& conn : prefab.connections) {
+                nlohmann::json connJson;
+                connJson["id"] = conn.id;
+                connJson["position"] = nlohmann::json::array(
+                    {conn.localPosition.x, conn.localPosition.y, conn.localPosition.z});
+                connJson["size"] = nlohmann::json::array({conn.size.x, conn.size.y});
+                connJson["type"] = conn.type;
+                connJson["required"] = conn.required;
+
+                switch (conn.direction) {
+                    case ConnectionDirection::North: connJson["direction"] = "north"; break;
+                    case ConnectionDirection::South: connJson["direction"] = "south"; break;
+                    case ConnectionDirection::East: connJson["direction"] = "east"; break;
+                    case ConnectionDirection::West: connJson["direction"] = "west"; break;
+                    case ConnectionDirection::Up: connJson["direction"] = "up"; break;
+                    case ConnectionDirection::Down: connJson["direction"] = "down"; break;
+                }
+                connsArray.push_back(connJson);
+            }
+            prefabJson["connections"] = connsArray;
+
+            prefabsArray.push_back(prefabJson);
+        }
+
+        root["prefabs"] = prefabsArray;
+
+        std::ofstream file(filepath);
+        if (!file.is_open()) {
+            ENJIN_LOG_ERROR(Procedural, "Failed to open file for writing: %s", filepath.c_str());
+            return false;
+        }
+        file << root.dump(2);
+        file.close();
+
+        ENJIN_LOG_INFO(Procedural, "Saved %zu prefabs to %s", m_Prefabs.size(), filepath.c_str());
+        return true;
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Procedural, "Error saving prefabs: %s", e.what());
+        return false;
+    }
+}
+
+const RoomPrefab* LevelGenerator::SelectPrefab(const std::vector<const RoomPrefab*>& valid) const {
+    if (valid.empty()) return nullptr;
+
+    // Weighted random selection based on prefab weights
+    f32 totalWeight = 0.0f;
+    for (const auto* prefab : valid) {
+        totalWeight += prefab->weight;
+    }
+
+    if (totalWeight <= 0.0f) {
+        // Fallback to uniform random if all weights are zero
+        return valid[RandomUint(static_cast<u32>(valid.size()))];
+    }
+
+    f32 roll = RandomFloat() * totalWeight;
+    f32 cumulative = 0.0f;
+    for (const auto* prefab : valid) {
+        cumulative += prefab->weight;
+        if (roll <= cumulative) {
+            return prefab;
+        }
+    }
+
+    return valid.back();
 }
 
 void LevelGenerator::Clear() {

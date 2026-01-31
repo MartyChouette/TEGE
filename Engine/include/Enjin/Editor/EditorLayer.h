@@ -15,6 +15,7 @@
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/RetroEffects.h"
+#include "Enjin/Scene/SceneManager.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -43,6 +44,7 @@ enum class EditorPanel : u32 {
     PostProcessing = 1 << 6,
     Effects = 1 << 7,
     GameView = 1 << 8,
+    SceneList = 1 << 9,
     All = 0xFFFFFFFF
 };
 
@@ -85,7 +87,7 @@ public:
     void Render(VkCommandBuffer commandBuffer);            // Call DURING main render pass
 
     // Set the world to edit
-    void SetWorld(ECS::World* world) { m_World = world; }
+    void SetWorld(ECS::World* world) { m_World = world; m_SceneManager.SetWorld(world); }
     ECS::World* GetWorld() const { return m_World; }
 
     // Set the camera for the viewport
@@ -103,8 +105,8 @@ public:
     // Set render system for offscreen game camera rendering
     void SetRenderSystem(ECS::RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
 
-    // Set post-processing for the settings panel
-    void SetPostProcessing(Renderer::PostProcessing* postProcessing) { m_PostProcessing = postProcessing; }
+    // Access post-processing (owned by editor, created during Initialize)
+    Renderer::PostProcessing* GetPostProcessing() { return m_PostProcessing.get(); }
 
     // Panel visibility
     void SetPanelVisibility(EditorPanel panel, bool visible);
@@ -134,6 +136,7 @@ private:
     void DrawPostProcessingPanel();
     void DrawEffectsPanel();
     void DrawGameViewPanel();
+    void DrawSceneListPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
 
@@ -151,6 +154,7 @@ private:
     void DrawVegetationComponent(ECS::Entity entity);
     void DrawCameraTriggerComponent(ECS::Entity entity);
     void DrawTemperatureZoneComponent(ECS::Entity entity);
+    void DrawGravityZoneComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -163,14 +167,38 @@ private:
     void DrawHealthComponent(ECS::Entity entity);
     void DrawRigidbodyComponent(ECS::Entity entity);
     void DrawBoxColliderComponent(ECS::Entity entity);
+    void DrawSphereColliderComponent(ECS::Entity entity);
+    void DrawCapsuleColliderComponent(ECS::Entity entity);
+    void DrawTriggerZoneComponent(ECS::Entity entity);
+    void DrawDamageComponent(ECS::Entity entity);
+    void DrawInteractableComponent(ECS::Entity entity);
+    void DrawPickupComponent(ECS::Entity entity);
+    void DrawInventoryComponent(ECS::Entity entity);
+    void DrawTimerComponent(ECS::Entity entity);
     void DrawAudioSourceComponent(ECS::Entity entity);
+    void DrawAudioListenerComponent(ECS::Entity entity);
+
+    // AI components
+    void DrawAIControllerComponent(ECS::Entity entity);
+    void DrawFollowTargetComponent(ECS::Entity entity);
+    void DrawLookAtTargetComponent(ECS::Entity entity);
+    void DrawWaypointComponent(ECS::Entity entity);
+
+    // Visual components
+    void DrawBillboardComponent(ECS::Entity entity);
+    void DrawParticleEmitterComponent(ECS::Entity entity);
 
     // 2D components
     void DrawSprite2DComponent(ECS::Entity entity);
     void DrawAnimatedSprite2DComponent(ECS::Entity entity);
     void DrawTilemapComponent(ECS::Entity entity);
+    void DrawCamera2DBoundsComponent(ECS::Entity entity);
     void DrawStateMachineComponent(ECS::Entity entity);
     void DrawDialogueComponent(ECS::Entity entity);
+
+    // Other components
+    void DrawTagComponent(ECS::Entity entity);
+    void DrawSpawnPointComponent(ECS::Entity entity);
 
     // Scene management
     void SaveScene(const std::string& path);
@@ -186,7 +214,6 @@ private:
     Renderer::Camera* m_Camera = nullptr;
     Renderer::CameraController* m_CameraController = nullptr;
     ECS::RenderSystem* m_RenderSystem = nullptr;
-    Renderer::PostProcessing* m_PostProcessing = nullptr;
 
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
 
@@ -265,16 +292,33 @@ private:
     f32 m_SplashFadeStart = 2.0f;  // Start fading at 2 seconds
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
+    // Template selector (shown after splash)
+    bool m_ShowTemplateSelector = true;
+    i32 m_SelectedTemplate = -1;   // -1 = none selected (hovering)
+    std::vector<std::string> m_CustomTemplateNames;  // Saved custom template names
+    std::vector<std::string> m_CustomTemplatePaths;  // Saved custom template file paths
+    void DrawTemplateSelector();
+    void ApplyTemplate(const std::string& templateId);
+    void SaveCustomTemplate(const std::string& name);
+    void LoadCustomTemplates();
+
     // Docking layout
     bool m_DockingInitialized = false;
 
-    // Game View render target (offscreen rendering for game camera)
-    std::unique_ptr<Renderer::RenderTarget> m_GameViewRenderTarget;
+    // Game View render targets (offscreen rendering for game camera)
+    std::unique_ptr<Renderer::RenderTarget> m_GameViewRenderTarget;  // Final output (displayed in ImGui)
+    std::unique_ptr<Renderer::RenderTarget> m_SceneRenderTarget;     // Scene pre-post-processing
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
 
+    // Post-processing (owned by editor, applied to Game View)
+    std::unique_ptr<Renderer::PostProcessing> m_PostProcessing;
+
     // Selected game camera entity (user can pick which camera to use)
     ECS::Entity m_SelectedGameCamera = ECS::INVALID_ENTITY;
+
+    // Scene management
+    Scene::SceneManager m_SceneManager;
 
     // Effects systems (global, rendered in game view)
     Effects::WindSystem m_WindSystem;
@@ -285,8 +329,16 @@ private:
     // Draw camera frustum gizmo in editor view
     void DrawCameraFrustum(ECS::Entity cameraEntity);
 
+    // Auto-create and configure a game camera when a character controller is added
+    void SetupCameraForController(ECS::Entity controllerEntity, const std::string& controllerType);
+
     // Console command execution
     void ExecuteConsoleCommand(const std::string& command);
+
+    // Clipboard state for cut/copy/paste entities
+    std::string m_ClipboardEntityJson;
+    bool m_ClipboardIsCut = false;
+    ECS::Entity m_ClipboardSourceEntity = ECS::INVALID_ENTITY;
 
     // Asset browser state
     std::string m_AssetBrowserPath;  // Current browsing directory

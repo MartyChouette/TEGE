@@ -2,7 +2,9 @@
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 #include <algorithm>
+#include <climits>
 
 namespace Enjin {
 namespace Physics {
@@ -24,9 +26,27 @@ void SimplePhysics::Update(f32 deltaTime) {
             continue;
         }
 
+        // Determine effective gravity for this entity (check gravity zones)
+        Math::Vector3 effectiveGravity = m_Gravity;
+        {
+            i32 bestPriority = INT_MIN;
+            for (ECS::Entity zoneEntity : m_World->GetAllEntities()) {
+                if (!m_World->HasComponent<ECS::GravityZoneComponent>(zoneEntity)) continue;
+                auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
+                auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
+                if (zone && zoneTransform && zone->isActive && zone->priority > bestPriority) {
+                    if (zone->ContainsPoint(zoneTransform->position, transform->position)) {
+                        // Use position-aware gravity (supports both directional and point gravity)
+                        effectiveGravity = zone->GetGravityAt(zoneTransform->position, transform->position);
+                        bestPriority = zone->priority;
+                    }
+                }
+            }
+        }
+
         // Apply gravity
         if (rb->useGravity && !rb->isGrounded) {
-            rb->velocity = rb->velocity + m_Gravity * rb->gravityScale * deltaTime;
+            rb->velocity = rb->velocity + effectiveGravity * rb->gravityScale * deltaTime;
         }
 
         // Apply drag
