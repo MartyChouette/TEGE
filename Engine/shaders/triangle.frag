@@ -64,7 +64,8 @@ layout(binding = 1) uniform LightingUBO {
     mat4 lightSpaceMatrix;
     float shadowBias;
     int shadowEnabled;
-    vec2 _shadowPad;
+    float shadowStrength;
+    float _shadowPad;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -130,6 +131,12 @@ layout(binding = 5) uniform sampler2D heightMap;
 // Normal map sampler (binding 6)
 layout(binding = 6) uniform sampler2D normalMap;
 
+// Metallic-roughness map sampler (binding 8)
+layout(binding = 8) uniform sampler2D metallicRoughnessMap;
+
+// Emissive map sampler (binding 9)
+layout(binding = 9) uniform sampler2D emissiveMap;
+
 // Calculate shadow factor using PCF (Percentage Closer Filtering)
 float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
     // Check if shadows are enabled
@@ -165,6 +172,9 @@ float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
         }
     }
     shadow /= 9.0;
+
+    // Apply shadow strength: 0 = no shadow effect, 1 = full shadows
+    shadow = mix(1.0, shadow, lighting.shadowStrength);
 
     return shadow;
 }
@@ -353,6 +363,19 @@ void main() {
         albedo *= texColor.rgb;
     }
 
+    // Sample metallic-roughness texture if available (glTF convention: G=roughness, B=metallic)
+    if ((material.flags & FLAG_HAS_METALLIC_TEX) != 0) {
+        vec4 mrSample = texture(metallicRoughnessMap, uv);
+        roughness *= mrSample.g;
+        metallic *= mrSample.b;
+    }
+
+    // Sample emissive texture if available
+    vec3 emissiveTexColor = vec3(1.0);
+    if ((material.flags & FLAG_HAS_EMISSIVE_TEX) != 0) {
+        emissiveTexColor = texture(emissiveMap, uv).rgb;
+    }
+
     // Multiply with vertex color (baked shadows / per-vertex lighting)
     // Skip for water surfaces: vertex color G channel stores edge distance, not color
     if ((material.flags & FLAG_WATER_SURFACE) == 0) {
@@ -362,8 +385,8 @@ void main() {
     // Gouraud-only mode: skip per-pixel lighting, use vertex color as pre-computed lighting
     if ((material.flags & FLAG_GOURAUD_ONLY) != 0) {
         vec3 result = albedo;
-        // Add emission
-        result += material.emissiveColor * material.emissiveStrength;
+        // Add emission (modulated by emissive texture if present)
+        result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
         // Gamma correction
         result = pow(result, vec3(1.0 / 2.2));
         // Alpha handling
@@ -503,8 +526,8 @@ void main() {
         }
     }
 
-    // Add emission
-    result += material.emissiveColor * material.emissiveStrength;
+    // Add emission (modulated by emissive texture if present)
+    result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
 
     // Snow accumulation: whiten upward-facing surfaces based on snow intensity
     float snowIntensity = lighting.fogColorSnow.w;

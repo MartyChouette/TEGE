@@ -103,7 +103,8 @@ struct alignas(16) LightingUBO {
     Math::Matrix4 lightSpaceMatrix;  // Light view-projection matrix
     f32 shadowBias;                  // Depth bias for shadow acne
     i32 shadowEnabled;               // 1 = shadows enabled
-    f32 _shadowPad[2];               // Padding for alignment
+    f32 shadowStrength;              // 0..1 shadow strength (0 = no shadow, 1 = full)
+    f32 _shadowPad;                  // Padding for alignment
 
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time

@@ -47,7 +47,8 @@ layout(binding = 1) uniform LightingUBO {
     mat4 lightSpaceMatrix;
     float shadowBias;
     int shadowEnabled;
-    vec2 _shadowPad;
+    float shadowStrength;
+    float _shadowPad;
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity

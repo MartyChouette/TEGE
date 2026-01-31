@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Accessibility/ContentWarning.h"
+#include "Enjin/Renderer/Skybox.h"
 #include <string>
 #include <vector>
 
@@ -65,9 +66,14 @@ public:
     const Accessibility::SceneContentFlags& GetContentFlags() const { return m_ContentFlags; }
     Accessibility::SceneContentFlags& GetContentFlags() { return m_ContentFlags; }
 
+    // Scene-level skybox configuration
+    void SetSkyboxConfig(const Renderer::SkyboxConfig& config) { m_SkyboxConfig = config; }
+    const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_SkyboxConfig; }
+
 private:
     ECS::World* m_World = nullptr;
     Accessibility::SceneContentFlags m_ContentFlags;
+    Renderer::SkyboxConfig m_SkyboxConfig;
 };
 
 } // namespace Scene

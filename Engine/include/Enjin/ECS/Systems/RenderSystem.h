@@ -21,6 +21,8 @@
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Renderer/Skybox.h"
+#include "Enjin/Assets/FileWatcher.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
@@ -115,6 +117,11 @@ public:
     void SetWorldCurvature(f32 strength) { m_WorldCurvature = strength; }
     f32 GetWorldCurvature() const { return m_WorldCurvature; }
 
+    // Skybox
+    void SetSkybox(const Renderer::SkyboxConfig& config);
+    const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
+    Renderer::Skybox* GetSkybox() { return &m_Skybox; }
+
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
 
@@ -183,6 +190,19 @@ private:
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
 
+    // Skybox
+    Renderer::Skybox m_Skybox;
+    VkPipeline m_SkyboxPipelineHandle = VK_NULL_HANDLE;
+    VkPipelineLayout m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
+    std::unique_ptr<Renderer::VulkanBuffer> m_SkyboxVertexBuffer;
+    VkDescriptorPool m_SkyboxDescriptorPool = VK_NULL_HANDLE;
+    std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_SkyboxUniformBuffers;
+    void CreateSkyboxPipeline();
+    void RenderSkybox(VkCommandBuffer commandBuffer);
+    void CreateSkyboxCubeVBO();
+
     // Water surface mesh generation
     void EnsureWaterMeshes();
 
@@ -191,6 +211,8 @@ private:
     void UpdateTextureDescriptor(Renderer::Texture* texture);
     void UpdateHeightTextureDescriptor(Renderer::Texture* texture);
     void UpdateNormalMapDescriptor(Renderer::Texture* texture);
+    void UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture);
+    void UpdateEmissiveDescriptor(Renderer::Texture* texture);
 
     // Split uniform updates: frame-level (once) vs per-entity (material only)
     void UpdateFrameUniforms();
@@ -209,6 +231,10 @@ private:
     // Draw call / triangle counters
     u32 m_DrawCallCount = 0;
     u32 m_TriangleCount = 0;
+
+    // Asset hot-reload watcher (polls texture files for changes)
+    Assets::FileWatcher m_TextureWatcher;
+    u32 m_WatcherPollCounter = 0;
 
     bool m_Initialized = false;
 };

@@ -22,6 +22,9 @@
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -238,6 +241,17 @@ void EditorLayer::Update(f32 deltaTime) {
         if (Input::IsKeyPressed(KeyCode::Num4)) {
             // Toggle between local and world space
             m_GizmoSpace = (m_GizmoSpace == GizmoSpace::World) ? GizmoSpace::Local : GizmoSpace::World;
+        }
+
+        // Undo (Ctrl+Z) / Redo (Ctrl+Y or Ctrl+Shift+Z)
+        if (Input::IsKeyDown(KeyCode::LeftControl)) {
+            if (Input::IsKeyDown(KeyCode::LeftShift) && Input::IsKeyPressed(KeyCode::Z)) {
+                m_UndoRedo.Redo();
+            } else if (Input::IsKeyPressed(KeyCode::Z)) {
+                m_UndoRedo.Undo();
+            } else if (Input::IsKeyPressed(KeyCode::Y)) {
+                m_UndoRedo.Redo();
+            }
         }
 
         // Delete selected entity
@@ -1201,8 +1215,12 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("Edit")) {
-            ImGui::MenuItem("Undo", "Ctrl+Z", false, false);  // Not yet implemented
-            ImGui::MenuItem("Redo", "Ctrl+Y", false, false);  // Not yet implemented
+            if (ImGui::MenuItem("Undo", "Ctrl+Z", false, m_UndoRedo.CanUndo())) {
+                m_UndoRedo.Undo();
+            }
+            if (ImGui::MenuItem("Redo", "Ctrl+Y", false, m_UndoRedo.CanRedo())) {
+                m_UndoRedo.Redo();
+            }
             ImGui::Separator();
             bool hasSelection = m_SelectedEntity != ECS::INVALID_ENTITY && m_World;
             if (ImGui::MenuItem("Cut", "Ctrl+X", false, hasSelection)) {
@@ -2118,6 +2136,62 @@ void EditorLayer::DrawInspectorPanel() {
             DrawWaypointComponent(m_SelectedEntity);
         }
 
+        // IK Components
+        if (m_World->HasComponent<ECS::LookAtIKComponent>(m_SelectedEntity)) {
+            if (ImGui::CollapsingHeader("Look-At IK")) {
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(m_SelectedEntity);
+                char headBone[128];
+                strncpy(headBone, ik->headBoneName.c_str(), sizeof(headBone) - 1);
+                headBone[sizeof(headBone) - 1] = '\0';
+                if (ImGui::InputText("Head Bone", headBone, sizeof(headBone))) {
+                    ik->headBoneName = headBone;
+                }
+                char neckBone[128];
+                strncpy(neckBone, ik->neckBoneName.c_str(), sizeof(neckBone) - 1);
+                neckBone[sizeof(neckBone) - 1] = '\0';
+                if (ImGui::InputText("Neck Bone", neckBone, sizeof(neckBone))) {
+                    ik->neckBoneName = neckBone;
+                }
+                ImGui::SliderFloat("Max Rotation", &ik->maxRotation, 0.0f, 90.0f);
+                ImGui::SliderFloat("Smooth Speed##LookAtIK", &ik->smoothSpeed, 0.1f, 20.0f);
+                ImGui::SliderFloat("Look Weight", &ik->lookWeight, 0.0f, 1.0f);
+                ImGui::DragFloat3("Target Pos", &ik->targetWorldPos.x, 0.1f);
+            }
+        }
+
+        if (m_World->HasComponent<ECS::InteractionIKComponent>(m_SelectedEntity)) {
+            if (ImGui::CollapsingHeader("Interaction IK")) {
+                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(m_SelectedEntity);
+                char handBone[128];
+                strncpy(handBone, ik->handBoneName.c_str(), sizeof(handBone) - 1);
+                handBone[sizeof(handBone) - 1] = '\0';
+                if (ImGui::InputText("Hand Bone", handBone, sizeof(handBone))) {
+                    ik->handBoneName = handBone;
+                }
+                char elbowBone[128];
+                strncpy(elbowBone, ik->elbowBoneName.c_str(), sizeof(elbowBone) - 1);
+                elbowBone[sizeof(elbowBone) - 1] = '\0';
+                if (ImGui::InputText("Elbow Bone", elbowBone, sizeof(elbowBone))) {
+                    ik->elbowBoneName = elbowBone;
+                }
+                char shoulderBone[128];
+                strncpy(shoulderBone, ik->shoulderBoneName.c_str(), sizeof(shoulderBone) - 1);
+                shoulderBone[sizeof(shoulderBone) - 1] = '\0';
+                if (ImGui::InputText("Shoulder Bone", shoulderBone, sizeof(shoulderBone))) {
+                    ik->shoulderBoneName = shoulderBone;
+                }
+                ImGui::SliderFloat("Radius", &ik->interactionRadius, 0.1f, 10.0f);
+                ImGui::SliderFloat("IK Weight", &ik->ikWeight, 0.0f, 1.0f);
+                ImGui::SliderFloat("Smooth Speed##InteractionIK", &ik->smoothSpeed, 0.1f, 20.0f);
+                char ikTag[128];
+                strncpy(ikTag, ik->interactionTag.c_str(), sizeof(ikTag) - 1);
+                ikTag[sizeof(ikTag) - 1] = '\0';
+                if (ImGui::InputText("Interaction Tag", ikTag, sizeof(ikTag))) {
+                    ik->interactionTag = ikTag;
+                }
+            }
+        }
+
         // Visual components
         if (m_World->HasComponent<ECS::BillboardComponent>(m_SelectedEntity)) {
             DrawBillboardComponent(m_SelectedEntity);
@@ -2565,8 +2639,24 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Tangent-space normal map (RGB encoded)");
 
-            ImGui::Text("Metallic/Roughness: %d", material->metallicRoughnessTexture);
-            ImGui::Text("Emissive: %d", material->emissiveTexture);
+            // Metallic-roughness texture path
+            char mrPath[256];
+            strncpy(mrPath, material->metallicRoughnessTexturePath.c_str(), sizeof(mrPath) - 1);
+            mrPath[sizeof(mrPath) - 1] = '\0';
+            if (ImGui::InputText("Metallic/Roughness", mrPath, sizeof(mrPath))) {
+                material->metallicRoughnessTexturePath = mrPath;
+                if (material->metallicRoughnessTexturePath.empty()) material->metallicRoughnessTexture = -1;
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("glTF metallic-roughness (G=roughness, B=metallic)");
+
+            // Emissive texture path
+            char emissivePath[256];
+            strncpy(emissivePath, material->emissiveTexturePath.c_str(), sizeof(emissivePath) - 1);
+            emissivePath[sizeof(emissivePath) - 1] = '\0';
+            if (ImGui::InputText("Emissive Map", emissivePath, sizeof(emissivePath))) {
+                material->emissiveTexturePath = emissivePath;
+                if (material->emissiveTexturePath.empty()) material->emissiveTexture = -1;
+            }
             ImGui::TreePop();
         }
 
@@ -4626,6 +4716,35 @@ void EditorLayer::DrawPostProcessingPanel() {
 void EditorLayer::DrawEffectsPanel() {
     ImGui::Begin("Effects (Retro)");
 
+    // === SKYBOX ===
+    if (ImGui::CollapsingHeader("Skybox")) {
+        if (m_RenderSystem) {
+            Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
+            int typeIdx = static_cast<int>(config.type);
+            const char* skyboxTypes[] = { "None", "Cubemap", "Procedural", "Solid Color" };
+            if (ImGui::Combo("Skybox Type", &typeIdx, skyboxTypes, 4)) {
+                config.type = static_cast<Renderer::SkyboxType>(typeIdx);
+                m_RenderSystem->SetSkybox(config);
+            }
+
+            if (config.type == Renderer::SkyboxType::Procedural) {
+                bool changed = false;
+                changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
+                changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
+                changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
+                if (changed) m_RenderSystem->SetSkybox(config);
+            }
+
+            if (config.type == Renderer::SkyboxType::SolidColor) {
+                if (ImGui::ColorEdit3("Sky Color", &config.solidColor.x)) {
+                    m_RenderSystem->SetSkybox(config);
+                }
+            }
+        }
+    }
+
+    ImGui::Separator();
+
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
     if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
         bool retroEnabled = m_RetroEffects.IsEnabled();
@@ -5667,6 +5786,13 @@ void EditorLayer::DrawSplashScreen() {
         ImVec2 loadingPos(center.x - loadingSize.x * 0.5f, center.y + 80);
         u32 loadingColor = IM_COL32(120, 130, 160, static_cast<int>(200 * alpha));
         drawList->AddText(loadingPos, loadingColor, loadingText);
+
+        // "by marty64" credit at bottom
+        const char* credit = "by marty64";
+        ImVec2 creditSize = ImGui::CalcTextSize(credit);
+        ImVec2 creditPos(center.x - creditSize.x * 0.5f, io.DisplaySize.y * 0.75f);
+        u32 creditColor = IM_COL32(100, 100, 110, static_cast<int>(140 * alpha));
+        drawList->AddText(creditPos, creditColor, credit);
     }
     ImGui::End();
 
@@ -5737,8 +5863,9 @@ void EditorLayer::DrawTemplateSelector() {
             { "puzzle",      "Puzzle Plat.",   "Pushable blocks\nPlates + doors + switches",           ImVec4(0.5f, 0.8f, 0.9f, 1.0f) },
             { "horror",      "Horror",         "Walking sim\nFlashlight + notes + dark",               ImVec4(0.3f, 0.1f, 0.3f, 1.0f) },
             { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f) },
+            { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f) },
         };
-        int builtinCount = 21;
+        int builtinCount = 22;
 
         f32 cardW = 180.0f;
         f32 cardH = 140.0f;
@@ -5908,9 +6035,10 @@ void EditorLayer::DrawTemplateSelector() {
 void EditorLayer::ApplyTemplate(const std::string& templateId) {
     if (!m_World) return;
 
-    // Clear existing scene
+    // Clear existing scene and undo history
     m_World->Clear();
     m_SelectedEntity = ECS::INVALID_ENTITY;
+    m_UndoRedo.Clear();
 
     // Handle custom templates
     if (templateId.substr(0, 7) == "custom:") {
@@ -8334,6 +8462,130 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
         }
     }
+    else if (templateId == "flower") {
+        // Flower Garden template - procedural flower with pluckable leaves and petals
+
+        // Ground plane
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.scale = Math::Vector3(20.0f, 0.2f, 20.0f);
+            gt.position = Math::Vector3(0.0f, -0.1f, 0.0f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.25f, 0.45f, 0.15f);
+            gmat.roughness = 0.95f;
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Flower stem
+        {
+            ECS::Entity stem = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(stem, "Flower_Stem");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(stem);
+            st.position = Math::Vector3(0.0f, 0.8f, 0.0f);
+            st.scale = Math::Vector3(0.08f, 1.6f, 0.08f);
+            auto& smat = m_World->AddComponent<ECS::MaterialComponent>(stem);
+            smat.baseColor = Math::Vector3(0.2f, 0.5f, 0.15f);
+            smat.roughness = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(stem, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Petals (arranged radially)
+        const int petalCount = 10;
+        const float petalHeight = 1.7f;
+        for (int i = 0; i < petalCount; ++i) {
+            ECS::Entity petal = m_World->CreateEntity();
+            char pname[32]; snprintf(pname, sizeof(pname), "Petal_%d", i + 1);
+            m_World->AddComponent<ECS::NameComponent>(petal, pname);
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(petal);
+            float angle = (float)i / (float)petalCount * 6.28318f;
+            float radius = 0.4f;
+            pt.position = Math::Vector3(std::cos(angle) * radius, petalHeight, std::sin(angle) * radius);
+            pt.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), -angle)
+                        * Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(30.0f));
+            pt.scale = Math::Vector3(0.25f, 0.05f, 0.15f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(petal);
+            bool withered = (i % 4 == 0);
+            if (withered) {
+                pmat.baseColor = Math::Vector3(0.6f, 0.45f, 0.2f);
+            } else {
+                pmat.baseColor = Math::Vector3(0.9f + (float)i * 0.01f, 0.3f, 0.4f + (float)i * 0.03f);
+            }
+            pmat.roughness = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(petal, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pickup = m_World->AddComponent<ECS::PickupComponent>(petal);
+            pickup.type = ECS::PickupComponent::PickupType::Custom;
+            pickup.value = withered ? 5.0f : 10.0f;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(petal);
+            tag.tags.push_back(withered ? "withered" : "healthy");
+        }
+
+        // Leaves along the stem
+        const int leafCount = 5;
+        for (int i = 0; i < leafCount; ++i) {
+            ECS::Entity leaf = m_World->CreateEntity();
+            char lname[32]; snprintf(lname, sizeof(lname), "Leaf_%d", i + 1);
+            m_World->AddComponent<ECS::NameComponent>(leaf, lname);
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(leaf);
+            float height = 0.3f + (float)i * 0.3f;
+            float side = (i % 2 == 0) ? 1.0f : -1.0f;
+            lt.position = Math::Vector3(side * 0.2f, height, 0.0f);
+            lt.rotation = Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(side * 35.0f));
+            lt.scale = Math::Vector3(0.3f, 0.04f, 0.12f);
+            auto& lmat = m_World->AddComponent<ECS::MaterialComponent>(leaf);
+            bool witheredLeaf = (i % 3 == 0);
+            lmat.baseColor = witheredLeaf ? Math::Vector3(0.5f, 0.4f, 0.15f) : Math::Vector3(0.2f, 0.55f, 0.15f);
+            lmat.roughness = 0.7f;
+            m_World->AddComponent<ECS::MeshComponent>(leaf, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pickup = m_World->AddComponent<ECS::PickupComponent>(leaf);
+            pickup.type = ECS::PickupComponent::PickupType::Custom;
+            pickup.value = witheredLeaf ? 5.0f : 10.0f;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(leaf);
+            tag.tags.push_back(witheredLeaf ? "withered" : "healthy");
+        }
+
+        // Camera
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Game Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(3.0f, 2.5f, 3.0f);
+            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-25.0f))
+                        * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(-45.0f));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.fieldOfView = 50.0f;
+            cc.nearPlane = 0.1f;
+            cc.farPlane = 100.0f;
+            m_SelectedGameCamera = cam;
+        }
+
+        // Directional light
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Sun Light");
+            auto& ltr = m_World->AddComponent<ECS::TransformComponent>(light);
+            ltr.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-50.0f))
+                         * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(30.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(1.0f, 0.95f, 0.85f);
+            lc.intensity = 1.5f;
+            lc.castShadows = true;
+        }
+
+        // Score text
+        {
+            ECS::Entity scoreText = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(scoreText, "Score Display");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(scoreText);
+            tt.position = Math::Vector3(0.0f, 3.0f, 0.0f);
+            auto& text = m_World->AddComponent<ECS::TextComponent>(scoreText);
+            text.text = "Petals: 0/10 | Leaves: 0/5 | Score: 0";
+            text.fontSize = 24.0f;
+            text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        }
+    }
 
     m_CurrentScenePath.clear();
     ENJIN_LOG_INFO(Editor, "Applied template: %s", templateId.c_str());
@@ -8551,6 +8803,14 @@ void EditorLayer::DrawGizmos() {
         }
     }
 
+    // Track gizmo drag start/end for undo/redo
+    bool gizmoActive = ImGuizmo::IsUsing();
+    if (gizmoActive && !m_GizmoDragging) {
+        // Drag just started - capture the initial transform
+        m_GizmoDragging = true;
+        m_GizmoStartTransform = entityMat;
+    }
+
     // Draw and manipulate gizmo
     if (ImGuizmo::Manipulate(viewMat.m, projMat.m, op, mode, entityMat.m,
                               nullptr, m_UseSnap ? snapValues : nullptr)) {
@@ -8570,6 +8830,30 @@ void EditorLayer::DrawGizmos() {
         Math::Quaternion qy(Math::Vector3(0, 1, 0), ry);
         Math::Quaternion qz(Math::Vector3(0, 0, 1), rz);
         transform->rotation = qy * qx * qz; // YXZ order
+    }
+
+    // Gizmo drag ended - create undo command
+    if (!gizmoActive && m_GizmoDragging) {
+        m_GizmoDragging = false;
+
+        // Decompose old transform from saved matrix
+        f32 oldTrans[3], oldRot[3], oldScale[3];
+        ImGuizmo::DecomposeMatrixToComponents(m_GizmoStartTransform.m, oldTrans, oldRot, oldScale);
+
+        ECS::TransformComponent oldTransform;
+        oldTransform.position = Math::Vector3(oldTrans[0], oldTrans[1], oldTrans[2]);
+        oldTransform.scale = Math::Vector3(oldScale[0], oldScale[1], oldScale[2]);
+        f32 orx = Math::Radians(oldRot[0]);
+        f32 ory = Math::Radians(oldRot[1]);
+        f32 orz = Math::Radians(oldRot[2]);
+        oldTransform.rotation = Math::Quaternion(Math::Vector3(0,1,0), ory)
+                              * Math::Quaternion(Math::Vector3(1,0,0), orx)
+                              * Math::Quaternion(Math::Vector3(0,0,1), orz);
+
+        ECS::TransformComponent newTransform = *transform;
+
+        auto cmd = std::make_unique<TransformCommand>(m_World, m_SelectedEntity, oldTransform, newTransform);
+        m_UndoRedo.Execute(std::move(cmd));
     }
 }
 
@@ -8720,6 +9004,9 @@ void EditorLayer::SaveScene(const std::string& path) {
     }
 
     Scene::SceneSerializer serializer(m_World);
+    if (m_RenderSystem) {
+        serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+    }
     auto result = serializer.Save(path);
 
     if (result.success) {
@@ -8747,9 +9034,15 @@ void EditorLayer::OpenScene(const std::string& path) {
     Scene::SceneSerializer serializer(m_World);
     auto result = serializer.Load(path, true); // Clear existing entities
 
+    // Apply loaded skybox config
+    if (result.success && m_RenderSystem) {
+        m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+    }
+
     if (result.success) {
         m_CurrentScenePath = path;
         m_SelectedEntity = ECS::INVALID_ENTITY;
+        m_UndoRedo.Clear();
         usize entityCount = result.entities.size();
         std::stringstream ss;
         ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";

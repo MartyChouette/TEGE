@@ -22,6 +22,7 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TerrainBrush.h"
+#include "Enjin/Editor/UndoRedo.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -376,6 +377,11 @@ private:
     // Asset browser state
     std::string m_AssetBrowserPath;  // Current browsing directory
     std::string m_AssetBrowserSelected; // Currently selected file
+
+    // Undo/Redo manager
+    UndoRedoManager m_UndoRedo;
+    Math::Matrix4 m_GizmoStartTransform;
+    bool m_GizmoDragging = false;
 
     // Accessibility settings (persistent)
     EditorSettings m_EditorSettings;

@@ -302,6 +302,124 @@ void ShadowMap::EndShadowPass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
 }
 
+void ShadowMap::DestroyDepthResources() {
+    VkDevice device = m_Context->GetDevice();
+    if (device == VK_NULL_HANDLE) return;
+
+    vkDeviceWaitIdle(device);
+
+    if (m_Framebuffer != VK_NULL_HANDLE) {
+        vkDestroyFramebuffer(device, m_Framebuffer, nullptr);
+        m_Framebuffer = VK_NULL_HANDLE;
+    }
+    if (m_DepthImageView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_DepthImageView, nullptr);
+        m_DepthImageView = VK_NULL_HANDLE;
+    }
+    if (m_DepthImage != VK_NULL_HANDLE) {
+        vkDestroyImage(device, m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+    }
+    if (m_DepthMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_DepthMemory, nullptr);
+        m_DepthMemory = VK_NULL_HANDLE;
+    }
+}
+
+void ShadowMap::SetResolution(u32 size) {
+    if (size == m_Config.resolution || !m_Initialized) return;
+
+    // Clamp to valid values
+    if (size < 512) size = 512;
+    if (size > 4096) size = 4096;
+
+    ENJIN_LOG_INFO(Renderer, "Changing shadow map resolution from %u to %u", m_Config.resolution, size);
+    m_Config.resolution = size;
+
+    // Recreate depth resources and framebuffer at new size
+    DestroyDepthResources();
+    if (!CreateDepthResources()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate shadow map at resolution %u", size);
+        return;
+    }
+    if (!CreateFramebuffer()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate shadow framebuffer at resolution %u", size);
+    }
+}
+
+void ShadowMap::UpdateFrustum(const Math::Matrix4& viewProj, const Math::Vector3& lightDir) {
+    // Compute inverse view-projection to get camera frustum corners in world space
+    Math::Matrix4 invViewProj = viewProj.Inverse();
+
+    // 8 NDC corners of the camera frustum
+    Math::Vector3 corners[8];
+    int idx = 0;
+    for (int z = 0; z < 2; ++z) {
+        for (int y = 0; y < 2; ++y) {
+            for (int x = 0; x < 2; ++x) {
+                Math::Vector4 ndc(
+                    x * 2.0f - 1.0f,
+                    y * 2.0f - 1.0f,
+                    z * 1.0f,  // Vulkan depth range [0, 1]
+                    1.0f
+                );
+                Math::Vector4 world = invViewProj * ndc;
+                corners[idx] = Math::Vector3(world.x / world.w, world.y / world.w, world.z / world.w);
+                idx++;
+            }
+        }
+    }
+
+    // Compute frustum center
+    Math::Vector3 center(0.0f);
+    for (int i = 0; i < 8; ++i) {
+        center = center + corners[i];
+    }
+    center = center * (1.0f / 8.0f);
+
+    // Build light view matrix looking from center along light direction
+    Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
+    if (std::abs(lightDir.Dot(lightUp)) > 0.99f) {
+        lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
+    }
+    Math::Matrix4 lightView = Math::Matrix4::LookAt(center + lightDir * 50.0f, center, lightUp);
+
+    // Transform frustum corners into light space and compute AABB
+    f32 minX = 1e9f, maxX = -1e9f;
+    f32 minY = 1e9f, maxY = -1e9f;
+    f32 minZ = 1e9f, maxZ = -1e9f;
+
+    for (int i = 0; i < 8; ++i) {
+        Math::Vector4 lightSpaceCorner = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
+        if (lightSpaceCorner.x < minX) minX = lightSpaceCorner.x;
+        if (lightSpaceCorner.x > maxX) maxX = lightSpaceCorner.x;
+        if (lightSpaceCorner.y < minY) minY = lightSpaceCorner.y;
+        if (lightSpaceCorner.y > maxY) maxY = lightSpaceCorner.y;
+        if (lightSpaceCorner.z < minZ) minZ = lightSpaceCorner.z;
+        if (lightSpaceCorner.z > maxZ) maxZ = lightSpaceCorner.z;
+    }
+
+    // Add some padding to avoid shadow popping at edges
+    f32 padding = 5.0f;
+    minX -= padding; maxX += padding;
+    minY -= padding; maxY += padding;
+    minZ -= padding; maxZ += padding;
+
+    // Compute ortho size as half the max dimension
+    f32 sizeX = (maxX - minX) * 0.5f;
+    f32 sizeY = (maxY - minY) * 0.5f;
+    m_FittedOrthoSize = std::max(sizeX, sizeY);
+    m_FittedCenter = center;
+
+    // Update light position based on fitted frustum
+    m_LightDirection = lightDir.Normalized();
+    m_LightPosition = center + m_LightDirection * 50.0f;
+
+    // Update near/far for the fitted frustum
+    m_Config.nearPlane = 0.1f;
+    m_Config.farPlane = maxZ - minZ + 100.0f;
+}
+
 void ShadowMap::SetLightDirection(const Math::Vector3& direction) {
     m_LightDirection = direction.Normalized();
 }
@@ -324,8 +442,9 @@ Math::Matrix4 ShadowMap::GetLightViewMatrix() const {
 }
 
 Math::Matrix4 ShadowMap::GetLightProjectionMatrix() const {
-    // Orthographic projection for directional light
-    f32 size = m_Config.orthoSize;
+    // Use fitted ortho size if auto-fit is enabled, otherwise use config value
+    f32 size = m_AutoFit ? m_FittedOrthoSize : m_Config.orthoSize;
+    if (size < 1.0f) size = m_Config.orthoSize; // Fallback if not yet fitted
     return Math::Matrix4::Orthographic(-size, size, -size, size, m_Config.nearPlane, m_Config.farPlane);
 }
 

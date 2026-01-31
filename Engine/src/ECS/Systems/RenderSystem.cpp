@@ -10,6 +10,9 @@
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -141,6 +144,11 @@ void RenderSystem::Initialize() {
         m_TreeRenderer.reset();
     }
 
+    // Initialize skybox
+    m_Skybox.Initialize(m_Renderer->GetContext());
+    CreateSkyboxCubeVBO();
+    CreateSkyboxPipeline();
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -176,6 +184,30 @@ void RenderSystem::Shutdown() {
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
 
+    // Clean up skybox resources
+    m_SkyboxVertexBuffer.reset();
+    m_SkyboxUniformBuffers.clear();
+    if (m_Renderer->GetContext()) {
+        VkDevice device = m_Renderer->GetContext()->GetDevice();
+        if (m_SkyboxPipelineHandle != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
+            m_SkyboxPipelineHandle = VK_NULL_HANDLE;
+        }
+        if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
+            m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
+        }
+        if (m_SkyboxDescriptorSetLayoutHandle != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, m_SkyboxDescriptorSetLayoutHandle, nullptr);
+            m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
+        }
+        if (m_SkyboxDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, m_SkyboxDescriptorPool, nullptr);
+            m_SkyboxDescriptorPool = VK_NULL_HANDLE;
+        }
+    }
+    m_Skybox.Shutdown();
+
     // Clean up line pipeline
     m_LinePipeline.reset();
 
@@ -206,6 +238,12 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset per-frame stats
     ResetFrameCounters();
+
+    // Poll texture file watcher every 30 frames (~0.5s at 60fps)
+    if (++m_WatcherPollCounter >= 30) {
+        m_WatcherPollCounter = 0;
+        m_TextureWatcher.Poll();
+    }
 
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
@@ -253,6 +291,73 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Apply IK constraints after animation update (modifies bone transforms before GPU upload)
+    for (Entity entity : allEntities) {
+        auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+        if (!animComp || !animComp->animator.IsPlaying()) continue;
+
+        auto* lookAtIK = m_World->GetComponent<LookAtIKComponent>(entity);
+        if (lookAtIK && lookAtIK->lookWeight > 0.0f) {
+            // Resolve target position
+            Math::Vector3 targetPos = lookAtIK->targetWorldPos;
+            if (lookAtIK->useEntityTarget && lookAtIK->targetEntity != INVALID_ENTITY) {
+                auto* targetTransform = m_World->GetComponent<TransformComponent>(lookAtIK->targetEntity);
+                if (targetTransform) {
+                    targetPos = targetTransform->position;
+                }
+            }
+
+            // Get head bone world position from entity transform
+            auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
+            if (entityTransform) {
+                Math::Vector3 headWorldPos = entityTransform->position + Math::Vector3(0, 1.6f, 0);
+                Math::Quaternion solved = Animation::LookAtIK::Solve(
+                    headWorldPos, targetPos, lookAtIK->currentHeadRotation,
+                    lookAtIK->maxRotation, lookAtIK->smoothSpeed, deltaTime);
+                lookAtIK->currentHeadRotation = solved;
+            }
+        }
+
+        auto* interactionIK = m_World->GetComponent<InteractionIKComponent>(entity);
+        if (interactionIK && interactionIK->ikWeight > 0.0f) {
+            auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
+            if (entityTransform) {
+                // Find nearest interactable within radius
+                Math::Vector3 handPos = entityTransform->position + Math::Vector3(0.3f, 1.0f, 0.5f);
+                Math::Vector3 nearestTarget = handPos;
+                f32 nearestDist = interactionIK->interactionRadius + 1.0f;
+
+                for (Entity other : allEntities) {
+                    if (other == entity) continue;
+                    auto* interactable = m_World->GetComponent<InteractableComponent>(other);
+                    if (!interactable) continue;
+                    if (!interactionIK->interactionTag.empty()) {
+                        auto* otherName = m_World->GetComponent<NameComponent>(other);
+                        if (otherName && otherName->name.find(interactionIK->interactionTag) == std::string::npos)
+                            continue;
+                    }
+                    auto* otherTransform = m_World->GetComponent<TransformComponent>(other);
+                    if (!otherTransform) continue;
+                    f32 dist = (otherTransform->position - handPos).Length();
+                    if (dist < nearestDist && dist <= interactionIK->interactionRadius) {
+                        nearestDist = dist;
+                        nearestTarget = otherTransform->position;
+                    }
+                }
+
+                if (nearestDist <= interactionIK->interactionRadius) {
+                    // Simple 3-bone FABRIK solve for hand chain
+                    std::vector<Math::Vector3> chain = {
+                        entityTransform->position + Math::Vector3(0.2f, 1.3f, 0.0f), // shoulder
+                        entityTransform->position + Math::Vector3(0.3f, 1.1f, 0.3f), // elbow
+                        handPos                                                        // hand
+                    };
+                    Animation::FABRIK::Solve(chain, nearestTarget, 5);
+                }
+            }
+        }
+    }
+
     // Shadow pass first (if enabled) - runs before main render pass
     if (m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline) {
         RenderShadowPass();
@@ -260,6 +365,14 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Begin the main render pass (after any pre-passes like shadows)
     m_Renderer->BeginMainRenderPass();
+
+    // Render skybox first (behind all geometry)
+    {
+        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+        if (cmd != VK_NULL_HANDLE) {
+            RenderSkybox(cmd);
+        }
+    }
 
     // Upload frame-level uniforms once (view/proj + lighting)
     UpdateFrameUniforms();
@@ -494,6 +607,28 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
             }
 
+            // Bind metallic-roughness texture if available
+            if (material && !material->metallicRoughnessTexturePath.empty()) {
+                auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                if (mrTex && mrTex->IsValid()) {
+                    material->metallicRoughnessTexture = 1;
+                    UpdateMetallicRoughnessDescriptor(mrTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            // Bind emissive texture if available
+            if (material && !material->emissiveTexturePath.empty()) {
+                auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
+                if (emissiveTex && emissiveTex->IsValid()) {
+                    material->emissiveTexture = 1;
+                    UpdateEmissiveDescriptor(emissiveTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
+            }
+
             // Upload bone matrices for skinned meshes
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
             if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
@@ -686,12 +821,12 @@ void RenderSystem::CreateUniformBuffers() {
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
 
-    // Create descriptor pool (3 UBOs + 4 combined image samplers + 1 SSBO per frame)
+    // Create descriptor pool (3 UBOs + 6 combined image samplers + 1 SSBO per frame)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = framesInFlight * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = framesInFlight * 4;  // base color + shadow map + height map + normal map
+    poolSizes[1].descriptorCount = framesInFlight * 6;  // base color + shadow + height + normal + metallic-roughness + emissive
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = framesInFlight * 1;  // bone matrices SSBO
 
@@ -780,7 +915,13 @@ void RenderSystem::CreateDescriptorSets() {
             boneBufferInfo.range = m_DefaultBoneBuffer->GetSize();
         }
 
-        std::array<VkWriteDescriptorSet, 8> descriptorWrites{};
+        // Metallic-roughness texture (binding 8) - default to white
+        VkDescriptorImageInfo metallicRoughnessImageInfo = imageInfo;
+
+        // Emissive texture (binding 9) - default to white
+        VkDescriptorImageInfo emissiveImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 10> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -853,6 +994,24 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         descriptorWrites[7].descriptorCount = 1;
         descriptorWrites[7].pBufferInfo = &boneBufferInfo;
+
+        // Metallic-roughness texture descriptor
+        descriptorWrites[8].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[8].dstSet = m_DescriptorSets[i];
+        descriptorWrites[8].dstBinding = 8;
+        descriptorWrites[8].dstArrayElement = 0;
+        descriptorWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[8].descriptorCount = 1;
+        descriptorWrites[8].pImageInfo = &metallicRoughnessImageInfo;
+
+        // Emissive texture descriptor
+        descriptorWrites[9].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[9].dstSet = m_DescriptorSets[i];
+        descriptorWrites[9].dstBinding = 9;
+        descriptorWrites[9].dstArrayElement = 0;
+        descriptorWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[9].descriptorCount = 1;
+        descriptorWrites[9].pImageInfo = &emissiveImageInfo;
 
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
@@ -1009,13 +1168,14 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.lightSpaceMatrix = m_ShadowMap->GetLightSpaceMatrix();
         lighting.shadowBias = m_ShadowMap->GetDepthBias();
         lighting.shadowEnabled = 1;
+        lighting.shadowStrength = m_ShadowMap->GetShadowStrength();
     } else {
         lighting.lightSpaceMatrix = Math::Matrix4::Identity();
         lighting.shadowBias = 0.005f;
         lighting.shadowEnabled = 0;
+        lighting.shadowStrength = 1.0f;
     }
-    lighting._shadowPad[0] = 0.0f;
-    lighting._shadowPad[1] = 0.0f;
+    lighting._shadowPad = 0.0f;
 
     if (m_WindSystem) {
         lighting.windData = m_WindSystem->GetWindVector();
@@ -1285,6 +1445,28 @@ void RenderSystem::RenderEntity(Entity entity) {
         UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
     }
 
+    // Bind metallic-roughness texture if available
+    if (material && !material->metallicRoughnessTexturePath.empty()) {
+        auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+        if (mrTex && mrTex->IsValid()) {
+            material->metallicRoughnessTexture = 1;
+            UpdateMetallicRoughnessDescriptor(mrTex.get());
+        }
+    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+        UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
+    }
+
+    // Bind emissive texture if available
+    if (material && !material->emissiveTexturePath.empty()) {
+        auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
+        if (emissiveTex && emissiveTex->IsValid()) {
+            material->emissiveTexture = 1;
+            UpdateEmissiveDescriptor(emissiveTex.get());
+        }
+    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+        UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
+    }
+
     // Upload bone matrices for skinned meshes
     AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
     if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
@@ -1329,6 +1511,8 @@ void RenderSystem::RenderShadowPass() {
     const auto& allEntities = m_World->GetAllEntities();
     bool foundShadowLight = false;
 
+    Math::Vector3 shadowLightDir(0.5f, 0.8f, 0.3f);
+
     for (Entity lightEntity : allEntities) {
         if (!m_World->HasComponent<LightComponent>(lightEntity)) continue;
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
@@ -1337,19 +1521,23 @@ void RenderSystem::RenderShadowPass() {
         TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
         if (lightTransform) {
             Math::Vector3 forward(0.0f, 0.0f, -1.0f);
-            Math::Vector3 lightDir = lightTransform->rotation.Rotate(forward).Normalized();
-            m_ShadowMap->SetLightDirection(lightDir);
-            // Position the shadow map to cover the scene
-            m_ShadowMap->SetLightPosition(Math::Vector3(0.0f, 20.0f, 0.0f) - lightDir * 30.0f);
+            shadowLightDir = lightTransform->rotation.Rotate(forward).Normalized();
         }
         foundShadowLight = true;
         break;
     }
 
-    // If no shadow-casting light, use default
-    if (!foundShadowLight) {
-        m_ShadowMap->SetLightDirection(Math::Vector3(0.5f, 0.8f, 0.3f).Normalized());
-        m_ShadowMap->SetLightPosition(Math::Vector3(-15.0f, 24.0f, -9.0f));
+    // Use auto-fit frustum if enabled and we have a camera
+    if (m_ShadowMap->IsAutoFitEnabled() && m_Camera) {
+        Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
+        m_ShadowMap->UpdateFrustum(viewProj, foundShadowLight ? shadowLightDir : shadowLightDir.Normalized());
+    } else {
+        m_ShadowMap->SetLightDirection(foundShadowLight ? shadowLightDir : Math::Vector3(0.5f, 0.8f, 0.3f).Normalized());
+        if (!foundShadowLight) {
+            m_ShadowMap->SetLightPosition(Math::Vector3(-15.0f, 24.0f, -9.0f));
+        } else {
+            m_ShadowMap->SetLightPosition(Math::Vector3(0.0f, 20.0f, 0.0f) - shadowLightDir * 30.0f);
+        }
     }
 
     // Begin shadow pass
@@ -1435,8 +1623,18 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     ENJIN_LOG_INFO(Renderer, "Loaded texture: %s (%dx%d)",
         path.c_str(), texture->GetWidth(), texture->GetHeight());
 
-    // Cache and return
+    // Cache and watch for hot-reload
     m_TextureCache[path] = texture;
+    m_TextureWatcher.Watch(path, [this](const std::string& changedPath) {
+        ENJIN_LOG_INFO(Renderer, "Texture changed, reloading: %s", changedPath.c_str());
+        auto it = m_TextureCache.find(changedPath);
+        if (it != m_TextureCache.end()) {
+            auto newTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+            if (newTex->LoadFromFile(changedPath)) {
+                it->second = newTex;
+            }
+        }
+    });
     return texture;
 }
 
@@ -1496,6 +1694,42 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
     descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
     descriptorWrite.dstBinding = 6;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture) {
+    if (!texture || !texture->IsValid()) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = 8;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pImageInfo = &imageInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
+    if (!texture || !texture->IsValid()) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    VkDescriptorImageInfo imageInfo = texture->GetDescriptorInfo();
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstBinding = 9;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     descriptorWrite.descriptorCount = 1;
@@ -1695,6 +1929,296 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     if (m_TreeRenderer) {
         m_TreeRenderer->RecreateForRenderPass(renderPass, layout);
     }
+}
+
+void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {
+    m_Skybox.SetConfig(config);
+}
+
+void RenderSystem::CreateSkyboxCubeVBO() {
+    float cubeVertices[] = {
+        -1.0f,-1.0f,-1.0f,  1.0f,-1.0f,-1.0f,  1.0f, 1.0f,-1.0f,
+         1.0f, 1.0f,-1.0f, -1.0f, 1.0f,-1.0f, -1.0f,-1.0f,-1.0f,
+        -1.0f,-1.0f, 1.0f,  1.0f, 1.0f, 1.0f,  1.0f,-1.0f, 1.0f,
+         1.0f, 1.0f, 1.0f, -1.0f,-1.0f, 1.0f, -1.0f, 1.0f, 1.0f,
+        -1.0f, 1.0f, 1.0f, -1.0f,-1.0f,-1.0f, -1.0f, 1.0f,-1.0f,
+        -1.0f,-1.0f,-1.0f, -1.0f, 1.0f, 1.0f, -1.0f,-1.0f, 1.0f,
+         1.0f, 1.0f, 1.0f,  1.0f, 1.0f,-1.0f,  1.0f,-1.0f,-1.0f,
+         1.0f,-1.0f,-1.0f,  1.0f,-1.0f, 1.0f,  1.0f, 1.0f, 1.0f,
+        -1.0f,-1.0f,-1.0f,  1.0f,-1.0f, 1.0f,  1.0f,-1.0f,-1.0f,
+         1.0f,-1.0f, 1.0f, -1.0f,-1.0f,-1.0f, -1.0f,-1.0f, 1.0f,
+        -1.0f, 1.0f,-1.0f,  1.0f, 1.0f,-1.0f,  1.0f, 1.0f, 1.0f,
+         1.0f, 1.0f, 1.0f, -1.0f, 1.0f, 1.0f, -1.0f, 1.0f,-1.0f,
+    };
+
+    m_SkyboxVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_SkyboxVertexBuffer->Create(sizeof(cubeVertices), Renderer::BufferUsage::Vertex, true)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create skybox VBO");
+        m_SkyboxVertexBuffer.reset();
+        return;
+    }
+    m_SkyboxVertexBuffer->UploadData(cubeVertices, sizeof(cubeVertices));
+}
+
+void RenderSystem::CreateSkyboxPipeline() {
+    if (!m_Renderer || !m_Renderer->GetContext()) return;
+
+    auto* context = m_Renderer->GetContext();
+    VkDevice device = context->GetDevice();
+
+    // Load skybox shaders
+    auto skyboxVert = std::make_unique<Renderer::VulkanShader>(context);
+    if (!skyboxVert->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SkyboxVertexShaderData),
+        Renderer::ShaderData::SkyboxVertexShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Skybox vertex shader not available, skybox disabled");
+        return;
+    }
+
+    auto skyboxFrag = std::make_unique<Renderer::VulkanShader>(context);
+    if (!skyboxFrag->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SkyboxFragmentShaderData),
+        Renderer::ShaderData::SkyboxFragmentShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Skybox fragment shader not available, skybox disabled");
+        return;
+    }
+
+    // Create descriptor set layout (binding 0: UBO, binding 1: cubemap sampler)
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    bindings[0].descriptorCount = 1;
+    bindings[0].stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<u32>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_SkyboxDescriptorSetLayoutHandle) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox descriptor set layout");
+        return;
+    }
+
+    // Create pipeline layout
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_SkyboxDescriptorSetLayoutHandle;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_SkyboxPipelineLayoutHandle) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline layout");
+        return;
+    }
+
+    // Vertex input: position only (vec3)
+    VkVertexInputBindingDescription bindingDesc{};
+    bindingDesc.binding = 0;
+    bindingDesc.stride = sizeof(float) * 3;
+    bindingDesc.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    VkVertexInputAttributeDescription attrDesc{};
+    attrDesc.binding = 0;
+    attrDesc.location = 0;
+    attrDesc.format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrDesc.offset = 0;
+
+    VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
+    vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDesc;
+    vertexInputInfo.vertexAttributeDescriptionCount = 1;
+    vertexInputInfo.pVertexAttributeDescriptions = &attrDesc;
+
+    VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
+    inputAssembly.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
+    inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+
+    VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+    VkPipelineDynamicStateCreateInfo dynamicState{};
+    dynamicState.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamicState.dynamicStateCount = 2;
+    dynamicState.pDynamicStates = dynamicStates;
+
+    VkPipelineViewportStateCreateInfo viewportState{};
+    viewportState.sType = VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO;
+    viewportState.viewportCount = 1;
+    viewportState.scissorCount = 1;
+
+    VkPipelineRasterizationStateCreateInfo rasterizer{};
+    rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
+    rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
+    rasterizer.lineWidth = 1.0f;
+    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+    rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+
+    VkPipelineMultisampleStateCreateInfo multisampling{};
+    multisampling.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
+    multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+
+    VkPipelineDepthStencilStateCreateInfo depthStencil{};
+    depthStencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+    depthStencil.depthTestEnable = VK_TRUE;
+    depthStencil.depthWriteEnable = VK_FALSE;
+    depthStencil.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
+
+    VkPipelineColorBlendAttachmentState colorBlendAttachment{};
+    colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                           VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    VkPipelineColorBlendStateCreateInfo colorBlending{};
+    colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
+    colorBlending.attachmentCount = 1;
+    colorBlending.pAttachments = &colorBlendAttachment;
+
+    VkPipelineShaderStageCreateInfo vertStage{};
+    vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    vertStage.stage = VK_SHADER_STAGE_VERTEX_BIT;
+    vertStage.module = skyboxVert->GetModule();
+    vertStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo fragStage{};
+    fragStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    fragStage.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    fragStage.module = skyboxFrag->GetModule();
+    fragStage.pName = "main";
+
+    VkPipelineShaderStageCreateInfo stages[] = { vertStage, fragStage };
+
+    VkGraphicsPipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
+    pipelineInfo.stageCount = 2;
+    pipelineInfo.pStages = stages;
+    pipelineInfo.pVertexInputState = &vertexInputInfo;
+    pipelineInfo.pInputAssemblyState = &inputAssembly;
+    pipelineInfo.pViewportState = &viewportState;
+    pipelineInfo.pRasterizationState = &rasterizer;
+    pipelineInfo.pMultisampleState = &multisampling;
+    pipelineInfo.pDepthStencilState = &depthStencil;
+    pipelineInfo.pColorBlendState = &colorBlending;
+    pipelineInfo.pDynamicState = &dynamicState;
+    pipelineInfo.layout = m_SkyboxPipelineLayoutHandle;
+    pipelineInfo.renderPass = m_Renderer->GetRenderPass();
+    pipelineInfo.subpass = 0;
+
+    if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_SkyboxPipelineHandle) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox pipeline");
+        return;
+    }
+
+    // Create descriptor pool for skybox
+    constexpr u32 framesInFlight = 2;
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = framesInFlight;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = framesInFlight;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = framesInFlight;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_SkyboxDescriptorPool) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create skybox descriptor pool");
+        return;
+    }
+
+    // Allocate descriptor sets
+    std::vector<VkDescriptorSetLayout> layouts(framesInFlight, m_SkyboxDescriptorSetLayoutHandle);
+    m_SkyboxDescriptorSets.resize(framesInFlight);
+
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_SkyboxDescriptorPool;
+    allocInfo.descriptorSetCount = framesInFlight;
+    allocInfo.pSetLayouts = layouts.data();
+
+    if (vkAllocateDescriptorSets(device, &allocInfo, m_SkyboxDescriptorSets.data()) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to allocate skybox descriptor sets");
+        return;
+    }
+
+    // Create UBOs for skybox viewProj matrix
+    m_SkyboxUniformBuffers.resize(framesInFlight);
+    for (u32 i = 0; i < framesInFlight; ++i) {
+        m_SkyboxUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        m_SkyboxUniformBuffers[i]->Create(sizeof(Math::Matrix4), Renderer::BufferUsage::Uniform, true);
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Skybox pipeline created");
+}
+
+void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer) {
+    if (!m_Skybox.IsValid() || m_SkyboxPipelineHandle == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
+        return;
+    }
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    // Build view-projection matrix with translation removed (keep skybox centered on camera)
+    Math::Matrix4 view = m_Camera->GetViewMatrix();
+    // Zero out the translation column (column 3, rows 0-2) - flat column-major layout
+    view.m[12] = 0.0f;
+    view.m[13] = 0.0f;
+    view.m[14] = 0.0f;
+    Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * view;
+
+    // Upload UBO
+    m_SkyboxUniformBuffers[currentFrame]->UploadData(&viewProj, sizeof(Math::Matrix4));
+
+    // Update descriptor set with UBO and cubemap
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = m_SkyboxUniformBuffers[currentFrame]->GetBuffer();
+    uboInfo.offset = 0;
+    uboInfo.range = sizeof(Math::Matrix4);
+
+    VkDescriptorImageInfo cubemapInfo = m_Skybox.GetDescriptorInfo();
+
+    std::array<VkWriteDescriptorSet, 2> writes{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = m_SkyboxDescriptorSets[currentFrame];
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[0].descriptorCount = 1;
+    writes[0].pBufferInfo = &uboInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_SkyboxDescriptorSets[currentFrame];
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &cubemapInfo;
+
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+    // Set viewport and scissor
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkViewport viewport{};
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    // Bind skybox pipeline and draw
+    vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SkyboxPipelineHandle);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_SkyboxPipelineLayoutHandle, 0, 1, &m_SkyboxDescriptorSets[currentFrame], 0, nullptr);
+
+    VkBuffer vertexBuffers[] = { m_SkyboxVertexBuffer->GetBuffer() };
+    VkDeviceSize offsets[] = { 0 };
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+
+    vkCmdDraw(commandBuffer, 36, 1, 0, 0);
 }
 
 } // namespace ECS

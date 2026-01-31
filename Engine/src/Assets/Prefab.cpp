@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -287,6 +288,17 @@ ECS::Entity PrefabManager::Instantiate(ECS::World* world, const Prefab& prefab,
             if (it != m_ComponentCallbacks.end()) {
                 it->second.deserializer(world, entity, compData);
             }
+        }
+    }
+
+    // Establish parent-child relationships using Hierarchy components
+    for (usize i = 0; i < createdEntities.size(); ++i) {
+        const auto& entityData = prefab.GetEntities()[i];
+        if (entityData.parentIndex >= 0 &&
+            entityData.parentIndex < static_cast<i32>(createdEntities.size())) {
+            ECS::Entity childEntity = createdEntities[i];
+            ECS::Entity parentEntity = createdEntities[entityData.parentIndex];
+            ECS::SetParent(world, childEntity, parentEntity);
         }
     }
 

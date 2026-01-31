@@ -17,6 +17,9 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Logging/Log.h"
 
@@ -1007,6 +1010,38 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
 
+            // Hierarchy
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
+            }
+
+            // IK Components
+            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+                json ikJson;
+                ikJson["headBone"] = ik->headBoneName;
+                ikJson["neckBone"] = ik->neckBoneName;
+                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                ikJson["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
+                ikJson["useEntityTarget"] = ik->useEntityTarget;
+                ikJson["maxRotation"] = ik->maxRotation;
+                ikJson["smoothSpeed"] = ik->smoothSpeed;
+                ikJson["lookWeight"] = ik->lookWeight;
+                entityJson["lookAtIK"] = ikJson;
+            }
+            if (m_World->HasComponent<ECS::InteractionIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(entity);
+                json ikJson;
+                ikJson["handBone"] = ik->handBoneName;
+                ikJson["elbowBone"] = ik->elbowBoneName;
+                ikJson["shoulderBone"] = ik->shoulderBoneName;
+                ikJson["interactionRadius"] = ik->interactionRadius;
+                ikJson["ikWeight"] = ik->ikWeight;
+                ikJson["smoothSpeed"] = ik->smoothSpeed;
+                ikJson["interactionTag"] = ik->interactionTag;
+                entityJson["interactionIK"] = ikJson;
+            }
+
             entitiesArray.push_back(entityJson);
         }
 
@@ -1015,6 +1050,21 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         // Serialize accessibility content flags
         if (static_cast<u32>(m_ContentFlags.flags) != 0 || !m_ContentFlags.customWarnings.empty()) {
             sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
+        }
+
+        // Serialize skybox configuration
+        if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
+            json skyboxJson;
+            skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
+            skyboxJson["topColor"] = { m_SkyboxConfig.topColor.x, m_SkyboxConfig.topColor.y, m_SkyboxConfig.topColor.z };
+            skyboxJson["bottomColor"] = { m_SkyboxConfig.bottomColor.x, m_SkyboxConfig.bottomColor.y, m_SkyboxConfig.bottomColor.z };
+            skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
+            skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
+            skyboxJson["rotation"] = m_SkyboxConfig.rotation;
+            json faces = json::array();
+            for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
+            skyboxJson["cubemapPaths"] = faces;
+            sceneJson["skybox"] = skyboxJson;
         }
 
         // Write to file
@@ -1089,6 +1139,25 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         json sceneJson;
         file >> sceneJson;
         file.close();
+
+        // Deserialize skybox configuration (file-based load)
+        if (sceneJson.contains("skybox")) {
+            const auto& sj = sceneJson["skybox"];
+            m_SkyboxConfig = Renderer::SkyboxConfig{};
+            if (sj.contains("type")) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(sj["type"].get<u32>());
+            if (sj.contains("topColor")) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("bottomColor")) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
+            if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
+                for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
+                    m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
+                }
+            }
+        } else {
+            m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
 
         // Check version
         std::string version = sceneJson.value("version", "1.0");
@@ -1221,6 +1290,40 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("firstPerson")) {
                 m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
+            }
+
+            // Hierarchy
+            if (entityJson.contains("parent")) {
+                auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
+                pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            }
+
+            // IK Components
+            if (entityJson.contains("lookAtIK")) {
+                auto& ik = m_World->AddComponent<ECS::LookAtIKComponent>(entity);
+                auto& ikJson = entityJson["lookAtIK"];
+                if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
+                if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("targetPos")) {
+                    auto arr = ikJson["targetPos"];
+                    ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
+                }
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+                if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
+            }
+            if (entityJson.contains("interactionIK")) {
+                auto& ik = m_World->AddComponent<ECS::InteractionIKComponent>(entity);
+                auto& ikJson = entityJson["interactionIK"];
+                if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
+                if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
+                if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
+                if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
+                if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
         }
 
@@ -1358,6 +1461,38 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
 
+            // Hierarchy
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
+            }
+
+            // IK Components
+            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+                json ikJson;
+                ikJson["headBone"] = ik->headBoneName;
+                ikJson["neckBone"] = ik->neckBoneName;
+                ikJson["targetEntity"] = static_cast<u64>(ik->targetEntity);
+                ikJson["targetPos"] = { ik->targetWorldPos.x, ik->targetWorldPos.y, ik->targetWorldPos.z };
+                ikJson["useEntityTarget"] = ik->useEntityTarget;
+                ikJson["maxRotation"] = ik->maxRotation;
+                ikJson["smoothSpeed"] = ik->smoothSpeed;
+                ikJson["lookWeight"] = ik->lookWeight;
+                entityJson["lookAtIK"] = ikJson;
+            }
+            if (m_World->HasComponent<ECS::InteractionIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(entity);
+                json ikJson;
+                ikJson["handBone"] = ik->handBoneName;
+                ikJson["elbowBone"] = ik->elbowBoneName;
+                ikJson["shoulderBone"] = ik->shoulderBoneName;
+                ikJson["interactionRadius"] = ik->interactionRadius;
+                ikJson["ikWeight"] = ik->ikWeight;
+                ikJson["smoothSpeed"] = ik->smoothSpeed;
+                ikJson["interactionTag"] = ik->interactionTag;
+                entityJson["interactionIK"] = ikJson;
+            }
+
             entitiesArray.push_back(entityJson);
         }
 
@@ -1366,6 +1501,21 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
         // Serialize accessibility content flags
         if (static_cast<u32>(m_ContentFlags.flags) != 0 || !m_ContentFlags.customWarnings.empty()) {
             sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
+        }
+
+        // Serialize skybox configuration
+        if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
+            json skyboxJson;
+            skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
+            skyboxJson["topColor"] = { m_SkyboxConfig.topColor.x, m_SkyboxConfig.topColor.y, m_SkyboxConfig.topColor.z };
+            skyboxJson["bottomColor"] = { m_SkyboxConfig.bottomColor.x, m_SkyboxConfig.bottomColor.y, m_SkyboxConfig.bottomColor.z };
+            skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
+            skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
+            skyboxJson["rotation"] = m_SkyboxConfig.rotation;
+            json faces = json::array();
+            for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
+            skyboxJson["cubemapPaths"] = faces;
+            sceneJson["skybox"] = skyboxJson;
         }
 
         if (options.prettyPrint) {
@@ -1399,6 +1549,25 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
 
     try {
         json sceneJson = json::parse(jsonString);
+
+        // Deserialize skybox configuration (string-based load)
+        if (sceneJson.contains("skybox")) {
+            const auto& sj = sceneJson["skybox"];
+            m_SkyboxConfig = Renderer::SkyboxConfig{};
+            if (sj.contains("type")) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(sj["type"].get<u32>());
+            if (sj.contains("topColor")) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("bottomColor")) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
+            if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
+                for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
+                    m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
+                }
+            }
+        } else {
+            m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
 
         // Check version
         std::string version = sceneJson.value("version", "1.0");
@@ -1527,6 +1696,40 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("firstPerson")) {
                 m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
+            }
+
+            // Hierarchy
+            if (entityJson.contains("parent")) {
+                auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
+                pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            }
+
+            // IK Components
+            if (entityJson.contains("lookAtIK")) {
+                auto& ik = m_World->AddComponent<ECS::LookAtIKComponent>(entity);
+                auto& ikJson = entityJson["lookAtIK"];
+                if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
+                if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
+                if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
+                if (ikJson.contains("targetPos")) {
+                    auto arr = ikJson["targetPos"];
+                    ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
+                }
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+                if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
+            }
+            if (entityJson.contains("interactionIK")) {
+                auto& ik = m_World->AddComponent<ECS::InteractionIKComponent>(entity);
+                auto& ikJson = entityJson["interactionIK"];
+                if (ikJson.contains("handBone")) ik.handBoneName = ikJson["handBone"].get<std::string>();
+                if (ikJson.contains("elbowBone")) ik.elbowBoneName = ikJson["elbowBone"].get<std::string>();
+                if (ikJson.contains("shoulderBone")) ik.shoulderBoneName = ikJson["shoulderBone"].get<std::string>();
+                if (ikJson.contains("interactionRadius")) ik.interactionRadius = ikJson["interactionRadius"].get<f32>();
+                if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
+                if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
+                if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
         }
 
