@@ -160,11 +160,7 @@ void Application::MainLoop() {
         // Update input system (must be after PollEvents)
         Input::Update();
 
-        // Escape key closes the window
-        if (Input::IsKeyPressed(KeyCode::Escape)) {
-            m_Running = false;
-            break;
-        }
+        // Escape is handled by the editor layer (focus mode exit, play mode stop, etc.)
 
         Update(deltaTime);
         Render();
