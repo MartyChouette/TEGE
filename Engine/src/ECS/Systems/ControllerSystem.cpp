@@ -73,6 +73,11 @@ void ControllerSystem::Update(f32 deltaTime) {
 }
 
 Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& controller) {
+    // Delegate to input action map if available
+    if (m_InputMap) {
+        return m_InputMap->GetMovementVector();
+    }
+
     Math::Vector2 input(0.0f, 0.0f);
 
     if (controller.useWASD) {
@@ -112,6 +117,8 @@ Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& 
 }
 
 bool ControllerSystem::IsJumpPressed() {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Jump);
+
     bool pressed = Input::IsKeyPressed(KeyCode::Space);
     // Check all connected gamepads for A button (jump)
     for (i32 gp = 0; gp < 4; ++gp) {
@@ -123,6 +130,8 @@ bool ControllerSystem::IsJumpPressed() {
 }
 
 bool ControllerSystem::IsSprintHeld() {
+    if (m_InputMap) return m_InputMap->IsActionDown(InputSystem::GameAction::Sprint);
+
     bool held = Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
     for (i32 gp = 0; gp < 4; ++gp) {
         if (Input::IsGamepadConnected(gp)) {
@@ -137,6 +146,8 @@ bool ControllerSystem::IsSprintHeld() {
 }
 
 bool ControllerSystem::IsCrouchPressed() {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Crouch);
+
     bool pressed = Input::IsKeyPressed(KeyCode::LeftControl) || Input::IsKeyPressed(KeyCode::C);
     for (i32 gp = 0; gp < 4; ++gp) {
         if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::B, gp)) {
@@ -147,6 +158,8 @@ bool ControllerSystem::IsCrouchPressed() {
 }
 
 bool ControllerSystem::IsDashPressed() {
+    if (m_InputMap) return m_InputMap->IsActionPressed(InputSystem::GameAction::Dash);
+
     bool pressed = Input::IsKeyPressed(KeyCode::LeftShift) || Input::IsKeyPressed(KeyCode::E);
     for (i32 gp = 0; gp < 4; ++gp) {
         if (Input::IsGamepadConnected(gp) && Input::IsGamepadButtonPressed(GamepadButton::RightBumper, gp)) {
@@ -538,7 +551,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     (void)entity;
 
     // Mouse look for camera orbit
-    if (Input::IsMouseButtonDown(MouseButton::Right)) {
+    // When mouse is captured (focus mode), orbit is always active.
+    // When not captured (editor), requires RMB hold.
+    if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
         Math::Vector2 mouseDelta = Input::GetMouseDelta();
         ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
         ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
@@ -820,8 +835,8 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         }
     }
 
-    // Head bob
-    if (ctrl.enableHeadBob && ctrl.isGrounded && moveMag > 0.1f) {
+    // Head bob (disabled when reduced motion is active)
+    if (ctrl.enableHeadBob && !m_ReducedMotion && ctrl.isGrounded && moveMag > 0.1f) {
         ctrl.headBobTimer += dt * ctrl.headBobFrequency * (ctrl.isSprinting ? 1.5f : 1.0f);
     }
 

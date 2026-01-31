@@ -342,4 +342,21 @@ bool Input::IsGamepadActive(i32 gamepadIndex) {
     return s_GamepadActiveThisFrame[gamepadIndex];
 }
 
+void Input::ClearAllState() {
+    std::memset(s_KeysDown, 0, sizeof(s_KeysDown));
+    std::memset(s_KeysDownPrev, 0, sizeof(s_KeysDownPrev));
+    std::memset(s_MouseButtonsDown, 0, sizeof(s_MouseButtonsDown));
+    std::memset(s_MouseButtonsDownPrev, 0, sizeof(s_MouseButtonsDownPrev));
+    s_MouseDelta = Math::Vector2(0.0f, 0.0f);
+    s_ScrollDelta = Math::Vector2(0.0f, 0.0f);
+    s_ScrollAccumulator = Math::Vector2(0.0f, 0.0f);
+    s_FirstMouseMove = true;
+    for (i32 gp = 0; gp < MAX_GAMEPADS; ++gp) {
+        std::memset(s_GamepadButtons[gp], 0, sizeof(s_GamepadButtons[gp]));
+        std::memset(s_GamepadButtonsPrev[gp], 0, sizeof(s_GamepadButtonsPrev[gp]));
+        std::memset(s_GamepadAxes[gp], 0, sizeof(s_GamepadAxes[gp]));
+        s_GamepadActiveThisFrame[gp] = false;
+    }
+}
+
 } // namespace Enjin

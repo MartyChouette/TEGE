@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Input/InputAction.h"
 
 namespace Enjin {
 namespace ECS {
@@ -19,6 +20,11 @@ public:
     void SetWorld(World* world) { m_World = world; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     void SetPhysics(Physics::SimplePhysics* physics) { m_Physics = physics; }
+    void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
+
+    // Reduced motion (disables head bob, FOV effects)
+    void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
+    bool GetReducedMotion() const { return m_ReducedMotion; }
 
     // Enable/disable all controller updates (e.g., when in editor mode vs play mode)
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
@@ -50,7 +56,9 @@ private:
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Physics::SimplePhysics* m_Physics = nullptr;
+    InputSystem::InputActionMap* m_InputMap = nullptr;
     bool m_Enabled = false;  // Disabled by default (editor mode)
+    bool m_ReducedMotion = false;
 };
 
 } // namespace ECS

@@ -83,6 +83,21 @@ public:
         m_ResizeCallback = callback;
     }
 
+    void SetFocusCallback(const FocusCallback& callback) override {
+        m_FocusCallback = callback;
+    }
+
+    void SetIconifyCallback(const IconifyCallback& callback) override {
+        m_IconifyCallback = callback;
+    }
+
+    bool IsFocused() const override { return m_Focused; }
+    bool IsIconified() const override { return m_Iconified; }
+
+    void WaitEvents() override {
+        glfwWaitEvents();
+    }
+
     GLFWwindow* GetGLFWHandle() const { return m_Window; }
 
 private:
@@ -96,12 +111,36 @@ private:
                 self->m_ResizeCallback(static_cast<u32>(width), static_cast<u32>(height));
             }
         });
+
+        glfwSetWindowFocusCallback(m_Window, [](GLFWwindow* window, int focused) {
+            GLFWWindow* self = static_cast<GLFWWindow*>(glfwGetWindowUserPointer(window));
+            if (self) {
+                self->m_Focused = (focused == GLFW_TRUE);
+                if (self->m_FocusCallback) {
+                    self->m_FocusCallback(self->m_Focused);
+                }
+            }
+        });
+
+        glfwSetWindowIconifyCallback(m_Window, [](GLFWwindow* window, int iconified) {
+            GLFWWindow* self = static_cast<GLFWWindow*>(glfwGetWindowUserPointer(window));
+            if (self) {
+                self->m_Iconified = (iconified == GLFW_TRUE);
+                if (self->m_IconifyCallback) {
+                    self->m_IconifyCallback(self->m_Iconified);
+                }
+            }
+        });
     }
 
     GLFWwindow* m_Window = nullptr;
     WindowDesc m_Desc;
     EventCallback m_EventCallback;
     ResizeCallback m_ResizeCallback;
+    FocusCallback m_FocusCallback;
+    IconifyCallback m_IconifyCallback;
+    bool m_Focused = true;
+    bool m_Iconified = false;
 };
 
 Window* CreateWindow(const WindowDesc& desc) {

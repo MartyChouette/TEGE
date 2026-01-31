@@ -69,6 +69,8 @@ private:
 
     Window* m_Window = nullptr;
     bool m_Running = true;
+    bool m_Minimized = false;
+    bool m_Focused = true;
     f32 m_LastFrameTime = 0.0f;
 };
 

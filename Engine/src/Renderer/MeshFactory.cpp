@@ -326,6 +326,196 @@ ECS::MeshComponent MeshFactory::CreateCone(f32 radius, f32 height, u32 segments)
     return mesh;
 }
 
+ECS::MeshComponent MeshFactory::CreateCapsule(f32 radius, f32 height, u32 segments, u32 rings) {
+    ECS::MeshComponent mesh;
+    f32 halfH = height * 0.5f;
+
+    // Top hemisphere
+    for (u32 ring = 0; ring <= rings; ++ring) {
+        f32 phi = Math::PI * 0.5f * static_cast<f32>(ring) / static_cast<f32>(rings); // 0 to PI/2
+        f32 y = Math::Cos(phi);
+        f32 ringRadius = Math::Sin(phi);
+
+        for (u32 seg = 0; seg <= segments; ++seg) {
+            f32 theta = Math::PI_2 * static_cast<f32>(seg) / static_cast<f32>(segments);
+            f32 x = ringRadius * Math::Cos(theta);
+            f32 z = ringRadius * Math::Sin(theta);
+
+            Math::Vector3 normal(x, y, z);
+            Math::Vector3 pos = Math::Vector3(x * radius, y * radius + halfH, z * radius);
+            Math::Vector2 uv(
+                static_cast<f32>(seg) / static_cast<f32>(segments),
+                static_cast<f32>(ring) / static_cast<f32>(rings * 2 + 1)
+            );
+
+            mesh.vertices.push_back({ pos, normal, uv });
+        }
+    }
+
+    // Cylinder body
+    u32 bodyRings = 2;
+    for (u32 ring = 0; ring <= bodyRings; ++ring) {
+        f32 t = static_cast<f32>(ring) / static_cast<f32>(bodyRings);
+        f32 y = halfH - t * height;
+
+        for (u32 seg = 0; seg <= segments; ++seg) {
+            f32 theta = Math::PI_2 * static_cast<f32>(seg) / static_cast<f32>(segments);
+            f32 x = Math::Cos(theta);
+            f32 z = Math::Sin(theta);
+
+            Math::Vector3 normal(x, 0, z);
+            Math::Vector3 pos = Math::Vector3(x * radius, y, z * radius);
+            f32 vCoord = (static_cast<f32>(rings) + t * static_cast<f32>(bodyRings)) / static_cast<f32>(rings * 2 + bodyRings);
+            Math::Vector2 uv(
+                static_cast<f32>(seg) / static_cast<f32>(segments),
+                vCoord
+            );
+
+            mesh.vertices.push_back({ pos, normal, uv });
+        }
+    }
+
+    // Bottom hemisphere
+    for (u32 ring = 0; ring <= rings; ++ring) {
+        f32 phi = Math::PI * 0.5f + Math::PI * 0.5f * static_cast<f32>(ring) / static_cast<f32>(rings); // PI/2 to PI
+        f32 y = Math::Cos(phi);
+        f32 ringRadius = Math::Sin(phi);
+
+        for (u32 seg = 0; seg <= segments; ++seg) {
+            f32 theta = Math::PI_2 * static_cast<f32>(seg) / static_cast<f32>(segments);
+            f32 x = ringRadius * Math::Cos(theta);
+            f32 z = ringRadius * Math::Sin(theta);
+
+            Math::Vector3 normal(x, y, z);
+            Math::Vector3 pos = Math::Vector3(x * radius, y * radius - halfH, z * radius);
+            Math::Vector2 uv(
+                static_cast<f32>(seg) / static_cast<f32>(segments),
+                1.0f - static_cast<f32>(rings - ring) / static_cast<f32>(rings * 2 + 1)
+            );
+
+            mesh.vertices.push_back({ pos, normal, uv });
+        }
+    }
+
+    // Generate indices for all ring strips
+    u32 totalRings = rings + bodyRings + rings;
+    for (u32 ring = 0; ring < totalRings; ++ring) {
+        for (u32 seg = 0; seg < segments; ++seg) {
+            u32 current = ring * (segments + 1) + seg;
+            u32 next = current + segments + 1;
+
+            mesh.indices.push_back(current);
+            mesh.indices.push_back(next);
+            mesh.indices.push_back(current + 1);
+
+            mesh.indices.push_back(current + 1);
+            mesh.indices.push_back(next);
+            mesh.indices.push_back(next + 1);
+        }
+    }
+
+    return mesh;
+}
+
+ECS::MeshComponent MeshFactory::CreateTriangle(f32 size) {
+    ECS::MeshComponent mesh;
+
+    // Equilateral triangle centered at origin, lying in XY plane facing +Z
+    f32 h = size * Math::Sqrt(3.0f) * 0.5f;
+    f32 yBottom = -h / 3.0f;
+    f32 yTop = 2.0f * h / 3.0f;
+    f32 halfBase = size * 0.5f;
+
+    Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+
+    // Front face
+    mesh.vertices.push_back({ Math::Vector3(-halfBase, yBottom, 0.0f), normal, Math::Vector2(0.0f, 0.0f) });
+    mesh.vertices.push_back({ Math::Vector3( halfBase, yBottom, 0.0f), normal, Math::Vector2(1.0f, 0.0f) });
+    mesh.vertices.push_back({ Math::Vector3(0.0f, yTop, 0.0f), normal, Math::Vector2(0.5f, 1.0f) });
+
+    // Back face
+    Math::Vector3 backNormal(0.0f, 0.0f, -1.0f);
+    mesh.vertices.push_back({ Math::Vector3( halfBase, yBottom, 0.0f), backNormal, Math::Vector2(0.0f, 0.0f) });
+    mesh.vertices.push_back({ Math::Vector3(-halfBase, yBottom, 0.0f), backNormal, Math::Vector2(1.0f, 0.0f) });
+    mesh.vertices.push_back({ Math::Vector3(0.0f, yTop, 0.0f), backNormal, Math::Vector2(0.5f, 1.0f) });
+
+    mesh.indices = { 0, 1, 2, 3, 4, 5 };
+
+    return mesh;
+}
+
+ECS::MeshComponent MeshFactory::CreatePyramid(f32 base, f32 height) {
+    ECS::MeshComponent mesh;
+    f32 hb = base * 0.5f;
+    f32 halfH = height * 0.5f;
+
+    // 5 unique positions
+    Math::Vector3 apex(0.0f, halfH, 0.0f);
+    Math::Vector3 bl(-hb, -halfH, -hb);
+    Math::Vector3 br( hb, -halfH, -hb);
+    Math::Vector3 fr( hb, -halfH,  hb);
+    Math::Vector3 fl(-hb, -halfH,  hb);
+
+    // Helper: compute face normal from 3 points
+    auto faceNormal = [](const Math::Vector3& a, const Math::Vector3& b, const Math::Vector3& c) {
+        Math::Vector3 e1 = b - a;
+        Math::Vector3 e2 = c - a;
+        Math::Vector3 n(
+            e1.y * e2.z - e1.z * e2.y,
+            e1.z * e2.x - e1.x * e2.z,
+            e1.x * e2.y - e1.y * e2.x
+        );
+        f32 len = Math::Sqrt(n.x * n.x + n.y * n.y + n.z * n.z);
+        if (len > 1e-6f) { n.x /= len; n.y /= len; n.z /= len; }
+        return n;
+    };
+
+    // Front face (fl, fr, apex)
+    Math::Vector3 nFront = faceNormal(fl, fr, apex);
+    mesh.vertices.push_back({ fl, nFront, Math::Vector2(0, 0) });
+    mesh.vertices.push_back({ fr, nFront, Math::Vector2(1, 0) });
+    mesh.vertices.push_back({ apex, nFront, Math::Vector2(0.5f, 1) });
+
+    // Right face (fr, br, apex)
+    Math::Vector3 nRight = faceNormal(fr, br, apex);
+    mesh.vertices.push_back({ fr, nRight, Math::Vector2(0, 0) });
+    mesh.vertices.push_back({ br, nRight, Math::Vector2(1, 0) });
+    mesh.vertices.push_back({ apex, nRight, Math::Vector2(0.5f, 1) });
+
+    // Back face (br, bl, apex)
+    Math::Vector3 nBack = faceNormal(br, bl, apex);
+    mesh.vertices.push_back({ br, nBack, Math::Vector2(0, 0) });
+    mesh.vertices.push_back({ bl, nBack, Math::Vector2(1, 0) });
+    mesh.vertices.push_back({ apex, nBack, Math::Vector2(0.5f, 1) });
+
+    // Left face (bl, fl, apex)
+    Math::Vector3 nLeft = faceNormal(bl, fl, apex);
+    mesh.vertices.push_back({ bl, nLeft, Math::Vector2(0, 0) });
+    mesh.vertices.push_back({ fl, nLeft, Math::Vector2(1, 0) });
+    mesh.vertices.push_back({ apex, nLeft, Math::Vector2(0.5f, 1) });
+
+    // Bottom face (two triangles)
+    Math::Vector3 nBottom(0, -1, 0);
+    mesh.vertices.push_back({ bl, nBottom, Math::Vector2(0, 0) });
+    mesh.vertices.push_back({ br, nBottom, Math::Vector2(1, 0) });
+    mesh.vertices.push_back({ fr, nBottom, Math::Vector2(1, 1) });
+    mesh.vertices.push_back({ fl, nBottom, Math::Vector2(0, 1) });
+
+    // Indices: 4 side faces (3 each) + bottom (6)
+    for (u32 i = 0; i < 12; ++i) {
+        mesh.indices.push_back(i);
+    }
+    // Bottom quad
+    mesh.indices.push_back(12);
+    mesh.indices.push_back(13);
+    mesh.indices.push_back(14);
+    mesh.indices.push_back(12);
+    mesh.indices.push_back(14);
+    mesh.indices.push_back(15);
+
+    return mesh;
+}
+
 ECS::MeshComponent MeshFactory::CreateQuad(f32 width, f32 height) {
     ECS::MeshComponent mesh;
     f32 hw = width * 0.5f;
@@ -339,6 +529,54 @@ ECS::MeshComponent MeshFactory::CreateQuad(f32 width, f32 height) {
     };
 
     mesh.indices = { 0, 1, 2, 0, 2, 3 };
+
+    return mesh;
+}
+
+ECS::MeshComponent MeshFactory::CreateCapsule2D(f32 width, f32 height, u32 capSegments) {
+    ECS::MeshComponent mesh;
+    f32 radius = width * 0.5f;
+    f32 bodyHalf = (height - width) * 0.5f;
+    if (bodyHalf < 0.0f) bodyHalf = 0.0f;
+
+    Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+
+    // Center vertex for fan triangulation
+    u32 centerIdx = 0;
+    mesh.vertices.push_back({ Math::Vector3(0.0f, 0.0f, 0.0f), normal, Math::Vector2(0.5f, 0.5f) });
+
+    // Build outline vertices: bottom cap, left side, top cap, right side
+    // Bottom semicircle (from bottom-right going clockwise to bottom-left)
+    for (u32 i = 0; i <= capSegments; ++i) {
+        f32 angle = Math::PI + Math::PI * static_cast<f32>(i) / static_cast<f32>(capSegments);
+        f32 x = radius * Math::Cos(angle);
+        f32 y = -bodyHalf + radius * Math::Sin(angle);
+
+        f32 u = (x + radius) / width;
+        f32 v = (y + bodyHalf + radius) / height;
+        mesh.vertices.push_back({ Math::Vector3(x, y, 0.0f), normal, Math::Vector2(u, v) });
+    }
+
+    // Top semicircle (from top-left going clockwise to top-right)
+    for (u32 i = 0; i <= capSegments; ++i) {
+        f32 angle = Math::PI * static_cast<f32>(i) / static_cast<f32>(capSegments);
+        f32 x = radius * Math::Cos(angle);
+        f32 y = bodyHalf + radius * Math::Sin(angle);
+
+        f32 u = (x + radius) / width;
+        f32 v = (y + bodyHalf + radius) / height;
+        mesh.vertices.push_back({ Math::Vector3(x, y, 0.0f), normal, Math::Vector2(u, v) });
+    }
+
+    // Fan triangles from center to outline
+    u32 outlineCount = static_cast<u32>(mesh.vertices.size()) - 1; // exclude center
+    for (u32 i = 0; i < outlineCount; ++i) {
+        u32 current = 1 + i;
+        u32 next = 1 + ((i + 1) % outlineCount);
+        mesh.indices.push_back(centerIdx);
+        mesh.indices.push_back(current);
+        mesh.indices.push_back(next);
+    }
 
     return mesh;
 }
@@ -496,6 +734,139 @@ void MeshFactory::CalculateTangents(ECS::MeshComponent& mesh) {
         // w = handedness (sign of cross(n, t) · bitangent)
         mesh.vertices[i].tangent = Math::Vector4(ortho.x, ortho.y, ortho.z, 1.0f);
     }
+}
+
+ECS::MeshComponent MeshFactory::CreateTerrain(const ECS::TerrainComponent& terrain) {
+    ECS::MeshComponent mesh;
+
+    u32 w = terrain.gridWidth;
+    u32 h = terrain.gridHeight;
+    f32 cellSize = terrain.cellSize;
+
+    // Center the terrain
+    f32 halfW = (w - 1) * cellSize * 0.5f;
+    f32 halfH = (h - 1) * cellSize * 0.5f;
+
+    // Generate vertices
+    for (u32 z = 0; z < h; ++z) {
+        for (u32 x = 0; x < w; ++x) {
+            f32 height = terrain.GetHeight(x, z);
+
+            Math::Vector3 pos(
+                static_cast<f32>(x) * cellSize - halfW,
+                height,
+                static_cast<f32>(z) * cellSize - halfH
+            );
+
+            // Compute normal from neighbors
+            f32 hL = (x > 0) ? terrain.GetHeight(x - 1, z) : height;
+            f32 hR = (x < w - 1) ? terrain.GetHeight(x + 1, z) : height;
+            f32 hD = (z > 0) ? terrain.GetHeight(x, z - 1) : height;
+            f32 hU = (z < h - 1) ? terrain.GetHeight(x, z + 1) : height;
+            Math::Vector3 normal(hL - hR, 2.0f * cellSize, hD - hU);
+            f32 len = Math::Sqrt(normal.x * normal.x + normal.y * normal.y + normal.z * normal.z);
+            if (len > 1e-6f) normal = normal * (1.0f / len);
+
+            Math::Vector2 uv(
+                static_cast<f32>(x) / static_cast<f32>(w - 1),
+                static_cast<f32>(z) / static_cast<f32>(h - 1)
+            );
+
+            // Vertex color = splatmap weights (RGBA for 4 texture layers)
+            Math::Vector4 color(1.0f, 1.0f, 1.0f, 1.0f);
+            if (terrain.splatmap.size() >= static_cast<usize>(w) * h * 4) {
+                usize idx = (static_cast<usize>(z) * w + x) * 4;
+                color = Math::Vector4(
+                    terrain.splatmap[idx + 0],
+                    terrain.splatmap[idx + 1],
+                    terrain.splatmap[idx + 2],
+                    terrain.splatmap[idx + 3]
+                );
+            }
+
+            ECS::MeshComponent::Vertex vert;
+            vert.position = pos;
+            vert.normal = normal;
+            vert.uv = uv;
+            vert.color = color;
+            mesh.vertices.push_back(vert);
+        }
+    }
+
+    // Generate indices
+    for (u32 z = 0; z < h - 1; ++z) {
+        for (u32 x = 0; x < w - 1; ++x) {
+            u32 topLeft = z * w + x;
+            u32 topRight = topLeft + 1;
+            u32 bottomLeft = (z + 1) * w + x;
+            u32 bottomRight = bottomLeft + 1;
+
+            mesh.indices.push_back(topLeft);
+            mesh.indices.push_back(bottomLeft);
+            mesh.indices.push_back(topRight);
+
+            mesh.indices.push_back(topRight);
+            mesh.indices.push_back(bottomLeft);
+            mesh.indices.push_back(bottomRight);
+        }
+    }
+
+    CalculateTangents(mesh);
+    return mesh;
+}
+
+ECS::MeshComponent MeshFactory::CreateTerrain2D(const ECS::Terrain2DComponent& terrain) {
+    ECS::MeshComponent mesh;
+
+    if (terrain.controlPoints.size() < 2) return mesh;
+
+    // For each pair of consecutive points, create a quad from surface down to depth
+    for (usize i = 0; i < terrain.controlPoints.size() - 1; ++i) {
+        const auto& p0 = terrain.controlPoints[i];
+        const auto& p1 = terrain.controlPoints[i + 1];
+
+        f32 u0 = static_cast<f32>(i) * terrain.uvScale;
+        f32 u1 = static_cast<f32>(i + 1) * terrain.uvScale;
+
+        u32 baseIdx = static_cast<u32>(mesh.vertices.size());
+
+        // Top-left (surface)
+        mesh.vertices.push_back({
+            Math::Vector3(p0.x, p0.y, 0.0f),
+            Math::Vector3(0.0f, 0.0f, 1.0f),
+            Math::Vector2(u0, 0.0f)
+        });
+        // Top-right (surface)
+        mesh.vertices.push_back({
+            Math::Vector3(p1.x, p1.y, 0.0f),
+            Math::Vector3(0.0f, 0.0f, 1.0f),
+            Math::Vector2(u1, 0.0f)
+        });
+        // Bottom-right (depth)
+        mesh.vertices.push_back({
+            Math::Vector3(p1.x, p1.y - terrain.depth, 0.0f),
+            Math::Vector3(0.0f, 0.0f, 1.0f),
+            Math::Vector2(u1, 1.0f)
+        });
+        // Bottom-left (depth)
+        mesh.vertices.push_back({
+            Math::Vector3(p0.x, p0.y - terrain.depth, 0.0f),
+            Math::Vector3(0.0f, 0.0f, 1.0f),
+            Math::Vector2(u0, 1.0f)
+        });
+
+        // Two triangles per quad
+        mesh.indices.push_back(baseIdx + 0);
+        mesh.indices.push_back(baseIdx + 3);
+        mesh.indices.push_back(baseIdx + 1);
+
+        mesh.indices.push_back(baseIdx + 1);
+        mesh.indices.push_back(baseIdx + 3);
+        mesh.indices.push_back(baseIdx + 2);
+    }
+
+    CalculateTangents(mesh);
+    return mesh;
 }
 
 } // namespace Renderer

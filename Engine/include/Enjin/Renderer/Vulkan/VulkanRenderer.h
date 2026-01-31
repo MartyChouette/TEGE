@@ -72,6 +72,8 @@ public:
 
     void OnWindowResize(u32 width, u32 height);
 
+    bool IsDeviceLost() const { return m_DeviceLost; }
+
     // Flag set by window resize callback to trigger swapchain recreation
     void SetFramebufferResized(bool resized) { m_FramebufferResized = resized; }
 
@@ -110,6 +112,7 @@ private:
     bool m_IsFrameStarted = false;
     bool m_IsMainRenderPassActive = false;
     bool m_FramebufferResized = false;
+    bool m_DeviceLost = false;
 
     std::vector<ResizeCallback> m_ResizeCallbacks;
 };

@@ -66,11 +66,15 @@ void VulkanBuffer::Destroy() {
     }
 
     if (m_Memory != VK_NULL_HANDLE) {
+        if (m_Context && m_AllocatedSize > 0) {
+            m_Context->TrackDeallocation(m_AllocatedSize);
+        }
         vkFreeMemory(m_Context->GetDevice(), m_Memory, nullptr);
         m_Memory = VK_NULL_HANDLE;
     }
 
     m_Size = 0;
+    m_AllocatedSize = 0;
 }
 
 bool VulkanBuffer::UploadData(const void* data, usize size, usize offset) {
@@ -153,6 +157,11 @@ bool VulkanBuffer::AllocateMemory(VkMemoryPropertyFlags properties) {
     if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate buffer memory: %d", result);
         return false;
+    }
+
+    m_AllocatedSize = static_cast<usize>(memRequirements.size);
+    if (m_Context && m_AllocatedSize > 0) {
+        m_Context->TrackAllocation(m_AllocatedSize);
     }
 
     return true;

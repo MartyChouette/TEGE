@@ -52,6 +52,8 @@ struct MaterialComponent {
     bool affineTexturing = false;
     bool vertexSnapping = false;
     bool stippleTransparency = false;
+    bool uvQuantize = false;
+    bool gouraudOnly = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 };
 
@@ -96,6 +98,8 @@ struct alignas(16) MaterialGPU {
         if (mat.affineTexturing) gpu.flags |= (1 << 21);
         if (mat.vertexSnapping) gpu.flags |= (1 << 22);
         if (mat.stippleTransparency) gpu.flags |= (1 << 23);
+        if (mat.uvQuantize) gpu.flags |= (1 << 12);
+        if (mat.gouraudOnly) gpu.flags |= (1 << 13);
         // Vertex snap resolution packed into bits 24-31
         gpu.flags |= (static_cast<i32>(mat.vertexSnapResolution) << 24);
 

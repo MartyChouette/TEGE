@@ -11,11 +11,17 @@
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/Editor/PlayMode.h"
+#include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Input/InputAction.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/RetroEffects.h"
+#include "Enjin/Effects/WorldTime.h"
+#include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Editor/PerformanceStats.h"
+#include "Enjin/Editor/TerrainBrush.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -102,6 +108,9 @@ public:
     bool IsPaused() const { return m_PlayMode.IsPaused(); }
     PlayMode& GetPlayMode() { return m_PlayMode; }
 
+    // Focus mode (fullscreen game view with captured mouse)
+    bool IsFocusMode() const { return m_FocusMode; }
+
     // Set render system for offscreen game camera rendering
     void SetRenderSystem(ECS::RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
 
@@ -151,6 +160,8 @@ private:
     void DrawWeatherZoneComponent(ECS::Entity entity);
     void DrawWaterVolumeComponent(ECS::Entity entity);
     void DrawGrassVolumeComponent(ECS::Entity entity);
+    void DrawShrubVolumeComponent(ECS::Entity entity);
+    void DrawTreeVolumeComponent(ECS::Entity entity);
     void DrawVegetationComponent(ECS::Entity entity);
     void DrawCameraTriggerComponent(ECS::Entity entity);
     void DrawTemperatureZoneComponent(ECS::Entity entity);
@@ -195,6 +206,10 @@ private:
     void DrawCamera2DBoundsComponent(ECS::Entity entity);
     void DrawStateMachineComponent(ECS::Entity entity);
     void DrawDialogueComponent(ECS::Entity entity);
+
+    // Terrain components
+    void DrawTerrainComponent(ECS::Entity entity);
+    void DrawTerrain2DComponent(ECS::Entity entity);
 
     // Other components
     void DrawTagComponent(ECS::Entity entity);
@@ -326,6 +341,20 @@ private:
     Effects::Water3D m_Water3D;
     Effects::RetroEffects m_RetroEffects;
 
+    // World time and seasonal weather
+    Effects::WorldTimeSystem m_WorldTime;
+    Effects::SeasonalWeatherSystem m_SeasonalWeather;
+    bool m_WorldTimeEnabled = false;
+    bool m_SeasonalWeatherEnabled = false;
+
+    // World curvature
+    f32 m_WorldCurvature = 0.0f;
+    bool m_WorldCurvatureEnabled = false;
+
+    // Terrain editing
+    TerrainBrush m_TerrainBrush;
+    bool m_TerrainEditMode = false;
+
     // Draw camera frustum gizmo in editor view
     void DrawCameraFrustum(ECS::Entity cameraEntity);
 
@@ -340,9 +369,19 @@ private:
     bool m_ClipboardIsCut = false;
     ECS::Entity m_ClipboardSourceEntity = ECS::INVALID_ENTITY;
 
+    // Performance stats
+    PerformanceMetrics m_PerfMetrics;
+    f32 m_PerfUpdateTimer = 0.0f;
+
     // Asset browser state
     std::string m_AssetBrowserPath;  // Current browsing directory
     std::string m_AssetBrowserSelected; // Currently selected file
+
+    // Accessibility settings (persistent)
+    EditorSettings m_EditorSettings;
+
+    // Input action map for remappable input
+    InputSystem::InputActionMap m_InputMap;
 };
 
 } // namespace Editor

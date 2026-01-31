@@ -64,6 +64,27 @@ struct CRTSettings {
     bool phosphorGlow = false;
     f32 glowStrength = 0.2f;
     Math::Vector3 phosphorMask = Math::Vector3(1.0f, 0.8f, 1.0f);  // RGB mask
+
+    // Phosphor subpixel blending
+    u32 maskType = 0;        // 0=aperture grille, 1=shadow mask, 2=slot mask
+    f32 maskPitch = 1.0f;    // Subpixel spacing (pixels between RGB triplets)
+    f32 bloomRadius = 1.5f;  // Phosphor bloom spread radius
+    f32 bloomStrength = 0.3f; // How much phosphors bleed into neighbors
+};
+
+// VHS filter settings
+struct VHSSettings {
+    bool enabled = false;
+    f32 trackingIntensity = 0.3f;
+    f32 trackingSpeed = 1.0f;
+    f32 wobbleIntensity = 0.002f;
+    f32 wobbleSpeed = 2.0f;
+    f32 colorBleedAmount = 0.003f;
+    f32 noiseIntensity = 0.05f;
+    f32 blueShift = 0.05f;
+    bool screenTear = false;
+    f32 tearOffset = 0.0f;
+    bool interlacing = false;
 };
 
 // Color grading presets
@@ -156,6 +177,14 @@ public:
     void SetCRTSettings(const CRTSettings& settings) { m_CRT = settings; }
     CRTSettings& GetCRTSettings() { return m_CRT; }
 
+    // VHS
+    void SetVHSSettings(const VHSSettings& settings) { m_VHS = settings; }
+    VHSSettings& GetVHSSettings() { return m_VHS; }
+
+    // Global retro flags
+    bool GetGouraudOnly() const { return m_GouraudOnly; }
+    void SetGouraudOnly(bool enabled) { m_GouraudOnly = enabled; }
+
     // Fog
     void SetFogSettings(const RetroFogSettings& settings) { m_Fog = settings; }
     RetroFogSettings& GetFogSettings() { return m_Fog; }
@@ -186,7 +215,9 @@ private:
     AffineSettings m_Affine;
     VertexJitterSettings m_VertexJitter;
     CRTSettings m_CRT;
+    VHSSettings m_VHS;
     RetroFogSettings m_Fog;
+    bool m_GouraudOnly = false;
 
     TransitionSettings m_Transition;
     f32 m_TransitionProgress = 1.0f;

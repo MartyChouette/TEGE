@@ -50,6 +50,10 @@ public:
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0);
 
+    // Reduced motion: cuts particles to 25%, disables stretch
+    void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
+    bool GetReducedMotion() const { return m_ReducedMotion; }
+
 private:
     void CreateQuadBuffers();
     void CreateInstanceBuffer();
@@ -71,7 +75,11 @@ private:
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
 
+    // Reusable instance data cache to avoid per-frame allocation
+    std::vector<ParticleInstanceData> m_InstanceDataCache;
+
     bool m_Initialized = false;
+    bool m_ReducedMotion = false;
 };
 
 } // namespace Effects

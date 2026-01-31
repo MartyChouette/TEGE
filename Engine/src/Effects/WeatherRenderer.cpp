@@ -204,31 +204,36 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
     const auto& particles = weather.GetParticles();
     u32 instanceCount = (particleCount < MAX_PARTICLES) ? particleCount : MAX_PARTICLES;
 
-    // Build instance data
-    std::vector<ParticleInstanceData> instances(instanceCount);
+    // Reduced motion: cut visible particles to 25%
+    if (m_ReducedMotion) {
+        instanceCount = instanceCount / 4;
+        if (instanceCount == 0) return;
+    }
+
+    // Build instance data (reuse cached vector to avoid per-frame allocation)
+    m_InstanceDataCache.resize(instanceCount);
     for (u32 i = 0; i < instanceCount; ++i) {
         const auto& p = particles[i];
         if (p.lifetime <= 0.0f) continue;
 
-        instances[i].position = p.position;
-        instances[i].size = p.size * 2.0f;
-        instances[i].alpha = p.alpha;
+        m_InstanceDataCache[i].position = p.position;
+        m_InstanceDataCache[i].size = p.size * 2.0f;
+        m_InstanceDataCache[i].alpha = p.alpha;
 
-        if (isRain) {
-            // Rain: elongated streaks
-            instances[i].stretch = 6.0f;
-            instances[i].stretchDirX = 0.0f;
-            instances[i].stretchDirY = 1.0f;
+        if (isRain && !m_ReducedMotion) {
+            // Reduced motion: disable rain stretch (makes it less visually intense)
+            m_InstanceDataCache[i].stretch = 6.0f;
+            m_InstanceDataCache[i].stretchDirX = 0.0f;
+            m_InstanceDataCache[i].stretchDirY = 1.0f;
         } else {
-            // Snow: round billboards
-            instances[i].stretch = 1.0f;
-            instances[i].stretchDirX = 0.0f;
-            instances[i].stretchDirY = 0.0f;
+            m_InstanceDataCache[i].stretch = 1.0f;
+            m_InstanceDataCache[i].stretchDirX = 0.0f;
+            m_InstanceDataCache[i].stretchDirY = 0.0f;
         }
     }
 
     // Upload instance data
-    m_InstanceBuffer->UploadData(instances.data(), instanceCount * sizeof(ParticleInstanceData));
+    m_InstanceBuffer->UploadData(m_InstanceDataCache.data(), instanceCount * sizeof(ParticleInstanceData));
 
     // Bind pipeline
     m_Pipeline->Bind(commandBuffer);

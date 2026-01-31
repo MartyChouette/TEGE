@@ -19,6 +19,8 @@
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/GrassRenderer.h"
+#include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/Effects/TreeRenderer.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
@@ -81,18 +83,26 @@ public:
     void SetRainActive(bool active) { m_RainActive = active; }
     bool IsRainActive() const { return m_RainActive; }
 
-    // Weather and grass renderers (initialized after main pipeline)
+    // Weather, grass, and tree renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
+    Effects::TreeRenderer* GetTreeRenderer() { return m_TreeRenderer.get(); }
 
-    // Render weather particles and grass (call after scene geometry in main render pass)
+    // Render weather particles, grass, shrubs, and trees (call after scene geometry in main render pass)
     // viewportWidth/Height: 0 = swapchain, >0 = render target override
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                 u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderTrees(u32 viewportWidth = 0, u32 viewportHeight = 0);
 
     // Recreate effect renderer pipelines for a specific render pass (e.g. render target)
     void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass);
+
+    // Draw call / triangle counters (reset each frame in Update)
+    u32 GetDrawCallCount() const { return m_DrawCallCount; }
+    u32 GetTriangleCount() const { return m_TriangleCount; }
+    void ResetFrameCounters() { m_DrawCallCount = 0; m_TriangleCount = 0; }
 
     // Fog and snow parameters (set by editor, uploaded to LightingUBO)
     void SetFogParams(f32 density, f32 start, f32 end, f32 heightFalloff) {
@@ -100,6 +110,10 @@ public:
     }
     void SetFogColor(const Math::Vector3& color) { m_FogColor = color; }
     void SetSnowIntensity(f32 intensity) { m_SnowIntensity = intensity; }
+
+    // World curvature (vertex-shader horizon bending)
+    void SetWorldCurvature(f32 strength) { m_WorldCurvature = strength; }
+    f32 GetWorldCurvature() const { return m_WorldCurvature; }
 
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
@@ -149,6 +163,7 @@ private:
     f32 m_FogHeightFalloff = 0.1f;
     Math::Vector3 m_FogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
     f32 m_SnowIntensity = 0.0f;
+    f32 m_WorldCurvature = 0.0f;
 
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
@@ -162,9 +177,11 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
 
-    // Weather particle and grass renderers
+    // Weather, grass, shrub, and tree renderers
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
+    std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
+    std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
 
     // Water surface mesh generation
     void EnsureWaterMeshes();
@@ -174,17 +191,25 @@ private:
     void UpdateTextureDescriptor(Renderer::Texture* texture);
     void UpdateHeightTextureDescriptor(Renderer::Texture* texture);
     void UpdateNormalMapDescriptor(Renderer::Texture* texture);
-    
+
+    // Split uniform updates: frame-level (once) vs per-entity (material only)
+    void UpdateFrameUniforms();
+    void UpdateMaterialBuffer(Entity entity);
+
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_LightingBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_MaterialBuffers;
     std::vector<VkDescriptorSet> m_DescriptorSets;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
-    
+
     // Per-entity render data
     std::unordered_map<Entity, EntityRenderData> m_EntityRenderData;
-    
+
+    // Draw call / triangle counters
+    u32 m_DrawCallCount = 0;
+    u32 m_TriangleCount = 0;
+
     bool m_Initialized = false;
 };
 

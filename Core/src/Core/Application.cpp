@@ -95,6 +95,19 @@ void Application::InitializeEngine() {
     // Initialize input system
     Input::Initialize(m_Window);
 
+    // Register focus callback: clear input on focus loss to prevent stuck keys
+    m_Window->SetFocusCallback([this](bool focused) {
+        m_Focused = focused;
+        if (!focused) {
+            Input::ClearAllState();
+        }
+    });
+
+    // Register iconify callback: track minimized state
+    m_Window->SetIconifyCallback([this](bool iconified) {
+        m_Minimized = iconified;
+    });
+
     ENJIN_LOG_INFO(Core, "Engine initialized successfully");
 }
 
@@ -113,10 +126,27 @@ void Application::MainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
     while (m_Running) {
+        // When minimized, wait for events instead of busy-spinning
+        if (m_Minimized && m_Window) {
+            m_Window->WaitEvents();
+            // Reset lastTime so we don't get a huge delta spike on restore
+            lastTime = std::chrono::high_resolution_clock::now();
+            if (m_Window->ShouldClose()) {
+                m_Running = false;
+                break;
+            }
+            continue;
+        }
+
         auto currentTime = std::chrono::high_resolution_clock::now();
         auto deltaTimeNs = std::chrono::duration_cast<std::chrono::nanoseconds>(currentTime - lastTime);
         f32 deltaTime = static_cast<f32>(deltaTimeNs.count()) / 1'000'000'000.0f;
         lastTime = currentTime;
+
+        // Clamp delta time to prevent physics explosion after long pause/resume
+        if (deltaTime > 0.1f) {
+            deltaTime = 0.1f;
+        }
 
         // Update window events
         if (m_Window) {

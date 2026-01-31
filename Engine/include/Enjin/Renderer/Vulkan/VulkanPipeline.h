@@ -31,9 +31,9 @@ struct PushConstants {
     f32 alphaCutoff;
     i32 flags;
     f32 parallaxScale;
-    f32 _pad0 = 0.0f;
-    f32 _pad1 = 0.0f;
-    f32 _pad2 = 0.0f;
+    f32 shoreWidth = 0.0f;
+    f32 foamIntensity = 0.0f;
+    f32 foamScale = 0.0f;
 };
 
 // Note: LightingUBO is defined in Enjin/ECS/Components/Light.h

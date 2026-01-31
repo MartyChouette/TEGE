@@ -48,6 +48,8 @@ layout(binding = 1) uniform LightingUBO {
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
+    vec4 playerPosition; // xyz = player world pos, w = step radius
+    vec4 worldCurvature; // x = strength, yzw reserved
 } lighting;
 
 layout(location = 0) out vec3 fragWorldPos;
@@ -117,6 +119,24 @@ void main() {
     vec3 windDisplacement = windDir * (windOffset + windOffset2);
 
     vec3 worldPos = bladeOrigin + rotatedPos + windDisplacement;
+
+    // Player stepping: grass bends away from player position
+    float stepRadius = lighting.playerPosition.w;
+    if (stepRadius > 0.0) {
+        vec2 toPlayer = worldPos.xz - lighting.playerPosition.xz;
+        float dist = length(toPlayer);
+        if (dist < stepRadius && dist > 0.001) {
+            float bendFactor = (1.0 - dist / stepRadius) * heightFraction;
+            worldPos.xz += normalize(toPlayer) * bendFactor * 0.5;
+            worldPos.y -= bendFactor * 0.2;
+        }
+    }
+
+    // World curvature: bend geometry downward at distance from camera
+    if (lighting.worldCurvature.x > 0.0) {
+        vec2 delta = worldPos.xz - lighting.cameraPos.xz;
+        worldPos.y -= lighting.worldCurvature.x * dot(delta, delta);
+    }
 
     gl_Position = ubo.proj * ubo.view * vec4(worldPos, 1.0);
 

@@ -112,6 +112,12 @@ struct alignas(16) LightingUBO {
     alignas(16) Math::Vector4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     alignas(16) Math::Vector4 fogColorSnow;  // xyz=fog color, w=snow intensity
 
+    // Player position for vegetation stepping (xyz = world pos, w = step radius)
+    alignas(16) Math::Vector4 playerPosition;
+
+    // World curvature (x = strength, yzw reserved)
+    alignas(16) Math::Vector4 worldCurvature;
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

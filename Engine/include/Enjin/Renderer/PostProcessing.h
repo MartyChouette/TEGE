@@ -25,6 +25,7 @@ enum class PostProcessEffect : u32 {
     FXAA = 1 << 4,           // Fast approximate anti-aliasing
     ColorGrading = 1 << 5,   // Color correction
     FilmGrain = 1 << 6,      // Film grain noise
+    LUT = 1 << 7,            // LUT color grading
     All = 0xFFFFFFFF
 };
 
@@ -53,9 +54,9 @@ enum class ToneMappingMode : u32 {
 // Post-processing settings (GPU-aligned)
 struct alignas(16) PostProcessSettings {
     // Tone mapping
-    alignas(4) u32 toneMappingMode = static_cast<u32>(ToneMappingMode::ACES);
+    alignas(4) u32 toneMappingMode = static_cast<u32>(ToneMappingMode::None);
     alignas(4) f32 exposure = 1.0f;
-    alignas(4) f32 gamma = 2.2f;
+    alignas(4) f32 gamma = 1.0f;  // Main shader already applies gamma; 1.0 = no double correction
     alignas(4) f32 whitePoint = 4.0f;
 
     // Bloom
@@ -81,8 +82,8 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 saturation = 1.0f;
     alignas(4) f32 contrast = 1.0f;
     alignas(4) f32 brightness = 0.0f;
-    alignas(4) f32 _pad3;
-    alignas(4) f32 _pad4;
+    alignas(4) u32 colorblindMode = 0;       // 0=off, 1=protanopia, 2=deuteranopia, 3=tritanopia, 4=protanomaly, 5=deuteranomaly, 6=tritanomaly, 7=achromatopsia
+    alignas(4) f32 colorblindStrength = 1.0f;
 
     // Film grain
     alignas(4) u32 filmGrainEnabled = 0;
@@ -125,6 +126,42 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 scanlineIntensity = 0.3f;
     alignas(4) f32 scanlineWidth = 1.0f;
     alignas(4) f32 crtCurvature = 0.0f;
+
+    // LUT color grading
+    alignas(4) u32 lutEnabled = 0;
+    alignas(4) f32 lutStrength = 1.0f;
+    alignas(4) u32 lutSize = 32;
+    alignas(4) f32 _lutPad0 = 0.0f;
+
+    // CRT Phosphor subpixel blending
+    alignas(4) u32 crtPhosphorEnabled = 0;
+    alignas(4) u32 crtMaskType = 0;        // 0=aperture grille, 1=shadow mask, 2=slot mask
+    alignas(4) f32 crtMaskPitch = 1.0f;
+    alignas(4) f32 crtBloomRadius = 1.5f;
+    alignas(4) f32 crtBloomStrength = 0.3f;
+    alignas(4) f32 _crtPad0 = 0.0f;
+    alignas(4) f32 _crtPad1 = 0.0f;
+    alignas(4) f32 _crtPad2 = 0.0f;
+
+    // VHS filter
+    alignas(4) u32 vhsEnabled = 0;
+    alignas(4) f32 vhsTrackingIntensity = 0.3f;
+    alignas(4) f32 vhsTrackingSpeed = 1.0f;
+    alignas(4) f32 vhsWobbleIntensity = 0.002f;
+    alignas(4) f32 vhsWobbleSpeed = 2.0f;
+    alignas(4) f32 vhsColorBleed = 0.003f;
+    alignas(4) f32 vhsNoiseIntensity = 0.05f;
+    alignas(4) f32 vhsBlueShift = 0.05f;
+    alignas(4) u32 vhsScreenTear = 0;
+    alignas(4) f32 vhsTearOffset = 0.0f;
+    alignas(4) u32 vhsInterlacing = 0;
+    alignas(4) f32 _vhsPad0 = 0.0f;
+
+    // Color palette lock
+    alignas(4) u32 paletteEnabled = 0;
+    alignas(4) u32 paletteColors = 16;
+    alignas(4) f32 _palPad0 = 0.0f;
+    alignas(4) f32 _palPad1 = 0.0f;
 };
 
 // Post-processing manager
@@ -154,6 +191,12 @@ public:
     PostProcessSettings& GetSettings() { return m_Settings; }
     const PostProcessSettings& GetSettings() const { return m_Settings; }
     void SetSettings(const PostProcessSettings& settings) { m_Settings = settings; }
+
+    // LUT color grading
+    bool LoadLUT(const std::string& filepath);
+    void ClearLUT();
+    std::string GetLUTPath() const { return m_LUTPath; }
+    bool IsLUTLoaded() const { return m_LUTLoaded; }
 
     // Individual effect toggles
     void SetEffectEnabled(PostProcessEffect effect, bool enabled);
@@ -211,6 +254,15 @@ private:
     u32 m_Width = 0;
     u32 m_Height = 0;
     bool m_Initialized = false;
+
+    // LUT texture resources
+    std::string m_LUTPath;
+    VkImage m_LUTImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_LUTImageMemory = VK_NULL_HANDLE;
+    VkImageView m_LUTImageView = VK_NULL_HANDLE;
+    VkSampler m_LUTSampler = VK_NULL_HANDLE;
+    bool m_LUTLoaded = false;
+    void DestroyLUTResources();
 };
 
 } // namespace Renderer

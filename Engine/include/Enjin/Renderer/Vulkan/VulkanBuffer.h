@@ -49,6 +49,7 @@ private:
     VkBuffer m_Buffer = VK_NULL_HANDLE;
     VkDeviceMemory m_Memory = VK_NULL_HANDLE;
     usize m_Size = 0;
+    usize m_AllocatedSize = 0;  // Actual GPU allocation (may be > m_Size due to alignment)
     VkBufferUsageFlags m_UsageFlags = 0;
     bool m_HostVisible = false;
     void* m_MappedData = nullptr;

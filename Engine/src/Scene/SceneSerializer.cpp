@@ -8,11 +8,16 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -104,6 +109,8 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["affineTexturing"] = material.affineTexturing;
     j["vertexSnapping"] = material.vertexSnapping;
     j["stippleTransparency"] = material.stippleTransparency;
+    j["uvQuantize"] = material.uvQuantize;
+    j["gouraudOnly"] = material.gouraudOnly;
     j["vertexSnapResolution"] = material.vertexSnapResolution;
     return j;
 }
@@ -245,6 +252,8 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("affineTexturing")) material.affineTexturing = j["affineTexturing"].get<bool>();
     if (j.contains("vertexSnapping")) material.vertexSnapping = j["vertexSnapping"].get<bool>();
     if (j.contains("stippleTransparency")) material.stippleTransparency = j["stippleTransparency"].get<bool>();
+    if (j.contains("uvQuantize")) material.uvQuantize = j["uvQuantize"].get<bool>();
+    if (j.contains("gouraudOnly")) material.gouraudOnly = j["gouraudOnly"].get<bool>();
     if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     return material;
 }
@@ -375,10 +384,16 @@ ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
 json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     json j;
     j["halfExtents"] = SerializeVector3(volume.halfExtents);
+    j["waterType"] = static_cast<u32>(volume.waterType);
     j["waterColor"] = SerializeVector3(volume.waterColor);
     j["opacity"] = volume.opacity;
     j["waveSpeed"] = volume.waveSpeed;
     j["waveHeight"] = volume.waveHeight;
+    j["enableShore"] = volume.enableShore;
+    j["shoreWidth"] = volume.shoreWidth;
+    j["foamIntensity"] = volume.foamIntensity;
+    j["foamScale"] = volume.foamScale;
+    j["shoreColor"] = SerializeVector3(volume.shoreColor);
     j["priority"] = volume.priority;
     return j;
 }
@@ -386,12 +401,165 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
 ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     ECS::WaterVolumeComponent volume;
     volume.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("waterType")) volume.waterType = static_cast<ECS::WaterType>(j["waterType"].get<u32>());
     volume.waterColor = DeserializeVector3(j["waterColor"]);
     volume.opacity = j["opacity"].get<f32>();
     volume.waveSpeed = j["waveSpeed"].get<f32>();
     volume.waveHeight = j["waveHeight"].get<f32>();
+    if (j.contains("enableShore")) volume.enableShore = j["enableShore"].get<bool>();
+    if (j.contains("shoreWidth")) volume.shoreWidth = j["shoreWidth"].get<f32>();
+    if (j.contains("foamIntensity")) volume.foamIntensity = j["foamIntensity"].get<f32>();
+    if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
+    if (j.contains("shoreColor")) volume.shoreColor = DeserializeVector3(j["shoreColor"]);
     volume.priority = j["priority"].get<i32>();
     return volume;
+}
+
+json SerializeShrubVolumeComponent(const ECS::ShrubVolumeComponent& shrub) {
+    json j;
+    j["halfExtents"] = SerializeVector3(shrub.halfExtents);
+    j["density"] = shrub.density;
+    j["shrubHeight"] = shrub.shrubHeight;
+    j["heightVariance"] = shrub.heightVariance;
+    j["width"] = shrub.width;
+    j["baseColor"] = SerializeVector3(shrub.baseColor);
+    j["tipColor"] = SerializeVector3(shrub.tipColor);
+    j["windSwayStrength"] = shrub.windSwayStrength;
+    j["quadsPerShrub"] = shrub.quadsPerShrub;
+    return j;
+}
+
+ECS::ShrubVolumeComponent DeserializeShrubVolumeComponent(const json& j) {
+    ECS::ShrubVolumeComponent shrub;
+    if (j.contains("halfExtents")) shrub.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("density")) shrub.density = j["density"].get<u32>();
+    if (j.contains("shrubHeight")) shrub.shrubHeight = j["shrubHeight"].get<f32>();
+    if (j.contains("heightVariance")) shrub.heightVariance = j["heightVariance"].get<f32>();
+    if (j.contains("width")) shrub.width = j["width"].get<f32>();
+    if (j.contains("baseColor")) shrub.baseColor = DeserializeVector3(j["baseColor"]);
+    if (j.contains("tipColor")) shrub.tipColor = DeserializeVector3(j["tipColor"]);
+    if (j.contains("windSwayStrength")) shrub.windSwayStrength = j["windSwayStrength"].get<f32>();
+    if (j.contains("quadsPerShrub")) shrub.quadsPerShrub = j["quadsPerShrub"].get<u32>();
+    return shrub;
+}
+
+json SerializeTreeVolumeComponent(const ECS::TreeVolumeComponent& tree) {
+    json j;
+    j["halfExtents"] = SerializeVector3(tree.halfExtents);
+    j["density"] = tree.density;
+    j["trunkHeight"] = tree.trunkHeight;
+    j["trunkWidth"] = tree.trunkWidth;
+    j["canopyRadius"] = tree.canopyRadius;
+    j["canopyOffset"] = tree.canopyOffset;
+    j["trunkColor"] = SerializeVector3(tree.trunkColor);
+    j["canopyBaseColor"] = SerializeVector3(tree.canopyBaseColor);
+    j["canopyTipColor"] = SerializeVector3(tree.canopyTipColor);
+    j["windSwayStrength"] = tree.windSwayStrength;
+    j["canopyQuads"] = tree.canopyQuads;
+    j["minHeightScale"] = tree.minHeightScale;
+    j["maxHeightScale"] = tree.maxHeightScale;
+    j["treeType"] = static_cast<u32>(tree.treeType);
+    j["springCanopyColor"] = SerializeVector3(tree.springCanopyColor);
+    j["summerCanopyColor"] = SerializeVector3(tree.summerCanopyColor);
+    j["fallCanopyColor"] = SerializeVector3(tree.fallCanopyColor);
+    if (!tree.barkTexturePath.empty()) j["barkTexturePath"] = tree.barkTexturePath;
+    if (!tree.canopyTexturePath.empty()) j["canopyTexturePath"] = tree.canopyTexturePath;
+    return j;
+}
+
+ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
+    ECS::TreeVolumeComponent tree;
+    if (j.contains("halfExtents")) tree.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("density")) tree.density = j["density"].get<u32>();
+    if (j.contains("trunkHeight")) tree.trunkHeight = j["trunkHeight"].get<f32>();
+    if (j.contains("trunkWidth")) tree.trunkWidth = j["trunkWidth"].get<f32>();
+    if (j.contains("canopyRadius")) tree.canopyRadius = j["canopyRadius"].get<f32>();
+    if (j.contains("canopyOffset")) tree.canopyOffset = j["canopyOffset"].get<f32>();
+    if (j.contains("trunkColor")) tree.trunkColor = DeserializeVector3(j["trunkColor"]);
+    if (j.contains("canopyBaseColor")) tree.canopyBaseColor = DeserializeVector3(j["canopyBaseColor"]);
+    if (j.contains("canopyTipColor")) tree.canopyTipColor = DeserializeVector3(j["canopyTipColor"]);
+    if (j.contains("windSwayStrength")) tree.windSwayStrength = j["windSwayStrength"].get<f32>();
+    if (j.contains("canopyQuads")) tree.canopyQuads = j["canopyQuads"].get<u32>();
+    if (j.contains("minHeightScale")) tree.minHeightScale = j["minHeightScale"].get<f32>();
+    if (j.contains("maxHeightScale")) tree.maxHeightScale = j["maxHeightScale"].get<f32>();
+    if (j.contains("treeType")) tree.treeType = static_cast<ECS::TreeType>(j["treeType"].get<u32>());
+    if (j.contains("springCanopyColor")) tree.springCanopyColor = DeserializeVector3(j["springCanopyColor"]);
+    if (j.contains("summerCanopyColor")) tree.summerCanopyColor = DeserializeVector3(j["summerCanopyColor"]);
+    if (j.contains("fallCanopyColor")) tree.fallCanopyColor = DeserializeVector3(j["fallCanopyColor"]);
+    if (j.contains("barkTexturePath")) tree.barkTexturePath = j["barkTexturePath"].get<std::string>();
+    if (j.contains("canopyTexturePath")) tree.canopyTexturePath = j["canopyTexturePath"].get<std::string>();
+    return tree;
+}
+
+// Terrain component serialization
+json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
+    json j;
+    j["gridWidth"] = terrain.gridWidth;
+    j["gridHeight"] = terrain.gridHeight;
+    j["cellSize"] = terrain.cellSize;
+    j["maxHeight"] = terrain.maxHeight;
+    j["heightmap"] = terrain.heightmap;
+    j["splatmap"] = terrain.splatmap;
+    json layersArr = json::array();
+    for (int i = 0; i < 4; ++i) {
+        json layer;
+        layer["texturePath"] = terrain.layers[i].texturePath;
+        layer["tileScale"] = terrain.layers[i].tileScale;
+        layersArr.push_back(layer);
+    }
+    j["layers"] = layersArr;
+    return j;
+}
+
+ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
+    ECS::TerrainComponent terrain;
+    if (j.contains("gridWidth")) terrain.gridWidth = j["gridWidth"].get<u32>();
+    if (j.contains("gridHeight")) terrain.gridHeight = j["gridHeight"].get<u32>();
+    if (j.contains("cellSize")) terrain.cellSize = j["cellSize"].get<f32>();
+    if (j.contains("maxHeight")) terrain.maxHeight = j["maxHeight"].get<f32>();
+    if (j.contains("heightmap")) terrain.heightmap = j["heightmap"].get<std::vector<f32>>();
+    if (j.contains("splatmap")) terrain.splatmap = j["splatmap"].get<std::vector<f32>>();
+    if (j.contains("layers")) {
+        const auto& layersArr = j["layers"];
+        for (int i = 0; i < 4 && i < static_cast<int>(layersArr.size()); ++i) {
+            if (layersArr[i].contains("texturePath"))
+                terrain.layers[i].texturePath = layersArr[i]["texturePath"].get<std::string>();
+            if (layersArr[i].contains("tileScale"))
+                terrain.layers[i].tileScale = layersArr[i]["tileScale"].get<f32>();
+        }
+    }
+    terrain.meshDirty = true;
+    return terrain;
+}
+
+// 2D Terrain component serialization
+json SerializeTerrain2DComponent(const ECS::Terrain2DComponent& terrain) {
+    json j;
+    json points = json::array();
+    for (const auto& p : terrain.controlPoints) {
+        points.push_back(SerializeVector2(p));
+    }
+    j["controlPoints"] = points;
+    j["depth"] = terrain.depth;
+    j["uvScale"] = terrain.uvScale;
+    j["texturePath"] = terrain.texturePath;
+    j["autoColliders"] = terrain.autoColliders;
+    return j;
+}
+
+ECS::Terrain2DComponent DeserializeTerrain2DComponent(const json& j) {
+    ECS::Terrain2DComponent terrain;
+    if (j.contains("controlPoints")) {
+        for (const auto& p : j["controlPoints"]) {
+            terrain.controlPoints.push_back(DeserializeVector2(p));
+        }
+    }
+    if (j.contains("depth")) terrain.depth = j["depth"].get<f32>();
+    if (j.contains("uvScale")) terrain.uvScale = j["uvScale"].get<f32>();
+    if (j.contains("texturePath")) terrain.texturePath = j["texturePath"].get<std::string>();
+    if (j.contains("autoColliders")) terrain.autoColliders = j["autoColliders"].get<bool>();
+    terrain.meshDirty = true;
+    return terrain;
 }
 
 json SerializeCameraTriggerComponent(const ECS::CameraTriggerComponent& trigger) {
@@ -674,6 +842,26 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
     return ctrl;
 }
 
+json SerializeContentFlags(const Accessibility::SceneContentFlags& flags) {
+    json j;
+    j["flags"] = static_cast<u32>(flags.flags);
+    if (!flags.customWarnings.empty()) {
+        j["customWarnings"] = flags.customWarnings;
+    }
+    return j;
+}
+
+Accessibility::SceneContentFlags DeserializeContentFlags(const json& j) {
+    Accessibility::SceneContentFlags flags;
+    if (j.contains("flags")) flags.flags = static_cast<Accessibility::ContentWarningType>(j["flags"].get<u32>());
+    if (j.contains("customWarnings")) {
+        for (const auto& w : j["customWarnings"]) {
+            flags.customWarnings.push_back(w.get<std::string>());
+        }
+    }
+    return flags;
+}
+
 } // anonymous namespace
 
 SceneSerializer::SceneSerializer(ECS::World* world)
@@ -767,6 +955,26 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
             }
 
+            if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
+                const auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
+                entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*shrub);
+            }
+
+            if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
+                const auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
+                entityJson["treeVolume"] = SerializeTreeVolumeComponent(*tree);
+            }
+
+            if (m_World->HasComponent<ECS::TerrainComponent>(entity)) {
+                const auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(entity);
+                entityJson["terrain"] = SerializeTerrainComponent(*terrain);
+            }
+
+            if (m_World->HasComponent<ECS::Terrain2DComponent>(entity)) {
+                const auto* terrain2d = m_World->GetComponent<ECS::Terrain2DComponent>(entity);
+                entityJson["terrain2d"] = SerializeTerrain2DComponent(*terrain2d);
+            }
+
             if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
                 const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
                 entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
@@ -803,6 +1011,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         }
 
         sceneJson["entities"] = entitiesArray;
+
+        // Serialize accessibility content flags
+        if (static_cast<u32>(m_ContentFlags.flags) != 0 || !m_ContentFlags.customWarnings.empty()) {
+            sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
+        }
 
         // Write to file
         std::ofstream file(filepath);
@@ -883,6 +1096,13 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             ENJIN_LOG_WARN(Asset, "Scene file version %s may not be fully compatible", version.c_str());
         }
 
+        // Deserialize accessibility content flags
+        if (sceneJson.contains("accessibility")) {
+            m_ContentFlags = DeserializeContentFlags(sceneJson["accessibility"]);
+        } else {
+            m_ContentFlags = Accessibility::SceneContentFlags{};
+        }
+
         // Deserialize entities
         if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
             result.error = "Invalid scene format: missing entities array";
@@ -949,6 +1169,26 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("waterVolume")) {
                 auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
+            }
+
+            if (entityJson.contains("shrubVolume")) {
+                auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
+                m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
+            }
+
+            if (entityJson.contains("treeVolume")) {
+                auto tree = DeserializeTreeVolumeComponent(entityJson["treeVolume"]);
+                m_World->AddComponent<ECS::TreeVolumeComponent>(entity, tree);
+            }
+
+            if (entityJson.contains("terrain")) {
+                auto terrain = DeserializeTerrainComponent(entityJson["terrain"]);
+                m_World->AddComponent<ECS::TerrainComponent>(entity, terrain);
+            }
+
+            if (entityJson.contains("terrain2d")) {
+                auto terrain2d = DeserializeTerrain2DComponent(entityJson["terrain2d"]);
+                m_World->AddComponent<ECS::Terrain2DComponent>(entity, terrain2d);
             }
 
             if (entityJson.contains("cameraTrigger")) {
@@ -1066,6 +1306,26 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
             }
 
+            if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
+                const auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
+                entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*shrub);
+            }
+
+            if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
+                const auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
+                entityJson["treeVolume"] = SerializeTreeVolumeComponent(*tree);
+            }
+
+            if (m_World->HasComponent<ECS::TerrainComponent>(entity)) {
+                const auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(entity);
+                entityJson["terrain"] = SerializeTerrainComponent(*terrain);
+            }
+
+            if (m_World->HasComponent<ECS::Terrain2DComponent>(entity)) {
+                const auto* terrain2d = m_World->GetComponent<ECS::Terrain2DComponent>(entity);
+                entityJson["terrain2d"] = SerializeTerrain2DComponent(*terrain2d);
+            }
+
             if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
                 const auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
                 entityJson["cameraTrigger"] = SerializeCameraTriggerComponent(*trigger);
@@ -1103,6 +1363,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
         sceneJson["entities"] = entitiesArray;
 
+        // Serialize accessibility content flags
+        if (static_cast<u32>(m_ContentFlags.flags) != 0 || !m_ContentFlags.customWarnings.empty()) {
+            sceneJson["accessibility"] = SerializeContentFlags(m_ContentFlags);
+        }
+
         if (options.prettyPrint) {
             return sceneJson.dump(static_cast<int>(options.indentSize));
         } else {
@@ -1137,6 +1402,13 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
 
         // Check version
         std::string version = sceneJson.value("version", "1.0");
+
+        // Deserialize accessibility content flags
+        if (sceneJson.contains("accessibility")) {
+            m_ContentFlags = DeserializeContentFlags(sceneJson["accessibility"]);
+        } else {
+            m_ContentFlags = Accessibility::SceneContentFlags{};
+        }
 
         // Deserialize entities
         if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
@@ -1203,6 +1475,26 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("waterVolume")) {
                 auto volume = DeserializeWaterVolumeComponent(entityJson["waterVolume"]);
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
+            }
+
+            if (entityJson.contains("shrubVolume")) {
+                auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
+                m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
+            }
+
+            if (entityJson.contains("treeVolume")) {
+                auto tree = DeserializeTreeVolumeComponent(entityJson["treeVolume"]);
+                m_World->AddComponent<ECS::TreeVolumeComponent>(entity, tree);
+            }
+
+            if (entityJson.contains("terrain")) {
+                auto terrain = DeserializeTerrainComponent(entityJson["terrain"]);
+                m_World->AddComponent<ECS::TerrainComponent>(entity, terrain);
+            }
+
+            if (entityJson.contains("terrain2d")) {
+                auto terrain2d = DeserializeTerrain2DComponent(entityJson["terrain2d"]);
+                m_World->AddComponent<ECS::Terrain2DComponent>(entity, terrain2d);
             }
 
             if (entityJson.contains("cameraTrigger")) {

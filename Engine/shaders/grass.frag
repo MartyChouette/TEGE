@@ -60,6 +60,8 @@ layout(binding = 1) uniform LightingUBO {
     vec4 windData;
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
+    vec4 playerPosition;
+    vec4 worldCurvature; // layout must match
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -131,7 +133,8 @@ void main() {
         float fogHeightFalloff = lighting.fogParams.w;
 
         float dist = length(lighting.cameraPos - fragWorldPos);
-        float fogFactor = clamp((dist - fogStart) / (fogEnd - fogStart), 0.0, 1.0);
+        float fogRange = max(fogEnd - fogStart, 0.001);
+        float fogFactor = clamp((dist - fogStart) / fogRange, 0.0, 1.0);
         fogFactor *= fogDensity;
 
         float heightFog = exp(-max(fragWorldPos.y, 0.0) * fogHeightFalloff);

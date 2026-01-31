@@ -1,7 +1,8 @@
 #version 450
 
 // Post-Processing Fragment Shader
-// Applies various effects: tone mapping, bloom, vignette, color grading, FXAA, retro effects
+// Applies various effects: tone mapping, bloom, vignette, color grading, FXAA, retro effects,
+// LUT color grading, CRT phosphor, VHS filter, palette lock
 
 layout(location = 0) in vec2 fragUV;
 layout(location = 0) out vec4 outColor;
@@ -40,8 +41,8 @@ layout(binding = 1) uniform PostProcessSettings {
     float saturation;
     float contrast;
     float brightness;
-    float _pad3;
-    float _pad4;
+    uint colorblindMode;       // 0=off, 1=protanopia, 2=deuteranopia, 3=tritanopia, 4-6=anomalous, 7=achromatopsia
+    float colorblindStrength;
 
     // Film grain
     uint filmGrainEnabled;
@@ -84,7 +85,46 @@ layout(binding = 1) uniform PostProcessSettings {
     float scanlineIntensity;
     float scanlineWidth;
     float crtCurvature;
+
+    // LUT color grading
+    uint lutEnabled;
+    float lutStrength;
+    uint lutSize;
+    float _lutPad0;
+
+    // CRT Phosphor subpixel blending
+    uint crtPhosphorEnabled;
+    uint crtMaskType;          // 0=aperture grille, 1=shadow mask, 2=slot mask
+    float crtMaskPitch;
+    float crtBloomRadius;
+    float crtBloomStrength;
+    float _crtPad0;
+    float _crtPad1;
+    float _crtPad2;
+
+    // VHS filter
+    uint vhsEnabled;
+    float vhsTrackingIntensity;
+    float vhsTrackingSpeed;
+    float vhsWobbleIntensity;
+    float vhsWobbleSpeed;
+    float vhsColorBleed;
+    float vhsNoiseIntensity;
+    float vhsBlueShift;
+    uint vhsScreenTear;
+    float vhsTearOffset;
+    uint vhsInterlacing;
+    float _vhsPad0;
+
+    // Color palette lock
+    uint paletteEnabled;
+    uint paletteColors;
+    float _palPad0;
+    float _palPad1;
 } settings;
+
+// LUT texture (binding 2)
+layout(binding = 2) uniform sampler2D lutTexture;
 
 // Tone mapping mode constants
 #define TONEMAP_NONE 0
@@ -232,6 +272,79 @@ vec3 applyColorGrading(vec3 color) {
     color *= settings.colorFilter;
 
     return clamp(color, 0.0, 1.0);
+}
+
+// Colorblind correction using Daltonization (Brettel/Machado approach)
+// Simulates how a colorblind person sees, computes error, redistributes to visible channels
+#define CB_OFF 0
+#define CB_PROTANOPIA 1
+#define CB_DEUTERANOPIA 2
+#define CB_TRITANOPIA 3
+#define CB_PROTANOMALY 4
+#define CB_DEUTERANOMALY 5
+#define CB_TRITANOMALY 6
+#define CB_ACHROMATOPSIA 7
+
+vec3 applyColorblindCorrection(vec3 color) {
+    if (settings.colorblindMode == CB_OFF) return color;
+
+    // Achromatopsia: convert to luminance
+    if (settings.colorblindMode == CB_ACHROMATOPSIA) {
+        float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        return mix(color, vec3(lum), settings.colorblindStrength);
+    }
+
+    // Simulation matrices (how colorblind person perceives color)
+    mat3 simMatrix;
+    float strength = settings.colorblindStrength;
+
+    // Anomalous modes use same matrices at reduced strength
+    uint baseMode = settings.colorblindMode;
+    if (baseMode >= CB_PROTANOMALY && baseMode <= CB_TRITANOMALY) {
+        baseMode = baseMode - 3; // Map 4->1, 5->2, 6->3
+        strength *= 0.6;
+    }
+
+    if (baseMode == CB_PROTANOPIA) {
+        // Protanopia: reduced red sensitivity
+        simMatrix = mat3(
+            0.152286, 0.114503, -0.003882,
+            1.052583, 0.786281, -0.048116,
+           -0.204868, 0.099216,  1.051998
+        );
+    } else if (baseMode == CB_DEUTERANOPIA) {
+        // Deuteranopia: reduced green sensitivity
+        simMatrix = mat3(
+            0.367322, 0.280085, -0.011820,
+            0.860646, 0.672501,  0.042940,
+           -0.227968, 0.047413,  0.968881
+        );
+    } else {
+        // Tritanopia: reduced blue sensitivity
+        simMatrix = mat3(
+            1.255528, -0.078411, 0.004733,
+           -0.076749,  0.930809, 0.691367,
+           -0.178779,  0.147602, 0.303900
+        );
+    }
+
+    // Simulate colorblind vision
+    vec3 simColor = simMatrix * color;
+    simColor = clamp(simColor, 0.0, 1.0);
+
+    // Compute error (what the colorblind person is missing)
+    vec3 error = color - simColor;
+
+    // Redistribute error to visible channels
+    // Shift red/green errors into blue, blue errors into red/green
+    vec3 correction;
+    correction.r = error.r * 0.0 + error.g * 0.7 + error.b * 0.7;
+    correction.g = error.r * 0.7 + error.g * 0.0 + error.b * 0.7;
+    correction.b = error.r * 0.7 + error.g * 0.7 + error.b * 0.0;
+
+    // Apply correction
+    vec3 result = color + correction * strength;
+    return clamp(result, 0.0, 1.0);
 }
 
 // Film grain
@@ -394,6 +507,160 @@ vec3 applyCRT(vec3 color, vec2 uv) {
     return color;
 }
 
+// ============================================================
+// LUT Color Grading
+// ============================================================
+vec3 applyLUT(vec3 color) {
+    if (settings.lutEnabled == 0) return color;
+
+    // 2D strip LUT: image is lutSize^2 wide, lutSize tall
+    float size = float(settings.lutSize);
+
+    // Clamp input color to valid range
+    color = clamp(color, 0.0, 1.0);
+
+    // Blue channel selects the slice
+    float blueSlice = color.b * (size - 1.0);
+    float slice0 = floor(blueSlice);
+    float slice1 = min(slice0 + 1.0, size - 1.0);
+    float blendFactor = blueSlice - slice0;
+
+    // UV within each slice
+    vec2 uv0 = vec2((slice0 + color.r * (size - 1.0) / size + 0.5 / size) / size, (color.g * (size - 1.0) + 0.5) / size);
+    vec2 uv1 = vec2((slice1 + color.r * (size - 1.0) / size + 0.5 / size) / size, (color.g * (size - 1.0) + 0.5) / size);
+
+    vec3 lut0 = texture(lutTexture, uv0).rgb;
+    vec3 lut1 = texture(lutTexture, uv1).rgb;
+    vec3 lutColor = mix(lut0, lut1, blendFactor);
+
+    return mix(color, lutColor, settings.lutStrength);
+}
+
+// ============================================================
+// CRT Phosphor Subpixel Blending
+// ============================================================
+vec3 applyCRTPhosphor(vec3 color, vec2 uv) {
+    if (settings.crtPhosphorEnabled == 0) return color;
+
+    vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
+    float pitch = max(settings.crtMaskPitch, 0.5);
+
+    // RGB subpixel mask pattern
+    vec3 mask = vec3(1.0);
+    int px = int(floor(screenPos.x / pitch));
+    int py = int(floor(screenPos.y / pitch));
+
+    if (settings.crtMaskType == 0) {
+        // Aperture grille: vertical RGB stripes
+        int stripe = int(mod(float(px), 3.0));
+        if (stripe == 0) mask = vec3(1.0, 0.3, 0.3);
+        else if (stripe == 1) mask = vec3(0.3, 1.0, 0.3);
+        else mask = vec3(0.3, 0.3, 1.0);
+    } else if (settings.crtMaskType == 1) {
+        // Shadow mask: triangular RGB dot pattern
+        int col = int(mod(float(px), 3.0));
+        bool oddRow = (int(mod(float(py), 2.0)) == 1);
+        int offset = oddRow ? 1 : 0;
+        int stripe = int(mod(float(col + offset), 3.0));
+        if (stripe == 0) mask = vec3(1.0, 0.25, 0.25);
+        else if (stripe == 1) mask = vec3(0.25, 1.0, 0.25);
+        else mask = vec3(0.25, 0.25, 1.0);
+    } else {
+        // Slot mask: rectangular RGB dot groups
+        int col = int(mod(float(px), 3.0));
+        bool evenSlot = (int(mod(float(py), 4.0)) < 2);
+        if (!evenSlot) col = int(mod(float(col + 1), 3.0));
+        if (col == 0) mask = vec3(1.0, 0.2, 0.2);
+        else if (col == 1) mask = vec3(0.2, 1.0, 0.2);
+        else mask = vec3(0.2, 0.2, 1.0);
+    }
+
+    // Phosphor bloom: sample neighbors weighted by gaussian
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    float radius = settings.crtBloomRadius;
+    vec3 bloom = vec3(0.0);
+    float totalWeight = 0.0;
+
+    for (int dy = -2; dy <= 2; dy++) {
+        for (int dx = -2; dx <= 2; dx++) {
+            vec2 offset = vec2(float(dx), float(dy)) * texelSize * radius;
+            float dist = length(vec2(float(dx), float(dy)));
+            float weight = exp(-dist * dist * 0.5);
+            bloom += texture(sceneTexture, uv + offset).rgb * weight;
+            totalWeight += weight;
+        }
+    }
+    bloom /= totalWeight;
+
+    // Combine: mask the direct color, blend bloom for phosphor glow
+    vec3 masked = color * mask;
+    return mix(masked, bloom, settings.crtBloomStrength);
+}
+
+// ============================================================
+// VHS Filter
+// ============================================================
+vec3 applyVHS(vec2 uv) {
+    if (settings.vhsEnabled == 0) return texture(sceneTexture, uv).rgb;
+
+    vec2 origUV = uv;
+    float t = settings.time;
+
+    // Screen tear: offset top/bottom half horizontally
+    if (settings.vhsScreenTear != 0) {
+        float tearLine = fract(t * 0.13 + 0.5);
+        if (uv.y < tearLine) {
+            uv.x += settings.vhsTearOffset * sin(t * 3.7) * 0.02;
+        }
+    }
+
+    // Tracking lines: scrolling horizontal band that displaces UV.x
+    float trackBand = sin(uv.y * 20.0 - t * settings.vhsTrackingSpeed * 5.0);
+    trackBand = smoothstep(0.8, 1.0, trackBand);
+    uv.x += trackBand * settings.vhsTrackingIntensity * 0.02;
+
+    // Wobble: sine-wave horizontal distortion
+    uv.x += sin(uv.y * 50.0 + t * settings.vhsWobbleSpeed * 10.0) * settings.vhsWobbleIntensity;
+
+    // Sample with color bleed: offset R and B channels horizontally
+    float bleed = settings.vhsColorBleed;
+    float r = texture(sceneTexture, vec2(uv.x + bleed, uv.y)).r;
+    float g = texture(sceneTexture, uv).g;
+    float b = texture(sceneTexture, vec2(uv.x - bleed, uv.y)).b;
+    vec3 color = vec3(r, g, b);
+
+    // Per-line noise (heavier at screen edges)
+    float lineNoise = fract(sin(dot(vec2(origUV.y * 1000.0, t), vec2(12.9898, 78.233))) * 43758.5453);
+    lineNoise = (lineNoise * 2.0 - 1.0) * settings.vhsNoiseIntensity;
+    float edgeFactor = 1.0 + abs(origUV.x - 0.5) * 2.0;  // Stronger at edges
+    color += vec3(lineNoise * edgeFactor);
+
+    // Blue shift
+    color *= vec3(1.0 - settings.vhsBlueShift, 1.0, 1.0 + settings.vhsBlueShift);
+
+    // Interlacing: darken odd or even lines alternating each frame
+    if (settings.vhsInterlacing != 0) {
+        int frame = int(t * 60.0) % 2;
+        int line = int(origUV.y * float(settings.screenHeight));
+        if ((line + frame) % 2 == 0) {
+            color *= 0.85;
+        }
+    }
+
+    return color;
+}
+
+// ============================================================
+// Color Palette Lock
+// ============================================================
+vec3 applyPaletteLock(vec3 color) {
+    if (settings.paletteEnabled == 0) return color;
+
+    float n = float(settings.paletteColors);
+    color = floor(color * (n - 1.0) + 0.5) / (n - 1.0);
+    return clamp(color, 0.0, 1.0);
+}
+
 void main() {
     vec2 uv = fragUV;
 
@@ -408,9 +675,11 @@ void main() {
         uv = centered * 0.5 + 0.5;
     }
 
-    // Sample scene with optional FXAA or chromatic aberration
+    // VHS: applied early because it warps UVs for the raw image sampling
     vec3 color;
-    if (settings.fxaaEnabled != 0 && settings.chromaticAberrationEnabled == 0) {
+    if (settings.vhsEnabled != 0) {
+        color = applyVHS(uv);
+    } else if (settings.fxaaEnabled != 0 && settings.chromaticAberrationEnabled == 0) {
         color = applyFXAA(uv);
     } else {
         color = applyChromaticAberration(uv);
@@ -421,8 +690,14 @@ void main() {
         color = applyToneMapping(color);
     }
 
+    // Apply LUT color grading (after tone mapping, before color grading)
+    color = applyLUT(color);
+
     // Apply color grading
     color = applyColorGrading(color);
+
+    // Apply colorblind correction (after color grading, before vignette)
+    color = applyColorblindCorrection(color);
 
     // Apply vignette
     color = applyVignette(color, uv);
@@ -437,8 +712,14 @@ void main() {
     // Retro: color quantization
     color = applyColorQuantization(color);
 
+    // Color palette lock (after quantization)
+    color = applyPaletteLock(color);
+
     // Gamma correction
     color = pow(color, vec3(1.0 / settings.gamma));
+
+    // CRT phosphor subpixel blending (before scanlines for best effect)
+    color = applyCRTPhosphor(color, fragUV);
 
     // CRT scanlines (applied after gamma, as the last effect)
     color = applyCRT(color, fragUV);

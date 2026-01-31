@@ -1,0 +1,316 @@
+#include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/Renderer/Vulkan/ShaderData.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Logging/Log.h"
+#include <array>
+#include <cstring>
+#include <cmath>
+
+namespace Enjin {
+namespace Effects {
+
+ShrubRenderer::~ShrubRenderer() {
+    Shutdown();
+}
+
+bool ShrubRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout) {
+    if (m_Initialized) return true;
+
+    m_Renderer = renderer;
+
+    CreateShrubMesh();
+    CreatePipeline(sharedLayout);
+
+    if (!m_Pipeline || !m_VertexBuffer || !m_IndexBuffer) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to initialize resources");
+        Shutdown();
+        return false;
+    }
+
+    m_Initialized = true;
+    ENJIN_LOG_INFO(Renderer, "ShrubRenderer initialized");
+    return true;
+}
+
+void ShrubRenderer::Shutdown() {
+    if (!m_Initialized) return;
+
+    if (m_Renderer && m_Renderer->GetContext()) {
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    }
+
+    m_Pipeline.reset();
+    m_VertexShader.reset();
+    m_FragmentShader.reset();
+    m_IndexBuffer.reset();
+    m_VertexBuffer.reset();
+
+    m_Initialized = false;
+}
+
+void ShrubRenderer::CreateShrubMesh() {
+    // 3 intersecting quads forming a star pattern (0, 60, 120 degrees)
+    // Each quad: 4 verts, 6 indices
+    // Total: 12 verts, 18 indices
+
+    struct ShrubVertex {
+        f32 px, py, pz;  // position
+        f32 u, v;         // UV
+    };
+
+    ShrubVertex verts[12];
+    u32 indices[18];
+
+    for (u32 q = 0; q < 3; ++q) {
+        f32 angle = static_cast<f32>(q) * 3.14159265f / 3.0f;  // 0, 60, 120 degrees
+        f32 cosA = std::cos(angle);
+        f32 sinA = std::sin(angle);
+
+        u32 vi = q * 4;
+        // Bottom-left
+        verts[vi + 0] = { -0.5f * cosA, 0.0f, -0.5f * sinA,  0.0f, 0.0f };
+        // Bottom-right
+        verts[vi + 1] = {  0.5f * cosA, 0.0f,  0.5f * sinA,  1.0f, 0.0f };
+        // Top-right
+        verts[vi + 2] = {  0.5f * cosA, 1.0f,  0.5f * sinA,  1.0f, 1.0f };
+        // Top-left
+        verts[vi + 3] = { -0.5f * cosA, 1.0f, -0.5f * sinA,  0.0f, 1.0f };
+
+        u32 ii = q * 6;
+        indices[ii + 0] = vi + 0;
+        indices[ii + 1] = vi + 1;
+        indices[ii + 2] = vi + 2;
+        indices[ii + 3] = vi + 2;
+        indices[ii + 4] = vi + 3;
+        indices[ii + 5] = vi + 0;
+    }
+
+    m_IndexCount = 18;
+
+    m_VertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_VertexBuffer->Create(sizeof(verts), Renderer::BufferUsage::Vertex, true)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create vertex buffer");
+        return;
+    }
+    m_VertexBuffer->UploadData(verts, sizeof(verts));
+
+    m_IndexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_IndexBuffer->Create(sizeof(indices), Renderer::BufferUsage::Index, true)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create index buffer");
+        return;
+    }
+    m_IndexBuffer->UploadData(indices, sizeof(indices));
+}
+
+void ShrubRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return;
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+
+    CreatePipelineWithPass(renderPass, sharedLayout);
+    if (!m_Pipeline) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to recreate pipeline for render pass");
+    }
+}
+
+void ShrubRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_VertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
+        Renderer::ShaderData::ShrubVertexShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub vertex shader");
+        return;
+    }
+
+    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_FragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
+        Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub fragment shader");
+        return;
+    }
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(f32) * 5;  // vec3 pos + vec2 uv
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(f32) * 3;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_Renderer->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = false;
+    config.customVertexInput = &vertexInput;
+
+    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create pipeline");
+        m_Pipeline.reset();
+    }
+}
+
+void ShrubRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    if (!m_VertexShader) {
+        m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_VertexShader->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubVertexShaderData),
+            Renderer::ShaderData::ShrubVertexShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub vertex shader");
+            return;
+        }
+    }
+    if (!m_FragmentShader) {
+        m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+        if (!m_FragmentShader->LoadFromSPIRV(
+            reinterpret_cast<const u8*>(Renderer::ShaderData::ShrubFragmentShaderData),
+            Renderer::ShaderData::ShrubFragmentShaderDataSize)) {
+            ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to load shrub fragment shader");
+            return;
+        }
+    }
+
+    VkVertexInputBindingDescription binding{};
+    binding.binding = 0;
+    binding.stride = sizeof(f32) * 5;
+    binding.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+
+    std::array<VkVertexInputAttributeDescription, 2> attrs{};
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[0].offset = 0;
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(f32) * 3;
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = 1;
+    vertexInput.pVertexBindingDescriptions = &binding;
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = renderPass;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = false;
+    config.customVertexInput = &vertexInput;
+
+    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "ShrubRenderer: Failed to create pipeline");
+        m_Pipeline.reset();
+    }
+}
+
+void ShrubRenderer::Render(VkCommandBuffer commandBuffer,
+                            const std::vector<VkDescriptorSet>& descriptorSets,
+                            u32 currentFrame,
+                            ECS::World* world,
+                            u32 viewportWidth,
+                            u32 viewportHeight) {
+    if (!m_Initialized || !m_Pipeline || !world) return;
+
+    const auto& entities = world->GetAllEntities();
+    bool hasBound = false;
+
+    for (ECS::Entity entity : entities) {
+        if (!world->HasComponent<ECS::ShrubVolumeComponent>(entity)) continue;
+        if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
+
+        auto* shrub = world->GetComponent<ECS::ShrubVolumeComponent>(entity);
+        auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
+        if (!shrub || !transform) continue;
+
+        if (!hasBound) {
+            m_Pipeline->Bind(commandBuffer);
+
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+            VkExtent2D extent;
+            if (viewportWidth > 0 && viewportHeight > 0) {
+                extent.width = viewportWidth;
+                extent.height = viewportHeight;
+            } else {
+                extent = m_Renderer->GetSwapchainExtent();
+            }
+            VkViewport viewport{};
+            viewport.x = 0.0f;
+            viewport.y = 0.0f;
+            viewport.width = static_cast<f32>(extent.width);
+            viewport.height = static_cast<f32>(extent.height);
+            viewport.minDepth = 0.0f;
+            viewport.maxDepth = 1.0f;
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+            VkRect2D scissor{};
+            scissor.offset = {0, 0};
+            scissor.extent = extent;
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            VkBuffer vertexBuffers[] = { m_VertexBuffer->GetBuffer() };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(commandBuffer, m_IndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+            hasBound = true;
+        }
+
+        // Build model matrix encoding position and half-extents (same as grass)
+        Math::Matrix4 model = Math::Matrix4::Identity();
+        model.m[0] = shrub->halfExtents.x;
+        model.m[5] = 1.0f;
+        model.m[10] = shrub->halfExtents.z;
+        model.m[12] = transform->position.x;
+        model.m[13] = transform->position.y;
+        model.m[14] = transform->position.z;
+
+        // Pack shrub parameters into push constants (same layout as grass)
+        Renderer::PushConstants pc{};
+        pc.model = model;
+        pc.baseColor = shrub->baseColor;
+        pc.emissiveColor = shrub->tipColor;
+        pc.emissiveStrength = shrub->shrubHeight;
+        pc.opacity = shrub->heightVariance;
+        pc.alphaCutoff = shrub->width;
+        pc.flags = static_cast<i32>(shrub->density);
+        pc.parallaxScale = shrub->windSwayStrength;
+
+        vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        vkCmdDrawIndexed(commandBuffer, m_IndexCount, shrub->density, 0, 0, 0);
+    }
+}
+
+} // namespace Effects
+} // namespace Enjin

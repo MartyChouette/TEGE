@@ -68,6 +68,8 @@ layout(binding = 1) uniform LightingUBO {
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
+    vec4 playerPosition; // xyz = player world pos, w = step radius
+    vec4 worldCurvature; // x = strength, yzw reserved (layout must match)
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -85,9 +87,9 @@ layout(push_constant) uniform PushConstants {
     float alphaCutoff;
     int flags;  // bits 0-7: render flags, 8-9: alpha mode, 10: height tex, 16-19: texture flags, 20-31: retro
     float parallaxScale;
-    float _pad0;
-    float _pad1;
-    float _pad2;
+    float shoreWidth;
+    float foamIntensity;
+    float foamScale;
 } material;
 
 // Material flag bits
@@ -105,12 +107,16 @@ layout(push_constant) uniform PushConstants {
 // Water/rain flag bits
 #define FLAG_WATER_SURFACE      (1 << 5)
 #define FLAG_RAIN_RIPPLES       (1 << 6)
+#define FLAG_WATER_SHORE        (1 << 7)
+#define FLAG_WATER_OCEAN        (1 << 11)
 
 // Retro flag bits (must match vertex shader and C++ Material.h)
 #define FLAG_FLAT_SHADING       (1 << 20)
 #define FLAG_AFFINE_TEXTURING   (1 << 21)
 #define FLAG_VERTEX_SNAPPING    (1 << 22)
 #define FLAG_STIPPLE_TRANS      (1 << 23)
+#define FLAG_UV_QUANTIZE        (1 << 12)
+#define FLAG_GOURAUD_ONLY       (1 << 13)
 
 // Base color texture sampler (binding 3)
 layout(binding = 3) uniform sampler2D baseColorTexture;
@@ -348,7 +354,33 @@ void main() {
     }
 
     // Multiply with vertex color (baked shadows / per-vertex lighting)
-    albedo *= fragVertColor.rgb;
+    // Skip for water surfaces: vertex color G channel stores edge distance, not color
+    if ((material.flags & FLAG_WATER_SURFACE) == 0) {
+        albedo *= fragVertColor.rgb;
+    }
+
+    // Gouraud-only mode: skip per-pixel lighting, use vertex color as pre-computed lighting
+    if ((material.flags & FLAG_GOURAUD_ONLY) != 0) {
+        vec3 result = albedo;
+        // Add emission
+        result += material.emissiveColor * material.emissiveStrength;
+        // Gamma correction
+        result = pow(result, vec3(1.0 / 2.2));
+        // Alpha handling
+        float alpha = material.opacity * fragVertColor.a;
+        int alphaMode = (material.flags >> 8) & 0x3;
+        if (alphaMode == 1) {
+            if (alpha < material.alphaCutoff) discard;
+            alpha = 1.0;
+        }
+        if ((material.flags & FLAG_STIPPLE_TRANS) != 0 && alpha < 1.0) {
+            float threshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+            if (alpha < threshold) discard;
+            alpha = 1.0;
+        }
+        outColor = vec4(result, alpha);
+        return;
+    }
 
     // Convert roughness to shininess for Blinn-Phong
     float shininess = max(2.0, (2.0 / (roughness * roughness + 0.0001)) - 2.0);
@@ -436,6 +468,39 @@ void main() {
         // Blend toward sky/specular color at glancing angles
         vec3 skyColor = vec3(0.4, 0.5, 0.7);
         result = mix(result, skyColor, fresnel * 0.6);
+
+        // Shore foam: procedural noise foam near edges
+        if ((material.flags & FLAG_WATER_SHORE) != 0 && material.foamIntensity > 0.0) {
+            float edgeDist = fragVertColor.g;  // 0=edge, 1=center
+            float shoreW = material.shoreWidth;
+
+            // Shallow water color blend near edges
+            float shallowBlend = 1.0 - smoothstep(0.0, shoreW * 2.0, edgeDist);
+            // shoreColor is approximated from baseColor lightened — we use fragVertColor.r channel
+            // for the shore color R and use a brighter tint of the water
+            vec3 shoreColor = material.baseColor * 1.5 + vec3(0.1, 0.15, 0.1);
+            result = mix(result, shoreColor, shallowBlend * 0.4);
+
+            // Multi-octave hash noise for foam pattern
+            float foamSc = material.foamScale;
+            float waterTime = lighting.windData.w;
+            vec2 wp = fragWorldPos.xz;
+
+            // Simple hash-based noise
+            #define FOAM_HASH(p) fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453)
+            float n1 = FOAM_HASH(floor(wp * foamSc));
+            float n2 = FOAM_HASH(floor(wp * foamSc * 2.3 + vec2(waterTime * 0.3)));
+            float n3 = FOAM_HASH(floor(wp * foamSc * 4.7 + vec2(waterTime * 0.7)));
+            float noise = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2);
+            #undef FOAM_HASH
+
+            // Animated threshold: foam appears and disappears
+            float foamThreshold = smoothstep(shoreW, 0.0, edgeDist);
+            float foam = smoothstep(0.35, 0.65, noise) * foamThreshold * material.foamIntensity;
+
+            // Blend white foam into result
+            result = mix(result, vec3(0.9, 0.95, 1.0), foam);
+        }
     }
 
     // Add emission

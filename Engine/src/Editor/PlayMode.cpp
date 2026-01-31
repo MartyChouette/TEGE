@@ -38,8 +38,8 @@ void PlayMode::Play() {
         m_CameraController->SetEnabled(false);
     }
 
-    // Capture mouse for gameplay
-    Input::SetMouseCaptured(true);
+    // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
+    // This lets the user keep a visible cursor in the editor while play mode runs.
 
     m_State = PlayState::Playing;
     ENJIN_LOG_INFO(Editor, "Entered Play Mode");
@@ -63,7 +63,7 @@ void PlayMode::Resume() {
     }
 
     m_ControllerSystem.SetEnabled(true);
-    Input::SetMouseCaptured(true);
+    // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
     m_State = PlayState::Playing;
     ENJIN_LOG_INFO(Editor, "Play Mode Resumed");
@@ -93,13 +93,7 @@ void PlayMode::Stop() {
 }
 
 void PlayMode::Update(f32 deltaTime) {
-    // Handle Escape key to stop/pause
-    if (Input::IsKeyPressed(KeyCode::Escape)) {
-        if (m_State == PlayState::Playing) {
-            Stop();
-            return;
-        }
-    }
+    // Escape is now handled by EditorLayer (which manages focus mode exit vs stop).
 
     // Update controller system when playing
     if (m_State == PlayState::Playing) {

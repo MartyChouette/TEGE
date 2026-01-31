@@ -54,8 +54,10 @@ enjin/
 │   │   ├── ECS/            # Entity-Component-System
 │   │   │   ├── Components/ # Transform, Mesh, Light, Material, Camera, Skeleton, Controllers
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
-│   │   ├── Editor/         # EditorLayer, PlayMode, UndoRedo
-│   │   ├── Effects/        # Weather, Water, RetroEffects
+│   │   ├── Accessibility/  # ColorblindFilter, SubtitleSystem, ContentWarning
+│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, PerformanceStats
+│   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, SeasonalWeather
+│   │   ├── Input/          # InputAction (remappable input action map)
 │   │   ├── GUI/            # ImGui integration
 │   │   ├── Physics/        # SimplePhysics
 │   │   ├── Platform/       # FileDialog
@@ -90,11 +92,11 @@ enjin/
 - **Components:**
   - `TransformComponent` - position, rotation (Euler), scale
   - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
-  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags
+  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags (flatShading, vertexSnapping, vertexSnapResolution, affineTexturing, stippleTransparency)
   - `LightComponent` - Light data (direction, color, intensity)
   - `NameComponent` - Entity name string
   - `CameraComponent` - In-game cameras with projection, weather/water settings
-  - `NotesComponent` - Text annotations for entities
+  - `NotesComponent` - Text annotations for entities (field: `.notes`, not `.text`)
   - `SkeletonComponent` - Shared skeleton data for skinned meshes
   - `AnimatorComponent` - Skeletal animation playback (SkeletalAnimator + AnimationStateMachine)
   - `CharacterController` - Various movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
@@ -157,7 +159,18 @@ struct PushConstants {
 - **`WeatherSystem`** - Rain, snow, fog, storm with lightning (global scene effect)
 - **`Water3D`** - 3D water plane with waves (global scene effect)
 - **`RetroEffects`** - CRT, pixelation, dithering post-processing
+- **`WorldTimeSystem`** - Day/night cycle with configurable speed
+- **`SeasonalWeatherSystem`** - Season-based weather transitions
 - Effects are configured globally and rendered only in Game View (not editor camera)
+
+### Accessibility
+
+- **`EditorSettings`** (`Engine/include/Enjin/Editor/EditorSettings.h`) - Persistent settings (theme, scale, colorblind, motion, input)
+- **`InputActionMap`** (`Engine/include/Enjin/Input/InputAction.h`) - Remappable input system (namespace: `Enjin::InputSystem`)
+- **`SubtitleSystem`** (`Engine/include/Enjin/Accessibility/SubtitleSystem.h`) - Subtitle/caption overlay
+- **`ContentWarningSystem`** (`Engine/include/Enjin/Accessibility/ContentWarning.h`) - Scene content warnings
+- **`RuntimeAccessibilitySettings`** (`Engine/include/Enjin/Accessibility/AccessibilitySettings.h`) - Runtime accessibility config
+- **Important:** The `InputSystem` namespace was chosen to avoid collision with the existing `Enjin::Input` class. Always use `InputSystem::` not `Input::` for action-map types.
 
 ### Assets
 
@@ -176,7 +189,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 ## Code Conventions
 
 - **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`
 - **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)`
 - **API export:** `ENJIN_API` macro for DLL export
 
@@ -236,11 +249,25 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Project file format (.enjinproject JSON manifest)
 - Full inspector UI for all gameplay components (40+ component types)
 - Procedural level generation with room prefab system (JSON load/save, weighted selection)
+- Accessibility: persistent editor settings (EditorSettings save/load to %APPDATA%/enjin/)
+- Accessibility: 4 editor themes (Dark, Light, High Contrast Dark, High Contrast Light)
+- Accessibility: GPU colorblind correction (8 modes: protanopia, deuteranopia, tritanopia, anomalous variants, achromatopsia) via Daltonization in postprocess.frag
+- Accessibility: remappable input via InputActionMap (semantic GameActions, hold/toggle modes, one-handed presets, JSON persistence)
+- Accessibility: reduced motion support (weather particle reduction, head-bob disable)
+- Accessibility: subtitle/caption overlay system (SubtitleSystem with configurable font size, background, speaker names, direction indicators)
+- Accessibility: content warning system (per-scene warning flags with dismissable overlay)
+- Accessibility: quick presets (Low Vision, Motor Impaired, Photosensitive, Reset All)
+- Scene serialization of content warning flags
+- 15 startup templates: Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third Person, 3D First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, 4P Racing, Arena Fighter, PS1 RPG, City Builder
+- World time and seasonal weather systems
+- Terrain editing with brush tools
+- Shrub/Tree vegetation rendering
 
 **Next Up:**
 - Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
 - AI/Navmesh integration (framework exists, needs gameplay logic)
 - Game build pipeline (packaging scenes + assets for standalone distribution)
+- Splitscreen rendering (viewport subdivision for racing/arena templates)
 
 ## Common Tasks
 

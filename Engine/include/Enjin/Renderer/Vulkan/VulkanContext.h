@@ -4,6 +4,7 @@
 #include "Enjin/Platform/Types.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <atomic>
 
 namespace Enjin {
 namespace Renderer {
@@ -32,6 +33,11 @@ public:
     // Find memory type for allocation
     u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) const;
 
+    // GPU memory tracking
+    void TrackAllocation(usize bytes) { m_TotalGPUAllocatedBytes.fetch_add(bytes, std::memory_order_relaxed); }
+    void TrackDeallocation(usize bytes) { m_TotalGPUAllocatedBytes.fetch_sub(bytes, std::memory_order_relaxed); }
+    usize GetTotalGPUAllocatedBytes() const { return m_TotalGPUAllocatedBytes.load(std::memory_order_relaxed); }
+
 protected:
     friend class VulkanRenderer;
     bool CreateInstance();
@@ -50,6 +56,8 @@ protected:
     VkQueue m_PresentQueue = VK_NULL_HANDLE;
     u32 m_GraphicsQueueFamily = UINT32_MAX;
     u32 m_PresentQueueFamily = UINT32_MAX;
+
+    std::atomic<usize> m_TotalGPUAllocatedBytes{0};
 
 #ifdef ENJIN_BUILD_DEBUG
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;

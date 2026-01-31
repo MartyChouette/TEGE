@@ -189,6 +189,9 @@ public:
     // Any gamepad input detected this frame (for auto-switching UI prompts)
     static bool IsGamepadActive(i32 gamepadIndex = 0);
 
+    // Clear all input state (call on focus loss to prevent stuck keys)
+    static void ClearAllState();
+
 private:
     Input() = default;
 };

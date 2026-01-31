@@ -22,9 +22,9 @@ layout(push_constant) uniform PushConstants {
     float alphaCutoff;
     int flags;
     float parallaxScale;
-    float _pad0;
-    float _pad1;
-    float _pad2;
+    float shoreWidth;
+    float foamIntensity;
+    float foamScale;
 } pushConstants;
 
 // Uniform buffer for view/projection (shared across all objects)
@@ -51,6 +51,8 @@ layout(binding = 1) uniform LightingUBO {
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
+    vec4 playerPosition; // xyz = player world pos, w = step radius
+    vec4 worldCurvature; // x = strength, yzw reserved
     // Note: light arrays follow but we only need lightSpaceMatrix and windData in vertex shader
 } lighting;
 
@@ -72,10 +74,14 @@ layout(location = 6) out vec4 fragTangent;
 #define FLAG_WIND_SWAY        (1 << 4)
 #define FLAG_WATER_SURFACE    (1 << 5)
 #define FLAG_RAIN_RIPPLES     (1 << 6)
+#define FLAG_WATER_SHORE      (1 << 7)
+#define FLAG_WATER_OCEAN      (1 << 11)
 #define FLAG_FLAT_SHADING     (1 << 20)
 #define FLAG_AFFINE_TEXTURING (1 << 21)
 #define FLAG_VERTEX_SNAPPING  (1 << 22)
 #define FLAG_STIPPLE_TRANS    (1 << 23)
+#define FLAG_UV_QUANTIZE      (1 << 12)
+#define FLAG_GOURAUD_ONLY     (1 << 13)
 
 void main() {
     vec3 skinnedPos = inPosition;
@@ -124,6 +130,13 @@ void main() {
         vec3 windDir = lighting.windData.xyz;
         float windMag = length(windDir) + 0.01;
 
+        // Shore dampening: vertex color G channel encodes edge distance (0=edge, 1=center)
+        float edgeDist = inColor.g;
+        float waveDampen = 1.0;
+        if ((pushConstants.flags & FLAG_WATER_SHORE) != 0) {
+            waveDampen = smoothstep(0.0, 0.3, edgeDist);
+        }
+
         // Wave 1: slow, broad swell along wind direction
         float phase1 = dot(worldPos.xz, windDir.xz * 0.3) + waterTime * 1.2;
         float wave1 = sin(phase1) * 0.15 * windMag;
@@ -132,7 +145,20 @@ void main() {
         float phase2 = dot(worldPos.xz, vec2(-windDir.z, windDir.x) * 0.5) + waterTime * 2.0;
         float wave2 = sin(phase2) * 0.08 * windMag;
 
-        worldPos.y += wave1 + wave2;
+        // Ocean mode: add larger, slower swell
+        float wave3 = 0.0;
+        if ((pushConstants.flags & FLAG_WATER_OCEAN) != 0) {
+            float phase3 = dot(worldPos.xz, windDir.xz * 0.08) + waterTime * 0.6;
+            wave3 = sin(phase3) * 0.35 * windMag;
+        }
+
+        worldPos.y += (wave1 + wave2 + wave3) * waveDampen;
+    }
+
+    // World curvature: bend geometry downward at distance from camera
+    if (lighting.worldCurvature.x > 0.0) {
+        vec2 delta = worldPos.xz - lighting.cameraPos.xz;
+        worldPos.y -= lighting.worldCurvature.x * dot(delta, delta);
     }
 
     fragWorldPos = worldPos.xyz;
@@ -166,6 +192,11 @@ void main() {
     } else {
         fragUV = inUV;
         fragClipW = 1.0;  // no-op divisor in fragment shader
+    }
+
+    // UV quantization (PS1-style fixed-point UV): snap UV to low precision grid
+    if ((pushConstants.flags & FLAG_UV_QUANTIZE) != 0) {
+        fragUV = floor(fragUV * 128.0) / 128.0;
     }
 
     // Pass through vertex color

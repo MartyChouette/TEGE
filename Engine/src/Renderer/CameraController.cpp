@@ -36,11 +36,9 @@ void CameraController::SyncFromCamera() {
 
 void CameraController::Update(f32 deltaTime) {
     if (!m_Camera || !m_Enabled) {
-        // Release mouse when controller is disabled
-        if (m_MouseCapturedByUs) {
-            Input::SetMouseCaptured(false);
-            m_MouseCapturedByUs = false;
-        }
+        // Clear our tracking flag but don't release mouse capture —
+        // play mode may have captured it for the FPS controller
+        m_MouseCapturedByUs = false;
         return;
     }
 

@@ -5,6 +5,11 @@
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/Terrain2D.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
@@ -122,6 +127,20 @@ void RenderSystem::Initialize() {
         m_GrassRenderer.reset();
     }
 
+    // Initialize shrub renderer
+    m_ShrubRenderer = std::make_unique<Effects::ShrubRenderer>();
+    if (!m_ShrubRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "ShrubRenderer initialization failed, shrubs disabled");
+        m_ShrubRenderer.reset();
+    }
+
+    // Initialize tree renderer
+    m_TreeRenderer = std::make_unique<Effects::TreeRenderer>();
+    if (!m_TreeRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "TreeRenderer initialization failed, trees disabled");
+        m_TreeRenderer.reset();
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -151,9 +170,11 @@ void RenderSystem::Shutdown() {
     m_MaterialBuffers.clear();
     m_DescriptorSets.clear();
 
-    // Clean up weather and grass renderers
+    // Clean up weather, grass, shrub, and tree renderers
     m_WeatherRenderer.reset();
     m_GrassRenderer.reset();
+    m_ShrubRenderer.reset();
+    m_TreeRenderer.reset();
 
     // Clean up line pipeline
     m_LinePipeline.reset();
@@ -183,8 +204,45 @@ void RenderSystem::Update(f32 deltaTime) {
         return;
     }
 
+    // Reset per-frame stats
+    ResetFrameCounters();
+
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
+
+    // Regenerate terrain meshes when dirty
+    {
+        const auto& terrainEntities = m_World->GetAllEntities();
+        for (Entity entity : terrainEntities) {
+            if (m_World->HasComponent<TerrainComponent>(entity)) {
+                auto* terrain = m_World->GetComponent<TerrainComponent>(entity);
+                if (terrain && terrain->meshDirty) {
+                    auto mesh = Renderer::MeshFactory::CreateTerrain(*terrain);
+                    if (m_World->HasComponent<MeshComponent>(entity)) {
+                        *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+                    } else {
+                        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+                    }
+                    // Force re-upload of GPU buffers
+                    m_EntityRenderData.erase(entity);
+                    terrain->meshDirty = false;
+                }
+            }
+            if (m_World->HasComponent<Terrain2DComponent>(entity)) {
+                auto* terrain2d = m_World->GetComponent<Terrain2DComponent>(entity);
+                if (terrain2d && terrain2d->meshDirty) {
+                    auto mesh = Renderer::MeshFactory::CreateTerrain2D(*terrain2d);
+                    if (m_World->HasComponent<MeshComponent>(entity)) {
+                        *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+                    } else {
+                        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+                    }
+                    m_EntityRenderData.erase(entity);
+                    terrain2d->meshDirty = false;
+                }
+            }
+        }
+    }
 
     // Update skeletal animators
     const auto& allEntities = m_World->GetAllEntities();
@@ -203,6 +261,34 @@ void RenderSystem::Update(f32 deltaTime) {
     // Begin the main render pass (after any pre-passes like shadows)
     m_Renderer->BeginMainRenderPass();
 
+    // Upload frame-level uniforms once (view/proj + lighting)
+    UpdateFrameUniforms();
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    // Bind pipeline, descriptor set, viewport, and scissor once for all entities
+    m_Pipeline->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = { 0, 0 };
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
     // Main render pass - render all entities with mesh and transform components
     const auto& entities = m_World->GetAllEntities();
     for (Entity entity : entities) {
@@ -218,6 +304,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         return;
     }
 
+    // NOTE: The caller (EditorLayer::RenderOffscreen) has already started the render target's
+    // render pass via sceneTarget->Begin(). We must NOT start another render pass here
+    // (e.g. shadow pass). Water meshes and shadows are handled by Update() for the main pass.
+
     // Temporarily swap the camera so UpdateUniformBuffer uses the game camera
     Renderer::Camera* prevCamera = m_Camera;
     m_Camera = camera;
@@ -232,6 +322,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // We just need to bind our pipeline and draw within the active render pass
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    // Upload frame-level uniforms once (view/proj + lighting using swapped game camera)
+    UpdateFrameUniforms();
 
     // Set viewport and scissor to match render target size
     VkViewport viewport{};
@@ -262,8 +355,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
             EntityRenderData& renderData = it->second;
 
-            // Update UBOs for this entity (uses swapped m_Camera)
-            UpdateUniformBuffer(entity);
+            // Update per-entity material UBO
+            UpdateMaterialBuffer(entity);
 
             // Bind pipeline and descriptor set
             m_Pipeline->Bind(commandBuffer);
@@ -336,10 +429,20 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             }
 
             // Set water surface flag for water volume entities
-            if (m_World->HasComponent<WaterVolumeComponent>(entity)) {
+            WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+            if (waterVol) {
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
                 if (m_RainActive) {
                     pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+                }
+                if (waterVol->enableShore) {
+                    pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
+                    pushConstants.shoreWidth = waterVol->shoreWidth;
+                    pushConstants.foamIntensity = waterVol->foamIntensity;
+                    pushConstants.foamScale = waterVol->foamScale;
+                }
+                if (waterVol->waterType == WaterType::Ocean) {
+                    pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN
                 }
             }
 
@@ -416,6 +519,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
             vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
             vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_DrawCallCount++;
+            m_TriangleCount += renderData.indexCount / 3;
         }
     }
 
@@ -805,16 +910,12 @@ void RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 }
 
-void RenderSystem::UpdateUniformBuffer(Entity entity) {
-    TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
-    if (!transform || !m_Camera) {
-        return;
-    }
+void RenderSystem::UpdateFrameUniforms() {
+    if (!m_Camera) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     // Update View/Projection UBO (shared across all objects)
-    // Note: Model matrix is now sent via push constants in RenderEntity
     Renderer::UniformBufferObject ubo{};
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
@@ -831,7 +932,6 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     lighting.spotLightCount = 0;
     lighting._pad1 = 0;
 
-    // Query all entities and check for LightComponent
     const auto& allEntities = m_World->GetAllEntities();
     bool hasAnyLight = false;
 
@@ -847,13 +947,10 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
             case LightType::Directional: {
                 if (lighting.directionalLightCount < MAX_DIRECTIONAL_LIGHTS) {
                     auto& dirLight = lighting.directionalLights[lighting.directionalLightCount];
-                    // Use transform rotation to determine direction (where light points)
-                    // Shader will negate this to get direction toward light source
                     if (lightTransform) {
                         Math::Vector3 forward(0.0f, 0.0f, -1.0f);
                         dirLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
                     } else {
-                        // Default: light pointing down and to the side (like sun)
                         dirLight.direction = Math::Vector3(-0.5f, -0.8f, -0.3f).Normalized();
                     }
                     dirLight.color = light->color;
@@ -881,7 +978,6 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
                     auto& spotLight = lighting.spotLights[lighting.spotLightCount];
                     spotLight.position = lightTransform ? lightTransform->position : Math::Vector3(0.0f);
                     spotLight.range = light->range;
-                    // Use transform rotation to determine direction
                     if (lightTransform) {
                         Math::Vector3 forward(0.0f, 0.0f, -1.0f);
                         spotLight.direction = lightTransform->rotation.Rotate(forward).Normalized();
@@ -902,16 +998,13 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         }
     }
 
-    // If no lights in scene, add a default directional light
     if (!hasAnyLight) {
-        // Direction light points (shader negates for "toward light" calculation)
         lighting.directionalLights[0].direction = Math::Vector3(-0.5f, -0.8f, -0.3f).Normalized();
         lighting.directionalLights[0].color = Math::Vector3(1.0f, 0.95f, 0.9f);
         lighting.directionalLights[0].intensity = 1.2f;
         lighting.directionalLightCount = 1;
     }
 
-    // Shadow mapping data
     if (m_ShadowsEnabled && m_ShadowMap) {
         lighting.lightSpaceMatrix = m_ShadowMap->GetLightSpaceMatrix();
         lighting.shadowBias = m_ShadowMap->GetDepthBias();
@@ -924,26 +1017,49 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
     lighting._shadowPad[0] = 0.0f;
     lighting._shadowPad[1] = 0.0f;
 
-    // Upload wind data from WindSystem
     if (m_WindSystem) {
         lighting.windData = m_WindSystem->GetWindVector();
     } else {
         lighting.windData = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     }
 
-    // Fog parameters
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
     lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
 
-    m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
+    // Find active player entity (any entity with a CharacterController) for vegetation stepping
+    lighting.playerPosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    if (m_World) {
+        for (Entity entity : m_World->GetAllEntities()) {
+            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+            bool hasController = m_World->HasComponent<ThirdPersonController>(entity) ||
+                                 m_World->HasComponent<FirstPersonController>(entity) ||
+                                 m_World->HasComponent<Platformer2DController>(entity) ||
+                                 m_World->HasComponent<TopDown2DController>(entity) ||
+                                 m_World->HasComponent<TopDown3DController>(entity);
+            if (hasController) {
+                auto* transform = m_World->GetComponent<TransformComponent>(entity);
+                lighting.playerPosition = Math::Vector4(
+                    transform->position.x, transform->position.y, transform->position.z,
+                    1.5f);  // w = step radius
+                break;
+            }
+        }
+    }
 
-    // Update Material UBO
+    // World curvature
+    lighting.worldCurvature = Math::Vector4(m_WorldCurvature, 0.0f, 0.0f, 0.0f);
+
+    m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
+}
+
+void RenderSystem::UpdateMaterialBuffer(Entity entity) {
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
     MaterialGPU materialGPU;
     MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
     if (material) {
         materialGPU = MaterialGPU::FromComponent(*material);
     } else {
-        // Default material (light gray, non-metallic)
         MaterialComponent defaultMat;
         defaultMat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
         defaultMat.metallic = 0.0f;
@@ -951,6 +1067,12 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
         materialGPU = MaterialGPU::FromComponent(defaultMat);
     }
     m_MaterialBuffers[currentFrame]->UploadData(&materialGPU, sizeof(materialGPU));
+}
+
+// Legacy wrapper for RenderToTarget which needs both frame + material updates
+void RenderSystem::UpdateUniformBuffer(Entity entity) {
+    UpdateFrameUniforms();
+    UpdateMaterialBuffer(entity);
 }
 
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
@@ -1051,38 +1173,8 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
-    // Update uniform buffer with transforms
-    UpdateUniformBuffer(entity);
-
-    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-
-    // Bind pipeline
-    m_Pipeline->Bind(commandBuffer);
-
-    // Bind descriptor set (UBO)
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_Pipeline->GetLayout(),
-        0, 1, &m_DescriptorSets[currentFrame],
-        0, nullptr
-    );
-
-    // Set viewport and scissor
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-    VkViewport viewport{};
-    viewport.x = 0.0f;
-    viewport.y = 0.0f;
-    viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
-    viewport.minDepth = 0.0f;
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-    VkRect2D scissor{};
-    scissor.offset = { 0, 0 };
-    scissor.extent = extent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    // Update per-entity material UBO
+    UpdateMaterialBuffer(entity);
 
     // Push model matrix and material for this entity
     Renderer::PushConstants pushConstants{};
@@ -1148,10 +1240,20 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
 
     // Set water surface flag for water volume entities
-    if (m_World->HasComponent<WaterVolumeComponent>(entity)) {
+    WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+    if (waterVol) {
         pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE
         if (m_RainActive) {
             pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES
+        }
+        if (waterVol->enableShore) {
+            pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
+            pushConstants.shoreWidth = waterVol->shoreWidth;
+            pushConstants.foamIntensity = waterVol->foamIntensity;
+            pushConstants.foamScale = waterVol->foamScale;
+        }
+        if (waterVol->waterType == WaterType::Ocean) {
+            pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN
         }
     }
 
@@ -1213,6 +1315,8 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Draw indexed
     vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    m_DrawCallCount++;
+    m_TriangleCount += renderData.indexCount / 3;
 }
 
 void RenderSystem::RenderShadowPass() {
@@ -1426,18 +1530,18 @@ void RenderSystem::EnsureWaterMeshes() {
     const auto& entities = m_World->GetAllEntities();
     for (Entity entity : entities) {
         if (!m_World->HasComponent<WaterVolumeComponent>(entity)) continue;
-        if (m_World->HasComponent<MeshComponent>(entity)) continue;
 
         auto* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;
+        if (waterVol->meshCreated && m_World->HasComponent<MeshComponent>(entity)) continue;
 
         // Create a subdivided plane mesh for the water surface
         MeshComponent mesh;
         f32 hx = waterVol->halfExtents.x;
         f32 hz = waterVol->halfExtents.z;
 
-        const u32 segsX = 16;
-        const u32 segsZ = 16;
+        const u32 segsX = 32;
+        const u32 segsZ = 32;
 
         for (u32 zi = 0; zi <= segsZ; ++zi) {
             for (u32 xi = 0; xi <= segsX; ++xi) {
@@ -1451,9 +1555,20 @@ void RenderSystem::EnsureWaterMeshes() {
                 );
                 v.normal = Math::Vector3(0.0f, 1.0f, 0.0f);
                 v.uv = Math::Vector2(u, vt);
+
+                // Compute minimum distance to any edge (normalized 0=edge, 1=center)
+                f32 distLeft = u;
+                f32 distRight = 1.0f - u;
+                f32 distTop = vt;
+                f32 distBottom = 1.0f - vt;
+                f32 minEdgeDist = std::min(std::min(distLeft, distRight), std::min(distTop, distBottom));
+                // Normalize so center = 1.0 (max edge dist is 0.5)
+                f32 edgeDist = std::min(minEdgeDist * 2.0f, 1.0f);
+
+                // R = water color red (unused by shader for water), G = edge distance, B = unused, A = opacity
                 v.color = Math::Vector4(
                     waterVol->waterColor.x,
-                    waterVol->waterColor.y,
+                    edgeDist,
                     waterVol->waterColor.z,
                     waterVol->opacity
                 );
@@ -1480,21 +1595,39 @@ void RenderSystem::EnsureWaterMeshes() {
 
         m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
 
-        // Add material with water visual properties
-        // Alpha mode is Opaque so water writes depth (occluding rain particles behind it).
-        // Visual transparency comes from vertex color alpha + opacity push constant in the shader.
+        // Add material with water visual properties based on water type
         MaterialComponent material;
         material.baseColor = waterVol->waterColor;
         material.opacity = waterVol->opacity;
         material.doubleSided = true;
-        material.metallic = 0.3f;
-        material.roughness = 0.1f;
         material.castShadows = false;
         material.alphaMode = static_cast<MaterialComponent::AlphaMode>(0);  // Opaque — writes depth
+
+        // Water type presets for material properties
+        switch (waterVol->waterType) {
+            case WaterType::Ocean:
+                material.metallic = 0.4f;
+                material.roughness = 0.05f;
+                break;
+            case WaterType::River:
+                material.metallic = 0.25f;
+                material.roughness = 0.15f;
+                break;
+            case WaterType::Pond:
+                material.metallic = 0.2f;
+                material.roughness = 0.2f;
+                break;
+            case WaterType::Lake:
+            default:
+                material.metallic = 0.3f;
+                material.roughness = 0.1f;
+                break;
+        }
 
         m_World->AddComponent<MaterialComponent>(entity, material);
 
         SetupEntityBuffers(entity);
+        waterVol->meshCreated = true;
 
         ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
             entity, hx * 2.0f, hz * 2.0f);
@@ -1524,6 +1657,28 @@ void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
                             viewportWidth, viewportHeight);
 }
 
+void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
+    if (!m_ShrubRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_ShrubRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+                            viewportWidth, viewportHeight);
+}
+
+void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
+    if (!m_TreeRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_TreeRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+                           viewportWidth, viewportHeight);
+}
+
 void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass) {
     if (!m_Pipeline) return;
     VkDescriptorSetLayout layout = m_Pipeline->GetDescriptorSetLayout();
@@ -1533,6 +1688,12 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     }
     if (m_GrassRenderer) {
         m_GrassRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+    if (m_ShrubRenderer) {
+        m_ShrubRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+    if (m_TreeRenderer) {
+        m_TreeRenderer->RecreateForRenderPass(renderPass, layout);
     }
 }
 

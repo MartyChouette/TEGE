@@ -1,0 +1,56 @@
+#pragma once
+
+#include "Enjin/Platform/Platform.h"
+#include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Matrix.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
+#include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#include <vulkan/vulkan.h>
+#include <memory>
+
+namespace Enjin {
+namespace Effects {
+
+// GPU-instanced shrub renderer
+class ENJIN_API ShrubRenderer {
+public:
+    ShrubRenderer() = default;
+    ~ShrubRenderer();
+
+    bool Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout);
+    void Shutdown();
+
+    void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+
+    void Render(VkCommandBuffer commandBuffer,
+                const std::vector<VkDescriptorSet>& descriptorSets,
+                u32 currentFrame,
+                ECS::World* world,
+                u32 viewportWidth = 0,
+                u32 viewportHeight = 0);
+
+private:
+    void CreateShrubMesh();
+    void CreatePipeline(VkDescriptorSetLayout sharedLayout);
+    void CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
+
+    Renderer::VulkanRenderer* m_Renderer = nullptr;
+
+    std::unique_ptr<Renderer::VulkanBuffer> m_VertexBuffer;
+    std::unique_ptr<Renderer::VulkanBuffer> m_IndexBuffer;
+    u32 m_IndexCount = 0;
+
+    std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
+    std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
+    std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+
+    bool m_Initialized = false;
+};
+
+} // namespace Effects
+} // namespace Enjin

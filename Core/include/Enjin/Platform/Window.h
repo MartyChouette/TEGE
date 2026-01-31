@@ -18,6 +18,8 @@ class ENJIN_API Window {
 public:
     using EventCallback = std::function<void()>;
     using ResizeCallback = std::function<void(u32, u32)>;
+    using FocusCallback = std::function<void(bool)>;
+    using IconifyCallback = std::function<void(bool)>;
 
     virtual ~Window() = default;
 
@@ -33,6 +35,14 @@ public:
 
     virtual void SetEventCallback(const EventCallback& callback) = 0;
     virtual void SetResizeCallback(const ResizeCallback& callback) = 0;
+    virtual void SetFocusCallback(const FocusCallback& callback) = 0;
+    virtual void SetIconifyCallback(const IconifyCallback& callback) = 0;
+
+    virtual bool IsFocused() const = 0;
+    virtual bool IsIconified() const = 0;
+
+    // Block until an event occurs (for use when minimized to avoid busy-spin)
+    virtual void WaitEvents() = 0;
 };
 
 ENJIN_API Window* CreateWindow(const WindowDesc& desc);

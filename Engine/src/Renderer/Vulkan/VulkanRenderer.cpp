@@ -288,6 +288,14 @@ bool VulkanRenderer::AcquireNextImage() {
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
         OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
         return false;
+    } else if (result == VK_ERROR_DEVICE_LOST) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan device lost during image acquisition");
+        m_DeviceLost = true;
+        return false;
+    } else if (result == VK_ERROR_SURFACE_LOST_KHR) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan surface lost (recovery requires surface recreation)");
+        m_DeviceLost = true;
+        return false;
     } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         ENJIN_LOG_ERROR(Renderer, "Failed to acquire swapchain image: %d", result);
         return false;
@@ -327,8 +335,17 @@ void VulkanRenderer::SubmitCommandBuffer() {
 
     vkResetFences(m_Context->GetDevice(), 1, &m_InFlightFences[m_CurrentFrame]);
 
-    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]) != VK_SUCCESS) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to submit draw command buffer");
+    VkResult submitResult = vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, m_InFlightFences[m_CurrentFrame]);
+    if (submitResult == VK_ERROR_DEVICE_LOST) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan device lost during queue submit");
+        m_DeviceLost = true;
+        return;
+    } else if (submitResult != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit draw command buffer: %d", submitResult);
+        // Submit failed but fence was already reset - must not leave it unsignaled
+        // or vkWaitForFences will deadlock on the next use of this frame slot
+        m_DeviceLost = true;
+        return;
     }
 
     VkPresentInfoKHR presentInfo{};
@@ -341,7 +358,10 @@ void VulkanRenderer::SubmitCommandBuffer() {
     presentInfo.pImageIndices = &m_CurrentImageIndex;
 
     VkResult result = vkQueuePresentKHR(m_Context->GetPresentQueue(), &presentInfo);
-    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_FramebufferResized) {
+    if (result == VK_ERROR_DEVICE_LOST) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan device lost during present");
+        m_DeviceLost = true;
+    } else if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR || m_FramebufferResized) {
         m_FramebufferResized = false;
         OnWindowResize(m_Window->GetWidth(), m_Window->GetHeight());
     } else if (result != VK_SUCCESS) {
@@ -352,6 +372,9 @@ void VulkanRenderer::SubmitCommandBuffer() {
 }
 
 bool VulkanRenderer::BeginFrame() {
+    // Skip rendering if device is lost
+    if (m_DeviceLost) return false;
+
     // Skip rendering while window is minimized (0x0 framebuffer)
     if (m_Window->GetWidth() == 0 || m_Window->GetHeight() == 0) {
         return false;

@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/Accessibility/ContentWarning.h"
 #include <string>
 #include <vector>
 
@@ -59,8 +60,14 @@ public:
     void SetWorld(ECS::World* world) { m_World = world; }
     ECS::World* GetWorld() const { return m_World; }
 
+    // Scene-level accessibility content flags
+    void SetContentFlags(const Accessibility::SceneContentFlags& flags) { m_ContentFlags = flags; }
+    const Accessibility::SceneContentFlags& GetContentFlags() const { return m_ContentFlags; }
+    Accessibility::SceneContentFlags& GetContentFlags() { return m_ContentFlags; }
+
 private:
     ECS::World* m_World = nullptr;
+    Accessibility::SceneContentFlags m_ContentFlags;
 };
 
 } // namespace Scene

@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
+#include "Enjin/Editor/EditorSettings.h"
 #include <string>
 
 struct ImFont;
@@ -54,6 +55,12 @@ public:
 
     // Reload fonts with new configuration (requires atlas rebuild)
     void ReloadFonts(const EditorFontConfig& fontConfig);
+
+    // Apply editor theme (call after Initialize)
+    void ApplyTheme(Editor::EditorTheme theme);
+
+    // Set global UI scale (wraps ImGui font global scale)
+    void SetGlobalScale(f32 scale);
 
 private:
     bool CreateDescriptorPool();
