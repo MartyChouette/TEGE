@@ -1069,6 +1069,7 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
             skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
             skyboxJson["rotation"] = m_SkyboxConfig.rotation;
+            skyboxJson["sunDirection"] = { m_SkyboxConfig.sunDirection.x, m_SkyboxConfig.sunDirection.y, m_SkyboxConfig.sunDirection.z };
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -1158,6 +1159,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
+            if (sj.contains("sunDirection")) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
@@ -1520,6 +1522,7 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
             skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
             skyboxJson["rotation"] = m_SkyboxConfig.rotation;
+            skyboxJson["sunDirection"] = { m_SkyboxConfig.sunDirection.x, m_SkyboxConfig.sunDirection.y, m_SkyboxConfig.sunDirection.z };
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -1568,6 +1571,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
+            if (sj.contains("sunDirection")) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();

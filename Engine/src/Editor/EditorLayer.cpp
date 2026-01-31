@@ -1029,6 +1029,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), ImGuiCond_FirstUseEver);
         DrawSceneListPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Skybox)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 440), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
+        DrawSkyboxPanel();
+    }
 
     // Draw scene transition overlay (fade to/from black/white)
     if (m_SceneManager.IsTransitioning()) {
@@ -1409,6 +1414,10 @@ void EditorLayer::DrawMenuBar() {
             bool sceneList = IsPanelVisible(EditorPanel::SceneList);
             if (ImGui::MenuItem("Scene List", nullptr, &sceneList)) {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
+            }
+            bool skybox = IsPanelVisible(EditorPanel::Skybox);
+            if (ImGui::MenuItem("Skybox", nullptr, &skybox)) {
+                SetPanelVisibility(EditorPanel::Skybox, skybox);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
@@ -4867,35 +4876,6 @@ void EditorLayer::DrawPostProcessingPanel() {
 void EditorLayer::DrawEffectsPanel() {
     ImGui::Begin("Effects (Retro)");
 
-    // === SKYBOX ===
-    if (ImGui::CollapsingHeader("Skybox")) {
-        if (m_RenderSystem) {
-            Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
-            int typeIdx = static_cast<int>(config.type);
-            const char* skyboxTypes[] = { "None", "Cubemap", "Procedural", "Solid Color" };
-            if (ImGui::Combo("Skybox Type", &typeIdx, skyboxTypes, 4)) {
-                config.type = static_cast<Renderer::SkyboxType>(typeIdx);
-                m_RenderSystem->SetSkybox(config);
-            }
-
-            if (config.type == Renderer::SkyboxType::Procedural) {
-                bool changed = false;
-                changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
-                changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
-                changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
-                if (changed) m_RenderSystem->SetSkybox(config);
-            }
-
-            if (config.type == Renderer::SkyboxType::SolidColor) {
-                if (ImGui::ColorEdit3("Sky Color", &config.solidColor.x)) {
-                    m_RenderSystem->SetSkybox(config);
-                }
-            }
-        }
-    }
-
-    ImGui::Separator();
-
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
     if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
         bool retroEnabled = m_RetroEffects.IsEnabled();
@@ -5553,6 +5533,114 @@ void EditorLayer::DrawGameViewPanel() {
         if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
             ImGui::TextDisabled("Render target unavailable - using fallback preview");
         }
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawSkyboxPanel() {
+    ImGui::Begin("Skybox", nullptr, ImGuiWindowFlags_None);
+
+    if (!m_RenderSystem) {
+        ImGui::TextDisabled("No render system available");
+        ImGui::End();
+        return;
+    }
+
+    Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
+    bool changed = false;
+
+    // Type combo
+    int typeIdx = static_cast<int>(config.type);
+    const char* skyboxTypes[] = { "None", "Cubemap", "Procedural", "Solid Color" };
+    if (ImGui::Combo("Type", &typeIdx, skyboxTypes, 4)) {
+        config.type = static_cast<Renderer::SkyboxType>(typeIdx);
+        changed = true;
+    }
+
+    ImGui::Separator();
+
+    // Procedural sky controls
+    if (config.type == Renderer::SkyboxType::Procedural) {
+        // Presets
+        ImGui::Text("Presets:");
+        if (ImGui::Button("Midday")) {
+            config.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            config.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            config.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            config.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Sunset")) {
+            config.topColor = Math::Vector3(0.1f, 0.1f, 0.4f);
+            config.horizonColor = Math::Vector3(0.9f, 0.4f, 0.1f);
+            config.bottomColor = Math::Vector3(0.95f, 0.6f, 0.2f);
+            config.sunDirection = Math::Vector3(0.8f, 0.1f, 0.3f);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Dawn")) {
+            config.topColor = Math::Vector3(0.15f, 0.15f, 0.5f);
+            config.horizonColor = Math::Vector3(0.8f, 0.5f, 0.3f);
+            config.bottomColor = Math::Vector3(0.6f, 0.4f, 0.3f);
+            config.sunDirection = Math::Vector3(-0.8f, 0.15f, 0.2f);
+            changed = true;
+        }
+        if (ImGui::Button("Night")) {
+            config.topColor = Math::Vector3(0.01f, 0.01f, 0.05f);
+            config.horizonColor = Math::Vector3(0.05f, 0.05f, 0.15f);
+            config.bottomColor = Math::Vector3(0.02f, 0.02f, 0.08f);
+            config.sunDirection = Math::Vector3(0.0f, -1.0f, 0.0f);
+            changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Overcast")) {
+            config.topColor = Math::Vector3(0.5f, 0.5f, 0.55f);
+            config.horizonColor = Math::Vector3(0.6f, 0.6f, 0.63f);
+            config.bottomColor = Math::Vector3(0.55f, 0.55f, 0.58f);
+            config.sunDirection = Math::Vector3(0.3f, 0.7f, 0.2f);
+            changed = true;
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Colors:");
+        changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
+        changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
+        changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
+
+        ImGui::Separator();
+        changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
+    }
+
+    // Solid color controls
+    if (config.type == Renderer::SkyboxType::SolidColor) {
+        changed |= ImGui::ColorEdit3("Sky Color", &config.solidColor.x);
+    }
+
+    // Cubemap controls
+    if (config.type == Renderer::SkyboxType::Cubemap) {
+        ImGui::Text("Cubemap Faces:");
+        const char* faceLabels[] = { "Right (+X)", "Left (-X)", "Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)" };
+        for (int i = 0; i < 6; ++i) {
+            char buf[256];
+            strncpy(buf, config.cubemapPaths[i].c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+            if (ImGui::InputText(faceLabels[i], buf, sizeof(buf))) {
+                config.cubemapPaths[i] = buf;
+                changed = true;
+            }
+        }
+    }
+
+    // Rotation slider for all non-None types
+    if (config.type != Renderer::SkyboxType::None) {
+        ImGui::Separator();
+        changed |= ImGui::SliderFloat("Rotation", &config.rotation, 0.0f, 360.0f, "%.1f deg");
+    }
+
+    if (changed) {
+        m_RenderSystem->SetSkybox(config);
     }
 
     ImGui::End();

@@ -53,6 +53,7 @@ enum class EditorPanel : u32 {
     Effects = 1 << 7,
     GameView = 1 << 8,
     SceneList = 1 << 9,
+    Skybox = 1 << 10,
     All = 0xFFFFFFFF
 };
 
@@ -148,6 +149,7 @@ private:
     void DrawEffectsPanel();
     void DrawGameViewPanel();
     void DrawSceneListPanel();
+    void DrawSkyboxPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
 
