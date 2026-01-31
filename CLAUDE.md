@@ -154,6 +154,23 @@ struct PushConstants {
   - Left-click - Select entity, Double-click - Focus on entity
   - Scroll - Adjust move speed
 
+### Skybox
+
+- **`Skybox`** (`Engine/include/Enjin/Renderer/Skybox.h`) - Cubemap-based skybox rendering
+- **`SkyboxConfig`** - Configuration struct with type, colors, sun direction, cubemap paths, rotation
+- **`SkyboxType`** enum: `None`, `Cubemap`, `Procedural`, `SolidColor`
+- **Editor panel:** Dedicated Skybox panel (`View > Skybox`, `EditorPanel::Skybox = 1 << 10`)
+  - `DrawSkyboxPanel()` in `EditorLayer` — type combo, procedural presets, color pickers, sun direction, cubemap face paths, rotation slider
+  - Procedural presets: Midday, Sunset, Dawn, Night, Overcast (set colors + sun direction)
+- **Config fields:**
+  - `topColor`, `horizonColor`, `bottomColor` — procedural gradient colors
+  - `sunDirection` — `Vector3` for procedural sun position
+  - `solidColor` — flat fill color
+  - `cubemapPaths` — `std::array<std::string, 6>` face paths (Right +X, Left -X, Top +Y, Bottom -Y, Front +Z, Back -Z)
+  - `rotation` — Y-axis rotation in degrees (0-360)
+- **Serialization:** All fields including `sunDirection` are saved/loaded in `SceneSerializer` (both file and string paths)
+- **API:** `RenderSystem::SetSkybox(config)` / `RenderSystem::GetSkyboxConfig()`
+
 ### Effects Systems
 
 - **`WeatherSystem`** - Rain, snow, fog, storm with lightning (global scene effect)
