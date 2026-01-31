@@ -119,6 +119,9 @@ struct alignas(16) LightingUBO {
     // World curvature (x = strength, yzw reserved)
     alignas(16) Math::Vector4 worldCurvature;
 
+    // Sky reflection color for water/ice surfaces (xyz = color, w = reserved)
+    alignas(16) Math::Vector4 skyReflectColor;
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

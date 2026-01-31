@@ -71,6 +71,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved (layout must match)
+    vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -487,14 +488,23 @@ void main() {
         }
     }
 
-    // Water surface: fresnel-like reflective sheen
+    // Water surface: fresnel-like reflective sheen with freeze transition
     if ((material.flags & FLAG_WATER_SURFACE) != 0) {
         float NdotV = max(dot(normal, viewDir), 0.0);
-        // Schlick fresnel: more reflective at glancing angles
-        float fresnel = 0.02 + 0.98 * pow(1.0 - NdotV, 5.0);
-        // Blend toward sky/specular color at glancing angles
-        vec3 skyColor = vec3(0.4, 0.5, 0.7);
-        result = mix(result, skyColor, fresnel * 0.6);
+        float freezeProgress = material.parallaxScale;
+        vec3 skyColor = lighting.skyReflectColor.xyz;
+
+        // Fresnel transitions: water (low base, steep falloff) -> ice (higher base, broader)
+        float fresnelBase = mix(0.02, 0.08, freezeProgress);
+        float fresnelExp  = mix(5.0, 3.0, freezeProgress);
+        float fresnel = fresnelBase + (1.0 - fresnelBase) * pow(1.0 - NdotV, fresnelExp);
+
+        // Frozen surface tints reflection slightly blue-white
+        vec3 reflectColor = mix(skyColor, skyColor * vec3(0.85, 0.9, 1.0) + vec3(0.1), freezeProgress * 0.4);
+
+        // Reflection strength increases for ice
+        float reflectStrength = mix(0.6, 0.85, freezeProgress);
+        result = mix(result, reflectColor, fresnel * reflectStrength);
 
         // Shore foam: procedural noise foam near edges
         if ((material.flags & FLAG_WATER_SHORE) != 0 && material.foamIntensity > 0.0) {

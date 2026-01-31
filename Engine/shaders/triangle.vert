@@ -54,6 +54,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved
+    vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
     // Note: light arrays follow but we only need lightSpaceMatrix and windData in vertex shader
 } lighting;
 
@@ -127,6 +128,9 @@ void main() {
 
     // Water surface wave displacement (gentle Gerstner-lite)
     if ((pushConstants.flags & FLAG_WATER_SURFACE) != 0) {
+        float freezeProgress = pushConstants.parallaxScale;
+        float waveFactor = 1.0 - freezeProgress; // 1=full waves, 0=frozen still
+
         float waterTime = lighting.windData.w;
         vec3 windDir = lighting.windData.xyz;
         float windMag = length(windDir) + 0.01;
@@ -153,7 +157,7 @@ void main() {
             wave3 = sin(phase3) * 0.35 * windMag;
         }
 
-        worldPos.y += (wave1 + wave2 + wave3) * waveDampen;
+        worldPos.y += (wave1 + wave2 + wave3) * waveDampen * waveFactor;
     }
 
     // World curvature: bend geometry downward at distance from camera

@@ -554,9 +554,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Set water surface flag for water volume entities
             WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
             if (waterVol) {
-                if (waterVol->freezeProgress < 0.99f) {
-                    pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE (wave animation)
-                }
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE — always set, shader handles freeze
+                pushConstants.parallaxScale = waterVol->freezeProgress; // repurpose for water (POM skips water)
+
                 if (m_RainActive && waterVol->freezeProgress < 0.5f) {
                     pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES (no ripples on ice)
                 }
@@ -1229,6 +1229,21 @@ void RenderSystem::UpdateFrameUniforms() {
     // World curvature
     lighting.worldCurvature = Math::Vector4(m_WorldCurvature, 0.0f, 0.0f, 0.0f);
 
+    // Sky reflection color for water/ice fresnel
+    {
+        const auto& skyConfig = m_Skybox.GetConfig();
+        Math::Vector3 skyCol(0.4f, 0.5f, 0.7f); // fallback matches old hardcoded value
+        if (skyConfig.type == Renderer::SkyboxType::Procedural) {
+            skyCol = Math::Vector3(
+                skyConfig.horizonColor.x * 0.6f + skyConfig.topColor.x * 0.4f,
+                skyConfig.horizonColor.y * 0.6f + skyConfig.topColor.y * 0.4f,
+                skyConfig.horizonColor.z * 0.6f + skyConfig.topColor.z * 0.4f);
+        } else if (skyConfig.type == Renderer::SkyboxType::SolidColor) {
+            skyCol = skyConfig.solidColor;
+        }
+        lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, 0.0f);
+    }
+
     m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
 }
 
@@ -1422,9 +1437,9 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Set water surface flag for water volume entities
     WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
     if (waterVol) {
-        if (waterVol->freezeProgress < 0.99f) {
-            pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE (wave animation)
-        }
+        pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE — always set, shader handles freeze
+        pushConstants.parallaxScale = waterVol->freezeProgress; // repurpose for water (POM skips water)
+
         if (m_RainActive && waterVol->freezeProgress < 0.5f) {
             pushConstants.flags |= (1 << 6); // FLAG_RAIN_RIPPLES (no ripples on ice)
         }
