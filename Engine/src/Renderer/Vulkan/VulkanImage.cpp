@@ -39,6 +39,34 @@ bool VulkanImage::LoadFromFile(const std::string& filepath) {
     return success;
 }
 
+bool VulkanImage::LoadFromMemory(const u8* data, usize size) {
+    if (!data || size == 0) {
+        ENJIN_LOG_ERROR(Renderer, "LoadFromMemory called with null/empty data");
+        return false;
+    }
+
+    int width, height, channels;
+    stbi_uc* pixels = stbi_load_from_memory(
+        reinterpret_cast<const stbi_uc*>(data),
+        static_cast<int>(size),
+        &width, &height, &channels, STBI_rgb_alpha);
+
+    if (!pixels) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to decode image from memory (%zu bytes)", size);
+        return false;
+    }
+
+    bool success = CreateFromData(pixels, static_cast<u32>(width), static_cast<u32>(height), 4, VK_FORMAT_R8G8B8A8_SRGB);
+
+    stbi_image_free(pixels);
+
+    if (success) {
+        ENJIN_LOG_INFO(Renderer, "Loaded image from memory: %dx%d (%zu bytes)", width, height, size);
+    }
+
+    return success;
+}
+
 bool VulkanImage::Create(
     u32 width,
     u32 height,

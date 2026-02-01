@@ -59,6 +59,7 @@ enjin/
 │   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, SeasonalWeather
 │   │   ├── Input/          # InputAction (remappable input action map)
 │   │   ├── GUI/            # ImGui integration
+│   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Physics/        # SimplePhysics
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Procedural/     # LevelGenerator (stub)
@@ -68,6 +69,8 @@ enjin/
 │   └── src/
 │
 ├── Editor/                  # Editor application (main.cpp entry point)
+│
+├── Player/                  # Standalone game player (no editor/ImGui)
 │
 ├── third_party/            # External dependencies
 │   ├── imgui/              # Dear ImGui (UI)
@@ -194,6 +197,19 @@ struct PushConstants {
 - **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
 - **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes
 
+### Build Pipeline & Player
+
+- **`BuildPipeline`** (`Engine/include/Enjin/Build/BuildPipeline.h`) - Orchestrates full game export: scan project → validate assets → pack → copy player → write manifest → verify CRC32s
+- **`AssetPacker`** (`Engine/include/Enjin/Build/AssetPacker.h`) - Writes `.enjpak` archives (compression + XOR obfuscation + CRC32 integrity)
+- **`AssetReader`** (`Engine/include/Enjin/Build/AssetReader.h`) - Reads `.enjpak` archives at runtime (decompress + deobfuscate + verify)
+- **`BuildConfig`** / **`BuildResult`** (`Engine/include/Enjin/Build/BuildReport.h`) - Build configuration (project path, output dir, window settings) and result messages
+- **`VulkanImage::LoadFromMemory()`** - Loads textures from packed in-memory data (PNG/JPG via stb_image)
+- **Editor integration:** `DrawBuildDialog()` in `EditorLayer` with progress tracking
+- **Player app** (`Player/src/main.cpp`) - Standalone executable that loads `game.enjpak`, reads build manifest for window config, runs game loop without editor/ImGui
+- **Pack format:** `.enjpak` with magic header `ENJPAK10`, per-file CRC32, XOR obfuscation with configurable key
+- **Build manifest:** `_build/manifest.json` inside the pack (windowTitle, windowWidth, windowHeight, fullscreen, startScene)
+- **Default pack key:** `enjin_default_pack_key_2025`
+
 ## Shader Workflow
 
 Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `ShaderData.h`:
@@ -206,8 +222,8 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 ## Code Conventions
 
 - **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`
-- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`
+- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)` — categories include Build, Player
 - **API export:** `ENJIN_API` macro for DLL export
 
 ## Current Feature Status
@@ -317,3 +333,10 @@ if (result.success) {
     // result.rootEntity is the root of the hierarchy
 }
 ```
+
+### Building a game for export
+
+1. Configure `BuildConfig` with project path, output directory, and window settings
+2. Run `BuildPipeline::Execute(config)` — scans scenes, validates assets, packs into `.enjpak`
+3. The pipeline copies `EnjinPlayer` executable alongside the pack
+4. Player loads `game.enjpak` from its own directory at startup

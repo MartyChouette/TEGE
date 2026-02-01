@@ -32,6 +32,8 @@ enum class LogCategory : u8 {
     Assets    = 9,
     Procedural = 10,
     Animation = 11,
+    Build     = 12,
+    Player    = 13,
     Count
 };
 

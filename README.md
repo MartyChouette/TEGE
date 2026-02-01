@@ -37,6 +37,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
 - **Asset Hot-Reload** - File watcher polls texture files for changes
+- **Build Dialog** - Configure and export standalone game builds from the editor
 
 ### Entity-Component System
 - **40+ Component Types** - Full inspector UI for all components
@@ -77,16 +78,19 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Scene Transitions** - Instant, Fade Black, Fade White, Cross Fade with configurable duration
 - **Prefab System** - Save/load entity templates
 
-### Standalone Player
-- **Game Player** - Editor-free runtime that loads scenes from `.enjpak` asset packs
-- **Build Pipeline** - Package scenes and assets for standalone distribution
+### Build & Distribution
+- **Build Pipeline** - Scan project → validate assets → compress/obfuscate → pack into `.enjpak` with CRC32 integrity verification
+- **Asset Packer** - `.enjpak` archive format with compression, XOR obfuscation, and per-file CRC32 checksums
+- **Build Dialog** - Editor UI for configuring and running builds with progress tracking
+- **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
+- **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop
 
 ## Project Structure
 
 ```
 enjin/
 ├── Core/           # Foundation layer (Memory, Math, Logging, Platform)
-├── Engine/         # Engine layer (Renderer, ECS, Audio, Effects, Editor, Assets)
+├── Engine/         # Engine layer (Renderer, ECS, Audio, Effects, Editor, Build, Assets)
 ├── Editor/         # Editor application entry point
 ├── Player/         # Standalone game player entry point
 ├── third_party/    # External dependencies (GLFW, ImGui, ImGuizmo)

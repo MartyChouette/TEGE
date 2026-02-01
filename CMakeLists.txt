@@ -16,6 +16,7 @@ endif()
 
 # Build options
 option(ENJIN_BUILD_EDITOR "Build the Enjin Editor" ON)
+option(ENJIN_BUILD_PLAYER "Build the standalone game player" ON)
 option(ENJIN_BUILD_TESTS "Build unit tests" OFF)
 option(ENJIN_BUILD_EXAMPLES "Build example projects" OFF)
 
@@ -38,6 +39,10 @@ add_subdirectory(Engine)
 
 if(ENJIN_BUILD_EDITOR)
     add_subdirectory(Editor)
+endif()
+
+if(ENJIN_BUILD_PLAYER)
+    add_subdirectory(Player)
 endif()
 
 if(ENJIN_BUILD_EXAMPLES)

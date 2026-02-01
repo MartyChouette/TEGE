@@ -24,6 +24,7 @@
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TerrainBrush.h"
 #include "Enjin/Editor/UndoRedo.h"
+#include "Enjin/Build/BuildReport.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -152,6 +153,7 @@ private:
     void DrawSkyboxPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
+    void DrawBuildDialog();
 
     void DrawEntityNode(ECS::Entity entity, const std::string& name);
     void DrawTransformComponent(ECS::Entity entity);
@@ -407,6 +409,15 @@ private:
 
     // In-game pause/system menu
     GUI::GameMenuSystem m_GameMenu;
+
+    // Build dialog state
+    bool m_ShowBuildDialog = false;
+    Build::BuildConfig m_BuildConfig;
+    Build::BuildResult m_BuildResult;
+    bool m_BuildInProgress = false;
+    bool m_BuildFinished = false;
+    float m_BuildProgress = 0.0f;
+    std::string m_BuildProgressPhase;
 };
 
 } // namespace Editor

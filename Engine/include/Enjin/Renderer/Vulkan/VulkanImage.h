@@ -16,6 +16,9 @@ public:
 
     // Create image from file (supports PNG, JPG, etc.)
     bool LoadFromFile(const std::string& filepath);
+
+    // Create image from raw file bytes in memory (PNG, JPG, etc. decoded via stb_image)
+    bool LoadFromMemory(const u8* data, usize size);
     
     // Create image from data
     bool Create(
