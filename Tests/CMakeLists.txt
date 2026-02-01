@@ -19,3 +19,13 @@ target_link_libraries(DungeonCrawlerTest PRIVATE
 )
 
 target_compile_features(DungeonCrawlerTest PRIVATE cxx_std_20)
+
+add_executable(SMTTemplateTest
+    SMTTemplateTest.cpp
+)
+
+target_link_libraries(SMTTemplateTest PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(SMTTemplateTest PRIVATE cxx_std_20)
