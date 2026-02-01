@@ -279,11 +279,14 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - World time and seasonal weather systems
 - Terrain editing with brush tools
 - Shrub/Tree vegetation rendering
+- Audio system (miniaudio cross-platform backend, 3D spatialization, multi-channel mixing)
+- Audio scene serialization (AudioSourceComponent, AudioListenerComponent)
+- Game camera offscreen rendering with separate uniform buffers (fixes editor/game camera conflict)
+- Standalone game player (Player/ app, loads .enjpak asset packs)
+- Asset pack build pipeline (.enjpak packaging)
 
 **Next Up:**
-- Audio system integration (SimpleAudio works on Windows, FMOD/Wwise need SDKs)
 - AI/Navmesh integration (framework exists, needs gameplay logic)
-- Game build pipeline (packaging scenes + assets for standalone distribution)
 - Splitscreen rendering (viewport subdivision for racing/arena templates)
 
 ## Common Tasks
