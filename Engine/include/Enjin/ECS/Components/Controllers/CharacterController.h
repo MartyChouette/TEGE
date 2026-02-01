@@ -154,8 +154,8 @@ struct ThirdPersonController : public CharacterControllerBase {
     f32 cameraYaw = 0.0f;          // Current yaw angle
     f32 cameraMinPitch = -30.0f;
     f32 cameraMaxPitch = 60.0f;
-    f32 cameraSensitivity = 2.0f;
-    f32 cameraLerpSpeed = 10.0f;   // Smooth camera follow
+    f32 cameraSensitivity = 0.15f;
+    f32 cameraLerpSpeed = 20.0f;   // Smooth camera follow
 
     // Camera collision
     bool enableCameraCollision = true;

@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
@@ -135,6 +136,78 @@ void ControllerSystem::Update(f32 deltaTime) {
             if (controller->isEnabled) {
                 UpdateFirstPerson(entity, *controller, *transform, deltaTime);
             }
+        }
+    }
+
+    // Process FollowTarget components (camera follow, companion follow, etc.)
+    for (Entity entity : m_World->GetAllEntities()) {
+        if (!m_World->HasComponent<FollowTargetComponent>(entity) ||
+            !m_World->HasComponent<TransformComponent>(entity)) {
+            continue;
+        }
+        auto* follow = m_World->GetComponent<FollowTargetComponent>(entity);
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (follow->target == INVALID_ENTITY) continue;
+
+        auto* targetTransform = m_World->GetComponent<TransformComponent>(follow->target);
+        if (!targetTransform) continue;
+
+        Math::Vector3 targetPos = targetTransform->position + follow->offset;
+
+        // Smooth follow via lerp
+        f32 lerpFactor = 1.0f - std::exp(-follow->moveSpeed * deltaTime);
+        transform->position = Math::Vector3(
+            transform->position.x + (targetPos.x - transform->position.x) * lerpFactor,
+            transform->position.y + (targetPos.y - transform->position.y) * lerpFactor,
+            transform->position.z + (targetPos.z - transform->position.z) * lerpFactor
+        );
+    }
+
+    // Process LookAtTarget components (camera look-at, turret tracking, etc.)
+    for (Entity entity : m_World->GetAllEntities()) {
+        if (!m_World->HasComponent<LookAtTargetComponent>(entity) ||
+            !m_World->HasComponent<TransformComponent>(entity)) {
+            continue;
+        }
+        auto* lookAt = m_World->GetComponent<LookAtTargetComponent>(entity);
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+
+        Math::Vector3 targetPos;
+        if (lookAt->useWorldTarget) {
+            targetPos = lookAt->worldTarget;
+        } else {
+            if (lookAt->target == INVALID_ENTITY) continue;
+            auto* targetTransform = m_World->GetComponent<TransformComponent>(lookAt->target);
+            if (!targetTransform) continue;
+            targetPos = targetTransform->position;
+        }
+
+        // Compute direction from entity to target
+        Math::Vector3 dir = Math::Vector3(
+            targetPos.x - transform->position.x,
+            targetPos.y - transform->position.y,
+            targetPos.z - transform->position.z
+        );
+        f32 len = dir.Length();
+        if (len < 0.001f) continue;
+        dir = dir * (1.0f / len);
+
+        // Compute yaw and pitch from direction
+        f32 yaw = std::atan2(-dir.x, -dir.z);
+        f32 pitch = std::asin(-dir.y);
+
+        // Clamp pitch
+        if (pitch < Math::Radians(lookAt->minPitch)) pitch = Math::Radians(lookAt->minPitch);
+        if (pitch > Math::Radians(lookAt->maxPitch)) pitch = Math::Radians(lookAt->maxPitch);
+
+        Math::Quaternion targetRotation = Math::Quaternion::FromEuler(
+            Math::Vector3(pitch, yaw, 0.0f));
+
+        if (lookAt->instant) {
+            transform->rotation = targetRotation;
+        } else {
+            f32 t = 1.0f - std::exp(-Math::Radians(lookAt->rotationSpeed) * deltaTime);
+            transform->rotation = Math::Quaternion::Slerp(transform->rotation, targetRotation, t);
         }
     }
 }
@@ -656,10 +729,19 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
             camOffset.y = Math::Sin(pitchRad2) * ctrl.cameraDistance + ctrl.cameraHeight;
             camOffset.z = Math::Cos(pitchRad2) * Math::Cos(yawRad2) * ctrl.cameraDistance;
             {
-                Math::Vector3 camPos = transform.position + camOffset;
-                UpdateGameCameraTransform(camPos,
-                    transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0),
-                    Math::Vector3(0, 1, 0));
+                Math::Vector3 targetCameraPos = transform.position + camOffset;
+                Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0);
+
+                // Apply smooth lerp (same as free movement path)
+                Math::Vector3 currentPos = targetCameraPos;
+                if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
+                    auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
+                    if (camTransform) currentPos = camTransform->position;
+                } else if (m_Camera) {
+                    currentPos = m_Camera->GetPosition();
+                }
+                Math::Vector3 newPos = currentPos + (targetCameraPos - currentPos) * Math::Min(ctrl.cameraLerpSpeed * dt, 1.0f);
+                UpdateGameCameraTransform(newPos, lookTarget, Math::Vector3(0, 1, 0));
             }
             // Rotate character to face movement direction
             if (ctrl.rotateToFaceMovement && ctrl.gridMoving) {

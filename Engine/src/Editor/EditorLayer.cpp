@@ -7100,6 +7100,15 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(cam, camName);
             auto& camT = m_World->AddComponent<ECS::TransformComponent>(cam);
             camT.position = startPositions[i] + Math::Vector3(0.0f, 8.0f, -6.0f);
+            // Point camera down toward the vehicle: direction = (0, -8, 6), pitch ≈ -53°
+            {
+                Math::Vector3 toVehicle = Math::Vector3(0.0f, -8.0f, 6.0f).Normalized();
+                // Camera forward is (0,0,-1). Compute rotation from forward to toVehicle.
+                // For a simple pitch rotation around X: angle = acos(dot(forward, dir))
+                // but we need the signed angle. Use atan2 for pitch.
+                f32 pitch = std::atan2(-toVehicle.y, -toVehicle.z); // angle from -Z toward -Y
+                camT.rotation = Math::Quaternion::FromEuler(Math::Vector3(pitch, 0.0f, 0.0f));
+            }
             auto& camC = m_World->AddComponent<ECS::CameraComponent>(cam);
             camC.fieldOfView = 60.0f;
             camC.nearPlane = 0.1f;
@@ -7316,7 +7325,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             camT.position = Math::Vector3(0.0f, 3.0f, 25.0f);
             auto& camC = m_World->AddComponent<ECS::CameraComponent>(cam);
             camC.projectionType = ECS::ProjectionType::Orthographic;
-            camC.orthoSize = 12.0f;  // Adjusts to fit all players
+            camC.orthoSize = 14.0f;  // Wide enough for all platforms + fighters
             camC.nearPlane = 0.1f;
             camC.farPlane = 100.0f;
             m_SelectedGameCamera = cam;
@@ -8701,21 +8710,21 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
 
         // Runner (player - 3 lanes: -2, 0, +2)
+        ECS::Entity runnerEntity = m_World->CreateEntity();
         {
-            ECS::Entity runner = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(runner, "Runner");
-            auto& rt = m_World->AddComponent<ECS::TransformComponent>(runner);
+            m_World->AddComponent<ECS::NameComponent>(runnerEntity, "Runner");
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(runnerEntity);
             rt.position = Math::Vector3(0.0f, 0.5f, 0.0f);
-            m_World->AddComponent<ECS::MeshComponent>(runner, Renderer::MeshFactory::CreateCapsule(0.3f, 0.8f));
-            auto& rm = m_World->AddComponent<ECS::MaterialComponent>(runner);
+            m_World->AddComponent<ECS::MeshComponent>(runnerEntity, Renderer::MeshFactory::CreateCapsule(0.3f, 0.8f));
+            auto& rm = m_World->AddComponent<ECS::MaterialComponent>(runnerEntity);
             rm.baseColor = Math::Vector3(0.2f, 0.5f, 0.9f);
-            auto& health = m_World->AddComponent<ECS::HealthComponent>(runner);
+            auto& health = m_World->AddComponent<ECS::HealthComponent>(runnerEntity);
             health.maxHealth = 3.0f;  // 3 lives
             health.currentHealth = 3.0f;
-            auto& tag = m_World->AddComponent<ECS::TagComponent>(runner);
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(runnerEntity);
             tag.tags.push_back("runner");
 
-            auto& notes = m_World->AddComponent<ECS::NotesComponent>(runner);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(runnerEntity);
             notes.notes = "RUNNER CONTROLS\n"
                 "================\n"
                 "Move left/right to switch lanes (-2, 0, +2 on X).\n"
@@ -8724,18 +8733,25 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "Auto-moves forward constantly (translate Z each frame).\n";
         }
 
-        // Chase camera
+        // Chase camera (follows behind runner, looking at them)
         {
             ECS::Entity cam = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(cam, "Runner Camera");
             auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
             ct.position = Math::Vector3(0.0f, 3.0f, -5.0f);
-            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-15.0f));
             auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
             cc.fieldOfView = 65.0f;
             cc.nearPlane = 0.1f;
             cc.farPlane = 300.0f;
             m_SelectedGameCamera = cam;
+
+            // Follow the runner from behind and above
+            auto& follow = m_World->AddComponent<ECS::FollowTargetComponent>(cam);
+            follow.target = runnerEntity;
+            follow.offset = Math::Vector3(0.0f, 2.5f, -5.0f);
+            follow.moveSpeed = 8.0f;
+            auto& lookAt = m_World->AddComponent<ECS::LookAtTargetComponent>(cam);
+            lookAt.target = runnerEntity;
         }
 
         // Lane markers
@@ -8919,8 +8935,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(cam, "Game Camera");
             auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
             ct.position = Math::Vector3(3.0f, 2.5f, 3.0f);
-            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-25.0f))
-                        * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(-45.0f));
+            // Look from (3, 2.5, 3) toward flower at origin
+            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-20.0f))
+                        * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(45.0f));
             auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
             cc.fieldOfView = 50.0f;
             cc.nearPlane = 0.1f;
@@ -11341,14 +11358,20 @@ void EditorLayer::SetupCameraForController(ECS::Entity controllerEntity, const s
             Math::Vector3(1.0f, 0.0f, 0.0f), -angle);
     } else if (controllerType == "ThirdPerson") {
         // Over-the-shoulder: perspective, behind and above player
+        // Match ThirdPersonController defaults: cameraDistance=5, cameraHeight=2, cameraPitch=20
         camComp->projectionType = ECS::ProjectionType::Perspective;
         camComp->fieldOfView = 60.0f;
         camComp->nearPlane = 0.1f;
         camComp->farPlane = 1000.0f;
-        camTransform->position = playerPos + Math::Vector3(0.0f, 3.0f, 6.0f);
-        // Slight downward angle
+        f32 pitchRad = Math::Radians(20.0f);
+        f32 dist = 5.0f;
+        f32 height = 2.0f;
+        camTransform->position = playerPos + Math::Vector3(
+            0.0f,
+            Math::Sin(pitchRad) * dist + height,
+            Math::Cos(pitchRad) * dist);
         camTransform->rotation = Math::Quaternion(
-            Math::Vector3(1.0f, 0.0f, 0.0f), Math::Radians(-15.0f));
+            Math::Vector3(1.0f, 0.0f, 0.0f), -pitchRad);
     } else if (controllerType == "FirstPerson") {
         // First-person: perspective, at player eye height
         camComp->projectionType = ECS::ProjectionType::Perspective;

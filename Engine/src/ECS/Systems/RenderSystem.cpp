@@ -451,7 +451,7 @@ void RenderSystem::Update(f32 deltaTime) {
             scissor.extent = { static_cast<u32>(pixelW), static_cast<u32>(pixelH) };
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-            RenderSkybox(commandBuffer);
+            RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
             m_Pipeline->Bind(commandBuffer);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -879,7 +879,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
         // Render skybox for this viewport
-        RenderSkybox(commandBuffer);
+        RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
         // Render all entities
         const auto& entities = m_World->GetAllEntities();
@@ -2734,7 +2734,9 @@ void RenderSystem::CreateSkyboxPipeline() {
     ENJIN_LOG_INFO(Renderer, "Skybox pipeline created");
 }
 
-void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer) {
+void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
+                                const VkViewport* viewportOverride,
+                                const VkRect2D* scissorOverride) {
     if (!m_Skybox.IsValid() || m_SkyboxPipelineHandle == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
         return;
     }
@@ -2777,17 +2779,27 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer) {
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    // Set viewport and scissor
-    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
-    VkViewport viewport{};
-    viewport.width = static_cast<f32>(extent.width);
-    viewport.height = static_cast<f32>(extent.height);
-    viewport.maxDepth = 1.0f;
-    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    // Set viewport and scissor — use overrides if provided (offscreen / splitscreen),
+    // otherwise fall back to swapchain extent (main pass single-camera)
+    if (viewportOverride) {
+        vkCmdSetViewport(commandBuffer, 0, 1, viewportOverride);
+    } else {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkViewport viewport{};
+        viewport.width = static_cast<f32>(extent.width);
+        viewport.height = static_cast<f32>(extent.height);
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+    }
 
-    VkRect2D scissor{};
-    scissor.extent = extent;
-    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    if (scissorOverride) {
+        vkCmdSetScissor(commandBuffer, 0, 1, scissorOverride);
+    } else {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        VkRect2D scissor{};
+        scissor.extent = extent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+    }
 
     // Bind skybox pipeline and draw
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_SkyboxPipelineHandle);

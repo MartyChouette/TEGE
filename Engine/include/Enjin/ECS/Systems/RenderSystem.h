@@ -230,7 +230,9 @@ private:
     std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_SkyboxUniformBuffers;
     void CreateSkyboxPipeline();
-    void RenderSkybox(VkCommandBuffer commandBuffer);
+    void RenderSkybox(VkCommandBuffer commandBuffer,
+                      const VkViewport* viewportOverride = nullptr,
+                      const VkRect2D* scissorOverride = nullptr);
     void CreateSkyboxCubeVBO();
 
     // Water surface mesh generation
