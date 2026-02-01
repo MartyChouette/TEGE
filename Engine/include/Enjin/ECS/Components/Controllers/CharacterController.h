@@ -27,6 +27,9 @@ struct CharacterControllerBase {
     // Gamepad settings
     f32 gamepadLookSensitivity = 2.0f;  // Right stick look speed
 
+    // Mouse look
+    bool disableMouseLook = false;      // Disable mouse/stick camera control
+
     // Grid/tile-based movement (alternative to free movement)
     bool gridMovement = false;          // Snap to grid cells instead of free movement
     f32 gridCellSize = 1.0f;            // Size of each grid cell in world units

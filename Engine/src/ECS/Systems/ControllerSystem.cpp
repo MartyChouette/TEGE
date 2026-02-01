@@ -689,22 +689,24 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     (void)entity;
 
     // Mouse look for camera orbit
-    // When mouse is captured (focus mode), orbit is always active.
-    // When not captured (editor), requires RMB hold.
-    if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
-        ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
-        ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
-        ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
-    }
-
-    // Gamepad right stick for camera orbit
-    if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
-        Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
-        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-            ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
-            ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+    if (!ctrl.disableMouseLook) {
+        // When mouse is captured (focus mode), orbit is always active.
+        // When not captured (editor), requires RMB hold.
+        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
+            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
+            ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
             ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
+        }
+
+        // Gamepad right stick for camera orbit
+        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+            Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
+            if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
+            }
         }
     }
 
@@ -862,29 +864,31 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     (void)entity;
 
     // Mouse look
-    if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
-        Math::Vector2 mouseDelta = Input::GetMouseDelta();
+    if (!ctrl.disableMouseLook) {
+        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
+            Math::Vector2 mouseDelta = Input::GetMouseDelta();
 
-        ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
-        if (ctrl.invertY) {
-            ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
-        } else {
-            ctrl.pitch += mouseDelta.y * ctrl.mouseSensitivity;
-        }
-        ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
-    }
-
-    // Gamepad right stick for look
-    if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
-        Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
-        if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-            ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+            ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
             if (ctrl.invertY) {
-                ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
             } else {
-                ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.pitch += mouseDelta.y * ctrl.mouseSensitivity;
             }
             ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
+        }
+
+        // Gamepad right stick for look
+        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+            Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
+            if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+                ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                if (ctrl.invertY) {
+                    ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                } else {
+                    ctrl.pitch += rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                }
+                ctrl.pitch = Math::Clamp(ctrl.pitch, ctrl.minPitch, ctrl.maxPitch);
+            }
         }
     }
 

@@ -10732,6 +10732,7 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Camera")) {
+            ImGui::Checkbox("Disable Mouse Look##tps", &ctrl->disableMouseLook);
             ImGui::DragFloat("Distance", &ctrl->cameraDistance, 0.1f, ctrl->cameraMinDistance, ctrl->cameraMaxDistance);
             ImGui::DragFloat("Height", &ctrl->cameraHeight, 0.1f, 0.0f, 10.0f);
             ImGui::DragFloat("Sensitivity", &ctrl->cameraSensitivity, 0.1f, 0.1f, 10.0f);
@@ -10803,6 +10804,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
         }
 
         if (ImGui::TreeNode("Mouse Look")) {
+            ImGui::Checkbox("Disable Mouse Look##fps", &ctrl->disableMouseLook);
             ImGui::DragFloat("Sensitivity", &ctrl->mouseSensitivity, 0.1f, 0.1f, 10.0f);
             ImGui::Checkbox("Invert Y", &ctrl->invertY);
             ImGui::DragFloat("Pitch", &ctrl->pitch, 1.0f, ctrl->minPitch, ctrl->maxPitch);
