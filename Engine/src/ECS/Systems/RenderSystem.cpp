@@ -114,6 +114,11 @@ void RenderSystem::Initialize() {
     CreateUniformBuffers();
     CreateDescriptorSets();
 
+    // Default active rendering target: main pass
+    m_ActiveDescriptorSets = &m_DescriptorSets;
+    m_ActiveUniformBuffers = &m_UniformBuffers;
+    m_ActiveLightingBuffers = &m_LightingBuffers;
+
     // Create default sphere mesh
     CreateDefaultMesh();
 
@@ -178,6 +183,12 @@ void RenderSystem::Shutdown() {
     m_LightingBuffers.clear();
     m_MaterialBuffers.clear();
     m_DescriptorSets.clear();
+    m_OffscreenUniformBuffers.clear();
+    m_OffscreenLightingBuffers.clear();
+    m_OffscreenDescriptorSets.clear();
+    m_ActiveDescriptorSets = nullptr;
+    m_ActiveUniformBuffers = nullptr;
+    m_ActiveLightingBuffers = nullptr;
 
     // Clean up weather, grass, shrub, and tree renderers
     m_WeatherRenderer.reset();
@@ -431,13 +442,22 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // render pass via sceneTarget->Begin(). We must NOT start another render pass here
     // (e.g. shadow pass). Water meshes and shadows are handled by Update() for the main pass.
 
-    // Temporarily swap the camera so UpdateUniformBuffer uses the game camera
+    // Temporarily swap the camera so UpdateFrameUniforms uses the game camera
     Renderer::Camera* prevCamera = m_Camera;
     m_Camera = camera;
+
+    // Switch to offscreen buffers and descriptor sets so the main pass
+    // doesn't overwrite the game-camera uniform data
+    m_ActiveDescriptorSets = &m_OffscreenDescriptorSets;
+    m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
+    m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
         m_Camera = prevCamera;
+        m_ActiveDescriptorSets = &m_DescriptorSets;
+        m_ActiveUniformBuffers = &m_UniformBuffers;
+        m_ActiveLightingBuffers = &m_LightingBuffers;
         return;
     }
 
@@ -446,7 +466,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
-    // Upload frame-level uniforms once (view/proj + lighting using swapped game camera)
+    // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
     UpdateFrameUniforms();
 
     // Set viewport and scissor to match render target size
@@ -481,10 +501,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Update per-entity material UBO
             UpdateMaterialBuffer(entity);
 
-            // Bind pipeline and descriptor set
+            // Bind pipeline and descriptor set (offscreen set with game camera UBOs)
             m_Pipeline->Bind(commandBuffer);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+                m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[currentFrame], 0, nullptr);
 
             // Re-set viewport/scissor (pipeline bind may reset dynamic state)
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -679,8 +699,11 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         }
     }
 
-    // Restore previous camera
+    // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
+    m_ActiveDescriptorSets = &m_DescriptorSets;
+    m_ActiveUniformBuffers = &m_UniformBuffers;
+    m_ActiveLightingBuffers = &m_LightingBuffers;
 }
 
 void RenderSystem::OnEntityAdded(Entity entity) {
@@ -813,6 +836,8 @@ void RenderSystem::CreateUniformBuffers() {
     m_UniformBuffers.resize(framesInFlight);
     m_LightingBuffers.resize(framesInFlight);
     m_MaterialBuffers.resize(framesInFlight);
+    m_OffscreenUniformBuffers.resize(framesInFlight);
+    m_OffscreenLightingBuffers.resize(framesInFlight);
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         // View/Projection uniform buffer (model matrix uses push constants now)
@@ -835,26 +860,40 @@ void RenderSystem::CreateUniformBuffers() {
             ENJIN_LOG_ERROR(Renderer, "Failed to create material buffer %u", i);
             return;
         }
+
+        // Offscreen (game view) uniform buffers — separate so main pass doesn't overwrite
+        m_OffscreenUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!m_OffscreenUniformBuffers[i]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen uniform buffer %u", i);
+            return;
+        }
+
+        m_OffscreenLightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+        if (!m_OffscreenLightingBuffers[i]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen lighting buffer %u", i);
+            return;
+        }
     }
 }
 
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
+    constexpr u32 totalSets = framesInFlight * 2; // main + offscreen
 
-    // Create descriptor pool (3 UBOs + 6 combined image samplers + 1 SSBO per frame)
+    // Create descriptor pool (3 UBOs + 6 combined image samplers + 1 SSBO per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    poolSizes[0].descriptorCount = framesInFlight * 3;
+    poolSizes[0].descriptorCount = totalSets * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = framesInFlight * 6;  // base color + shadow + height + normal + metallic-roughness + emissive
+    poolSizes[1].descriptorCount = totalSets * 6;  // base color + shadow + height + normal + metallic-roughness + emissive
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = framesInFlight * 1;  // bone matrices SSBO
+    poolSizes[2].descriptorCount = totalSets * 1;  // bone matrices SSBO
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
     poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
     poolInfo.pPoolSizes = poolSizes.data();
-    poolInfo.maxSets = framesInFlight;
+    poolInfo.maxSets = totalSets;
 
     VkResult result = vkCreateDescriptorPool(
         m_Renderer->GetContext()->GetDevice(), &poolInfo, nullptr, &m_DescriptorPool);
@@ -1036,6 +1075,99 @@ void RenderSystem::CreateDescriptorSets() {
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
+
+    // Allocate offscreen descriptor sets (same layout, different UBOs)
+    {
+        std::vector<VkDescriptorSetLayout> offscreenLayouts(framesInFlight, m_Pipeline->GetDescriptorSetLayout());
+        m_OffscreenDescriptorSets.resize(framesInFlight);
+
+        VkDescriptorSetAllocateInfo offAllocInfo{};
+        offAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        offAllocInfo.descriptorPool = m_DescriptorPool;
+        offAllocInfo.descriptorSetCount = framesInFlight;
+        offAllocInfo.pSetLayouts = offscreenLayouts.data();
+
+        result = vkAllocateDescriptorSets(
+            m_Renderer->GetContext()->GetDevice(), &offAllocInfo, m_OffscreenDescriptorSets.data());
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to allocate offscreen descriptor sets: %d", result);
+            return;
+        }
+
+        for (u32 i = 0; i < framesInFlight; ++i) {
+            std::array<VkDescriptorBufferInfo, 3> offBufInfos{};
+            offBufInfos[0].buffer = m_OffscreenUniformBuffers[i]->GetBuffer();
+            offBufInfos[0].offset = 0;
+            offBufInfos[0].range = sizeof(Renderer::UniformBufferObject);
+            offBufInfos[1].buffer = m_OffscreenLightingBuffers[i]->GetBuffer();
+            offBufInfos[1].offset = 0;
+            offBufInfos[1].range = sizeof(LightingUBO);
+            // Share the material buffer — it's written per-draw-call anyway
+            offBufInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
+            offBufInfos[2].offset = 0;
+            offBufInfos[2].range = sizeof(MaterialGPU);
+
+            VkDescriptorImageInfo offImageInfo{};
+            if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                offImageInfo = m_DefaultWhiteTexture->GetDescriptorInfo();
+            } else {
+                offImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                offImageInfo.imageView = VK_NULL_HANDLE;
+                offImageInfo.sampler = VK_NULL_HANDLE;
+            }
+            VkDescriptorImageInfo offShadowInfo{};
+            if (m_ShadowMap && m_ShadowsEnabled) {
+                offShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                offShadowInfo.imageView = m_ShadowMap->GetDepthImageView();
+                offShadowInfo.sampler = m_ShadowMap->GetShadowSampler();
+            } else {
+                offShadowInfo = offImageInfo;
+            }
+            VkDescriptorImageInfo offHeightInfo = offImageInfo;
+            VkDescriptorImageInfo offNormalInfo = offImageInfo;
+            VkDescriptorImageInfo offMetRoughInfo = offImageInfo;
+            VkDescriptorImageInfo offEmissiveInfo = offImageInfo;
+
+            VkDescriptorBufferInfo offBoneInfo{};
+            if (m_DefaultBoneBuffer) {
+                offBoneInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                offBoneInfo.offset = 0;
+                offBoneInfo.range = m_DefaultBoneBuffer->GetSize();
+            }
+
+            std::array<VkWriteDescriptorSet, 10> offWrites{};
+            for (u32 w = 0; w < 10; ++w) {
+                offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                offWrites[w].dstSet = m_OffscreenDescriptorSets[i];
+                offWrites[w].dstBinding = w;
+                offWrites[w].dstArrayElement = 0;
+                offWrites[w].descriptorCount = 1;
+            }
+            offWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            offWrites[0].pBufferInfo = &offBufInfos[0];
+            offWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            offWrites[1].pBufferInfo = &offBufInfos[1];
+            offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            offWrites[2].pBufferInfo = &offBufInfos[2];
+            offWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[3].pImageInfo = &offImageInfo;
+            offWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[4].pImageInfo = &offShadowInfo;
+            offWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[5].pImageInfo = &offHeightInfo;
+            offWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[6].pImageInfo = &offNormalInfo;
+            offWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+            offWrites[7].pBufferInfo = &offBoneInfo;
+            offWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[8].pImageInfo = &offMetRoughInfo;
+            offWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            offWrites[9].pImageInfo = &offEmissiveInfo;
+
+            vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+                static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
+        }
+    }
 }
 
 void RenderSystem::SetupEntityBuffers(Entity entity) {
@@ -1098,7 +1230,7 @@ void RenderSystem::UpdateFrameUniforms() {
     Renderer::UniformBufferObject ubo{};
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
-    m_UniformBuffers[currentFrame]->UploadData(&ubo, sizeof(ubo));
+    (*m_ActiveUniformBuffers)[currentFrame]->UploadData(&ubo, sizeof(ubo));
 
     // Update Lighting UBO with all lights in the scene
     LightingUBO lighting{};
@@ -1244,7 +1376,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, 0.0f);
     }
 
-    m_LightingBuffers[currentFrame]->UploadData(&lighting, sizeof(lighting));
+    (*m_ActiveLightingBuffers)[currentFrame]->UploadData(&lighting, sizeof(lighting));
 }
 
 void RenderSystem::UpdateMaterialBuffer(Entity entity) {
@@ -1695,7 +1827,7 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 3;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1716,7 +1848,7 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 5;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1737,7 +1869,7 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 6;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1755,7 +1887,7 @@ void RenderSystem::UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture)
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 8;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1773,7 +1905,7 @@ void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 9;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1795,7 +1927,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = m_DescriptorSets[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
     descriptorWrite.dstBinding = 7;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;

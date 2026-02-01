@@ -225,6 +225,17 @@ private:
     std::vector<VkDescriptorSet> m_DescriptorSets;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
 
+    // Offscreen (game view) uniform buffers + descriptor sets
+    // Separate from main pass so CPU writes don't overwrite each other
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_OffscreenUniformBuffers;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_OffscreenLightingBuffers;
+    std::vector<VkDescriptorSet> m_OffscreenDescriptorSets;
+
+    // Active rendering target pointers — swapped for offscreen passes
+    std::vector<VkDescriptorSet>* m_ActiveDescriptorSets = nullptr;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveUniformBuffers = nullptr;
+    std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveLightingBuffers = nullptr;
+
     // Per-entity render data
     std::unordered_map<Entity, EntityRenderData> m_EntityRenderData;
 
