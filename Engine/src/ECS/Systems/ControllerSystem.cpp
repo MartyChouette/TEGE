@@ -23,11 +23,11 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
                 fwd = fwd * (1.0f / fwdLen);
                 // Camera looks down -Z, so forward in camera space is -Z
                 // We need: rotation * (0,0,-1) = fwd => rotation * (0,0,1) = -fwd
-                Math::Vector3 right = up.Cross(fwd);
+                Math::Vector3 right = fwd.Cross(up);
                 f32 rightLen = right.Length();
                 if (rightLen > 1e-6f) {
                     right = right * (1.0f / rightLen);
-                    Math::Vector3 correctedUp = fwd.Cross(right);
+                    Math::Vector3 correctedUp = right.Cross(fwd);
                     // Convert rotation matrix to quaternion (Shepperd's method)
                     // Matrix columns: right, correctedUp, -forward (camera convention)
                     f32 m00 = right.x,        m01 = correctedUp.x, m02 = -fwd.x;

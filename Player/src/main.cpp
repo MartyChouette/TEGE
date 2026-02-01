@@ -6,6 +6,11 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
@@ -98,13 +103,11 @@ public:
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->Initialize();
 
-        // Load start scene from pack
-        if (!m_StartScene.empty()) {
-            LoadSceneFromPack(m_StartScene);
-        }
-
         // Initialize audio system
         Enjin::Audio::AudioManager::Get().Initialize();
+
+        // Show splash screen before loading game
+        SetupSplashScreen();
 
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Player initialized");
@@ -128,6 +131,40 @@ public:
 
     void Update(Enjin::f32 deltaTime) override {
         if (!m_Initialized) return;
+
+        // Splash screen phase
+        if (m_ShowingSplash) {
+            m_SplashTimer -= deltaTime;
+
+            // Fade in during first second
+            if (m_SplashTimer > m_SplashDuration - 1.0f) {
+                m_SplashAlpha = 1.0f - (m_SplashTimer - (m_SplashDuration - 1.0f));
+            }
+            // Fade out during last 0.5 seconds
+            else if (m_SplashTimer < 0.5f) {
+                m_SplashAlpha = m_SplashTimer / 0.5f;
+            } else {
+                m_SplashAlpha = 1.0f;
+            }
+
+            // Update splash text opacity
+            UpdateSplashAlpha();
+
+            // Skip on any key/click
+            if (m_SplashTimer < m_SplashDuration - 0.3f) {
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
+                    m_SplashTimer = 0.0f;
+                }
+            }
+
+            if (m_SplashTimer <= 0.0f) {
+                EndSplashScreen();
+            }
+            return;
+        }
 
         // Update audio
         Enjin::Audio::AudioManager::Get().Update();
@@ -206,6 +243,95 @@ public:
     }
 
 private:
+    void SetupSplashScreen() {
+        if (!m_World || !m_RenderSystem) return;
+
+        m_ShowingSplash = true;
+        m_SplashTimer = m_SplashDuration;
+        m_SplashAlpha = 0.0f;
+
+        // Dark background via skybox
+        Enjin::Renderer::SkyboxConfig splashSky;
+        splashSky.type = Enjin::Renderer::SkyboxType::SolidColor;
+        splashSky.solidColor = Enjin::Math::Vector3(0.04f, 0.04f, 0.06f);
+        m_RenderSystem->SetSkybox(splashSky);
+
+        // Camera looking at origin
+        if (m_Camera) {
+            m_Camera->SetPosition(Enjin::Math::Vector3(0.0f, 0.0f, 5.0f));
+            m_Camera->SetLookAt(
+                Enjin::Math::Vector3(0.0f, 0.0f, 5.0f),
+                Enjin::Math::Vector3(0.0f, 0.0f, 0.0f),
+                Enjin::Math::Vector3(0.0f, 1.0f, 0.0f));
+        }
+
+        // Title: "TEGE"
+        m_SplashTitleEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_SplashTitleEntity, "SplashTitle");
+        auto& titleTransform = m_World->AddComponent<Enjin::ECS::TransformComponent>(m_SplashTitleEntity);
+        titleTransform.position = Enjin::Math::Vector3(0.0f, 0.3f, 0.0f);
+        auto& titleText = m_World->AddComponent<Enjin::ECS::TextComponent>(m_SplashTitleEntity);
+        titleText.text = "TEGE";
+        titleText.fontSize = 72.0f;
+        titleText.textColor = Enjin::Math::Vector3(0.85f, 0.88f, 1.0f);
+
+        // Subtitle: "by marty64"
+        m_SplashSubEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_SplashSubEntity, "SplashSub");
+        auto& subTransform = m_World->AddComponent<Enjin::ECS::TransformComponent>(m_SplashSubEntity);
+        subTransform.position = Enjin::Math::Vector3(0.0f, -0.5f, 0.0f);
+        auto& subText = m_World->AddComponent<Enjin::ECS::TextComponent>(m_SplashSubEntity);
+        subText.text = "by marty64";
+        subText.fontSize = 28.0f;
+        subText.textColor = Enjin::Math::Vector3(0.5f, 0.52f, 0.6f);
+
+        // Light so text is visible
+        m_SplashLightEntity = m_World->CreateEntity();
+        m_World->AddComponent<Enjin::ECS::NameComponent>(m_SplashLightEntity, "SplashLight");
+        auto& lightTransform = m_World->AddComponent<Enjin::ECS::TransformComponent>(m_SplashLightEntity);
+        lightTransform.rotation = Enjin::Math::Quaternion(
+            Enjin::Math::Vector3(1, 0, 0), Enjin::Math::Radians(-30.0f));
+        auto& light = m_World->AddComponent<Enjin::ECS::LightComponent>(m_SplashLightEntity);
+        light.type = Enjin::ECS::LightType::Directional;
+        light.color = Enjin::Math::Vector3(1.0f, 1.0f, 1.0f);
+        light.intensity = 2.0f;
+
+        ENJIN_LOG_INFO(Player, "Splash screen displayed");
+    }
+
+    void UpdateSplashAlpha() {
+        if (!m_World) return;
+        auto* titleText = m_World->GetComponent<Enjin::ECS::TextComponent>(m_SplashTitleEntity);
+        auto* subText = m_World->GetComponent<Enjin::ECS::TextComponent>(m_SplashSubEntity);
+        if (titleText) {
+            titleText->textColor = Enjin::Math::Vector3(0.85f * m_SplashAlpha, 0.88f * m_SplashAlpha, 1.0f * m_SplashAlpha);
+        }
+        if (subText) {
+            subText->textColor = Enjin::Math::Vector3(0.5f * m_SplashAlpha, 0.52f * m_SplashAlpha, 0.6f * m_SplashAlpha);
+        }
+    }
+
+    void EndSplashScreen() {
+        m_ShowingSplash = false;
+
+        // Remove splash entities
+        if (m_World) {
+            m_World->DestroyEntity(m_SplashTitleEntity);
+            m_World->DestroyEntity(m_SplashSubEntity);
+            m_World->DestroyEntity(m_SplashLightEntity);
+        }
+        m_SplashTitleEntity = 0;
+        m_SplashSubEntity = 0;
+        m_SplashLightEntity = 0;
+
+        // Load the actual game scene
+        if (!m_StartScene.empty()) {
+            LoadSceneFromPack(m_StartScene);
+        }
+
+        ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
+    }
+
     bool LoadSceneFromPack(const std::string& scenePath) {
         auto sceneData = m_AssetReader.ReadFile(scenePath);
         if (sceneData.empty()) {
@@ -235,6 +361,15 @@ private:
     static constexpr const char* PACK_KEY = "enjin_default_pack_key_2025";
 
     bool m_Initialized = false;
+
+    // Splash screen
+    bool m_ShowingSplash = false;
+    Enjin::f32 m_SplashTimer = 0.0f;
+    Enjin::f32 m_SplashAlpha = 0.0f;
+    static constexpr Enjin::f32 m_SplashDuration = 3.0f;
+    Enjin::ECS::Entity m_SplashTitleEntity = 0;
+    Enjin::ECS::Entity m_SplashSubEntity = 0;
+    Enjin::ECS::Entity m_SplashLightEntity = 0;
 
     // Build manifest data
     std::string m_WindowTitle;

@@ -1964,7 +1964,6 @@ void EditorLayer::DrawMenuBar() {
         if (m_PlayMode.IsStopped()) {
             if (ImGui::Button(" > Play ")) {
                 m_PlayMode.Play();
-                m_FocusMode = true;  // Auto-enter focus mode when playing
             }
         } else if (m_PlayMode.IsPlaying()) {
             if (ImGui::Button(" || Pause ")) {
@@ -1973,7 +1972,6 @@ void EditorLayer::DrawMenuBar() {
         } else {  // Paused
             if (ImGui::Button(" > Resume ")) {
                 m_PlayMode.Resume();
-                m_FocusMode = true;  // Re-enter focus on resume
             }
         }
         ImGui::PopStyleColor();
@@ -5287,14 +5285,19 @@ void EditorLayer::DrawGameViewPanel() {
     // Set window to be larger by default for Game View
     ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
 
-    // Add a colored title bar when playing
+    // Add a colored title bar when playing, and lock the window so clicks go to the game
     bool isPlaying = m_PlayMode.IsPlaying();
+    bool isPlayActive = !m_PlayMode.IsStopped();
     if (isPlaying) {
         ImGui::PushStyleColor(ImGuiCol_TitleBg, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_TitleBgActive, ImVec4(0.3f, 0.7f, 0.3f, 1.0f));
     }
 
-    ImGui::Begin("Game View");
+    ImGuiWindowFlags gameViewFlags = 0;
+    if (isPlayActive) {
+        gameViewFlags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+    }
+    ImGui::Begin("Game View", nullptr, gameViewFlags);
 
     if (isPlaying) {
         ImGui::PopStyleColor(2);
@@ -6162,14 +6165,14 @@ void EditorLayer::DrawTemplateSelector() {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
 
         // Title
-        const char* title = "NEW PROJECT";
+        const char* title = "TEGE";
         ImVec2 titleSize = ImGui::CalcTextSize(title);
-        f32 titleScale = 2.0f;
-        ImVec2 titlePos(io.DisplaySize.x * 0.5f - titleSize.x * titleScale * 0.5f, 40.0f);
+        f32 titleScale = 3.0f;
+        ImVec2 titlePos(io.DisplaySize.x * 0.5f - titleSize.x * titleScale * 0.5f, 30.0f);
         drawList->AddText(nullptr, 14.0f * titleScale, titlePos,
             IM_COL32(200, 210, 255, 255), title);
 
-        const char* subtitle = "Choose a template to get started, or select a saved template";
+        const char* subtitle = "Choose a template to get started";
         ImVec2 subtitleSize = ImGui::CalcTextSize(subtitle);
         drawList->AddText(
             ImVec2(io.DisplaySize.x * 0.5f - subtitleSize.x * 0.5f, 40.0f + 14.0f * titleScale + 15.0f),
@@ -6209,9 +6212,9 @@ void EditorLayer::DrawTemplateSelector() {
         };
         int builtinCount = 22;
 
-        f32 cardW = 180.0f;
-        f32 cardH = 140.0f;
-        f32 cardPad = 15.0f;
+        f32 cardW = 345.0f;
+        f32 cardH = 240.0f;
+        f32 cardPad = 22.0f;
         f32 startY = 130.0f;
 
         // Calculate total cards per row
@@ -8864,11 +8867,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(petal, pname);
             auto& pt = m_World->AddComponent<ECS::TransformComponent>(petal);
             float angle = (float)i / (float)petalCount * 6.28318f;
-            float radius = 0.4f;
+            float radius = 0.6f;
             pt.position = Math::Vector3(std::cos(angle) * radius, petalHeight, std::sin(angle) * radius);
             pt.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), -angle)
                         * Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(30.0f));
-            pt.scale = Math::Vector3(0.25f, 0.05f, 0.15f);
+            pt.scale = Math::Vector3(0.5f, 0.08f, 0.3f);
             auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(petal);
             bool withered = (i % 4 == 0);
             if (withered) {
@@ -8904,9 +8907,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& lt = m_World->AddComponent<ECS::TransformComponent>(leaf);
             float height = 0.3f + (float)i * 0.3f;
             float side = (i % 2 == 0) ? 1.0f : -1.0f;
-            lt.position = Math::Vector3(side * 0.2f, height, 0.0f);
+            lt.position = Math::Vector3(side * 0.25f, height, 0.0f);
             lt.rotation = Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(side * 35.0f));
-            lt.scale = Math::Vector3(0.3f, 0.04f, 0.12f);
+            lt.scale = Math::Vector3(0.45f, 0.06f, 0.2f);
             auto& lmat = m_World->AddComponent<ECS::MaterialComponent>(leaf);
             bool witheredLeaf = (i % 3 == 0);
             lmat.baseColor = witheredLeaf ? Math::Vector3(0.5f, 0.4f, 0.15f) : Math::Vector3(0.2f, 0.55f, 0.15f);
@@ -8934,10 +8937,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ECS::Entity cam = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(cam, "Game Camera");
             auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
-            ct.position = Math::Vector3(3.0f, 2.5f, 3.0f);
-            // Look from (3, 2.5, 3) toward flower at origin
-            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-20.0f))
-                        * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(45.0f));
+            ct.position = Math::Vector3(2.0f, 2.5f, 2.0f);
+            // Look from (2, 2.5, 2) toward flower at origin — Qy(yaw) * Qx(pitch)
+            // to apply pitch in local frame (no roll/tilt)
+            ct.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(45.0f))
+                        * Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-25.0f));
             auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
             cc.fieldOfView = 50.0f;
             cc.nearPlane = 0.1f;

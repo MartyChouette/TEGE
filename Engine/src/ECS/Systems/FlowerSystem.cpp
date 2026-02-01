@@ -11,6 +11,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <cmath>
+#include <cfloat>
 #include <cstdio>
 
 namespace Enjin {
@@ -76,19 +77,46 @@ void FlowerSystem::ProcessInput() {
             f32 localX = (mousePos.x - m_ViewMinX) / viewW * static_cast<f32>(m_RTWidth);
             f32 localY = (mousePos.y - m_ViewMinY) / viewH * static_cast<f32>(m_RTHeight);
 
-            Entity hit = Editor::ScenePicker::PickEntity(m_World, &pickCamera,
-                                                         localX, localY,
-                                                         static_cast<f32>(m_RTWidth),
-                                                         static_cast<f32>(m_RTHeight));
+            Editor::Ray ray = Editor::ScenePicker::ScreenToRay(
+                &pickCamera, localX, localY,
+                static_cast<f32>(m_RTWidth), static_cast<f32>(m_RTHeight));
 
-            if (hit != INVALID_ENTITY && m_World->HasComponent<GrabbableComponent>(hit)) {
-                auto* grab = m_World->GetComponent<GrabbableComponent>(hit);
-                auto* hitTransform = m_World->GetComponent<TransformComponent>(hit);
+            // Pick only GrabbableComponent entities using sphere test (ignores ground)
+            Entity bestEntity = INVALID_ENTITY;
+            f32 bestDist = FLT_MAX;
+
+            for (Entity entity : m_World->GetAllEntities()) {
+                auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
+                if (!grab) continue;
+                auto* entTransform = m_World->GetComponent<TransformComponent>(entity);
+                if (!entTransform) continue;
+
+                // Ray-sphere test: use grabRadius as hit sphere size
+                Math::Vector3 oc = ray.origin - entTransform->position;
+                f32 r = grab->grabRadius;
+                f32 a = ray.direction.Dot(ray.direction);
+                f32 b = 2.0f * oc.Dot(ray.direction);
+                f32 c = oc.Dot(oc) - r * r;
+                f32 discriminant = b * b - 4.0f * a * c;
+
+                if (discriminant >= 0.0f) {
+                    f32 t = (-b - std::sqrt(discriminant)) / (2.0f * a);
+                    if (t < 0.0f) t = (-b + std::sqrt(discriminant)) / (2.0f * a);
+                    if (t >= 0.0f && t < bestDist) {
+                        bestDist = t;
+                        bestEntity = entity;
+                    }
+                }
+            }
+
+            if (bestEntity != INVALID_ENTITY) {
+                auto* grab = m_World->GetComponent<GrabbableComponent>(bestEntity);
+                auto* hitTransform = m_World->GetComponent<TransformComponent>(bestEntity);
                 if (grab && hitTransform) {
                     grab->isGrabbed = true;
                     grab->grabWorldPoint = hitTransform->position;
                     grab->cursorWorldPoint = hitTransform->position;
-                    m_GrabbedEntity = hit;
+                    m_GrabbedEntity = bestEntity;
 
                     // Compute grab depth (distance from camera to entity along camera forward)
                     Math::Vector3 toEntity = hitTransform->position - cameraTransform->position;
