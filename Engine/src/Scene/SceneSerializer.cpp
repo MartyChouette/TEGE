@@ -19,6 +19,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Logging/Log.h"
@@ -873,6 +874,52 @@ Accessibility::SceneContentFlags DeserializeContentFlags(const json& j) {
     return flags;
 }
 
+json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
+    json j;
+    j["clipPath"] = audio.clipPath;
+    j["volume"] = audio.volume;
+    j["pitch"] = audio.pitch;
+    j["minDistance"] = audio.minDistance;
+    j["maxDistance"] = audio.maxDistance;
+    j["playOnAwake"] = audio.playOnAwake;
+    j["loop"] = audio.loop;
+    j["is3D"] = audio.is3D;
+    j["spatialBlend"] = audio.spatialBlend;
+    j["rolloff"] = static_cast<u8>(audio.rolloff);
+    j["priority"] = audio.priority;
+    return j;
+}
+
+ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
+    ECS::AudioSourceComponent audio;
+    if (j.contains("clipPath")) audio.clipPath = j["clipPath"].get<std::string>();
+    if (j.contains("volume")) audio.volume = j["volume"].get<f32>();
+    if (j.contains("pitch")) audio.pitch = j["pitch"].get<f32>();
+    if (j.contains("minDistance")) audio.minDistance = j["minDistance"].get<f32>();
+    if (j.contains("maxDistance")) audio.maxDistance = j["maxDistance"].get<f32>();
+    if (j.contains("playOnAwake")) audio.playOnAwake = j["playOnAwake"].get<bool>();
+    if (j.contains("loop")) audio.loop = j["loop"].get<bool>();
+    if (j.contains("is3D")) audio.is3D = j["is3D"].get<bool>();
+    if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
+    if (j.contains("rolloff")) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(j["rolloff"].get<u8>());
+    if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
+    return audio;
+}
+
+json SerializeAudioListenerComponent(const ECS::AudioListenerComponent& listener) {
+    json j;
+    j["isActive"] = listener.isActive;
+    j["volumeScale"] = listener.volumeScale;
+    return j;
+}
+
+ECS::AudioListenerComponent DeserializeAudioListenerComponent(const json& j) {
+    ECS::AudioListenerComponent listener;
+    if (j.contains("isActive")) listener.isActive = j["isActive"].get<bool>();
+    if (j.contains("volumeScale")) listener.volumeScale = j["volumeScale"].get<f32>();
+    return listener;
+}
+
 } // anonymous namespace
 
 SceneSerializer::SceneSerializer(ECS::World* world)
@@ -1048,6 +1095,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 ikJson["smoothSpeed"] = ik->smoothSpeed;
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
+            }
+
+            // Audio Components
+            if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
+                const auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+                entityJson["audioSource"] = SerializeAudioSourceComponent(*audio);
+            }
+            if (m_World->HasComponent<ECS::AudioListenerComponent>(entity)) {
+                const auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
+                entityJson["audioListener"] = SerializeAudioListenerComponent(*listener);
             }
 
             entitiesArray.push_back(entityJson);
@@ -1335,6 +1392,16 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
             }
+
+            // Audio Components
+            if (entityJson.contains("audioSource")) {
+                auto audio = DeserializeAudioSourceComponent(entityJson["audioSource"]);
+                m_World->AddComponent<ECS::AudioSourceComponent>(entity, audio);
+            }
+            if (entityJson.contains("audioListener")) {
+                auto listener = DeserializeAudioListenerComponent(entityJson["audioListener"]);
+                m_World->AddComponent<ECS::AudioListenerComponent>(entity, listener);
+            }
         }
 
         result.success = true;
@@ -1501,6 +1568,16 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 ikJson["smoothSpeed"] = ik->smoothSpeed;
                 ikJson["interactionTag"] = ik->interactionTag;
                 entityJson["interactionIK"] = ikJson;
+            }
+
+            // Audio Components
+            if (m_World->HasComponent<ECS::AudioSourceComponent>(entity)) {
+                const auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+                entityJson["audioSource"] = SerializeAudioSourceComponent(*audio);
+            }
+            if (m_World->HasComponent<ECS::AudioListenerComponent>(entity)) {
+                const auto* listener = m_World->GetComponent<ECS::AudioListenerComponent>(entity);
+                entityJson["audioListener"] = SerializeAudioListenerComponent(*listener);
             }
 
             entitiesArray.push_back(entityJson);
@@ -1742,6 +1819,16 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (ikJson.contains("ikWeight")) ik.ikWeight = ikJson["ikWeight"].get<f32>();
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("interactionTag")) ik.interactionTag = ikJson["interactionTag"].get<std::string>();
+            }
+
+            // Audio Components
+            if (entityJson.contains("audioSource")) {
+                auto audio = DeserializeAudioSourceComponent(entityJson["audioSource"]);
+                m_World->AddComponent<ECS::AudioSourceComponent>(entity, audio);
+            }
+            if (entityJson.contains("audioListener")) {
+                auto listener = DeserializeAudioListenerComponent(entityJson["audioListener"]);
+                m_World->AddComponent<ECS::AudioListenerComponent>(entity, listener);
             }
         }
 

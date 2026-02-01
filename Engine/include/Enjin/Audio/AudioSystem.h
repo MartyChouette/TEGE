@@ -345,32 +345,6 @@ private:
 };
 
 // ============================================================================
-// Audio Component (for ECS)
-// ============================================================================
-
-struct AudioSourceComponent {
-    // Sound to play
-    std::string soundPath;
-    SoundHandle loadedSound = INVALID_SOUND;
-
-    // Playback settings
-    f32 volume = 1.0f;
-    f32 pitch = 1.0f;
-    bool loop = false;
-    bool playOnStart = false;
-    bool is3D = true;
-
-    // 3D settings
-    f32 minDistance = 1.0f;
-    f32 maxDistance = 50.0f;
-    AttenuationMode attenuation = AttenuationMode::InverseDistanceClamped;
-
-    // Runtime state
-    ChannelHandle currentChannel = INVALID_CHANNEL;
-    bool isPlaying = false;
-};
-
-// ============================================================================
 // Audio Utilities
 // ============================================================================
 

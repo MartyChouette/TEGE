@@ -33,6 +33,8 @@
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
+#include "Enjin/Build/BuildPipeline.h"
+#include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
@@ -375,6 +377,11 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update play mode
     m_PlayMode.Update(deltaTime);
+
+    // Update audio during play mode
+    if (!m_PlayMode.IsStopped()) {
+        Audio::AudioManager::Get().Update();
+    }
 
     // Safety net: release mouse capture if play mode stopped
     if (m_GameViewMouseCaptured && m_PlayMode.IsStopped()) {
@@ -1155,6 +1162,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::ShowDemoWindow(&m_ShowDemoWindow);
     }
 
+    // Build dialog
+    if (m_ShowBuildDialog) {
+        DrawBuildDialog();
+    }
+
     // Weather is now rendered per-camera in Game View panel only
     // (see DrawGameViewPanel for weather rendering)
 
@@ -1326,6 +1338,22 @@ void EditorLayer::DrawMenuBar() {
                 std::string path = FileDialog::OpenFile("Import Model", filters);
                 if (!path.empty()) {
                     ImportModel(path);
+                }
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Build Game...", "Ctrl+B")) {
+                m_ShowBuildDialog = true;
+                m_BuildFinished = false;
+                m_BuildInProgress = false;
+                m_BuildProgress = 0.0f;
+                m_BuildResult = Build::BuildResult{};
+                // Default output dir next to project
+                if (m_BuildConfig.outputDir.empty() && !m_SceneManager.GetProjectPath().empty()) {
+                    auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                    m_BuildConfig.outputDir = (projDir / "Build").string();
+                }
+                if (m_BuildConfig.windowTitle.empty()) {
+                    m_BuildConfig.windowTitle = m_SceneManager.GetProjectName();
                 }
             }
             ImGui::Separator();
@@ -11446,6 +11474,173 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
     while (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
         m_ConsoleLog.erase(m_ConsoleLog.begin());
     }
+}
+
+void EditorLayer::DrawBuildDialog() {
+    ImGui::SetNextWindowSize(ImVec2(550, 500), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Build Game", &m_ShowBuildDialog)) {
+        ImGui::End();
+        return;
+    }
+
+    bool hasProject = !m_SceneManager.GetProjectPath().empty();
+
+    if (!hasProject) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "No project loaded. Save a project first.");
+        ImGui::End();
+        return;
+    }
+
+    // --- Config section ---
+    ImGui::SeparatorText("Build Configuration");
+
+    // Output directory
+    static char outputDir[512] = {};
+    if (outputDir[0] == '\0' && !m_BuildConfig.outputDir.empty()) {
+        std::strncpy(outputDir, m_BuildConfig.outputDir.c_str(), sizeof(outputDir) - 1);
+    }
+    ImGui::InputText("Output Dir", outputDir, sizeof(outputDir));
+    ImGui::SameLine();
+    if (ImGui::Button("Browse##OutputDir")) {
+        std::vector<FileFilter> filters = {{ "All Files", "*.*" }};
+        std::string path = FileDialog::SaveFile("Select Output Directory", filters, "", "Build");
+        if (!path.empty()) {
+            // Use parent dir if user selected a file
+            auto p = std::filesystem::path(path);
+            if (p.has_extension()) p = p.parent_path();
+            std::strncpy(outputDir, p.string().c_str(), sizeof(outputDir) - 1);
+        }
+    }
+    m_BuildConfig.outputDir = outputDir;
+
+    // Window title
+    static char windowTitle[256] = {};
+    if (windowTitle[0] == '\0' && !m_BuildConfig.windowTitle.empty()) {
+        std::strncpy(windowTitle, m_BuildConfig.windowTitle.c_str(), sizeof(windowTitle) - 1);
+    }
+    ImGui::InputText("Window Title", windowTitle, sizeof(windowTitle));
+    m_BuildConfig.windowTitle = windowTitle;
+
+    // Resolution
+    int w = static_cast<int>(m_BuildConfig.windowWidth);
+    int h = static_cast<int>(m_BuildConfig.windowHeight);
+    ImGui::InputInt("Width", &w);
+    ImGui::InputInt("Height", &h);
+    if (w > 0) m_BuildConfig.windowWidth = static_cast<u32>(w);
+    if (h > 0) m_BuildConfig.windowHeight = static_cast<u32>(h);
+
+    ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
+
+    // Build key (optional)
+    static char buildKey[256] = {};
+    ImGui::InputText("Pack Key (optional)", buildKey, sizeof(buildKey),
+                     ImGuiInputTextFlags_Password);
+    m_BuildConfig.buildKey = buildKey;
+
+    ImGui::Spacing();
+
+    // Project info
+    ImGui::Text("Project: %s", m_SceneManager.GetProjectName().c_str());
+    ImGui::Text("Scenes: %zu", m_SceneManager.GetSceneCount());
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // --- Build button ---
+    bool canBuild = !m_BuildInProgress && !m_BuildConfig.outputDir.empty();
+    if (!canBuild) ImGui::BeginDisabled();
+    if (ImGui::Button("Build", ImVec2(120, 30))) {
+        m_BuildConfig.projectPath = m_SceneManager.GetProjectPath();
+        m_BuildInProgress = true;
+        m_BuildFinished = false;
+        m_BuildProgress = 0.0f;
+        m_BuildResult = Build::BuildResult{};
+
+        Build::BuildPipeline pipeline;
+        pipeline.SetProgressCallback([this](const std::string& phase, float progress) {
+            m_BuildProgressPhase = phase;
+            m_BuildProgress = progress;
+        });
+
+        m_BuildResult = pipeline.Execute(m_BuildConfig);
+        m_BuildInProgress = false;
+        m_BuildFinished = true;
+    }
+    if (!canBuild) ImGui::EndDisabled();
+
+    // Progress bar
+    if (m_BuildInProgress || m_BuildFinished) {
+        ImGui::SameLine();
+        if (m_BuildInProgress) {
+            ImGui::ProgressBar(m_BuildProgress, ImVec2(-1, 0),
+                               m_BuildProgressPhase.c_str());
+        } else if (m_BuildResult.success) {
+            ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.2f, 1.0f), "Build succeeded!");
+        } else {
+            ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "Build failed!");
+        }
+    }
+
+    // Open output folder button
+    if (m_BuildFinished && m_BuildResult.success) {
+        ImGui::SameLine();
+        if (ImGui::Button("Open Folder")) {
+#ifdef ENJIN_PLATFORM_WINDOWS
+            std::string cmd = "explorer \"" + m_BuildConfig.outputDir + "\"";
+            std::system(cmd.c_str());
+#elif defined(ENJIN_PLATFORM_MACOS)
+            std::string cmd = "open \"" + m_BuildConfig.outputDir + "\"";
+            std::system(cmd.c_str());
+#else
+            std::string cmd = "xdg-open \"" + m_BuildConfig.outputDir + "\"";
+            std::system(cmd.c_str());
+#endif
+        }
+    }
+
+    // --- Build log ---
+    if (m_BuildFinished && !m_BuildResult.messages.empty()) {
+        ImGui::Spacing();
+        ImGui::SeparatorText("Build Log");
+
+        ImGui::BeginChild("BuildLog", ImVec2(0, 0), ImGuiChildFlags_Borders);
+        for (const auto& msg : m_BuildResult.messages) {
+            ImVec4 color;
+            const char* prefix;
+            switch (msg.severity) {
+                case Build::MessageSeverity::Error:
+                    color = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+                    prefix = "[ERROR] ";
+                    break;
+                case Build::MessageSeverity::Warning:
+                    color = ImVec4(1.0f, 0.85f, 0.2f, 1.0f);
+                    prefix = "[WARN]  ";
+                    break;
+                default:
+                    color = ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+                    prefix = "[INFO]  ";
+                    break;
+            }
+            ImGui::TextColored(color, "%s%s", prefix, msg.text.c_str());
+        }
+
+        // Build stats
+        if (m_BuildResult.success) {
+            ImGui::Separator();
+            ImGui::Text("Files packed: %u", m_BuildResult.filesPacked);
+            ImGui::Text("Original size: %llu bytes", static_cast<unsigned long long>(m_BuildResult.totalSizeBytes));
+            ImGui::Text("Packed size: %llu bytes", static_cast<unsigned long long>(m_BuildResult.packedSizeBytes));
+        }
+
+        // Auto-scroll to bottom
+        if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+            ImGui::SetScrollHereY(1.0f);
+        }
+        ImGui::EndChild();
+    }
+
+    ImGui::End();
 }
 
 } // namespace Editor

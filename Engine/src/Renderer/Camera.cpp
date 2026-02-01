@@ -26,22 +26,25 @@ void Camera::SetLookAt(const Math::Vector3& eye, const Math::Vector3& center, co
     Math::Vector3 forward = (center - eye).Normalized();
     Math::Vector3 right = forward.Cross(up).Normalized();
     Math::Vector3 actualUp = right.Cross(forward);
-    
-    // Create rotation matrix from basis vectors
-    Math::Matrix4 rotationMat;
-    rotationMat.m[0] = right.x;
-    rotationMat.m[4] = right.y;
-    rotationMat.m[8] = right.z;
-    rotationMat.m[1] = actualUp.x;
-    rotationMat.m[5] = actualUp.y;
-    rotationMat.m[9] = actualUp.z;
-    rotationMat.m[2] = -forward.x;
-    rotationMat.m[6] = -forward.y;
-    rotationMat.m[10] = -forward.z;
-    
-    // Convert to quaternion (simplified - assumes pure rotation)
-    m_Rotation = Math::Quaternion::Identity(); // Simplified
-    m_ViewDirty = true;
+
+    // Build the view matrix directly from basis vectors (LookAt matrix)
+    // This is the standard OpenGL-style LookAt: rotation^T * translation
+    m_ViewMatrix = Math::Matrix4::Identity();
+    m_ViewMatrix.m[0]  = right.x;
+    m_ViewMatrix.m[4]  = right.y;
+    m_ViewMatrix.m[8]  = right.z;
+    m_ViewMatrix.m[1]  = actualUp.x;
+    m_ViewMatrix.m[5]  = actualUp.y;
+    m_ViewMatrix.m[9]  = actualUp.z;
+    m_ViewMatrix.m[2]  = -forward.x;
+    m_ViewMatrix.m[6]  = -forward.y;
+    m_ViewMatrix.m[10] = -forward.z;
+    // Translation component: dot products of basis with -eye
+    m_ViewMatrix.m[12] = -(right.x * eye.x + right.y * eye.y + right.z * eye.z);
+    m_ViewMatrix.m[13] = -(actualUp.x * eye.x + actualUp.y * eye.y + actualUp.z * eye.z);
+    m_ViewMatrix.m[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
+
+    m_ViewDirty = false; // Already computed
 }
 
 void Camera::SetPerspective(f32 fov, f32 aspect, f32 nearPlane, f32 farPlane) {

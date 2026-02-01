@@ -30,6 +30,15 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(assimp)
 
+# Fetch miniaudio (header-only, public domain audio library)
+FetchContent_Declare(
+    miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG 0.11.21
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(miniaudio)
+
 # Engine library - Rendering, ECS, Asset system, etc.
 file(GLOB_RECURSE ENGINE_SOURCES
     "src/**/*.cpp"
@@ -42,6 +51,7 @@ add_library(EnjinEngine STATIC ${ENGINE_SOURCES})
 target_include_directories(EnjinEngine PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
     $<INSTALL_INTERFACE:include>
+    $<BUILD_INTERFACE:${miniaudio_SOURCE_DIR}>
 )
 
 target_link_libraries(EnjinEngine PUBLIC

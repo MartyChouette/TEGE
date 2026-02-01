@@ -7,6 +7,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Audio/AudioSystem.h"
 #include <iostream>
 #include <memory>
 #if !defined(_WIN32)
@@ -65,11 +66,16 @@ public:
             m_EditorLayer->SetRenderSystem(m_RenderSystem);
         }
 
+        // Initialize audio system
+        Enjin::Audio::AudioManager::Get().Initialize();
+
         ENJIN_LOG_INFO(Editor, "Editor initialized - Use RMB + WASD to fly, scroll to adjust speed");
     }
 
     void Shutdown() override {
         ENJIN_LOG_INFO(Editor, "Enjin Editor shutting down...");
+
+        Enjin::Audio::AudioManager::Get().Shutdown();
 
         if (m_EditorLayer) {
             m_EditorLayer->Shutdown();

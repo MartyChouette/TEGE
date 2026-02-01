@@ -1,4 +1,5 @@
 #include "Enjin/Audio/AudioSystem.h"
+#include "Enjin/Audio/MiniaudioBackend.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
 #include <algorithm>
@@ -313,7 +314,7 @@ bool AudioManager::Initialize(std::unique_ptr<IAudioBackend> backend) {
     if (backend) {
         m_Backend = std::move(backend);
     } else {
-        m_Backend = std::make_unique<SimpleAudioBackend>();
+        m_Backend = std::make_unique<MiniaudioBackend>();
     }
 
     if (!m_Backend->Initialize()) {
