@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -387,19 +388,103 @@ void RenderSystem::Update(f32 deltaTime) {
     // Begin the main render pass (after any pre-passes like shadows)
     m_Renderer->BeginMainRenderPass();
 
-    // Render skybox first (behind all geometry)
-    {
-        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
-        if (cmd != VK_NULL_HANDLE) {
-            RenderSkybox(cmd);
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Splitscreen main pass: render each viewport separately
+    if (!m_MainPassViewports.empty()) {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+        Renderer::Camera* prevCamera = m_Camera;
+
+        // Switch to offscreen buffers for per-viewport uniform isolation
+        m_ActiveDescriptorSets = &m_OffscreenDescriptorSets;
+        m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
+        m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
+        m_OffscreenMode = true;
+
+        u32 viewportCount = static_cast<u32>(m_MainPassViewports.size());
+        if (viewportCount > MAX_SPLITSCREEN_VIEWPORTS) viewportCount = MAX_SPLITSCREEN_VIEWPORTS;
+
+        for (u32 v = 0; v < viewportCount; ++v) {
+            const ViewportCamera& vc = m_MainPassViewports[v];
+            m_CurrentViewportIndex = v;
+
+            auto* cameraComp = m_World->GetComponent<CameraComponent>(vc.entity);
+            auto* cameraTransform = m_World->GetComponent<TransformComponent>(vc.entity);
+            if (!cameraComp || !cameraTransform) continue;
+
+            Renderer::Camera viewCamera;
+            f32 pixelW = vc.viewportWidth * static_cast<f32>(extent.width);
+            f32 pixelH = vc.viewportHeight * static_cast<f32>(extent.height);
+            f32 aspect = (pixelH > 0.0f) ? (pixelW / pixelH) : 1.0f;
+
+            if (cameraComp->projectionType == ProjectionType::Perspective) {
+                viewCamera.SetPerspective(cameraComp->fieldOfView, aspect,
+                                           cameraComp->nearPlane, cameraComp->farPlane);
+            } else {
+                f32 halfH = cameraComp->orthoSize;
+                f32 halfW = halfH * aspect;
+                viewCamera.SetOrthographic(-halfW, halfW, -halfH, halfH,
+                                            cameraComp->nearPlane, cameraComp->farPlane);
+            }
+
+            viewCamera.SetPosition(cameraTransform->position);
+            Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+            Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+            viewCamera.SetLookAt(cameraTransform->position, cameraTransform->position + forward, up);
+
+            m_Camera = &viewCamera;
+            UpdateFrameUniforms();
+
+            VkViewport vkViewport{};
+            vkViewport.x = vc.viewportX * static_cast<f32>(extent.width);
+            vkViewport.y = vc.viewportY * static_cast<f32>(extent.height);
+            vkViewport.width = pixelW;
+            vkViewport.height = pixelH;
+            vkViewport.minDepth = 0.0f;
+            vkViewport.maxDepth = 1.0f;
+            vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
+
+            VkRect2D scissor{};
+            scissor.offset = { static_cast<i32>(vkViewport.x), static_cast<i32>(vkViewport.y) };
+            scissor.extent = { static_cast<u32>(pixelW), static_cast<u32>(pixelH) };
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            RenderSkybox(commandBuffer);
+
+            m_Pipeline->Bind(commandBuffer);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1,
+                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+            vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            const auto& entities = m_World->GetAllEntities();
+            for (Entity entity : entities) {
+                if (m_World->HasComponent<TransformComponent>(entity) &&
+                    m_World->HasComponent<MeshComponent>(entity)) {
+                    RenderEntity(entity);
+                }
+            }
         }
+
+        m_Camera = prevCamera;
+        m_ActiveDescriptorSets = &m_DescriptorSets;
+        m_ActiveUniformBuffers = &m_UniformBuffers;
+        m_ActiveLightingBuffers = &m_LightingBuffers;
+        m_OffscreenMode = false;
+        m_CurrentViewportIndex = 0;
+        return;
     }
+
+    // Single-camera main pass (default)
+
+    // Render skybox first (behind all geometry)
+    RenderSkybox(commandBuffer);
 
     // Upload frame-level uniforms once (view/proj + lighting)
     UpdateFrameUniforms();
-
-    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
-    if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
@@ -451,6 +536,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     m_ActiveDescriptorSets = &m_OffscreenDescriptorSets;
     m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
     m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
+    m_OffscreenMode = true;
+    m_CurrentViewportIndex = 0;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) {
@@ -458,6 +545,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         m_ActiveDescriptorSets = &m_DescriptorSets;
         m_ActiveUniformBuffers = &m_UniformBuffers;
         m_ActiveLightingBuffers = &m_LightingBuffers;
+        m_OffscreenMode = false;
         return;
     }
 
@@ -504,7 +592,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Bind pipeline and descriptor set (offscreen set with game camera UBOs)
             m_Pipeline->Bind(commandBuffer);
             vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[currentFrame], 0, nullptr);
+                m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
 
             // Re-set viewport/scissor (pipeline bind may reset dynamic state)
             vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
@@ -704,6 +792,311 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     m_ActiveDescriptorSets = &m_DescriptorSets;
     m_ActiveUniformBuffers = &m_UniformBuffers;
     m_ActiveLightingBuffers = &m_LightingBuffers;
+    m_OffscreenMode = false;
+    m_CurrentViewportIndex = 0;
+}
+
+void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::vector<ViewportCamera>& viewports) {
+    if (!target || !target->IsValid() || viewports.empty() || !m_Renderer || !m_Initialized || !m_Pipeline) {
+        return;
+    }
+
+    u32 viewportCount = static_cast<u32>(viewports.size());
+    if (viewportCount > MAX_SPLITSCREEN_VIEWPORTS) {
+        viewportCount = MAX_SPLITSCREEN_VIEWPORTS;
+    }
+
+    Renderer::Camera* prevCamera = m_Camera;
+
+    // Switch to offscreen buffers
+    m_ActiveDescriptorSets = &m_OffscreenDescriptorSets;
+    m_ActiveUniformBuffers = &m_OffscreenUniformBuffers;
+    m_ActiveLightingBuffers = &m_OffscreenLightingBuffers;
+    m_OffscreenMode = true;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) {
+        m_Camera = prevCamera;
+        m_ActiveDescriptorSets = &m_DescriptorSets;
+        m_ActiveUniformBuffers = &m_UniformBuffers;
+        m_ActiveLightingBuffers = &m_LightingBuffers;
+        m_OffscreenMode = false;
+        return;
+    }
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    u32 targetW = target->GetWidth();
+    u32 targetH = target->GetHeight();
+
+    for (u32 v = 0; v < viewportCount; ++v) {
+        const ViewportCamera& vc = viewports[v];
+        m_CurrentViewportIndex = v;
+
+        // Build a Camera from the entity's CameraComponent + TransformComponent
+        auto* cameraComp = m_World->GetComponent<CameraComponent>(vc.entity);
+        auto* cameraTransform = m_World->GetComponent<TransformComponent>(vc.entity);
+        if (!cameraComp || !cameraTransform) continue;
+
+        Renderer::Camera viewCamera;
+        f32 pixelW = vc.viewportWidth * static_cast<f32>(targetW);
+        f32 pixelH = vc.viewportHeight * static_cast<f32>(targetH);
+        f32 aspect = (pixelH > 0.0f) ? (pixelW / pixelH) : 1.0f;
+
+        if (cameraComp->projectionType == ProjectionType::Perspective) {
+            viewCamera.SetPerspective(cameraComp->fieldOfView, aspect,
+                                       cameraComp->nearPlane, cameraComp->farPlane);
+        } else {
+            f32 halfH = cameraComp->orthoSize;
+            f32 halfW = halfH * aspect;
+            viewCamera.SetOrthographic(-halfW, halfW, -halfH, halfH,
+                                        cameraComp->nearPlane, cameraComp->farPlane);
+        }
+
+        viewCamera.SetPosition(cameraTransform->position);
+        Math::Vector3 forward = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+        Math::Vector3 up = cameraTransform->rotation.Rotate(Math::Vector3(0.0f, 1.0f, 0.0f));
+        Math::Vector3 lookTarget = cameraTransform->position + forward;
+        viewCamera.SetLookAt(cameraTransform->position, lookTarget, up);
+
+        m_Camera = &viewCamera;
+
+        // Upload frame-level uniforms to this viewport's offscreen buffers
+        UpdateFrameUniforms();
+
+        // Compute pixel viewport rect
+        VkViewport vkViewport{};
+        vkViewport.x = vc.viewportX * static_cast<f32>(targetW);
+        vkViewport.y = vc.viewportY * static_cast<f32>(targetH);
+        vkViewport.width = pixelW;
+        vkViewport.height = pixelH;
+        vkViewport.minDepth = 0.0f;
+        vkViewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
+
+        VkRect2D scissor{};
+        scissor.offset = { static_cast<i32>(vkViewport.x), static_cast<i32>(vkViewport.y) };
+        scissor.extent = { static_cast<u32>(pixelW), static_cast<u32>(pixelH) };
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        // Render skybox for this viewport
+        RenderSkybox(commandBuffer);
+
+        // Render all entities
+        const auto& entities = m_World->GetAllEntities();
+        for (Entity entity : entities) {
+            if (!m_World->HasComponent<TransformComponent>(entity) ||
+                !m_World->HasComponent<MeshComponent>(entity)) {
+                continue;
+            }
+
+            auto it = m_EntityRenderData.find(entity);
+            if (it == m_EntityRenderData.end()) {
+                SetupEntityBuffers(entity);
+                it = m_EntityRenderData.find(entity);
+                if (it == m_EntityRenderData.end()) continue;
+            }
+            EntityRenderData& renderData = it->second;
+
+            UpdateMaterialBuffer(entity);
+
+            m_Pipeline->Bind(commandBuffer);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1,
+                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+
+            // Restore viewport/scissor after pipeline bind
+            vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            // Build push constants (same logic as RenderToTarget)
+            TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
+            Renderer::PushConstants pushConstants{};
+            pushConstants.model = transform->ToMatrix();
+
+            MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+            Renderer::Texture* boundTexture = nullptr;
+
+            if (material) {
+                pushConstants.baseColor = material->baseColor;
+                pushConstants.metallic = material->metallic;
+                pushConstants.emissiveColor = material->emissiveColor;
+                pushConstants.roughness = material->roughness;
+                pushConstants.emissiveStrength = material->emissiveStrength;
+                pushConstants.opacity = material->opacity;
+                pushConstants.alphaCutoff = material->alphaCutoff;
+
+                if (!material->baseColorTexturePath.empty()) {
+                    auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+                    if (tex && tex->IsValid()) {
+                        boundTexture = tex.get();
+                        material->baseColorTexture = 1;
+                    }
+                }
+
+                pushConstants.flags = 0;
+                if (material->doubleSided) pushConstants.flags |= 1;
+                if (material->castShadows) pushConstants.flags |= 2;
+                if (material->receiveShadows) pushConstants.flags |= 4;
+                pushConstants.flags |= (static_cast<i32>(material->alphaMode) << 8);
+                if (boundTexture != nullptr) pushConstants.flags |= (1 << 16);
+                if (material->normalTexture >= 0) pushConstants.flags |= (1 << 17);
+                if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
+                if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
+                if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
+                if (material->flatShading) pushConstants.flags |= (1 << 20);
+                if (material->affineTexturing) pushConstants.flags |= (1 << 21);
+                if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
+                if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+                pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+                pushConstants.parallaxScale = material->parallaxScale;
+            } else {
+                pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+                pushConstants.metallic = 0.0f;
+                pushConstants.emissiveColor = Math::Vector3(0.0f);
+                pushConstants.roughness = 0.5f;
+                pushConstants.emissiveStrength = 0.0f;
+                pushConstants.opacity = 1.0f;
+                pushConstants.alphaCutoff = 0.5f;
+                pushConstants.flags = 0;
+                pushConstants.parallaxScale = 0.0f;
+            }
+
+            VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
+            if (vegComp) {
+                pushConstants.flags |= (1 << 4);
+            }
+
+            WaterVolumeComponent* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
+            if (waterVol) {
+                pushConstants.flags |= (1 << 5);
+                pushConstants.parallaxScale = waterVol->freezeProgress;
+                if (m_RainActive && waterVol->freezeProgress < 0.5f) {
+                    pushConstants.flags |= (1 << 6);
+                }
+                if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
+                    pushConstants.flags |= (1 << 7);
+                    pushConstants.shoreWidth = waterVol->shoreWidth;
+                    pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
+                    pushConstants.foamScale = waterVol->foamScale;
+                }
+                if (waterVol->waterType == WaterType::Ocean) {
+                    pushConstants.flags |= (1 << 11);
+                }
+                f32 fp = waterVol->freezeProgress;
+                pushConstants.baseColor = Math::Vector3(
+                    pushConstants.baseColor.x * (1.0f - fp) + waterVol->iceColor.x * fp,
+                    pushConstants.baseColor.y * (1.0f - fp) + waterVol->iceColor.y * fp,
+                    pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
+                );
+                pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+            }
+
+            // Text rendering
+            TextComponent* textComp = m_World->GetComponent<TextComponent>(entity);
+            if (textComp && textComp->dirty && !textComp->fontPath.empty() && !textComp->text.empty()) {
+                auto pixels = m_TextRasterizer.Rasterize(*textComp);
+                if (!pixels.empty()) {
+                    auto textTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+                    if (textTex->CreateFromData(pixels.data(), textComp->textureWidth, textComp->textureHeight, 4)) {
+                        m_TextTextureCache[entity] = textTex;
+                    }
+                }
+                textComp->dirty = false;
+            }
+            auto textTexIt = m_TextTextureCache.find(entity);
+            if (textComp && textTexIt != m_TextTextureCache.end() && textTexIt->second && textTexIt->second->IsValid()) {
+                boundTexture = textTexIt->second.get();
+                pushConstants.flags |= (1 << 16);
+            }
+
+            if (boundTexture) {
+                UpdateTextureDescriptor(boundTexture);
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            if (material && !material->heightTexturePath.empty()) {
+                auto heightTex = GetOrLoadTexture(material->heightTexturePath);
+                if (heightTex && heightTex->IsValid()) {
+                    material->heightTexture = 1;
+                    UpdateHeightTextureDescriptor(heightTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateHeightTextureDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            if (material && !material->normalTexturePath.empty()) {
+                auto normalTex = GetOrLoadTexture(material->normalTexturePath);
+                if (normalTex && normalTex->IsValid()) {
+                    material->normalTexture = 1;
+                    UpdateNormalMapDescriptor(normalTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            if (material && !material->metallicRoughnessTexturePath.empty()) {
+                auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                if (mrTex && mrTex->IsValid()) {
+                    material->metallicRoughnessTexture = 1;
+                    UpdateMetallicRoughnessDescriptor(mrTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            if (material && !material->emissiveTexturePath.empty()) {
+                auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
+                if (emissiveTex && emissiveTex->IsValid()) {
+                    material->emissiveTexture = 1;
+                    UpdateEmissiveDescriptor(emissiveTex.get());
+                }
+            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
+            }
+
+            // Upload bone matrices for skinned meshes
+            AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
+            if (animComp && renderData.boneBuffer && animComp->animator.IsPlaying()) {
+                const auto& skinningMatrices = animComp->animator.GetSkinningMatrices();
+                if (!skinningMatrices.empty()) {
+                    renderData.boneBuffer->UploadData(skinningMatrices.data(),
+                        skinningMatrices.size() * sizeof(Math::Matrix4));
+                    UpdateBoneDescriptor(renderData.boneBuffer.get());
+                    pushConstants.flags |= (1 << 3);
+                }
+            } else {
+                if (m_DefaultBoneBuffer) {
+                    UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+                }
+            }
+
+            vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                sizeof(Renderer::PushConstants), &pushConstants);
+
+            VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            m_DrawCallCount++;
+            m_TriangleCount += renderData.indexCount / 3;
+        }
+
+        // Render effects for this viewport
+        RenderGrass(targetW, targetH);
+        RenderShrubs(targetW, targetH);
+        RenderTrees(targetW, targetH);
+    }
+
+    // Restore main pass state
+    m_Camera = prevCamera;
+    m_ActiveDescriptorSets = &m_DescriptorSets;
+    m_ActiveUniformBuffers = &m_UniformBuffers;
+    m_ActiveLightingBuffers = &m_LightingBuffers;
+    m_OffscreenMode = false;
+    m_CurrentViewportIndex = 0;
 }
 
 void RenderSystem::OnEntityAdded(Entity entity) {
@@ -832,12 +1225,13 @@ void RenderSystem::RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 ver
 
 void RenderSystem::CreateUniformBuffers() {
     constexpr u32 framesInFlight = 2;
+    const u32 offscreenCount = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
 
     m_UniformBuffers.resize(framesInFlight);
     m_LightingBuffers.resize(framesInFlight);
     m_MaterialBuffers.resize(framesInFlight);
-    m_OffscreenUniformBuffers.resize(framesInFlight);
-    m_OffscreenLightingBuffers.resize(framesInFlight);
+    m_OffscreenUniformBuffers.resize(offscreenCount);
+    m_OffscreenLightingBuffers.resize(offscreenCount);
 
     for (u32 i = 0; i < framesInFlight; ++i) {
         // View/Projection uniform buffer (model matrix uses push constants now)
@@ -861,24 +1255,29 @@ void RenderSystem::CreateUniformBuffers() {
             return;
         }
 
-        // Offscreen (game view) uniform buffers — separate so main pass doesn't overwrite
-        m_OffscreenUniformBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-        if (!m_OffscreenUniformBuffers[i]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
-            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen uniform buffer %u", i);
-            return;
-        }
+        // Offscreen (game view) uniform buffers — one per viewport per frame for splitscreen
+        for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
+            u32 idx = GetOffscreenBufferIndex(i, v);
 
-        m_OffscreenLightingBuffers[i] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-        if (!m_OffscreenLightingBuffers[i]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
-            ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen lighting buffer %u", i);
-            return;
+            m_OffscreenUniformBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            if (!m_OffscreenUniformBuffers[idx]->Create(sizeof(Renderer::UniformBufferObject), Renderer::BufferUsage::Uniform, true)) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen uniform buffer %u (viewport %u)", i, v);
+                return;
+            }
+
+            m_OffscreenLightingBuffers[idx] = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+            if (!m_OffscreenLightingBuffers[idx]->Create(sizeof(LightingUBO), Renderer::BufferUsage::Uniform, true)) {
+                ENJIN_LOG_ERROR(Renderer, "Failed to create offscreen lighting buffer %u (viewport %u)", i, v);
+                return;
+            }
         }
     }
 }
 
 void RenderSystem::CreateDescriptorSets() {
     constexpr u32 framesInFlight = 2;
-    constexpr u32 totalSets = framesInFlight * 2; // main + offscreen
+    const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
+    const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
     // Create descriptor pool (3 UBOs + 6 combined image samplers + 1 SSBO per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
@@ -1076,15 +1475,15 @@ void RenderSystem::CreateDescriptorSets() {
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
 
-    // Allocate offscreen descriptor sets (same layout, different UBOs)
+    // Allocate offscreen descriptor sets (one per viewport per frame for splitscreen)
     {
-        std::vector<VkDescriptorSetLayout> offscreenLayouts(framesInFlight, m_Pipeline->GetDescriptorSetLayout());
-        m_OffscreenDescriptorSets.resize(framesInFlight);
+        std::vector<VkDescriptorSetLayout> offscreenLayouts(offscreenSets, m_Pipeline->GetDescriptorSetLayout());
+        m_OffscreenDescriptorSets.resize(offscreenSets);
 
         VkDescriptorSetAllocateInfo offAllocInfo{};
         offAllocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         offAllocInfo.descriptorPool = m_DescriptorPool;
-        offAllocInfo.descriptorSetCount = framesInFlight;
+        offAllocInfo.descriptorSetCount = offscreenSets;
         offAllocInfo.pSetLayouts = offscreenLayouts.data();
 
         result = vkAllocateDescriptorSets(
@@ -1095,77 +1494,81 @@ void RenderSystem::CreateDescriptorSets() {
         }
 
         for (u32 i = 0; i < framesInFlight; ++i) {
-            std::array<VkDescriptorBufferInfo, 3> offBufInfos{};
-            offBufInfos[0].buffer = m_OffscreenUniformBuffers[i]->GetBuffer();
-            offBufInfos[0].offset = 0;
-            offBufInfos[0].range = sizeof(Renderer::UniformBufferObject);
-            offBufInfos[1].buffer = m_OffscreenLightingBuffers[i]->GetBuffer();
-            offBufInfos[1].offset = 0;
-            offBufInfos[1].range = sizeof(LightingUBO);
-            // Share the material buffer — it's written per-draw-call anyway
-            offBufInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
-            offBufInfos[2].offset = 0;
-            offBufInfos[2].range = sizeof(MaterialGPU);
+            for (u32 v = 0; v < MAX_SPLITSCREEN_VIEWPORTS; ++v) {
+                u32 idx = GetOffscreenBufferIndex(i, v);
 
-            VkDescriptorImageInfo offImageInfo{};
-            if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                offImageInfo = m_DefaultWhiteTexture->GetDescriptorInfo();
-            } else {
-                offImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                offImageInfo.imageView = VK_NULL_HANDLE;
-                offImageInfo.sampler = VK_NULL_HANDLE;
-            }
-            VkDescriptorImageInfo offShadowInfo{};
-            if (m_ShadowMap && m_ShadowsEnabled) {
-                offShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                offShadowInfo.imageView = m_ShadowMap->GetDepthImageView();
-                offShadowInfo.sampler = m_ShadowMap->GetShadowSampler();
-            } else {
-                offShadowInfo = offImageInfo;
-            }
-            VkDescriptorImageInfo offHeightInfo = offImageInfo;
-            VkDescriptorImageInfo offNormalInfo = offImageInfo;
-            VkDescriptorImageInfo offMetRoughInfo = offImageInfo;
-            VkDescriptorImageInfo offEmissiveInfo = offImageInfo;
+                std::array<VkDescriptorBufferInfo, 3> offBufInfos{};
+                offBufInfos[0].buffer = m_OffscreenUniformBuffers[idx]->GetBuffer();
+                offBufInfos[0].offset = 0;
+                offBufInfos[0].range = sizeof(Renderer::UniformBufferObject);
+                offBufInfos[1].buffer = m_OffscreenLightingBuffers[idx]->GetBuffer();
+                offBufInfos[1].offset = 0;
+                offBufInfos[1].range = sizeof(LightingUBO);
+                // Share the material buffer — it's written per-draw-call anyway
+                offBufInfos[2].buffer = m_MaterialBuffers[i]->GetBuffer();
+                offBufInfos[2].offset = 0;
+                offBufInfos[2].range = sizeof(MaterialGPU);
 
-            VkDescriptorBufferInfo offBoneInfo{};
-            if (m_DefaultBoneBuffer) {
-                offBoneInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
-                offBoneInfo.offset = 0;
-                offBoneInfo.range = m_DefaultBoneBuffer->GetSize();
-            }
+                VkDescriptorImageInfo offImageInfo{};
+                if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                    offImageInfo = m_DefaultWhiteTexture->GetDescriptorInfo();
+                } else {
+                    offImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+                    offImageInfo.imageView = VK_NULL_HANDLE;
+                    offImageInfo.sampler = VK_NULL_HANDLE;
+                }
+                VkDescriptorImageInfo offShadowInfo{};
+                if (m_ShadowMap && m_ShadowsEnabled) {
+                    offShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    offShadowInfo.imageView = m_ShadowMap->GetDepthImageView();
+                    offShadowInfo.sampler = m_ShadowMap->GetShadowSampler();
+                } else {
+                    offShadowInfo = offImageInfo;
+                }
+                VkDescriptorImageInfo offHeightInfo = offImageInfo;
+                VkDescriptorImageInfo offNormalInfo = offImageInfo;
+                VkDescriptorImageInfo offMetRoughInfo = offImageInfo;
+                VkDescriptorImageInfo offEmissiveInfo = offImageInfo;
 
-            std::array<VkWriteDescriptorSet, 10> offWrites{};
-            for (u32 w = 0; w < 10; ++w) {
-                offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-                offWrites[w].dstSet = m_OffscreenDescriptorSets[i];
-                offWrites[w].dstBinding = w;
-                offWrites[w].dstArrayElement = 0;
-                offWrites[w].descriptorCount = 1;
-            }
-            offWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            offWrites[0].pBufferInfo = &offBufInfos[0];
-            offWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            offWrites[1].pBufferInfo = &offBufInfos[1];
-            offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            offWrites[2].pBufferInfo = &offBufInfos[2];
-            offWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[3].pImageInfo = &offImageInfo;
-            offWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[4].pImageInfo = &offShadowInfo;
-            offWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[5].pImageInfo = &offHeightInfo;
-            offWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[6].pImageInfo = &offNormalInfo;
-            offWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-            offWrites[7].pBufferInfo = &offBoneInfo;
-            offWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[8].pImageInfo = &offMetRoughInfo;
-            offWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            offWrites[9].pImageInfo = &offEmissiveInfo;
+                VkDescriptorBufferInfo offBoneInfo{};
+                if (m_DefaultBoneBuffer) {
+                    offBoneInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offBoneInfo.offset = 0;
+                    offBoneInfo.range = m_DefaultBoneBuffer->GetSize();
+                }
 
-            vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
-                static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
+                std::array<VkWriteDescriptorSet, 10> offWrites{};
+                for (u32 w = 0; w < 10; ++w) {
+                    offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+                    offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
+                    offWrites[w].dstBinding = w;
+                    offWrites[w].dstArrayElement = 0;
+                    offWrites[w].descriptorCount = 1;
+                }
+                offWrites[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                offWrites[0].pBufferInfo = &offBufInfos[0];
+                offWrites[1].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                offWrites[1].pBufferInfo = &offBufInfos[1];
+                offWrites[2].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                offWrites[2].pBufferInfo = &offBufInfos[2];
+                offWrites[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[3].pImageInfo = &offImageInfo;
+                offWrites[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[4].pImageInfo = &offShadowInfo;
+                offWrites[5].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[5].pImageInfo = &offHeightInfo;
+                offWrites[6].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[6].pImageInfo = &offNormalInfo;
+                offWrites[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[7].pBufferInfo = &offBoneInfo;
+                offWrites[8].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[8].pImageInfo = &offMetRoughInfo;
+                offWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[9].pImageInfo = &offEmissiveInfo;
+
+                vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
+                    static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
+            }
         }
     }
 }
@@ -1230,7 +1633,7 @@ void RenderSystem::UpdateFrameUniforms() {
     Renderer::UniformBufferObject ubo{};
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
-    (*m_ActiveUniformBuffers)[currentFrame]->UploadData(&ubo, sizeof(ubo));
+    (*m_ActiveUniformBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&ubo, sizeof(ubo));
 
     // Update Lighting UBO with all lights in the scene
     LightingUBO lighting{};
@@ -1376,7 +1779,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, 0.0f);
     }
 
-    (*m_ActiveLightingBuffers)[currentFrame]->UploadData(&lighting, sizeof(lighting));
+    (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
 }
 
 void RenderSystem::UpdateMaterialBuffer(Entity entity) {
@@ -1827,7 +2230,7 @@ void RenderSystem::UpdateTextureDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 3;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1848,7 +2251,7 @@ void RenderSystem::UpdateHeightTextureDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 5;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1869,7 +2272,7 @@ void RenderSystem::UpdateNormalMapDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 6;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1887,7 +2290,7 @@ void RenderSystem::UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture)
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 8;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1905,7 +2308,7 @@ void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 9;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
@@ -1927,7 +2330,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
 
     VkWriteDescriptorSet descriptorWrite{};
     descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[currentFrame];
+    descriptorWrite.dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
     descriptorWrite.dstBinding = 7;
     descriptorWrite.dstArrayElement = 0;
     descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;

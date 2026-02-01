@@ -26,9 +26,20 @@
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <memory>
+#include <vector>
 
 namespace Enjin {
 namespace ECS {
+
+// Splitscreen viewport camera — associates an entity (with CameraComponent + TransformComponent)
+// with a normalized viewport rectangle within the render target.
+struct ViewportCamera {
+    Entity entity;       // Camera entity
+    f32 viewportX;       // Normalized X offset (0-1)
+    f32 viewportY;       // Normalized Y offset (0-1)
+    f32 viewportWidth;   // Normalized width (0-1)
+    f32 viewportHeight;  // Normalized height (0-1)
+};
 
 // Per-entity rendering data
 struct EntityRenderData {
@@ -56,6 +67,20 @@ public:
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
     void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera);
+
+    // Render multiple cameras to a single render target using viewport subdivision (splitscreen)
+    // Each ViewportCamera defines a normalized rect within the target.
+    // The render pass must already be started by the caller.
+    void RenderSplitscreen(Renderer::RenderTarget* target, const std::vector<ViewportCamera>& viewports);
+
+    static constexpr u32 MAX_SPLITSCREEN_VIEWPORTS = 4;
+
+    // Set splitscreen viewports for the main render pass (used by Player).
+    // When non-empty, Update() renders each viewport instead of a single full-screen camera.
+    // Call with empty vector to disable splitscreen.
+    void SetMainPassSplitscreen(const std::vector<ViewportCamera>& viewports) {
+        m_MainPassViewports = viewports;
+    }
 
     // Runtime rendering settings
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
@@ -124,6 +149,11 @@ public:
 
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
+
+    // Compute offscreen buffer/descriptor set index for a given frame and viewport
+    static u32 GetOffscreenBufferIndex(u32 frameIndex, u32 viewportIndex) {
+        return frameIndex * MAX_SPLITSCREEN_VIEWPORTS + viewportIndex;
+    }
 
 private:
     void RenderEntity(Entity entity);
@@ -235,6 +265,23 @@ private:
     std::vector<VkDescriptorSet>* m_ActiveDescriptorSets = nullptr;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveUniformBuffers = nullptr;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>>* m_ActiveLightingBuffers = nullptr;
+
+    // When true, active buffer/descriptor indexing uses GetOffscreenBufferIndex
+    bool m_OffscreenMode = false;
+    u32 m_CurrentViewportIndex = 0;
+
+    // Get the actual index into the active buffer/descriptor arrays for the current frame.
+    // In main-pass mode, this returns currentFrame directly.
+    // In offscreen mode, this returns frame * MAX_SPLITSCREEN_VIEWPORTS + viewportIndex.
+    u32 GetActiveBufferIndex(u32 currentFrame) const {
+        if (m_OffscreenMode) {
+            return GetOffscreenBufferIndex(currentFrame, m_CurrentViewportIndex);
+        }
+        return currentFrame;
+    }
+
+    // Splitscreen viewports for the main render pass (set by Player)
+    std::vector<ViewportCamera> m_MainPassViewports;
 
     // Per-entity render data
     std::unordered_map<Entity, EntityRenderData> m_EntityRenderData;

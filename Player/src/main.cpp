@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Window.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/CameraController.h"
@@ -159,6 +160,42 @@ public:
         if (extent.width > 0 && extent.height > 0 && m_Camera) {
             Enjin::f32 aspect = static_cast<Enjin::f32>(extent.width) / static_cast<Enjin::f32>(extent.height);
             m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
+        }
+
+        // Detect splitscreen: multiple active cameras with non-default viewports
+        if (m_World && m_RenderSystem) {
+            auto allCameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
+            bool useSplitscreen = false;
+
+            if (allCameras.size() > 1) {
+                for (auto camEntity : allCameras) {
+                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
+                    if (cc && (cc->viewportX != 0.0f || cc->viewportY != 0.0f ||
+                               cc->viewportWidth != 1.0f || cc->viewportHeight != 1.0f)) {
+                        useSplitscreen = true;
+                        break;
+                    }
+                }
+            }
+
+            if (useSplitscreen) {
+                std::vector<Enjin::ECS::ViewportCamera> viewports;
+                for (auto camEntity : allCameras) {
+                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(camEntity);
+                    if (!cc) continue;
+                    Enjin::ECS::ViewportCamera vc;
+                    vc.entity = camEntity;
+                    vc.viewportX = cc->viewportX;
+                    vc.viewportY = cc->viewportY;
+                    vc.viewportWidth = cc->viewportWidth;
+                    vc.viewportHeight = cc->viewportHeight;
+                    viewports.push_back(vc);
+                    if (viewports.size() >= Enjin::ECS::RenderSystem::MAX_SPLITSCREEN_VIEWPORTS) break;
+                }
+                m_RenderSystem->SetMainPassSplitscreen(viewports);
+            } else {
+                m_RenderSystem->SetMainPassSplitscreen({});
+            }
         }
 
         if (m_World) {

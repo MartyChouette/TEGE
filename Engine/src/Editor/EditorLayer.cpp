@@ -903,14 +903,52 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         ? m_SceneRenderTarget.get()
         : m_GameViewRenderTarget.get();
 
+    // Check for splitscreen: multiple active cameras with non-default viewport rects
+    bool useSplitscreen = false;
+    std::vector<ECS::ViewportCamera> splitViewports;
+    {
+        auto allCameras = ECS::CameraManager::GetAllActiveCameras(m_World);
+        if (allCameras.size() > 1) {
+            for (auto camEntity : allCameras) {
+                auto* cc = m_World->GetComponent<ECS::CameraComponent>(camEntity);
+                if (cc && (cc->viewportX != 0.0f || cc->viewportY != 0.0f ||
+                           cc->viewportWidth != 1.0f || cc->viewportHeight != 1.0f)) {
+                    useSplitscreen = true;
+                    break;
+                }
+            }
+            if (useSplitscreen) {
+                for (auto camEntity : allCameras) {
+                    auto* cc = m_World->GetComponent<ECS::CameraComponent>(camEntity);
+                    if (!cc) continue;
+                    ECS::ViewportCamera vc;
+                    vc.entity = camEntity;
+                    vc.viewportX = cc->viewportX;
+                    vc.viewportY = cc->viewportY;
+                    vc.viewportWidth = cc->viewportWidth;
+                    vc.viewportHeight = cc->viewportHeight;
+                    splitViewports.push_back(vc);
+                    if (splitViewports.size() >= ECS::RenderSystem::MAX_SPLITSCREEN_VIEWPORTS) break;
+                }
+            }
+        }
+    }
+
     // Render scene + effects into the chosen target
     sceneTarget->Begin(commandBuffer);
-    m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
-    m_RenderSystem->RenderGrass(rtWidth, rtHeight);
-    m_RenderSystem->RenderShrubs(rtWidth, rtHeight);
-    m_RenderSystem->RenderTrees(rtWidth, rtHeight);
-    if (hasWeatherParticles) {
-        m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+    if (useSplitscreen && !splitViewports.empty()) {
+        m_RenderSystem->RenderSplitscreen(sceneTarget, splitViewports);
+        if (hasWeatherParticles) {
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+        }
+    } else {
+        m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
+        m_RenderSystem->RenderGrass(rtWidth, rtHeight);
+        m_RenderSystem->RenderShrubs(rtWidth, rtHeight);
+        m_RenderSystem->RenderTrees(rtWidth, rtHeight);
+        if (hasWeatherParticles) {
+            m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
+        }
     }
     sceneTarget->End(commandBuffer);
 
@@ -7055,7 +7093,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ctrl.moveSpeed = 15.0f;
             ctrl.gamepadIndex = i;
 
-            // Each player gets their own camera
+            // Each player gets their own camera with a quadrant viewport
             ECS::Entity cam = m_World->CreateEntity();
             char camName[32];
             snprintf(camName, sizeof(camName), "Camera P%d", i + 1);
@@ -7066,6 +7104,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             camC.fieldOfView = 60.0f;
             camC.nearPlane = 0.1f;
             camC.farPlane = 500.0f;
+            // Splitscreen quadrants: TL, TR, BL, BR
+            camC.viewportX = (i % 2) * 0.5f;
+            camC.viewportY = (i / 2) * 0.5f;
+            camC.viewportWidth = 0.5f;
+            camC.viewportHeight = 0.5f;
 
             auto& follow = m_World->AddComponent<ECS::FollowTargetComponent>(cam);
             follow.target = vehicle;
