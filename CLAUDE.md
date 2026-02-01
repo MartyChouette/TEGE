@@ -300,10 +300,10 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Game camera offscreen rendering with separate uniform buffers (fixes editor/game camera conflict)
 - Standalone game player (Player/ app, loads .enjpak asset packs)
 - Asset pack build pipeline (.enjpak packaging)
+- Splitscreen rendering (2P/4P viewport subdivision, per-viewport uniform buffers, 4P Racing template)
 
 **Next Up:**
 - AI/Navmesh integration (framework exists, needs gameplay logic)
-- Splitscreen rendering (viewport subdivision for racing/arena templates)
 
 ## Common Tasks
 
