@@ -944,7 +944,7 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 }
 
                 // --- Wall collision check ---
-                // Compute target cell position
+                // Compute target cell position and the midpoint (cell boundary)
                 f32 cellSize = ctrl.gridCellSize;
                 f32 ox = ctrl.gridOrigin.x;
                 f32 oz = ctrl.gridOrigin.z;
@@ -952,11 +952,13 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 f32 snappedZ = Math::Round((transform.position.z - oz) / cellSize) * cellSize + oz;
                 f32 targetX = snappedX + facingInput.x * cellSize;
                 f32 targetZ = snappedZ + facingInput.y * cellSize;
+                // Walls sit on cell boundaries; check both the boundary midpoint and the target center
+                f32 midX = (snappedX + targetX) * 0.5f;
+                f32 midZ = (snappedZ + targetZ) * 0.5f;
 
-                // Check if any entity with a BoxCollider occupies the target cell
+                // Check if any entity with a BoxCollider blocks the path
                 bool blocked = false;
                 if (m_World) {
-                    f32 halfCell = cellSize * 0.5f;
                     for (ECS::Entity other : m_World->GetAllEntities()) {
                         if (!m_World->HasComponent<BoxColliderComponent>(other) ||
                             !m_World->HasComponent<TransformComponent>(other)) {
@@ -965,14 +967,17 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                         auto* col = m_World->GetComponent<BoxColliderComponent>(other);
                         if (col->isTrigger) continue;  // Triggers don't block
                         auto* otherT = m_World->GetComponent<TransformComponent>(other);
-                        // AABB overlap test: collider center in world space
+                        // AABB in world space
                         f32 colCX = otherT->position.x + col->center.x;
                         f32 colCZ = otherT->position.z + col->center.z;
                         f32 colHalfX = col->size.x * otherT->scale.x * 0.5f;
                         f32 colHalfZ = col->size.z * otherT->scale.z * 0.5f;
-                        // Check if target cell center overlaps the collider
-                        if (targetX >= colCX - colHalfX && targetX <= colCX + colHalfX &&
-                            targetZ >= colCZ - colHalfZ && targetZ <= colCZ + colHalfZ) {
+                        // Check if midpoint (boundary) or target center overlaps the collider
+                        bool midHit = (midX >= colCX - colHalfX && midX <= colCX + colHalfX &&
+                                       midZ >= colCZ - colHalfZ && midZ <= colCZ + colHalfZ);
+                        bool tgtHit = (targetX >= colCX - colHalfX && targetX <= colCX + colHalfX &&
+                                       targetZ >= colCZ - colHalfZ && targetZ <= colCZ + colHalfZ);
+                        if (midHit || tgtHit) {
                             blocked = true;
                             break;
                         }

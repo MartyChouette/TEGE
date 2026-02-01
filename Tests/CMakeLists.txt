@@ -1,14 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Add Catch2 or Google Test here when ready
-# For now, this is a placeholder
+add_executable(SerializerRoundTrip
+    SerializerRoundTrip.cpp
+)
 
-# Example test structure:
-# add_executable(EnjinTests
-#     Math/VectorTest.cpp
-#     Memory/AllocatorTest.cpp
-# )
-# 
-# target_link_libraries(EnjinTests PRIVATE
-#     EnjinCore
-# )
+target_link_libraries(SerializerRoundTrip PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(SerializerRoundTrip PRIVATE cxx_std_20)
+
+add_executable(DungeonCrawlerTest
+    DungeonCrawlerTest.cpp
+)
+
+target_link_libraries(DungeonCrawlerTest PRIVATE
+    EnjinEngine
+)
+
+target_compile_features(DungeonCrawlerTest PRIVATE cxx_std_20)
