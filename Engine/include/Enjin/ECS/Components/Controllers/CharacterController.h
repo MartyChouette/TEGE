@@ -205,6 +205,11 @@ struct FirstPersonController : public CharacterControllerBase {
     // Sprinting
     f32 sprintFOVIncrease = 10.0f;  // FOV increase when sprinting
 
+    // Dungeon crawler mode (SMT-style)
+    bool dungeonCrawlerMode = false; // Snap turns + facing-relative movement
+    f32 snapTurnAngle = 90.0f;       // Degrees per snap turn (A/D)
+    bool snapTurnPending = false;    // Prevents holding A/D from spinning
+
     // State
     bool isJumping = false;
     bool isFalling = false;

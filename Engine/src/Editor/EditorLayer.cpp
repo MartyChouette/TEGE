@@ -24,7 +24,9 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
@@ -33,6 +35,7 @@
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/FileDialog.h"
+#include "Enjin/Assets/Prefab.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Math/Math.h"
@@ -392,6 +395,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Safety net: close pause menu if play mode stopped (e.g. via toolbar button)
     if (m_GameMenu.IsMenuOpen() && m_PlayMode.IsStopped()) {
         m_GameMenu.HideAll();
+    }
+
+    // Update dialogue typewriter during play mode
+    if (m_PlayMode.IsPlaying()) {
+        UpdateDialogue(deltaTime);
     }
 
     // Update post-processing time for animated effects (film grain, etc.)
@@ -1006,6 +1014,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
         ImGui::End();
 
+        // Render dialogue overlay on top of fullscreen game view
+        if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+            DrawDialogueOverlay();
+        }
+
         // Render pause menu overlay on top of fullscreen game view
         if (m_GameMenu.IsMenuOpen()) {
             m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
@@ -1018,67 +1031,79 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Menu bar
     DrawMenuBar();
 
-    // Calculate layout dimensions
+    // Calculate layout dimensions from config
     f32 screenW = io.DisplaySize.x;
     f32 screenH = io.DisplaySize.y;
     f32 menuBarH = 22.0f;
-    f32 leftW = screenW * 0.18f;
-    f32 rightW = screenW * 0.22f;
-    f32 bottomH = screenH * 0.22f;
+    f32 leftW = screenW * m_Layout.leftWidth;
+    f32 rightW = screenW * m_Layout.rightWidth;
+    f32 bottomH = screenH * m_Layout.bottomHeight;
     f32 centerW = screenW - leftW - rightW;
     f32 centerH = screenH - menuBarH - bottomH;
 
-    // Panels with initial positions (user can freely move/resize after first launch)
+    // When force layout is set (after template change), override positions once
+    ImGuiCond layoutCond = m_ForceLayout ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+
+    // Game View position/size (auto-compute if -1)
+    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + 20.0f);
+    f32 gvY = m_Layout.gameViewY >= 0 ? m_Layout.gameViewY : (menuBarH + 20.0f);
+    f32 gvW = m_Layout.gameViewW;
+    f32 gvH = m_Layout.gameViewH;
+
+    // Panels with layout-driven positions
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
-        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(leftW, centerH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(0, menuBarH), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(leftW, centerH), layoutCond);
         DrawHierarchyPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * 0.6f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * m_Layout.inspectorSplit), layoutCond);
         DrawInspectorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH + centerH * 0.6f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * 0.4f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * (1.0f - m_Layout.inspectorSplit)), layoutCond);
         DrawSettingsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW, screenH - bottomH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(leftW, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawConsolePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + centerW * 0.5f, screenH - bottomH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(leftW + centerW * 0.5f, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawAssetBrowserPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PostProcessing)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 50), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(280, 400), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 50), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(280, 400), layoutCond);
         DrawPostProcessingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Effects)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 100), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(280, 450), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 100), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(280, 450), layoutCond);
         DrawEffectsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(500, 400), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(gvX, gvY), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(gvW, gvH), layoutCond);
         DrawGameViewPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
-        ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), layoutCond);
         DrawSceneListPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Skybox)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 440), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(300, 400), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 440), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(300, 400), layoutCond);
         DrawSkyboxPanel();
     }
+
+    // Clear the force flag after one frame
+    if (m_ForceLayout) m_ForceLayout = false;
 
     // Draw scene transition overlay (fade to/from black/white)
     if (m_SceneManager.IsTransitioning()) {
@@ -1228,6 +1253,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::Begin("##FadeOverlay", nullptr, overlayFlags);
         ImGui::End();
         ImGui::PopStyleColor();
+    }
+
+    // Render dialogue overlay on top of editor panels during play
+    if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+        DrawDialogueOverlay();
     }
 
     // Render pause menu overlay on top of editor panels
@@ -1490,7 +1520,8 @@ void EditorLayer::DrawMenuBar() {
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
             ImGui::Separator();
             if (ImGui::MenuItem("Reset Layout")) {
-                m_DockingInitialized = false;  // Will re-layout on next frame
+                m_DockingInitialized = false;
+                m_ForceLayout = true;  // Force positions on next frame
             }
             if (ImGui::MenuItem("Show All Panels")) {
                 m_VisiblePanels = EditorPanel::All;
@@ -2004,7 +2035,7 @@ void EditorLayer::DrawMenuBar() {
         m_ShowAboutDialog = false;
     }
     if (ImGui::BeginPopupModal("About Enjin", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        ImGui::Text("Enjin Engine");
+        ImGui::Text("TEGE - The Enjin Game Engine");
         ImGui::Separator();
         ImGui::Text("Version 0.1.0 (Development)");
         ImGui::Spacing();
@@ -2083,6 +2114,21 @@ void EditorLayer::DrawHierarchyPanel() {
                 m_World->AddComponent<ECS::TransformComponent>(entity);
                 m_SelectedEntity = entity;
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Load Prefab...")) {
+                std::vector<FileFilter> filters = {{ "Prefab Files", "*.enjprefab;*.json" }};
+                std::string path = FileDialog::OpenFile("Load Prefab", filters);
+                if (!path.empty()) {
+                    auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
+                    if (prefab) {
+                        ECS::Entity root = Assets::PrefabManager::Get().Instantiate(
+                            m_World, *prefab);
+                        if (root != ECS::INVALID_ENTITY) {
+                            m_SelectedEntity = root;
+                        }
+                    }
+                }
+            }
             ImGui::EndPopup();
         }
     } else {
@@ -2129,6 +2175,29 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         if (ImGui::MenuItem("Focus", "F")) {
             FocusOnEntity(entity);
         }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Save as Prefab...")) {
+            std::string defaultName = "prefab.enjprefab";
+            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+                defaultName = m_World->GetComponent<ECS::NameComponent>(entity)->name + ".enjprefab";
+            }
+            std::vector<FileFilter> filters = {{ "Prefab Files", "*.enjprefab" }};
+            std::string path = FileDialog::SaveFile("Save as Prefab", filters, "", defaultName);
+            if (!path.empty()) {
+                std::string prefabName = defaultName.substr(0, defaultName.find_last_of('.'));
+                auto prefab = Assets::PrefabManager::Get().CreateFromEntity(
+                    m_World, entity, prefabName);
+                if (prefab) {
+                    Assets::PrefabManager::Get().SavePrefab(*prefab, path);
+                }
+            }
+        }
+        bool isPrefabInstance = Assets::PrefabUtils::IsPrefabInstance(m_World, entity);
+        if (isPrefabInstance) {
+            if (ImGui::MenuItem("Unpack Prefab")) {
+                Assets::PrefabManager::Get().UnpackInstance(m_World, entity);
+            }
+        }
         ImGui::EndPopup();
     }
 
@@ -2163,6 +2232,17 @@ void EditorLayer::DrawInspectorPanel() {
                 m_World->AddComponent<ECS::NameComponent>(m_SelectedEntity, "Unnamed");
             }
         }
+        // Prefab instance indicator
+        if (Assets::PrefabUtils::IsPrefabInstance(m_World, m_SelectedEntity)) {
+            auto* prefabInst = m_World->GetComponent<Assets::PrefabInstanceComponent>(m_SelectedEntity);
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
+            ImGui::Text("Prefab Instance");
+            ImGui::PopStyleColor();
+            if (prefabInst && !prefabInst->prefabPath.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s)", std::filesystem::path(prefabInst->prefabPath).filename().string().c_str());
+            }
+        }
         ImGui::Separator();
 
         // Transform component
@@ -2173,6 +2253,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Mesh component
         if (m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
             DrawMeshComponent(m_SelectedEntity);
+        }
+
+        // LOD component
+        if (m_World->HasComponent<ECS::LODComponent>(m_SelectedEntity)) {
+            DrawLODComponent(m_SelectedEntity);
         }
 
         // Material component
@@ -2444,6 +2529,16 @@ void EditorLayer::DrawInspectorPanel() {
             if (!m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
                 if (ImGui::MenuItem("Mesh")) {
                     m_World->AddComponent<ECS::MeshComponent>(m_SelectedEntity);
+                }
+            }
+            if (!m_World->HasComponent<ECS::LODComponent>(m_SelectedEntity) &&
+                m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
+                if (ImGui::MenuItem("LOD (Auto-Generate)")) {
+                    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_SelectedEntity);
+                    if (mesh && mesh->IsValid()) {
+                        auto& lod = m_World->AddComponent<ECS::LODComponent>(m_SelectedEntity);
+                        Renderer::MeshSimplifier::GenerateLODs(*mesh, lod);
+                    }
                 }
             }
             if (!m_World->HasComponent<ECS::MaterialComponent>(m_SelectedEntity)) {
@@ -2770,6 +2865,73 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
 
         ImGui::Text("Vertices: %zu", mesh->vertices.size());
         ImGui::Text("Indices: %zu", mesh->indices.size());
+    }
+}
+
+void EditorLayer::DrawLODComponent(ECS::Entity entity) {
+    bool lodOpen = ImGui::CollapsingHeader("LOD", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("LODCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::LODComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        if (ImGui::MenuItem("Regenerate LODs")) {
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            auto* lod = m_World->GetComponent<ECS::LODComponent>(entity);
+            if (mesh && lod && mesh->IsValid()) {
+                Renderer::MeshSimplifier::GenerateLODs(*mesh, *lod);
+            }
+        }
+        ImGui::EndPopup();
+    }
+    if (lodOpen) {
+        ECS::LODComponent* lod = m_World->GetComponent<ECS::LODComponent>(entity);
+        if (!lod) return;
+
+        ImGui::Checkbox("Enabled", &lod->enabled);
+        ImGui::Text("Levels: %d | Active: LOD %d", lod->levelCount, lod->activeLOD);
+
+        if (ImGui::SliderFloat("Base Distance", &lod->baseDistance, 2.0f, 100.0f, "%.1f")) {
+            // Recompute distance thresholds
+            for (int i = 0; i < lod->levelCount; ++i) {
+                lod->levels[i].maxDistance = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(i));
+            }
+        }
+        if (ImGui::SliderFloat("Distance Mult", &lod->distanceMultiplier, 1.2f, 5.0f, "%.1f")) {
+            for (int i = 0; i < lod->levelCount; ++i) {
+                lod->levels[i].maxDistance = lod->baseDistance * std::pow(lod->distanceMultiplier, static_cast<f32>(i));
+            }
+        }
+
+        ImGui::Separator();
+        for (int i = 0; i < lod->levelCount; ++i) {
+            auto& level = lod->levels[i];
+            bool isActive = (i == lod->activeLOD);
+
+            if (isActive) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.4f, 1.0f));
+            }
+
+            ImGui::Text("LOD %d: %u verts, %u tris (%.0f%%)  dist < %.1f%s",
+                i, level.vertexCount, level.triangleCount,
+                level.reductionRatio * 100.0f, level.maxDistance,
+                isActive ? "  [ACTIVE]" : "");
+
+            if (isActive) {
+                ImGui::PopStyleColor();
+            }
+
+            // Reduction ratio slider for regeneration
+            char label[32];
+            snprintf(label, sizeof(label), "Ratio##lod%d", i);
+            if (i > 0) {
+                ImGui::SameLine();
+                ImGui::PushItemWidth(80);
+                ImGui::SliderFloat(label, &lod->reductionRatios[i], 0.01f, 0.99f, "%.2f");
+                ImGui::PopItemWidth();
+            }
+        }
     }
 }
 
@@ -6089,8 +6251,8 @@ void EditorLayer::DrawSplashScreen() {
             ImVec2(center.x + lineWidth, center.y + 60),
             lineColor, 2.0f);
 
-        // Main title "THE ENJIN ENGINE"
-        const char* title = "THE ENJIN ENGINE";
+        // Main title
+        const char* title = "TEGE";
         ImGui::PushFont(nullptr);  // Use default font (will be larger if custom font is set)
 
         // Calculate text size for centering
@@ -6209,8 +6371,10 @@ void EditorLayer::DrawTemplateSelector() {
             { "horror",      "Horror",         "Walking sim\nFlashlight + notes + dark",               ImVec4(0.3f, 0.1f, 0.3f, 1.0f) },
             { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f) },
             { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f) },
+            { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f) },
+            { "dungeon",     "SMT Dungeon",   "First-person crawler\nGrid dungeon + encounters",          ImVec4(0.15f, 0.6f, 0.15f, 1.0f) },
         };
-        int builtinCount = 22;
+        int builtinCount = 24;
 
         f32 cardW = 345.0f;
         f32 cardH = 240.0f;
@@ -6338,6 +6502,102 @@ void EditorLayer::DrawTemplateSelector() {
             }
         }
 
+        // --- Recent Projects section ---
+        if (!m_EditorSettings.recentProjects.empty()) {
+            // Compute row start after all template cards
+            int totalTemplateCards = builtinCount + static_cast<int>(m_CustomTemplateNames.size());
+            int lastTemplateRow = (totalTemplateCards > 0) ? ((totalTemplateCards - 1) / cardsPerRow) : 0;
+            f32 recentSectionY = startY + (lastTemplateRow + 1) * (cardH + cardPad) + 10.0f;
+
+            // Section header
+            const char* recentLabel = "RECENT PROJECTS";
+            ImVec2 labelSize = ImGui::CalcTextSize(recentLabel);
+            drawList->AddText(
+                ImVec2((io.DisplaySize.x - labelSize.x) * 0.5f, recentSectionY),
+                IM_COL32(160, 165, 185, 220), recentLabel);
+
+            // Divider line
+            drawList->AddLine(
+                ImVec2(60, recentSectionY + 20.0f),
+                ImVec2(io.DisplaySize.x - 60, recentSectionY + 20.0f),
+                IM_COL32(60, 65, 80, 150), 1.0f);
+
+            f32 recentStartY = recentSectionY + 30.0f;
+            f32 recentCardH = 80.0f; // Shorter cards for recent projects
+
+            int recentCount = static_cast<int>(m_EditorSettings.recentProjects.size());
+            for (int i = 0; i < recentCount; ++i) {
+                int row = i / cardsPerRow;
+                int col = i % cardsPerRow;
+                int itemsInRow = recentCount - row * cardsPerRow;
+                if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
+
+                f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
+                f32 rowStartX = (io.DisplaySize.x - rowWidth) * 0.5f;
+
+                ImVec2 rPos(rowStartX + col * (cardW + cardPad), recentStartY + row * (recentCardH + cardPad));
+                ImVec2 rEnd(rPos.x + cardW, rPos.y + recentCardH);
+
+                bool hovered = (io.MousePos.x >= rPos.x && io.MousePos.x <= rEnd.x &&
+                               io.MousePos.y >= rPos.y && io.MousePos.y <= rEnd.y);
+
+                ImU32 bgCol = hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255);
+                drawList->AddRectFilled(rPos, rEnd, bgCol, 8.0f);
+
+                // Accent bar (blue-ish for recent projects)
+                ImU32 recentAccent = hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 180);
+                drawList->AddRectFilled(rPos, ImVec2(rEnd.x, rPos.y + 3.0f), recentAccent, 8.0f, ImDrawFlags_RoundCornersTop);
+
+                ImU32 borderCol = hovered ? recentAccent : IM_COL32(60, 65, 80, 150);
+                drawList->AddRect(rPos, rEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
+
+                // Extract filename from path for display
+                std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
+                std::string displayName = fsPath.stem().string();
+                if (displayName.length() > 28) {
+                    displayName = displayName.substr(0, 25) + "...";
+                }
+
+                // File icon indicator
+                const char* fileIcon = "[Scene]";
+                ImVec2 iconSize = ImGui::CalcTextSize(fileIcon);
+                drawList->AddText(
+                    ImVec2(rPos.x + 12.0f, rPos.y + 12.0f),
+                    IM_COL32(80, 140, 220, 200), fileIcon);
+
+                // Project name (bold-style, larger)
+                ImVec2 nameSize = ImGui::CalcTextSize(displayName.c_str());
+                drawList->AddText(
+                    ImVec2(rPos.x + 12.0f + iconSize.x + 8.0f, rPos.y + 12.0f),
+                    IM_COL32(220, 225, 245, 255), displayName.c_str());
+
+                // Full path (smaller, dimmed)
+                std::string pathStr = m_EditorSettings.recentProjects[i];
+                if (pathStr.length() > 55) {
+                    pathStr = "..." + pathStr.substr(pathStr.length() - 52);
+                }
+                drawList->AddText(
+                    ImVec2(rPos.x + 12.0f, rPos.y + 36.0f),
+                    IM_COL32(120, 125, 145, 180), pathStr.c_str());
+
+                // File exists indicator
+                bool exists = std::filesystem::exists(m_EditorSettings.recentProjects[i]);
+                const char* statusText = exists ? "Ready" : "Missing";
+                ImU32 statusCol = exists ? IM_COL32(80, 200, 120, 200) : IM_COL32(200, 80, 80, 200);
+                ImVec2 statusSize = ImGui::CalcTextSize(statusText);
+                drawList->AddText(
+                    ImVec2(rEnd.x - statusSize.x - 12.0f, rPos.y + 56.0f),
+                    statusCol, statusText);
+
+                // Click handler — open the recent project
+                if (hovered && exists && ImGui::IsMouseClicked(0)) {
+                    templateChosen = false; // Don't apply template
+                    m_ShowTemplateSelector = false;
+                    OpenScene(m_EditorSettings.recentProjects[i]);
+                }
+            }
+        }
+
         // Bottom bar with "Save Current as Template" and "Open Scene" buttons
         f32 bottomY = io.DisplaySize.y - 60.0f;
         drawList->AddLine(ImVec2(30, bottomY - 15), ImVec2(io.DisplaySize.x - 30, bottomY - 15),
@@ -6384,6 +6644,171 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     m_World->Clear();
     m_SelectedEntity = ECS::INVALID_ENTITY;
     m_UndoRedo.Clear();
+
+    // --- Configure editor layout per template ---
+    // Reset to defaults first
+    m_Layout = LayoutConfig{};
+    EditorPanel corePanels = EditorPanel::Hierarchy | EditorPanel::Inspector |
+                             EditorPanel::Console | EditorPanel::AssetBrowser;
+
+    if (templateId == "blank") {
+        // Full editor: everything visible for exploration
+        m_Layout.panels = EditorPanel::All;
+    }
+    else if (templateId == "platformer" || templateId == "topdown2d") {
+        // 2D: compact hierarchy, wide game view, no 3D-specific panels
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 700.0f;
+        m_Layout.gameViewH = 450.0f;
+    }
+    else if (templateId == "isometric" || templateId == "citybuilder" || templateId == "towerdefense") {
+        // Top-down 3D: standard layout with scene list + skybox, moderate game view
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox |
+                          EditorPanel::SceneList | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.16f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 650.0f;
+        m_Layout.gameViewH = 420.0f;
+    }
+    else if (templateId == "thirdperson" || templateId == "arena" || templateId == "teamsports") {
+        // Standard 3D action: game view, inspector for controller tuning, skybox
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.16f;
+        m_Layout.rightWidth = 0.23f;
+        m_Layout.inspectorSplit = 0.65f;
+        m_Layout.gameViewW = 680.0f;
+        m_Layout.gameViewH = 440.0f;
+    }
+    else if (templateId == "firstperson" || templateId == "fpsarena") {
+        // FPS: large immersive game view, narrow hierarchy, inspector for mouse look tuning
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
+        m_Layout.leftWidth = 0.13f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 800.0f;
+        m_Layout.gameViewH = 500.0f;
+    }
+    else if (templateId == "visualnovel" || templateId == "narrative") {
+        // Story-driven: large game view for dialogue display, inspector for editing
+        m_Layout.panels = corePanels | EditorPanel::GameView;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.24f;
+        m_Layout.bottomHeight = 0.15f;
+        m_Layout.inspectorSplit = 0.7f;
+        m_Layout.gameViewW = 750.0f;
+        m_Layout.gameViewH = 480.0f;
+    }
+    else if (templateId == "rpg_village") {
+        // Full RPG: all panels including scene list, effects for weather/time
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
+                          EditorPanel::SceneList | EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.17f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.inspectorSplit = 0.55f;
+        m_Layout.gameViewW = 640.0f;
+        m_Layout.gameViewH = 400.0f;
+    }
+    else if (templateId == "survival") {
+        // Exploration: large game view, effects for weather, console for debug
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
+                          EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 720.0f;
+        m_Layout.gameViewH = 450.0f;
+    }
+    else if (templateId == "gamemanager") {
+        // System design: console prominent, hierarchy/inspector standard, no game view emphasis
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::SceneList | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.18f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.bottomHeight = 0.28f;  // Larger console area
+        m_Layout.gameViewW = 500.0f;
+        m_Layout.gameViewH = 350.0f;
+    }
+    else if (templateId == "racing") {
+        // Splitscreen: game view as large as possible for viewport subdivision
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
+        m_Layout.leftWidth = 0.12f;
+        m_Layout.rightWidth = 0.18f;
+        m_Layout.bottomHeight = 0.16f;
+        m_Layout.gameViewW = 900.0f;
+        m_Layout.gameViewH = 550.0f;
+    }
+    else if (templateId == "ps1rpg") {
+        // Retro: post-processing + effects visible for retro tuning, game view centered
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::PostProcessing |
+                          EditorPanel::Effects | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 640.0f;
+        m_Layout.gameViewH = 420.0f;
+    }
+    else if (templateId == "horror") {
+        // Atmospheric: large immersive game view, effects + post-processing for mood
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
+                          EditorPanel::PostProcessing | EditorPanel::Skybox;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.21f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 780.0f;
+        m_Layout.gameViewH = 500.0f;
+    }
+    else if (templateId == "puzzle") {
+        // Puzzle: game view prominent, inspector for puzzle editing, minimal panels
+        m_Layout.panels = corePanels | EditorPanel::GameView;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 700.0f;
+        m_Layout.gameViewH = 450.0f;
+    }
+    else if (templateId == "runner") {
+        // Endless runner: wide game view (horizontal gameplay), compact panels
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
+        m_Layout.leftWidth = 0.13f;
+        m_Layout.rightWidth = 0.19f;
+        m_Layout.bottomHeight = 0.16f;
+        m_Layout.gameViewW = 850.0f;
+        m_Layout.gameViewH = 400.0f;  // Wide aspect for runner
+    }
+    else if (templateId == "flower") {
+        // Interactive art: large centered game view, effects for wind/weather, inspector for physics
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
+                          EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.23f;
+        m_Layout.inspectorSplit = 0.65f;
+        m_Layout.gameViewW = 720.0f;
+        m_Layout.gameViewH = 480.0f;
+    }
+    else if (templateId == "fixedcam") {
+        // Fixed camera: large game view (camera framing is key), inspector for zones
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 750.0f;
+        m_Layout.gameViewH = 480.0f;
+    }
+    else if (templateId == "dungeon") {
+        // SMT dungeon: large first-person game view, console for game messages, compact hierarchy
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.21f;
+        m_Layout.bottomHeight = 0.20f;
+        m_Layout.gameViewW = 800.0f;
+        m_Layout.gameViewH = 520.0f;
+    }
+    else {
+        // Fallback: standard layout
+        m_Layout.panels = EditorPanel::All;
+    }
+
+    m_VisiblePanels = m_Layout.panels;
+    m_ForceLayout = true;
 
     // Handle custom templates
     if (templateId.substr(0, 7) == "custom:") {
@@ -8890,9 +9315,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             // Flower interaction components
             auto& jelly = m_World->AddComponent<ECS::JellyMeshComponent>(petal);
             jelly.springStiffness = 80.0f;
+            jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(petal);
             tether.stemEntity = stemEntity;
-            tether.breakDistance = 1.2f;
+            tether.breakDistance = 1.5f;
             tether.tensionRamp = 2.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 12.0f;
@@ -8924,9 +9350,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             // Flower interaction components
             auto& jelly = m_World->AddComponent<ECS::JellyMeshComponent>(leaf);
             jelly.springStiffness = 60.0f;
+            jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(leaf);
             tether.stemEntity = stemEntity;
-            tether.breakDistance = 1.0f;
+            tether.breakDistance = 1.5f;
             tether.tensionRamp = 2.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 15.0f;
@@ -8975,6 +9402,557 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
             auto& scoreTag = m_World->AddComponent<ECS::TagComponent>(scoreText);
             scoreTag.tags.push_back("score_display");
+        }
+    }
+
+    else if (templateId == "fixedcam") {
+        // Fixed-Angle Third-Person Camera template
+        // Classic RE / God of War style — player moves in world, camera stays at fixed position+angle
+        // Multiple camera zones demonstrate room-based camera switching
+
+        // --- Ground ---
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.scale = Math::Vector3(30.0f, 0.1f, 30.0f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.25f, 0.22f, 0.2f);
+            gmat.roughness = 0.9f;
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gcol = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
+            gcol.size = Math::Vector3(30.0f, 0.1f, 30.0f);
+        }
+
+        // --- Player ---
+        ECS::Entity player = m_World->CreateEntity();
+        {
+            m_World->AddComponent<ECS::NameComponent>(player, "Player");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
+            pmat.baseColor = Math::Vector3(0.3f, 0.35f, 0.8f);
+            m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+
+            // Third-person controller with NO mouse-look (fixed camera)
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
+            ctrl.moveSpeed = 4.0f;
+            ctrl.rotateToFaceMovement = true;
+            ctrl.rotateToFaceCamera = false;
+            ctrl.cameraDistance = 8.0f;
+            ctrl.cameraHeight = 5.0f;
+            ctrl.cameraPitch = 35.0f;
+            ctrl.cameraYaw = 0.0f;
+            ctrl.cameraSensitivity = 0.0f; // Disable mouse orbit — fixed angle
+            ctrl.cameraLerpSpeed = 5.0f;   // Smooth follow
+            ctrl.enableCameraCollision = false;
+            ctrl.jumpForce = 8.0f;
+
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+        }
+
+        // --- Fixed camera ---
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Fixed Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0.0f, 8.0f, 10.0f);
+            ct.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-35.0f));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.fieldOfView = 55.0f;
+            cc.nearPlane = 0.1f;
+            cc.farPlane = 100.0f;
+            m_SelectedGameCamera = cam;
+
+            // Camera follows player at fixed offset
+            auto& follow = m_World->AddComponent<ECS::FollowTargetComponent>(cam);
+            follow.target = player;
+            follow.offset = Math::Vector3(0.0f, 8.0f, 10.0f);
+            follow.smoothTime = 0.5f;
+            follow.moveSpeed = 6.0f;
+
+            // Look at player
+            auto& lookAt = m_World->AddComponent<ECS::LookAtTargetComponent>(cam);
+            lookAt.target = player;
+            lookAt.rotationSpeed = 360.0f;
+        }
+
+        // --- Room environment: walls forming an L-shaped corridor ---
+        auto makeWall = [&](const char* name, Math::Vector3 pos, Math::Vector3 scale, Math::Vector3 color) {
+            ECS::Entity wall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wall, name);
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+            wt.position = pos;
+            wt.scale = scale;
+            auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+            wmat.baseColor = color;
+            wmat.roughness = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& wcol = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+            wcol.size = scale;
+            return wall;
+        };
+
+        Math::Vector3 wallCol(0.35f, 0.30f, 0.28f);
+        Math::Vector3 pillarCol(0.4f, 0.35f, 0.3f);
+
+        // Main room walls
+        makeWall("Wall_North", Math::Vector3(0.0f, 1.5f, -8.0f), Math::Vector3(16.0f, 3.0f, 0.3f), wallCol);
+        makeWall("Wall_South", Math::Vector3(-4.0f, 1.5f, 8.0f), Math::Vector3(8.0f, 3.0f, 0.3f), wallCol);
+        makeWall("Wall_West", Math::Vector3(-8.0f, 1.5f, 0.0f), Math::Vector3(0.3f, 3.0f, 16.0f), wallCol);
+        makeWall("Wall_East_Upper", Math::Vector3(8.0f, 1.5f, -4.0f), Math::Vector3(0.3f, 3.0f, 8.0f), wallCol);
+
+        // Corridor extension to the east
+        makeWall("Corridor_N", Math::Vector3(12.0f, 1.5f, -1.0f), Math::Vector3(8.0f, 3.0f, 0.3f), wallCol);
+        makeWall("Corridor_S", Math::Vector3(12.0f, 1.5f, 5.0f), Math::Vector3(8.0f, 3.0f, 0.3f), wallCol);
+        makeWall("Corridor_End", Math::Vector3(16.0f, 1.5f, 2.0f), Math::Vector3(0.3f, 3.0f, 6.0f), wallCol);
+
+        // Decorative pillars
+        makeWall("Pillar_1", Math::Vector3(-3.0f, 1.5f, -3.0f), Math::Vector3(0.5f, 3.0f, 0.5f), pillarCol);
+        makeWall("Pillar_2", Math::Vector3(3.0f, 1.5f, -3.0f), Math::Vector3(0.5f, 3.0f, 0.5f), pillarCol);
+        makeWall("Pillar_3", Math::Vector3(-3.0f, 1.5f, 3.0f), Math::Vector3(0.5f, 3.0f, 0.5f), pillarCol);
+        makeWall("Pillar_4", Math::Vector3(3.0f, 1.5f, 3.0f), Math::Vector3(0.5f, 3.0f, 0.5f), pillarCol);
+
+        // --- Interactable objects ---
+        // Door at corridor entrance
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Corridor Door");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(8.0f, 1.2f, 2.0f);
+            dt.scale = Math::Vector3(0.3f, 2.4f, 3.0f);
+            auto& dmat = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dmat.baseColor = Math::Vector3(0.45f, 0.30f, 0.15f);
+            dmat.roughness = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(door);
+            interact.promptText = "Open Door";
+            interact.interactionRange = 2.5f;
+            auto& dtag = m_World->AddComponent<ECS::TagComponent>(door);
+            dtag.tags.push_back("door");
+        }
+
+        // Pickup item
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Key Item");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(-5.0f, 0.5f, -5.0f);
+            kt.scale = Math::Vector3(0.3f, 0.3f, 0.1f);
+            auto& kmat = m_World->AddComponent<ECS::MaterialComponent>(key);
+            kmat.baseColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+            kmat.metallic = 0.8f;
+            kmat.roughness = 0.2f;
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pickup = m_World->AddComponent<ECS::PickupComponent>(key);
+            pickup.type = ECS::PickupComponent::PickupType::Custom;
+            pickup.value = 1.0f;
+            auto& ktag = m_World->AddComponent<ECS::TagComponent>(key);
+            ktag.tags.push_back("key_item");
+        }
+
+        // Camera trigger zone — switches camera angle in corridor
+        {
+            ECS::Entity camZone = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(camZone, "Corridor Camera Zone");
+            auto& zt = m_World->AddComponent<ECS::TransformComponent>(camZone);
+            zt.position = Math::Vector3(10.0f, 1.5f, 2.0f);
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(camZone);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(6.0f, 3.0f, 5.0f);
+            trigger.triggerOnce = false;
+            auto& ztag = m_World->AddComponent<ECS::TagComponent>(camZone);
+            ztag.tags.push_back("camera_zone");
+        }
+
+        // --- Lighting ---
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Main Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-55.0f))
+                        * Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(25.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(0.9f, 0.85f, 0.75f);
+            lc.intensity = 1.2f;
+            lc.castShadows = true;
+        }
+
+        // Corridor point light
+        {
+            ECS::Entity cLight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cLight, "Corridor Light");
+            auto& clt = m_World->AddComponent<ECS::TransformComponent>(cLight);
+            clt.position = Math::Vector3(12.0f, 2.5f, 2.0f);
+            auto& clc = m_World->AddComponent<ECS::LightComponent>(cLight);
+            clc.type = ECS::LightType::Point;
+            clc.color = Math::Vector3(1.0f, 0.8f, 0.5f);
+            clc.intensity = 2.0f;
+            clc.range = 8.0f;
+        }
+
+        // --- HUD ---
+        {
+            ECS::Entity hud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hud, "HUD");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hud);
+            ht.position = Math::Vector3(0.0f, 5.0f, 0.0f);
+            auto& htext = m_World->AddComponent<ECS::TextComponent>(hud);
+            htext.text = "HP: 100/100 | Items: 0";
+            htext.fontSize = 20.0f;
+            htext.textColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+        }
+    }
+
+    else if (templateId == "dungeon") {
+        // SMT-style First-Person Dungeon Crawler
+        // Grid-based dungeon layout with corridors, doors, encounter zones, and party HUD
+
+        const f32 CELL = 3.0f;       // Grid cell size in world units
+        const f32 WALL_H = 3.0f;     // Wall height
+        const f32 WALL_THICK = 0.15f; // Wall thickness
+
+        // --- Dungeon layout (8x8 grid) ---
+        // 1 = floor, 0 = solid, 2 = door, 3 = encounter, 4 = stairs, 5 = treasure
+        // N/S walls placed on cell edges, E/W walls placed on cell edges
+        const int GRID = 8;
+        int layout[GRID][GRID] = {
+            {0,0,0,0,0,0,0,0},
+            {0,1,1,1,0,1,1,0},
+            {0,1,0,1,0,1,3,0},
+            {0,1,0,2,1,1,1,0},
+            {0,1,0,1,0,0,1,0},
+            {0,1,1,1,1,3,1,0},
+            {0,5,0,0,1,1,4,0},
+            {0,0,0,0,0,0,0,0},
+        };
+
+        // Helper lambdas for wall creation
+        auto makeWall = [&](const char* name, Math::Vector3 pos, Math::Vector3 scale, Math::Vector3 color, bool addCollider = false) {
+            ECS::Entity wall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wall, name);
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+            wt.position = pos;
+            wt.scale = scale;
+            auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+            wmat.baseColor = color;
+            wmat.roughness = 0.85f;
+            m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+            if (addCollider) {
+                auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+                col.size = Math::Vector3(1.0f, 1.0f, 1.0f);  // Unit cube scaled by transform
+            }
+            return wall;
+        };
+
+        // Dungeon palette
+        Math::Vector3 floorColor(0.15f, 0.15f, 0.18f);
+        Math::Vector3 ceilingColor(0.12f, 0.12f, 0.14f);
+        Math::Vector3 wallColor(0.22f, 0.20f, 0.25f);
+        Math::Vector3 wallAccent(0.28f, 0.18f, 0.18f);
+        Math::Vector3 doorColor(0.45f, 0.30f, 0.15f);
+        Math::Vector3 encounterColor(0.6f, 0.1f, 0.1f);
+        Math::Vector3 stairsColor(0.5f, 0.5f, 0.55f);
+        Math::Vector3 treasureColor(0.8f, 0.7f, 0.2f);
+
+        int wallIdx = 0;
+        int floorIdx = 0;
+        char nameBuf[64];
+
+        // Player start position (cell 1,1)
+        Math::Vector3 playerStart(1.0f * CELL + CELL * 0.5f, 1.5f, 1.0f * CELL + CELL * 0.5f);
+
+        for (int z = 0; z < GRID; ++z) {
+            for (int x = 0; x < GRID; ++x) {
+                if (layout[z][x] == 0) continue;
+
+                f32 cx = static_cast<f32>(x) * CELL + CELL * 0.5f;
+                f32 cz = static_cast<f32>(z) * CELL + CELL * 0.5f;
+
+                // Floor tile
+                snprintf(nameBuf, sizeof(nameBuf), "Floor_%d", floorIdx++);
+                makeWall(nameBuf,
+                    Math::Vector3(cx, 0.0f, cz),
+                    Math::Vector3(CELL, 0.1f, CELL),
+                    floorColor);
+
+                // Ceiling tile
+                snprintf(nameBuf, sizeof(nameBuf), "Ceiling_%d", floorIdx);
+                makeWall(nameBuf,
+                    Math::Vector3(cx, WALL_H, cz),
+                    Math::Vector3(CELL, 0.1f, CELL),
+                    ceilingColor);
+
+                // Special cell markers
+                if (layout[z][x] == 2) {
+                    // Door
+                    snprintf(nameBuf, sizeof(nameBuf), "Door_%d_%d", x, z);
+                    ECS::Entity door = makeWall(nameBuf,
+                        Math::Vector3(cx, WALL_H * 0.4f, cz),
+                        Math::Vector3(CELL * 0.7f, WALL_H * 0.8f, WALL_THICK * 2.0f),
+                        doorColor);
+                    auto& dtag = m_World->AddComponent<ECS::TagComponent>(door);
+                    dtag.tags.push_back("door");
+                    auto& interact = m_World->AddComponent<ECS::InteractableComponent>(door);
+                    interact.promptText = "Open Door";
+                    interact.interactionRange = CELL;
+                }
+                else if (layout[z][x] == 3) {
+                    // Encounter zone — red floor marker
+                    snprintf(nameBuf, sizeof(nameBuf), "Encounter_%d_%d", x, z);
+                    ECS::Entity enc = makeWall(nameBuf,
+                        Math::Vector3(cx, 0.06f, cz),
+                        Math::Vector3(CELL * 0.6f, 0.02f, CELL * 0.6f),
+                        encounterColor);
+                    auto& etag = m_World->AddComponent<ECS::TagComponent>(enc);
+                    etag.tags.push_back("encounter_zone");
+                    // Trigger zone for random encounters
+                    auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(enc);
+                    trigger.shape = ECS::TriggerZoneComponent::Shape::Sphere;
+                    trigger.sphereRadius = CELL * 0.5f;
+                    trigger.triggerOnce = false;
+                }
+                else if (layout[z][x] == 4) {
+                    // Stairs down
+                    snprintf(nameBuf, sizeof(nameBuf), "Stairs_%d_%d", x, z);
+                    ECS::Entity stairs = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(stairs, nameBuf);
+                    auto& st = m_World->AddComponent<ECS::TransformComponent>(stairs);
+                    st.position = Math::Vector3(cx, 0.3f, cz);
+                    st.scale = Math::Vector3(CELL * 0.5f, 0.6f, CELL * 0.5f);
+                    st.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-20.0f));
+                    auto& smat = m_World->AddComponent<ECS::MaterialComponent>(stairs);
+                    smat.baseColor = stairsColor;
+                    smat.roughness = 0.7f;
+                    m_World->AddComponent<ECS::MeshComponent>(stairs, Renderer::MeshFactory::CreateCube(1.0f));
+                    auto& stag = m_World->AddComponent<ECS::TagComponent>(stairs);
+                    stag.tags.push_back("stairs_down");
+                    auto& sinteract = m_World->AddComponent<ECS::InteractableComponent>(stairs);
+                    sinteract.promptText = "Descend";
+                    sinteract.interactionRange = CELL;
+                }
+                else if (layout[z][x] == 5) {
+                    // Treasure chest
+                    snprintf(nameBuf, sizeof(nameBuf), "Treasure_%d_%d", x, z);
+                    ECS::Entity chest = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(chest, nameBuf);
+                    auto& ct = m_World->AddComponent<ECS::TransformComponent>(chest);
+                    ct.position = Math::Vector3(cx, 0.3f, cz);
+                    ct.scale = Math::Vector3(0.8f, 0.6f, 0.5f);
+                    auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(chest);
+                    cmat.baseColor = treasureColor;
+                    cmat.roughness = 0.4f;
+                    cmat.metallic = 0.6f;
+                    m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+                    auto& ctag = m_World->AddComponent<ECS::TagComponent>(chest);
+                    ctag.tags.push_back("treasure");
+                    auto& cinteract = m_World->AddComponent<ECS::InteractableComponent>(chest);
+                    cinteract.promptText = "Open Chest";
+                    cinteract.interactionRange = CELL * 0.8f;
+                    cinteract.singleUse = true;
+                }
+
+                // Walls on edges adjacent to solid (0) cells or grid boundary
+                // North wall (z-1 is solid or out of bounds)
+                if (z == 0 || layout[z - 1][x] == 0) {
+                    snprintf(nameBuf, sizeof(nameBuf), "Wall_N_%d", wallIdx++);
+                    bool accent = (wallIdx % 5 == 0);
+                    makeWall(nameBuf,
+                        Math::Vector3(cx, WALL_H * 0.5f, cz - CELL * 0.5f),
+                        Math::Vector3(CELL, WALL_H, WALL_THICK),
+                        accent ? wallAccent : wallColor, true);
+                }
+                // South wall
+                if (z == GRID - 1 || layout[z + 1][x] == 0) {
+                    snprintf(nameBuf, sizeof(nameBuf), "Wall_S_%d", wallIdx++);
+                    bool accent = (wallIdx % 5 == 0);
+                    makeWall(nameBuf,
+                        Math::Vector3(cx, WALL_H * 0.5f, cz + CELL * 0.5f),
+                        Math::Vector3(CELL, WALL_H, WALL_THICK),
+                        accent ? wallAccent : wallColor, true);
+                }
+                // West wall
+                if (x == 0 || layout[z][x - 1] == 0) {
+                    snprintf(nameBuf, sizeof(nameBuf), "Wall_W_%d", wallIdx++);
+                    bool accent = (wallIdx % 5 == 0);
+                    makeWall(nameBuf,
+                        Math::Vector3(cx - CELL * 0.5f, WALL_H * 0.5f, cz),
+                        Math::Vector3(WALL_THICK, WALL_H, CELL),
+                        accent ? wallAccent : wallColor, true);
+                }
+                // East wall
+                if (x == GRID - 1 || layout[z][x + 1] == 0) {
+                    snprintf(nameBuf, sizeof(nameBuf), "Wall_E_%d", wallIdx++);
+                    bool accent = (wallIdx % 5 == 0);
+                    makeWall(nameBuf,
+                        Math::Vector3(cx + CELL * 0.5f, WALL_H * 0.5f, cz),
+                        Math::Vector3(WALL_THICK, WALL_H, CELL),
+                        accent ? wallAccent : wallColor, true);
+                }
+            }
+        }
+
+        // Torches along corridors (point lights)
+        int torchIdx = 0;
+        int torchCells[][2] = {{1,1}, {3,3}, {1,5}, {5,5}, {3,1}, {6,5}};
+        for (auto& tc : torchCells) {
+            int tx = tc[0], tz = tc[1];
+            if (layout[tz][tx] == 0) continue;
+
+            f32 cx = static_cast<f32>(tx) * CELL + CELL * 0.5f;
+            f32 cz = static_cast<f32>(tz) * CELL + CELL * 0.5f;
+
+            snprintf(nameBuf, sizeof(nameBuf), "Torch_%d", torchIdx++);
+            ECS::Entity torch = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(torch, nameBuf);
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(torch);
+            tt.position = Math::Vector3(cx + 1.2f, WALL_H * 0.7f, cz);
+            tt.scale = Math::Vector3(0.1f, 0.3f, 0.1f);
+            auto& tmat = m_World->AddComponent<ECS::MaterialComponent>(torch);
+            tmat.baseColor = Math::Vector3(0.8f, 0.5f, 0.1f);
+            tmat.emissiveColor = Math::Vector3(1.0f, 0.6f, 0.2f);
+            tmat.emissiveStrength = 2.0f;
+            m_World->AddComponent<ECS::MeshComponent>(torch, Renderer::MeshFactory::CreateCube(1.0f));
+
+            // Point light for the torch
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(torch);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(1.0f, 0.65f, 0.3f);
+            lc.intensity = 2.5f;
+            lc.range = CELL * 2.5f;
+            lc.castShadows = true;
+        }
+
+        // Dim ambient directional light (dungeon ambiance)
+        {
+            ECS::Entity ambLight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ambLight, "Ambient Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(ambLight);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-70.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(ambLight);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(0.15f, 0.15f, 0.25f);
+            lc.intensity = 0.3f;
+            lc.castShadows = false;
+        }
+
+        // Player entity at ground level with FPS controller
+        ECS::Entity player;
+        {
+            player = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(player, "Player");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(playerStart.x, 0.0f, playerStart.z);  // Feet on ground
+
+            // FPS character controller for grid-style dungeon navigation
+            auto& fps = m_World->AddComponent<ECS::FirstPersonController>(player);
+            fps.moveSpeed = 4.0f;
+            fps.mouseSensitivity = 0.15f;
+            fps.gridMovement = true;
+            fps.gridCellSize = CELL;
+            fps.gridOrigin = Math::Vector3(CELL * 0.5f, 0.0f, CELL * 0.5f);
+            fps.standingHeight = 1.5f;  // Eye height for dungeon
+            fps.currentHeight = 1.5f;
+            fps.dungeonCrawlerMode = true;  // SMT-style snap turns + facing movement
+            fps.snapTurnAngle = 90.0f;
+            fps.yaw = 180.0f;  // Face south (into the corridor)
+
+            // Auto-create separate camera entity
+            SetupCameraForController(player, "FirstPerson");
+
+            // Override camera settings for dungeon
+            ECS::Entity camEntity = ECS::CameraManager::GetActiveCamera(m_World);
+            if (camEntity != ECS::INVALID_ENTITY) {
+                auto* cc = m_World->GetComponent<ECS::CameraComponent>(camEntity);
+                if (cc) {
+                    cc->fieldOfView = 70.0f;
+                    cc->nearPlane = 0.1f;
+                    cc->farPlane = 50.0f;
+                }
+                m_SelectedGameCamera = camEntity;
+            }
+        }
+
+        // --- HUD Text Entities ---
+
+        // Party stats display (top-left style)
+        {
+            ECS::Entity partyHud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(partyHud, "Party HUD");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(partyHud);
+            ht.position = Math::Vector3(-3.0f, 4.5f, 0.0f);
+            auto& htext = m_World->AddComponent<ECS::TextComponent>(partyHud);
+            htext.text = "=== PARTY ===\n"
+                         "Hero    Lv12  HP 142/142  MP 38/38\n"
+                         "Pixie   Lv10  HP  86/86   MP 52/52\n"
+                         "Cerberus Lv11 HP 168/168  MP 24/24\n"
+                         "Angel   Lv13  HP 120/120  MP 64/64";
+            htext.fontSize = 16.0f;
+            htext.textColor = Math::Vector3(0.0f, 1.0f, 0.4f);
+            auto& htag = m_World->AddComponent<ECS::TagComponent>(partyHud);
+            htag.tags.push_back("party_hud");
+        }
+
+        // Compass / minimap display (top-right style)
+        {
+            ECS::Entity compass = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(compass, "Compass");
+            auto& cpt = m_World->AddComponent<ECS::TransformComponent>(compass);
+            cpt.position = Math::Vector3(3.5f, 4.5f, 0.0f);
+            auto& ctext = m_World->AddComponent<ECS::TextComponent>(compass);
+            ctext.text = "B1F  N\nW + E\n    S\n(1,1)";
+            ctext.fontSize = 18.0f;
+            ctext.textColor = Math::Vector3(0.7f, 0.7f, 1.0f);
+            auto& ctag = m_World->AddComponent<ECS::TagComponent>(compass);
+            ctag.tags.push_back("compass_display");
+        }
+
+        // Encounter log / message box (bottom)
+        {
+            ECS::Entity msgBox = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(msgBox, "Message Box");
+            auto& mt = m_World->AddComponent<ECS::TransformComponent>(msgBox);
+            mt.position = Math::Vector3(0.0f, 0.5f, 0.0f);
+            auto& mtext = m_World->AddComponent<ECS::TextComponent>(msgBox);
+            mtext.text = "You enter the dungeon...\nThe air is thick with dread.";
+            mtext.fontSize = 18.0f;
+            mtext.textColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+            auto& mtag = m_World->AddComponent<ECS::TagComponent>(msgBox);
+            mtag.tags.push_back("message_box");
+        }
+
+        // Decorative pillar entities in larger rooms
+        int pillarIdx = 0;
+        int pillarCells[][2] = {{5,2}, {5,6}, {1,5}};
+        for (auto& pc : pillarCells) {
+            int px = pc[0], pz = pc[1];
+            if (layout[pz][px] == 0) continue;
+            f32 cx = static_cast<f32>(px) * CELL + CELL * 0.5f;
+            f32 cz = static_cast<f32>(pz) * CELL + CELL * 0.5f;
+
+            snprintf(nameBuf, sizeof(nameBuf), "Pillar_%d", pillarIdx++);
+            ECS::Entity pillar = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillar, nameBuf);
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pillar);
+            pt.position = Math::Vector3(cx - 0.8f, WALL_H * 0.5f, cz - 0.8f);
+            pt.scale = Math::Vector3(0.3f, WALL_H, 0.3f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(pillar);
+            pmat.baseColor = Math::Vector3(0.30f, 0.28f, 0.32f);
+            pmat.roughness = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(pillar, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Skybox: dark dungeon atmosphere
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.02f, 0.02f, 0.05f);
+            skyConfig.horizonColor = Math::Vector3(0.05f, 0.04f, 0.08f);
+            skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.02f);
+            m_RenderSystem->SetSkybox(skyConfig);
         }
     }
 
@@ -9053,7 +10031,7 @@ void EditorLayer::ImportModel(const std::string& path) {
     Assets::ImportOptions options;
     options.scale = 1.0f;
 
-    Assets::ImportResult result = Assets::SceneImporter::ImportGLTF(path, m_World, options);
+    Assets::ImportResult result = Assets::SceneImporter::Import(path, m_World, options);
 
     if (result.success) {
         std::stringstream ss;
@@ -9418,6 +10396,10 @@ void EditorLayer::SaveScene(const std::string& path) {
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Saved scene to %s (%zu entities)", path.c_str(), entityCount);
+
+        // Track in recent projects
+        m_EditorSettings.AddRecentProject(path);
+        m_EditorSettings.Save();
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to save scene: " << result.error;
@@ -9450,6 +10432,10 @@ void EditorLayer::OpenScene(const std::string& path) {
         ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Loaded scene from %s (%zu entities)", path.c_str(), entityCount);
+
+        // Track in recent projects
+        m_EditorSettings.AddRecentProject(path);
+        m_EditorSettings.Save();
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to load scene: " << result.error;
@@ -9464,7 +10450,16 @@ void EditorLayer::OpenScene(const std::string& path) {
 // ============================================================================
 
 void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool ctrlOpen = ImGui::CollapsingHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("Platformer2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::Platformer2DController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::Platformer2DController>(entity);
         if (!ctrl) return;
 
@@ -9541,7 +10536,16 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool ctrlOpen = ImGui::CollapsingHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TopDown2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TopDown2DController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::TopDown2DController>(entity);
         if (!ctrl) return;
 
@@ -9602,7 +10606,16 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool ctrlOpen = ImGui::CollapsingHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TopDown3DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TopDown3DController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::TopDown3DController>(entity);
         if (!ctrl) return;
 
@@ -9659,7 +10672,16 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool ctrlOpen = ImGui::CollapsingHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ThirdPersonCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::ThirdPersonController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::ThirdPersonController>(entity);
         if (!ctrl) return;
 
@@ -9728,7 +10750,16 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool ctrlOpen = ImGui::CollapsingHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("FirstPersonCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::FirstPersonController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
         auto* ctrl = m_World->GetComponent<ECS::FirstPersonController>(entity);
         if (!ctrl) return;
 
@@ -9808,7 +10839,16 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool healthOpen = ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("HealthCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::HealthComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (healthOpen) {
         auto* health = m_World->GetComponent<ECS::HealthComponent>(entity);
         if (!health) return;
 
@@ -9847,7 +10887,16 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool rbOpen = ImGui::CollapsingHeader("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("RigidbodyCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::RigidbodyComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (rbOpen) {
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!rb) return;
 
@@ -9889,7 +10938,16 @@ void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Box Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool boxOpen = ImGui::CollapsingHeader("Box Collider", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("BoxColliderCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::BoxColliderComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (boxOpen) {
         auto* col = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
         if (!col) return;
 
@@ -9914,7 +10972,16 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Audio Source", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool audioOpen = ImGui::CollapsingHeader("Audio Source", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AudioSourceCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::AudioSourceComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (audioOpen) {
         auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
         if (!audio) return;
 
@@ -9956,7 +11023,16 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool spriteOpen = ImGui::CollapsingHeader("Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("Sprite2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::Sprite2DComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (spriteOpen) {
         auto* sprite = m_World->GetComponent<ECS::Sprite2DComponent>(entity);
         if (!sprite) return;
 
@@ -10015,7 +11091,16 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool animOpen = ImGui::CollapsingHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("AnimSprite2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::AnimatedSprite2DComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (animOpen) {
         auto* anim = m_World->GetComponent<ECS::AnimatedSprite2DComponent>(entity);
         if (!anim) return;
 
@@ -10057,7 +11142,16 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool tilemapOpen = ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TilemapCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TilemapComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (tilemapOpen) {
         auto* tilemap = m_World->GetComponent<ECS::TilemapComponent>(entity);
         if (!tilemap) return;
 
@@ -10105,7 +11199,16 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool smOpen = ImGui::CollapsingHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("StateMachineCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::StateMachineComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (smOpen) {
         auto* sm = m_World->GetComponent<ECS::StateMachineComponent>(entity);
         if (!sm) return;
 
@@ -10142,7 +11245,16 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen)) {
+    bool dlgOpen = ImGui::CollapsingHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DialogueCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::DialogueComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (dlgOpen) {
         auto* dialogue = m_World->GetComponent<ECS::DialogueComponent>(entity);
         if (!dialogue) return;
 
@@ -11060,6 +12172,196 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
             ImGui::EndPopup();
         }
     }
+}
+
+// ============================================================================
+// Runtime Dialogue System
+// ============================================================================
+
+void EditorLayer::UpdateDialogue(f32 deltaTime) {
+    if (!m_World) return;
+
+    // Find active dialogue entity
+    ECS::Entity activeDialogue = ECS::INVALID_ENTITY;
+
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (!m_World->HasComponent<ECS::DialogueComponent>(entity)) continue;
+        auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(entity);
+        if (!dlg || dlg->dialogueLines.empty() || dlg->IsComplete()) continue;
+
+        // This dialogue is active (has lines, not complete)
+        activeDialogue = entity;
+        auto& d = *dlg;
+
+        // Advance typewriter
+        if (d.isTyping && d.currentLine < d.dialogueLines.size()) {
+            d.charTimer += deltaTime;
+            while (d.charTimer >= d.charDelay && d.currentChar < d.dialogueLines[d.currentLine].size()) {
+                d.currentChar++;
+                d.charTimer -= d.charDelay;
+            }
+            // Line fully typed
+            if (d.currentChar >= d.dialogueLines[d.currentLine].size()) {
+                d.isTyping = false;
+                d.waitingForInput = true;
+            }
+        }
+
+        // Input: advance dialogue
+        if (d.waitingForInput) {
+            if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter) ||
+                Input::IsMouseButtonPressed(MouseButton::Left)) {
+                // If choices are available at end of dialogue, don't auto-advance
+                if (d.currentLine + 1 >= d.dialogueLines.size() && !d.choices.empty()) {
+                    // Wait for choice selection
+                } else {
+                    d.currentLine++;
+                    d.currentChar = 0;
+                    d.charTimer = 0.0f;
+                    d.waitingForInput = false;
+                    if (!d.IsComplete()) {
+                        d.isTyping = true;
+                    }
+                }
+            }
+        }
+
+        // If typing and player presses advance, skip to end of line
+        if (d.isTyping) {
+            if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter)) {
+                d.currentChar = static_cast<u32>(d.dialogueLines[d.currentLine].size());
+                d.isTyping = false;
+                d.waitingForInput = true;
+            }
+        }
+
+        // Choice navigation
+        if (d.waitingForInput && !d.choices.empty() &&
+            d.currentLine + 1 >= d.dialogueLines.size()) {
+            if (Input::IsKeyPressed(KeyCode::Up) || Input::IsKeyPressed(KeyCode::W)) {
+                d.selectedChoice--;
+                if (d.selectedChoice < 0) d.selectedChoice = static_cast<i32>(d.choices.size()) - 1;
+            }
+            if (Input::IsKeyPressed(KeyCode::Down) || Input::IsKeyPressed(KeyCode::S)) {
+                d.selectedChoice++;
+                if (d.selectedChoice >= static_cast<i32>(d.choices.size())) d.selectedChoice = 0;
+            }
+            // Select choice
+            if (Input::IsKeyPressed(KeyCode::Enter) || Input::IsKeyPressed(KeyCode::Space)) {
+                // Mark complete (game logic can read selectedChoice)
+                d.currentLine = static_cast<u32>(d.dialogueLines.size());
+                d.waitingForInput = false;
+            }
+        }
+
+        break;  // Only handle one active dialogue at a time
+    }
+
+    m_ActiveDialogueEntity = activeDialogue;
+}
+
+void EditorLayer::DrawDialogueOverlay() {
+    if (!m_World || m_ActiveDialogueEntity == ECS::INVALID_ENTITY) return;
+
+    auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_ActiveDialogueEntity);
+    if (!dlg || dlg->IsComplete()) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 screenW = io.DisplaySize.x;
+    f32 screenH = io.DisplaySize.y;
+
+    // Dialogue box dimensions — bottom of screen, classic JRPG style
+    f32 boxW = screenW * 0.75f;
+    f32 boxH = 140.0f;
+    f32 boxX = (screenW - boxW) * 0.5f;
+    f32 boxY = screenH - boxH - 30.0f;
+    f32 padding = 16.0f;
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+    // Style the dialogue box
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.1f, 0.92f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.45f, 0.65f, 0.8f));
+
+    ImGui::SetNextWindowPos(ImVec2(boxX, boxY));
+    ImGui::SetNextWindowSize(ImVec2(boxW, boxH));
+
+    if (ImGui::Begin("##DialogueBox", nullptr, flags)) {
+        // Speaker name header
+        if (!dlg->speakerName.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.75f, 1.0f, 1.0f));
+            ImGui::Text("%s", dlg->speakerName.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+            ImGui::Spacing();
+        }
+
+        // Dialogue text with typewriter
+        std::string visibleText = dlg->GetVisibleText();
+        if (!visibleText.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.98f, 1.0f));
+            ImGui::TextWrapped("%s", visibleText.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        // Blinking cursor indicator when typing
+        if (dlg->isTyping) {
+            ImGui::SameLine(0, 0);
+            f32 blink = std::fmod(static_cast<f32>(ImGui::GetTime()) * 3.0f, 2.0f);
+            if (blink < 1.0f) {
+                ImGui::TextColored(ImVec4(0.7f, 0.8f, 1.0f, 0.8f), "_");
+            }
+        }
+
+        // "Press to continue" indicator
+        if (dlg->waitingForInput && dlg->choices.empty()) {
+            f32 bounce = std::sin(static_cast<f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
+            ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
+            ImGui::Text("[Space]");
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::End();
+
+    // Choice box (appears above dialogue box when choices are shown)
+    bool showChoices = dlg->waitingForInput && !dlg->choices.empty() &&
+                       dlg->currentLine + 1 >= dlg->dialogueLines.size();
+    if (showChoices) {
+        f32 choiceH = static_cast<f32>(dlg->choices.size()) * 28.0f + padding * 2.0f;
+        f32 choiceW = 300.0f;
+        f32 choiceX = boxX + boxW - choiceW - 10.0f;
+        f32 choiceY = boxY - choiceH - 8.0f;
+
+        ImGui::SetNextWindowPos(ImVec2(choiceX, choiceY));
+        ImGui::SetNextWindowSize(ImVec2(choiceW, choiceH));
+
+        if (ImGui::Begin("##ChoiceBox", nullptr, flags)) {
+            for (usize i = 0; i < dlg->choices.size(); ++i) {
+                bool selected = (static_cast<i32>(i) == dlg->selectedChoice);
+
+                if (selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                    ImGui::Text("> %s", dlg->choices[i].text.c_str());
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                    ImGui::Text("  %s", dlg->choices[i].text.c_str());
+                    ImGui::PopStyleColor();
+                }
+            }
+        }
+        ImGui::End();
+    }
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
 }
 
 void EditorLayer::DuplicateEntity(ECS::Entity entity) {

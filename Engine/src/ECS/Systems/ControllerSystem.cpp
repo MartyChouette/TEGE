@@ -902,6 +902,107 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
 
     // Grid movement override (XZ plane, still allows look + jump/gravity)
     if (ctrl.gridMovement) {
+        // Dungeon crawler mode: snap turns + facing-relative movement + wall collision
+        if (ctrl.dungeonCrawlerMode) {
+            // --- Snap turns on A/D (input.x) ---
+            if (Math::Abs(input.x) > 0.3f) {
+                if (!ctrl.snapTurnPending) {
+                    ctrl.snapTurnPending = true;
+                    if (input.x < 0.0f) {
+                        ctrl.yaw += ctrl.snapTurnAngle;  // Turn left
+                    } else {
+                        ctrl.yaw -= ctrl.snapTurnAngle;  // Turn right
+                    }
+                    // Normalize yaw to 0-360
+                    while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
+                    while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
+                }
+            } else {
+                ctrl.snapTurnPending = false;
+            }
+
+            // --- Facing-relative movement on W/S (input.y) ---
+            // Convert forward/backward input into the direction the player faces
+            Math::Vector2 facingInput(0.0f, 0.0f);
+            if (Math::Abs(input.y) > 0.3f && !ctrl.gridMoving) {
+                f32 yr = Math::Radians(ctrl.yaw);
+                // Forward direction on XZ plane
+                f32 fwdX = -Math::Sin(yr);
+                f32 fwdZ = -Math::Cos(yr);
+                // Snap to dominant cardinal direction
+                if (Math::Abs(fwdX) > Math::Abs(fwdZ)) {
+                    facingInput.x = fwdX > 0.0f ? 1.0f : -1.0f;
+                    facingInput.y = 0.0f;
+                } else {
+                    facingInput.x = 0.0f;
+                    facingInput.y = fwdZ > 0.0f ? 1.0f : -1.0f;
+                }
+                if (input.y < 0.0f) {
+                    // Backward: reverse the direction
+                    facingInput.x = -facingInput.x;
+                    facingInput.y = -facingInput.y;
+                }
+
+                // --- Wall collision check ---
+                // Compute target cell position
+                f32 cellSize = ctrl.gridCellSize;
+                f32 ox = ctrl.gridOrigin.x;
+                f32 oz = ctrl.gridOrigin.z;
+                f32 snappedX = Math::Round((transform.position.x - ox) / cellSize) * cellSize + ox;
+                f32 snappedZ = Math::Round((transform.position.z - oz) / cellSize) * cellSize + oz;
+                f32 targetX = snappedX + facingInput.x * cellSize;
+                f32 targetZ = snappedZ + facingInput.y * cellSize;
+
+                // Check if any entity with a BoxCollider occupies the target cell
+                bool blocked = false;
+                if (m_World) {
+                    f32 halfCell = cellSize * 0.5f;
+                    for (ECS::Entity other : m_World->GetAllEntities()) {
+                        if (!m_World->HasComponent<BoxColliderComponent>(other) ||
+                            !m_World->HasComponent<TransformComponent>(other)) {
+                            continue;
+                        }
+                        auto* col = m_World->GetComponent<BoxColliderComponent>(other);
+                        if (col->isTrigger) continue;  // Triggers don't block
+                        auto* otherT = m_World->GetComponent<TransformComponent>(other);
+                        // AABB overlap test: collider center in world space
+                        f32 colCX = otherT->position.x + col->center.x;
+                        f32 colCZ = otherT->position.z + col->center.z;
+                        f32 colHalfX = col->size.x * otherT->scale.x * 0.5f;
+                        f32 colHalfZ = col->size.z * otherT->scale.z * 0.5f;
+                        // Check if target cell center overlaps the collider
+                        if (targetX >= colCX - colHalfX && targetX <= colCX + colHalfX &&
+                            targetZ >= colCZ - colHalfZ && targetZ <= colCZ + colHalfZ) {
+                            blocked = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (blocked) {
+                    facingInput = Math::Vector2(0.0f, 0.0f);
+                }
+            }
+
+            // Use facing-relative input for grid movement
+            if (UpdateGridMovement(ctrl, transform, facingInput, dt)) {
+                // Camera follows position with yaw/pitch
+                Math::Vector3 eyePos = transform.position;
+                eyePos.y += ctrl.currentHeight;
+                f32 yr = Math::Radians(ctrl.yaw);
+                f32 pr = Math::Radians(ctrl.pitch);
+                Math::Vector3 fwd;
+                fwd.x = -Math::Sin(yr) * Math::Cos(pr);
+                fwd.y = Math::Sin(pr);
+                fwd.z = -Math::Cos(yr) * Math::Cos(pr);
+                UpdateGameCameraTransform(eyePos, eyePos + fwd, Math::Vector3(0, 1, 0));
+            }
+            // Update entity rotation to match yaw
+            transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.yaw));
+            return;
+        }
+
+        // Non-crawler grid movement (original behavior)
         if (UpdateGridMovement(ctrl, transform, input, dt)) {
             // Camera follows position in grid mode
             {
