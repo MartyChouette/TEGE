@@ -247,6 +247,35 @@ void ControllerSystem::Update(f32 deltaTime) {
             transform->rotation = Math::Quaternion::Slerp(transform->rotation, targetRotation, t);
         }
     }
+
+    // Camera2D bounds follow
+    for (Entity entity : m_World->GetEntitiesWithComponent<Camera2DBoundsComponent>()) {
+        auto* cam2d = m_World->GetComponent<Camera2DBoundsComponent>(entity);
+        auto* camTransform = m_World->GetComponent<TransformComponent>(entity);
+        if (!cam2d || !camTransform || cam2d->followTarget == 0) continue;
+
+        auto* targetTransform = m_World->GetComponent<TransformComponent>(cam2d->followTarget);
+        if (!targetTransform) continue;
+
+        // Smooth follow
+        Math::Vector3 followTarget = targetTransform->position +
+            Math::Vector3(cam2d->followOffset.x, cam2d->followOffset.y, 0);
+        f32 t = 1.0f - std::exp(-cam2d->followSmoothing * deltaTime);
+        camTransform->position.x += (followTarget.x - camTransform->position.x) * t;
+        camTransform->position.y += (followTarget.y - camTransform->position.y) * t;
+
+        // Clamp to bounds
+        if (cam2d->useBounds) {
+            f32 minX = cam2d->minBounds.x + cam2d->boundsPadding;
+            f32 maxX = cam2d->maxBounds.x - cam2d->boundsPadding;
+            f32 minY = cam2d->minBounds.y + cam2d->boundsPadding;
+            f32 maxY = cam2d->maxBounds.y - cam2d->boundsPadding;
+            if (camTransform->position.x < minX) camTransform->position.x = minX;
+            if (camTransform->position.x > maxX) camTransform->position.x = maxX;
+            if (camTransform->position.y < minY) camTransform->position.y = minY;
+            if (camTransform->position.y > maxY) camTransform->position.y = maxY;
+        }
+    }
 }
 
 Math::Vector2 ControllerSystem::GetMovementInput(const CharacterControllerBase& controller) {

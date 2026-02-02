@@ -577,6 +577,12 @@ struct Sprite2DComponent {
 
     // Visibility
     bool visible = true;
+
+    // Dirty flag — triggers mesh regeneration in RenderSystem
+    bool spriteDirty = true;
+
+    // Texture pixel dimensions (set by RenderSystem on texture load for UV normalization)
+    f32 texPixelWidth = 0, texPixelHeight = 0;
 };
 
 // Animated sprite component (sprite sheet animation)
@@ -630,8 +636,12 @@ struct TilemapComponent {
     void SetTile(u32 x, u32 y, i32 tileIndex) {
         if (x < width && y < height) {
             tiles[y * width + x] = tileIndex;
+            meshDirty = true;
         }
     }
+
+    // Dirty flag — triggers mesh regeneration in RenderSystem
+    bool meshDirty = true;
 };
 
 // 2D Camera bounds (for 2D games)

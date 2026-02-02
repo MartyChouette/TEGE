@@ -30,8 +30,10 @@
 #include <string>
 #include <functional>
 #include <memory>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include <vulkan/vulkan.h>
 
 namespace Enjin {
 
@@ -516,6 +518,26 @@ private:
     bool m_BuildFinished = false;
     float m_BuildProgress = 0.0f;
     std::string m_BuildProgressPhase;
+
+    // ImGui texture descriptor cache for sprite/tilemap previews
+    std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;
+    VkDescriptorSet GetImGuiTexture(const std::string& path);
+    void CleanupImGuiTextureCache();
+
+    // Sprite frame picker state
+    f32 m_SpriteFramePickerW = 32.0f;
+    f32 m_SpriteFramePickerH = 32.0f;
+
+    // Auto-slice state
+    f32 m_AutoSliceWidth = 32.0f;
+    f32 m_AutoSliceHeight = 32.0f;
+    f32 m_AutoSliceDuration = 0.1f;
+    i32 m_AutoSliceCount = 0;
+
+    // Tilemap editor state
+    bool m_TilemapEditMode = false;
+    i32 m_TileBrushIndex = 0;
+    void HandleTilemapBrush();
 };
 
 } // namespace Editor

@@ -23,6 +23,7 @@
 #include "Enjin/Renderer/MeshFactory.h"
 #include <cstring>
 #include <array>
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -299,6 +300,85 @@ void RenderSystem::Update(f32 deltaTime) {
                 jelly->meshDirty = false;
             }
         }
+
+        // Advance animated sprite timers and mark dirty on frame change
+        for (Entity entity : m_World->GetEntitiesWithComponent<AnimatedSprite2DComponent>()) {
+            auto* anim = m_World->GetComponent<AnimatedSprite2DComponent>(entity);
+            auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+            if (!anim || !sprite || !anim->playing || anim->frames.empty()) continue;
+
+            anim->frameTimer += deltaTime * anim->playbackSpeed;
+            const auto& frame = anim->frames[anim->currentFrame];
+            if (anim->frameTimer >= frame.duration) {
+                anim->frameTimer -= frame.duration;
+                anim->frameChanged = true;
+                u32 nextFrame = anim->currentFrame + 1;
+                if (nextFrame >= static_cast<u32>(anim->frames.size())) {
+                    if (anim->loop) { nextFrame = 0; }
+                    else { nextFrame = anim->currentFrame; anim->playing = false; anim->animationComplete = true; }
+                }
+                anim->currentFrame = nextFrame;
+                const auto& newFrame = anim->frames[anim->currentFrame];
+                sprite->srcX = newFrame.srcX;
+                sprite->srcY = newFrame.srcY;
+                sprite->spriteDirty = true;
+            } else {
+                anim->frameChanged = false;
+            }
+        }
+
+        // Auto-generate sprite quad meshes when dirty
+        for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
+            auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+            if (!sprite || !sprite->spriteDirty) continue;
+
+            // Resolve texture pixel dimensions for UV normalization
+            if (sprite->texPixelWidth == 0 && !sprite->texturePath.empty()) {
+                auto tex = GetOrLoadTexture(sprite->texturePath);
+                if (tex && tex->IsValid()) {
+                    sprite->texPixelWidth = static_cast<f32>(tex->GetWidth());
+                    sprite->texPixelHeight = static_cast<f32>(tex->GetHeight());
+                }
+            }
+
+            // Calculate normalized UVs (srcWidth 0 = full texture)
+            f32 uvL = 0.0f, uvT = 0.0f, uvR = 1.0f, uvB = 1.0f;
+            if (sprite->srcWidth > 0 && sprite->srcHeight > 0 && sprite->texPixelWidth > 0) {
+                uvL = sprite->srcX / sprite->texPixelWidth;
+                uvT = sprite->srcY / sprite->texPixelHeight;
+                uvR = (sprite->srcX + sprite->srcWidth) / sprite->texPixelWidth;
+                uvB = (sprite->srcY + sprite->srcHeight) / sprite->texPixelHeight;
+            }
+
+            auto mesh = Renderer::MeshFactory::CreateSpriteQuad(
+                sprite->size.x, sprite->size.y,
+                sprite->pivot.x, sprite->pivot.y,
+                uvL, uvT, uvR, uvB,
+                sprite->flipX, sprite->flipY);
+
+            if (m_World->HasComponent<MeshComponent>(entity)) {
+                *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+            } else {
+                m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+            }
+            m_EntityRenderData.erase(entity);
+            sprite->spriteDirty = false;
+        }
+
+        // Auto-generate tilemap meshes when dirty
+        for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+            auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
+            if (!tilemap || !tilemap->meshDirty) continue;
+
+            auto mesh = Renderer::MeshFactory::CreateTilemapMesh(*tilemap);
+            if (m_World->HasComponent<MeshComponent>(entity)) {
+                *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+            } else {
+                m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
+            }
+            m_EntityRenderData.erase(entity);
+            tilemap->meshDirty = false;
+        }
     }
 
     // Update skeletal animators (only iterate entities that have AnimatorComponent)
@@ -516,6 +596,9 @@ void RenderSystem::Update(f32 deltaTime) {
                 continue;
             }
 
+            // Skip 2D sprites — rendered in sorted pass after 3D geometry
+            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+
             // LOD selection (if camera is available)
             if (doLOD) {
                 auto* lod = m_World->GetComponent<LODComponent>(entity);
@@ -544,6 +627,9 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderEntity(entity);
         }
     }
+
+    // Sorted 2D sprite rendering pass (after 3D geometry)
+    RenderSprites();
 }
 
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
@@ -600,11 +686,14 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     scissor.extent = { target->GetWidth(), target->GetHeight() };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Render all entities with mesh and transform
+    // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
     const auto& entities = m_World->GetAllEntities();
     for (Entity entity : entities) {
         if (m_World->HasComponent<TransformComponent>(entity) &&
             m_World->HasComponent<MeshComponent>(entity)) {
+
+            // Skip 2D sprites — rendered in sorted pass after 3D geometry
+            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
             auto it = m_EntityRenderData.find(entity);
             if (it == m_EntityRenderData.end()) {
@@ -814,6 +903,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
         }
     }
 
+    // Sorted 2D sprite rendering pass (after 3D geometry)
+    RenderSprites();
+
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
     m_ActiveDescriptorSets = &m_DescriptorSets;
@@ -908,13 +1000,16 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Render skybox for this viewport
         RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
-        // Render all entities
+        // Render all entities (skip sprites — drawn in sorted pass)
         const auto& entities = m_World->GetAllEntities();
         for (Entity entity : entities) {
             if (!m_World->HasComponent<TransformComponent>(entity) ||
                 !m_World->HasComponent<MeshComponent>(entity)) {
                 continue;
             }
+
+            // Skip 2D sprites — rendered in sorted pass after 3D geometry
+            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
             auto it = m_EntityRenderData.find(entity);
             if (it == m_EntityRenderData.end()) {
@@ -1109,6 +1204,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             m_DrawCallCount++;
             m_TriangleCount += renderData.indexCount / 3;
         }
+
+        // Sorted 2D sprite rendering pass (after 3D geometry)
+        RenderSprites();
 
         // Render effects for this viewport
         RenderGrass(targetW, targetH);
@@ -2015,6 +2113,28 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.parallaxScale = 0.0f;
     }
 
+    // Sprite texture override — use sprite's texturePath instead of material's
+    Sprite2DComponent* spriteComp = m_World->GetComponent<Sprite2DComponent>(entity);
+    if (spriteComp && !spriteComp->texturePath.empty()) {
+        auto tex = GetOrLoadTexture(spriteComp->texturePath);
+        if (tex && tex->IsValid()) {
+            boundTexture = tex.get();
+            pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
+        }
+        pushConstants.baseColor = spriteComp->tint;
+        pushConstants.opacity = spriteComp->alpha;
+    }
+
+    // Tilemap texture override — use tileset texture path
+    TilemapComponent* tilemapComp = m_World->GetComponent<TilemapComponent>(entity);
+    if (tilemapComp && !tilemapComp->tilesetPath.empty()) {
+        auto tex = GetOrLoadTexture(tilemapComp->tilesetPath);
+        if (tex && tex->IsValid()) {
+            boundTexture = tex.get();
+            pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
+        }
+    }
+
     // Set wind sway flag for vegetation entities
     VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
     if (vegComp) {
@@ -2131,6 +2251,54 @@ void RenderSystem::RenderEntity(Entity entity) {
     vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
     m_DrawCallCount++;
     m_TriangleCount += renderData.indexCount / 3;
+}
+
+void RenderSystem::RenderSprites() {
+    if (!m_Pipeline || !m_Renderer || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Collect all sprite entities
+    struct SpriteEntry {
+        Entity entity;
+        i32 sortingLayer;
+        i32 orderInLayer;
+    };
+
+    std::vector<SpriteEntry> sprites;
+    for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
+        auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+        if (!sprite || !sprite->visible) continue;
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+        if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+
+        sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
+    }
+
+    // Also collect tilemap entities (they use the tileset texture like sprites)
+    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+        if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+
+        auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
+        // Tilemaps render at layer -1000 by default (behind sprites)
+        sprites.push_back({ entity, -1000, 0 });
+    }
+
+    if (sprites.empty()) return;
+
+    // Sort by sortingLayer (ascending), then orderInLayer (ascending)
+    // Lower layer = drawn first = behind
+    std::sort(sprites.begin(), sprites.end(), [](const SpriteEntry& a, const SpriteEntry& b) {
+        if (a.sortingLayer != b.sortingLayer) return a.sortingLayer < b.sortingLayer;
+        return a.orderInLayer < b.orderInLayer;
+    });
+
+    // Render each sprite using existing RenderEntity path
+    for (const auto& entry : sprites) {
+        RenderEntity(entry.entity);
+    }
 }
 
 void RenderSystem::RenderShadowPass() {

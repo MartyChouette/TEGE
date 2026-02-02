@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Assets/GLTFLoader.h"
 #include "Enjin/Math/Vector.h"
 #include <vector>
@@ -44,6 +45,15 @@ public:
 
     // Create 2D terrain mesh from polyline control points
     static ECS::MeshComponent CreateTerrain2D(const ECS::Terrain2DComponent& terrain);
+
+    // Create a textured quad for 2D sprites with UV sub-rect support
+    static ECS::MeshComponent CreateSpriteQuad(f32 width, f32 height,
+        f32 pivotX, f32 pivotY,
+        f32 uvLeft, f32 uvTop, f32 uvRight, f32 uvBottom,
+        bool flipX, bool flipY);
+
+    // Create a batched mesh for an entire tilemap layer
+    static ECS::MeshComponent CreateTilemapMesh(const ECS::TilemapComponent& tilemap);
 
 private:
     static void CalculateTangents(ECS::MeshComponent& mesh);

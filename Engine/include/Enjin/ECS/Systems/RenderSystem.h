@@ -147,6 +147,9 @@ public:
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
 
+    // Load or retrieve a cached texture (public wrapper for editor/tool use)
+    std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
+
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
 
@@ -158,6 +161,7 @@ public:
 private:
     void RenderEntity(Entity entity);
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
+    void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void CreateDefaultMesh();
     void CreatePipeline();
     void CreateShadowPipeline();

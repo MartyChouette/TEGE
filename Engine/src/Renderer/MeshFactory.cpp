@@ -869,5 +869,101 @@ ECS::MeshComponent MeshFactory::CreateTerrain2D(const ECS::Terrain2DComponent& t
     return mesh;
 }
 
+ECS::MeshComponent MeshFactory::CreateSpriteQuad(f32 width, f32 height,
+    f32 pivotX, f32 pivotY,
+    f32 uvLeft, f32 uvTop, f32 uvRight, f32 uvBottom,
+    bool flipX, bool flipY) {
+    ECS::MeshComponent mesh;
+
+    // Offset so pivot point is at local origin
+    f32 x0 = -pivotX * width;
+    f32 y0 = -pivotY * height;
+    f32 x1 = x0 + width;
+    f32 y1 = y0 + height;
+
+    // Apply flipping by swapping UV coordinates
+    f32 u0 = flipX ? uvRight : uvLeft;
+    f32 u1 = flipX ? uvLeft : uvRight;
+    f32 v0 = flipY ? uvBottom : uvTop;
+    f32 v1 = flipY ? uvTop : uvBottom;
+
+    Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+
+    // 4 vertices on XY plane facing +Z
+    mesh.vertices = {
+        { Math::Vector3(x0, y0, 0), normal, Math::Vector2(u0, v0) },
+        { Math::Vector3(x1, y0, 0), normal, Math::Vector2(u1, v0) },
+        { Math::Vector3(x1, y1, 0), normal, Math::Vector2(u1, v1) },
+        { Math::Vector3(x0, y1, 0), normal, Math::Vector2(u0, v1) }
+    };
+
+    mesh.indices = { 0, 1, 2, 0, 2, 3 };
+
+    return mesh;
+}
+
+ECS::MeshComponent MeshFactory::CreateTilemapMesh(const ECS::TilemapComponent& tilemap) {
+    ECS::MeshComponent mesh;
+
+    if (tilemap.width == 0 || tilemap.height == 0 || tilemap.tiles.empty() || tilemap.tilesetColumns == 0) {
+        return mesh;
+    }
+
+    // Reserve approximate space
+    u32 tileCount = tilemap.width * tilemap.height;
+    mesh.vertices.reserve(tileCount * 4);
+    mesh.indices.reserve(tileCount * 6);
+
+    // Compute tileset texture dimensions in tiles
+    // We don't know the exact texture pixel size, so UVs are computed as
+    // tile-index-based fractions: u = col_in_tileset / tilesetColumns
+    // For rows, we estimate max rows from the tile data
+    u32 maxTileIndex = 0;
+    for (i32 t : tilemap.tiles) {
+        if (t > static_cast<i32>(maxTileIndex)) maxTileIndex = static_cast<u32>(t);
+    }
+    u32 tilesetRows = (maxTileIndex / tilemap.tilesetColumns) + 1;
+
+    f32 uTileSize = 1.0f / static_cast<f32>(tilemap.tilesetColumns);
+    f32 vTileSize = 1.0f / static_cast<f32>(tilesetRows);
+
+    Math::Vector3 normal(0.0f, 0.0f, 1.0f);
+
+    for (u32 row = 0; row < tilemap.height; ++row) {
+        for (u32 col = 0; col < tilemap.width; ++col) {
+            i32 tileIndex = tilemap.tiles[row * tilemap.width + col];
+            if (tileIndex < 0) continue; // Empty tile
+
+            // World position of this tile
+            f32 x = static_cast<f32>(col) * tilemap.worldTileWidth;
+            f32 y = static_cast<f32>(row) * tilemap.worldTileHeight;
+
+            // UV coordinates from tile index
+            u32 tileCol = static_cast<u32>(tileIndex) % tilemap.tilesetColumns;
+            u32 tileRow = static_cast<u32>(tileIndex) / tilemap.tilesetColumns;
+            f32 u0 = static_cast<f32>(tileCol) * uTileSize;
+            f32 v0 = static_cast<f32>(tileRow) * vTileSize;
+            f32 u1 = u0 + uTileSize;
+            f32 v1 = v0 + vTileSize;
+
+            u32 baseIdx = static_cast<u32>(mesh.vertices.size());
+
+            mesh.vertices.push_back({ Math::Vector3(x, y, 0), normal, Math::Vector2(u0, v0) });
+            mesh.vertices.push_back({ Math::Vector3(x + tilemap.worldTileWidth, y, 0), normal, Math::Vector2(u1, v0) });
+            mesh.vertices.push_back({ Math::Vector3(x + tilemap.worldTileWidth, y + tilemap.worldTileHeight, 0), normal, Math::Vector2(u1, v1) });
+            mesh.vertices.push_back({ Math::Vector3(x, y + tilemap.worldTileHeight, 0), normal, Math::Vector2(u0, v1) });
+
+            mesh.indices.push_back(baseIdx + 0);
+            mesh.indices.push_back(baseIdx + 1);
+            mesh.indices.push_back(baseIdx + 2);
+            mesh.indices.push_back(baseIdx + 0);
+            mesh.indices.push_back(baseIdx + 2);
+            mesh.indices.push_back(baseIdx + 3);
+        }
+    }
+
+    return mesh;
+}
+
 } // namespace Renderer
 } // namespace Enjin
