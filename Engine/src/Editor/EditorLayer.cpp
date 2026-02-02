@@ -5358,6 +5358,32 @@ void EditorLayer::DrawProjectSettingsPanel() {
                 m_RenderSystem->SetShadowsEnabled(shadows);
             }
 
+            if (shadows) {
+                // Shadow resolution
+                const char* resOptions[] = { "512", "1024", "2048", "4096" };
+                const u32 resValues[] = { 512, 1024, 2048, 4096 };
+                u32 currentRes = m_RenderSystem->GetShadowResolution();
+                int resIdx = 2; // default to 2048
+                for (int i = 0; i < 4; ++i) {
+                    if (resValues[i] == currentRes) { resIdx = i; break; }
+                }
+                if (ImGui::Combo("Shadow Resolution", &resIdx, resOptions, 4)) {
+                    m_RenderSystem->SetShadowResolution(resValues[resIdx]);
+                }
+
+                // Shadow distance
+                f32 shadowDist = m_RenderSystem->GetShadowDistance();
+                if (ImGui::SliderFloat("Shadow Distance", &shadowDist, 10.0f, 500.0f, "%.0f")) {
+                    m_RenderSystem->SetShadowDistance(shadowDist);
+                }
+
+                // Shadow strength
+                f32 shadowStr = m_RenderSystem->GetShadowStrength();
+                if (ImGui::SliderFloat("Shadow Strength", &shadowStr, 0.0f, 1.0f)) {
+                    m_RenderSystem->SetShadowStrength(shadowStr);
+                }
+            }
+
             // Backface culling
             bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
             if (ImGui::Checkbox("Backface Culling", &culling)) {
@@ -13366,6 +13392,17 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
             sprite->texturePath = pathBuffer;
         }
 
+        // Normal map path (for 2.5D lit sprite mode)
+        char normalMapBuffer[256];
+        strncpy(normalMapBuffer, sprite->normalMapPath.c_str(), sizeof(normalMapBuffer) - 1);
+        normalMapBuffer[sizeof(normalMapBuffer) - 1] = '\0';
+        if (ImGui::InputText("Normal Map", normalMapBuffer, sizeof(normalMapBuffer))) {
+            sprite->normalMapPath = normalMapBuffer;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Optional normal map for per-pixel lighting in 2.5D mode");
+        }
+
         // --- Feature 1: Texture preview with source rect overlay ---
         if (!sprite->texturePath.empty() && m_RenderSystem) {
             VkDescriptorSet texId = GetImGuiTexture(sprite->texturePath);
@@ -17817,9 +17854,14 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         auto& theme = canvas->theme;
 
         const char* presets[] = { "Dark", "Light", "RetroGreen", "Fantasy" };
-        int presetIdx = -1;
+        int presetIdx = static_cast<int>(
+            theme.name == "Light" ? 1 :
+            theme.name == "RetroGreen" ? 2 :
+            theme.name == "Fantasy" ? 3 : 0);
         if (ImGui::Combo("Preset", &presetIdx, presets, 4)) {
-            theme = GUI::UITheme::FromPreset(static_cast<GUI::UIThemePreset>(presetIdx));
+            if (presetIdx >= 0 && presetIdx < static_cast<int>(GUI::UIThemePreset::Count)) {
+                theme = GUI::UITheme::FromPreset(static_cast<GUI::UIThemePreset>(presetIdx));
+            }
         }
 
         ImGui::ColorEdit3("Primary", &theme.primary.x);
@@ -18120,6 +18162,10 @@ void EditorLayer::DrawUIEditorOverlay() {
 
     // Compute layout in Game View local space (0..gvW, 0..gvH)
     m_UISystem.ComputeLayoutForCanvas(*canvas, gvW, gvH);
+
+    // Re-validate canvas pointer after layout computation (ECS storage may have reallocated)
+    canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
+    if (!canvas || canvas->elements.empty()) return;
 
     f32 offsetX = m_GameViewImageMinX;
     f32 offsetY = m_GameViewImageMinY;

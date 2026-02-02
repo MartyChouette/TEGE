@@ -79,11 +79,12 @@ void RenderSystem::Initialize() {
     // Create line pipeline for editor grid rendering
     CreateLinePipeline();
 
-    // Create shadow map
+    // Create cascaded shadow map
     m_ShadowMap = std::make_unique<Renderer::ShadowMap>(m_Renderer->GetContext());
     Renderer::ShadowMapConfig shadowConfig;
     shadowConfig.resolution = 2048;
-    shadowConfig.orthoSize = 30.0f;
+    shadowConfig.cascadeCount = 4;
+    shadowConfig.shadowDistance = m_ShadowDistance;
     if (!m_ShadowMap->Initialize(shadowConfig)) {
         ENJIN_LOG_WARN(Renderer, "Failed to initialize shadow map, shadows disabled");
         m_ShadowsEnabled = false;
@@ -132,6 +133,13 @@ void RenderSystem::Initialize() {
         m_WeatherRenderer.reset();
     }
 
+    // Initialize particle emitter renderer
+    m_ParticleRenderer = std::make_unique<Effects::ParticleRenderer>();
+    if (!m_ParticleRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "ParticleRenderer initialization failed, emitter particles disabled");
+        m_ParticleRenderer.reset();
+    }
+
     // Initialize grass renderer
     m_GrassRenderer = std::make_unique<Effects::GrassRenderer>();
     if (!m_GrassRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
@@ -151,6 +159,13 @@ void RenderSystem::Initialize() {
     if (!m_TreeRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_WARN(Renderer, "TreeRenderer initialization failed, trees disabled");
         m_TreeRenderer.reset();
+    }
+
+    // Initialize sprite batch renderer
+    m_SpriteBatchRenderer = std::make_unique<Effects::SpriteBatchRenderer>();
+    if (!m_SpriteBatchRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "SpriteBatchRenderer initialization failed, sprite batching disabled");
+        m_SpriteBatchRenderer.reset();
     }
 
     // Initialize skybox
@@ -193,11 +208,13 @@ void RenderSystem::Shutdown() {
     m_ActiveUniformBuffers = nullptr;
     m_ActiveLightingBuffers = nullptr;
 
-    // Clean up weather, grass, shrub, and tree renderers
+    // Clean up weather, particle, grass, shrub, tree, and sprite batch renderers
     m_WeatherRenderer.reset();
+    m_ParticleRenderer.reset();
     m_GrassRenderer.reset();
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
+    m_SpriteBatchRenderer.reset();
 
     // Clean up skybox resources
     m_SkyboxVertexBuffer.reset();
@@ -455,9 +472,23 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
-    // Shadow pass first (if enabled) - runs before main render pass
-    if (m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline) {
+    // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
+    ClassifySceneComposition();
+
+    // Shadow pass first (if enabled) - only run when 3D meshes are present (Scene3D mode)
+    // Pure 2D and 2.5D scenes skip the shadow pass entirely since sprites never cast shadows.
+    if (m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline &&
+        m_SceneComposition.mode == SceneRenderMode::Scene3D) {
         RenderShadowPass();
+    }
+
+    // Periodic diagnostic warnings (every 300 frames)
+    if (++m_DiagnosticFrameCounter >= 300) {
+        m_DiagnosticFrameCounter = 0;
+        if (m_SceneComposition.spriteCount > 100 && !m_SpriteBatchRenderer) {
+            ENJIN_LOG_WARN(Renderer, "Scene has %u sprites without batch renderer — high draw call count",
+                           m_SceneComposition.spriteCount);
+        }
     }
 
     // Begin the main render pass (after any pre-passes like shadows)
@@ -539,9 +570,22 @@ void RenderSystem::Update(f32 deltaTime) {
             for (Entity entity : entities) {
                 if (m_World->HasComponent<TransformComponent>(entity) &&
                     m_World->HasComponent<MeshComponent>(entity)) {
+                    // Skip 2D sprites — rendered in sorted pass after 3D geometry
+                    if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
                     RenderEntity(entity);
                 }
             }
+
+            // Sorted 2D sprite rendering pass (after 3D geometry)
+            RenderSprites();
+
+            // Render effects for this viewport
+            u32 vpW = static_cast<u32>(pixelW);
+            u32 vpH = static_cast<u32>(pixelH);
+            RenderGrass(vpW, vpH);
+            RenderShrubs(vpW, vpH);
+            RenderTrees(vpW, vpH);
+            RenderParticles(vpW, vpH);
         }
 
         m_Camera = prevCamera;
@@ -630,6 +674,12 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
+
+    // Render effect passes (grass, shrubs, trees, particles)
+    RenderGrass(0, 0);
+    RenderShrubs(0, 0);
+    RenderTrees(0, 0);
+    RenderParticles(0, 0);
 }
 
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
@@ -905,6 +955,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
+
+    // Render effect passes (grass, shrubs, trees, particles)
+    RenderGrass(0, 0);
+    RenderShrubs(0, 0);
+    RenderTrees(0, 0);
+    RenderParticles(0, 0);
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
@@ -1212,6 +1268,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderGrass(targetW, targetH);
         RenderShrubs(targetW, targetH);
         RenderTrees(targetW, targetH);
+        RenderParticles(targetW, targetH);
     }
 
     // Restore main pass state
@@ -1225,6 +1282,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
 void RenderSystem::OnEntityAdded(Entity entity) {
     SetupEntityBuffers(entity);
+
+    // Invalidate scene composition cache (new entity may change 2D/3D classification)
+    m_SceneComposition.dirty = true;
 
     // Cache player entity (first entity with any CharacterController)
     if (m_CachedPlayerEntity == INVALID_ENTITY && m_World) {
@@ -1242,6 +1302,9 @@ void RenderSystem::OnEntityAdded(Entity entity) {
 void RenderSystem::OnEntityRemoved(Entity entity) {
     m_EntityRenderData.erase(entity);
     m_TextTextureCache.erase(entity);
+
+    // Invalidate scene composition cache (removed entity may change 2D/3D classification)
+    m_SceneComposition.dirty = true;
 
     // Invalidate cached player entity and search for a replacement
     if (entity == m_CachedPlayerEntity) {
@@ -1261,6 +1324,54 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
             }
         }
     }
+}
+
+void RenderSystem::ClassifySceneComposition() {
+    if (!m_SceneComposition.dirty || !m_World) return;
+
+    m_SceneComposition.spriteCount = 0;
+    m_SceneComposition.tilemapCount = 0;
+    m_SceneComposition.mesh3DCount = 0;
+    m_SceneComposition.hasShadowCastingLights = false;
+
+    // Count sprites
+    for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
+        (void)entity;
+        m_SceneComposition.spriteCount++;
+    }
+
+    // Count tilemaps
+    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+        (void)entity;
+        m_SceneComposition.tilemapCount++;
+    }
+
+    // Count 3D meshes (MeshComponent WITHOUT Sprite2DComponent and WITHOUT TilemapComponent)
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+        m_SceneComposition.mesh3DCount++;
+    }
+
+    // Check for shadow-casting directional lights
+    for (Entity entity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+        auto* light = m_World->GetComponent<LightComponent>(entity);
+        if (light && light->type == LightType::Directional && light->castShadows) {
+            m_SceneComposition.hasShadowCastingLights = true;
+            break;
+        }
+    }
+
+    // Classify scene mode
+    if (m_SceneComposition.mesh3DCount > 0) {
+        m_SceneComposition.mode = SceneRenderMode::Scene3D;
+    } else if (m_SceneComposition.hasShadowCastingLights) {
+        m_SceneComposition.mode = SceneRenderMode::Scene2_5D;
+    } else {
+        m_SceneComposition.mode = SceneRenderMode::Scene2D;
+    }
+
+    m_SceneComposition.dirty = false;
 }
 
 void RenderSystem::CreatePipeline() {
@@ -1503,11 +1614,11 @@ void RenderSystem::CreateDescriptorSets() {
             imageInfo.sampler = VK_NULL_HANDLE;
         }
 
-        // Shadow map (binding 4)
+        // Shadow map (binding 4) - 2D array for cascaded shadows
         VkDescriptorImageInfo shadowImageInfo{};
         if (m_ShadowMap && m_ShadowsEnabled) {
             shadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-            shadowImageInfo.imageView = m_ShadowMap->GetDepthImageView();
+            shadowImageInfo.imageView = m_ShadowMap->GetDepthArrayView();
             shadowImageInfo.sampler = m_ShadowMap->GetShadowSampler();
         } else {
             // Use default white texture as fallback (will return 1.0 = no shadow)
@@ -1675,7 +1786,7 @@ void RenderSystem::CreateDescriptorSets() {
                 VkDescriptorImageInfo offShadowInfo{};
                 if (m_ShadowMap && m_ShadowsEnabled) {
                     offShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-                    offShadowInfo.imageView = m_ShadowMap->GetDepthImageView();
+                    offShadowInfo.imageView = m_ShadowMap->GetDepthArrayView();
                     offShadowInfo.sampler = m_ShadowMap->GetShadowSampler();
                 } else {
                     offShadowInfo = offImageInfo;
@@ -1880,17 +1991,28 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 
     if (m_ShadowsEnabled && m_ShadowMap) {
-        lighting.lightSpaceMatrix = m_ShadowMap->GetLightSpaceMatrix();
+        for (u32 i = 0; i < Renderer::MAX_SHADOW_CASCADES; ++i) {
+            lighting.cascadeViewProj[i] = m_ShadowMap->GetCascadeViewProj(i);
+        }
+        lighting.cascadeSplits = Math::Vector4(
+            m_ShadowMap->GetCascadeSplit(0),
+            m_ShadowMap->GetCascadeSplit(1),
+            m_ShadowMap->GetCascadeSplit(2),
+            m_ShadowMap->GetCascadeSplit(3));
         lighting.shadowBias = m_ShadowMap->GetDepthBias();
         lighting.shadowEnabled = 1;
         lighting.shadowStrength = m_ShadowMap->GetShadowStrength();
+        lighting.shadowMaxDistance = m_ShadowDistance;
     } else {
-        lighting.lightSpaceMatrix = Math::Matrix4::Identity();
+        for (u32 i = 0; i < Renderer::MAX_SHADOW_CASCADES; ++i) {
+            lighting.cascadeViewProj[i] = Math::Matrix4::Identity();
+        }
+        lighting.cascadeSplits = Math::Vector4(25.0f, 50.0f, 75.0f, 100.0f);
         lighting.shadowBias = 0.005f;
         lighting.shadowEnabled = 0;
         lighting.shadowStrength = 1.0f;
+        lighting.shadowMaxDistance = 100.0f;
     }
-    lighting._shadowPad = 0.0f;
 
     if (m_WindSystem) {
         lighting.windData = m_WindSystem->GetWindVector();
@@ -1965,6 +2087,30 @@ void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
 void RenderSystem::SetWireframeEnabled(bool enabled) {
     if (m_WireframeMode == enabled) return;
     m_WireframeMode = enabled;
+    RecreatePipelines();
+}
+
+void RenderSystem::SetShadowDistance(f32 d) {
+    m_ShadowDistance = d;
+    if (m_ShadowMap) m_ShadowMap->SetShadowDistance(d);
+}
+
+f32 RenderSystem::GetShadowStrength() const {
+    return m_ShadowMap ? m_ShadowMap->GetShadowStrength() : 1.0f;
+}
+
+void RenderSystem::SetShadowStrength(f32 s) {
+    if (m_ShadowMap) m_ShadowMap->SetShadowStrength(s);
+}
+
+u32 RenderSystem::GetShadowResolution() const {
+    return m_ShadowMap ? m_ShadowMap->GetResolution() : 2048;
+}
+
+void RenderSystem::SetShadowResolution(u32 r) {
+    if (!m_ShadowMap) return;
+    m_ShadowMap->SetResolution(r);
+    // Recreate descriptor sets to pick up new image views
     RecreatePipelines();
 }
 
@@ -2259,45 +2405,79 @@ void RenderSystem::RenderSprites() {
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
-    // Collect all sprite entities
-    struct SpriteEntry {
-        Entity entity;
-        i32 sortingLayer;
-        i32 orderInLayer;
-    };
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
-    std::vector<SpriteEntry> sprites;
-    for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
-        auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
-        if (!sprite || !sprite->visible) continue;
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-        if (!m_World->HasComponent<MeshComponent>(entity)) continue;
-
-        sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
+    // Render tilemaps first (layer -1000, behind sprites) via the per-entity path
+    // Tilemaps are complex meshes that don't benefit from instance batching
+    {
+        struct TilemapEntry {
+            Entity entity;
+        };
+        std::vector<TilemapEntry> tilemaps;
+        for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+            if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+            tilemaps.push_back({ entity });
+        }
+        for (const auto& entry : tilemaps) {
+            RenderEntity(entry.entity);
+        }
     }
 
-    // Also collect tilemap entities (they use the tileset texture like sprites)
-    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-        if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+    // Render sprites via batch renderer (instanced draw calls grouped by texture)
+    if (m_SpriteBatchRenderer) {
+        // Determine lit mode: Scene2D = unlit, Scene2_5D/Scene3D = lit (sprites respond to lights)
+        bool litMode = (m_SceneComposition.mode != SceneRenderMode::Scene2D);
 
-        auto* tilemap = m_World->GetComponent<TilemapComponent>(entity);
-        // Tilemaps render at layer -1000 by default (behind sprites)
-        sprites.push_back({ entity, -1000, 0 });
-    }
+        auto textureBindCallback = [this](const std::string& texturePath) {
+            if (!texturePath.empty()) {
+                auto tex = GetOrLoadTexture(texturePath);
+                if (tex && tex->IsValid()) {
+                    UpdateTextureDescriptor(tex.get());
+                }
+            }
+            // Bind default normal map (flat normal) for lit sprites at binding 6
+            if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+            }
+        };
 
-    if (sprites.empty()) return;
+        m_SpriteBatchRenderer->Render(
+            commandBuffer,
+            *m_ActiveDescriptorSets,
+            GetActiveBufferIndex(currentFrame),
+            m_World,
+            textureBindCallback,
+            0, 0,
+            litMode);
+    } else {
+        // Fallback: per-entity sprite rendering (no batching)
+        struct SpriteEntry {
+            Entity entity;
+            i32 sortingLayer;
+            i32 orderInLayer;
+        };
 
-    // Sort by sortingLayer (ascending), then orderInLayer (ascending)
-    // Lower layer = drawn first = behind
-    std::sort(sprites.begin(), sprites.end(), [](const SpriteEntry& a, const SpriteEntry& b) {
-        if (a.sortingLayer != b.sortingLayer) return a.sortingLayer < b.sortingLayer;
-        return a.orderInLayer < b.orderInLayer;
-    });
+        std::vector<SpriteEntry> sprites;
+        for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
+            auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+            if (!sprite || !sprite->visible) continue;
+            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+            if (!m_World->HasComponent<MeshComponent>(entity)) continue;
 
-    // Render each sprite using existing RenderEntity path
-    for (const auto& entry : sprites) {
-        RenderEntity(entry.entity);
+            sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
+        }
+
+        if (!sprites.empty()) {
+            std::sort(sprites.begin(), sprites.end(), [](const SpriteEntry& a, const SpriteEntry& b) {
+                if (a.sortingLayer != b.sortingLayer) return a.sortingLayer < b.sortingLayer;
+                return a.orderInLayer < b.orderInLayer;
+            });
+
+            for (const auto& entry : sprites) {
+                RenderEntity(entry.entity);
+            }
+        }
     }
 }
 
@@ -2325,49 +2505,57 @@ void RenderSystem::RenderShadowPass() {
         break;
     }
 
-    // Use auto-fit frustum if enabled and we have a camera
-    if (m_ShadowMap->IsAutoFitEnabled() && m_Camera) {
-        Math::Matrix4 viewProj = m_Camera->GetProjectionMatrix() * m_Camera->GetViewMatrix();
-        m_ShadowMap->UpdateFrustum(viewProj, foundShadowLight ? shadowLightDir : shadowLightDir.Normalized());
-    } else {
-        m_ShadowMap->SetLightDirection(foundShadowLight ? shadowLightDir : Math::Vector3(0.5f, 0.8f, 0.3f).Normalized());
-        if (!foundShadowLight) {
-            m_ShadowMap->SetLightPosition(Math::Vector3(-15.0f, 24.0f, -9.0f));
-        } else {
-            m_ShadowMap->SetLightPosition(Math::Vector3(0.0f, 20.0f, 0.0f) - shadowLightDir * 30.0f);
-        }
+    // Update cascade frustums from camera
+    if (m_Camera) {
+        Math::Vector3 lightDir = foundShadowLight ? shadowLightDir : Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
+        m_ShadowMap->UpdateCascades(
+            m_Camera->GetViewMatrix(), m_Camera->GetProjectionMatrix(),
+            m_Camera->GetNearPlane(), m_Camera->GetFarPlane(),
+            lightDir);
     }
 
-    // Begin shadow pass
-    m_ShadowMap->BeginShadowPass(commandBuffer);
-
-    // Bind shadow pipeline
-    m_ShadowPipeline->Bind(commandBuffer);
-
-    // Bind descriptor set for uniforms
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    vkCmdBindDescriptorSets(
-        commandBuffer,
-        VK_PIPELINE_BIND_POINT_GRAPHICS,
-        m_ShadowPipeline->GetLayout(),
-        0, 1, &m_DescriptorSets[currentFrame],
-        0, nullptr
-    );
 
-    // Render all shadow-casting entities
-    for (Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<TransformComponent>(entity) &&
-            m_World->HasComponent<MeshComponent>(entity)) {
-            // Check if material casts shadows (default: yes)
-            MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
-            if (material && !material->castShadows) continue;
+    // Render each cascade
+    for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
+        // Upload the cascade's view-projection matrix to the UBO as view=Identity, proj=cascadeVP
+        // so the shadow vertex shader (which computes proj * view * model * pos) uses the cascade matrix
+        Renderer::UniformBufferObject shadowUbo{};
+        shadowUbo.view = Math::Matrix4::Identity();
+        shadowUbo.proj = m_ShadowMap->GetCascadeViewProj(cascade);
+        m_UniformBuffers[currentFrame]->UploadData(&shadowUbo, sizeof(shadowUbo));
 
-            RenderEntityShadow(entity, commandBuffer);
+        m_ShadowMap->BeginCascadePass(commandBuffer, cascade);
+
+        // Bind shadow pipeline
+        m_ShadowPipeline->Bind(commandBuffer);
+
+        // Bind descriptor set for uniforms
+        vkCmdBindDescriptorSets(
+            commandBuffer,
+            VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_ShadowPipeline->GetLayout(),
+            0, 1, &m_DescriptorSets[currentFrame],
+            0, nullptr
+        );
+
+        // Render all shadow-casting entities (skip 2D sprites — they never cast shadows)
+        for (Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<TransformComponent>(entity) &&
+                m_World->HasComponent<MeshComponent>(entity)) {
+                // Skip 2D sprites from shadow pass
+                if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+
+                // Check if material casts shadows (default: yes)
+                MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
+                if (material && !material->castShadows) continue;
+
+                RenderEntityShadow(entity, commandBuffer);
+            }
         }
-    }
 
-    // End shadow pass
-    m_ShadowMap->EndShadowPass(commandBuffer);
+        m_ShadowMap->EndCascadePass(commandBuffer);
+    }
 }
 
 void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer) {
@@ -2675,6 +2863,17 @@ void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather,
                               viewportWidth, viewportHeight);
 }
 
+void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
+    if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_ParticleRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+                               viewportWidth, viewportHeight);
+}
+
 void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
     if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World) return;
 
@@ -2721,8 +2920,14 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     if (m_ShrubRenderer) {
         m_ShrubRenderer->RecreateForRenderPass(renderPass, layout);
     }
+    if (m_ParticleRenderer) {
+        m_ParticleRenderer->RecreateForRenderPass(renderPass, layout);
+    }
     if (m_TreeRenderer) {
         m_TreeRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+    if (m_SpriteBatchRenderer) {
+        m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout);
     }
 }
 

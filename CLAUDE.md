@@ -126,7 +126,7 @@ Binding 0: View/Projection UBO (vertex shader)
 Binding 1: Lighting UBO with multi-light arrays (vertex + fragment)
 Binding 2: Material UBO (fragment shader)
 Binding 3: Base color texture sampler (fragment shader)
-Binding 4: Shadow map sampler (fragment shader)
+Binding 4: Shadow map array sampler - 2D array for CSM cascades (fragment shader)
 Binding 5: Height map for parallax mapping (fragment shader)
 Binding 6: Normal map (fragment shader)
 Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
@@ -308,7 +308,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Play mode (play/pause/stop)
 - Native file dialogs (Windows, macOS, Linux)
 - Multiple light sources support (directional, point, spot)
-- Shadow mapping with PCF filtering
+- Cascaded shadow maps (4-cascade CSM with PCF filtering, texel stabilization, distance fade, per-cascade bias)
 - Render-to-texture for Game View (offscreen rendering)
 - Retro rendering effects (per-material flat shading, affine texturing, vertex snapping, stipple transparency)
 - Retro post-processing (dithering, color quantization, resolution downscaling, CRT scanlines)
@@ -428,6 +428,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - GPU instanced particle renderer (billboard quads, alpha-blended, depth-tested, up to 16384 particles)
 - Particle Editor panel (7 presets, color gradient bar, size/speed curve visualization, shape preview, playback controls)
 - Per-scene rendering settings (SceneRenderSettings config struct, project-level defaults in .enjinproject, per-scene overrides in .enjin, play mode save/restore, Project Settings UI)
+- Shadow quality settings (resolution 512-4096, shadow distance 10-500, shadow strength 0-1, serialized per-scene)
 
 ## AngelScript API Reference
 
@@ -529,7 +530,7 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 
 ### Adding a new shader uniform
 
-1. Update the UBO struct in `VulkanPipeline.h`
+1. Update the UBO struct (`Light.h` for LightingUBO, `VulkanPipeline.h` for ViewProjectionUBO)
 2. Update the GLSL shader
 3. Recompile shader to SPIR-V
 4. Update `ShaderData.h` with new bytecode
@@ -605,6 +606,9 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
 - **Editor Settings vs Scene Settings** — ~~DONE~~ Separated into Settings (editor prefs) and Project Settings (rendering, physics) panels.
 - **Template Rebuild & Demo Scenes** — Update and rebuild all 15 startup templates to use the latest engine features (per-scene render settings, particle system, UI system, etc.). For each template, create a small demo scene that showcases the template's intended gameplay. Add a "Demo" button on each template card in the selector that loads the demo scene instead of the blank template. Template card UI improvements: larger font for template titles, better visual hierarchy.
+- **Planet Gravity 3D Third-Person Platformer Template** — New startup template: spherical/planetoid gravity third-person platformer (Super Mario Galaxy-style). Player walks on the surface of small planetoids with gravity that always points toward the planet center. Requires: a `PlanetGravityZone` component (sphere collider that overrides gravity direction toward its center, configurable radius and strength), integration with the existing gravity zone system (the `GravityZoneComponent` already supports directional/point/zero-G modes — planet gravity is a point-mode specialization with surface-aligned orientation), third-person camera that orbits relative to the planet surface normal rather than world up, and a `SurfaceAlignedController` that rotates the character to match the local gravity vector. Template scene: 3-4 small planetoids at different positions, player spawns on the largest one, can jump between them. Camera auto-adjusts "up" to match the planet the player is standing on.
+- **Component Search Bar** — When clicking "Add Component" in the inspector, show a searchable dropdown/popup instead of the current flat list. Fuzzy text filter that narrows results as you type (like Unity's Add Component menu). Categorize components into groups (Rendering, Physics, Audio, Gameplay, Controllers, UI, Effects, etc.) with collapsible headers. Recently-used components pinned at the top. Keyboard navigation (arrow keys + Enter to select). This becomes essential as component count grows past 60+.
+- **2D/3D Project & Component Separation** — Distinguish between 2D and 3D workflows at both the project and component level. Project-level: startup templates already hint at 2D vs 3D, but formalize this with a project mode setting (2D, 3D, or Mixed) stored in `.enjinproject`. Component-level: tag each component as 2D-specific (SpriteComponent, TilemapComponent, Platformer2DController, TopDown2DController), 3D-specific (MeshComponent, SkeletonComponent, FPSController, TPSController, GrassVolume, TreeVolume, TerrainComponent), or universal (Transform, Name, Tags, Light, AudioSource, Script, Health, etc.). In the Add Component menu and inspector, filter or visually separate components by project mode — a 2D project hides 3D-specific components by default (with an "Show All" toggle), and vice versa. The editor viewport should also adapt: 2D projects default to orthographic camera, snap to XY plane, show 2D grid. 3D projects default to perspective with 3D grid. Mixed mode shows everything. This reduces clutter and makes the engine less overwhelming for users who only need one dimension.
 - **Editor Accent Color & Theming** — Replace the current blue accent color with TEGE brand color `#c7dac4` (soft sage green). Use this as the primary accent throughout the editor (selected items, active tabs, buttons, progress bars, focus indicators). Complement with the existing blue as a secondary accent for links/info. Make the overall editor more aesthetically pleasant, cute, and inviting while maintaining readability. Consider: rounded corners on panels, softer panel borders, warmer background tones, subtle hover animations. The goal is a distinct visual identity — not Unity grey, not Unreal dark, not generic dev-tool blue.
 
 ### Runtime Systems
@@ -616,8 +620,9 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
 - **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
 - **Destructible Environments** — extend DestructibleComponent to work as a prefab-level setting. When enabled on a prefab, all instances inherit destructibility. Add fracture/shatter visual effects (mesh splitting into fragments on destroy), debris physics, chain destruction propagation. Editor toggle: "Destructible" checkbox on prefab inspector.
-- **Improved Shadow System** — cascaded shadow maps (CSM) for large outdoor scenes, shadow distance fade, per-light shadow quality settings, soft shadows with PCSS, transparent shadow receivers. Fix shadow acne edge cases and improve shadow bias auto-tuning.
+- **Improved Shadow System** — ~~DONE (Phase 1)~~ 4-cascade CSM with practical split scheme, texel-size stabilization (anti-swimming), per-cascade scaled bias, distance fade, configurable shadow distance/resolution/strength, Project Settings UI, per-scene serialization. Future work: soft shadows with PCSS, transparent shadow receivers, per-light shadow quality settings, point/spot light shadow maps.
 - **Per-Scene Rendering Settings** — ~~DONE~~ `SceneRenderSettings` struct captures all RenderSystem + PostProcessSettings state (~60 fields). Serialized in scene files as `"renderSettings"` JSON section. Project-level defaults stored in `.enjinproject` manifest. Applied on scene load/new scene, saved/restored around play mode. Project Settings panel has "Use Project Defaults" checkbox + "Set Current as Project Default" / "Reset to Project Default" buttons. Old scenes without `renderSettings` gracefully default.
+- **Simple Fluid Simulation** — Lightweight 2D/3D fluid system for water, lava, and gas effects. Grid-based Eulerian approach (not SPH — simpler, more predictable, easier to integrate with existing rendering). Core features: velocity field advection, pressure solve (Jacobi iteration), density transport, boundary conditions from colliders. Rendering via particle injection into existing particle system or a dedicated screen-space fluid surface renderer. Use cases: flowing water in platformers, lava pools, gas/smoke volumes, potion/liquid physics. Editor integration: FluidVolumeComponent (defines simulation bounds, resolution, viscosity, gravity response), real-time preview in viewport, preset configs (Water, Lava, Smoke, Steam). Performance target: 64x64 2D grid or 32x32x32 3D grid at 60fps on mid-range GPU via compute shader. Potential extensions: two-way coupling with rigidbodies, buoyancy forces, heat-driven convection, surface tension.
 
 ### Rendering Pipeline & Performance
 
@@ -653,7 +658,11 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Procedural Generation Algorithms** — Expand LevelGenerator with modular algorithm support. Each algorithm should work as a pluggable generator that produces 2D grid data or 3D room/corridor layouts. Include bag/piece-pull options (weighted randomized selection from pools) where applicable:
   - **Cellular Automata** — cave generation, organic shapes (configurable birth/death thresholds, iteration count, bag of initial fill patterns)
   - **Random Walkers** — dungeon carving with drunkard's walk, directional bias, tunnel width options (bag of walker behaviors: straight, wobbly, branching)
-  - **Wave Function Collapse (WFC)** — tile-based generation from example patterns, adjacency constraints, backtracking solver (bag of tile sets, weight per tile)
+  - **Wave Function Collapse (WFC)** — tile-based generation from example patterns, adjacency constraints, backtracking solver (bag of tile sets, weight per tile). Key references to study before implementation:
+    - Maxim Gumin's original WFC repo and algorithm description: https://github.com/mxgmn/WaveFunctionCollapse
+    - Oskar Stalberg (Bad North, Townscaper) — "Wave Function Collapse in Bad North" EPC2018 talk: https://www.youtube.com/watch?v=0bcZb-SsnrA — covers practical WFC tile assembly for procedural island dioramas, marching cubes on irregular grids
+    - Anastasia Opara (Tiny Glade, ex-SEED/Embark) — "Creativity of Rules and Patterns" GDC2018: https://www.ea.com/seed/news/seed-gdc-2018-presentation-slides-creativity-of-rules-and-patterns — procedural systems design philosophy. Also her texture synthesis work (example-based generation closely related to WFC): https://medium.com/embarkstudios/texture-synthesis-and-remixing-from-a-single-example-faf5f4e8a5b8
+    - Isaac Karth & Adam M. Smith — "WaveFunctionCollapse is Constraint Solving in the Wild" (2017 workshop paper formalizing WFC as ASP) and follow-up on backtracking heuristics
   - **BSP (Binary Space Partitioning)** — room-corridor dungeons, min/max room sizes, corridor placement (bag of room templates, piece-pull for room shapes and decoration)
   - **L-Systems** — rule-based recursive generation for trees, plants, branching structures, river networks (bag of production rules, stochastic rule selection)
   - **Voronoi Diagrams** — region-based world generation, biome placement, city districts (bag of region types with weighted pull for biome assignment)

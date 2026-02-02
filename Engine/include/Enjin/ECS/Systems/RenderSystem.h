@@ -19,6 +19,7 @@
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/SpriteBatchRenderer.h"
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -31,6 +32,25 @@
 
 namespace Enjin {
 namespace ECS {
+
+// Scene rendering mode — auto-detected per frame from entity composition.
+// Controls which rendering features are active to avoid unnecessary GPU work.
+enum class SceneRenderMode : u8 {
+    Scene2D,    // Only sprites/tilemaps, no 3D meshes — skip shadows, skip 3D lighting
+    Scene2_5D,  // Sprites + lights but no 3D meshes — skip shadows, keep lighting
+    Scene3D     // 3D meshes present — full pipeline
+};
+
+// Cached scene composition data for per-frame rendering decisions.
+// Invalidated on entity add/remove, recomputed lazily before shadow pass.
+struct SceneComposition {
+    SceneRenderMode mode = SceneRenderMode::Scene3D;
+    u32 spriteCount = 0;
+    u32 tilemapCount = 0;
+    u32 mesh3DCount = 0;
+    bool hasShadowCastingLights = false;
+    bool dirty = true;
+};
 
 // Splitscreen viewport camera — associates an entity (with CameraComponent + TransformComponent)
 // with a normalized viewport rectangle within the render target.
@@ -87,6 +107,14 @@ public:
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
 
+    // Shadow quality settings
+    f32 GetShadowDistance() const { return m_ShadowDistance; }
+    void SetShadowDistance(f32 d);
+    f32 GetShadowStrength() const;
+    void SetShadowStrength(f32 s);
+    u32 GetShadowResolution() const;
+    void SetShadowResolution(u32 r);
+
     bool IsBackfaceCullingEnabled() const { return m_BackfaceCulling; }
     void SetBackfaceCullingEnabled(bool enabled);
 
@@ -128,6 +156,10 @@ public:
 
     // Recreate effect renderer pipelines for a specific render pass (e.g. render target)
     void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass);
+
+    // Scene composition (auto-detected rendering mode)
+    SceneRenderMode GetSceneRenderMode() const { return m_SceneComposition.mode; }
+    const SceneComposition& GetSceneComposition() const { return m_SceneComposition; }
 
     // Draw call / triangle counters (reset each frame in Update)
     u32 GetDrawCallCount() const { return m_DrawCallCount; }
@@ -173,6 +205,7 @@ private:
     void RenderEntity(Entity entity);
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
+    void ClassifySceneComposition();  // Update m_SceneComposition if dirty
     void CreateDefaultMesh();
     void CreatePipeline();
     void CreateShadowPipeline();
@@ -203,6 +236,7 @@ private:
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     bool m_ShadowsEnabled = true;
+    f32 m_ShadowDistance = 100.0f;
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
@@ -231,12 +265,17 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
 
-    // Weather, particle, grass, shrub, and tree renderers
+    // Weather, particle, grass, shrub, tree, and sprite batch renderers
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
     std::unique_ptr<Effects::ParticleRenderer> m_ParticleRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
+    std::unique_ptr<Effects::SpriteBatchRenderer> m_SpriteBatchRenderer;
+
+    // Scene composition cache (auto-detected per frame, drives rendering decisions)
+    SceneComposition m_SceneComposition;
+    u32 m_DiagnosticFrameCounter = 0;
 
     // Skybox
     Renderer::Skybox m_Skybox;

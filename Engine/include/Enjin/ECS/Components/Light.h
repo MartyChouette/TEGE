@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Math/Matrix.h"
 #include "Enjin/Math/Vector.h"
 
 namespace Enjin {
@@ -99,12 +100,13 @@ struct alignas(16) LightingUBO {
     u32 spotLightCount;
     u32 _pad1;
 
-    // Shadow mapping data
-    Math::Matrix4 lightSpaceMatrix;  // Light view-projection matrix
-    f32 shadowBias;                  // Depth bias for shadow acne
-    i32 shadowEnabled;               // 1 = shadows enabled
-    f32 shadowStrength;              // 0..1 shadow strength (0 = no shadow, 1 = full)
-    f32 _shadowPad;                  // Padding for alignment
+    // Cascaded shadow mapping data
+    Math::Matrix4 cascadeViewProj[4];  // Per-cascade light view-projection matrices
+    Math::Vector4 cascadeSplits;       // View-space far distance of each cascade (x,y,z,w)
+    f32 shadowBias;                    // Depth bias for shadow acne
+    i32 shadowEnabled;                 // 1 = shadows enabled
+    f32 shadowStrength;                // 0..1 shadow strength (0 = no shadow, 1 = full)
+    f32 shadowMaxDistance;             // Maximum shadow distance (for fade-out)
 
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time

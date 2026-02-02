@@ -2,12 +2,17 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
 #include <array>
+#include <cmath>
+#include <algorithm>
 
 namespace Enjin {
 namespace Renderer {
 
 ShadowMap::ShadowMap(VulkanContext* context)
     : m_Context(context) {
+    for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        m_CascadeViewProj[i] = Math::Matrix4::Identity();
+    }
 }
 
 ShadowMap::~ShadowMap() {
@@ -20,8 +25,12 @@ bool ShadowMap::Initialize(const ShadowMapConfig& config) {
     }
 
     m_Config = config;
+    if (m_Config.cascadeCount > MAX_SHADOW_CASCADES) {
+        m_Config.cascadeCount = MAX_SHADOW_CASCADES;
+    }
 
-    ENJIN_LOG_INFO(Renderer, "Initializing shadow map (%ux%u)...", config.resolution, config.resolution);
+    ENJIN_LOG_INFO(Renderer, "Initializing cascaded shadow map (%ux%u, %u cascades)...",
+                   config.resolution, config.resolution, m_Config.cascadeCount);
 
     if (!CreateDepthResources()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map depth resources");
@@ -33,8 +42,8 @@ bool ShadowMap::Initialize(const ShadowMapConfig& config) {
         return false;
     }
 
-    if (!CreateFramebuffer()) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map framebuffer");
+    if (!CreateFramebuffers()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map framebuffers");
         return false;
     }
 
@@ -44,7 +53,7 @@ bool ShadowMap::Initialize(const ShadowMapConfig& config) {
     }
 
     m_Initialized = true;
-    ENJIN_LOG_INFO(Renderer, "Shadow map initialized");
+    ENJIN_LOG_INFO(Renderer, "Cascaded shadow map initialized");
     return true;
 }
 
@@ -56,9 +65,11 @@ void ShadowMap::Shutdown() {
 
     vkDeviceWaitIdle(device);
 
-    if (m_Framebuffer != VK_NULL_HANDLE) {
-        vkDestroyFramebuffer(device, m_Framebuffer, nullptr);
-        m_Framebuffer = VK_NULL_HANDLE;
+    for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        if (m_CascadeFramebuffers[i] != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(device, m_CascadeFramebuffers[i], nullptr);
+            m_CascadeFramebuffers[i] = VK_NULL_HANDLE;
+        }
     }
 
     if (m_RenderPass != VK_NULL_HANDLE) {
@@ -71,9 +82,16 @@ void ShadowMap::Shutdown() {
         m_ShadowSampler = VK_NULL_HANDLE;
     }
 
-    if (m_DepthImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, m_DepthImageView, nullptr);
-        m_DepthImageView = VK_NULL_HANDLE;
+    for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        if (m_CascadeViews[i] != VK_NULL_HANDLE) {
+            vkDestroyImageView(device, m_CascadeViews[i], nullptr);
+            m_CascadeViews[i] = VK_NULL_HANDLE;
+        }
+    }
+
+    if (m_DepthArrayView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_DepthArrayView, nullptr);
+        m_DepthArrayView = VK_NULL_HANDLE;
     }
 
     if (m_DepthImage != VK_NULL_HANDLE) {
@@ -93,7 +111,7 @@ bool ShadowMap::CreateDepthResources() {
     VkDevice device = m_Context->GetDevice();
     VkPhysicalDevice physicalDevice = m_Context->GetPhysicalDevice();
 
-    // Create depth image
+    // Create depth image with arrayLayers = cascadeCount
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
@@ -101,7 +119,7 @@ bool ShadowMap::CreateDepthResources() {
     imageInfo.extent.height = m_Config.resolution;
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
+    imageInfo.arrayLayers = m_Config.cascadeCount;
     imageInfo.format = VK_FORMAT_D32_SFLOAT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -147,21 +165,40 @@ bool ShadowMap::CreateDepthResources() {
 
     vkBindImageMemory(device, m_DepthImage, m_DepthMemory, 0);
 
-    // Create image view
-    VkImageViewCreateInfo viewInfo{};
-    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    viewInfo.image = m_DepthImage;
-    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    viewInfo.format = VK_FORMAT_D32_SFLOAT;
-    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
+    // Create 2D_ARRAY view for shader sampling (all cascades)
+    VkImageViewCreateInfo arrayViewInfo{};
+    arrayViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    arrayViewInfo.image = m_DepthImage;
+    arrayViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+    arrayViewInfo.format = VK_FORMAT_D32_SFLOAT;
+    arrayViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    arrayViewInfo.subresourceRange.baseMipLevel = 0;
+    arrayViewInfo.subresourceRange.levelCount = 1;
+    arrayViewInfo.subresourceRange.baseArrayLayer = 0;
+    arrayViewInfo.subresourceRange.layerCount = m_Config.cascadeCount;
 
-    if (vkCreateImageView(device, &viewInfo, nullptr, &m_DepthImageView) != VK_SUCCESS) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map image view");
+    if (vkCreateImageView(device, &arrayViewInfo, nullptr, &m_DepthArrayView) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map array view");
         return false;
+    }
+
+    // Create per-cascade 2D views for framebuffer attachments
+    for (u32 i = 0; i < m_Config.cascadeCount; ++i) {
+        VkImageViewCreateInfo cascadeViewInfo{};
+        cascadeViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        cascadeViewInfo.image = m_DepthImage;
+        cascadeViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        cascadeViewInfo.format = VK_FORMAT_D32_SFLOAT;
+        cascadeViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        cascadeViewInfo.subresourceRange.baseMipLevel = 0;
+        cascadeViewInfo.subresourceRange.levelCount = 1;
+        cascadeViewInfo.subresourceRange.baseArrayLayer = i;
+        cascadeViewInfo.subresourceRange.layerCount = 1;
+
+        if (vkCreateImageView(device, &cascadeViewInfo, nullptr, &m_CascadeViews[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create shadow map cascade view %u", i);
+            return false;
+        }
     }
 
     return true;
@@ -223,19 +260,21 @@ bool ShadowMap::CreateRenderPass() {
     return true;
 }
 
-bool ShadowMap::CreateFramebuffer() {
-    VkFramebufferCreateInfo fbInfo{};
-    fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-    fbInfo.renderPass = m_RenderPass;
-    fbInfo.attachmentCount = 1;
-    fbInfo.pAttachments = &m_DepthImageView;
-    fbInfo.width = m_Config.resolution;
-    fbInfo.height = m_Config.resolution;
-    fbInfo.layers = 1;
+bool ShadowMap::CreateFramebuffers() {
+    for (u32 i = 0; i < m_Config.cascadeCount; ++i) {
+        VkFramebufferCreateInfo fbInfo{};
+        fbInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+        fbInfo.renderPass = m_RenderPass;
+        fbInfo.attachmentCount = 1;
+        fbInfo.pAttachments = &m_CascadeViews[i];
+        fbInfo.width = m_Config.resolution;
+        fbInfo.height = m_Config.resolution;
+        fbInfo.layers = 1;
 
-    if (vkCreateFramebuffer(m_Context->GetDevice(), &fbInfo, nullptr, &m_Framebuffer) != VK_SUCCESS) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to create shadow framebuffer");
-        return false;
+        if (vkCreateFramebuffer(m_Context->GetDevice(), &fbInfo, nullptr, &m_CascadeFramebuffers[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create shadow framebuffer for cascade %u", i);
+            return false;
+        }
     }
 
     return true;
@@ -267,11 +306,13 @@ bool ShadowMap::CreateSampler() {
     return true;
 }
 
-void ShadowMap::BeginShadowPass(VkCommandBuffer commandBuffer) {
+void ShadowMap::BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex) {
+    if (cascadeIndex >= m_Config.cascadeCount) return;
+
     VkRenderPassBeginInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
     renderPassInfo.renderPass = m_RenderPass;
-    renderPassInfo.framebuffer = m_Framebuffer;
+    renderPassInfo.framebuffer = m_CascadeFramebuffers[cascadeIndex];
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = { m_Config.resolution, m_Config.resolution };
 
@@ -298,7 +339,7 @@ void ShadowMap::BeginShadowPass(VkCommandBuffer commandBuffer) {
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 }
 
-void ShadowMap::EndShadowPass(VkCommandBuffer commandBuffer) {
+void ShadowMap::EndCascadePass(VkCommandBuffer commandBuffer) {
     vkCmdEndRenderPass(commandBuffer);
 }
 
@@ -308,13 +349,21 @@ void ShadowMap::DestroyDepthResources() {
 
     vkDeviceWaitIdle(device);
 
-    if (m_Framebuffer != VK_NULL_HANDLE) {
-        vkDestroyFramebuffer(device, m_Framebuffer, nullptr);
-        m_Framebuffer = VK_NULL_HANDLE;
+    for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        if (m_CascadeFramebuffers[i] != VK_NULL_HANDLE) {
+            vkDestroyFramebuffer(device, m_CascadeFramebuffers[i], nullptr);
+            m_CascadeFramebuffers[i] = VK_NULL_HANDLE;
+        }
     }
-    if (m_DepthImageView != VK_NULL_HANDLE) {
-        vkDestroyImageView(device, m_DepthImageView, nullptr);
-        m_DepthImageView = VK_NULL_HANDLE;
+    for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
+        if (m_CascadeViews[i] != VK_NULL_HANDLE) {
+            vkDestroyImageView(device, m_CascadeViews[i], nullptr);
+            m_CascadeViews[i] = VK_NULL_HANDLE;
+        }
+    }
+    if (m_DepthArrayView != VK_NULL_HANDLE) {
+        vkDestroyImageView(device, m_DepthArrayView, nullptr);
+        m_DepthArrayView = VK_NULL_HANDLE;
     }
     if (m_DepthImage != VK_NULL_HANDLE) {
         vkDestroyImage(device, m_DepthImage, nullptr);
@@ -336,120 +385,130 @@ void ShadowMap::SetResolution(u32 size) {
     ENJIN_LOG_INFO(Renderer, "Changing shadow map resolution from %u to %u", m_Config.resolution, size);
     m_Config.resolution = size;
 
-    // Recreate depth resources and framebuffer at new size
+    // Recreate depth resources and framebuffers at new size
     DestroyDepthResources();
     if (!CreateDepthResources()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate shadow map at resolution %u", size);
         return;
     }
-    if (!CreateFramebuffer()) {
-        ENJIN_LOG_ERROR(Renderer, "Failed to recreate shadow framebuffer at resolution %u", size);
+    if (!CreateFramebuffers()) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate shadow framebuffers at resolution %u", size);
     }
 }
 
-void ShadowMap::UpdateFrustum(const Math::Matrix4& viewProj, const Math::Vector3& lightDir) {
-    // Compute inverse view-projection to get camera frustum corners in world space
-    Math::Matrix4 invViewProj = viewProj.Inverse();
+void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matrix4& cameraProj,
+                                f32 cameraNear, f32 cameraFar, const Math::Vector3& lightDir) {
+    // Clamp camera far to shadow distance
+    f32 effectiveFar = std::min(cameraFar, m_Config.shadowDistance);
 
-    // 8 NDC corners of the camera frustum
-    Math::Vector3 corners[8];
-    int idx = 0;
-    for (int z = 0; z < 2; ++z) {
-        for (int y = 0; y < 2; ++y) {
-            for (int x = 0; x < 2; ++x) {
-                Math::Vector4 ndc(
-                    x * 2.0f - 1.0f,
-                    y * 2.0f - 1.0f,
-                    z * 1.0f,  // Vulkan depth range [0, 1]
-                    1.0f
-                );
-                Math::Vector4 world = invViewProj * ndc;
-                corners[idx] = Math::Vector3(world.x / world.w, world.y / world.w, world.z / world.w);
-                idx++;
+    // Compute split distances using practical split scheme
+    // (blend between logarithmic and linear split)
+    f32 lambda = m_Config.splitLambda;
+    f32 ratio = effectiveFar / cameraNear;
+    f32 range = effectiveFar - cameraNear;
+
+    for (u32 i = 0; i < m_Config.cascadeCount; ++i) {
+        f32 p = static_cast<f32>(i + 1) / static_cast<f32>(m_Config.cascadeCount);
+        f32 logSplit = cameraNear * std::pow(ratio, p);
+        f32 linearSplit = cameraNear + range * p;
+        m_CascadeSplits[i] = lambda * logSplit + (1.0f - lambda) * linearSplit;
+    }
+
+    // Compute inverse view-projection to get frustum corners in world space
+    Math::Matrix4 invViewProj = (cameraProj * cameraView).Inverse();
+
+    for (u32 cascade = 0; cascade < m_Config.cascadeCount; ++cascade) {
+        f32 splitNear = (cascade == 0) ? cameraNear : m_CascadeSplits[cascade - 1];
+        f32 splitFar = m_CascadeSplits[cascade];
+
+        // Convert split distances to normalized depth [0,1] (Vulkan depth range)
+        // For a perspective projection: z_ndc = (far * near) / (far - z * (far - near)) approximately
+        // We compute frustum corners by interpolating between near and far NDC corners
+        f32 nearNorm = (splitNear - cameraNear) / (cameraFar - cameraNear);
+        f32 farNorm = (splitFar - cameraNear) / (cameraFar - cameraNear);
+
+        // 8 NDC corners of the sub-frustum
+        Math::Vector3 corners[8];
+        int idx = 0;
+        for (int z = 0; z < 2; ++z) {
+            f32 zNdc = (z == 0) ? nearNorm : farNorm;
+            for (int y = 0; y < 2; ++y) {
+                for (int x = 0; x < 2; ++x) {
+                    Math::Vector4 ndc(
+                        x * 2.0f - 1.0f,
+                        y * 2.0f - 1.0f,
+                        zNdc,
+                        1.0f
+                    );
+                    Math::Vector4 world = invViewProj * ndc;
+                    corners[idx] = Math::Vector3(world.x / world.w, world.y / world.w, world.z / world.w);
+                    idx++;
+                }
             }
         }
+
+        // Compute frustum center
+        Math::Vector3 center(0.0f);
+        for (int i = 0; i < 8; ++i) {
+            center = center + corners[i];
+        }
+        center = center * (1.0f / 8.0f);
+
+        // Build light view matrix
+        Math::Vector3 lightDirN = lightDir.Normalized();
+        Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
+        if (std::abs(lightDirN.Dot(lightUp)) > 0.99f) {
+            lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
+        }
+        Math::Matrix4 lightView = Math::Matrix4::LookAt(center + lightDirN * 50.0f, center, lightUp);
+
+        // Transform frustum corners to light space and compute AABB
+        f32 minX = 1e9f, maxX = -1e9f;
+        f32 minY = 1e9f, maxY = -1e9f;
+        f32 minZ = 1e9f, maxZ = -1e9f;
+
+        for (int i = 0; i < 8; ++i) {
+            Math::Vector4 lsCorner = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
+            minX = std::min(minX, lsCorner.x);
+            maxX = std::max(maxX, lsCorner.x);
+            minY = std::min(minY, lsCorner.y);
+            maxY = std::max(maxY, lsCorner.y);
+            minZ = std::min(minZ, lsCorner.z);
+            maxZ = std::max(maxZ, lsCorner.z);
+        }
+
+        // Add Z padding so shadow casters behind the frustum are captured
+        f32 zPad = 50.0f;
+        minZ -= zPad;
+        maxZ += zPad;
+
+        // Texel-size snapping to prevent shadow swimming when camera moves
+        f32 worldUnitsPerTexel = std::max(maxX - minX, maxY - minY) / static_cast<f32>(m_Config.resolution);
+        if (worldUnitsPerTexel > 0.0f) {
+            minX = std::floor(minX / worldUnitsPerTexel) * worldUnitsPerTexel;
+            maxX = std::floor(maxX / worldUnitsPerTexel) * worldUnitsPerTexel;
+            minY = std::floor(minY / worldUnitsPerTexel) * worldUnitsPerTexel;
+            maxY = std::floor(maxY / worldUnitsPerTexel) * worldUnitsPerTexel;
+        }
+
+        // Build orthographic projection
+        Math::Matrix4 lightProj = Math::Matrix4::Orthographic(minX, maxX, minY, maxY, minZ, maxZ);
+
+        m_CascadeViewProj[cascade] = lightProj * lightView;
     }
-
-    // Compute frustum center
-    Math::Vector3 center(0.0f);
-    for (int i = 0; i < 8; ++i) {
-        center = center + corners[i];
-    }
-    center = center * (1.0f / 8.0f);
-
-    // Build light view matrix looking from center along light direction
-    Math::Vector3 lightUp(0.0f, 1.0f, 0.0f);
-    if (std::abs(lightDir.Dot(lightUp)) > 0.99f) {
-        lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
-    }
-    Math::Matrix4 lightView = Math::Matrix4::LookAt(center + lightDir * 50.0f, center, lightUp);
-
-    // Transform frustum corners into light space and compute AABB
-    f32 minX = 1e9f, maxX = -1e9f;
-    f32 minY = 1e9f, maxY = -1e9f;
-    f32 minZ = 1e9f, maxZ = -1e9f;
-
-    for (int i = 0; i < 8; ++i) {
-        Math::Vector4 lightSpaceCorner = lightView * Math::Vector4(corners[i].x, corners[i].y, corners[i].z, 1.0f);
-        if (lightSpaceCorner.x < minX) minX = lightSpaceCorner.x;
-        if (lightSpaceCorner.x > maxX) maxX = lightSpaceCorner.x;
-        if (lightSpaceCorner.y < minY) minY = lightSpaceCorner.y;
-        if (lightSpaceCorner.y > maxY) maxY = lightSpaceCorner.y;
-        if (lightSpaceCorner.z < minZ) minZ = lightSpaceCorner.z;
-        if (lightSpaceCorner.z > maxZ) maxZ = lightSpaceCorner.z;
-    }
-
-    // Add some padding to avoid shadow popping at edges
-    f32 padding = 5.0f;
-    minX -= padding; maxX += padding;
-    minY -= padding; maxY += padding;
-    minZ -= padding; maxZ += padding;
-
-    // Compute ortho size as half the max dimension
-    f32 sizeX = (maxX - minX) * 0.5f;
-    f32 sizeY = (maxY - minY) * 0.5f;
-    m_FittedOrthoSize = std::max(sizeX, sizeY);
-    m_FittedCenter = center;
-
-    // Update light position based on fitted frustum
-    m_LightDirection = lightDir.Normalized();
-    m_LightPosition = center + m_LightDirection * 50.0f;
-
-    // Update near/far for the fitted frustum
-    m_Config.nearPlane = 0.1f;
-    m_Config.farPlane = maxZ - minZ + 100.0f;
 }
 
-void ShadowMap::SetLightDirection(const Math::Vector3& direction) {
-    m_LightDirection = direction.Normalized();
-}
-
-void ShadowMap::SetLightPosition(const Math::Vector3& position) {
-    m_LightPosition = position;
-}
-
-Math::Matrix4 ShadowMap::GetLightViewMatrix() const {
-    // Look from position in the direction of light
-    Math::Vector3 target = m_LightPosition - m_LightDirection * 10.0f;
-
-    // Calculate up vector (avoid parallel with direction)
-    Math::Vector3 up(0.0f, 1.0f, 0.0f);
-    if (std::abs(m_LightDirection.Dot(up)) > 0.99f) {
-        up = Math::Vector3(0.0f, 0.0f, 1.0f);
+const Math::Matrix4& ShadowMap::GetCascadeViewProj(u32 index) const {
+    if (index >= MAX_SHADOW_CASCADES) {
+        static Math::Matrix4 identity = Math::Matrix4::Identity();
+        return identity;
     }
-
-    return Math::Matrix4::LookAt(m_LightPosition, target, up);
+    return m_CascadeViewProj[index];
 }
 
-Math::Matrix4 ShadowMap::GetLightProjectionMatrix() const {
-    // Use fitted ortho size if auto-fit is enabled, otherwise use config value
-    f32 size = m_AutoFit ? m_FittedOrthoSize : m_Config.orthoSize;
-    if (size < 1.0f) size = m_Config.orthoSize; // Fallback if not yet fitted
-    return Math::Matrix4::Orthographic(-size, size, -size, size, m_Config.nearPlane, m_Config.farPlane);
-}
-
-Math::Matrix4 ShadowMap::GetLightSpaceMatrix() const {
-    return GetLightProjectionMatrix() * GetLightViewMatrix();
+f32 ShadowMap::GetCascadeSplit(u32 index) const {
+    if (index >= MAX_SHADOW_CASCADES) return 0.0f;
+    return m_CascadeSplits[index];
 }
 
 } // namespace Renderer

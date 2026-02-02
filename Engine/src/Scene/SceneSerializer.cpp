@@ -1397,6 +1397,7 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
 json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
     json j;
     j["texturePath"] = s.texturePath;
+    if (!s.normalMapPath.empty()) j["normalMapPath"] = s.normalMapPath;
     j["srcX"] = s.srcX;
     j["srcY"] = s.srcY;
     j["srcWidth"] = s.srcWidth;
@@ -1416,6 +1417,7 @@ json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
 ECS::Sprite2DComponent DeserializeSprite2DComponent(const json& j) {
     ECS::Sprite2DComponent s;
     if (j.contains("texturePath")) s.texturePath = j["texturePath"].get<std::string>();
+    if (j.contains("normalMapPath")) s.normalMapPath = j["normalMapPath"].get<std::string>();
     if (j.contains("srcX")) s.srcX = j["srcX"].get<f32>();
     if (j.contains("srcY")) s.srcY = j["srcY"].get<f32>();
     if (j.contains("srcWidth")) s.srcWidth = j["srcWidth"].get<f32>();

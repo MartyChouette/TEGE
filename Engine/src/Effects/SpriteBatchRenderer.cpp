@@ -1,0 +1,512 @@
+#include "Enjin/Effects/SpriteBatchRenderer.h"
+#include "Enjin/Renderer/Vulkan/ShaderData.h"
+#include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/Logging/Log.h"
+#include <cstring>
+#include <array>
+#include <algorithm>
+
+namespace Enjin {
+namespace Effects {
+
+SpriteBatchRenderer::~SpriteBatchRenderer() {
+    Shutdown();
+}
+
+bool SpriteBatchRenderer::Initialize(Renderer::VulkanRenderer* renderer, VkDescriptorSetLayout sharedLayout) {
+    if (m_Initialized) return true;
+
+    m_Renderer = renderer;
+
+    CreateQuadBuffers();
+    CreateInstanceBuffer();
+    CreatePipeline(sharedLayout);
+    CreateLitPipeline(sharedLayout);
+
+    if (!m_Pipeline || !m_QuadVertexBuffer || !m_QuadIndexBuffer || !m_InstanceBuffer) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to initialize resources");
+        Shutdown();
+        return false;
+    }
+
+    if (!m_LitPipeline) {
+        ENJIN_LOG_WARN(Renderer, "SpriteBatchRenderer: Lit pipeline failed to create, lit mode unavailable");
+    }
+
+    m_Initialized = true;
+    ENJIN_LOG_INFO(Renderer, "SpriteBatchRenderer initialized");
+    return true;
+}
+
+void SpriteBatchRenderer::Shutdown() {
+    if (!m_Initialized) return;
+
+    if (m_Renderer && m_Renderer->GetContext()) {
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    }
+
+    m_LitPipeline.reset();
+    m_LitVertexShader.reset();
+    m_LitFragmentShader.reset();
+    m_Pipeline.reset();
+    m_VertexShader.reset();
+    m_FragmentShader.reset();
+    m_InstanceBuffer.reset();
+    m_QuadIndexBuffer.reset();
+    m_QuadVertexBuffer.reset();
+
+    m_Initialized = false;
+}
+
+void SpriteBatchRenderer::CreateQuadBuffers() {
+    // Quad vertices: position (vec2) + UV (vec2) = 4 floats per vertex
+    float quadVerts[] = {
+        -0.5f, -0.5f,  0.0f,  0.0f,
+         0.5f, -0.5f,  1.0f,  0.0f,
+         0.5f,  0.5f,  1.0f,  1.0f,
+        -0.5f,  0.5f,  0.0f,  1.0f,
+    };
+
+    m_QuadVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_QuadVertexBuffer->Create(sizeof(quadVerts), Renderer::BufferUsage::Vertex, true)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to create quad vertex buffer");
+        return;
+    }
+    m_QuadVertexBuffer->UploadData(quadVerts, sizeof(quadVerts));
+
+    u32 quadIndices[] = { 0, 1, 2, 2, 3, 0 };
+
+    m_QuadIndexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_QuadIndexBuffer->Create(sizeof(quadIndices), Renderer::BufferUsage::Index, true)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to create quad index buffer");
+        return;
+    }
+    m_QuadIndexBuffer->UploadData(quadIndices, sizeof(quadIndices));
+}
+
+void SpriteBatchRenderer::CreateInstanceBuffer() {
+    usize bufferSize = MAX_SPRITES * sizeof(SpriteInstanceData);
+    m_InstanceBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_InstanceBuffer->Create(bufferSize, Renderer::BufferUsage::Vertex, true)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to create instance buffer");
+    }
+}
+
+void SpriteBatchRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return;
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+    m_LitPipeline.reset();
+
+    CreatePipelineWithPass(renderPass, sharedLayout);
+    CreateLitPipelineWithPass(renderPass, sharedLayout);
+    if (!m_Pipeline) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to recreate pipeline for render pass");
+    }
+}
+
+void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    // Load sprite shaders
+    m_VertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_VertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteVertexShaderData),
+        Renderer::ShaderData::SpriteVertexShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite vertex shader");
+        return;
+    }
+
+    m_FragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_FragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteFragmentShaderData),
+        Renderer::ShaderData::SpriteFragmentShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load sprite fragment shader");
+        return;
+    }
+
+    // Custom vertex input: binding 0 = quad vertex, binding 1 = instance data
+    std::array<VkVertexInputBindingDescription, 2> bindings{};
+    bindings[0].binding = 0;
+    bindings[0].stride = sizeof(f32) * 4;
+    bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    bindings[1].binding = 1;
+    bindings[1].stride = sizeof(SpriteInstanceData);
+    bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    // 8 vertex attributes: 2 from quad (binding 0), 6 from instance (binding 1)
+    std::array<VkVertexInputAttributeDescription, 8> attrs{};
+
+    // Binding 0: quad vertex data
+    // location 0: quad position (vec2)
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[0].offset = 0;
+
+    // location 1: quad UV (vec2)
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(f32) * 2;
+
+    // Binding 1: per-instance sprite data
+    // location 2: world position (vec3)
+    attrs[2].binding = 1;
+    attrs[2].location = 2;
+    attrs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[2].offset = offsetof(SpriteInstanceData, position);
+
+    // location 3: size (vec2 = sizeX, sizeY)
+    attrs[3].binding = 1;
+    attrs[3].location = 3;
+    attrs[3].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[3].offset = offsetof(SpriteInstanceData, sizeX);
+
+    // location 4: rotation (float, radians)
+    attrs[4].binding = 1;
+    attrs[4].location = 4;
+    attrs[4].format = VK_FORMAT_R32_SFLOAT;
+    attrs[4].offset = offsetof(SpriteInstanceData, rotation);
+
+    // location 5: UV rect (vec4 = left, top, right, bottom)
+    attrs[5].binding = 1;
+    attrs[5].location = 5;
+    attrs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[5].offset = offsetof(SpriteInstanceData, uvLeft);
+
+    // location 6: tint color + alpha (vec4 = r, g, b, a)
+    attrs[6].binding = 1;
+    attrs[6].location = 6;
+    attrs[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[6].offset = offsetof(SpriteInstanceData, tintR);
+
+    // location 7: flip flags (uint)
+    attrs[7].binding = 1;
+    attrs[7].location = 7;
+    attrs[7].format = VK_FORMAT_R32_UINT;
+    attrs[7].offset = offsetof(SpriteInstanceData, flipFlags);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = static_cast<u32>(bindings.size());
+    vertexInput.pVertexBindingDescriptions = bindings.data();
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = renderPass;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = false;   // Sprites don't write depth (same as particles)
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = true;
+    config.customVertexInput = &vertexInput;
+
+    m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_Pipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to create sprite pipeline");
+        m_Pipeline.reset();
+    }
+}
+
+void SpriteBatchRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
+    CreatePipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
+}
+
+void SpriteBatchRenderer::CreateLitPipeline(VkDescriptorSetLayout sharedLayout) {
+    CreateLitPipelineWithPass(m_Renderer->GetRenderPass(), sharedLayout);
+}
+
+void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
+    // Load lit sprite shaders
+    m_LitVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_LitVertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitVertexShaderData),
+        Renderer::ShaderData::SpriteLitVertexShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite vertex shader");
+        return;
+    }
+
+    m_LitFragmentShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_LitFragmentShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::SpriteLitFragmentShaderData),
+        Renderer::ShaderData::SpriteLitFragmentShaderDataSize)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to load lit sprite fragment shader");
+        return;
+    }
+
+    // Same vertex input as unlit pipeline (same SpriteInstanceData struct)
+    std::array<VkVertexInputBindingDescription, 2> bindings{};
+    bindings[0].binding = 0;
+    bindings[0].stride = sizeof(f32) * 4;
+    bindings[0].inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    bindings[1].binding = 1;
+    bindings[1].stride = sizeof(SpriteInstanceData);
+    bindings[1].inputRate = VK_VERTEX_INPUT_RATE_INSTANCE;
+
+    std::array<VkVertexInputAttributeDescription, 8> attrs{};
+
+    attrs[0].binding = 0;
+    attrs[0].location = 0;
+    attrs[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[0].offset = 0;
+
+    attrs[1].binding = 0;
+    attrs[1].location = 1;
+    attrs[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[1].offset = sizeof(f32) * 2;
+
+    attrs[2].binding = 1;
+    attrs[2].location = 2;
+    attrs[2].format = VK_FORMAT_R32G32B32_SFLOAT;
+    attrs[2].offset = offsetof(SpriteInstanceData, position);
+
+    attrs[3].binding = 1;
+    attrs[3].location = 3;
+    attrs[3].format = VK_FORMAT_R32G32_SFLOAT;
+    attrs[3].offset = offsetof(SpriteInstanceData, sizeX);
+
+    attrs[4].binding = 1;
+    attrs[4].location = 4;
+    attrs[4].format = VK_FORMAT_R32_SFLOAT;
+    attrs[4].offset = offsetof(SpriteInstanceData, rotation);
+
+    attrs[5].binding = 1;
+    attrs[5].location = 5;
+    attrs[5].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[5].offset = offsetof(SpriteInstanceData, uvLeft);
+
+    attrs[6].binding = 1;
+    attrs[6].location = 6;
+    attrs[6].format = VK_FORMAT_R32G32B32A32_SFLOAT;
+    attrs[6].offset = offsetof(SpriteInstanceData, tintR);
+
+    attrs[7].binding = 1;
+    attrs[7].location = 7;
+    attrs[7].format = VK_FORMAT_R32_UINT;
+    attrs[7].offset = offsetof(SpriteInstanceData, flipFlags);
+
+    VkPipelineVertexInputStateCreateInfo vertexInput{};
+    vertexInput.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
+    vertexInput.vertexBindingDescriptionCount = static_cast<u32>(bindings.size());
+    vertexInput.pVertexBindingDescriptions = bindings.data();
+    vertexInput.vertexAttributeDescriptionCount = static_cast<u32>(attrs.size());
+    vertexInput.pVertexAttributeDescriptions = attrs.data();
+
+    Renderer::PipelineConfig config;
+    config.renderPass = renderPass;
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = false;
+    config.cullMode = VK_CULL_MODE_NONE;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.alphaBlend = true;
+    config.customVertexInput = &vertexInput;
+
+    m_LitPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_LitPipeline->CreateWithLayout(config, m_LitVertexShader.get(), m_LitFragmentShader.get(), sharedLayout)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: Failed to create lit sprite pipeline");
+        m_LitPipeline.reset();
+    }
+}
+
+void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
+                                  const std::vector<VkDescriptorSet>& descriptorSets,
+                                  u32 currentFrame,
+                                  ECS::World* world,
+                                  std::function<void(const std::string& texturePath)> textureBindCallback,
+                                  u32 viewportWidth,
+                                  u32 viewportHeight,
+                                  bool litMode) {
+    if (!m_Initialized || !m_Pipeline || !world) return;
+
+    // Select active pipeline: lit (2.5D Blinn-Phong) or unlit (flat 2D)
+    Renderer::VulkanPipeline* activePipeline = m_Pipeline.get();
+    if (litMode && m_LitPipeline) {
+        activePipeline = m_LitPipeline.get();
+    }
+
+    // Collect all visible Sprite2DComponent entities (skip tilemaps)
+    struct SpriteEntry {
+        ECS::Entity entity;
+        i32 sortingLayer;
+        i32 orderInLayer;
+        const ECS::Sprite2DComponent* sprite;
+    };
+
+    std::vector<SpriteEntry> sortedSprites;
+
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::Sprite2DComponent>()) {
+        if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
+        // Skip entities that also have TilemapComponent (those are rendered separately)
+        if (world->HasComponent<ECS::TilemapComponent>(entity)) continue;
+
+        auto* sprite = world->GetComponent<ECS::Sprite2DComponent>(entity);
+        if (!sprite || !sprite->visible) continue;
+
+        SpriteEntry entry;
+        entry.entity = entity;
+        entry.sortingLayer = sprite->sortingLayer;
+        entry.orderInLayer = sprite->orderInLayer;
+        entry.sprite = sprite;
+        sortedSprites.push_back(entry);
+    }
+
+    if (sortedSprites.empty()) return;
+
+    // Sort by sorting layer (ascending), then order in layer (ascending)
+    std::sort(sortedSprites.begin(), sortedSprites.end(),
+        [](const SpriteEntry& a, const SpriteEntry& b) {
+            if (a.sortingLayer != b.sortingLayer)
+                return a.sortingLayer < b.sortingLayer;
+            if (a.orderInLayer != b.orderInLayer)
+                return a.orderInLayer < b.orderInLayer;
+            // Tertiary sort by texture path to maximize batching within same layer
+            return a.sprite->texturePath < b.sprite->texturePath;
+        });
+
+    // Resolve viewport extent
+    VkExtent2D extent;
+    if (viewportWidth > 0 && viewportHeight > 0) {
+        extent.width = viewportWidth;
+        extent.height = viewportHeight;
+    } else {
+        extent = m_Renderer->GetSwapchainExtent();
+    }
+
+    // Build instance data and batch by texture path
+    m_InstanceDataCache.clear();
+    std::string currentTexture;
+    u32 batchStart = 0;
+
+    // Lambda to flush the current batch as an instanced draw call
+    auto flushBatch = [&](u32 batchEnd) {
+        u32 count = batchEnd - batchStart;
+        if (count == 0) return;
+
+        // Upload this batch's instance data
+        m_InstanceBuffer->UploadData(
+            m_InstanceDataCache.data() + batchStart,
+            count * sizeof(SpriteInstanceData));
+
+        // Bind the texture for this batch
+        if (textureBindCallback) {
+            textureBindCallback(currentTexture);
+        }
+
+        // Bind pipeline (lit or unlit depending on mode)
+        activePipeline->Bind(commandBuffer);
+
+        // Bind descriptor set
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            activePipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+        // Set viewport
+        VkViewport viewport{};
+        viewport.x = 0.0f;
+        viewport.y = 0.0f;
+        viewport.width = static_cast<f32>(extent.width);
+        viewport.height = static_cast<f32>(extent.height);
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
+        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+        // Set scissor
+        VkRect2D scissor{};
+        scissor.offset = {0, 0};
+        scissor.extent = extent;
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        // Push constants — identity model matrix, white base color, full opacity
+        Renderer::PushConstants pc{};
+        pc.model = Math::Matrix4::Identity();
+        pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        pc.metallic = 0.0f;
+        pc.opacity = 1.0f;
+        pc.flags = 0;
+
+        vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        // Bind vertex buffers (quad = binding 0, instances = binding 1)
+        VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+        VkDeviceSize offsets[] = { 0, 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+
+        // Bind index buffer
+        vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+        // Draw instanced: 6 indices per quad, count instances
+        vkCmdDrawIndexed(commandBuffer, 6, count, 0, 0, 0);
+
+        batchStart = batchEnd;
+    };
+
+    for (const auto& entry : sortedSprites) {
+        const auto* sprite = entry.sprite;
+        const auto* transform = world->GetComponent<ECS::TransformComponent>(entry.entity);
+        if (!transform) continue;
+
+        // Determine texture path for batching
+        const std::string& texPath = sprite->texturePath;
+
+        // Flush when texture changes (but not on the first sprite)
+        if (texPath != currentTexture && m_InstanceDataCache.size() > batchStart) {
+            flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+        }
+        currentTexture = texPath;
+
+        // Build instance data from sprite + transform
+        SpriteInstanceData inst{};
+        inst.position = transform->position;
+        inst.sizeX = sprite->size.x;
+        inst.sizeY = sprite->size.y;
+
+        // Extract Z-axis rotation from quaternion (radians)
+        Math::Vector3 euler = transform->rotation.ToEuler();
+        inst.rotation = euler.z;
+
+        // Compute UV coordinates from sprite source rectangle
+        if (sprite->srcWidth > 0 && sprite->srcHeight > 0 &&
+            sprite->texPixelWidth > 0 && sprite->texPixelHeight > 0) {
+            inst.uvLeft   = sprite->srcX / sprite->texPixelWidth;
+            inst.uvTop    = sprite->srcY / sprite->texPixelHeight;
+            inst.uvRight  = (sprite->srcX + sprite->srcWidth) / sprite->texPixelWidth;
+            inst.uvBottom = (sprite->srcY + sprite->srcHeight) / sprite->texPixelHeight;
+        } else {
+            // Use full texture
+            inst.uvLeft   = 0.0f;
+            inst.uvTop    = 0.0f;
+            inst.uvRight  = 1.0f;
+            inst.uvBottom = 1.0f;
+        }
+
+        // Tint color and alpha
+        inst.tintR = sprite->tint.x;
+        inst.tintG = sprite->tint.y;
+        inst.tintB = sprite->tint.z;
+        inst.tintA = sprite->alpha;
+
+        // Flip flags
+        inst.flipFlags = (sprite->flipX ? 1u : 0u) | (sprite->flipY ? 2u : 0u);
+
+        m_InstanceDataCache.push_back(inst);
+
+        // If we hit the max sprite limit, flush immediately
+        if (m_InstanceDataCache.size() >= MAX_SPRITES) {
+            flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+            m_InstanceDataCache.clear();
+            batchStart = 0;
+        }
+    }
+
+    // Flush remaining sprites
+    flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+}
+
+} // namespace Effects
+} // namespace Enjin

@@ -23,6 +23,9 @@ struct SceneRenderSettings {
 
     // --- RenderSystem fields ---
     bool shadowsEnabled = true;
+    u32 shadowResolution = 2048;    // 512/1024/2048/4096
+    f32 shadowDistance = 100.0f;    // Max shadow distance
+    f32 shadowStrength = 1.0f;     // 0..1
     bool backfaceCulling = false;
     bool wireframe = false;
     f32 ambientIntensity = 1.0f;

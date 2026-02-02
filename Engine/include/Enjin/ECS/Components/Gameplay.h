@@ -466,7 +466,31 @@ struct BillboardComponent {
     f32 rotationOffset = 0.0f;     // Additional rotation in degrees
 };
 
-// Particle Emitter Settings (simplified)
+// Single particle instance (runtime only)
+struct Particle {
+    Math::Vector3 position;
+    Math::Vector3 velocity;
+    f32 lifetime = 0.0f;
+    f32 maxLifetime = 1.0f;
+    f32 size = 0.5f;
+    f32 alpha = 1.0f;
+    f32 rotation = 0.0f;           // Radians
+    f32 rotationSpeed = 0.0f;      // Radians per second
+    Math::Vector3 color = Math::Vector3(1, 1, 1);
+};
+
+// Runtime particle pool (not serialized, managed by ParticleSystem)
+struct ParticlePool {
+    std::vector<Particle> particles;
+    u32 activeCount = 0;
+    u32 maxParticles = 1024;
+    f32 spawnAccumulator = 0.0f;
+    f32 burstTimer = 0.0f;
+    f32 systemAge = 0.0f;
+    bool initialized = false;
+};
+
+// Particle Emitter Settings
 struct ParticleEmitterComponent {
     bool isPlaying = false;
     bool playOnAwake = true;
@@ -489,6 +513,19 @@ struct ParticleEmitterComponent {
     f32 startAlpha = 1.0f;
     f32 endAlpha = 0.0f;
 
+    // Size curve (piecewise linear: start -> mid -> end)
+    f32 sizeMid = -1.0f;           // -1 = auto interpolate between start and end
+
+    // Speed curve multipliers over lifetime
+    f32 speedMultiplierMid = 1.0f;
+    f32 speedMultiplierEnd = 0.5f;
+
+    // Rotation
+    f32 startRotation = 0.0f;      // Radians
+    f32 rotationVariance = 0.0f;
+    f32 rotationSpeed = 0.0f;      // Radians per second
+    f32 rotationSpeedVariance = 0.0f;
+
     // Shape
     enum class EmitterShape : u8 {
         Point,
@@ -505,10 +542,20 @@ struct ParticleEmitterComponent {
     Math::Vector3 gravity = Math::Vector3(0, -9.8f, 0);
     f32 drag = 0.0f;
 
+    // Max particles
+    u32 maxParticles = 1024;
+
+    // Simulation space
+    enum class SimulationSpace : u8 { World, Local };
+    SimulationSpace simulationSpace = SimulationSpace::World;
+
     // Texture
     std::string texturePath;
     i32 textureSheetX = 1;         // Animation frames
     i32 textureSheetY = 1;
+
+    // Runtime pool (not serialized)
+    ParticlePool pool;
 };
 
 // ============================================================================
@@ -556,6 +603,9 @@ struct LayerComponent {
 struct Sprite2DComponent {
     // Texture reference (path for now, could be handle later)
     std::string texturePath;
+
+    // Optional normal map for lit sprite mode (2.5D lighting)
+    std::string normalMapPath;
 
     // Source rectangle in texture (for sprite sheets)
     f32 srcX = 0, srcY = 0;

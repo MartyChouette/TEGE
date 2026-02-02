@@ -1,11 +1,11 @@
 #version 450
 
-// Lit Mesh Fragment Shader with Multi-light, Shadow, and Retro Effect Support
+// Lit Mesh Fragment Shader with Multi-light, Cascaded Shadow, and Retro Effect Support
 
 layout(location = 0) in vec3 fragWorldPos;
 layout(location = 1) in vec3 fragNormal;
 layout(location = 2) in vec2 fragUV;
-layout(location = 3) in vec4 fragPosLightSpace;
+layout(location = 3) in float fragViewDepth;  // View-space depth for cascade selection
 layout(location = 4) in vec4 fragVertColor;
 layout(location = 5) in float fragClipW;
 layout(location = 6) in vec4 fragTangent;
@@ -61,11 +61,12 @@ layout(binding = 1) uniform LightingUBO {
     uint pointLightCount;
     uint spotLightCount;
     uint _pad1;
-    mat4 lightSpaceMatrix;
+    mat4 cascadeViewProj[4];
+    vec4 cascadeSplits;
     float shadowBias;
     int shadowEnabled;
     float shadowStrength;
-    float _shadowPad;
+    float shadowMaxDistance;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -123,8 +124,8 @@ layout(push_constant) uniform PushConstants {
 // Base color texture sampler (binding 3)
 layout(binding = 3) uniform sampler2D baseColorTexture;
 
-// Shadow map sampler (binding 4)
-layout(binding = 4) uniform sampler2DShadow shadowMap;
+// Shadow map sampler - 2D array for cascaded shadows (binding 4)
+layout(binding = 4) uniform sampler2DArrayShadow shadowMap;
 
 // Height map sampler for parallax mapping (binding 5)
 layout(binding = 5) uniform sampler2D heightMap;
@@ -138,43 +139,56 @@ layout(binding = 8) uniform sampler2D metallicRoughnessMap;
 // Emissive map sampler (binding 9)
 layout(binding = 9) uniform sampler2D emissiveMap;
 
-// Calculate shadow factor using PCF (Percentage Closer Filtering)
-float calcShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
-    // Check if shadows are enabled
-    if (lighting.shadowEnabled == 0) {
-        return 1.0;
+// Calculate cascaded shadow factor using PCF (Percentage Closer Filtering)
+float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) {
+    if (lighting.shadowEnabled == 0) return 1.0;
+
+    // Select cascade based on view-space depth
+    int cascadeIdx = 3;  // default to furthest
+    for (int i = 0; i < 4; ++i) {
+        if (viewDepth < lighting.cascadeSplits[i]) {
+            cascadeIdx = i;
+            break;
+        }
     }
 
-    // Perspective divide
-    vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
-
-    // Transform from [-1,1] to [0,1] range for texture sampling
+    // Transform world position to this cascade's light space
+    vec4 lightSpacePos = lighting.cascadeViewProj[cascadeIdx] * vec4(worldPos, 1.0);
+    vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
-    // Check if outside shadow map bounds
+    // Out-of-bounds check
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
         projCoords.y < 0.0 || projCoords.y > 1.0 ||
         projCoords.z < 0.0 || projCoords.z > 1.0) {
         return 1.0;
     }
 
-    // Apply bias to reduce shadow acne
-    float bias = max(lighting.shadowBias * (1.0 - dot(normal, lightDir)), lighting.shadowBias * 0.1);
+    // Per-cascade bias: larger cascades need larger bias (texels cover more world space)
+    float cascadeScale = float(1 << cascadeIdx);  // 1, 2, 4, 8
+    float bias = max(lighting.shadowBias * cascadeScale * (1.0 - dot(normal, lightDir)),
+                     lighting.shadowBias * cascadeScale * 0.1);
     float currentDepth = projCoords.z - bias;
 
-    // PCF (3x3 kernel)
+    // PCF 3x3 on the texture array layer
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0));
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0).xy);
     for (int x = -1; x <= 1; ++x) {
         for (int y = -1; y <= 1; ++y) {
             vec2 offset = vec2(float(x), float(y)) * texelSize;
-            // sampler2DShadow returns 0.0 or 1.0 based on comparison
-            shadow += texture(shadowMap, vec3(projCoords.xy + offset, currentDepth));
+            // sampler2DArrayShadow: vec4(uv.x, uv.y, layer, depth)
+            shadow += texture(shadowMap, vec4(projCoords.xy + offset,
+                                              float(cascadeIdx), currentDepth));
         }
     }
     shadow /= 9.0;
 
-    // Apply shadow strength: 0 = no shadow effect, 1 = full shadows
+    // Distance fade: smoothly fade shadows near max distance
+    float fadeStart = lighting.shadowMaxDistance * 0.8;
+    float fadeFactor = 1.0 - smoothstep(fadeStart, lighting.shadowMaxDistance, viewDepth);
+    shadow = mix(1.0, shadow, fadeFactor);
+
+    // Apply shadow strength
     shadow = mix(1.0, shadow, lighting.shadowStrength);
 
     return shadow;
@@ -424,10 +438,10 @@ void main() {
         vec3 lightColor = lighting.directionalLights[i].color;
         float intensity = lighting.directionalLights[i].intensity;
 
-        // Apply shadow only to first directional light
+        // Apply cascaded shadow only to first directional light
         float shadow = 1.0;
         if (i == 0u) {
-            shadow = calcShadow(fragPosLightSpace, normal, lightDir);
+            shadow = calcShadowCSM(fragViewDepth, fragWorldPos, normal, lightDir);
         }
 
         result += shadow * calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess);

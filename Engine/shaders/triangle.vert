@@ -1,6 +1,6 @@
 #version 450
 
-// Lit Mesh Vertex Shader with Shadow Support, Retro Effects, and Skeletal Animation
+// Lit Mesh Vertex Shader with Cascaded Shadow Support, Retro Effects, and Skeletal Animation
 
 layout(location = 0) in vec3 inPosition;
 layout(location = 1) in vec3 inNormal;
@@ -33,7 +33,7 @@ layout(binding = 0) uniform UniformBufferObject {
     mat4 proj;
 } ubo;
 
-// Access lightSpaceMatrix from lighting UBO
+// Access lighting UBO for wind data and cascade matrices
 // Must match C++ LightingUBO structure exactly
 layout(binding = 1) uniform LightingUBO {
     vec3 ambientColor;
@@ -44,18 +44,19 @@ layout(binding = 1) uniform LightingUBO {
     uint pointLightCount;
     uint spotLightCount;
     uint _pad1;
-    mat4 lightSpaceMatrix;
+    mat4 cascadeViewProj[4];
+    vec4 cascadeSplits;
     float shadowBias;
     int shadowEnabled;
     float shadowStrength;
-    float _shadowPad;
+    float shadowMaxDistance;
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved
     vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
-    // Note: light arrays follow but we only need lightSpaceMatrix and windData in vertex shader
+    // Note: light arrays follow but we only need windData in vertex shader
 } lighting;
 
 // Bone matrix SSBO for skeletal animation
@@ -66,7 +67,7 @@ layout(std430, binding = 7) readonly buffer BoneMatrixSSBO {
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragUV;
-layout(location = 3) out vec4 fragPosLightSpace;
+layout(location = 3) out float fragViewDepth;  // View-space depth for cascade selection
 layout(location = 4) out vec4 fragVertColor;
 layout(location = 5) out float fragClipW;
 layout(location = 6) out vec4 fragTangent;
@@ -211,6 +212,6 @@ void main() {
     vec3 worldTangent = normalize(normalMatrix * skinnedTangent);
     fragTangent = vec4(worldTangent, inTangent.w);
 
-    // Calculate position in light space for shadow mapping
-    fragPosLightSpace = lighting.lightSpaceMatrix * worldPos;
+    // Calculate view-space depth for cascaded shadow map selection
+    fragViewDepth = -(ubo.view * worldPos).z;  // Positive distance from camera
 }

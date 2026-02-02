@@ -6,7 +6,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
-- **Shadow Mapping** - PCF-filtered shadow maps for directional lights
+- **Cascaded Shadow Maps** - 4-cascade CSM with PCF filtering, texel stabilization, distance fade, per-cascade bias
 - **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
@@ -20,6 +20,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Wireframe Rendering** - Toggle wireframe mode with wide line support
 - **World Curvature** - Vertex-shader horizon bending effect
 - **Render-to-Texture** - Offscreen rendering for Game View with separate uniform buffers
+- **Per-Scene Render Settings** - Full rendering config per scene with project-level defaults and editor UI
+- **Particle System** - CPU particle simulation (5 emitter shapes, size/speed curves, gravity/drag) with GPU instanced billboard rendering
+- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, and shadow strength
 
 ### Editor
 - **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
@@ -38,9 +41,14 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
 - **Asset Hot-Reload** - File watcher polls texture files for changes
 - **Build Dialog** - Configure and export standalone game builds from the editor
+- **Particle Editor** - 7 presets, color gradient bar, size/speed curves, shape preview, playback controls
+- **UI Editor** - Viewport WYSIWYG editing with click-select, drag-move, resize handles, and element tree
+- **Project Settings** - Dedicated panel for rendering/physics defaults separated from editor preferences
+- **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
+- **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 
 ### Entity-Component System
-- **50+ Component Types** - Full inspector UI for all components
+- **60+ Component Types** - Full inspector UI for all components
 - **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
 - **Camera Component** - In-game cameras with projection settings and frustum visualization
 - **Physics** - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB), ground detection
@@ -49,6 +57,11 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Camera Trigger Zones** - Camera override volumes
 - **Text Rendering** - TextComponent with stb_truetype rasterization to texture
 - **Vegetation Components** - Grass, shrub, tree volume definitions
+- **Physics Joints** - 6 joint types (Distance, Hinge, BallSocket, Spring, Fixed, Slider) with breakable mode
+- **Ragdoll System** - Bone-to-joint mapping, animation-to-ragdoll blend, auto-settle
+- **LOD System** - Distance-based mesh swapping
+- **Level Streaming** - Chunk-based distance loading with priority queue and async support
+- **Runtime UI** - Anchor-based layout, 8 widget types, event bus, 4 theme presets
 
 ### Animation
 - **Skeletal Animation** - glTF skin/joint/animation import, GPU skinning, auto-play
@@ -96,6 +109,14 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Build Dialog** - Editor UI for configuring and running builds with progress tracking
 - **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop
+
+### Scripting & Extensibility
+- **AngelScript Integration** - TegeBehavior base class, ~150 API bindings, hot-reload
+- **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
+- **Script Event System** - String-named events with typed EventData payloads
+- **Plugin System** - IPlugin interface, DLL/SO loading, manifest JSON, editor panel
+- **C++ Hot-Reload** - File watching, DLL reload with state save/restore
+- **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes
 
 ## Project Structure
 
@@ -152,7 +173,7 @@ enjin/
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)
 - [x] Alpha cutoff / transparency support
 - [x] Multiple Light Sources (point, spot, directional)
-- [x] Shadow Mapping with PCF filtering
+- [x] Cascaded Shadow Maps (4-cascade CSM with PCF, texel stabilization, distance fade)
 - [x] Texture Support (albedo, normal, height, metallic-roughness, emissive)
 - [x] Normal Mapping (tangent-space)
 - [x] Parallax Occlusion Mapping

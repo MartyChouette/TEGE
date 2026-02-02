@@ -11,16 +11,18 @@ namespace Renderer {
 class VulkanContext;
 class VulkanBuffer;
 
+static constexpr u32 MAX_SHADOW_CASCADES = 4;
+
 // Shadow map configuration
 struct ShadowMapConfig {
     u32 resolution = 2048;       // Shadow map resolution (square)
-    f32 nearPlane = 0.1f;        // Near plane for shadow projection
-    f32 farPlane = 100.0f;       // Far plane for shadow projection
-    f32 orthoSize = 20.0f;       // Orthographic projection size (for directional lights)
+    u32 cascadeCount = 4;        // Number of cascaded shadow maps
+    f32 shadowDistance = 100.0f;  // Maximum shadow distance from camera
+    f32 splitLambda = 0.75f;     // Log/linear split blend (0=linear, 1=logarithmic)
     f32 depthBias = 0.005f;      // Depth bias to reduce shadow acne
 };
 
-// Shadow map class - manages shadow depth texture and framebuffer
+// Shadow map class - manages cascaded shadow depth textures and framebuffers
 class ENJIN_API ShadowMap {
 public:
     ShadowMap(VulkanContext* context);
@@ -29,63 +31,57 @@ public:
     bool Initialize(const ShadowMapConfig& config = ShadowMapConfig{});
     void Shutdown();
 
-    // Begin/end shadow pass
-    void BeginShadowPass(VkCommandBuffer commandBuffer);
-    void EndShadowPass(VkCommandBuffer commandBuffer);
+    // Cascade frustum computation
+    void UpdateCascades(const Math::Matrix4& cameraView, const Math::Matrix4& cameraProj,
+                        f32 cameraNear, f32 cameraFar, const Math::Vector3& lightDir);
 
-    // Set light direction for directional light shadows
-    void SetLightDirection(const Math::Vector3& direction);
-    void SetLightPosition(const Math::Vector3& position);
+    // Begin/end per-cascade shadow pass
+    void BeginCascadePass(VkCommandBuffer commandBuffer, u32 cascadeIndex);
+    void EndCascadePass(VkCommandBuffer commandBuffer);
 
     // Adaptive shadow mapping
     void SetResolution(u32 size);  // 512/1024/2048/4096 - recreates resources
-    void SetAutoFitToCamera(bool enable) { m_AutoFit = enable; }
-    void UpdateFrustum(const Math::Matrix4& viewProj, const Math::Vector3& lightDir);
+    void SetShadowDistance(f32 distance) { m_Config.shadowDistance = distance; }
+    f32 GetShadowDistance() const { return m_Config.shadowDistance; }
 
     // Shadow strength (0 = no shadows, 1 = full shadows)
     void SetShadowStrength(f32 strength) { m_ShadowStrength = strength; }
     f32 GetShadowStrength() const { return m_ShadowStrength; }
 
-    // Get matrices
-    Math::Matrix4 GetLightViewMatrix() const;
-    Math::Matrix4 GetLightProjectionMatrix() const;
-    Math::Matrix4 GetLightSpaceMatrix() const; // proj * view
+    // Per-cascade data access
+    const Math::Matrix4& GetCascadeViewProj(u32 index) const;
+    f32 GetCascadeSplit(u32 index) const;
+    u32 GetCascadeCount() const { return m_Config.cascadeCount; }
 
     // Getters
-    VkImageView GetDepthImageView() const { return m_DepthImageView; }
+    VkImageView GetDepthArrayView() const { return m_DepthArrayView; }
     VkSampler GetShadowSampler() const { return m_ShadowSampler; }
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
-    VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     u32 GetResolution() const { return m_Config.resolution; }
     f32 GetDepthBias() const { return m_Config.depthBias; }
-    bool IsAutoFitEnabled() const { return m_AutoFit; }
 
 private:
     bool CreateDepthResources();
     bool CreateRenderPass();
-    bool CreateFramebuffer();
+    bool CreateFramebuffers();
     bool CreateSampler();
     void DestroyDepthResources();
 
     VulkanContext* m_Context = nullptr;
     ShadowMapConfig m_Config;
 
-    // Vulkan resources
+    // Vulkan resources - layered depth image for all cascades
     VkImage m_DepthImage = VK_NULL_HANDLE;
     VkDeviceMemory m_DepthMemory = VK_NULL_HANDLE;
-    VkImageView m_DepthImageView = VK_NULL_HANDLE;
+    VkImageView m_DepthArrayView = VK_NULL_HANDLE;                   // 2D_ARRAY view for shader sampling
+    VkImageView m_CascadeViews[MAX_SHADOW_CASCADES] = {};            // Per-layer views for framebuffer
+    VkFramebuffer m_CascadeFramebuffers[MAX_SHADOW_CASCADES] = {};   // Per-cascade framebuffer
     VkSampler m_ShadowSampler = VK_NULL_HANDLE;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;
-    VkFramebuffer m_Framebuffer = VK_NULL_HANDLE;
 
-    // Light transform
-    Math::Vector3 m_LightDirection = Math::Vector3(0.5f, 0.8f, 0.3f).Normalized();
-    Math::Vector3 m_LightPosition = Math::Vector3(0.0f, 10.0f, 0.0f);
-
-    // Auto-fit frustum data
-    bool m_AutoFit = true;
-    f32 m_FittedOrthoSize = 30.0f;
-    Math::Vector3 m_FittedCenter = Math::Vector3(0.0f);
+    // Per-cascade computed data
+    Math::Matrix4 m_CascadeViewProj[MAX_SHADOW_CASCADES];
+    f32 m_CascadeSplits[MAX_SHADOW_CASCADES] = {};  // View-space far distance of each cascade
 
     // Shadow strength
     f32 m_ShadowStrength = 1.0f;
