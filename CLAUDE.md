@@ -408,3 +408,76 @@ if (result.success) {
 ### Setting the window icon
 
 Place an `icon.png` file (32x32 or 64x64 PNG recommended) next to the executable. The engine loads it via stb_image and calls `glfwSetWindowIcon()` at startup. If the file is missing, the OS default icon is used.
+
+## Roadmap (Planned Features)
+
+This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. Items are grouped by category. Each session should pick one item to plan and implement — do NOT try to plan the whole list at once.
+
+### Editor Tools & UX
+
+- **UI Editor** — visual drag-and-drop layout tool for in-game UI (menus, HUD, dialogs, buttons, panels). Not ImGui — a proper runtime UI system with anchoring, layout, and event handling.
+- **Particle Editor** — visual particle system editor with curve editors, real-time preview in inspector, color gradients, sub-emitter support.
+- **Node/Graph Editor** — generic node graph framework powering three systems:
+  - Visual scripting (blueprint-style alternative to AngelScript)
+  - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
+  - Animation state machine (visual state/transition editor replacing manual AnimatorComponent setup)
+- **Script Component Workflow** — when adding a ScriptComponent, prompt for script name, auto-generate a TegeBehavior boilerplate file, open it in the user's configured IDE (Rider, VS, VS Code — configurable in editor settings).
+- **IDE Integration** — editor settings for external IDE selection (Rider, Visual Studio, VS Code). Open-file-at-line support for script errors.
+- **Undo/Redo Across All Operations** — extend existing UndoRedoManager to cover every inspector edit, hierarchy change, component add/remove, tilemap paint, terrain sculpt, etc.
+- **Drag and Drop** — drag assets (textures, models, scenes, scripts) from asset browser into viewport/inspector fields. Drag entities in hierarchy for reparenting.
+- **Hot-Swap Shaders** — edit shaders at runtime and see changes live without restarting. File watcher on .vert/.frag files, recompile GLSL to SPIR-V, recreate pipeline.
+- **Improved Asset Import Pipeline** — on model/texture import, auto-process like Unity does: generate thumbnails, extract materials, set up serialization metadata, configure import settings (scale, axis, compression). Clean .enjinasset metadata files.
+- **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
+- **Editor Settings vs Scene Settings** — separate the editor preferences panel (themes, IDE, keybinds, accessibility) from the scene/project settings (physics, rendering, lighting defaults). Currently conflated in one Settings window.
+
+### Runtime Systems
+
+- **UI Runtime** — proper in-game UI system (not ImGui). Anchored layout, flex/grid, buttons, sliders, text input, scrollable panels, event system. The UI Editor above edits these.
+- **2D Camera System** — follow targets, camera bounds/clamping, smooth follow, look-ahead, screen shake, zoom, dead zones, multi-target framing.
+- **Particle System Runtime** — GPU particle simulation, emitter shapes, curves for size/color/velocity over lifetime, sub-emitters, collision, attractors. The Particle Editor above edits these.
+- **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
+- **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
+
+### Scripting & Extensibility
+
+- **Component/Plugin DLL Repositories** — load gameplay components from external DLLs/shared libraries. Package format for distributing reusable components. Local repository system (marketplace comes later).
+- **Documentation Generator** — auto-generate docs from component definitions, script API, project structure. HTML or markdown output for game teams.
+
+### Platform & Export
+
+- **Mobile Support** — touch input, gyroscope, screen density handling, mobile-optimized render paths. Android (Vulkan) and iOS (MoltenVK) targets.
+- **Console Support** — platform abstraction for console input, certification requirements, console-specific render backends.
+- **VR/XR Support** — OpenXR integration, stereo rendering, hand tracking, spatial input, roomscale. Head-mounted display render paths.
+- **WebAssembly Export** — target WebGPU (NOT WebGL). Vulkan-aligned API, better future-proofing. Compile to WASM with Emscripten or wasm-bindgen. Accept that browser support is limited now but growing.
+
+### Accessibility (Engine-Level)
+
+Accessibility is not just for games made with Enjin — the editor itself must be fully accessible.
+
+- **Screen Reader Support** — expose editor UI hierarchy to OS accessibility APIs (UI Automation on Windows, AT-SPI on Linux, NSAccessibility on macOS). All panels, buttons, fields must have accessible names/roles.
+- **Keyboard-Only Navigation** — full editor operation without a mouse. Tab-order through panels, keyboard shortcuts for every action, focus indicators on all interactive elements.
+- **Alternative Input Devices** — support for switch access, eye tracking, sip-and-puff. Configurable input mapping at the editor level (not just in-game InputActionMap).
+- **Motor Accessibility** — adjustable click/drag thresholds, sticky keys, dwell-click support, one-handed editor presets.
+- **Visual Accessibility** — already have colorblind modes and high-contrast themes. Add: configurable font sizes across all editor panels, icon scaling, custom accent colors, reduced transparency option.
+- **Audio Accessibility** — visual indicators for all audio feedback in the editor (build complete, error notifications, etc.). Captions for any tutorial/onboarding audio.
+- **Blind-Accessible Workflow** — investigate whether a blind developer can create a game using only screen reader + keyboard. Identify and fix gaps. Consider an alternative text-based/CLI interface for core operations (create entity, add component, set properties, build).
+
+### UI/UX Design Philosophy
+
+Enjin's editor design should be:
+- **Aesthetically accessible** — clean, forward-thinking, timeless design
+- **Not a clone** — not Apple-style, not Unity grey, not Unreal dark. Our own identity.
+- **Information-dense but not cluttered** — show what matters, collapse what doesn't
+- **Consistent** — same patterns everywhere (context menus, drag behavior, property editing)
+
+### Version Control & Collaboration
+
+- **Git Integration** — built-in git panel in editor. Stage, commit, push, pull, branch, merge. Visual diff for scenes (structured JSON diff, not raw text).
+- **Session Sharing / Collaborative Editing** — real-time or turn-based collaboration with clear session locks showing who is editing which entity/scene. Prevents merge conflicts at the editor level.
+- **Clean Git Serialization** — scene files must serialize deterministically (sorted keys, stable ordering, no floating-point drift noise). Unity's random YAML reordering and index GUIDs are the anti-pattern. Our JSON scenes should diff cleanly and merge predictably.
+
+### NOT Planned Yet (Future)
+
+- Asset marketplace / template exchange (needs servers, not now)
+- Cloud build pipelines
+- Analytics dashboard
