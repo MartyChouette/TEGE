@@ -4612,7 +4612,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 m_AssetBrowserPath = ".";
             }
         }
+    } catch (const std::exception& e) {
+        ENJIN_LOG_WARN(Editor, "Error reading directory '%s': %s", m_AssetBrowserPath.c_str(), e.what());
+        ImGui::TextDisabled("Error reading directory");
     } catch (...) {
+        ENJIN_LOG_WARN(Editor, "Unknown error reading directory '%s'", m_AssetBrowserPath.c_str());
         ImGui::TextDisabled("Error reading directory");
     }
 

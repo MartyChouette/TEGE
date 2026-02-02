@@ -1,4 +1,5 @@
 #include "Enjin/GUI/DialogueTree.h"
+#include "Enjin/Logging/Log.h"
 
 #include <imgui.h>
 #include <algorithm>
@@ -335,7 +336,8 @@ namespace Enjin::GUI {
                     f64 a = std::stod(varValue);
                     f64 b = std::stod(cond.value);
                     return a > b;
-                } catch (...) {
+                } catch (const std::exception&) {
+                    // Non-numeric values, fall back to string comparison
                     return varValue > cond.value;
                 }
             }
@@ -345,7 +347,8 @@ namespace Enjin::GUI {
                     f64 a = std::stod(varValue);
                     f64 b = std::stod(cond.value);
                     return a < b;
-                } catch (...) {
+                } catch (const std::exception&) {
+                    // Non-numeric values, fall back to string comparison
                     return varValue < cond.value;
                 }
             }

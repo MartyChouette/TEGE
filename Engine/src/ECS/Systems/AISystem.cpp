@@ -188,8 +188,22 @@ void AISystem::ProcessPatrol(Entity entity, AIControllerComponent& ai, Transform
             if (ai.patrolLoop) {
                 ai.currentPatrolIndex = (ai.currentPatrolIndex + 1) % ai.patrolPoints.size();
             } else {
-                // Ping-pong: not implemented here for simplicity, just loop
-                ai.currentPatrolIndex = (ai.currentPatrolIndex + 1) % ai.patrolPoints.size();
+                // Ping-pong: reverse direction at endpoints
+                if (state.patrolForward) {
+                    if (ai.currentPatrolIndex + 1 >= ai.patrolPoints.size()) {
+                        state.patrolForward = false;
+                        if (ai.currentPatrolIndex > 0) ai.currentPatrolIndex--;
+                    } else {
+                        ai.currentPatrolIndex++;
+                    }
+                } else {
+                    if (ai.currentPatrolIndex == 0) {
+                        state.patrolForward = true;
+                        if (ai.patrolPoints.size() > 1) ai.currentPatrolIndex++;
+                    } else {
+                        ai.currentPatrolIndex--;
+                    }
+                }
             }
 
             // Request a new path to the next patrol point

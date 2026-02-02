@@ -644,7 +644,11 @@ bool InputActionMap::FromJson(const std::string& jsonStr) {
             }
         }
         return true;
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Core, "Failed to load input action map: %s", e.what());
+        return false;
     } catch (...) {
+        ENJIN_LOG_ERROR(Core, "Failed to load input action map: unknown error");
         return false;
     }
 }

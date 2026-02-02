@@ -2245,10 +2245,10 @@ bool PostProcessing::CreateDescriptorSets() {
     bufferInfo.offset = 0;
     bufferInfo.range = sizeof(PostProcessSettings);
 
-    // LUT placeholder: reuse scene image view (shader will skip LUT when lutEnabled==0)
+    // LUT initial binding: use scene image view as valid default (shader skips LUT when lutEnabled==0)
     VkDescriptorImageInfo lutImageInfo{};
     lutImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    lutImageInfo.imageView = m_SceneImageView;  // placeholder
+    lutImageInfo.imageView = m_SceneImageView;
     lutImageInfo.sampler = m_LUTSampler;
 
     VkWriteDescriptorSet writes[3]{};
@@ -2476,10 +2476,10 @@ void PostProcessing::ClearLUT() {
 
     DestroyLUTResources();
 
-    // Rebind placeholder to binding 2
+    // Rebind default image to binding 2 (shader skips LUT when lutEnabled==0)
     VkDescriptorImageInfo lutDescInfo{};
     lutDescInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-    lutDescInfo.imageView = m_SceneImageView;  // placeholder
+    lutDescInfo.imageView = m_SceneImageView;
     lutDescInfo.sampler = m_LUTSampler;
 
     VkWriteDescriptorSet write{};

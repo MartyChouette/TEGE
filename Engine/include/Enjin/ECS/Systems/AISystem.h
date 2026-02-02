@@ -88,6 +88,7 @@ private:
         bool isWaiting = false;
         f32 lostTargetTimer = 0.0f;
         f32 attackCooldownTimer = 0.0f;
+        bool patrolForward = true;  // Direction for ping-pong patrol mode
     };
 
     // Process individual AI states

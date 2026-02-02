@@ -144,7 +144,11 @@ SaveSlot SaveSystem::GetSlotInfo(i32 slot) const {
         if (j.contains("timestamp")) info.timestamp = j["timestamp"].get<std::string>();
         if (j.contains("playTime")) info.playTime = j["playTime"].get<f32>();
         if (j.contains("displayName")) info.displayName = j["displayName"].get<std::string>();
-    } catch (...) {}
+    } catch (const std::exception& e) {
+        ENJIN_LOG_WARN(Editor, "Error reading save slot metadata '%s': %s", path.c_str(), e.what());
+    } catch (...) {
+        ENJIN_LOG_WARN(Editor, "Unknown error reading save slot metadata '%s'", path.c_str());
+    }
 
     return info;
 }
@@ -178,7 +182,11 @@ bool SaveSystem::QuickSave(ECS::World* world, const std::string& sceneName) {
 
         ENJIN_LOG_INFO(Editor, "Quick saved: %s", sceneName.c_str());
         return true;
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "Quick save failed: %s", e.what());
+        return false;
     } catch (...) {
+        ENJIN_LOG_ERROR(Editor, "Quick save failed: unknown error");
         return false;
     }
 }
@@ -201,7 +209,11 @@ bool SaveSystem::QuickLoad(ECS::World* world) {
         auto result = serializer.LoadFromString(saveJson["sceneData"].get<std::string>(), true);
         ENJIN_LOG_INFO(Editor, "Quick loaded");
         return result.success;
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Editor, "Quick load failed: %s", e.what());
+        return false;
     } catch (...) {
+        ENJIN_LOG_ERROR(Editor, "Quick load failed: unknown error");
         return false;
     }
 }
