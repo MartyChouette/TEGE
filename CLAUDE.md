@@ -368,6 +368,17 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Mobile/console export foundations (IRenderBackend interface, PlatformInput, BuildTarget enum)
 - Level streaming (chunk-based, distance-based loading, priority queue, async, StreamingVolume/Portal components)
 - AI/Navmesh A* pathfinding with debug visualization
+- AI ping-pong patrol mode (reversing direction at patrol endpoints)
+- 2D sprite rendering (dirty-flag mesh generation, sorted sprite pass, UV normalization)
+- 2D tilemap rendering (tile mesh generation, tileset texture binding)
+- 2D sprite animation advancement (frame timer, looping, playback speed)
+- 2D camera follow and bounds clamping in ControllerSystem
+- Sprite texture preview in inspector (thumbnail with source rect overlay)
+- Sprite sheet frame picker (clickable grid, auto-sets source rectangle)
+- Animation preview widget (live current-frame display with progress bar)
+- Sprite atlas auto-slicer (grid-based frame generation from sprite sheets)
+- Tilemap visual grid editor in inspector (clickable tile grid with palette)
+- Tilemap viewport brush tool (ray-plane intersection painting/erasing)
 
 ## Common Tasks
 
