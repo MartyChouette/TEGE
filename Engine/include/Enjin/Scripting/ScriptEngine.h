@@ -98,6 +98,10 @@ private:
     u32 m_PollCounter = 0;
     static constexpr u32 POLL_INTERVAL = 30; // Check every 30 frames
 
+    // Execution timeout (instruction limit per Execute call)
+    static constexpr u32 MAX_INSTRUCTIONS = 1000000u; // 1M instructions
+    static void LineCallback(asIScriptContext* ctx, void* param);
+
     ECS::World* m_World = nullptr;
 };
 

@@ -61,7 +61,7 @@ enjin/
 │   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, PerformanceStats
 │   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, SeasonalWeather
 │   │   ├── Input/          # InputAction (remappable input action map)
-│   │   ├── GUI/            # ImGui integration
+│   │   ├── GUI/            # ImGui integration, UICanvas, UISystem, GameMenus, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
 │   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
@@ -194,6 +194,25 @@ struct PushConstants {
 - **Serialization:** All fields including `sunDirection` are saved/loaded in `SceneSerializer` (both file and string paths)
 - **API:** `RenderSystem::SetSkybox(config)` / `RenderSystem::GetSkyboxConfig()`
 
+### UI System (Runtime + Editor)
+
+- **`UICanvasComponent`** (`Engine/include/Enjin/GUI/UICanvas.h`) — ECS component (namespace `Enjin::GUI`). Holds element tree, design resolution, scale mode, theme
+- **`UIElement`** (`Engine/include/Enjin/GUI/UIElement.h`) — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`, `computedRect`
+- **`UIWidgetType`** enum: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle (+ Phase 2 placeholders)
+- **`UIAnchor`** — Unity RectTransform-style: anchorMin/Max (0-1), pivot, offsetLeft/Right/Top/Bottom (pixels)
+- **`UISystem`** (`Engine/include/Enjin/GUI/UISystem.h`) — Layout + render + input processing
+  - `Update(world, vpW, vpH, deltaTime)` — processes all canvases in the world
+  - `ComputeLayoutForCanvas(canvas, vpW, vpH)` — editor API: compute layout for a single canvas
+  - `RenderCanvasPreview(canvas)` — editor API: render a single canvas via ImGui foreground draw list
+- **`UIEventBus`** (`Engine/include/Enjin/GUI/UIEvents.h`) — String-named callbacks, `Listen(name, callback)`, `Dispatch(eventData)`
+- **`UITheme`** (`Engine/include/Enjin/GUI/UITheme.h`) — Presets: Dark, Light, RetroGreen, Fantasy. Per-element style overrides
+- **`UITemplates`** (`Engine/include/Enjin/GUI/UITemplates.h`) — Factory functions: `CreateMainMenu`, `CreatePauseMenu`, `CreateOptionsMenu`
+- **UI Editor** — Viewport WYSIWYG editing mode in EditorLayer (`m_UIEditMode`):
+  - Click to select elements, drag to move, 8 resize handles (corners + edges)
+  - Right-click context menu to add new elements at click position
+  - Inspector tree synced via `m_UIEditSelectedElementId`
+  - Mutual exclusion with terrain/tilemap edit modes
+
 ### Effects Systems
 
 - **`WeatherSystem`** - Rain, snow, fog, storm with lightning (global scene effect)
@@ -215,7 +234,10 @@ struct PushConstants {
 ### Assets
 
 - **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
-- **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes
+- **`AssimpLoader`** - Loads FBX, OBJ, DAE, 3DS files via Assimp v5.4.3 into AssimpScene
+- **`SceneImporter`** - Converts GLTFScene or AssimpScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes. `Import()` auto-detects format from extension.
+- **`PrefabManager`** (singleton) - Create prefabs from entities (`CreateFromEntity`), instantiate with overrides, save/load `.enjprefab` files, apply changes to all instances, unpack instances
+- **`PrefabInstanceComponent`** - Marks an entity as a prefab instance with `prefabId`, `prefabPath`, and per-instance property overrides
 
 ### Window Icon
 
@@ -259,7 +281,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 **Completed:**
 - Vulkan renderer with Blinn-Phong lighting
 - ECS architecture
-- glTF/FBX model import
+- glTF/FBX/OBJ/DAE model import (GLTFLoader native + Assimp v5.4.3 for FBX/OBJ/DAE/3DS)
 - ImGui editor (hierarchy, inspector, viewport, effects panels)
 - Transform gizmos (ImGuizmo)
 - Entity selection via ray casting
@@ -379,6 +401,17 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Sprite atlas auto-slicer (grid-based frame generation from sprite sheets)
 - Tilemap visual grid editor in inspector (clickable tile grid with palette)
 - Tilemap viewport brush tool (ray-plane intersection painting/erasing)
+- Runtime UI system (UICanvasComponent, UIElement hierarchy, anchor-based layout, 8 widget renderers)
+- UI event bus (string-named callbacks, C++ std::function listeners)
+- UI theme system (4 presets: Dark, Light, RetroGreen, Fantasy, per-element style overrides)
+- UI templates (CreateMainMenu, CreatePauseMenu, CreateOptionsMenu factory functions)
+- UI canvas inspector (element tree, theme editor, widget-specific fields, template insertion)
+- UI Editor (viewport WYSIWYG: click-select, drag-move, resize handles, right-click add, inspector sync)
+- Script component workflow (class name prompt, TegeBehavior boilerplate generation, auto-fill attachment, open in IDE)
+- External IDE configuration (VS Code, Visual Studio, Rider, Custom with persistent settings)
+- Editor Settings vs Project Settings separation (dedicated Project Settings panel for rendering/physics)
+- Prefab system (save/load .enjprefab, instantiate, unpack, per-instance property overrides, inspector badge)
+- Security hardening: vector deserialization bounds checks, AssetReader size caps and I/O validation, GLTFLoader attribute count clamping, animation keyframe bounds validation, script execution timeout (1M instruction limit)
 
 ## Common Tasks
 
@@ -420,39 +453,67 @@ if (result.success) {
 
 Place an `icon.png` file (32x32 or 64x64 PNG recommended) next to the executable. The engine loads it via stb_image and calls `glfwSetWindowIcon()` at startup. If the file is missing, the OS default icon is used.
 
+## Security Considerations
+
+When modifying or extending the engine, keep these security notes in mind:
+
+### Input Validation
+- **Scene files (JSON):** All deserialization functions must validate array sizes and check field existence with `.contains()` before accessing JSON keys. Vector deserializers now return safe defaults for malformed arrays.
+- **glTF/GLB import:** Attribute counts may differ across vertex attributes. Always clamp loop bounds to the allocated buffer size. Validate that animation keyframe value arrays have enough elements for the declared keyframe count.
+- **Asset pack (.enjpak):** All sizes and offsets read from pack files must be bounds-checked against file size and capped to reasonable maximums. Check `file.good()` after every seek/read.
+
+### Script Execution
+- AngelScript scripts are sandboxed from filesystem and network access (no bindings exposed).
+- A per-context instruction limit (1M instructions) is enforced via `SetLineCallback()` to prevent infinite loop DoS. If a script exceeds this limit, execution is aborted.
+- Script `#include` paths are resolved via `lexically_normal()` but are not yet restricted to the script directory — avoid exposing script compilation to untrusted input.
+
+### Asset Pack Obfuscation
+- The `.enjpak` XOR obfuscation uses a repeating key and is **not cryptographically secure**. It deters casual inspection but is trivially broken via known-plaintext attack (e.g., JSON files start with `{`).
+- CRC32 is used for **integrity detection**, not authentication. It catches accidental corruption but not intentional tampering.
+- For commercial releases requiring real asset protection, replace XOR with authenticated encryption (e.g., AES-GCM).
+
+### General Guidelines
+- Always validate enum casts from deserialized integers against valid ranges.
+- Sanitize file paths loaded from scene/project files — prevent `..` traversal.
+- Cap allocation sizes from untrusted input (pack files, scene files, model files).
+
 ## Roadmap (Planned Features)
 
 This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. Items are grouped by category. Each session should pick one item to plan and implement — do NOT try to plan the whole list at once.
 
 ### Editor Tools & UX
 
-- **UI Editor** — visual drag-and-drop layout tool for in-game UI (menus, HUD, dialogs, buttons, panels). Not ImGui — a proper runtime UI system with anchoring, layout, and event handling.
+- **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
 - **Particle Editor** — visual particle system editor with curve editors, real-time preview in inspector, color gradients, sub-emitter support.
 - **Node/Graph Editor** — generic node graph framework powering three systems:
   - Visual scripting (blueprint-style alternative to AngelScript)
   - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
   - Animation state machine (visual state/transition editor replacing manual AnimatorComponent setup)
-- **Script Component Workflow** — when adding a ScriptComponent, prompt for script name, auto-generate a TegeBehavior boilerplate file, open it in the user's configured IDE (Rider, VS, VS Code — configurable in editor settings).
-- **IDE Integration** — editor settings for external IDE selection (Rider, Visual Studio, VS Code). Open-file-at-line support for script errors.
+- **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
+- **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
 - **Undo/Redo Across All Operations** — extend existing UndoRedoManager to cover every inspector edit, hierarchy change, component add/remove, tilemap paint, terrain sculpt, etc.
 - **Drag and Drop** — drag assets (textures, models, scenes, scripts) from asset browser into viewport/inspector fields. Drag entities in hierarchy for reparenting.
 - **Hot-Swap Shaders** — edit shaders at runtime and see changes live without restarting. File watcher on .vert/.frag files, recompile GLSL to SPIR-V, recreate pipeline.
 - **Improved Asset Import Pipeline** — on model/texture import, auto-process like Unity does: generate thumbnails, extract materials, set up serialization metadata, configure import settings (scale, axis, compression). Clean .enjinasset metadata files.
+- **Extended Model Format Support** — add PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders. PLY is useful for photogrammetry/scan data; VOX enables voxel art workflows. Also verify Assimp's existing FBX/OBJ/DAE import paths are robust (fix any crash-on-malformed-input issues).
 - **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
-- **Editor Settings vs Scene Settings** — separate the editor preferences panel (themes, IDE, keybinds, accessibility) from the scene/project settings (physics, rendering, lighting defaults). Currently conflated in one Settings window.
+- **Editor Settings vs Scene Settings** — ~~DONE~~ Separated into Settings (editor prefs) and Project Settings (rendering, physics) panels.
 
 ### Runtime Systems
 
-- **UI Runtime** — proper in-game UI system (not ImGui). Anchored layout, flex/grid, buttons, sliders, text input, scrollable panels, event system. The UI Editor above edits these.
+- **UI Runtime** — ~~DONE (Phase 1)~~ Anchored layout, 8 widget types, event bus, theme system implemented. Future work: flex/grid layout, text input widget, scrollable panels, runtime texture loading for Image widgets.
 - **2D Camera System** — follow targets, camera bounds/clamping, smooth follow, look-ahead, screen shake, zoom, dead zones, multi-target framing.
 - **Particle System Runtime** — GPU particle simulation, emitter shapes, curves for size/color/velocity over lifetime, sub-emitters, collision, attractors. The Particle Editor above edits these.
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
 - **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
+- **Destructible Environments** — extend DestructibleComponent to work as a prefab-level setting. When enabled on a prefab, all instances inherit destructibility. Add fracture/shatter visual effects (mesh splitting into fragments on destroy), debris physics, chain destruction propagation. Editor toggle: "Destructible" checkbox on prefab inspector.
+- **Improved Shadow System** — cascaded shadow maps (CSM) for large outdoor scenes, shadow distance fade, per-light shadow quality settings, soft shadows with PCSS, transparent shadow receivers. Fix shadow acne edge cases and improve shadow bias auto-tuning.
 
 ### Scripting & Extensibility
 
 - **Component/Plugin DLL Repositories** — load gameplay components from external DLLs/shared libraries. Package format for distributing reusable components. Local repository system (marketplace comes later).
 - **Documentation Generator** — auto-generate docs from component definitions, script API, project structure. HTML or markdown output for game teams.
+- **ScriptableObject / DataAsset System** — Unity-like reusable data containers that are NOT entities. Serialized JSON assets for game configuration: weapon stats, enemy tables, dialogue databases, item definitions, skill trees. Create/edit in inspector, reference from components. Extends the current component-only model with standalone data assets.
 
 ### Platform & Export
 

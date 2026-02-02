@@ -257,9 +257,11 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
 
                 switch (channel.path) {
                     case GLTFAnimationChannel::Path::Translation: {
-                        track->positionTimes = channel.times;
-                        track->positions.resize(channel.times.size());
-                        for (usize k = 0; k < channel.times.size(); ++k) {
+                        usize keyCount = channel.times.size();
+                        if (channel.values.size() < keyCount * 3) keyCount = channel.values.size() / 3;
+                        track->positionTimes.assign(channel.times.begin(), channel.times.begin() + keyCount);
+                        track->positions.resize(keyCount);
+                        for (usize k = 0; k < keyCount; ++k) {
                             track->positions[k] = Math::Vector3(
                                 channel.values[k * 3 + 0],
                                 channel.values[k * 3 + 1],
@@ -268,9 +270,11 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         break;
                     }
                     case GLTFAnimationChannel::Path::Rotation: {
-                        track->rotationTimes = channel.times;
-                        track->rotations.resize(channel.times.size());
-                        for (usize k = 0; k < channel.times.size(); ++k) {
+                        usize keyCount = channel.times.size();
+                        if (channel.values.size() < keyCount * 4) keyCount = channel.values.size() / 4;
+                        track->rotationTimes.assign(channel.times.begin(), channel.times.begin() + keyCount);
+                        track->rotations.resize(keyCount);
+                        for (usize k = 0; k < keyCount; ++k) {
                             track->rotations[k] = Math::Quaternion(
                                 channel.values[k * 4 + 0],
                                 channel.values[k * 4 + 1],
@@ -280,9 +284,11 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         break;
                     }
                     case GLTFAnimationChannel::Path::Scale: {
-                        track->scaleTimes = channel.times;
-                        track->scales.resize(channel.times.size());
-                        for (usize k = 0; k < channel.times.size(); ++k) {
+                        usize keyCount = channel.times.size();
+                        if (channel.values.size() < keyCount * 3) keyCount = channel.values.size() / 3;
+                        track->scaleTimes.assign(channel.times.begin(), channel.times.begin() + keyCount);
+                        track->scales.resize(keyCount);
+                        for (usize k = 0; k < keyCount; ++k) {
                             track->scales[k] = Math::Vector3(
                                 channel.values[k * 3 + 0],
                                 channel.values[k * 3 + 1],

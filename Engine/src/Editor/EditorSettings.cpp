@@ -91,6 +91,10 @@ bool EditorSettings::Save(const std::string& path) const {
         j["rawMouseInput"] = rawMouseInput;
         j["mouseSmoothing"] = mouseSmoothing;
 
+        // External IDE
+        j["externalIDE"] = externalIDE;
+        j["customIDEPath"] = customIDEPath;
+
         // Recent projects
         j["recentProjects"] = json::array();
         for (const auto& rp : recentProjects) {
@@ -162,6 +166,10 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("inputPreset")) inputPreset = j["inputPreset"].get<u32>();
         if (j.contains("rawMouseInput")) rawMouseInput = j["rawMouseInput"].get<bool>();
         if (j.contains("mouseSmoothing")) mouseSmoothing = j["mouseSmoothing"].get<f32>();
+
+        // External IDE
+        if (j.contains("externalIDE")) externalIDE = j["externalIDE"].get<u32>();
+        if (j.contains("customIDEPath")) customIDEPath = j["customIDEPath"].get<std::string>();
 
         // Recent projects
         if (j.contains("recentProjects") && j["recentProjects"].is_array()) {

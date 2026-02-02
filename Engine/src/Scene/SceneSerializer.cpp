@@ -27,6 +27,7 @@
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Accessibility/ContentWarning.h"
+#include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -54,10 +55,12 @@ json SerializeQuaternion(const Math::Quaternion& q) {
 }
 
 Math::Vector2 DeserializeVector2(const json& j) {
+    if (!j.is_array() || j.size() < 2) return Math::Vector2(0.0f, 0.0f);
     return Math::Vector2(j[0].get<f32>(), j[1].get<f32>());
 }
 
 Math::Vector3 DeserializeVector3(const json& j) {
+    if (!j.is_array() || j.size() < 3) return Math::Vector3(0.0f, 0.0f, 0.0f);
     return Math::Vector3(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>());
 }
 
@@ -66,10 +69,12 @@ json SerializeVector4(const Math::Vector4& v) {
 }
 
 Math::Vector4 DeserializeVector4(const json& j) {
+    if (!j.is_array() || j.size() < 4) return Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
     return Math::Vector4(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
 }
 
 Math::Quaternion DeserializeQuaternion(const json& j) {
+    if (!j.is_array() || j.size() < 4) return Math::Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     return Math::Quaternion(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
 }
 
@@ -2196,6 +2201,239 @@ ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
     return h;
 }
 
+json SerializeUIElement(const GUI::UIElement& e) {
+    json j;
+    j["id"] = e.id;
+    j["name"] = e.name;
+    j["type"] = static_cast<u8>(e.type);
+    j["visible"] = e.visible;
+    j["enabled"] = e.enabled;
+    j["parentId"] = e.parentId;
+    j["childIds"] = e.childIds;
+
+    // Anchor
+    json anchor;
+    anchor["anchorMin"] = SerializeVector2(e.anchor.anchorMin);
+    anchor["anchorMax"] = SerializeVector2(e.anchor.anchorMax);
+    anchor["pivot"] = SerializeVector2(e.anchor.pivot);
+    anchor["offsetLeft"] = e.anchor.offsetLeft;
+    anchor["offsetRight"] = e.anchor.offsetRight;
+    anchor["offsetTop"] = e.anchor.offsetTop;
+    anchor["offsetBottom"] = e.anchor.offsetBottom;
+    j["anchor"] = anchor;
+
+    // Style overrides
+    json style;
+    style["bgColor"] = SerializeVector3(e.style.bgColor);
+    style["textColor"] = SerializeVector3(e.style.textColor);
+    style["borderColor"] = SerializeVector3(e.style.borderColor);
+    style["bgAlpha"] = e.style.bgAlpha;
+    style["borderRadius"] = e.style.borderRadius;
+    style["borderWidth"] = e.style.borderWidth;
+    style["fontSize"] = e.style.fontSize;
+    j["style"] = style;
+
+    // Widget data
+    json data;
+    data["text"] = e.data.text;
+    data["textAlignH"] = e.data.textAlignH;
+    data["textAlignV"] = e.data.textAlignV;
+    data["imagePath"] = e.data.imagePath;
+    data["imageTint"] = SerializeVector3(e.data.imageTint);
+    data["imageAlpha"] = e.data.imageAlpha;
+    data["progressValue"] = e.data.progressValue;
+    data["progressFillColor"] = SerializeVector3(e.data.progressFillColor);
+    data["sliderValue"] = e.data.sliderValue;
+    data["sliderMin"] = e.data.sliderMin;
+    data["sliderMax"] = e.data.sliderMax;
+    data["checked"] = e.data.checked;
+    if (!e.data.options.empty()) data["options"] = e.data.options;
+    data["selectedOption"] = e.data.selectedOption;
+    data["inputText"] = e.data.inputText;
+    data["placeholder"] = e.data.placeholder;
+    j["data"] = data;
+
+    // Events
+    j["onClickEvent"] = e.onClickEvent;
+    j["onValueChangedEvent"] = e.onValueChangedEvent;
+    j["onSubmitEvent"] = e.onSubmitEvent;
+
+    return j;
+}
+
+GUI::UIElement DeserializeUIElement(const json& j) {
+    GUI::UIElement e;
+    if (j.contains("id")) e.id = j["id"].get<u32>();
+    if (j.contains("name")) e.name = j["name"].get<std::string>();
+    if (j.contains("type")) e.type = static_cast<GUI::UIWidgetType>(j["type"].get<u8>());
+    if (j.contains("visible")) e.visible = j["visible"].get<bool>();
+    if (j.contains("enabled")) e.enabled = j["enabled"].get<bool>();
+    if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
+    if (j.contains("childIds") && j["childIds"].is_array()) {
+        for (const auto& cid : j["childIds"]) e.childIds.push_back(cid.get<u32>());
+    }
+
+    if (j.contains("anchor")) {
+        const auto& a = j["anchor"];
+        if (a.contains("anchorMin")) e.anchor.anchorMin = DeserializeVector2(a["anchorMin"]);
+        if (a.contains("anchorMax")) e.anchor.anchorMax = DeserializeVector2(a["anchorMax"]);
+        if (a.contains("pivot")) e.anchor.pivot = DeserializeVector2(a["pivot"]);
+        if (a.contains("offsetLeft")) e.anchor.offsetLeft = a["offsetLeft"].get<f32>();
+        if (a.contains("offsetRight")) e.anchor.offsetRight = a["offsetRight"].get<f32>();
+        if (a.contains("offsetTop")) e.anchor.offsetTop = a["offsetTop"].get<f32>();
+        if (a.contains("offsetBottom")) e.anchor.offsetBottom = a["offsetBottom"].get<f32>();
+    }
+
+    if (j.contains("style")) {
+        const auto& s = j["style"];
+        if (s.contains("bgColor")) e.style.bgColor = DeserializeVector3(s["bgColor"]);
+        if (s.contains("textColor")) e.style.textColor = DeserializeVector3(s["textColor"]);
+        if (s.contains("borderColor")) e.style.borderColor = DeserializeVector3(s["borderColor"]);
+        if (s.contains("bgAlpha")) e.style.bgAlpha = s["bgAlpha"].get<f32>();
+        if (s.contains("borderRadius")) e.style.borderRadius = s["borderRadius"].get<f32>();
+        if (s.contains("borderWidth")) e.style.borderWidth = s["borderWidth"].get<f32>();
+        if (s.contains("fontSize")) e.style.fontSize = s["fontSize"].get<f32>();
+    }
+
+    if (j.contains("data")) {
+        const auto& d = j["data"];
+        if (d.contains("text")) e.data.text = d["text"].get<std::string>();
+        if (d.contains("textAlignH")) e.data.textAlignH = d["textAlignH"].get<u8>();
+        if (d.contains("textAlignV")) e.data.textAlignV = d["textAlignV"].get<u8>();
+        if (d.contains("imagePath")) e.data.imagePath = d["imagePath"].get<std::string>();
+        if (d.contains("imageTint")) e.data.imageTint = DeserializeVector3(d["imageTint"]);
+        if (d.contains("imageAlpha")) e.data.imageAlpha = d["imageAlpha"].get<f32>();
+        if (d.contains("progressValue")) e.data.progressValue = d["progressValue"].get<f32>();
+        if (d.contains("progressFillColor")) e.data.progressFillColor = DeserializeVector3(d["progressFillColor"]);
+        if (d.contains("sliderValue")) e.data.sliderValue = d["sliderValue"].get<f32>();
+        if (d.contains("sliderMin")) e.data.sliderMin = d["sliderMin"].get<f32>();
+        if (d.contains("sliderMax")) e.data.sliderMax = d["sliderMax"].get<f32>();
+        if (d.contains("checked")) e.data.checked = d["checked"].get<bool>();
+        if (d.contains("options") && d["options"].is_array()) {
+            for (const auto& opt : d["options"]) e.data.options.push_back(opt.get<std::string>());
+        }
+        if (d.contains("selectedOption")) e.data.selectedOption = d["selectedOption"].get<i32>();
+        if (d.contains("inputText")) e.data.inputText = d["inputText"].get<std::string>();
+        if (d.contains("placeholder")) e.data.placeholder = d["placeholder"].get<std::string>();
+    }
+
+    if (j.contains("onClickEvent")) e.onClickEvent = j["onClickEvent"].get<std::string>();
+    if (j.contains("onValueChangedEvent")) e.onValueChangedEvent = j["onValueChangedEvent"].get<std::string>();
+    if (j.contains("onSubmitEvent")) e.onSubmitEvent = j["onSubmitEvent"].get<std::string>();
+
+    return e;
+}
+
+json SerializeUITheme(const GUI::UITheme& t) {
+    json j;
+    j["name"] = t.name;
+    j["primary"] = SerializeVector3(t.primary);
+    j["secondary"] = SerializeVector3(t.secondary);
+    j["background"] = SerializeVector3(t.background);
+    j["surface"] = SerializeVector3(t.surface);
+    j["error"] = SerializeVector3(t.error);
+    j["textPrimary"] = SerializeVector3(t.textPrimary);
+    j["textSecondary"] = SerializeVector3(t.textSecondary);
+    j["textDisabled"] = SerializeVector3(t.textDisabled);
+    j["buttonDefault"] = SerializeVector3(t.buttonDefault);
+    j["buttonHovered"] = SerializeVector3(t.buttonHovered);
+    j["buttonPressed"] = SerializeVector3(t.buttonPressed);
+    j["buttonDisabled"] = SerializeVector3(t.buttonDisabled);
+    j["inputBg"] = SerializeVector3(t.inputBg);
+    j["inputBorder"] = SerializeVector3(t.inputBorder);
+    j["inputFocused"] = SerializeVector3(t.inputFocused);
+    j["sliderTrack"] = SerializeVector3(t.sliderTrack);
+    j["sliderFill"] = SerializeVector3(t.sliderFill);
+    j["sliderThumb"] = SerializeVector3(t.sliderThumb);
+    j["checkboxBg"] = SerializeVector3(t.checkboxBg);
+    j["checkboxChecked"] = SerializeVector3(t.checkboxChecked);
+    j["toggleOffBg"] = SerializeVector3(t.toggleOffBg);
+    j["toggleOnBg"] = SerializeVector3(t.toggleOnBg);
+    j["toggleKnob"] = SerializeVector3(t.toggleKnob);
+    j["borderRadius"] = t.borderRadius;
+    j["borderWidth"] = t.borderWidth;
+    j["fontSizeBody"] = t.fontSizeBody;
+    j["fontSizeHeading"] = t.fontSizeHeading;
+    j["fontSizeSmall"] = t.fontSizeSmall;
+    j["spacing"] = t.spacing;
+    j["bgAlpha"] = t.bgAlpha;
+    return j;
+}
+
+GUI::UITheme DeserializeUITheme(const json& j) {
+    GUI::UITheme t;
+    if (j.contains("name")) t.name = j["name"].get<std::string>();
+    if (j.contains("primary")) t.primary = DeserializeVector3(j["primary"]);
+    if (j.contains("secondary")) t.secondary = DeserializeVector3(j["secondary"]);
+    if (j.contains("background")) t.background = DeserializeVector3(j["background"]);
+    if (j.contains("surface")) t.surface = DeserializeVector3(j["surface"]);
+    if (j.contains("error")) t.error = DeserializeVector3(j["error"]);
+    if (j.contains("textPrimary")) t.textPrimary = DeserializeVector3(j["textPrimary"]);
+    if (j.contains("textSecondary")) t.textSecondary = DeserializeVector3(j["textSecondary"]);
+    if (j.contains("textDisabled")) t.textDisabled = DeserializeVector3(j["textDisabled"]);
+    if (j.contains("buttonDefault")) t.buttonDefault = DeserializeVector3(j["buttonDefault"]);
+    if (j.contains("buttonHovered")) t.buttonHovered = DeserializeVector3(j["buttonHovered"]);
+    if (j.contains("buttonPressed")) t.buttonPressed = DeserializeVector3(j["buttonPressed"]);
+    if (j.contains("buttonDisabled")) t.buttonDisabled = DeserializeVector3(j["buttonDisabled"]);
+    if (j.contains("inputBg")) t.inputBg = DeserializeVector3(j["inputBg"]);
+    if (j.contains("inputBorder")) t.inputBorder = DeserializeVector3(j["inputBorder"]);
+    if (j.contains("inputFocused")) t.inputFocused = DeserializeVector3(j["inputFocused"]);
+    if (j.contains("sliderTrack")) t.sliderTrack = DeserializeVector3(j["sliderTrack"]);
+    if (j.contains("sliderFill")) t.sliderFill = DeserializeVector3(j["sliderFill"]);
+    if (j.contains("sliderThumb")) t.sliderThumb = DeserializeVector3(j["sliderThumb"]);
+    if (j.contains("checkboxBg")) t.checkboxBg = DeserializeVector3(j["checkboxBg"]);
+    if (j.contains("checkboxChecked")) t.checkboxChecked = DeserializeVector3(j["checkboxChecked"]);
+    if (j.contains("toggleOffBg")) t.toggleOffBg = DeserializeVector3(j["toggleOffBg"]);
+    if (j.contains("toggleOnBg")) t.toggleOnBg = DeserializeVector3(j["toggleOnBg"]);
+    if (j.contains("toggleKnob")) t.toggleKnob = DeserializeVector3(j["toggleKnob"]);
+    if (j.contains("borderRadius")) t.borderRadius = j["borderRadius"].get<f32>();
+    if (j.contains("borderWidth")) t.borderWidth = j["borderWidth"].get<f32>();
+    if (j.contains("fontSizeBody")) t.fontSizeBody = j["fontSizeBody"].get<f32>();
+    if (j.contains("fontSizeHeading")) t.fontSizeHeading = j["fontSizeHeading"].get<f32>();
+    if (j.contains("fontSizeSmall")) t.fontSizeSmall = j["fontSizeSmall"].get<f32>();
+    if (j.contains("spacing")) t.spacing = j["spacing"].get<f32>();
+    if (j.contains("bgAlpha")) t.bgAlpha = j["bgAlpha"].get<f32>();
+    return t;
+}
+
+json SerializeUICanvasComponent(const GUI::UICanvasComponent& c) {
+    json j;
+    j["canvasName"] = c.canvasName;
+    j["visible"] = c.visible;
+    j["sortOrder"] = c.sortOrder;
+    j["designWidth"] = c.designWidth;
+    j["designHeight"] = c.designHeight;
+    j["scaleMode"] = static_cast<u8>(c.scaleMode);
+    j["theme"] = SerializeUITheme(c.theme);
+    j["nextElementId"] = c.nextElementId;
+
+    json elementsArr = json::array();
+    for (const auto& elem : c.elements) {
+        elementsArr.push_back(SerializeUIElement(elem));
+    }
+    j["elements"] = elementsArr;
+    return j;
+}
+
+GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
+    GUI::UICanvasComponent c;
+    if (j.contains("canvasName")) c.canvasName = j["canvasName"].get<std::string>();
+    if (j.contains("visible")) c.visible = j["visible"].get<bool>();
+    if (j.contains("sortOrder")) c.sortOrder = j["sortOrder"].get<i32>();
+    if (j.contains("designWidth")) c.designWidth = j["designWidth"].get<f32>();
+    if (j.contains("designHeight")) c.designHeight = j["designHeight"].get<f32>();
+    if (j.contains("scaleMode")) c.scaleMode = static_cast<GUI::UIScaleMode>(j["scaleMode"].get<u8>());
+    if (j.contains("theme")) c.theme = DeserializeUITheme(j["theme"]);
+    if (j.contains("nextElementId")) c.nextElementId = j["nextElementId"].get<u32>();
+
+    if (j.contains("elements") && j["elements"].is_array()) {
+        for (const auto& ej : j["elements"]) {
+            c.elements.push_back(DeserializeUIElement(ej));
+        }
+    }
+    return c;
+}
+
 json SerializeCinematicCameraComponent(const ECS::CinematicCameraComponent& c) {
     json j;
     j["loop"] = c.loop;
@@ -3182,6 +3420,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
             }
+            if (m_World->HasComponent<GUI::UICanvasComponent>(entity)) {
+                entityJson["uiCanvas"] = SerializeUICanvasComponent(*m_World->GetComponent<GUI::UICanvasComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
                 entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
             }
@@ -3683,6 +3924,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
             }
+            if (entityJson.contains("uiCanvas")) {
+                m_World->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(entityJson["uiCanvas"]));
+            }
             if (entityJson.contains("cinematicCamera")) {
                 m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
             }
@@ -4066,6 +4310,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
                 entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
+            }
+            if (m_World->HasComponent<GUI::UICanvasComponent>(entity)) {
+                entityJson["uiCanvas"] = SerializeUICanvasComponent(*m_World->GetComponent<GUI::UICanvasComponent>(entity));
             }
             if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
                 entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
@@ -4522,6 +4769,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("hudWidget")) {
                 m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
+            }
+            if (entityJson.contains("uiCanvas")) {
+                m_World->AddComponent<GUI::UICanvasComponent>(entity, DeserializeUICanvasComponent(entityJson["uiCanvas"]));
             }
             if (entityJson.contains("cinematicCamera")) {
                 m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));

@@ -49,6 +49,10 @@ struct EditorSettings {
     bool rawMouseInput = true;
     f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy
 
+    // External IDE
+    u32 externalIDE = 0;          // 0=Auto, 1=VS Code, 2=Visual Studio, 3=Rider, 4=Custom
+    std::string customIDEPath;     // Only used when externalIDE == 4
+
     // Recent projects (most recent first, max 8)
     std::vector<std::string> recentProjects;
     static constexpr int MAX_RECENT_PROJECTS = 8;

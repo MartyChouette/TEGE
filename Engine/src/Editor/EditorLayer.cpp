@@ -39,12 +39,15 @@
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Audio/AudioSystem.h"
+#include "Enjin/GUI/UICanvas.h"
+#include "Enjin/GUI/UITemplates.h"
 #include "Enjin/Math/Math.h"
 #include <imgui.h>
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
 #include <sstream>
+#include <fstream>
 #include <filesystem>
 #include <cstdio>
 #include <cstring>
@@ -391,10 +394,20 @@ void EditorLayer::Update(f32 deltaTime) {
         HandleTilemapBrush();
     }
 
+    // Handle UI editor viewport interaction (intercepts mouse before viewport picking)
+    if (m_UIEditMode && m_PlayMode.IsStopped()) {
+        HandleUIEditorInput();
+    }
+
+    // Deactivate UI edit mode when entering play mode
+    if (!m_PlayMode.IsStopped() && m_UIEditMode) {
+        m_UIEditMode = false;
+    }
+
     // Handle viewport picking (left-click to select, but not when using gizmo)
     // Only allow picking in editor mode, not play mode
-    // Skip viewport picking while terrain/tilemap edit mode is active to prevent entity deselection
-    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped() && !m_TerrainEditMode && !m_TilemapEditMode) {
+    // Skip viewport picking while terrain/tilemap/UI edit mode is active to prevent entity deselection
+    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode) {
         HandleViewportPicking();
     }
 
@@ -1057,6 +1070,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
         }
 
+        // Render UI canvases during play mode (fullscreen)
+        if (m_PlayMode.IsPlaying()) {
+            m_UISystem.Update(m_World, io.DisplaySize.x, io.DisplaySize.y, m_LastDeltaTime);
+        }
+
         // Render pause menu overlay on top of fullscreen game view
         if (m_GameMenu.IsMenuOpen()) {
             m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
@@ -1103,6 +1121,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * (1.0f - m_Layout.inspectorSplit)), layoutCond);
         DrawSettingsPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings)) {
+        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 310, menuBarH + 50), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(300, 500), layoutCond);
+        DrawProjectSettingsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
         ImGui::SetNextWindowPos(ImVec2(leftW, screenH - bottomH), layoutCond);
@@ -1312,6 +1335,20 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             m_GameViewImageMinX, m_GameViewImageMinY,
             m_GameViewImageMaxX - m_GameViewImageMinX,
             m_GameViewImageMaxY - m_GameViewImageMinY);
+    }
+
+    // Render UI canvases during play mode (editor game view)
+    if (m_PlayMode.IsPlaying()) {
+        f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+        f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+        if (gvW > 0 && gvH > 0) {
+            m_UISystem.Update(m_World, gvW, gvH, m_LastDeltaTime);
+        }
+    }
+
+    // Render UI editor overlay (design-time WYSIWYG preview in Game View)
+    if (m_UIEditMode && m_PlayMode.IsStopped()) {
+        DrawUIEditorOverlay();
     }
 
     // Render pause menu overlay on top of editor panels
@@ -1626,6 +1663,10 @@ void EditorLayer::DrawMenuBar() {
             }
             if (ImGui::MenuItem("Settings", nullptr, &settings)) {
                 SetPanelVisibility(EditorPanel::Settings, settings);
+            }
+            bool projectSettings = IsPanelVisible(EditorPanel::ProjectSettings);
+            if (ImGui::MenuItem("Project Settings", nullptr, &projectSettings)) {
+                SetPanelVisibility(EditorPanel::ProjectSettings, projectSettings);
             }
             if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
                 SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
@@ -2719,6 +2760,9 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
             DrawHUDWidgetComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<GUI::UICanvasComponent>(m_PrimarySelected)) {
+            DrawUICanvasComponent(m_PrimarySelected);
+        }
         if (m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
             DrawCinematicCameraComponent(m_PrimarySelected);
         }
@@ -2931,6 +2975,11 @@ void EditorLayer::DrawInspectorPanel() {
                 if (!m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("HUD Widget")) {
                         m_World->AddComponent<ECS::HUDWidgetComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<GUI::UICanvasComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("UI Canvas")) {
+                        m_World->AddComponent<GUI::UICanvasComponent>(m_PrimarySelected);
                     }
                 }
                 if (!m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
@@ -4851,144 +4900,6 @@ void EditorLayer::DrawSettingsPanel() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Rendering")) {
-        if (m_RenderSystem) {
-            // Shadows
-            bool shadows = m_RenderSystem->IsShadowsEnabled();
-            if (ImGui::Checkbox("Shadows", &shadows)) {
-                m_RenderSystem->SetShadowsEnabled(shadows);
-            }
-
-            // Backface culling
-            bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
-            if (ImGui::Checkbox("Backface Culling", &culling)) {
-                m_RenderSystem->SetBackfaceCullingEnabled(culling);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
-
-            // Wireframe
-            bool wireframe = m_RenderSystem->IsWireframeEnabled();
-            if (ImGui::Checkbox("Wireframe", &wireframe)) {
-                m_RenderSystem->SetWireframeEnabled(wireframe);
-            }
-
-            ImGui::Separator();
-
-            // Ambient lighting
-            Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
-            f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
-            if (ImGui::ColorEdit3("Ambient Color", ambient)) {
-                m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
-            }
-
-            f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
-            if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
-                m_RenderSystem->SetAmbientIntensity(ambientIntensity);
-            }
-        } else {
-            ImGui::TextDisabled("RenderSystem not available");
-        }
-
-        ImGui::Separator();
-        ImGui::Text("Post-Processing:");
-
-        if (m_PostProcessing) {
-            auto& settings = m_PostProcessing->GetSettings();
-
-            // Tone mapping
-            const char* toneModes[] = { "None", "Reinhard", "Reinhard Ext", "ACES", "Uncharted 2", "AgX" };
-            int toneMode = static_cast<int>(settings.toneMappingMode);
-            if (ImGui::Combo("Tone Mapping", &toneMode, toneModes, 6)) {
-                settings.toneMappingMode = static_cast<u32>(toneMode);
-            }
-
-            ImGui::DragFloat("Exposure", &settings.exposure, 0.05f, 0.1f, 10.0f);
-            ImGui::DragFloat("Gamma", &settings.gamma, 0.05f, 0.5f, 3.0f);
-
-            // FXAA
-            bool fxaa = settings.fxaaEnabled != 0;
-            if (ImGui::Checkbox("FXAA", &fxaa)) {
-                settings.fxaaEnabled = fxaa ? 1 : 0;
-            }
-
-            // Bloom
-            bool bloom = settings.bloomEnabled != 0;
-            if (ImGui::Checkbox("Bloom", &bloom)) {
-                settings.bloomEnabled = bloom ? 1 : 0;
-            }
-            if (bloom) {
-                ImGui::DragFloat("Bloom Threshold", &settings.bloomThreshold, 0.05f, 0.0f, 5.0f);
-                ImGui::DragFloat("Bloom Intensity", &settings.bloomIntensity, 0.05f, 0.0f, 5.0f);
-            }
-
-            // Vignette
-            bool vignette = settings.vignetteEnabled != 0;
-            if (ImGui::Checkbox("Vignette", &vignette)) {
-                settings.vignetteEnabled = vignette ? 1 : 0;
-            }
-            if (vignette) {
-                ImGui::DragFloat("Vignette Intensity", &settings.vignetteIntensity, 0.05f, 0.0f, 3.0f);
-            }
-
-            // Film Grain
-            bool grain = settings.filmGrainEnabled != 0;
-            if (ImGui::Checkbox("Film Grain", &grain)) {
-                settings.filmGrainEnabled = grain ? 1 : 0;
-            }
-            if (grain) {
-                ImGui::DragFloat("Grain Intensity", &settings.filmGrainIntensity, 0.005f, 0.0f, 0.5f);
-            }
-
-            // Chromatic Aberration
-            bool chrAb = settings.chromaticAberrationEnabled != 0;
-            if (ImGui::Checkbox("Chromatic Aberration", &chrAb)) {
-                settings.chromaticAberrationEnabled = chrAb ? 1 : 0;
-            }
-            if (chrAb) {
-                ImGui::DragFloat("CA Intensity", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.1f);
-            }
-
-            ImGui::Separator();
-            ImGui::Text("Color Grading:");
-            ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
-            ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.0f, 3.0f);
-            ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 3.0f);
-            f32 filter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
-            if (ImGui::ColorEdit3("Color Filter", filter)) {
-                settings.colorFilter = Math::Vector3(filter[0], filter[1], filter[2]);
-            }
-        } else {
-            ImGui::TextDisabled("PostProcessing not available");
-        }
-    }
-
-    if (ImGui::CollapsingHeader("Physics")) {
-        Physics::SimplePhysics* physics = m_PlayMode.GetPhysics();
-        Math::Vector3 gravity = physics->GetGravity();
-
-        f32 grav[3] = { gravity.x, gravity.y, gravity.z };
-        if (ImGui::DragFloat3("Global Gravity", grav, 0.1f, -100.0f, 100.0f)) {
-            physics->SetGravity(Math::Vector3(grav[0], grav[1], grav[2]));
-        }
-
-        // Quick presets
-        ImGui::Text("Presets:");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Earth")) { physics->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Moon")) { physics->SetGravity(Math::Vector3(0.0f, -1.62f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Mars")) { physics->SetGravity(Math::Vector3(0.0f, -3.72f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Zero")) { physics->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f)); }
-
-        f32 strength = physics->GetGravity().Length();
-        ImGui::TextDisabled("Strength: %.2f m/s^2", strength);
-
-        ImGui::Spacing();
-        ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
-    }
-
     if (ImGui::CollapsingHeader("Gamepad")) {
         // Global dead zone setting
         f32 deadZone = Input::GetGamepadDeadZone();
@@ -5102,6 +5013,51 @@ void EditorLayer::DrawSettingsPanel() {
         ImGui::BulletText("4 - Toggle Local/World space");
         ImGui::BulletText("Ctrl+S - Save scene");
         ImGui::BulletText("F11 - Toggle focus mode");
+    }
+
+    if (ImGui::CollapsingHeader("External IDE")) {
+        bool ideChanged = false;
+
+        const char* ideNames[] = { "Auto (VS Code)", "VS Code", "Visual Studio", "Rider", "Custom" };
+        int currentIDE = static_cast<int>(m_EditorSettings.externalIDE);
+        if (ImGui::Combo("IDE", &currentIDE, ideNames, 5)) {
+            m_EditorSettings.externalIDE = static_cast<u32>(currentIDE);
+            ideChanged = true;
+        }
+
+        if (m_EditorSettings.externalIDE == 4) {
+            char idePath[512];
+            strncpy(idePath, m_EditorSettings.customIDEPath.c_str(), sizeof(idePath) - 1);
+            idePath[sizeof(idePath) - 1] = '\0';
+            if (ImGui::InputText("IDE Path", idePath, sizeof(idePath))) {
+                m_EditorSettings.customIDEPath = idePath;
+                ideChanged = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Browse...")) {
+                std::vector<FileFilter> filters = {
+#ifdef ENJIN_PLATFORM_WINDOWS
+                    { "Executable", "*.exe" },
+#endif
+                    { "All Files", "*.*" }
+                };
+                std::string selected = FileDialog::OpenFile("Select IDE Executable", filters);
+                if (!selected.empty()) {
+                    m_EditorSettings.customIDEPath = selected;
+                    ideChanged = true;
+                }
+            }
+        }
+
+        if (ImGui::Button("Test Open")) {
+            OpenInExternalIDE("enjin_api/TegeBehavior.as");
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Opens enjin_api/TegeBehavior.as");
+
+        if (ideChanged) {
+            m_EditorSettings.Save();
+        }
     }
 
     if (ImGui::CollapsingHeader("Accessibility")) {
@@ -5337,6 +5293,150 @@ void EditorLayer::DrawSettingsPanel() {
             fontConfig.monoFontSize = monoSize;
             m_ImGuiLayer->ReloadFonts(fontConfig);
         }
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawProjectSettingsPanel() {
+    ImGui::Begin("Project Settings");
+
+    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (m_RenderSystem) {
+            // Shadows
+            bool shadows = m_RenderSystem->IsShadowsEnabled();
+            if (ImGui::Checkbox("Shadows", &shadows)) {
+                m_RenderSystem->SetShadowsEnabled(shadows);
+            }
+
+            // Backface culling
+            bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
+            if (ImGui::Checkbox("Backface Culling", &culling)) {
+                m_RenderSystem->SetBackfaceCullingEnabled(culling);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
+
+            // Wireframe
+            bool wireframe = m_RenderSystem->IsWireframeEnabled();
+            if (ImGui::Checkbox("Wireframe", &wireframe)) {
+                m_RenderSystem->SetWireframeEnabled(wireframe);
+            }
+
+            ImGui::Separator();
+
+            // Ambient lighting
+            Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
+            f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
+            if (ImGui::ColorEdit3("Ambient Color", ambient)) {
+                m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
+            }
+
+            f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
+            if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
+                m_RenderSystem->SetAmbientIntensity(ambientIntensity);
+            }
+        } else {
+            ImGui::TextDisabled("RenderSystem not available");
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Post-Processing:");
+
+        if (m_PostProcessing) {
+            auto& settings = m_PostProcessing->GetSettings();
+
+            // Tone mapping
+            const char* toneModes[] = { "None", "Reinhard", "Reinhard Ext", "ACES", "Uncharted 2", "AgX" };
+            int toneMode = static_cast<int>(settings.toneMappingMode);
+            if (ImGui::Combo("Tone Mapping", &toneMode, toneModes, 6)) {
+                settings.toneMappingMode = static_cast<u32>(toneMode);
+            }
+
+            ImGui::DragFloat("Exposure", &settings.exposure, 0.05f, 0.1f, 10.0f);
+            ImGui::DragFloat("Gamma", &settings.gamma, 0.05f, 0.5f, 3.0f);
+
+            // FXAA
+            bool fxaa = settings.fxaaEnabled != 0;
+            if (ImGui::Checkbox("FXAA", &fxaa)) {
+                settings.fxaaEnabled = fxaa ? 1 : 0;
+            }
+
+            // Bloom
+            bool bloom = settings.bloomEnabled != 0;
+            if (ImGui::Checkbox("Bloom", &bloom)) {
+                settings.bloomEnabled = bloom ? 1 : 0;
+            }
+            if (bloom) {
+                ImGui::DragFloat("Bloom Threshold", &settings.bloomThreshold, 0.05f, 0.0f, 5.0f);
+                ImGui::DragFloat("Bloom Intensity", &settings.bloomIntensity, 0.05f, 0.0f, 5.0f);
+            }
+
+            // Vignette
+            bool vignette = settings.vignetteEnabled != 0;
+            if (ImGui::Checkbox("Vignette", &vignette)) {
+                settings.vignetteEnabled = vignette ? 1 : 0;
+            }
+            if (vignette) {
+                ImGui::DragFloat("Vignette Intensity", &settings.vignetteIntensity, 0.05f, 0.0f, 3.0f);
+            }
+
+            // Film Grain
+            bool grain = settings.filmGrainEnabled != 0;
+            if (ImGui::Checkbox("Film Grain", &grain)) {
+                settings.filmGrainEnabled = grain ? 1 : 0;
+            }
+            if (grain) {
+                ImGui::DragFloat("Grain Intensity", &settings.filmGrainIntensity, 0.005f, 0.0f, 0.5f);
+            }
+
+            // Chromatic Aberration
+            bool chrAb = settings.chromaticAberrationEnabled != 0;
+            if (ImGui::Checkbox("Chromatic Aberration", &chrAb)) {
+                settings.chromaticAberrationEnabled = chrAb ? 1 : 0;
+            }
+            if (chrAb) {
+                ImGui::DragFloat("CA Intensity", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.1f);
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Color Grading:");
+            ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
+            ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.0f, 3.0f);
+            ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 3.0f);
+            f32 filter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
+            if (ImGui::ColorEdit3("Color Filter", filter)) {
+                settings.colorFilter = Math::Vector3(filter[0], filter[1], filter[2]);
+            }
+        } else {
+            ImGui::TextDisabled("PostProcessing not available");
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        Physics::SimplePhysics* physics = m_PlayMode.GetPhysics();
+        Math::Vector3 gravity = physics->GetGravity();
+
+        f32 grav[3] = { gravity.x, gravity.y, gravity.z };
+        if (ImGui::DragFloat3("Global Gravity", grav, 0.1f, -100.0f, 100.0f)) {
+            physics->SetGravity(Math::Vector3(grav[0], grav[1], grav[2]));
+        }
+
+        // Quick presets
+        ImGui::Text("Presets:");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Earth")) { physics->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Moon")) { physics->SetGravity(Math::Vector3(0.0f, -1.62f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Mars")) { physics->SetGravity(Math::Vector3(0.0f, -3.72f, 0.0f)); }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Zero")) { physics->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f)); }
+
+        f32 strength = physics->GetGravity().Length();
+        ImGui::TextDisabled("Strength: %.2f m/s^2", strength);
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
     }
 
     ImGui::End();
@@ -14625,6 +14725,84 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
 }
 
 // ============================================================================
+// External IDE Launcher
+// ============================================================================
+
+void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
+    u32 ide = m_EditorSettings.externalIDE;
+    std::string cmd;
+
+#ifdef ENJIN_PLATFORM_WINDOWS
+    switch (ide) {
+    case 1: // VS Code
+        cmd = "start \"\" code \"" + filePath + "\"";
+        break;
+    case 2: // Visual Studio
+        cmd = "start \"\" devenv /edit \"" + filePath + "\"";
+        break;
+    case 3: // Rider
+        cmd = "start \"\" rider64 \"" + filePath + "\"";
+        break;
+    case 4: // Custom
+        if (!m_EditorSettings.customIDEPath.empty()) {
+            cmd = "start \"\" \"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\"";
+        }
+        break;
+    default: // Auto - try VS Code
+        cmd = "start \"\" code \"" + filePath + "\"";
+        break;
+    }
+#elif defined(ENJIN_PLATFORM_MACOS)
+    switch (ide) {
+    case 1: // VS Code
+        cmd = "code \"" + filePath + "\" &";
+        break;
+    case 2: // Visual Studio
+        cmd = "open -a \"Visual Studio\" \"" + filePath + "\" &";
+        break;
+    case 3: // Rider
+        cmd = "open -a \"Rider\" \"" + filePath + "\" &";
+        break;
+    case 4: // Custom
+        if (!m_EditorSettings.customIDEPath.empty()) {
+            cmd = "\"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\" &";
+        }
+        break;
+    default: // Auto - try VS Code
+        cmd = "code \"" + filePath + "\" &";
+        break;
+    }
+#else
+    switch (ide) {
+    case 1: // VS Code
+        cmd = "code \"" + filePath + "\" &";
+        break;
+    case 2: // Visual Studio
+        cmd = "code \"" + filePath + "\" &"; // No VS on Linux, fall back to code
+        break;
+    case 3: // Rider
+        cmd = "rider \"" + filePath + "\" &";
+        break;
+    case 4: // Custom
+        if (!m_EditorSettings.customIDEPath.empty()) {
+            cmd = "\"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\" &";
+        }
+        break;
+    default: // Auto - try VS Code
+        cmd = "code \"" + filePath + "\" &";
+        break;
+    }
+#endif
+
+    if (!cmd.empty()) {
+        std::system(cmd.c_str());
+        ENJIN_LOG_INFO(Editor, "Opening in IDE: %s", filePath.c_str());
+    } else {
+        ENJIN_LOG_WARN(Editor, "No IDE configured to open: %s", filePath.c_str());
+    }
+}
+
+// ============================================================================
 // Script Component Inspector
 // ============================================================================
 
@@ -14671,6 +14849,12 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                 pathBuf[sizeof(pathBuf) - 1] = '\0';
                 if (ImGui::InputText("Script File", pathBuf, sizeof(pathBuf))) {
                     script.scriptPath = pathBuf;
+                }
+                if (!script.scriptPath.empty() && std::filesystem::exists(script.scriptPath)) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Open")) {
+                        OpenInExternalIDE(script.scriptPath);
+                    }
                 }
 
                 // Class name
@@ -14843,9 +15027,101 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
         // Add script button
         ImGui::Separator();
         if (ImGui::Button("Add Script")) {
-            ECS::ScriptAttachment attachment;
-            attachment.scriptPath = "scripts/";
-            sc->scripts.push_back(std::move(attachment));
+            m_ShowCreateScriptPopup = true;
+            m_NewScriptNameBuf[0] = '\0';
+            m_NewScriptNameError.clear();
+            ImGui::OpenPopup("Create Script");
+        }
+
+        // Create Script modal popup
+        if (ImGui::BeginPopupModal("Create Script", &m_ShowCreateScriptPopup, ImGuiWindowFlags_AlwaysAutoResize)) {
+            ImGui::Text("Enter a class name for the new TegeBehavior script:");
+            ImGui::Separator();
+
+            ImGui::InputText("Class Name", m_NewScriptNameBuf, sizeof(m_NewScriptNameBuf));
+
+            if (!m_NewScriptNameError.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                ImGui::TextWrapped("%s", m_NewScriptNameError.c_str());
+                ImGui::PopStyleColor();
+            }
+
+            ImGui::Separator();
+            if (ImGui::Button("Create", ImVec2(120, 0))) {
+                std::string name = m_NewScriptNameBuf;
+                // Validation
+                bool valid = true;
+                if (name.empty()) {
+                    m_NewScriptNameError = "Class name cannot be empty.";
+                    valid = false;
+                } else if (name[0] < 'A' || name[0] > 'Z') {
+                    m_NewScriptNameError = "Class name must start with an uppercase letter.";
+                    valid = false;
+                } else {
+                    for (char c : name) {
+                        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '_') {
+                            m_NewScriptNameError = "Class name must only contain letters, digits, or underscores.";
+                            valid = false;
+                            break;
+                        }
+                    }
+                }
+                if (valid) {
+                    std::string scriptPath = "scripts/" + name + ".as";
+                    if (std::filesystem::exists(scriptPath)) {
+                        m_NewScriptNameError = "File already exists: " + scriptPath;
+                        valid = false;
+                    }
+                }
+
+                if (valid) {
+                    std::string scriptPath = "scripts/" + name + ".as";
+                    // Create scripts/ directory if needed
+                    std::error_code ec;
+                    std::filesystem::create_directories("scripts", ec);
+
+                    // Write boilerplate TegeBehavior script
+                    std::ofstream file(scriptPath);
+                    if (file.is_open()) {
+                        file << "class " << name << " : TegeBehavior {\n";
+                        file << "    void OnCreate() {\n";
+                        file << "        // Called when the entity is created\n";
+                        file << "    }\n";
+                        file << "\n";
+                        file << "    void OnUpdate(float dt) {\n";
+                        file << "        // Called every frame\n";
+                        file << "    }\n";
+                        file << "\n";
+                        file << "    void OnDestroy() {\n";
+                        file << "        // Called when the entity is destroyed\n";
+                        file << "    }\n";
+                        file << "}\n";
+                        file.close();
+
+                        // Add the script attachment
+                        ECS::ScriptAttachment attachment;
+                        attachment.scriptPath = scriptPath;
+                        attachment.className = name;
+                        sc->scripts.push_back(std::move(attachment));
+
+                        ENJIN_LOG_INFO(Editor, "Created script: %s", scriptPath.c_str());
+
+                        // Open in IDE
+                        OpenInExternalIDE(scriptPath);
+
+                        m_ShowCreateScriptPopup = false;
+                        ImGui::CloseCurrentPopup();
+                    } else {
+                        m_NewScriptNameError = "Failed to create file: " + scriptPath;
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                m_ShowCreateScriptPopup = false;
+                ImGui::CloseCurrentPopup();
+            }
+            ImGui::EndPopup();
         }
     }
 }
@@ -17383,6 +17659,602 @@ void EditorLayer::HandleTilemapBrush() {
     // Right-click/drag: erase tile
     else if (Input::IsMouseButtonDown(MouseButton::Right)) {
         tilemap->SetTile(static_cast<u32>(col), static_cast<u32>(row), -1);
+    }
+}
+
+void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("UI Canvas", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("UICanvasCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<GUI::UICanvasComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(entity);
+    if (!canvas) return;
+
+    // Canvas settings
+    char nameBuf[128];
+    strncpy(nameBuf, canvas->canvasName.c_str(), sizeof(nameBuf) - 1); nameBuf[sizeof(nameBuf) - 1] = '\0';
+    if (ImGui::InputText("Canvas Name", nameBuf, sizeof(nameBuf))) canvas->canvasName = nameBuf;
+
+    ImGui::Checkbox("Visible", &canvas->visible);
+    ImGui::DragInt("Sort Order", &canvas->sortOrder, 1, -100, 1000);
+    ImGui::DragFloat("Design Width", &canvas->designWidth, 1.0f, 320.0f, 7680.0f);
+    ImGui::DragFloat("Design Height", &canvas->designHeight, 1.0f, 240.0f, 4320.0f);
+
+    const char* scaleModes[] = { "Scale With Screen", "Constant Pixel", "Constant Physical" };
+    int scaleMode = static_cast<int>(canvas->scaleMode);
+    if (ImGui::Combo("Scale Mode", &scaleMode, scaleModes, 3)) {
+        canvas->scaleMode = static_cast<GUI::UIScaleMode>(scaleMode);
+    }
+
+    // UI Edit Mode toggle — WYSIWYG viewport editing
+    if (ImGui::Checkbox("Edit in Viewport", &m_UIEditMode)) {
+        if (m_UIEditMode) {
+            m_UIEditCanvasEntity = entity;
+            m_TerrainEditMode = false;
+            m_TilemapEditMode = false;
+        } else {
+            m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
+        }
+    }
+    if (m_UIEditMode && m_UIEditCanvasEntity == entity) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "ACTIVE");
+    }
+
+    // Theme editor (collapsible)
+    if (ImGui::TreeNode("Theme")) {
+        auto& theme = canvas->theme;
+
+        const char* presets[] = { "Dark", "Light", "RetroGreen", "Fantasy" };
+        int presetIdx = -1;
+        if (ImGui::Combo("Preset", &presetIdx, presets, 4)) {
+            theme = GUI::UITheme::FromPreset(static_cast<GUI::UIThemePreset>(presetIdx));
+        }
+
+        ImGui::ColorEdit3("Primary", &theme.primary.x);
+        ImGui::ColorEdit3("Secondary", &theme.secondary.x);
+        ImGui::ColorEdit3("Background", &theme.background.x);
+        ImGui::ColorEdit3("Surface", &theme.surface.x);
+        ImGui::ColorEdit3("Error", &theme.error.x);
+        ImGui::ColorEdit3("Text Primary", &theme.textPrimary.x);
+        ImGui::ColorEdit3("Text Secondary", &theme.textSecondary.x);
+        ImGui::ColorEdit3("Button Default", &theme.buttonDefault.x);
+        ImGui::ColorEdit3("Button Hovered", &theme.buttonHovered.x);
+        ImGui::ColorEdit3("Button Pressed", &theme.buttonPressed.x);
+        ImGui::ColorEdit3("Slider Fill", &theme.sliderFill.x);
+        ImGui::ColorEdit3("Slider Track", &theme.sliderTrack.x);
+        ImGui::DragFloat("Border Radius", &theme.borderRadius, 0.5f, 0.0f, 20.0f);
+        ImGui::DragFloat("Border Width", &theme.borderWidth, 0.25f, 0.0f, 5.0f);
+        ImGui::DragFloat("Font Size Body", &theme.fontSizeBody, 0.5f, 8.0f, 48.0f);
+        ImGui::DragFloat("Font Size Heading", &theme.fontSizeHeading, 0.5f, 12.0f, 72.0f);
+        ImGui::DragFloat("BG Alpha", &theme.bgAlpha, 0.01f, 0.0f, 1.0f);
+
+        ImGui::TreePop();
+    }
+
+    // Element list
+    if (ImGui::TreeNode("Elements")) {
+        // Tree view of elements (synced with viewport UI editor via m_UIEditSelectedElementId)
+        auto rootIds = canvas->GetRootElementIds();
+        for (u32 rootId : rootIds) {
+            auto* elem = canvas->GetElement(rootId);
+            if (!elem) continue;
+
+            ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+            if (elem->childIds.empty()) flags |= ImGuiTreeNodeFlags_Leaf;
+            if (m_UIEditSelectedElementId == elem->id) flags |= ImGuiTreeNodeFlags_Selected;
+
+            std::string label = elem->name + " [" + std::to_string(elem->id) + "]";
+            bool nodeOpen = ImGui::TreeNodeEx(label.c_str(), flags);
+
+            if (ImGui::IsItemClicked()) m_UIEditSelectedElementId = elem->id;
+
+            if (nodeOpen) {
+                for (u32 childId : elem->childIds) {
+                    auto* child = canvas->GetElement(childId);
+                    if (!child) continue;
+
+                    ImGuiTreeNodeFlags childFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_SpanAvailWidth;
+                    if (m_UIEditSelectedElementId == child->id) childFlags |= ImGuiTreeNodeFlags_Selected;
+
+                    std::string childLabel = child->name + " [" + std::to_string(child->id) + "]";
+                    ImGui::TreeNodeEx(childLabel.c_str(), childFlags | ImGuiTreeNodeFlags_NoTreePushOnOpen);
+                    if (ImGui::IsItemClicked()) m_UIEditSelectedElementId = child->id;
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::Separator();
+
+        // Add element buttons
+        if (ImGui::Button("Add Panel")) canvas->AddElement(GUI::UIWidgetType::Panel, "Panel");
+        ImGui::SameLine();
+        if (ImGui::Button("Add Button")) canvas->AddElement(GUI::UIWidgetType::Button, "Button");
+        ImGui::SameLine();
+        if (ImGui::Button("Add Label")) canvas->AddElement(GUI::UIWidgetType::Label, "Label");
+
+        if (ImGui::Button("Add Image")) canvas->AddElement(GUI::UIWidgetType::Image, "Image");
+        ImGui::SameLine();
+        if (ImGui::Button("Add ProgressBar")) canvas->AddElement(GUI::UIWidgetType::ProgressBar, "ProgressBar");
+        ImGui::SameLine();
+        if (ImGui::Button("Add Slider")) canvas->AddElement(GUI::UIWidgetType::Slider, "Slider");
+
+        if (ImGui::Button("Add Checkbox")) canvas->AddElement(GUI::UIWidgetType::Checkbox, "Checkbox");
+        ImGui::SameLine();
+        if (ImGui::Button("Add Toggle")) canvas->AddElement(GUI::UIWidgetType::Toggle, "Toggle");
+
+        ImGui::Separator();
+
+        // Template insertion
+        if (ImGui::Button("Insert Main Menu Template")) {
+            auto tmpl = GUI::UITemplates::CreateMainMenu("My Game");
+            *canvas = tmpl;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Insert Pause Menu")) {
+            auto tmpl = GUI::UITemplates::CreatePauseMenu();
+            *canvas = tmpl;
+        }
+
+        ImGui::Separator();
+
+        // Selected element editor
+        auto* sel = canvas->GetElement(m_UIEditSelectedElementId);
+        if (sel) {
+            ImGui::Text("Selected: %s (#%u)", sel->name.c_str(), sel->id);
+
+            char elemNameBuf[128];
+            strncpy(elemNameBuf, sel->name.c_str(), sizeof(elemNameBuf) - 1); elemNameBuf[sizeof(elemNameBuf) - 1] = '\0';
+            if (ImGui::InputText("Element Name", elemNameBuf, sizeof(elemNameBuf))) sel->name = elemNameBuf;
+
+            const char* widgetTypes[] = {
+                "Panel", "Button", "Label", "Image", "ProgressBar", "Slider", "Checkbox", "Toggle",
+                "Dropdown", "TextInput", "RadioGroup", "ScrollArea", "Grid", "TabGroup", "Tooltip", "Modal", "ListView"
+            };
+            int widgetType = static_cast<int>(sel->type);
+            if (ImGui::Combo("Widget Type", &widgetType, widgetTypes, 17)) {
+                sel->type = static_cast<GUI::UIWidgetType>(widgetType);
+            }
+
+            ImGui::Checkbox("Element Visible", &sel->visible);
+            ImGui::Checkbox("Element Enabled", &sel->enabled);
+
+            // Anchor
+            if (ImGui::TreeNode("Anchor")) {
+                ImGui::DragFloat2("Anchor Min", &sel->anchor.anchorMin.x, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat2("Anchor Max", &sel->anchor.anchorMax.x, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat2("Pivot", &sel->anchor.pivot.x, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Offset Left", &sel->anchor.offsetLeft, 1.0f);
+                ImGui::DragFloat("Offset Right", &sel->anchor.offsetRight, 1.0f);
+                ImGui::DragFloat("Offset Top", &sel->anchor.offsetTop, 1.0f);
+                ImGui::DragFloat("Offset Bottom", &sel->anchor.offsetBottom, 1.0f);
+                ImGui::TreePop();
+            }
+
+            // Style overrides
+            if (ImGui::TreeNode("Style Overrides")) {
+                ImGui::ColorEdit3("BG Color Override", &sel->style.bgColor.x);
+                ImGui::ColorEdit3("Text Color Override", &sel->style.textColor.x);
+                ImGui::ColorEdit3("Border Color Override", &sel->style.borderColor.x);
+                ImGui::DragFloat("BG Alpha Override", &sel->style.bgAlpha, 0.01f, -1.0f, 1.0f);
+                ImGui::DragFloat("Border Radius Override", &sel->style.borderRadius, 0.5f, -1.0f, 20.0f);
+                ImGui::DragFloat("Border Width Override", &sel->style.borderWidth, 0.25f, -1.0f, 5.0f);
+                ImGui::DragFloat("Font Size Override", &sel->style.fontSize, 0.5f, -1.0f, 72.0f);
+                ImGui::TextDisabled("Set to -1 to use theme default");
+                ImGui::TreePop();
+            }
+
+            // Widget-specific data
+            if (ImGui::TreeNode("Widget Data")) {
+                if (sel->type == GUI::UIWidgetType::Button || sel->type == GUI::UIWidgetType::Label ||
+                    sel->type == GUI::UIWidgetType::Checkbox || sel->type == GUI::UIWidgetType::Toggle) {
+                    char textBuf[256];
+                    strncpy(textBuf, sel->data.text.c_str(), sizeof(textBuf) - 1); textBuf[sizeof(textBuf) - 1] = '\0';
+                    if (ImGui::InputText("Text", textBuf, sizeof(textBuf))) sel->data.text = textBuf;
+
+                    const char* hAligns[] = { "Left", "Center", "Right" };
+                    int hAlign = sel->data.textAlignH;
+                    if (ImGui::Combo("H Align", &hAlign, hAligns, 3)) sel->data.textAlignH = static_cast<u8>(hAlign);
+
+                    const char* vAligns[] = { "Top", "Center", "Bottom" };
+                    int vAlign = sel->data.textAlignV;
+                    if (ImGui::Combo("V Align", &vAlign, vAligns, 3)) sel->data.textAlignV = static_cast<u8>(vAlign);
+                }
+
+                if (sel->type == GUI::UIWidgetType::Image) {
+                    char imgBuf[256];
+                    strncpy(imgBuf, sel->data.imagePath.c_str(), sizeof(imgBuf) - 1); imgBuf[sizeof(imgBuf) - 1] = '\0';
+                    if (ImGui::InputText("Image Path", imgBuf, sizeof(imgBuf))) sel->data.imagePath = imgBuf;
+                    ImGui::ColorEdit3("Image Tint", &sel->data.imageTint.x);
+                    ImGui::DragFloat("Image Alpha", &sel->data.imageAlpha, 0.01f, 0.0f, 1.0f);
+                }
+
+                if (sel->type == GUI::UIWidgetType::ProgressBar) {
+                    ImGui::DragFloat("Progress Value", &sel->data.progressValue, 0.01f, 0.0f, 1.0f);
+                    ImGui::ColorEdit3("Fill Color", &sel->data.progressFillColor.x);
+                }
+
+                if (sel->type == GUI::UIWidgetType::Slider) {
+                    ImGui::DragFloat("Slider Value", &sel->data.sliderValue, 0.01f, sel->data.sliderMin, sel->data.sliderMax);
+                    ImGui::DragFloat("Slider Min", &sel->data.sliderMin, 0.01f);
+                    ImGui::DragFloat("Slider Max", &sel->data.sliderMax, 0.01f);
+                }
+
+                if (sel->type == GUI::UIWidgetType::Checkbox || sel->type == GUI::UIWidgetType::Toggle) {
+                    ImGui::Checkbox("Checked", &sel->data.checked);
+                }
+
+                ImGui::TreePop();
+            }
+
+            // Event names
+            if (ImGui::TreeNode("Events")) {
+                char clickBuf[128];
+                strncpy(clickBuf, sel->onClickEvent.c_str(), sizeof(clickBuf) - 1); clickBuf[sizeof(clickBuf) - 1] = '\0';
+                if (ImGui::InputText("On Click Event", clickBuf, sizeof(clickBuf))) sel->onClickEvent = clickBuf;
+
+                char valBuf[128];
+                strncpy(valBuf, sel->onValueChangedEvent.c_str(), sizeof(valBuf) - 1); valBuf[sizeof(valBuf) - 1] = '\0';
+                if (ImGui::InputText("On Value Changed", valBuf, sizeof(valBuf))) sel->onValueChangedEvent = valBuf;
+
+                char subBuf[128];
+                strncpy(subBuf, sel->onSubmitEvent.c_str(), sizeof(subBuf) - 1); subBuf[sizeof(subBuf) - 1] = '\0';
+                if (ImGui::InputText("On Submit Event", subBuf, sizeof(subBuf))) sel->onSubmitEvent = subBuf;
+
+                ImGui::TreePop();
+            }
+
+            // Delete element button
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+            if (ImGui::Button("Delete Element")) {
+                canvas->RemoveElement(m_UIEditSelectedElementId);
+                m_UIEditSelectedElementId = 0;
+            }
+            ImGui::PopStyleColor();
+        }
+
+        ImGui::TreePop();
+    }
+}
+
+// ============================================================================
+// UI EDITOR — Viewport WYSIWYG Editing
+// ============================================================================
+
+void EditorLayer::UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY) {
+    f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+    f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+    f32 localX = screenX - m_GameViewImageMinX;
+    f32 localY = screenY - m_GameViewImageMinY;
+
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
+    if (!canvas || gvW <= 0 || gvH <= 0) {
+        designX = localX;
+        designY = localY;
+        return;
+    }
+
+    f32 scaleFactor = std::min(gvW / canvas->designWidth, gvH / canvas->designHeight);
+    if (canvas->scaleMode == GUI::UIScaleMode::ConstantPixelSize) scaleFactor = 1.0f;
+
+    designX = localX / scaleFactor;
+    designY = localY / scaleFactor;
+}
+
+void EditorLayer::UIEditorDesignToScreen(f32 designX, f32 designY, f32& screenX, f32& screenY) {
+    f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+    f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
+    if (!canvas || gvW <= 0 || gvH <= 0) {
+        screenX = designX + m_GameViewImageMinX;
+        screenY = designY + m_GameViewImageMinY;
+        return;
+    }
+
+    f32 scaleFactor = std::min(gvW / canvas->designWidth, gvH / canvas->designHeight);
+    if (canvas->scaleMode == GUI::UIScaleMode::ConstantPixelSize) scaleFactor = 1.0f;
+
+    screenX = designX * scaleFactor + m_GameViewImageMinX;
+    screenY = designY * scaleFactor + m_GameViewImageMinY;
+}
+
+UIEditDragMode EditorLayer::UIEditorHitTestHandles(f32 localX, f32 localY, const GUI::UIRect& rect) {
+    constexpr f32 handleSize = 5.0f;
+
+    f32 left   = rect.x;
+    f32 right  = rect.x + rect.w;
+    f32 top    = rect.y;
+    f32 bottom = rect.y + rect.h;
+    f32 midX   = rect.x + rect.w * 0.5f;
+    f32 midY   = rect.y + rect.h * 0.5f;
+
+    auto hitHandle = [&](f32 hx, f32 hy) {
+        return (localX >= hx - handleSize && localX <= hx + handleSize &&
+                localY >= hy - handleSize && localY <= hy + handleSize);
+    };
+
+    // Corners first (higher priority)
+    if (hitHandle(left, top))     return UIEditDragMode::ResizeTL;
+    if (hitHandle(right, top))    return UIEditDragMode::ResizeTR;
+    if (hitHandle(left, bottom))  return UIEditDragMode::ResizeBL;
+    if (hitHandle(right, bottom)) return UIEditDragMode::ResizeBR;
+
+    // Edges
+    if (hitHandle(midX, top))     return UIEditDragMode::ResizeTop;
+    if (hitHandle(midX, bottom))  return UIEditDragMode::ResizeBottom;
+    if (hitHandle(left, midY))    return UIEditDragMode::ResizeLeft;
+    if (hitHandle(right, midY))   return UIEditDragMode::ResizeRight;
+
+    return UIEditDragMode::None;
+}
+
+void EditorLayer::DrawUIEditorOverlay() {
+    if (!m_World || m_UIEditCanvasEntity == ECS::INVALID_ENTITY) return;
+
+    // Validate entity still exists
+    if (!m_World->HasComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity)) {
+        m_UIEditMode = false;
+        m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
+        return;
+    }
+
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
+    if (!canvas) return;
+
+    f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+    f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+    if (gvW <= 0 || gvH <= 0) return;
+
+    // Compute layout in Game View local space (0..gvW, 0..gvH)
+    m_UISystem.ComputeLayoutForCanvas(*canvas, gvW, gvH);
+
+    f32 offsetX = m_GameViewImageMinX;
+    f32 offsetY = m_GameViewImageMinY;
+
+    // Offset all computed rects to screen space for rendering
+    for (auto& element : canvas->elements) {
+        element.computedRect.x += offsetX;
+        element.computedRect.y += offsetY;
+    }
+
+    // Render the canvas preview using the existing widget renderers
+    m_UISystem.RenderCanvasPreview(*canvas);
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+    // Draw selection outline and handles for selected element
+    auto* selElem = canvas->GetElement(m_UIEditSelectedElementId);
+    if (selElem) {
+        const auto& r = selElem->computedRect;
+
+        // Selection outline (cyan, 2px)
+        ImU32 selColor = IM_COL32(0, 255, 255, 200);
+        dl->AddRect(ImVec2(r.x, r.y), ImVec2(r.x + r.w, r.y + r.h), selColor, 0.0f, 0, 2.0f);
+
+        // 8 resize handles (white squares)
+        constexpr f32 hs = 4.0f;
+        ImU32 handleColor = IM_COL32(255, 255, 255, 230);
+        ImU32 handleBorder = IM_COL32(0, 0, 0, 200);
+
+        auto drawHandle = [&](f32 cx, f32 cy) {
+            dl->AddRectFilled(ImVec2(cx - hs, cy - hs), ImVec2(cx + hs, cy + hs), handleColor);
+            dl->AddRect(ImVec2(cx - hs, cy - hs), ImVec2(cx + hs, cy + hs), handleBorder);
+        };
+
+        f32 left = r.x, right = r.x + r.w, top = r.y, bottom = r.y + r.h;
+        f32 midX = r.x + r.w * 0.5f, midY = r.y + r.h * 0.5f;
+
+        drawHandle(left, top);       drawHandle(right, top);
+        drawHandle(left, bottom);    drawHandle(right, bottom);
+        drawHandle(midX, top);       drawHandle(midX, bottom);
+        drawHandle(left, midY);      drawHandle(right, midY);
+
+        // Element name label above selection
+        std::string label = selElem->name;
+        ImFont* font = ImGui::GetFont();
+        ImVec2 textSize = font->CalcTextSizeA(12.0f, FLT_MAX, 0.0f, label.c_str());
+        f32 labelX = r.x;
+        f32 labelY = r.y - textSize.y - 4.0f;
+        dl->AddRectFilled(ImVec2(labelX - 2, labelY - 1), ImVec2(labelX + textSize.x + 4, labelY + textSize.y + 1),
+                          IM_COL32(0, 0, 0, 180));
+        dl->AddText(font, 12.0f, ImVec2(labelX, labelY), selColor, label.c_str());
+    }
+
+    // "UI EDIT MODE" indicator in top-left of game view
+    ImFont* font = ImGui::GetFont();
+    ImVec2 indicatorPos(offsetX + 8.0f, offsetY + 8.0f);
+    dl->AddRectFilled(ImVec2(indicatorPos.x - 2, indicatorPos.y - 1),
+                      ImVec2(indicatorPos.x + 102, indicatorPos.y + 15),
+                      IM_COL32(0, 0, 0, 160));
+    dl->AddText(font, 13.0f, indicatorPos, IM_COL32(0, 255, 200, 220), "UI EDIT MODE");
+
+    // Restore computed rects back to local space
+    for (auto& element : canvas->elements) {
+        element.computedRect.x -= offsetX;
+        element.computedRect.y -= offsetY;
+    }
+}
+
+void EditorLayer::HandleUIEditorInput() {
+    if (!m_World || m_UIEditCanvasEntity == ECS::INVALID_ENTITY) return;
+
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_UIEditCanvasEntity);
+    if (!canvas) {
+        m_UIEditMode = false;
+        return;
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 mouseX = io.MousePos.x;
+    f32 mouseY = io.MousePos.y;
+
+    // Guard: only process when mouse is within Game View bounds
+    bool inGameView = (mouseX >= m_GameViewImageMinX && mouseX <= m_GameViewImageMaxX &&
+                       mouseY >= m_GameViewImageMinY && mouseY <= m_GameViewImageMaxY);
+    if (!inGameView && !ImGui::IsMouseDown(0)) {
+        // Allow finishing drag outside game view but don't start new interactions
+        if (m_UIEditDragMode != UIEditDragMode::None && !ImGui::IsMouseDown(0)) {
+            m_UIEditDragMode = UIEditDragMode::None;
+        }
+        return;
+    }
+
+    f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+    f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+    if (gvW <= 0 || gvH <= 0) return;
+
+    // Compute layout to get current rects in local space (0..gvW)
+    m_UISystem.ComputeLayoutForCanvas(*canvas, gvW, gvH);
+
+    f32 localX = mouseX - m_GameViewImageMinX;
+    f32 localY = mouseY - m_GameViewImageMinY;
+
+    // Convert mouse delta to design-space pixels
+    f32 scaleFactor = std::min(gvW / canvas->designWidth, gvH / canvas->designHeight);
+    if (canvas->scaleMode == GUI::UIScaleMode::ConstantPixelSize) scaleFactor = 1.0f;
+
+    // Handle active drag
+    if (m_UIEditDragMode != UIEditDragMode::None && ImGui::IsMouseDown(0)) {
+        auto* dragElem = canvas->GetElement(m_UIEditSelectedElementId);
+        if (dragElem) {
+            f32 deltaX = (mouseX - m_UIEditDragStart.x) / scaleFactor;
+            f32 deltaY = (mouseY - m_UIEditDragStart.y) / scaleFactor;
+
+            const auto& startAnchor = m_UIEditDragStartAnchor;
+
+            if (m_UIEditDragMode == UIEditDragMode::Move) {
+                dragElem->anchor.offsetLeft   = startAnchor.offsetLeft   + deltaX;
+                dragElem->anchor.offsetRight  = startAnchor.offsetRight  + deltaX;
+                dragElem->anchor.offsetTop    = startAnchor.offsetTop    + deltaY;
+                dragElem->anchor.offsetBottom = startAnchor.offsetBottom + deltaY;
+            } else {
+                // Resize — apply delta to specific anchor offsets
+                bool affectsLeft   = (m_UIEditDragMode == UIEditDragMode::ResizeLeft ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeTL ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeBL);
+                bool affectsRight  = (m_UIEditDragMode == UIEditDragMode::ResizeRight ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeTR ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeBR);
+                bool affectsTop    = (m_UIEditDragMode == UIEditDragMode::ResizeTop ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeTL ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeTR);
+                bool affectsBottom = (m_UIEditDragMode == UIEditDragMode::ResizeBottom ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeBL ||
+                                      m_UIEditDragMode == UIEditDragMode::ResizeBR);
+
+                if (affectsLeft)   dragElem->anchor.offsetLeft   = startAnchor.offsetLeft   + deltaX;
+                if (affectsRight)  dragElem->anchor.offsetRight  = startAnchor.offsetRight  + deltaX;
+                if (affectsTop)    dragElem->anchor.offsetTop    = startAnchor.offsetTop    + deltaY;
+                if (affectsBottom) dragElem->anchor.offsetBottom = startAnchor.offsetBottom + deltaY;
+            }
+        }
+        return;
+    }
+
+    // End drag
+    if (m_UIEditDragMode != UIEditDragMode::None && !ImGui::IsMouseDown(0)) {
+        m_UIEditDragMode = UIEditDragMode::None;
+        return;
+    }
+
+    // Cursor feedback for resize handles on selected element
+    auto* selElem = canvas->GetElement(m_UIEditSelectedElementId);
+    if (selElem && !ImGui::IsMouseDown(0)) {
+        UIEditDragMode handleHit = UIEditorHitTestHandles(localX, localY, selElem->computedRect);
+        switch (handleHit) {
+            case UIEditDragMode::ResizeTL: case UIEditDragMode::ResizeBR:
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNWSE); break;
+            case UIEditDragMode::ResizeTR: case UIEditDragMode::ResizeBL:
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNESW); break;
+            case UIEditDragMode::ResizeLeft: case UIEditDragMode::ResizeRight:
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW); break;
+            case UIEditDragMode::ResizeTop: case UIEditDragMode::ResizeBottom:
+                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS); break;
+            default: break;
+        }
+    }
+
+    // Left click — start drag or select
+    if (ImGui::IsMouseClicked(0) && inGameView) {
+        // First check resize handles on selected element
+        if (selElem) {
+            UIEditDragMode handleHit = UIEditorHitTestHandles(localX, localY, selElem->computedRect);
+            if (handleHit != UIEditDragMode::None) {
+                m_UIEditDragMode = handleHit;
+                m_UIEditDragStart = ImVec2(mouseX, mouseY);
+                m_UIEditDragStartAnchor = selElem->anchor;
+                return;
+            }
+        }
+
+        // Hit test elements in reverse order (front-to-back)
+        bool hitAny = false;
+        for (i32 i = static_cast<i32>(canvas->elements.size()) - 1; i >= 0; --i) {
+            auto& elem = canvas->elements[static_cast<usize>(i)];
+            if (!elem.visible) continue;
+            if (elem.computedRect.Contains(localX, localY)) {
+                m_UIEditSelectedElementId = elem.id;
+                hitAny = true;
+
+                // Start move drag
+                m_UIEditDragMode = UIEditDragMode::Move;
+                m_UIEditDragStart = ImVec2(mouseX, mouseY);
+                m_UIEditDragStartAnchor = elem.anchor;
+                break;
+            }
+        }
+
+        if (!hitAny) {
+            m_UIEditSelectedElementId = 0;
+        }
+    }
+
+    // Right-click context menu — add new elements at click position
+    if (ImGui::IsMouseClicked(1) && inGameView) {
+        ImGui::OpenPopup("UIEditorContextMenu");
+    }
+
+    if (ImGui::BeginPopup("UIEditorContextMenu")) {
+        f32 designX, designY;
+        UIEditorScreenToDesign(mouseX, mouseY, designX, designY);
+
+        ImGui::TextDisabled("Add UI Element");
+        ImGui::Separator();
+
+        auto addAtPosition = [&](GUI::UIWidgetType type, const char* name, f32 defaultW, f32 defaultH) {
+            u32 id = canvas->AddElement(type, name);
+            auto* newElem = canvas->GetElement(id);
+            if (newElem) {
+                newElem->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                newElem->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
+                newElem->anchor.offsetLeft   = designX;
+                newElem->anchor.offsetRight  = designX + defaultW;
+                newElem->anchor.offsetTop    = designY;
+                newElem->anchor.offsetBottom = designY + defaultH;
+                if (type == GUI::UIWidgetType::Button) newElem->data.text = "Button";
+                if (type == GUI::UIWidgetType::Label)  newElem->data.text = "Label";
+                m_UIEditSelectedElementId = id;
+            }
+        };
+
+        if (ImGui::MenuItem("Panel"))       addAtPosition(GUI::UIWidgetType::Panel,       "Panel",       200, 150);
+        if (ImGui::MenuItem("Button"))      addAtPosition(GUI::UIWidgetType::Button,      "Button",      160, 40);
+        if (ImGui::MenuItem("Label"))       addAtPosition(GUI::UIWidgetType::Label,       "Label",       200, 30);
+        if (ImGui::MenuItem("Image"))       addAtPosition(GUI::UIWidgetType::Image,       "Image",       100, 100);
+        if (ImGui::MenuItem("ProgressBar")) addAtPosition(GUI::UIWidgetType::ProgressBar, "ProgressBar", 200, 24);
+        if (ImGui::MenuItem("Slider"))      addAtPosition(GUI::UIWidgetType::Slider,      "Slider",      200, 30);
+        if (ImGui::MenuItem("Checkbox"))    addAtPosition(GUI::UIWidgetType::Checkbox,    "Checkbox",    120, 24);
+        if (ImGui::MenuItem("Toggle"))      addAtPosition(GUI::UIWidgetType::Toggle,      "Toggle",      120, 24);
+        ImGui::EndPopup();
     }
 }
 

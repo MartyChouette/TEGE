@@ -46,7 +46,8 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     file.seekg(0, std::ios::end);
     u64 fileSize = static_cast<u64>(file.tellg());
 
-    if (fileSize < indexOffset + 8) {
+    // Guard against integer overflow: indexOffset + 8 could wrap
+    if (indexOffset > fileSize || fileSize - indexOffset < 8) {
         ENJIN_LOG_ERROR(Build, "Pack file truncated: %s", pakPath.c_str());
         return false;
     }
@@ -58,10 +59,28 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     file.read(reinterpret_cast<char*>(&indexSize), sizeof(indexSize));
     file.read(reinterpret_cast<char*>(&indexCRC), sizeof(indexCRC));
 
+    // Cap index size to prevent excessive allocation (max 64 MB)
+    static constexpr u32 MAX_INDEX_SIZE = 64u * 1024u * 1024u;
+    if (indexSize > MAX_INDEX_SIZE) {
+        ENJIN_LOG_ERROR(Build, "Pack index too large (%u bytes, max %u): %s",
+                        indexSize, MAX_INDEX_SIZE, pakPath.c_str());
+        return false;
+    }
+
+    // Verify index fits within the file
+    if (static_cast<u64>(indexSize) > fileSize - indexOffset) {
+        ENJIN_LOG_ERROR(Build, "Pack index size exceeds available data: %s", pakPath.c_str());
+        return false;
+    }
+
     // Read obfuscated index
     file.seekg(static_cast<std::streamoff>(indexOffset));
     std::vector<u8> indexBuf(indexSize);
     file.read(reinterpret_cast<char*>(indexBuf.data()), indexSize);
+    if (!file.good()) {
+        ENJIN_LOG_ERROR(Build, "Failed to read pack index: %s", pakPath.c_str());
+        return false;
+    }
 
     // Deobfuscate
     XorDeobfuscate(indexBuf);
@@ -82,11 +101,21 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
         return true;
     };
 
+    // Cap entry count to prevent excessive iteration (max 1M entries)
+    static constexpr u32 MAX_ENTRY_COUNT = 1000000u;
+    if (entryCount > MAX_ENTRY_COUNT) {
+        ENJIN_LOG_ERROR(Build, "Pack entry count too large (%u, max %u): %s",
+                        entryCount, MAX_ENTRY_COUNT, pakPath.c_str());
+        return false;
+    }
+
     for (u32 i = 0; i < entryCount; i++) {
         u32 pathLen = 0;
         if (!readVal(&pathLen, sizeof(pathLen))) break;
 
-        if (pos + pathLen > indexBuf.size()) break;
+        // Cap path length to prevent overflow and excessive allocation
+        static constexpr u32 MAX_PATH_LEN = 4096u;
+        if (pathLen > MAX_PATH_LEN || pos + pathLen > indexBuf.size()) break;
         std::string vpath(reinterpret_cast<const char*>(indexBuf.data() + pos), pathLen);
         pos += pathLen;
 
@@ -128,6 +157,16 @@ std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
 
     const Entry& entry = it->second;
 
+    // Reject unreasonable sizes (max 512 MB per file)
+    static constexpr u64 MAX_FILE_SIZE = 512ull * 1024ull * 1024ull;
+    if (entry.compressedSize > MAX_FILE_SIZE || entry.originalSize > MAX_FILE_SIZE) {
+        ENJIN_LOG_ERROR(Build, "File too large in pack (%s): compressed=%llu, original=%llu",
+                        virtualPath.c_str(),
+                        static_cast<unsigned long long>(entry.compressedSize),
+                        static_cast<unsigned long long>(entry.originalSize));
+        return {};
+    }
+
     std::ifstream file(m_PakPath, std::ios::binary);
     if (!file.is_open()) {
         ENJIN_LOG_ERROR(Build, "Cannot reopen pack file: %s", m_PakPath.c_str());
@@ -136,9 +175,19 @@ std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
 
     // Read compressed+obfuscated data
     file.seekg(static_cast<std::streamoff>(entry.offset));
+    if (!file.good()) {
+        ENJIN_LOG_ERROR(Build, "Seek failed for %s at offset %llu",
+                        virtualPath.c_str(), static_cast<unsigned long long>(entry.offset));
+        return {};
+    }
     std::vector<u8> compressed(static_cast<usize>(entry.compressedSize));
     file.read(reinterpret_cast<char*>(compressed.data()),
               static_cast<std::streamsize>(entry.compressedSize));
+    if (!file.good()) {
+        ENJIN_LOG_ERROR(Build, "Read failed for %s (%llu bytes)",
+                        virtualPath.c_str(), static_cast<unsigned long long>(entry.compressedSize));
+        return {};
+    }
 
     // Deobfuscate
     XorDeobfuscate(compressed);
@@ -173,10 +222,23 @@ bool AssetReader::VerifyIntegrity() const {
     if (!file.is_open()) return false;
 
     for (auto& [vpath, entry] : m_Index) {
+        static constexpr u64 MAX_VERIFY_SIZE = 512ull * 1024ull * 1024ull;
+        if (entry.compressedSize > MAX_VERIFY_SIZE) {
+            ENJIN_LOG_ERROR(Build, "Integrity check skipped (too large): %s", vpath.c_str());
+            return false;
+        }
         file.seekg(static_cast<std::streamoff>(entry.offset));
+        if (!file.good()) {
+            ENJIN_LOG_ERROR(Build, "Integrity check seek failed: %s", vpath.c_str());
+            return false;
+        }
         std::vector<u8> compressed(static_cast<usize>(entry.compressedSize));
         file.read(reinterpret_cast<char*>(compressed.data()),
                   static_cast<std::streamsize>(entry.compressedSize));
+        if (!file.good()) {
+            ENJIN_LOG_ERROR(Build, "Integrity check read failed: %s", vpath.c_str());
+            return false;
+        }
 
         // Deobfuscate
         if (!m_Key.empty()) {

@@ -163,7 +163,9 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                 cgltf_attribute& attr = srcPrim.attributes[a];
                 cgltf_accessor* accessor = attr.data;
 
-                for (cgltf_size v = 0; v < accessor->count; ++v) {
+                // Clamp to allocated vertex count to prevent buffer overflow
+                cgltf_size count = (accessor->count <= vertexCount) ? accessor->count : vertexCount;
+                for (cgltf_size v = 0; v < count; ++v) {
                     GLTFVertex& vertex = dstPrim.vertices[v];
 
                     switch (attr.type) {
@@ -359,6 +361,7 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
                     continue;
             }
 
+            if (!srcChannel.sampler) continue;
             cgltf_animation_sampler& sampler = *srcChannel.sampler;
 
             // Read keyframe times from input accessor

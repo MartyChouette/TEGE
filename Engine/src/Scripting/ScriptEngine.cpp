@@ -373,23 +373,42 @@ void ScriptEngine::ReleaseInstance(asIScriptObject* obj)
 // Context Pool
 // ---------------------------------------------------------------------------
 
+// Execution timeout callback — aborts scripts that exceed the instruction limit.
+// The instruction counter is stored in the context's user data pointer.
+void ScriptEngine::LineCallback(asIScriptContext* ctx, void* param)
+{
+    u32* counter = reinterpret_cast<u32*>(param);
+    (*counter)++;
+    if (*counter > MAX_INSTRUCTIONS) {
+        ENJIN_LOG_ERROR(Script, "Script exceeded instruction limit (%u) — aborting", MAX_INSTRUCTIONS);
+        ctx->Abort();
+    }
+}
+
 asIScriptContext* ScriptEngine::AcquireContext()
 {
     if (!m_Engine) {
         return nullptr;
     }
 
+    asIScriptContext* ctx = nullptr;
     if (!m_ContextPool.empty()) {
-        asIScriptContext* ctx = m_ContextPool.back();
+        ctx = m_ContextPool.back();
         m_ContextPool.pop_back();
-        return ctx;
+    } else {
+        // Pool exhausted -- create a new context on demand
+        ctx = m_Engine->CreateContext();
+        if (!ctx) {
+            ENJIN_LOG_WARN(Script, "Failed to create new execution context");
+            return nullptr;
+        }
     }
 
-    // Pool exhausted -- create a new context on demand
-    asIScriptContext* ctx = m_Engine->CreateContext();
-    if (!ctx) {
-        ENJIN_LOG_WARN(Script, "Failed to create new execution context");
-    }
+    // Allocate per-context instruction counter and install timeout callback
+    u32* counter = new u32(0);
+    ctx->SetUserData(counter, 0);
+    ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), counter, asCALL_CDECL);
+
     return ctx;
 }
 
@@ -398,6 +417,12 @@ void ScriptEngine::ReturnContext(asIScriptContext* ctx)
     if (!ctx) {
         return;
     }
+
+    // Free the per-context instruction counter
+    u32* counter = reinterpret_cast<u32*>(ctx->GetUserData(0));
+    delete counter;
+    ctx->SetUserData(nullptr, 0);
+    ctx->ClearLineCallback();
 
     // Unprepare the context before returning to pool so it releases
     // references to functions/objects from the previous call

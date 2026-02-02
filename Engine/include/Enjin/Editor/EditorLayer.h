@@ -15,6 +15,7 @@
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/UISystem.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -65,6 +66,7 @@ enum class EditorPanel : u32 {
     SceneList = 1 << 9,
     Skybox = 1 << 10,
     Profiler = 1 << 11,
+    ProjectSettings = 1 << 12,
     All = 0xFFFFFFFF
 };
 
@@ -79,6 +81,20 @@ inline EditorPanel operator&(EditorPanel a, EditorPanel b) {
 inline bool HasPanel(EditorPanel flags, EditorPanel panel) {
     return (static_cast<u32>(flags) & static_cast<u32>(panel)) != 0;
 }
+
+// UI editor drag handle mode
+enum class UIEditDragMode : u8 {
+    None = 0,
+    Move,
+    ResizeLeft,
+    ResizeRight,
+    ResizeTop,
+    ResizeBottom,
+    ResizeTL,
+    ResizeTR,
+    ResizeBL,
+    ResizeBR
+};
 
 // Gizmo operation mode
 enum class GizmoOperation {
@@ -170,6 +186,7 @@ private:
     void DrawGameViewPanel();
     void DrawSceneListPanel();
     void DrawSkyboxPanel();
+    void DrawProjectSettingsPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -261,6 +278,7 @@ private:
     void DrawPoolableComponent(ECS::Entity entity);
     void DrawQuestStateComponent(ECS::Entity entity);
     void DrawHUDWidgetComponent(ECS::Entity entity);
+    void DrawUICanvasComponent(ECS::Entity entity);
     void DrawCinematicCameraComponent(ECS::Entity entity);
 
     // Joint & Ragdoll components
@@ -510,6 +528,9 @@ private:
     // In-game pause/system menu
     GUI::GameMenuSystem m_GameMenu;
 
+    // Runtime UI system
+    GUI::UISystem m_UISystem;
+
     // Build dialog state
     bool m_ShowBuildDialog = false;
     Build::BuildConfig m_BuildConfig;
@@ -534,10 +555,30 @@ private:
     f32 m_AutoSliceDuration = 0.1f;
     i32 m_AutoSliceCount = 0;
 
+    // Script creation popup state
+    bool m_ShowCreateScriptPopup = false;
+    char m_NewScriptNameBuf[128] = "";
+    std::string m_NewScriptNameError;
+    void OpenInExternalIDE(const std::string& filePath);
+
     // Tilemap editor state
     bool m_TilemapEditMode = false;
     i32 m_TileBrushIndex = 0;
     void HandleTilemapBrush();
+
+    // UI editor (viewport WYSIWYG) state
+    bool m_UIEditMode = false;
+    u32 m_UIEditSelectedElementId = 0;
+    ECS::Entity m_UIEditCanvasEntity = ECS::INVALID_ENTITY;
+    UIEditDragMode m_UIEditDragMode = UIEditDragMode::None;
+    ImVec2 m_UIEditDragStart = {0, 0};
+    GUI::UIAnchor m_UIEditDragStartAnchor;
+
+    void DrawUIEditorOverlay();
+    void HandleUIEditorInput();
+    void UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY);
+    void UIEditorDesignToScreen(f32 designX, f32 designY, f32& screenX, f32& screenY);
+    UIEditDragMode UIEditorHitTestHandles(f32 localX, f32 localY, const GUI::UIRect& rect);
 };
 
 } // namespace Editor

@@ -19,6 +19,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
 #include "Enjin/Effects/Weather.h"
@@ -315,6 +316,13 @@ public:
                 DrawDialogueOverlay();
             }
 
+            // Runtime UI canvases
+            if (!m_ShowingSplash && m_World) {
+                m_UISystem.Update(m_World.get(),
+                    static_cast<Enjin::f32>(extent.width),
+                    static_cast<Enjin::f32>(extent.height), 0.0f);
+            }
+
             m_ImGuiLayer->EndFrame(cmd);
         }
 
@@ -477,6 +485,9 @@ private:
     // Input & menus
     Enjin::InputSystem::InputActionMap m_InputMap;
     Enjin::GUI::GameMenuSystem m_GameMenu;
+
+    // Runtime UI system
+    Enjin::GUI::UISystem m_UISystem;
 
     // Scripting
     Enjin::Scripting::ScriptEngine m_ScriptEngine;
