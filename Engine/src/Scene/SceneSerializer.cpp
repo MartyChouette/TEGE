@@ -26,6 +26,7 @@
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/Skybox.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Logging/Log.h"
@@ -1340,6 +1341,15 @@ json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) 
     j["texturePath"] = pe.texturePath;
     j["textureSheetX"] = pe.textureSheetX;
     j["textureSheetY"] = pe.textureSheetY;
+    j["sizeMid"] = pe.sizeMid;
+    j["speedMultiplierMid"] = pe.speedMultiplierMid;
+    j["speedMultiplierEnd"] = pe.speedMultiplierEnd;
+    j["startRotation"] = pe.startRotation;
+    j["rotationVariance"] = pe.rotationVariance;
+    j["rotationSpeed"] = pe.rotationSpeed;
+    j["rotationSpeedVariance"] = pe.rotationSpeedVariance;
+    j["maxParticles"] = pe.maxParticles;
+    j["simulationSpace"] = static_cast<u8>(pe.simulationSpace);
     return j;
 }
 
@@ -1368,6 +1378,15 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("texturePath")) pe.texturePath = j["texturePath"].get<std::string>();
     if (j.contains("textureSheetX")) pe.textureSheetX = j["textureSheetX"].get<i32>();
     if (j.contains("textureSheetY")) pe.textureSheetY = j["textureSheetY"].get<i32>();
+    if (j.contains("sizeMid")) pe.sizeMid = j["sizeMid"].get<f32>();
+    if (j.contains("speedMultiplierMid")) pe.speedMultiplierMid = j["speedMultiplierMid"].get<f32>();
+    if (j.contains("speedMultiplierEnd")) pe.speedMultiplierEnd = j["speedMultiplierEnd"].get<f32>();
+    if (j.contains("startRotation")) pe.startRotation = j["startRotation"].get<f32>();
+    if (j.contains("rotationVariance")) pe.rotationVariance = j["rotationVariance"].get<f32>();
+    if (j.contains("rotationSpeed")) pe.rotationSpeed = j["rotationSpeed"].get<f32>();
+    if (j.contains("rotationSpeedVariance")) pe.rotationSpeedVariance = j["rotationSpeedVariance"].get<f32>();
+    if (j.contains("maxParticles")) pe.maxParticles = j["maxParticles"].get<u32>();
+    if (j.contains("simulationSpace")) pe.simulationSpace = static_cast<ECS::ParticleEmitterComponent::SimulationSpace>(j["simulationSpace"].get<u8>());
     return pe;
 }
 
@@ -3501,6 +3520,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             sceneJson["skybox"] = skyboxJson;
         }
 
+        // Serialize render settings
+        sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
+
         // Write to file
         std::ofstream file(filepath);
         if (!file.is_open()) {
@@ -3592,6 +3614,13 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
         } else {
             m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
+
+        // Deserialize render settings
+        if (sceneJson.contains("renderSettings")) {
+            m_RenderSettings = Renderer::DeserializeRenderSettings(sceneJson["renderSettings"]);
+        } else {
+            m_RenderSettings = Renderer::SceneRenderSettings{};
         }
 
         // Check version
@@ -4392,6 +4421,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             sceneJson["skybox"] = skyboxJson;
         }
 
+        // Serialize render settings
+        sceneJson["renderSettings"] = Renderer::SerializeRenderSettings(m_RenderSettings);
+
         if (options.prettyPrint) {
             return sceneJson.dump(static_cast<int>(options.indentSize));
         } else {
@@ -4442,6 +4474,13 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
         } else {
             m_SkyboxConfig = Renderer::SkyboxConfig{};
+        }
+
+        // Deserialize render settings
+        if (sceneJson.contains("renderSettings")) {
+            m_RenderSettings = Renderer::DeserializeRenderSettings(sceneJson["renderSettings"]);
+        } else {
+            m_RenderSettings = Renderer::SceneRenderSettings{};
         }
 
         // Check version

@@ -1,4 +1,5 @@
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -19,6 +20,7 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_ManifestPath.clear();
     m_ProjectRoot.clear();
     m_CurrentSceneName.clear();
+    m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
 }
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
@@ -49,6 +51,13 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Load project-level render defaults
+        if (root.contains("defaultRenderSettings")) {
+            m_DefaultRenderSettings = Renderer::DeserializeRenderSettings(root["defaultRenderSettings"]);
+        } else {
+            m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+        }
+
         ENJIN_LOG_INFO(Asset, "Loaded project '%s' with %zu scenes from %s",
             m_ProjectName.c_str(), m_Scenes.size(), manifestPath.c_str());
         return true;
@@ -75,6 +84,9 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
             scenesArray.push_back(sceneJson);
         }
         root["scenes"] = scenesArray;
+
+        // Save project-level render defaults
+        root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);
 
         std::ofstream file(manifestPath);
         if (!file.is_open()) {

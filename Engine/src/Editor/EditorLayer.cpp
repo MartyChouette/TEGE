@@ -53,6 +53,7 @@
 #include <cstring>
 #include <climits>
 #include <cmath>
+#include <algorithm>
 
 namespace Enjin {
 namespace Editor {
@@ -137,6 +138,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         } else if (action == "quit_to_menu") {
             m_GameMenu.HideAll();
             m_PlayMode.Stop();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         } else if (action == "quit") {
             if (m_Window) m_Window->Close();
         }
@@ -343,6 +346,8 @@ void EditorLayer::Update(f32 deltaTime) {
         m_FocusMode = !m_FocusMode;
         if (m_FocusMode) {
             if (m_PlayMode.IsStopped()) {
+                m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
                 m_PlayMode.Play();  // Auto-play when entering focus mode
             }
             // Capture mouse for immersive gameplay (hides cursor, enables free look)
@@ -370,6 +375,8 @@ void EditorLayer::Update(f32 deltaTime) {
         } else if (m_PlayMode.IsPaused() && !m_GameMenu.IsMenuOpen()) {
             // Paused without menu (fallback): stop play mode
             m_PlayMode.Stop();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
     }
 
@@ -945,6 +952,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Notify render system whether rain is active (drives water ripple shader)
     m_RenderSystem->SetRainActive(isRain);
 
+    // Update particle emitter simulation
+    m_ParticleSystem.Update(m_LastDeltaTime, m_World);
+
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
 
@@ -994,6 +1004,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
+        m_RenderSystem->RenderParticles(rtWidth, rtHeight);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
         m_RenderSystem->RenderGrass(rtWidth, rtHeight);
@@ -1002,6 +1013,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
+        m_RenderSystem->RenderParticles(rtWidth, rtHeight);
     }
     sceneTarget->End(commandBuffer);
 
@@ -1166,6 +1178,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(520, 450), layoutCond);
         Debug::Profiler::Instance().DrawProfilerPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + 340, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(380, 600), layoutCond);
+        DrawParticleEditorPanel();
     }
 
     // Clear the force flag after one frame
@@ -1464,6 +1481,10 @@ void EditorLayer::DrawMenuBar() {
                     ClearSelection();
                     m_CurrentScenePath.clear();
                     m_ShowTemplateSelector = true;
+                    // Reset rendering to project defaults
+                    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                    m_CurrentSceneUsesProjectDefaults = true;
                     ENJIN_LOG_INFO(Editor, "Created new scene");
                 }
             }
@@ -1688,6 +1709,10 @@ void EditorLayer::DrawMenuBar() {
             bool profiler = IsPanelVisible(EditorPanel::Profiler);
             if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
                 SetPanelVisibility(EditorPanel::Profiler, profiler);
+            }
+            bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
+            if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
+                SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
@@ -2168,6 +2193,9 @@ void EditorLayer::DrawMenuBar() {
         // Play/Pause button
         if (m_PlayMode.IsStopped()) {
             if (ImGui::Button(" > Play ")) {
+                // Save render settings before play mode
+                m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
                 m_PlayMode.Play();
             }
         } else if (m_PlayMode.IsPlaying()) {
@@ -2187,6 +2215,9 @@ void EditorLayer::DrawMenuBar() {
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
             if (ImGui::Button(" [] Stop ")) {
                 m_PlayMode.Stop();
+                // Restore render settings after play mode
+                m_PrePlayRenderSettings.ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
                 m_FocusMode = false;  // Return to editor on stop
             }
             ImGui::PopStyleColor();
@@ -5302,6 +5333,24 @@ void EditorLayer::DrawProjectSettingsPanel() {
     ImGui::Begin("Project Settings");
 
     if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Per-scene override toggle
+        if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
+            if (m_CurrentSceneUsesProjectDefaults) {
+                // Switching back to project defaults — apply them
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "When checked, this scene uses the project's default rendering settings.\n"
+            "Uncheck to override settings per-scene.");
+
+        if (m_CurrentSceneUsesProjectDefaults) {
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "This scene uses project default rendering settings");
+        }
+
+        ImGui::Spacing();
+
         if (m_RenderSystem) {
             // Shadows
             bool shadows = m_RenderSystem->IsShadowsEnabled();
@@ -5409,6 +5458,33 @@ void EditorLayer::DrawProjectSettingsPanel() {
             }
         } else {
             ImGui::TextDisabled("PostProcessing not available");
+        }
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Project default management buttons
+        if (ImGui::Button("Set Current as Project Default")) {
+            auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_SceneManager.SetDefaultRenderSettings(current);
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                m_SceneManager.SaveProject();
+            }
+            ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "Save the current rendering settings as the project-level default.\n"
+            "New scenes and scenes using project defaults will use these settings.");
+
+        if (!m_CurrentSceneUsesProjectDefaults) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset to Project Default")) {
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Reset this scene's rendering settings to the project default values.");
         }
     }
 
@@ -6002,6 +6078,8 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
             m_PlayMode.Stop();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
     } else if (m_PlayMode.IsPaused()) {
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
@@ -6012,11 +6090,15 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
             m_PlayMode.Stop();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
     } else {
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "STOPPED");
         ImGui::SameLine();
         if (ImGui::Button("Play")) {
+            m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_PlayMode.Play();
         }
     }
@@ -6024,6 +6106,8 @@ void EditorLayer::DrawGameViewPanel() {
     if (ImGui::Button("Focus (F11)")) {
         m_FocusMode = true;
         if (m_PlayMode.IsStopped()) {
+            m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_PlayMode.Play();
         }
     }
@@ -12603,6 +12687,13 @@ void EditorLayer::SaveScene(const std::string& path) {
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
     }
+
+    // Capture current render settings for serialization
+    auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    serializer.SetRenderSettings(renderSettings);
+
     auto result = serializer.Save(path);
 
     if (result.success) {
@@ -12637,6 +12728,19 @@ void EditorLayer::OpenScene(const std::string& path) {
     // Apply loaded skybox config
     if (result.success && m_RenderSystem) {
         m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+    }
+
+    // Apply loaded render settings
+    if (result.success) {
+        const auto& loaded = serializer.GetRenderSettings();
+        m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
+        if (loaded.useProjectDefaults) {
+            m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        } else {
+            loaded.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        }
     }
 
     if (result.success) {
@@ -18256,6 +18360,484 @@ void EditorLayer::HandleUIEditorInput() {
         if (ImGui::MenuItem("Toggle"))      addAtPosition(GUI::UIWidgetType::Toggle,      "Toggle",      120, 24);
         ImGui::EndPopup();
     }
+}
+
+// ============================================================================
+// PARTICLE PRESETS
+// ============================================================================
+
+static void ApplyParticlePreset(ECS::ParticleEmitterComponent& e, const std::string& preset) {
+    // Reset pool so particles respawn with new settings
+    e.pool.activeCount = 0;
+    e.pool.spawnAccumulator = 0.0f;
+    e.pool.burstTimer = 0.0f;
+    e.pool.systemAge = 0.0f;
+    e.isPlaying = true;
+    e.loop = true;
+
+    if (preset == "Fire") {
+        e.emissionRate = 60.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 1.2f;
+        e.lifetimeVariance = 0.3f;
+        e.startSpeed = 2.5f;
+        e.speedVariance = 0.5f;
+        e.startSize = 0.4f;
+        e.sizeMid = 0.6f;
+        e.endSize = 0.05f;
+        e.startColor = Math::Vector3(1.0f, 0.6f, 0.1f);
+        e.endColor = Math::Vector3(0.8f, 0.1f, 0.0f);
+        e.startAlpha = 0.9f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 0.8f;
+        e.speedMultiplierEnd = 0.3f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
+        e.shapeRadius = 0.2f;
+        e.coneAngle = 15.0f;
+        e.gravity = Math::Vector3(0, 1.5f, 0);
+        e.drag = 0.5f;
+        e.rotationSpeed = 0.5f;
+        e.rotationSpeedVariance = 1.0f;
+        e.maxParticles = 512;
+    } else if (preset == "Smoke") {
+        e.emissionRate = 20.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 3.0f;
+        e.lifetimeVariance = 0.5f;
+        e.startSpeed = 1.0f;
+        e.speedVariance = 0.3f;
+        e.startSize = 0.3f;
+        e.sizeMid = 0.8f;
+        e.endSize = 1.5f;
+        e.startColor = Math::Vector3(0.4f, 0.4f, 0.4f);
+        e.endColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+        e.startAlpha = 0.6f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 0.7f;
+        e.speedMultiplierEnd = 0.2f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
+        e.shapeRadius = 0.3f;
+        e.coneAngle = 20.0f;
+        e.gravity = Math::Vector3(0, 0.5f, 0);
+        e.drag = 0.8f;
+        e.rotationSpeed = 0.3f;
+        e.rotationSpeedVariance = 0.5f;
+        e.maxParticles = 256;
+    } else if (preset == "Sparks") {
+        e.emissionRate = 5.0f;
+        e.burstCount = 10;
+        e.burstInterval = 0.5f;
+        e.lifetime = 0.8f;
+        e.lifetimeVariance = 0.3f;
+        e.startSpeed = 8.0f;
+        e.speedVariance = 3.0f;
+        e.startSize = 0.1f;
+        e.sizeMid = -1.0f;
+        e.endSize = 0.02f;
+        e.startColor = Math::Vector3(1.0f, 0.9f, 0.3f);
+        e.endColor = Math::Vector3(1.0f, 0.3f, 0.0f);
+        e.startAlpha = 1.0f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 0.6f;
+        e.speedMultiplierEnd = 0.1f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
+        e.shapeRadius = 0.05f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0, -9.8f, 0);
+        e.drag = 0.2f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.maxParticles = 256;
+    } else if (preset == "Snow") {
+        e.emissionRate = 40.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 4.0f;
+        e.lifetimeVariance = 1.0f;
+        e.startSpeed = 0.5f;
+        e.speedVariance = 0.2f;
+        e.startSize = 0.15f;
+        e.sizeMid = -1.0f;
+        e.endSize = 0.1f;
+        e.startColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        e.endColor = Math::Vector3(0.9f, 0.95f, 1.0f);
+        e.startAlpha = 0.8f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 1.0f;
+        e.speedMultiplierEnd = 0.8f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Box;
+        e.shapeRadius = 5.0f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0.3f, -1.5f, 0.1f);
+        e.drag = 0.3f;
+        e.rotationSpeed = 0.5f;
+        e.rotationSpeedVariance = 1.0f;
+        e.maxParticles = 512;
+    } else if (preset == "Rain") {
+        e.emissionRate = 80.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 1.5f;
+        e.lifetimeVariance = 0.3f;
+        e.startSpeed = 12.0f;
+        e.speedVariance = 2.0f;
+        e.startSize = 0.05f;
+        e.sizeMid = -1.0f;
+        e.endSize = 0.03f;
+        e.startColor = Math::Vector3(0.5f, 0.6f, 0.8f);
+        e.endColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        e.startAlpha = 0.6f;
+        e.endAlpha = 0.1f;
+        e.speedMultiplierMid = 1.0f;
+        e.speedMultiplierEnd = 1.0f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Box;
+        e.shapeRadius = 5.0f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0.5f, -15.0f, 0);
+        e.drag = 0.0f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.maxParticles = 1024;
+    } else if (preset == "Magic") {
+        e.emissionRate = 30.0f;
+        e.burstCount = 5;
+        e.burstInterval = 1.0f;
+        e.lifetime = 2.0f;
+        e.lifetimeVariance = 0.5f;
+        e.startSpeed = 1.5f;
+        e.speedVariance = 0.5f;
+        e.startSize = 0.2f;
+        e.sizeMid = 0.35f;
+        e.endSize = 0.0f;
+        e.startColor = Math::Vector3(0.3f, 0.5f, 1.0f);
+        e.endColor = Math::Vector3(0.8f, 0.2f, 1.0f);
+        e.startAlpha = 1.0f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 1.2f;
+        e.speedMultiplierEnd = 0.4f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Sphere;
+        e.shapeRadius = 0.5f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0, 0.5f, 0);
+        e.drag = 0.3f;
+        e.rotationSpeed = 2.0f;
+        e.rotationSpeedVariance = 1.5f;
+        e.maxParticles = 512;
+    } else if (preset == "Explosion") {
+        e.emissionRate = 0.0f;
+        e.burstCount = 80;
+        e.burstInterval = 0.0f;
+        e.lifetime = 1.0f;
+        e.lifetimeVariance = 0.3f;
+        e.startSpeed = 10.0f;
+        e.speedVariance = 4.0f;
+        e.startSize = 0.5f;
+        e.sizeMid = 0.8f;
+        e.endSize = 0.1f;
+        e.startColor = Math::Vector3(1.0f, 0.8f, 0.2f);
+        e.endColor = Math::Vector3(0.3f, 0.1f, 0.0f);
+        e.startAlpha = 1.0f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 0.4f;
+        e.speedMultiplierEnd = 0.05f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
+        e.shapeRadius = 0.1f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0, -3.0f, 0);
+        e.drag = 1.5f;
+        e.rotationSpeed = 3.0f;
+        e.rotationSpeedVariance = 3.0f;
+        e.loop = false;
+        e.maxParticles = 256;
+    }
+}
+
+// ============================================================================
+// PARTICLE EDITOR PANEL
+// ============================================================================
+
+void EditorLayer::DrawParticleEditorPanel() {
+    if (!ImGui::Begin("Particle Editor")) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World) {
+        ImGui::TextDisabled("No world loaded");
+        ImGui::End();
+        return;
+    }
+
+    // Operate on selected entity's ParticleEmitterComponent
+    ECS::Entity entity = m_PrimarySelected;
+    ECS::ParticleEmitterComponent* emitter = nullptr;
+    ECS::TransformComponent* transform = nullptr;
+
+    if (entity != ECS::INVALID_ENTITY) {
+        emitter = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
+        transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+    }
+
+    if (!emitter) {
+        ImGui::TextDisabled("Select an entity with a Particle Emitter component");
+        ImGui::End();
+        return;
+    }
+
+    // --- Stats ---
+    auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+    if (nameComp) {
+        ImGui::Text("Entity: %s", nameComp->name.c_str());
+    }
+    ImGui::Text("Active: %u / %u", emitter->pool.activeCount, emitter->pool.maxParticles);
+    ImGui::Text("Total Active: %u  Emitters: %u",
+        m_ParticleSystem.GetTotalActiveParticles(),
+        m_ParticleSystem.GetTotalEmitterCount());
+    ImGui::Separator();
+
+    // --- Playback Controls ---
+    if (emitter->isPlaying) {
+        if (ImGui::Button("Pause")) {
+            emitter->isPlaying = false;
+        }
+    } else {
+        if (ImGui::Button("Play")) {
+            emitter->isPlaying = true;
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart")) {
+        emitter->pool.activeCount = 0;
+        emitter->pool.spawnAccumulator = 0.0f;
+        emitter->pool.burstTimer = 0.0f;
+        emitter->pool.systemAge = 0.0f;
+        emitter->isPlaying = true;
+    }
+    ImGui::Separator();
+
+    // --- Presets ---
+    if (ImGui::CollapsingHeader("Presets", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* presets[] = { "Fire", "Smoke", "Sparks", "Snow", "Rain", "Magic", "Explosion" };
+        for (int i = 0; i < 7; ++i) {
+            if (i > 0) ImGui::SameLine();
+            if (ImGui::Button(presets[i])) {
+                ApplyParticlePreset(*emitter, presets[i]);
+            }
+        }
+    }
+
+    // --- Color Gradient ---
+    if (ImGui::CollapsingHeader("Color Gradient")) {
+        f32 startCol[3] = { emitter->startColor.x, emitter->startColor.y, emitter->startColor.z };
+        if (ImGui::ColorEdit3("Start Color##pe", startCol)) {
+            emitter->startColor = Math::Vector3(startCol[0], startCol[1], startCol[2]);
+        }
+        f32 endCol[3] = { emitter->endColor.x, emitter->endColor.y, emitter->endColor.z };
+        if (ImGui::ColorEdit3("End Color##pe", endCol)) {
+            emitter->endColor = Math::Vector3(endCol[0], endCol[1], endCol[2]);
+        }
+
+        ImGui::DragFloat("Start Alpha##pe", &emitter->startAlpha, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("End Alpha##pe", &emitter->endAlpha, 0.01f, 0.0f, 1.0f);
+
+        // Gradient preview bar
+        ImVec2 barPos = ImGui::GetCursorScreenPos();
+        f32 barWidth = ImGui::GetContentRegionAvail().x;
+        f32 barHeight = 20.0f;
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+
+        const int segments = 32;
+        for (int i = 0; i < segments; ++i) {
+            f32 t0 = static_cast<f32>(i) / segments;
+            f32 t1 = static_cast<f32>(i + 1) / segments;
+            f32 r0 = emitter->startColor.x + (emitter->endColor.x - emitter->startColor.x) * t0;
+            f32 g0 = emitter->startColor.y + (emitter->endColor.y - emitter->startColor.y) * t0;
+            f32 b0 = emitter->startColor.z + (emitter->endColor.z - emitter->startColor.z) * t0;
+            f32 a0 = emitter->startAlpha + (emitter->endAlpha - emitter->startAlpha) * t0;
+            f32 r1 = emitter->startColor.x + (emitter->endColor.x - emitter->startColor.x) * t1;
+            f32 g1 = emitter->startColor.y + (emitter->endColor.y - emitter->startColor.y) * t1;
+            f32 b1 = emitter->startColor.z + (emitter->endColor.z - emitter->startColor.z) * t1;
+            f32 a1 = emitter->startAlpha + (emitter->endAlpha - emitter->startAlpha) * t1;
+
+            f32 x0 = barPos.x + t0 * barWidth;
+            f32 x1 = barPos.x + t1 * barWidth;
+
+            ImU32 col0 = IM_COL32(
+                static_cast<u8>(r0 * 255), static_cast<u8>(g0 * 255),
+                static_cast<u8>(b0 * 255), static_cast<u8>(a0 * 255));
+            ImU32 col1 = IM_COL32(
+                static_cast<u8>(r1 * 255), static_cast<u8>(g1 * 255),
+                static_cast<u8>(b1 * 255), static_cast<u8>(a1 * 255));
+
+            drawList->AddRectFilledMultiColor(
+                ImVec2(x0, barPos.y), ImVec2(x1, barPos.y + barHeight),
+                col0, col1, col1, col0);
+        }
+        drawList->AddRect(barPos, ImVec2(barPos.x + barWidth, barPos.y + barHeight),
+            IM_COL32(128, 128, 128, 255));
+        ImGui::Dummy(ImVec2(barWidth, barHeight + 4));
+    }
+
+    // --- Size Over Lifetime ---
+    if (ImGui::CollapsingHeader("Size Over Lifetime")) {
+        ImGui::DragFloat("Start Size##pe", &emitter->startSize, 0.01f, 0.001f, 10.0f);
+        ImGui::DragFloat("Mid Size##pe", &emitter->sizeMid, 0.01f, -1.0f, 10.0f, "%.3f (-1=auto)");
+        ImGui::DragFloat("End Size##pe", &emitter->endSize, 0.01f, 0.0f, 10.0f);
+
+        // Curve visualization
+        f32 midVal = emitter->sizeMid >= 0.0f ? emitter->sizeMid
+            : (emitter->startSize + emitter->endSize) * 0.5f;
+        f32 maxSize = std::max({emitter->startSize, midVal, emitter->endSize, 0.01f});
+
+        ImVec2 curvePos = ImGui::GetCursorScreenPos();
+        f32 curveW = ImGui::GetContentRegionAvail().x;
+        f32 curveH = 50.0f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        dl->AddRectFilled(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
+            IM_COL32(30, 30, 30, 255));
+        dl->AddRect(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
+            IM_COL32(80, 80, 80, 255));
+
+        // Draw piecewise linear curve
+        f32 y0 = curvePos.y + curveH - (emitter->startSize / maxSize) * curveH;
+        f32 y1 = curvePos.y + curveH - (midVal / maxSize) * curveH;
+        f32 y2 = curvePos.y + curveH - (emitter->endSize / maxSize) * curveH;
+        dl->AddLine(ImVec2(curvePos.x, y0), ImVec2(curvePos.x + curveW * 0.5f, y1),
+            IM_COL32(100, 200, 255, 255), 2.0f);
+        dl->AddLine(ImVec2(curvePos.x + curveW * 0.5f, y1),
+            ImVec2(curvePos.x + curveW, y2), IM_COL32(100, 200, 255, 255), 2.0f);
+
+        ImGui::Dummy(ImVec2(curveW, curveH + 4));
+    }
+
+    // --- Speed Over Lifetime ---
+    if (ImGui::CollapsingHeader("Speed Over Lifetime")) {
+        ImGui::DragFloat("Mid Multiplier##spd", &emitter->speedMultiplierMid, 0.01f, 0.0f, 5.0f);
+        ImGui::DragFloat("End Multiplier##spd", &emitter->speedMultiplierEnd, 0.01f, 0.0f, 5.0f);
+
+        f32 maxSpd = std::max({1.0f, emitter->speedMultiplierMid, emitter->speedMultiplierEnd, 0.01f});
+
+        ImVec2 curvePos = ImGui::GetCursorScreenPos();
+        f32 curveW = ImGui::GetContentRegionAvail().x;
+        f32 curveH = 50.0f;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        dl->AddRectFilled(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
+            IM_COL32(30, 30, 30, 255));
+        dl->AddRect(curvePos, ImVec2(curvePos.x + curveW, curvePos.y + curveH),
+            IM_COL32(80, 80, 80, 255));
+
+        f32 y0 = curvePos.y + curveH - (1.0f / maxSpd) * curveH;
+        f32 y1 = curvePos.y + curveH - (emitter->speedMultiplierMid / maxSpd) * curveH;
+        f32 y2 = curvePos.y + curveH - (emitter->speedMultiplierEnd / maxSpd) * curveH;
+        dl->AddLine(ImVec2(curvePos.x, y0), ImVec2(curvePos.x + curveW * 0.5f, y1),
+            IM_COL32(255, 200, 100, 255), 2.0f);
+        dl->AddLine(ImVec2(curvePos.x + curveW * 0.5f, y1),
+            ImVec2(curvePos.x + curveW, y2), IM_COL32(255, 200, 100, 255), 2.0f);
+
+        ImGui::Dummy(ImVec2(curveW, curveH + 4));
+    }
+
+    // --- Shape Preview ---
+    if (ImGui::CollapsingHeader("Shape Preview")) {
+        const char* shapes[] = { "Point", "Sphere", "Hemisphere", "Cone", "Box" };
+        int shape = static_cast<int>(emitter->shape);
+        if (ImGui::Combo("Shape##pe", &shape, shapes, 5)) {
+            emitter->shape = static_cast<ECS::ParticleEmitterComponent::EmitterShape>(shape);
+        }
+        ImGui::DragFloat("Radius##pe", &emitter->shapeRadius, 0.05f, 0.0f, 50.0f);
+        if (emitter->shape == ECS::ParticleEmitterComponent::EmitterShape::Cone) {
+            ImGui::DragFloat("Cone Angle##pe", &emitter->coneAngle, 1.0f, 0.0f, 90.0f);
+        }
+
+        // 2D wireframe shape preview
+        ImVec2 previewPos = ImGui::GetCursorScreenPos();
+        f32 previewSize = 80.0f;
+        f32 cx = previewPos.x + previewSize;
+        f32 cy = previewPos.y + previewSize;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+
+        dl->AddRectFilled(previewPos,
+            ImVec2(previewPos.x + previewSize * 2, previewPos.y + previewSize * 2),
+            IM_COL32(20, 20, 20, 255));
+
+        ImU32 shapeColor = IM_COL32(100, 200, 100, 180);
+        f32 scale = previewSize * 0.7f;
+
+        switch (emitter->shape) {
+            case ECS::ParticleEmitterComponent::EmitterShape::Point:
+                dl->AddCircleFilled(ImVec2(cx, cy), 3.0f, shapeColor);
+                break;
+            case ECS::ParticleEmitterComponent::EmitterShape::Sphere:
+                dl->AddCircle(ImVec2(cx, cy), scale * 0.5f, shapeColor, 32, 1.5f);
+                break;
+            case ECS::ParticleEmitterComponent::EmitterShape::Hemisphere: {
+                // Draw upper half circle
+                for (int i = 0; i < 16; ++i) {
+                    f32 a0 = 3.14159265f + (3.14159265f * i / 16.0f);
+                    f32 a1 = 3.14159265f + (3.14159265f * (i + 1) / 16.0f);
+                    f32 r = scale * 0.5f;
+                    dl->AddLine(
+                        ImVec2(cx + std::cos(a0) * r, cy + std::sin(a0) * r),
+                        ImVec2(cx + std::cos(a1) * r, cy + std::sin(a1) * r),
+                        shapeColor, 1.5f);
+                }
+                dl->AddLine(ImVec2(cx - scale * 0.5f, cy), ImVec2(cx + scale * 0.5f, cy),
+                    shapeColor, 1.5f);
+                break;
+            }
+            case ECS::ParticleEmitterComponent::EmitterShape::Cone: {
+                f32 angleRad = emitter->coneAngle * (3.14159265f / 180.0f);
+                f32 halfW = std::sin(angleRad) * scale * 0.6f;
+                f32 h = std::cos(angleRad) * scale * 0.6f;
+                dl->AddLine(ImVec2(cx, cy), ImVec2(cx - halfW, cy - h), shapeColor, 1.5f);
+                dl->AddLine(ImVec2(cx, cy), ImVec2(cx + halfW, cy - h), shapeColor, 1.5f);
+                dl->AddLine(ImVec2(cx - halfW, cy - h), ImVec2(cx + halfW, cy - h), shapeColor, 1.5f);
+                break;
+            }
+            case ECS::ParticleEmitterComponent::EmitterShape::Box: {
+                f32 half = scale * 0.4f;
+                dl->AddRect(ImVec2(cx - half, cy - half), ImVec2(cx + half, cy + half),
+                    shapeColor, 0.0f, 0, 1.5f);
+                break;
+            }
+        }
+
+        ImGui::Dummy(ImVec2(previewSize * 2, previewSize * 2 + 4));
+    }
+
+    // --- Additional Settings ---
+    if (ImGui::CollapsingHeader("Emission")) {
+        ImGui::DragFloat("Rate##pe", &emitter->emissionRate, 0.5f, 0.0f, 1000.0f);
+        ImGui::DragInt("Burst Count##pe", &emitter->burstCount, 1, 0, 100);
+        if (emitter->burstCount > 0) {
+            ImGui::DragFloat("Burst Interval##pe", &emitter->burstInterval, 0.1f, 0.0f, 30.0f);
+        }
+        int maxP = static_cast<int>(emitter->maxParticles);
+        if (ImGui::DragInt("Max Particles##pe", &maxP, 16, 16, 16384)) {
+            emitter->maxParticles = static_cast<u32>(std::max(16, maxP));
+        }
+    }
+
+    if (ImGui::CollapsingHeader("Rotation")) {
+        ImGui::DragFloat("Start Rotation##pe", &emitter->startRotation, 0.01f, -6.28f, 6.28f);
+        ImGui::DragFloat("Rotation Variance##pe", &emitter->rotationVariance, 0.01f, 0.0f, 6.28f);
+        ImGui::DragFloat("Rotation Speed##pe", &emitter->rotationSpeed, 0.01f, -10.0f, 10.0f);
+        ImGui::DragFloat("Speed Variance##pe2", &emitter->rotationSpeedVariance, 0.01f, 0.0f, 10.0f);
+    }
+
+    if (ImGui::CollapsingHeader("Forces##pe")) {
+        f32 grav[3] = { emitter->gravity.x, emitter->gravity.y, emitter->gravity.z };
+        if (ImGui::DragFloat3("Gravity##pe", grav, 0.1f)) {
+            emitter->gravity = Math::Vector3(grav[0], grav[1], grav[2]);
+        }
+        ImGui::DragFloat("Drag##pe", &emitter->drag, 0.01f, 0.0f, 10.0f);
+    }
+
+    ImGui::End();
 }
 
 } // namespace Editor

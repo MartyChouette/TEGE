@@ -22,7 +22,9 @@
 #include "Enjin/Effects/RetroEffects.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
+#include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TerrainBrush.h"
 #include "Enjin/Editor/ScenePicker.h"
@@ -67,6 +69,7 @@ enum class EditorPanel : u32 {
     Skybox = 1 << 10,
     Profiler = 1 << 11,
     ProjectSettings = 1 << 12,
+    ParticleEditor = 1 << 13,
     All = 0xFFFFFFFF
 };
 
@@ -187,6 +190,7 @@ private:
     void DrawSceneListPanel();
     void DrawSkyboxPanel();
     void DrawProjectSettingsPanel();
+    void DrawParticleEditorPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -459,6 +463,9 @@ private:
     Effects::Water3D m_Water3D;
     Effects::RetroEffects m_RetroEffects;
 
+    // Particle system (CPU simulation for ParticleEmitterComponent)
+    Effects::ParticleSystem m_ParticleSystem;
+
     // World time and seasonal weather
     Effects::WorldTimeSystem m_WorldTime;
     Effects::SeasonalWeatherSystem m_SeasonalWeather;
@@ -468,6 +475,10 @@ private:
     // World curvature
     f32 m_WorldCurvature = 0.0f;
     bool m_WorldCurvatureEnabled = false;
+
+    // Per-scene render settings
+    bool m_CurrentSceneUsesProjectDefaults = true;
+    Renderer::SceneRenderSettings m_PrePlayRenderSettings;
 
     // Terrain editing
     TerrainBrush m_TerrainBrush;

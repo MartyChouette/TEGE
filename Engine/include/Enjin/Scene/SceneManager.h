@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Renderer/SceneRenderSettings.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -116,6 +117,10 @@ public:
     f32 GetTransitionAlpha() const { return m_TransitionAlpha; }
     bool IsTransitioning() const { return m_TransitionState != TransitionState::None; }
 
+    // --- Project-level render defaults ---
+    void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
+    const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
+
     // --- Callbacks ---
     using SceneLoadedCallback = std::function<void(const std::string& sceneName)>;
     using SceneUnloadedCallback = std::function<void(const std::string& sceneName)>;
@@ -131,6 +136,9 @@ private:
     std::string m_ManifestPath;    // Path to the .enjinproject file
     std::string m_ProjectRoot;     // Directory containing the manifest
     std::vector<SceneEntry> m_Scenes;
+
+    // Project-level render defaults
+    Renderer::SceneRenderSettings m_DefaultRenderSettings;
 
     // Runtime state
     std::string m_CurrentSceneName;

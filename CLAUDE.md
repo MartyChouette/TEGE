@@ -220,6 +220,18 @@ struct PushConstants {
 - **`RetroEffects`** - CRT, pixelation, dithering post-processing
 - **`WorldTimeSystem`** - Day/night cycle with configurable speed
 - **`SeasonalWeatherSystem`** - Season-based weather transitions
+- **`ParticleSystem`** (`Engine/include/Enjin/Effects/ParticleSystem.h`) - CPU particle simulation for `ParticleEmitterComponent` entities
+  - Spawns from 5 shapes: Point, Sphere, Hemisphere, Cone, Box
+  - Piecewise-linear size and speed curves over lifetime, color/alpha interpolation
+  - Gravity, drag, rotation, burst spawning, accumulator-based continuous emission
+- **`ParticleRenderer`** (`Engine/include/Enjin/Effects/ParticleRenderer.h`) - GPU instanced billboard renderer (same pipeline as WeatherRenderer)
+  - Gathers all emitter pools into single instanced draw call (up to 16384 particles)
+- **Particle Editor** (`View > Particle Editor`, `EditorPanel::ParticleEditor = 1 << 13`)
+  - Operates on selected entity's `ParticleEmitterComponent`
+  - 7 presets: Fire, Smoke, Sparks, Snow, Rain, Magic, Explosion
+  - Color gradient bar with alpha, piecewise-linear size/speed curve visualizations
+  - 2D wireframe shape preview, emission/rotation/forces editors
+  - Play/Pause/Restart playback controls, active particle stats
 - Effects are configured globally and rendered only in Game View (not editor camera)
 
 ### Accessibility
@@ -412,6 +424,100 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Editor Settings vs Project Settings separation (dedicated Project Settings panel for rendering/physics)
 - Prefab system (save/load .enjprefab, instantiate, unpack, per-instance property overrides, inspector badge)
 - Security hardening: vector deserialization bounds checks, AssetReader size caps and I/O validation, GLTFLoader attribute count clamping, animation keyframe bounds validation, script execution timeout (1M instruction limit)
+- Particle system runtime (CPU simulation: 5 emitter shapes, size/speed curves, gravity/drag/rotation, burst spawning)
+- GPU instanced particle renderer (billboard quads, alpha-blended, depth-tested, up to 16384 particles)
+- Particle Editor panel (7 presets, color gradient bar, size/speed curve visualization, shape preview, playback controls)
+- Per-scene rendering settings (SceneRenderSettings config struct, project-level defaults in .enjinproject, per-scene overrides in .enjin, play mode save/restore, Project Settings UI)
+
+## AngelScript API Reference
+
+All functions below are callable from AngelScript via `TegeBehavior` scripts. ~150 functions across all categories.
+
+### Math Types
+
+- **Vector2**: `x`, `y`, `Length()`, `Normalized()`, `Dot()`, operators `+`, `-`, `*`, `/`, unary `-`
+- **Vector3**: `x`, `y`, `z`, `Length()`, `Normalized()`, `Dot()`, `Cross()`, operators
+- **Vector4**: `x`, `y`, `z`, `w`
+- **Quaternion**: `x`, `y`, `z`, `w`, `Rotate(Vector3)`, `Normalized()`, `Inverse()`, `ToEuler()`, operators. Statics: `Quaternion_Identity()`, `Quaternion_FromEuler(Vector3)`, `Quaternion_Slerp(q1, q2, t)`
+
+### Global Math Functions
+
+`Abs`, `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan2`, `Sqrt`, `Pow`, `Floor`, `Ceil`, `Round`, `Min`, `Max`, `Clamp`, `Lerp`, `MoveTowards`, `Sign`, `Random()`, `RandomRange(min, max)`, `RandomInt(min, max)`, `Radians`, `Degrees`, `PI()`
+
+### Entity & Transform
+
+- `Entity_GetPosition/SetPosition(uint64, Vector3)`
+- `Entity_GetRotation/SetRotation(uint64, Vector3)` — degrees
+- `Entity_GetScale/SetScale(uint64, Vector3)`
+- `Entity_GetName(uint64)`
+- **EntityHandle** class: `IsValid()`, `GetID()`, `GetPosition/SetPosition()`, `GetRotation/SetRotation()`, `GetScale/SetScale()`, `GetName()`, `HasTag(string)`
+- **TransformProxy**: `position`, `rotation`, `scale`, `forward`, `right`, `up` (read-only)
+
+### Scene Management
+
+- `Scene_FindEntity(string name)`, `Scene_FindEntityByTag(string tag)`
+- `Scene_DestroyEntity(uint64)`, `Scene_Instantiate()`, `Scene_InstantiateNamed(string)`, `Scene_InstantiateAt(Vector3)`
+- `Scene_IsValid(uint64)`, `Scene_GetEntityCount()`
+- `Scene_GetEntityName/SetEntityName(uint64, string)`
+- `Scene_AddTag/RemoveTag/HasTag(uint64, string)`
+- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`
+
+### Time
+
+`Time_GetDeltaTime()`, `Time_GetFixedDeltaTime()`, `Time_GetTime()`, `Time_GetTimeScale()`, `Time_SetTimeScale(float)`, `Time_GetFrameCount()`
+
+### Debug
+
+`Debug_Log(string)`, `Debug_LogWarning(string)`, `Debug_LogError(string)`
+
+### Input — Keyboard
+
+`Input_GetKey(int)`, `Input_GetKeyDown(int)`, `Input_GetKeyUp(int)` — Key enum: A-Z, Num0-9, F1-F12, Space, Escape, Enter, Tab, Backspace, arrows, Shift, Control, Alt, etc.
+
+### Input — Mouse
+
+`Input_GetMouseButton/Down/Up(int)` — MouseBtn: Left, Right, Middle
+`Input_GetMousePosition()`, `Input_GetMouseDelta()`, `Input_GetScrollDelta()`
+`Input_IsMouseCaptured()`, `Input_SetMouseCaptured(bool)`
+
+### Input — Gamepad
+
+`Input_IsGamepadConnected(int)`, `Input_GetGamepadButton/ButtonDown(int, int)` — GamepadBtn: A, B, X, Y, bumpers, back, start, D-pad
+`Input_GetGamepadAxis(int, int)` — GamepadAx: LeftX/Y, RightX/Y, triggers
+`Input_GetGamepadLeftStick/RightStick(int)`, `Input_GetGamepadLeftTrigger/RightTrigger(int)`
+
+### Physics
+
+- `Physics_Raycast(origin, dir, maxDist)`, `Physics_RaycastHit(origin, dir, maxDist, &hit)` — RaycastHit: `point`, `normal`, `distance`, `entity`
+- `Physics_CheckSphere(center, radius)`, `Physics_CheckBox(center, halfExtents)`
+- `Physics_AddForce/AddImpulse(uint64, Vector3)`, `Physics_SetVelocity/GetVelocity(uint64)`, `Physics_SetGravityScale(uint64, float)`
+
+### Audio
+
+`Audio_Play(uint64)`, `Audio_PlayAtPosition(string, Vector3)`, `Audio_Stop(uint64)`, `Audio_StopAll()`
+`Audio_SetVolume/SetPitch(uint64, float)`, `Audio_IsPlaying(uint64)`
+`Audio_SetMasterVolume/GetMasterVolume(float)`
+
+### Component Access
+
+- **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
+- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`
+- **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
+- **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
+- **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
+- **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`
+- **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
+- **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`
+
+### Coroutines
+
+`StartCoroutine(string)`, `YieldSeconds(float)`, `YieldFrames(uint)`, `YieldEndOfFrame()`
+
+### Event System
+
+- **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
+- `Events_Listen(string, EventCallback@)` — returns listener ID
+- `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
 
 ## Common Tasks
 
@@ -484,7 +590,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 ### Editor Tools & UX
 
 - **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
-- **Particle Editor** — visual particle system editor with curve editors, real-time preview in inspector, color gradients, sub-emitter support.
+- **Particle Editor** — ~~DONE (Phase 1)~~ CPU particle simulation + GPU instanced renderer + editor panel with 7 presets, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
 - **Node/Graph Editor** — generic node graph framework powering three systems:
   - Visual scripting (blueprint-style alternative to AngelScript)
   - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
@@ -498,19 +604,74 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Extended Model Format Support** — add PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders. PLY is useful for photogrammetry/scan data; VOX enables voxel art workflows. Also verify Assimp's existing FBX/OBJ/DAE import paths are robust (fix any crash-on-malformed-input issues).
 - **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
 - **Editor Settings vs Scene Settings** — ~~DONE~~ Separated into Settings (editor prefs) and Project Settings (rendering, physics) panels.
+- **Template Rebuild & Demo Scenes** — Update and rebuild all 15 startup templates to use the latest engine features (per-scene render settings, particle system, UI system, etc.). For each template, create a small demo scene that showcases the template's intended gameplay. Add a "Demo" button on each template card in the selector that loads the demo scene instead of the blank template. Template card UI improvements: larger font for template titles, better visual hierarchy.
+- **Editor Accent Color & Theming** — Replace the current blue accent color with TEGE brand color `#c7dac4` (soft sage green). Use this as the primary accent throughout the editor (selected items, active tabs, buttons, progress bars, focus indicators). Complement with the existing blue as a secondary accent for links/info. Make the overall editor more aesthetically pleasant, cute, and inviting while maintaining readability. Consider: rounded corners on panels, softer panel borders, warmer background tones, subtle hover animations. The goal is a distinct visual identity — not Unity grey, not Unreal dark, not generic dev-tool blue.
 
 ### Runtime Systems
 
 - **UI Runtime** — ~~DONE (Phase 1)~~ Anchored layout, 8 widget types, event bus, theme system implemented. Future work: flex/grid layout, text input widget, scrollable panels, runtime texture loading for Image widgets.
+- **9-Slice / Text Box System** — Scalable UI backgrounds from sprite sheets using 9-slice (9-patch) rendering. A `NineSliceConfig` struct (texture path + 4 border insets in pixels) defines how a sprite is split into 9 regions: corners stay fixed-size, edges stretch in one axis, center stretches in both. The renderer generates a 9-quad mesh per element. This replaces flat-color Panel backgrounds with customizable, artist-friendly frames (dialogue boxes, buttons, tooltips, health bars). Should be simple to configure: drop in a sprite, set 4 inset values, done. Per-theme 9-slice defaults so all Panels/Buttons in a theme share the same frame style. Alternative considered: SDF rounded rectangles (resolution-independent but less artist-customizable). 9-slice is the better fit for a game engine UI.
 - **2D Camera System** — follow targets, camera bounds/clamping, smooth follow, look-ahead, screen shake, zoom, dead zones, multi-target framing.
-- **Particle System Runtime** — GPU particle simulation, emitter shapes, curves for size/color/velocity over lifetime, sub-emitters, collision, attractors. The Particle Editor above edits these.
+- **Particle System Runtime** — ~~DONE (Phase 1)~~ CPU simulation with 5 emitter shapes, piecewise-linear size/speed curves, color/alpha interpolation, gravity, drag, rotation. GPU instanced billboard rendering. Future work: GPU compute particle simulation, sub-emitters, particle collision, attractors, force fields.
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
 - **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
 - **Destructible Environments** — extend DestructibleComponent to work as a prefab-level setting. When enabled on a prefab, all instances inherit destructibility. Add fracture/shatter visual effects (mesh splitting into fragments on destroy), debris physics, chain destruction propagation. Editor toggle: "Destructible" checkbox on prefab inspector.
 - **Improved Shadow System** — cascaded shadow maps (CSM) for large outdoor scenes, shadow distance fade, per-light shadow quality settings, soft shadows with PCSS, transparent shadow receivers. Fix shadow acne edge cases and improve shadow bias auto-tuning.
+- **Per-Scene Rendering Settings** — ~~DONE~~ `SceneRenderSettings` struct captures all RenderSystem + PostProcessSettings state (~60 fields). Serialized in scene files as `"renderSettings"` JSON section. Project-level defaults stored in `.enjinproject` manifest. Applied on scene load/new scene, saved/restored around play mode. Project Settings panel has "Use Project Defaults" checkbox + "Set Current as Project Default" / "Reset to Project Default" buttons. Old scenes without `renderSettings` gracefully default.
+
+### Rendering Pipeline & Performance
+
+- **3D/2D Pipeline Audit & Safety Rails** — Currently 2D sprites and 3D meshes share the same Vulkan pipeline. Sprites generate per-entity quads via MeshComponent and are sorted/rendered in a separate `RenderSprites()` pass. Audit needed:
+  - **Costs of cross-use:** 2D sprites incur per-entity draw calls like 3D meshes (no batching). Shadow pass runs even in 2D-only scenes. Ortho/perspective projection mixing can produce unexpected depth results.
+  - **Smart safety rails:** Auto-disable shadow pass when no 3D geometry exists. Warn users when mixing ortho and perspective cameras in the same scene. Auto-skip 3D lighting calculations for sprite-only entities (flat shading fast path). Detect and warn when sprite count exceeds batching threshold (100+ individual draw calls).
+  - **Sprite batching:** Group sprites by texture atlas into single instanced draw calls (like particle renderer). This is the biggest 2D performance win — reduces 100 sprite draw calls to 1-5 batched calls.
+  - **Frame slog scenarios to address:** Many unbatched sprites (100+), sprite meshes regenerating every frame without dirty flags (already mitigated), 3D shadow pass on 2D-only scenes, per-entity uniform buffer updates for static sprites.
+  - **What breaks:** Mixing 2D sprites with 3D depth testing causes z-fighting. 2D entities with 3D physics colliders work but waste collision broadphase cycles. Sprite transparency sorting conflicts with 3D depth buffer.
+
+- **Rendering Pipeline Investigation & Optimization** — Frame rate erratically drops (200fps dives). Investigate the rendering pipeline for bottlenecks. Potential optimizations:
+  - Multi-threaded command buffer recording (record per-viewport or per-material-group in parallel)
+  - GPU payload batching (sort by pipeline/material to minimize state changes)
+  - Indirect rendering (VkCmdDrawIndexedIndirect for single draw call with GPU-side culling)
+  - Asynchronous compute for culling, particle simulation, and post-processing passes
+  - Frame graph resource scheduling (avoid unnecessary GPU barriers/transitions)
+  - LOD selection on compute shader, occlusion queries, Hi-Z culling
+  - Profile with GPU timestamps and CPU profiler to identify actual bottleneck (CPU-bound submission vs GPU-bound fragment)
+
+### Procedural Generation
+
+- **Noise Library** — Implement a variety of useful noise types for procgen and terrain:
+  - Perlin noise (2D/3D)
+  - Simplex noise (2D/3D)
+  - Worley/cellular noise (F1, F2, F1-F2 variants)
+  - Value noise
+  - Fractal Brownian motion (fBm) — octaved layering of any base noise
+  - Ridged multifractal noise
+  - Domain warping (noise fed into noise coordinates)
+  - Billow noise
+  - All noise types should support configurable frequency, amplitude, octaves, lacunarity, persistence. Expose as both C++ API and AngelScript bindings.
+
+- **Procedural Generation Algorithms** — Expand LevelGenerator with modular algorithm support. Each algorithm should work as a pluggable generator that produces 2D grid data or 3D room/corridor layouts. Include bag/piece-pull options (weighted randomized selection from pools) where applicable:
+  - **Cellular Automata** — cave generation, organic shapes (configurable birth/death thresholds, iteration count, bag of initial fill patterns)
+  - **Random Walkers** — dungeon carving with drunkard's walk, directional bias, tunnel width options (bag of walker behaviors: straight, wobbly, branching)
+  - **Wave Function Collapse (WFC)** — tile-based generation from example patterns, adjacency constraints, backtracking solver (bag of tile sets, weight per tile)
+  - **BSP (Binary Space Partitioning)** — room-corridor dungeons, min/max room sizes, corridor placement (bag of room templates, piece-pull for room shapes and decoration)
+  - **L-Systems** — rule-based recursive generation for trees, plants, branching structures, river networks (bag of production rules, stochastic rule selection)
+  - **Voronoi Diagrams** — region-based world generation, biome placement, city districts (bag of region types with weighted pull for biome assignment)
+  - **Diamond-Square Algorithm** — heightmap terrain generation, midpoint displacement (configurable roughness, seed, corner initialization)
+  - **Grammar-Based Generation** — shape grammars for building layouts, procedural architecture, interior room decoration (bag of grammar rules with weighted selection)
+  - **Modular/Prefab Assembly** — snap-together room/corridor pieces from a prefab library with connection points (bag of pieces per socket type, weighted pull, uniqueness constraints)
+  - Editor UI: Generator panel with algorithm selection, parameter sliders, live preview, seed control, "Generate" button. Results stored as TilemapComponent data or TerrainComponent heightmaps.
+
+### Custom Flora Assets
+
+- **Flora Asset Drop-In** — Allow users to drop in custom images or 3D models to replace stock flora in the vegetation/grass/shrub/tree systems:
+  - For 2D flora (grass, shrubs): drop a sprite/image into the vegetation volume inspector to replace the stock billboard texture. The system textures the existing instanced quads with the custom image.
+  - For 3D flora (trees): drop a `.gltf`/`.fbx`/`.obj` model file. The engine auto-creates a prefab if one doesn't exist, and the TreeRenderer uses the prefab mesh instead of the procedural tree. Wind sway, LOD, and seasonal color changes continue to work via vertex shader wind and material tinting.
+  - Inspector UI: "Custom Asset" field on GrassVolumeComponent, ShrubVolumeComponent, TreeVolumeComponent. Browse button + drag-drop from asset browser. Clear button to revert to stock.
 
 ### Scripting & Extensibility
 
+- **Script Rendering Bindings** — Expose RenderSystem and PostProcessSettings to AngelScript so scripts can automate camera movement and rendering changes at runtime. Bindings like `Render_SetFogDensity(float)`, `Render_SetFogColor(Vector3)`, `Render_SetAmbientIntensity(float)`, `Render_SetShadowsEnabled(bool)`, `PostProcess_SetExposure(float)`, `PostProcess_SetBloomEnabled(bool)`, `PostProcess_SetVignetteIntensity(float)`, `PostProcess_SetToneMapping(int)`, etc. Enables cinematic sequences that change lighting/fog/post-processing over time, day/night transitions driven by scripts, and gameplay-reactive visual effects. Combined with existing `CinematicCameraComponent` spline waypoints and coroutines (`YieldSeconds`), this gives full cutscene authoring capability from scripts.
 - **Component/Plugin DLL Repositories** — load gameplay components from external DLLs/shared libraries. Package format for distributing reusable components. Local repository system (marketplace comes later).
 - **Documentation Generator** — auto-generate docs from component definitions, script API, project structure. HTML or markdown output for game teams.
 - **ScriptableObject / DataAsset System** — Unity-like reusable data containers that are NOT entities. Serialized JSON assets for game configuration: weapon stats, enemy tables, dialogue databases, item definitions, skill trees. Create/edit in inspector, reference from components. Extends the current component-only model with standalone data assets.

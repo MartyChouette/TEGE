@@ -18,6 +18,7 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
+#include "Enjin/Effects/ParticleRenderer.h"
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -115,10 +116,12 @@ public:
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
     Effects::TreeRenderer* GetTreeRenderer() { return m_TreeRenderer.get(); }
 
-    // Render weather particles, grass, shrubs, and trees (call after scene geometry in main render pass)
+    // Render weather particles, game particles, grass, shrubs, and trees
+    // (call after scene geometry in main render pass)
     // viewportWidth/Height: 0 = swapchain, >0 = render target override
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                 u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderTrees(u32 viewportWidth = 0, u32 viewportHeight = 0);
@@ -137,6 +140,14 @@ public:
     }
     void SetFogColor(const Math::Vector3& color) { m_FogColor = color; }
     void SetSnowIntensity(f32 intensity) { m_SnowIntensity = intensity; }
+
+    // Fog and snow getters
+    f32 GetFogDensity() const { return m_FogDensity; }
+    f32 GetFogStart() const { return m_FogStart; }
+    f32 GetFogEnd() const { return m_FogEnd; }
+    f32 GetFogHeightFalloff() const { return m_FogHeightFalloff; }
+    Math::Vector3 GetFogColor() const { return m_FogColor; }
+    f32 GetSnowIntensity() const { return m_SnowIntensity; }
 
     // World curvature (vertex-shader horizon bending)
     void SetWorldCurvature(f32 strength) { m_WorldCurvature = strength; }
@@ -220,8 +231,9 @@ private:
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
 
-    // Weather, grass, shrub, and tree renderers
+    // Weather, particle, grass, shrub, and tree renderers
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
+    std::unique_ptr<Effects::ParticleRenderer> m_ParticleRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
