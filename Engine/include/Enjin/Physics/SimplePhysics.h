@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <vector>
+#include <memory>
 
 namespace Enjin {
 namespace Physics {
@@ -67,13 +68,18 @@ struct RaycastHit {
     ECS::Entity entity = 0;
 };
 
+class ConstraintSolver;
+
 // Simple physics world - handles basic collision detection
 class ENJIN_API SimplePhysics {
 public:
-    SimplePhysics() = default;
-    ~SimplePhysics() = default;
+    SimplePhysics();
+    ~SimplePhysics();
 
-    void SetWorld(ECS::World* world) { m_World = world; }
+    void SetWorld(ECS::World* world);
+
+    // Get the constraint solver for joint configuration
+    ConstraintSolver* GetConstraintSolver() { return m_ConstraintSolver.get(); }
 
     // Update physics simulation
     void Update(f32 deltaTime);
@@ -108,6 +114,7 @@ private:
 
     ECS::World* m_World = nullptr;
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
+    std::unique_ptr<ConstraintSolver> m_ConstraintSolver;
 };
 
 } // namespace Physics

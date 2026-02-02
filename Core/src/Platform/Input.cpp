@@ -41,6 +41,11 @@ namespace {
     bool s_CursorVisible = true;
     bool s_FirstMouseMove = true;
 
+    // Raw mouse input and smoothing
+    bool s_UseRawInput = true;
+    f32 s_MouseSmoothAmount = 0.0f;
+    Math::Vector2 s_SmoothedDelta = {};
+
     // Gamepad state
     bool s_GamepadConnected[MAX_GAMEPADS] = {};
     bool s_GamepadButtons[MAX_GAMEPADS][MAX_GAMEPAD_BUTTONS] = {};
@@ -122,9 +127,17 @@ void Input::Update() {
     // Calculate mouse delta
     if (s_FirstMouseMove) {
         s_MouseDelta = Math::Vector2(0.0f, 0.0f);
+        s_SmoothedDelta = Math::Vector2(0.0f, 0.0f);
         s_FirstMouseMove = false;
     } else {
         s_MouseDelta = s_MousePosition - s_MousePositionPrev;
+    }
+
+    // Apply temporal smoothing if enabled
+    if (s_MouseSmoothAmount > 0.0f) {
+        f32 t = 1.0f - s_MouseSmoothAmount * 0.9f; // Maps to 0.1..1.0 interpolation factor
+        s_SmoothedDelta = s_SmoothedDelta + (s_MouseDelta - s_SmoothedDelta) * t;
+        s_MouseDelta = s_SmoothedDelta;
     }
 
     // Update scroll delta and reset accumulator
@@ -229,8 +242,12 @@ void Input::SetMouseCaptured(bool captured) {
     s_MouseCaptured = captured;
     if (captured) {
         glfwSetInputMode(s_Window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+        if (s_UseRawInput && glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        }
         s_FirstMouseMove = true; // Reset to avoid large delta on capture
     } else {
+        glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
         glfwSetInputMode(s_Window, GLFW_CURSOR, s_CursorVisible ? GLFW_CURSOR_NORMAL : GLFW_CURSOR_HIDDEN);
     }
 }
@@ -340,6 +357,33 @@ f32 Input::GetGamepadDeadZone() {
 bool Input::IsGamepadActive(i32 gamepadIndex) {
     if (gamepadIndex < 0 || gamepadIndex >= MAX_GAMEPADS) return false;
     return s_GamepadActiveThisFrame[gamepadIndex];
+}
+
+void Input::SetRawMouseInput(bool enabled) {
+    s_UseRawInput = enabled;
+    // Apply immediately if currently captured
+    if (s_Window && s_MouseCaptured) {
+        if (enabled && glfwRawMouseMotionSupported()) {
+            glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        } else {
+            glfwSetInputMode(s_Window, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+        }
+    }
+}
+
+bool Input::IsRawMouseInput() {
+    return s_UseRawInput;
+}
+
+void Input::SetMouseSmoothing(f32 amount) {
+    s_MouseSmoothAmount = amount;
+    if (amount <= 0.0f) {
+        s_SmoothedDelta = Math::Vector2(0.0f, 0.0f);
+    }
+}
+
+f32 Input::GetMouseSmoothing() {
+    return s_MouseSmoothAmount;
 }
 
 void Input::ClearAllState() {

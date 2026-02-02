@@ -1,8 +1,11 @@
 #pragma once
 
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
+#include "Enjin/ECS/Entity.h"
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -217,6 +220,68 @@ struct FirstPersonController : public CharacterControllerBase {
     bool isJumping = false;
     bool isFalling = false;
     bool isSprinting = false;
+};
+
+// Vehicle Controller (car-like physics with steering, acceleration, braking)
+struct VehicleController : public CharacterControllerBase {
+    // Acceleration / braking
+    f32 maxSpeed = 30.0f;           // Top speed (units/sec)
+    f32 reverseMaxSpeed = 10.0f;    // Top reverse speed
+    f32 acceleration = 15.0f;       // Forward acceleration force
+    f32 brakeForce = 25.0f;         // Brake deceleration
+    f32 engineBrake = 5.0f;         // Deceleration when no input (engine drag)
+    f32 currentSpeed = 0.0f;        // Current forward speed
+
+    // Steering
+    f32 maxSteerAngle = 35.0f;      // Max wheel turn angle (degrees)
+    f32 steerSpeed = 120.0f;        // Steering input speed (degrees/sec)
+    f32 steerReturnSpeed = 200.0f;  // Auto-center speed (degrees/sec)
+    f32 currentSteerAngle = 0.0f;   // Current steering angle
+    f32 wheelBase = 2.5f;           // Distance between front/rear axles
+
+    // Physics feel
+    f32 grip = 1.0f;                // Tire grip multiplier (lower = slidey)
+    f32 driftFactor = 0.9f;         // Lateral velocity retention (1 = no drift, 0 = full drift)
+    f32 downforceMultiplier = 0.5f; // Speed-dependent downforce
+    f32 mass = 1000.0f;             // Vehicle mass (kg)
+
+    // Camera
+    f32 cameraDistance = 8.0f;
+    f32 cameraHeight = 3.5f;
+    f32 cameraLerpSpeed = 5.0f;     // Smooth follow speed
+    f32 cameraLookAhead = 2.0f;     // Look ahead based on velocity
+    f32 cameraYaw = 0.0f;
+    f32 cameraPitch = 15.0f;
+
+    // Visuals
+    f32 bodyRollAmount = 5.0f;      // Degrees of body roll in turns
+    f32 bodyPitchAmount = 3.0f;     // Degrees of body pitch on accel/brake
+
+    // State
+    f32 currentRPM = 0.0f;          // For engine sound/visual
+    f32 heading = 0.0f;             // Current facing (yaw degrees)
+    Math::Vector3 forwardDir = Math::Vector3(0.0f, 0.0f, -1.0f);
+    Math::Vector3 lateralVelocity = Math::Vector3(0.0f, 0.0f, 0.0f);
+    bool isBraking = false;
+    bool isReversing = false;
+    bool isDrifting = false;
+    bool handbrake = false;
+};
+
+// Possessable component — allows the player to switch which entity they control
+struct PossessableComponent {
+    bool isPossessed = false;        // Currently controlled by the player
+    bool autoDetect = true;          // Automatically detect controller type on possess
+    i32 playerIndex = 0;             // Which player (0-3) can possess this entity
+    f32 possessRange = 5.0f;         // Max distance to possess (0 = unlimited)
+    std::string promptText = "Press E to enter"; // UI prompt when in range
+
+    // Transition settings
+    f32 transitionDuration = 0.3f;   // Camera blend time on possess/unpossess
+    bool disableOnUnpossess = true;  // Disable controller when not possessed
+
+    // State
+    Entity previousPossessor = 0;    // Entity that was possessed before this one
 };
 
 } // namespace ECS

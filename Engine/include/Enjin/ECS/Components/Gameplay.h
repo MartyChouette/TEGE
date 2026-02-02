@@ -340,9 +340,22 @@ struct AIControllerComponent {
     usize currentPatrolIndex = 0;
     f32 patrolWaitTime = 2.0f;
     f32 patrolWaitTimer = 0.0f;
+    bool patrolLoop = true;            // Loop patrol or ping-pong
+
+    // Navigation
+    bool useNavmesh = true;            // Use navmesh pathfinding (A*) when available
+    f32 repathInterval = 0.5f;         // How often to recalculate path during chase (seconds)
+    f32 arrivalRadius = 0.5f;          // Distance threshold for reaching a waypoint
+    f32 chaseSpeed = 5.0f;             // Speed when chasing target
+    f32 fleeSpeed = 6.0f;             // Speed when fleeing
+    f32 fleeDistance = 15.0f;          // How far to flee before returning to idle
 
     // State timers
     f32 stateTimer = 0.0f;
+
+    // Debug visualization
+    bool debugDrawPath = false;        // Draw current A* path
+    bool debugDrawDetection = false;   // Draw detection range circle
 };
 
 // Follow Target - makes entity follow another entity
@@ -772,6 +785,563 @@ struct SaveDataComponent {
         }
         return defaultValue;
     }
+};
+
+// ============================================================================
+// PUZZLE & INTERACTION COMPONENTS
+// ============================================================================
+
+// Lock component — requires a key to open (door, gate, chest, etc.)
+struct LockComponent {
+    std::string requiredKey;       // Key ID that unlocks this (matches InventoryComponent::keys)
+    bool isLocked = true;
+    bool consumeKey = false;       // Remove key from inventory on use
+    bool autoOpen = false;         // Open automatically when player with key enters range
+    f32 interactRange = 2.0f;      // Range for manual interact
+
+    // Door behavior
+    enum class OpenMode : u8 {
+        Toggle,      // Open/close on interact
+        OpenOnly,    // Once open, stays open
+        Timed        // Opens for openDuration then closes
+    };
+    OpenMode openMode = OpenMode::Toggle;
+    f32 openDuration = 5.0f;       // For Timed mode
+    f32 openTimer = 0.0f;
+
+    // Animation
+    Math::Vector3 closedPosition = Math::Vector3(0, 0, 0);
+    Math::Vector3 openPosition = Math::Vector3(0, 3, 0);   // Default: slide up
+    Math::Vector3 closedRotation = Math::Vector3(0, 0, 0);
+    Math::Vector3 openRotation = Math::Vector3(0, 0, 0);
+    f32 openSpeed = 3.0f;          // Lerp speed
+    f32 openProgress = 0.0f;       // 0 = closed, 1 = open
+
+    // State
+    bool isOpen = false;
+    bool isAnimating = false;
+
+    // Prompt
+    std::string lockedPrompt = "Requires key";
+    std::string unlockedPrompt = "Press E to open";
+};
+
+// Pushable component — entity can be pushed by the player or other forces
+struct PushableComponent {
+    f32 mass = 1.0f;               // Heavier = slower to push
+    f32 pushSpeed = 3.0f;          // Movement speed when being pushed
+    f32 friction = 0.9f;           // Velocity damping per frame
+
+    // Grid-based pushing (for Sokoban-style puzzles)
+    bool gridSnap = false;         // Snap to grid cells
+    f32 gridCellSize = 1.0f;       // Grid cell size
+    f32 gridMoveSpeed = 6.0f;      // Speed of lerp between cells
+    bool gridMoving = false;       // Currently transitioning
+    Math::Vector3 gridMoveStart;
+    Math::Vector3 gridMoveTarget;
+    f32 gridMoveProgress = 0.0f;
+
+    // Constraints
+    bool pushableX = true;
+    bool pushableY = false;        // Usually no vertical pushing
+    bool pushableZ = true;
+    bool canBePushedOff = false;   // Can be pushed off ledges
+
+    // State
+    bool isBeingPushed = false;
+    Math::Vector3 velocity;
+    Entity pushedBy = 0;           // Entity pushing this
+};
+
+// Switch / Pressure Plate — activates when triggered (by weight, interaction, etc.)
+struct SwitchComponent {
+    enum class SwitchType : u8 {
+        PressurePlate,   // Activated by weight (entity standing/placed on it)
+        Toggle,          // Click/interact to toggle on/off
+        OneShot,         // Interact once, stays on permanently
+        Timed,           // Turns on for duration, then off
+        Sequence         // Part of a sequence (must activate in order)
+    };
+    SwitchType type = SwitchType::PressurePlate;
+
+    // Activation
+    bool isActive = false;
+    bool requireSpecificTag;       // Only entities with matching tag activate it
+    std::string requiredTag;       // Tag required (e.g., "crate", "player")
+    f32 activationWeight = 0.0f;   // Min mass needed for pressure plate (0 = any)
+
+    // Timed mode
+    f32 activeDuration = 5.0f;
+    f32 activeTimer = 0.0f;
+
+    // Sequence mode
+    i32 sequenceIndex = 0;         // Position in sequence (0-based)
+    i32 sequenceGroup = 0;         // Which sequence this belongs to
+
+    // Linked entities (what this switch controls)
+    std::vector<Entity> linkedEntities;
+
+    // Visual
+    Math::Vector3 offPosition;     // Position when inactive
+    Math::Vector3 onPosition;      // Position when active (e.g., pressed down)
+    f32 transitionSpeed = 8.0f;
+    f32 transitionProgress = 0.0f;
+
+    // Prompt
+    std::string promptText = "Press E";
+    bool showPrompt = true;
+
+    // State
+    Entity activatedBy = 0;        // Entity that activated this switch
+    bool wasActive = false;        // Previous frame state (for edge detection)
+};
+
+// Goal Zone — marks a target area for puzzle completion (Sokoban goals, checkpoints, etc.)
+struct GoalZoneComponent {
+    enum class GoalType : u8 {
+        PushTarget,    // A box must be pushed here (Sokoban)
+        StandOn,       // Player must stand here
+        ItemDeposit,   // Specific item must be placed here
+        Checkpoint,    // Save progress point
+        LevelExit      // Transition to next level/scene
+    };
+    GoalType type = GoalType::PushTarget;
+
+    // Requirements
+    std::string requiredTag;       // Entity tag that satisfies this goal (e.g., "crate")
+    std::string requiredItem;      // Item ID for ItemDeposit type
+
+    // State
+    bool isSatisfied = false;      // Goal condition met
+    Entity satisfiedBy = 0;        // Which entity satisfied this goal
+    i32 goalGroup = 0;             // Group ID (all goals in group must be satisfied)
+
+    // Visual feedback
+    Math::Vector3 inactiveColor = Math::Vector3(0.3f, 0.3f, 0.3f);
+    Math::Vector3 activeColor = Math::Vector3(0.2f, 0.8f, 0.2f);
+
+    // Level transition (for LevelExit type)
+    std::string nextScene;
+};
+
+// Conveyor Belt — moves entities along a direction
+struct ConveyorComponent {
+    Math::Vector3 direction = Math::Vector3(1, 0, 0); // Movement direction (normalized)
+    f32 speed = 3.0f;
+    bool affectsPlayer = true;
+    bool affectsPushables = true;
+    bool isActive = true;
+};
+
+// Teleporter — moves entities to a target position
+struct TeleporterComponent {
+    Math::Vector3 targetPosition;
+    Math::Vector3 targetRotation;   // Euler angles after teleport
+    Entity linkedTeleporter = 0;    // For bidirectional teleporters
+    f32 cooldown = 1.0f;            // Prevent rapid re-teleport
+    f32 cooldownTimer = 0.0f;
+    bool preserveVelocity = false;
+    std::string requiredTag;        // Empty = teleports anything
+};
+
+// Destructible — entity can be destroyed by damage or interaction
+struct DestructibleComponent {
+    f32 health = 1.0f;             // Hits to destroy (or HP)
+    bool destroyOnHit = true;      // One-hit destroy
+    bool spawnPickup = false;      // Drop item on destroy
+    std::string pickupId;          // What to drop
+    i32 pickupCount = 1;
+
+    // Respawn
+    bool canRespawn = false;
+    f32 respawnTime = 10.0f;
+    f32 respawnTimer = 0.0f;
+    bool isDestroyed = false;
+
+    // Visual
+    f32 shakeOnHit = 0.1f;        // Screen/entity shake amount
+};
+
+// Moving Platform — entity moves between waypoints
+struct MovingPlatformComponent {
+    std::vector<Math::Vector3> waypoints;
+    f32 speed = 2.0f;
+    f32 waitTime = 1.0f;           // Pause at each waypoint
+    f32 waitTimer = 0.0f;
+
+    enum class PlatformMode : u8 {
+        Loop,       // A → B → C → A → B → ...
+        PingPong,   // A → B → C → B → A → ...
+        OneWay,     // A → B → C (stops)
+        Triggered   // Only moves when activated (via SwitchComponent)
+    };
+    PlatformMode mode = PlatformMode::PingPong;
+
+    // State
+    i32 currentWaypoint = 0;
+    i32 direction = 1;             // +1 forward, -1 backward (for PingPong)
+    f32 moveProgress = 0.0f;       // 0-1 between current and next waypoint
+    bool isMoving = true;
+    bool isWaiting = false;
+
+    // Carries entities standing on it
+    bool carryEntities = true;
+};
+
+// ============================================================================
+// DAMAGE RESISTANCE SYSTEM
+// ============================================================================
+
+struct DamageResistanceComponent {
+    // Multipliers per damage type (1.0 = normal, 0.0 = immune, 2.0 = weakness)
+    f32 physicalMult = 1.0f;
+    f32 fireMult = 1.0f;
+    f32 iceMult = 1.0f;
+    f32 electricMult = 1.0f;
+    f32 poisonMult = 1.0f;
+    f32 magicMult = 1.0f;
+
+    f32 GetMultiplier(DamageComponent::DamageType type) const {
+        switch (type) {
+            case DamageComponent::DamageType::Physical: return physicalMult;
+            case DamageComponent::DamageType::Fire:     return fireMult;
+            case DamageComponent::DamageType::Ice:      return iceMult;
+            case DamageComponent::DamageType::Electric:  return electricMult;
+            case DamageComponent::DamageType::Poison:    return poisonMult;
+            case DamageComponent::DamageType::Magic:     return magicMult;
+            default: return 1.0f;
+        }
+    }
+};
+
+// ============================================================================
+// STAMINA / RESOURCE SYSTEM
+// ============================================================================
+
+struct ResourceComponent {
+    std::string resourceName = "Stamina";
+    f32 maxValue = 100.0f;
+    f32 currentValue = 100.0f;
+    f32 regenRate = 10.0f;        // Per second
+    f32 regenDelay = 1.0f;        // Seconds after use before regen starts
+    f32 timeSinceLastUse = 0.0f;
+    bool depleted = false;         // True when hits 0, stays true until threshold
+    f32 depletedThreshold = 20.0f; // Must regen to this before un-depleted
+
+    // Costs for common actions
+    f32 sprintCostPerSec = 15.0f;
+    f32 jumpCost = 20.0f;
+    f32 dashCost = 25.0f;
+    f32 attackCost = 0.0f;
+
+    f32 GetPercent() const { return maxValue > 0.0f ? currentValue / maxValue : 0.0f; }
+
+    bool TryConsume(f32 amount) {
+        if (currentValue >= amount) {
+            currentValue -= amount;
+            timeSinceLastUse = 0.0f;
+            if (currentValue <= 0.0f) { currentValue = 0.0f; depleted = true; }
+            return true;
+        }
+        return false;
+    }
+
+    void Regenerate(f32 deltaTime) {
+        timeSinceLastUse += deltaTime;
+        if (timeSinceLastUse >= regenDelay && currentValue < maxValue) {
+            currentValue = std::min(currentValue + regenRate * deltaTime, maxValue);
+            if (depleted && currentValue >= depletedThreshold) depleted = false;
+        }
+    }
+};
+
+// ============================================================================
+// FOOTSTEP SYSTEM
+// ============================================================================
+
+struct FootstepComponent {
+    struct SurfaceSound {
+        std::string surfaceTag;   // "grass", "stone", "wood", "metal", "water"
+        std::string walkSound;     // Audio clip path
+        std::string runSound;
+        f32 volumeScale = 1.0f;
+    };
+
+    std::vector<SurfaceSound> surfaceSounds;
+    std::string defaultWalkSound;
+    std::string defaultRunSound;
+
+    f32 walkStepInterval = 0.5f;   // Seconds between steps when walking
+    f32 runStepInterval = 0.3f;
+    f32 stepTimer = 0.0f;
+    f32 volume = 0.8f;
+    f32 pitchVariance = 0.1f;      // Random pitch variation
+
+    bool isMoving = false;
+    bool isRunning = false;
+    std::string currentSurface = "default";
+};
+
+// ============================================================================
+// OBJECT POOLING
+// ============================================================================
+
+struct PoolableComponent {
+    std::string poolId;
+    bool isActive = false;
+    f32 lifetime = 0.0f;      // 0 = infinite (manually returned)
+    f32 activeTime = 0.0f;
+    Entity spawnedBy = 0;
+};
+
+// ============================================================================
+// QUEST / OBJECTIVE SYSTEM
+// ============================================================================
+
+struct QuestStateComponent {
+    std::string questId;
+    enum class Status : u8 { NotStarted, Active, Completed, Failed };
+    Status status = Status::NotStarted;
+    i32 currentObjective = 0;
+    std::vector<std::pair<std::string, bool>> objectiveFlags;
+    f32 timeElapsed = 0.0f;
+};
+
+// ============================================================================
+// HUD / UI SYSTEM
+// ============================================================================
+
+struct HUDWidgetComponent {
+    enum class WidgetType : u8 { HealthBar, ResourceBar, Label, ObjectiveMarker, Crosshair, Minimap };
+    WidgetType type = WidgetType::HealthBar;
+    bool visible = true;
+    bool screenSpace = true; // true = fixed screen position, false = world-space billboard
+
+    // Screen position (normalized 0-1)
+    f32 anchorX = 0.05f;
+    f32 anchorY = 0.05f;
+    f32 width = 0.2f;
+    f32 height = 0.03f;
+
+    // Visual properties
+    Math::Vector3 fillColor = Math::Vector3(0.2f, 0.8f, 0.2f);
+    Math::Vector3 bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+    Math::Vector3 textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+    f32 fontSize = 16.0f;
+    std::string text;
+
+    // Data binding
+    Entity sourceEntity = 0; // Entity to read data from (0 = self)
+    std::string bindField; // "health", "stamina", "custom"
+    f32 currentValue = 1.0f;
+    f32 maxValue = 1.0f;
+
+    // World-space settings
+    Math::Vector3 worldOffset = Math::Vector3(0, 2, 0);
+    f32 maxRenderDistance = 50.0f;
+};
+
+// ============================================================================
+// CINEMATIC CAMERA SYSTEM
+// ============================================================================
+
+struct CinematicCameraComponent {
+    struct Waypoint {
+        Math::Vector3 position;
+        Math::Vector3 lookAt;
+        f32 fov = 60.0f;
+        f32 duration = 2.0f;         // Time to reach this waypoint
+        f32 holdTime = 0.0f;         // Pause at waypoint
+        enum class Easing : u8 { Linear, EaseIn, EaseOut, EaseInOut, SmashCut };
+        Easing easing = Easing::EaseInOut;
+    };
+
+    std::vector<Waypoint> waypoints;
+    bool isPlaying = false;
+    bool loop = false;
+    bool autoPlay = false;
+    bool hideHUD = true;
+    bool disableInput = true;
+    f32 currentTime = 0.0f;
+    i32 currentSegment = 0;
+    f32 segmentProgress = 0.0f;
+    bool isComplete = false;
+
+    // Callbacks
+    Entity onCompleteNotify = 0;
+    Entity onWaypointReachNotify = 0;
+};
+
+// ============================================================================
+// JOINT / CONSTRAINT COMPONENTS
+// ============================================================================
+
+// Joint type enumeration shared by all joint components
+enum class JointType : u8 {
+    Distance,
+    Hinge,
+    BallSocket,
+    Spring,
+    Fixed,
+    Slider
+};
+
+// Distance Joint - maintains a fixed distance between two anchor points
+struct DistanceJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);  // Local-space anchor on A
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);  // Local-space anchor on B
+
+    f32 restDistance = 1.0f;         // Target distance between anchors
+    f32 tolerance = 0.0f;           // Allowed deviation before constraint kicks in
+    f32 stiffness = 1.0f;           // 0-1, how rigidly the constraint is enforced
+
+    bool breakable = false;
+    f32 breakForce = 1000.0f;
+    f32 currentStress = 0.0f;
+};
+
+// Hinge Joint - allows rotation around a single axis
+struct HingeJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);
+
+    Math::Vector3 axis = Math::Vector3(0, 1, 0);  // Hinge axis (local-space of A)
+
+    bool useLimits = false;
+    f32 lowerLimit = -180.0f;       // Degrees
+    f32 upperLimit = 180.0f;        // Degrees
+    f32 currentAngle = 0.0f;        // Current rotation around axis
+
+    bool useMotor = false;
+    f32 motorSpeed = 0.0f;          // Degrees per second
+    f32 motorMaxForce = 100.0f;
+
+    bool breakable = false;
+    f32 breakForce = 1000.0f;
+    f32 currentStress = 0.0f;
+};
+
+// Ball-Socket Joint - allows 3 DOF rotation, keeps anchors coincident
+struct BallSocketJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);
+
+    // Cone limit (limits the angle between bodies)
+    bool useConeLimit = false;
+    f32 coneAngleLimit = 45.0f;     // Degrees, max angle from rest axis
+
+    // Twist limit (limits rotation around the connecting axis)
+    bool useTwistLimit = false;
+    f32 twistLowerLimit = -180.0f;  // Degrees
+    f32 twistUpperLimit = 180.0f;   // Degrees
+
+    bool breakable = false;
+    f32 breakForce = 1000.0f;
+    f32 currentStress = 0.0f;
+};
+
+// Spring Joint - applies Hooke's law force based on distance
+struct SpringJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);
+
+    f32 restLength = 1.0f;          // Natural length of the spring
+    f32 springConstant = 50.0f;     // Hooke's law k (higher = stiffer)
+    f32 dampingCoefficient = 5.0f;  // Velocity damping (reduces oscillation)
+
+    f32 minDistance = 0.0f;         // Minimum allowed distance (0 = no limit)
+    f32 maxDistance = 0.0f;         // Maximum allowed distance (0 = no limit)
+
+    bool breakable = false;
+    f32 breakForce = 1000.0f;
+    f32 currentStress = 0.0f;
+};
+
+// Fixed Joint - keeps relative transform constant (like gluing two bodies)
+struct FixedJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);
+
+    // Stored relative transform at creation time
+    Math::Vector3 relativePosition = Math::Vector3(0, 0, 0);
+    Math::Vector3 relativeRotation = Math::Vector3(0, 0, 0);  // Euler angles
+    bool initialized = false;       // Set true once relative transform is captured
+
+    bool breakable = false;
+    f32 breakForce = 500.0f;        // Lower default; fixed joints are rigid
+    f32 currentStress = 0.0f;
+};
+
+// Slider Joint - constrains movement to a single axis
+struct SliderJointComponent {
+    Entity entityA = 0;
+    Entity entityB = 0;
+    Math::Vector3 anchorA = Math::Vector3(0, 0, 0);
+    Math::Vector3 anchorB = Math::Vector3(0, 0, 0);
+
+    Math::Vector3 slideAxis = Math::Vector3(1, 0, 0);  // Axis of permitted motion (local-space of A)
+
+    bool useLimits = false;
+    f32 lowerLimit = -1.0f;         // Min displacement along axis
+    f32 upperLimit = 1.0f;          // Max displacement along axis
+    f32 currentDisplacement = 0.0f; // Current position along axis
+
+    bool useMotor = false;
+    f32 motorSpeed = 0.0f;          // Units per second along axis
+    f32 motorMaxForce = 100.0f;
+
+    bool breakable = false;
+    f32 breakForce = 1000.0f;
+    f32 currentStress = 0.0f;
+};
+
+// ============================================================================
+// RAGDOLL SYSTEM
+// ============================================================================
+
+// Ragdoll component - maps physics joints to skeleton bones for ragdoll simulation
+struct RagdollComponent {
+    struct BoneJoint {
+        std::string boneName;           // Skeleton bone name
+        i32 boneIndex = -1;            // Index into SkeletonComponent bones
+        JointType jointType = JointType::BallSocket;
+        Entity jointEntity = 0;        // Entity holding the joint component
+
+        // Per-bone physics properties
+        f32 mass = 1.0f;
+        f32 colliderRadius = 0.1f;     // Capsule/sphere radius for bone collision
+
+        // Joint limits for this bone connection
+        f32 coneAngleLimit = 45.0f;    // Max angle from parent bone direction
+        f32 twistLimit = 30.0f;        // Max twist around bone axis
+    };
+
+    std::vector<BoneJoint> boneJoints;
+
+    bool enabled = false;               // Whether ragdoll simulation is active
+    bool autoDisableAfterSettle = true;  // Disable after bodies come to rest
+    f32 settleThreshold = 0.01f;        // Velocity magnitude below which considered settled
+    f32 settleTimer = 0.0f;            // Accumulates time at rest
+    f32 settleTime = 1.0f;             // Seconds of rest before auto-disable
+
+    // Blend between animation and ragdoll (0 = full animation, 1 = full ragdoll)
+    f32 blendWeight = 1.0f;
+    f32 blendSpeed = 5.0f;            // How fast to transition between modes
+
+    // Global ragdoll properties
+    f32 gravityScale = 1.0f;
+    f32 linearDamping = 0.1f;
+    f32 angularDamping = 0.3f;
 };
 
 } // namespace ECS

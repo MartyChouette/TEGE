@@ -58,6 +58,7 @@ target_link_libraries(EnjinEngine PUBLIC
     EnjinCore
     imgui
     imguizmo
+    angelscript
     nlohmann_json::nlohmann_json
     assimp::assimp
 )

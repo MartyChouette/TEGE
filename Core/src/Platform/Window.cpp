@@ -3,6 +3,7 @@
 #include <iostream>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#include "stb_image.h"
 
 namespace Enjin {
 
@@ -29,6 +30,23 @@ public:
         if (!m_Window) {
             ENJIN_LOG_ERROR(Core, "Failed to create GLFW window");
             return;
+        }
+
+        // Set window icon if path provided
+        if (desc.iconPath) {
+            int iconW = 0, iconH = 0, iconChannels = 0;
+            unsigned char* iconPixels = stbi_load(desc.iconPath, &iconW, &iconH, &iconChannels, 4);
+            if (iconPixels) {
+                GLFWimage icon;
+                icon.width = iconW;
+                icon.height = iconH;
+                icon.pixels = iconPixels;
+                glfwSetWindowIcon(m_Window, 1, &icon);
+                stbi_image_free(iconPixels);
+                ENJIN_LOG_INFO(Core, "Window icon set from: %s (%dx%d)", desc.iconPath, iconW, iconH);
+            } else {
+                ENJIN_LOG_WARN(Core, "Failed to load window icon: %s", desc.iconPath);
+            }
         }
 
         glfwSetWindowUserPointer(m_Window, this);

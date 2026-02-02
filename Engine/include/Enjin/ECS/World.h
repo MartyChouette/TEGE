@@ -112,6 +112,24 @@ public:
     void Clear(); // Clear all entities and components
 
     /**
+     * @brief Get all entities that have a specific component type
+     * @tparam T The component type to filter by
+     * @return Vector of entities with the given component
+     */
+    template<typename T>
+    std::vector<Entity> GetEntitiesWithComponent() const {
+        std::vector<Entity> result;
+        auto storage = GetStorage<T>();
+        if (!storage) return result;
+        for (auto entity : m_EntityManager.GetAllEntities()) {
+            if (storage->Has(entity)) {
+                result.push_back(entity);
+            }
+        }
+        return result;
+    }
+
+    /**
      * @brief Get all active entities
      * @return Vector of all active entity handles
      */

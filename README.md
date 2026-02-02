@@ -14,7 +14,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Water Rendering** - 3D water plane with Gerstner waves, shore foam, freeze system, ocean mode
 - **Skybox** - Procedural gradient sky, solid color, or six-face cubemap with rotation and sun direction
 - **Vegetation** - Instanced grass, shrub, and tree rendering with wind sway
-- **Terrain** - Editable terrain with brush tools (2D and 3D)
+- **Terrain** - 3D heightmap terrain with sculpting brushes (raise, lower, flatten, smooth, paint) and 2D polyline terrain with drag-to-edit control points
 - **Multiple Light Sources** - Directional, point, and spot lights
 - **GPU Skinning** - Skeletal animation via bone matrix SSBO
 - **Wireframe Rendering** - Toggle wireframe mode with wide line support
@@ -33,14 +33,14 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
 - **Startup Templates** - 15 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, 4P Racing, Arena Fighter, PS1 RPG, City Builder)
 - **Custom Templates** - Save/load from templates/ directory
-- **Terrain Brushes** - Raise, lower, smooth, paint terrain
+- **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
 - **Asset Hot-Reload** - File watcher polls texture files for changes
 - **Build Dialog** - Configure and export standalone game builds from the editor
 
 ### Entity-Component System
-- **40+ Component Types** - Full inspector UI for all components
+- **50+ Component Types** - Full inspector UI for all components
 - **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
 - **Camera Component** - In-game cameras with projection settings and frustum visualization
 - **Physics** - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB), ground detection
@@ -77,6 +77,18 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Scene Manager** - Project manifests, scene lists, build indices
 - **Scene Transitions** - Instant, Fade Black, Fade White, Cross Fade with configurable duration
 - **Prefab System** - Save/load entity templates
+
+### Gameplay Systems
+- **Save/Load System** - 10-slot save system with quick save/load support
+- **HUD Overlay** - Health bars, resource bars, labels, and crosshair rendering
+- **Quest/Objective Tracking** - Start, complete, and fail quests with objective tracking
+- **Damage Resistance/Weakness** - Per-type damage multipliers for resistance and weakness
+- **Stamina/Resource System** - Generic resource with regeneration and controller integration
+- **Footstep Audio** - Surface-based footstep sounds with walk/run interval support
+- **Object Pooling** - Entity recycling with configurable pool sizes and auto-release
+- **Cinematic Camera** - Waypoint sequences with easing curves for cutscenes
+- **Entity Event Bus** - Decoupled C++ entity communication system
+- **Raw Mouse Input** - Bypass OS mouse acceleration with smoothing options
 
 ### Build & Distribution
 - **Build Pipeline** - Scan project → validate assets → compress/obfuscate → pack into `.enjpak` with CRC32 integrity verification
@@ -125,7 +137,7 @@ enjin/
 ### Phase 4: Editor Tooling ✅
 - [x] Editor GUI (Dear ImGui integration)
 - [x] Scene Hierarchy Panel
-- [x] Entity Inspector Panel (40+ component types)
+- [x] Entity Inspector Panel (50+ component types)
 - [x] Transform Gizmos (ImGuizmo - translate/rotate/scale)
 - [x] Entity Selection via Ray Casting
 - [x] Viewport Panel with camera controls
@@ -198,12 +210,25 @@ enjin/
 - [x] Content Warning System
 - [x] Accessibility Quick Presets
 
-### Phase 11: Distribution 🚧
+### Phase 11: Distribution
 - [x] Standalone Game Player
 - [x] Asset Pack Build Pipeline (.enjpak)
-- [ ] Scripting Language (Lua or C# binding)
+- [x] Splitscreen Rendering
+- [x] Scripting Language (AngelScript with hot-reload, coroutines, event bus)
 - [ ] Networking (client-server, peer-to-peer)
-- [ ] Splitscreen Rendering
+
+### Phase 12: Advanced Gameplay
+- [x] Save/Load System (10-slot persistence)
+- [x] HUD Overlay System
+- [x] Quest/Objective System
+- [x] Damage Resistance System
+- [x] Stamina/Resource System
+- [x] Footstep Audio System
+- [x] Object Pooling
+- [x] Cinematic Camera System
+- [x] Entity Event Bus
+- [x] Raw Mouse Input + Smoothing
+- [x] Window Icon Support
 
 ## Editor Controls
 
@@ -221,6 +246,11 @@ enjin/
 | Rotate Gizmo | `2` |
 | Scale Gizmo | `3` |
 | Toggle Local/World | `4` |
+| Toggle Multi-Select | `Ctrl+click` |
+| Range Select (Hierarchy) | `Shift+click` |
+| Marquee Select | Viewport drag |
+| Undo | `Ctrl+Z` |
+| Redo | `Ctrl+Y` |
 
 ## Skybox
 
@@ -266,7 +296,7 @@ cmake .. -G "Visual Studio 16 2019" -A x64
 cmake --build . --config Release
 ```
 
-**See [WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for detailed Windows instructions.**
+**See [BUILD.md](docs/BUILD.md) for detailed build instructions on all platforms.**
 
 ### Build Options
 - `ENJIN_BUILD_EDITOR=ON` - Build the editor (default: ON)

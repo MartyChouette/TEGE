@@ -12,6 +12,7 @@
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Debug/Profiler.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/Effects/Weather.h"
@@ -23,11 +24,14 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Editor/PerformanceStats.h"
 #include "Enjin/Editor/TerrainBrush.h"
+#include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Build/BuildReport.h"
 #include <string>
 #include <functional>
 #include <memory>
+#include <unordered_set>
+#include <vector>
 
 namespace Enjin {
 
@@ -37,6 +41,9 @@ namespace Renderer {
 }
 namespace ECS {
     class RenderSystem;
+    struct TerrainComponent;
+    struct Terrain2DComponent;
+    struct TransformComponent;
 }
 
 namespace Editor {
@@ -55,6 +62,7 @@ enum class EditorPanel : u32 {
     GameView = 1 << 8,
     SceneList = 1 << 9,
     Skybox = 1 << 10,
+    Profiler = 1 << 11,
     All = 0xFFFFFFFF
 };
 
@@ -125,9 +133,18 @@ public:
     void SetPanelVisibility(EditorPanel panel, bool visible);
     bool IsPanelVisible(EditorPanel panel) const;
 
-    // Selected entity
-    ECS::Entity GetSelectedEntity() const { return m_SelectedEntity; }
-    void SetSelectedEntity(ECS::Entity entity) { m_SelectedEntity = entity; }
+    // Multi-select entity management
+    void SelectEntity(ECS::Entity entity, bool addToSelection = false);
+    void DeselectEntity(ECS::Entity entity);
+    void ClearSelection();
+    void SelectRange(ECS::Entity from, ECS::Entity to);
+    bool IsSelected(ECS::Entity entity) const;
+    const std::unordered_set<ECS::Entity>& GetSelectedEntities() const { return m_SelectedEntities; }
+    void SelectEntitiesInRect(ImVec2 min, ImVec2 max);
+
+    // Backward-compatible single-entity API (returns/sets primary)
+    ECS::Entity GetSelectedEntity() const { return m_PrimarySelected; }
+    void SetSelectedEntity(ECS::Entity entity);
 
     // Callbacks
     using EntitySelectedCallback = std::function<void(ECS::Entity)>;
@@ -158,6 +175,7 @@ private:
     void DrawEntityNode(ECS::Entity entity, const std::string& name);
     void DrawTransformComponent(ECS::Entity entity);
     void DrawMeshComponent(ECS::Entity entity);
+    void DrawLODComponent(ECS::Entity entity);
     void DrawMaterialComponent(ECS::Entity entity);
     void DrawLightComponent(ECS::Entity entity);
     void DrawCameraComponent(ECS::Entity entity);
@@ -227,13 +245,55 @@ private:
     void DrawGrabbableComponent(ECS::Entity entity);
     void DrawFlowerStemComponent(ECS::Entity entity);
 
+    // Scripting
+    void DrawScriptComponent(ECS::Entity entity);
+
+    // Vehicle / Possession
+    void DrawVehicleController(ECS::Entity entity);
+    void DrawPossessableComponent(ECS::Entity entity);
+
+    // New gameplay components
+    void DrawDamageResistanceComponent(ECS::Entity entity);
+    void DrawResourceComponent(ECS::Entity entity);
+    void DrawFootstepComponent(ECS::Entity entity);
+    void DrawPoolableComponent(ECS::Entity entity);
+    void DrawQuestStateComponent(ECS::Entity entity);
+    void DrawHUDWidgetComponent(ECS::Entity entity);
+    void DrawCinematicCameraComponent(ECS::Entity entity);
+
+    // Joint & Ragdoll components
+    void DrawDistanceJointComponent(ECS::Entity entity);
+    void DrawHingeJointComponent(ECS::Entity entity);
+    void DrawBallSocketJointComponent(ECS::Entity entity);
+    void DrawSpringJointComponent(ECS::Entity entity);
+    void DrawFixedJointComponent(ECS::Entity entity);
+    void DrawSliderJointComponent(ECS::Entity entity);
+    void DrawRagdollComponent(ECS::Entity entity);
+
+    // Puzzle components
+    void DrawLockComponent(ECS::Entity entity);
+    void DrawPushableComponent(ECS::Entity entity);
+    void DrawSwitchComponent(ECS::Entity entity);
+    void DrawGoalZoneComponent(ECS::Entity entity);
+    void DrawConveyorComponent(ECS::Entity entity);
+    void DrawTeleporterComponent(ECS::Entity entity);
+    void DrawDestructibleComponent(ECS::Entity entity);
+    void DrawMovingPlatformComponent(ECS::Entity entity);
+
+    // Runtime dialogue overlay (rendered during play mode)
+    void UpdateDialogue(f32 deltaTime);
+    void DrawDialogueOverlay();
+    ECS::Entity m_ActiveDialogueEntity = ECS::INVALID_ENTITY;
+
     // Scene management
     void SaveScene(const std::string& path);
     void OpenScene(const std::string& path);
 
     // Entity operations
     void DuplicateEntity(ECS::Entity entity);
-    void DeleteSelectedEntity();
+    void DeleteSelectedEntities();
+    void DuplicateSelectedEntities();
+    void FocusOnSelection();
 
     Window* m_Window = nullptr;
     Renderer::VulkanRenderer* m_Renderer = nullptr;
@@ -245,7 +305,15 @@ private:
     std::unique_ptr<GUI::ImGuiLayer> m_ImGuiLayer;
 
     EditorPanel m_VisiblePanels = EditorPanel::All;
-    ECS::Entity m_SelectedEntity = ECS::INVALID_ENTITY;
+
+    // Multi-select state
+    std::unordered_set<ECS::Entity> m_SelectedEntities;
+    ECS::Entity m_PrimarySelected = ECS::INVALID_ENTITY;
+
+    // Marquee (rubber-band) drag state
+    bool m_MarqueeDragging = false;
+    ImVec2 m_MarqueeStart = {0, 0};
+    ImVec2 m_MarqueeEnd = {0, 0};
 
     EntitySelectedCallback m_OnEntitySelected;
 
@@ -268,6 +336,8 @@ private:
     void DrawGizmos();
     void DrawGrid();
     void FocusOnEntity(ECS::Entity entity);  // Center camera on entity
+    void DrawMarqueeRect();                   // Draw rubber-band selection rectangle
+    void DrawMultiSelectInspector();          // Inspector view when multiple entities selected
 
     // Gizmo state
     GizmoOperation m_GizmoOperation = GizmoOperation::Translate;
@@ -333,6 +403,21 @@ private:
     // Docking layout
     bool m_DockingInitialized = false;
 
+    // Per-template layout configuration
+    struct LayoutConfig {
+        f32 leftWidth   = 0.18f;   // Hierarchy panel width ratio
+        f32 rightWidth  = 0.22f;   // Inspector panel width ratio
+        f32 bottomHeight = 0.22f;  // Console/Assets height ratio
+        f32 inspectorSplit = 0.6f; // Inspector vs Settings vertical split
+        f32 gameViewX = -1.0f;     // Game View X (-1 = auto: leftWidth + 20px)
+        f32 gameViewY = -1.0f;     // Game View Y (-1 = auto: menuBarH + 20px)
+        f32 gameViewW = 500.0f;    // Game View width
+        f32 gameViewH = 400.0f;    // Game View height
+        EditorPanel panels = EditorPanel::All;  // Which panels to show
+    };
+    LayoutConfig m_Layout;
+    bool m_ForceLayout = false;  // When true, override positions for one frame
+
     // Game View render targets (offscreen rendering for game camera)
     std::unique_ptr<Renderer::RenderTarget> m_GameViewRenderTarget;  // Final output (displayed in ImGui)
     std::unique_ptr<Renderer::RenderTarget> m_SceneRenderTarget;     // Scene pre-post-processing
@@ -367,6 +452,19 @@ private:
     // Terrain editing
     TerrainBrush m_TerrainBrush;
     bool m_TerrainEditMode = false;
+    ECS::Entity m_TerrainEditTarget = 0;
+    bool m_BrushActive = false;
+    Math::Vector3 m_BrushHitPoint;
+    bool m_BrushHitValid = false;
+    i32 m_Dragging2DPoint = -1;  // Index of control point being dragged, -1 = none
+
+    void HandleTerrainBrush(f32 deltaTime);
+    bool RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
+                        const ECS::TransformComponent* transform, Math::Vector3& hitPoint);
+    void ApplyBrush(ECS::TerrainComponent* terrain, const ECS::TransformComponent* transform,
+                    const Math::Vector3& worldHit, f32 deltaTime);
+    void ApplyBrush2D(ECS::Terrain2DComponent* terrain2d, const ECS::TransformComponent* transform,
+                      const Math::Vector3& worldHit);
 
     // Draw camera frustum gizmo in editor view
     void DrawCameraFrustum(ECS::Entity cameraEntity);

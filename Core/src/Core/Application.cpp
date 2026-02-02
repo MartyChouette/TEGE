@@ -71,7 +71,8 @@ void Application::InitializeEngine() {
     WindowDesc windowDesc;
     windowDesc.width = 1600;
     windowDesc.height = 900;
-    windowDesc.title = "Enjin Editor";
+    windowDesc.title = "TEGE";
+    windowDesc.iconPath = "icon.png";
     windowDesc.fullscreen = false;
     // Parentheses prevent potential macro substitution as well.
     m_Window = (CreateWindow)(windowDesc);

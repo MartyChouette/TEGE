@@ -4,11 +4,25 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <filesystem>
+#include <algorithm>
 
 using json = nlohmann::json;
 
 namespace Enjin {
 namespace Editor {
+
+void EditorSettings::AddRecentProject(const std::string& path) {
+    // Remove existing entry if present (will re-add at front)
+    recentProjects.erase(
+        std::remove(recentProjects.begin(), recentProjects.end(), path),
+        recentProjects.end());
+    // Insert at front (most recent first)
+    recentProjects.insert(recentProjects.begin(), path);
+    // Trim to max
+    if (static_cast<int>(recentProjects.size()) > MAX_RECENT_PROJECTS) {
+        recentProjects.resize(MAX_RECENT_PROJECTS);
+    }
+}
 
 std::string EditorSettings::GetDefaultPath() {
 #ifdef _WIN32
@@ -74,6 +88,14 @@ bool EditorSettings::Save(const std::string& path) const {
         j["crouchMode"] = crouchMode;
         j["mouseSensitivity"] = mouseSensitivity;
         j["inputPreset"] = inputPreset;
+        j["rawMouseInput"] = rawMouseInput;
+        j["mouseSmoothing"] = mouseSmoothing;
+
+        // Recent projects
+        j["recentProjects"] = json::array();
+        for (const auto& rp : recentProjects) {
+            j["recentProjects"].push_back(rp);
+        }
 
         std::ofstream file(savePath);
         if (!file.is_open()) {
@@ -138,6 +160,18 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("crouchMode")) crouchMode = j["crouchMode"].get<u32>();
         if (j.contains("mouseSensitivity")) mouseSensitivity = j["mouseSensitivity"].get<f32>();
         if (j.contains("inputPreset")) inputPreset = j["inputPreset"].get<u32>();
+        if (j.contains("rawMouseInput")) rawMouseInput = j["rawMouseInput"].get<bool>();
+        if (j.contains("mouseSmoothing")) mouseSmoothing = j["mouseSmoothing"].get<f32>();
+
+        // Recent projects
+        if (j.contains("recentProjects") && j["recentProjects"].is_array()) {
+            recentProjects.clear();
+            for (const auto& rp : j["recentProjects"]) {
+                if (rp.is_string()) {
+                    recentProjects.push_back(rp.get<std::string>());
+                }
+            }
+        }
 
         ENJIN_LOG_INFO(Editor, "Loaded editor settings from %s", loadPath.c_str());
         return true;

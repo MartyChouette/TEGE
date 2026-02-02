@@ -9,7 +9,7 @@ Enjin Engine is a proprietary, licensable 3D game engine built from scratch usin
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    Application Layer                     │
-│  (Editor, Game Runtime)                                 │
+│  (Editor, Game Player, Standalone Runtime)               │
 └─────────────────────────────────────────────────────────┘
                             │
 ┌─────────────────────────────────────────────────────────┐
@@ -19,12 +19,20 @@ Enjin Engine is a proprietary, licensable 3D game engine built from scratch usin
 │  │   System     │  │   System     │  │   System     │  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │    ECS       │  │   Scene      │  │   Effects    │  │
+│  │  Scripting   │  │   Scene      │  │   Effects    │  │
+│  │  (AngelScript)│  │   System     │  │   System     │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │    ECS       │  │   Gameplay   │  │  Procedural  │  │
+│  │   System     │  │   Systems    │  │  Generation  │  │
+│  └──────────────┘  └──────────────┘  └──────────────┘  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+│  │   Editor     │  │   Assets     │  │   Plugin     │  │
 │  │   System     │  │   System     │  │   System     │  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
-│  │   Editor     │  │   Assets     │  │  Procedural  │  │
-│  │   System     │  │   System     │  │  Generation  │  │
+│  │   Debug /    │  │  Animation   │  │   Level      │  │
+│  │   Profiler   │  │  Timeline    │  │  Streaming   │  │
 │  └──────────────┘  └──────────────┘  └──────────────┘  │
 └─────────────────────────────────────────────────────────┘
                             │
@@ -61,24 +69,28 @@ enjin/
 │
 ├── Engine/                  # Engine layer
 │   ├── include/Enjin/
-│   │   ├── AI/             # AIBehaviors, Navmesh
-│   │   ├── Animation/      # Sprite + skeletal animation framework
+│   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
+│   │   ├── Animation/      # Sprite + skeletal animation, Timeline/Sequencer
 │   │   ├── Assets/         # GLTFLoader, SceneImporter, Prefab
-│   │   ├── Audio/          # AudioSystem, SimpleAudio
+│   │   ├── Audio/          # AudioSystem, SimpleAudio (miniaudio backend)
+│   │   ├── Debug/          # Profiler, ScopeTimer, FrameData tracking
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # 40+ component types
+│   │   │   ├── Components/ # 60+ component types (incl. joints, ragdoll)
 │   │   │   │   ├── Controllers/  # 5 character controller types
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
-│   │   ├── Editor/         # EditorLayer, PlayMode, UndoRedo
+│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings
 │   │   ├── Effects/        # Weather, Water, Wind, RetroEffects
 │   │   ├── GUI/            # ImGui integration
-│   │   ├── Physics/        # SimplePhysics
+│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
+│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
 │   │   ├── Platform/       # FileDialog
+│   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
-│   │   ├── Renderer/       # Vulkan renderer
+│   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
 │   │   │   └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
-│   │   └── Scene/          # SceneSerializer, SceneManager
+│   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
+│   │   └── Scripting/      # AngelScript engine, bindings, coroutines, events
 │   ├── shaders/            # GLSL shaders (triangle.vert/frag, grass.vert/frag)
 │   └── src/
 │
@@ -119,14 +131,19 @@ enjin/
 **Components**:
 - `World` - Main ECS container managing entities and components
 - `Entity` - ID-based entities (u64)
-- 40+ component types across categories:
+- 60+ component types across categories:
   - Core (Transform, Mesh, Material, Light, Camera, Name, Notes, Text)
-  - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson)
+  - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson, Vehicle, Possessable)
+  - Terrain (TerrainComponent, Terrain2DComponent)
   - Physics (Rigidbody, BoxCollider, SphereCollider, CapsuleCollider, TriggerZone)
+  - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
-  - Gameplay (Health, Damage, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint)
+  - Combat (Health, Damage, DamageResistance, Resource)
+  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD)
   - AI (AIController, FollowTarget, LookAtTarget, Waypoint)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
+  - Streaming (StreamingVolume, StreamingPortal)
+  - Timeline (TimelineComponent)
   - Other (StateMachine, Dialogue, Skeleton, Animator)
 
 ### Editor System
@@ -138,12 +155,14 @@ enjin/
 - Template Selector - Startup project templates
 
 **Features**:
-- 10 editor panels (Hierarchy, Inspector, Console, Asset Browser, Settings, Post Processing, Effects, Game View, Scene List, Stats Overlay)
+- 12 editor panels (Hierarchy, Inspector, Console, Asset Browser, Settings, Post Processing, Effects, Game View, Scene List, Skybox, Stats Overlay, Profiler)
 - Transform gizmos (translate, rotate, scale) via ImGuizmo
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
 - Scene management with project manifests and scene transitions
-- Startup template selector with 6 built-in templates + custom templates
+- Startup template selector with 15 built-in templates + custom templates
+- Terrain sculpting brushes (raise, lower, flatten, smooth, paint) with viewport ray-heightmap intersection
+- 2D terrain control point drag-to-edit in viewport
 
 ### Scene System
 
@@ -152,7 +171,7 @@ enjin/
 - `SceneManager` - Project manifests, scene lists, runtime loading, transitions
 
 **Features**:
-- Full serialization of all 40+ component types
+- Full serialization of all 60+ component types (including joints and ragdoll)
 - Project manifest format (.enjinproject)
 - Scene build indices and start scene designation
 - Scene transitions (Instant, Fade Black, Fade White, Cross Fade)
@@ -171,17 +190,162 @@ enjin/
 
 ### Physics System
 
+**SimplePhysics** (collision queries and character movement):
 - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
-- Rigidbody dynamics with gravity, drag, and constraints
-- Raycast-based ground detection
+- Raycasting (single hit and multi-hit)
+- Move-and-slide for character controllers
+- Ground detection (raycast downward)
+- Configurable gravity
+
+**PhysicsWorld** (impulse-based rigid body dynamics):
+- RigidBody objects with mass, velocity, restitution, friction
+- Sphere and Box collision shapes
+- Impulse-based collision response with friction
+- Positional correction with Baumgarte stabilization
+- ECS integration bridge (SyncFromECS / SyncToECS)
+
+**ConstraintSolver** (joint system):
+- Sequential impulse solver with configurable iterations (default 8)
+- Warm starting for improved convergence
+- Baumgarte stabilization for position drift correction
+- 6 joint types:
+  - `DistanceJoint` - Fixed distance between entities with stiffness
+  - `HingeJoint` - Rotation around one axis with angle limits and motor
+  - `BallSocketJoint` - Free rotation with cone and twist limits
+  - `SpringJoint` - Hooke's law spring with damping
+  - `FixedJoint` - Rigid connection (breakable under force)
+  - `SliderJoint` - Translation along one axis with limits and motor
+- All joints support breakable mode with force threshold and stress tracking
+
+**RagdollComponent**:
+- Per-bone joint definitions mapped to skeleton
+- Blend weight for animation-to-ragdoll transition
+- Auto-settle detection
+
+**Additional features**:
 - Auto-generated box colliders on model import
 - Gravity zones (directional, point, zero-G overrides)
+- Temperature zones (heat/cold environmental effects)
+
+### Gameplay Systems
+
+- `SaveSystem` - 10-slot save/load with disk persistence
+- `HUDSystem` - Runtime health bars, resource bars, labels, crosshair
+- `QuestSystem` - Quest state tracking and progression
+- `FootstepSystem` - Surface-based footstep audio
+- `ObjectPool` - Entity recycling with lifetime auto-release
+- `CinematicSystem` - Waypoint-based camera sequences with easing
+- `EntityEventBus` - Decoupled C++ entity communication
+
+### Terrain System
+
+**3D Terrain** (`TerrainComponent`):
+- Grid-based heightmap (`gridWidth x gridHeight`, configurable cell size)
+- 4-layer splatmap for texture blending (RGBA weights per cell)
+- Height queries: `GetHeight(x, z)` / `SetHeight(x, z, h)` with automatic `meshDirty` flagging
+- `InitializeFlat(height)` creates a flat heightmap with default splatmap (layer 0 = 100%)
+- Per-layer texture paths and tile scale
+- RenderSystem auto-regenerates mesh when `meshDirty = true`
+
+**2D Terrain** (`Terrain2DComponent`):
+- Polyline control points (XY plane, auto-sorted by X)
+- Configurable fill depth below surface
+- UV scale and texture path
+- Optional auto-collider generation from control points
+
+**Terrain Brush** (editor tool):
+- 5 brush modes: Raise, Lower, Flatten, Smooth, Paint
+- Configurable radius, strength, falloff
+- Smoothstep falloff function for natural blending
+- Ray-heightmap intersection with iterative march + binary search refinement
+- Real-time brush cursor coordinate feedback in inspector
+- 2D terrain: click-to-grab nearest control point, drag to reposition
+
+### AI System
+
+- `AIBehaviors` - State-based AI (idle, patrol, chase, attack, flee, dead)
+- `NavmeshSystem` - Navigation mesh generation from scene geometry
+- `Pathfinding` - A* pathfinding on navmesh with debug visualization
+- `AIControllerComponent` - Per-entity AI state, detection range, FOV, patrol points
+- `FollowTargetComponent` - Smooth entity following with offset and distance constraints
+- `LookAtTargetComponent` - Entity rotation toward target with angle limits
+- `WaypointComponent` - Linked waypoint chains for patrol routes
 
 ### Assets System
 
 - `GLTFLoader` - Loads .gltf/.glb files (meshes, materials, skins, animations)
 - `SceneImporter` - Converts loaded models to ECS entities
 - `MeshFactory` - Primitive mesh generation (cube, sphere, plane, cylinder, cone, quad)
+
+### Scripting System (AngelScript)
+
+**Architecture**:
+- `ScriptEngine` - Manages AngelScript VM, module compilation, hot-reload
+- `ScriptBindings` - Registers all engine APIs with the script VM
+- `TegeBehavior` - Base class for all gameplay scripts (analogous to MonoBehaviour)
+- `CoroutineScheduler` - Manages script coroutines (yield seconds, frames, end-of-frame)
+- `ScriptEventBus` - Script-to-script event dispatch system
+
+**Script Bindings** (5 categories):
+- **Scene**: Entity transform access (Get/Set Position/Rotation/Scale/Name), scene loading
+- **Physics**: Raycast, sphere/box overlap, force/impulse/velocity, gravity scale
+- **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume
+- **Components**: Health, Material, Light, Camera, AudioSource, Animator, Controller (40+ functions)
+- **Core**: Coroutines (StartCoroutine, Yield*), Events (Listen, Send, Broadcast), logging, input, time
+
+**Script Lifecycle**: `OnCreate()` → `OnUpdate(deltaTime)` per frame → `OnDestroy()`
+
+### Debug & Profiler System
+
+- `Profiler` singleton with `ENJIN_PROFILE_SCOPE("name")` macro
+- Per-frame breakdown: render, physics, scripting, ECS, audio
+- FPS counter, frame time history (240-frame rolling window)
+- Draw call, entity, and triangle counters
+- Memory usage tracking
+- ImGui overlay panel with graphs, progress bars, detailed scope table
+
+### Plugin System
+
+- `IPlugin` interface: `OnLoad()`, `OnUnload()`, `OnUpdate()`, `GetName()`, `GetVersion()`
+- Dynamic library loading (LoadLibrary/dlopen/dlopen)
+- Plugin manifest (JSON: name, version, dependencies)
+- Plugin registration with engine subsystems
+- Editor panel for plugin management (load, unload, status display)
+
+### Animation Timeline / Sequencer
+
+- `TimelineComponent` with property, event, and animation tracks
+- Property track: keyframe any component field over time (position, rotation, scale, material)
+- Event track: fire callbacks at specific timestamps
+- Animation track: play/blend skeletal animations
+- Easing functions: Linear, EaseIn, EaseOut, EaseInOut, Step
+- Loop and ping-pong playback modes
+
+### Hot-Reload System
+
+- File watcher on gameplay source directory
+- On change: save state → unload DLL → recompile → reload → restore state
+- `ENJIN_GAMEPLAY_CLASS(ClassName)` macro for exportable classes
+- Platform-specific DLL/SO loading and compilation
+- Reload callback system with error tracking
+
+### Level Streaming
+
+- `StreamingManager` - Distance-based chunk loading/unloading
+- `StreamingChunk` - Spatial region with entity list, load state, LOD level
+- `StreamingVolumeComponent` - Defines chunk boundaries
+- `StreamingPortalComponent` - Connects chunks (doorways, corridors)
+- Priority-sorted load queue with concurrent load limiting
+- Async chunk loading via SceneSerializer
+- ImGui debug overlay showing chunk states
+
+### Render Backend Abstraction
+
+- `IRenderBackend` interface for platform-agnostic rendering
+- `BuildTarget` enum: Windows, Linux, macOS, Android, iOS, WebGL
+- `TextureCompression` enum: BC1, BC3, BC7, ETC2, ASTC, PVRTC
+- `PlatformCapabilities` struct for device feature queries
+- `PlatformInput` abstraction for touch and motion input
 
 ## Descriptor Bindings
 
@@ -226,7 +390,7 @@ struct PushConstants {
 ## Code Conventions
 
 - **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Scene`, `Enjin::Effects`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Scene`, `Enjin::Effects`, `Enjin::Gameplay`, `Enjin::Physics`, `Enjin::Scripting`, `Enjin::Debug`, `Enjin::Plugin`, `Enjin::Animation`, `Enjin::AI`
 - **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)`
-- **Log Categories:** Core, Renderer, Physics, Audio, Asset, Script, Editor, Game, AI, Assets, Procedural, Animation
+- **Log Categories:** Core, Renderer, Physics, Audio, Asset, Script, Editor, Game, AI, Assets, Procedural, Animation, Build, Player
 - **API export:** `ENJIN_API` macro for DLL export

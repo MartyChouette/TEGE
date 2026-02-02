@@ -11,6 +11,7 @@
 #include "Enjin/ECS/Components/Terrain.h"
 #include "Enjin/ECS/Components/Terrain2D.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -261,52 +262,47 @@ void RenderSystem::Update(f32 deltaTime) {
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
 
-    // Regenerate terrain meshes when dirty
+    // Regenerate terrain meshes when dirty (only iterate entities that have the component)
     {
-        const auto& terrainEntities = m_World->GetAllEntities();
-        for (Entity entity : terrainEntities) {
-            if (m_World->HasComponent<TerrainComponent>(entity)) {
-                auto* terrain = m_World->GetComponent<TerrainComponent>(entity);
-                if (terrain && terrain->meshDirty) {
-                    auto mesh = Renderer::MeshFactory::CreateTerrain(*terrain);
-                    if (m_World->HasComponent<MeshComponent>(entity)) {
-                        *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-                    } else {
-                        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-                    }
-                    // Force re-upload of GPU buffers
-                    m_EntityRenderData.erase(entity);
-                    terrain->meshDirty = false;
+        for (Entity entity : m_World->GetEntitiesWithComponent<TerrainComponent>()) {
+            auto* terrain = m_World->GetComponent<TerrainComponent>(entity);
+            if (terrain && terrain->meshDirty) {
+                auto mesh = Renderer::MeshFactory::CreateTerrain(*terrain);
+                if (m_World->HasComponent<MeshComponent>(entity)) {
+                    *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+                } else {
+                    m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
+                // Force re-upload of GPU buffers
+                m_EntityRenderData.erase(entity);
+                terrain->meshDirty = false;
             }
-            if (m_World->HasComponent<Terrain2DComponent>(entity)) {
-                auto* terrain2d = m_World->GetComponent<Terrain2DComponent>(entity);
-                if (terrain2d && terrain2d->meshDirty) {
-                    auto mesh = Renderer::MeshFactory::CreateTerrain2D(*terrain2d);
-                    if (m_World->HasComponent<MeshComponent>(entity)) {
-                        *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
-                    } else {
-                        m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
-                    }
-                    m_EntityRenderData.erase(entity);
-                    terrain2d->meshDirty = false;
+        }
+        for (Entity entity : m_World->GetEntitiesWithComponent<Terrain2DComponent>()) {
+            auto* terrain2d = m_World->GetComponent<Terrain2DComponent>(entity);
+            if (terrain2d && terrain2d->meshDirty) {
+                auto mesh = Renderer::MeshFactory::CreateTerrain2D(*terrain2d);
+                if (m_World->HasComponent<MeshComponent>(entity)) {
+                    *m_World->GetComponent<MeshComponent>(entity) = std::move(mesh);
+                } else {
+                    m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
+                m_EntityRenderData.erase(entity);
+                terrain2d->meshDirty = false;
             }
-
-            // JellyMesh dirty check (flower system vertex deformation)
-            if (m_World->HasComponent<JellyMeshComponent>(entity)) {
-                auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
-                if (jelly && jelly->meshDirty) {
-                    m_EntityRenderData.erase(entity);
-                    jelly->meshDirty = false;
-                }
+        }
+        // JellyMesh dirty check (flower system vertex deformation)
+        for (Entity entity : m_World->GetEntitiesWithComponent<JellyMeshComponent>()) {
+            auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
+            if (jelly && jelly->meshDirty) {
+                m_EntityRenderData.erase(entity);
+                jelly->meshDirty = false;
             }
         }
     }
 
-    // Update skeletal animators
-    const auto& allEntities = m_World->GetAllEntities();
-    for (Entity entity : allEntities) {
+    // Update skeletal animators (only iterate entities that have AnimatorComponent)
+    for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
         if (animComp) {
             animComp->Update(deltaTime);
@@ -314,7 +310,8 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // Apply IK constraints after animation update (modifies bone transforms before GPU upload)
-    for (Entity entity : allEntities) {
+    // Only iterate entities with AnimatorComponent (same set as above, typically very few)
+    for (Entity entity : m_World->GetEntitiesWithComponent<AnimatorComponent>()) {
         auto* animComp = m_World->GetComponent<AnimatorComponent>(entity);
         if (!animComp || !animComp->animator.IsPlaying()) continue;
 
@@ -344,18 +341,16 @@ void RenderSystem::Update(f32 deltaTime) {
         if (interactionIK && interactionIK->ikWeight > 0.0f) {
             auto* entityTransform = m_World->GetComponent<TransformComponent>(entity);
             if (entityTransform) {
-                // Find nearest interactable within radius
+                // Find nearest interactable within radius (only scan InteractableComponent entities)
                 Math::Vector3 handPos = entityTransform->position + Math::Vector3(0.3f, 1.0f, 0.5f);
                 Math::Vector3 nearestTarget = handPos;
                 f32 nearestDist = interactionIK->interactionRadius + 1.0f;
 
-                for (Entity other : allEntities) {
+                for (Entity other : m_World->GetEntitiesWithComponent<InteractableComponent>()) {
                     if (other == entity) continue;
-                    auto* interactable = m_World->GetComponent<InteractableComponent>(other);
-                    if (!interactable) continue;
                     if (!interactionIK->interactionTag.empty()) {
-                        auto* otherName = m_World->GetComponent<NameComponent>(other);
-                        if (otherName && otherName->name.find(interactionIK->interactionTag) == std::string::npos)
+                        auto* otherTag = m_World->GetComponent<TagComponent>(other);
+                        if (!otherTag || !otherTag->HasTag(interactionIK->interactionTag))
                             continue;
                     }
                     auto* otherTransform = m_World->GetComponent<TransformComponent>(other);
@@ -508,11 +503,44 @@ void RenderSystem::Update(f32 deltaTime) {
     scissor.extent = extent;
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Main render pass - render all entities with mesh and transform components
-    const auto& entities = m_World->GetAllEntities();
-    for (Entity entity : entities) {
-        if (m_World->HasComponent<TransformComponent>(entity) &&
-            m_World->HasComponent<MeshComponent>(entity)) {
+    // Single-pass LOD update + render — iterates renderable entities once
+    {
+        Math::Vector3 camPos;
+        bool doLOD = (m_Camera != nullptr);
+        if (doLOD) camPos = m_Camera->GetPosition();
+
+        const auto& entities = m_World->GetAllEntities();
+        for (Entity entity : entities) {
+            if (!m_World->HasComponent<TransformComponent>(entity) ||
+                !m_World->HasComponent<MeshComponent>(entity)) {
+                continue;
+            }
+
+            // LOD selection (if camera is available)
+            if (doLOD) {
+                auto* lod = m_World->GetComponent<LODComponent>(entity);
+                if (lod && lod->enabled && lod->levelCount > 1) {
+                    auto* transform = m_World->GetComponent<TransformComponent>(entity);
+                    if (transform) {
+                        f32 dist = (transform->position - camPos).Length();
+                        i32 newLOD = 0;
+                        for (i32 l = 0; l < lod->levelCount - 1; ++l) {
+                            if (dist > lod->levels[l].maxDistance) {
+                                newLOD = l + 1;
+                            }
+                        }
+                        if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
+                            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                            if (mesh && lod->levels[newLOD].mesh.IsValid()) {
+                                *mesh = lod->levels[newLOD].mesh;
+                                m_EntityRenderData.erase(entity);
+                                lod->activeLOD = newLOD;
+                            }
+                        }
+                    }
+                }
+            }
+
             RenderEntity(entity);
         }
     }
@@ -580,8 +608,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             auto it = m_EntityRenderData.find(entity);
             if (it == m_EntityRenderData.end()) {
-                SetupEntityBuffers(entity);
-                it = m_EntityRenderData.find(entity);
+                it = SetupEntityBuffers(entity);
                 if (it == m_EntityRenderData.end()) continue;
             }
             EntityRenderData& renderData = it->second;
@@ -891,8 +918,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             auto it = m_EntityRenderData.find(entity);
             if (it == m_EntityRenderData.end()) {
-                SetupEntityBuffers(entity);
-                it = m_EntityRenderData.find(entity);
+                it = SetupEntityBuffers(entity);
                 if (it == m_EntityRenderData.end()) continue;
             }
             EntityRenderData& renderData = it->second;
@@ -1101,11 +1127,42 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
 void RenderSystem::OnEntityAdded(Entity entity) {
     SetupEntityBuffers(entity);
+
+    // Cache player entity (first entity with any CharacterController)
+    if (m_CachedPlayerEntity == INVALID_ENTITY && m_World) {
+        bool hasController = m_World->HasComponent<ThirdPersonController>(entity) ||
+                             m_World->HasComponent<FirstPersonController>(entity) ||
+                             m_World->HasComponent<Platformer2DController>(entity) ||
+                             m_World->HasComponent<TopDown2DController>(entity) ||
+                             m_World->HasComponent<TopDown3DController>(entity);
+        if (hasController) {
+            m_CachedPlayerEntity = entity;
+        }
+    }
 }
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
     m_EntityRenderData.erase(entity);
     m_TextTextureCache.erase(entity);
+
+    // Invalidate cached player entity and search for a replacement
+    if (entity == m_CachedPlayerEntity) {
+        m_CachedPlayerEntity = INVALID_ENTITY;
+        if (m_World) {
+            for (Entity e : m_World->GetAllEntities()) {
+                if (e == entity) continue;
+                bool hasController = m_World->HasComponent<ThirdPersonController>(e) ||
+                                     m_World->HasComponent<FirstPersonController>(e) ||
+                                     m_World->HasComponent<Platformer2DController>(e) ||
+                                     m_World->HasComponent<TopDown2DController>(e) ||
+                                     m_World->HasComponent<TopDown3DController>(e);
+                if (hasController) {
+                    m_CachedPlayerEntity = e;
+                    break;
+                }
+            }
+        }
+    }
 }
 
 void RenderSystem::CreatePipeline() {
@@ -1573,25 +1630,28 @@ void RenderSystem::CreateDescriptorSets() {
     }
 }
 
-void RenderSystem::SetupEntityBuffers(Entity entity) {
+std::unordered_map<Entity, EntityRenderData>::iterator RenderSystem::SetupEntityBuffers(Entity entity) {
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
     if (!mesh || !mesh->IsValid()) {
-        return;
+        return m_EntityRenderData.end();
     }
 
-    EntityRenderData& renderData = m_EntityRenderData[entity];
+    auto [insertIt, _] = m_EntityRenderData.try_emplace(entity);
+    EntityRenderData& renderData = insertIt->second;
 
     // Create vertex buffer
     usize vertexBufferSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
     renderData.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
     if (!renderData.vertexBuffer->Create(vertexBufferSize, Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create vertex buffer for entity %llu", entity);
-        return;
+        m_EntityRenderData.erase(insertIt);
+        return m_EntityRenderData.end();
     }
 
     if (!renderData.vertexBuffer->UploadData(mesh->vertices.data(), vertexBufferSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload vertex data for entity %llu", entity);
-        return;
+        m_EntityRenderData.erase(insertIt);
+        return m_EntityRenderData.end();
     }
 
     // Create index buffer
@@ -1599,12 +1659,14 @@ void RenderSystem::SetupEntityBuffers(Entity entity) {
     renderData.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
     if (!renderData.indexBuffer->Create(indexBufferSize, Renderer::BufferUsage::Index, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create index buffer for entity %llu", entity);
-        return;
+        m_EntityRenderData.erase(insertIt);
+        return m_EntityRenderData.end();
     }
 
     if (!renderData.indexBuffer->UploadData(mesh->indices.data(), indexBufferSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload index data for entity %llu", entity);
-        return;
+        m_EntityRenderData.erase(insertIt);
+        return m_EntityRenderData.end();
     }
 
     renderData.indexCount = static_cast<u32>(mesh->indices.size());
@@ -1622,6 +1684,8 @@ void RenderSystem::SetupEntityBuffers(Entity entity) {
             }
         }
     }
+
+    return insertIt;
 }
 
 void RenderSystem::UpdateFrameUniforms() {
@@ -1646,11 +1710,9 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.spotLightCount = 0;
     lighting._pad1 = 0;
 
-    const auto& allEntities = m_World->GetAllEntities();
     bool hasAnyLight = false;
 
-    for (Entity lightEntity : allEntities) {
-        if (!m_World->HasComponent<LightComponent>(lightEntity)) continue;
+    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
         TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
         if (!light) continue;
@@ -1741,23 +1803,14 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
     lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
 
-    // Find active player entity (any entity with a CharacterController) for vegetation stepping
+    // Look up cached player entity position for vegetation stepping (O(1) instead of linear scan)
     lighting.playerPosition = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-    if (m_World) {
-        for (Entity entity : m_World->GetAllEntities()) {
-            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-            bool hasController = m_World->HasComponent<ThirdPersonController>(entity) ||
-                                 m_World->HasComponent<FirstPersonController>(entity) ||
-                                 m_World->HasComponent<Platformer2DController>(entity) ||
-                                 m_World->HasComponent<TopDown2DController>(entity) ||
-                                 m_World->HasComponent<TopDown3DController>(entity);
-            if (hasController) {
-                auto* transform = m_World->GetComponent<TransformComponent>(entity);
-                lighting.playerPosition = Math::Vector4(
-                    transform->position.x, transform->position.y, transform->position.z,
-                    1.5f);  // w = step radius
-                break;
-            }
+    if (m_CachedPlayerEntity != INVALID_ENTITY) {
+        auto* transform = m_World->GetComponent<TransformComponent>(m_CachedPlayerEntity);
+        if (transform) {
+            lighting.playerPosition = Math::Vector4(
+                transform->position.x, transform->position.y, transform->position.z,
+                1.5f);  // w = step radius
         }
     }
 
@@ -1888,8 +1941,7 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     auto it = m_EntityRenderData.find(entity);
     if (it == m_EntityRenderData.end()) {
-        SetupEntityBuffers(entity);
-        it = m_EntityRenderData.find(entity);
+        it = SetupEntityBuffers(entity);
         if (it == m_EntityRenderData.end()) {
             return;
         }
@@ -2088,13 +2140,11 @@ void RenderSystem::RenderShadowPass() {
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     // Find the first directional light for shadow casting
-    const auto& allEntities = m_World->GetAllEntities();
     bool foundShadowLight = false;
 
     Math::Vector3 shadowLightDir(0.5f, 0.8f, 0.3f);
 
-    for (Entity lightEntity : allEntities) {
-        if (!m_World->HasComponent<LightComponent>(lightEntity)) continue;
+    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
         if (!light || light->type != LightType::Directional || !light->castShadows) continue;
 
@@ -2137,7 +2187,7 @@ void RenderSystem::RenderShadowPass() {
     );
 
     // Render all shadow-casting entities
-    for (Entity entity : allEntities) {
+    for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<TransformComponent>(entity) &&
             m_World->HasComponent<MeshComponent>(entity)) {
             // Check if material casts shadows (default: yes)
@@ -2341,10 +2391,7 @@ void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
 }
 
 void RenderSystem::EnsureWaterMeshes() {
-    const auto& entities = m_World->GetAllEntities();
-    for (Entity entity : entities) {
-        if (!m_World->HasComponent<WaterVolumeComponent>(entity)) continue;
-
+    for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
         auto* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;
         if (waterVol->meshCreated && m_World->HasComponent<MeshComponent>(entity)) continue;

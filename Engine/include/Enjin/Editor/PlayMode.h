@@ -7,6 +7,16 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptSystem.h"
+#include "Enjin/Scripting/CoroutineScheduler.h"
+#include "Enjin/Scripting/ScriptEvents.h"
+#include "Enjin/ECS/EntityEventBus.h"
+#include "Enjin/Gameplay/HUDSystem.h"
+#include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/FootstepSystem.h"
+#include "Enjin/Gameplay/ObjectPool.h"
+#include "Enjin/Gameplay/CinematicSystem.h"
 #include <string>
 
 namespace Enjin {
@@ -52,6 +62,20 @@ public:
     // Get physics system
     Physics::SimplePhysics* GetPhysics() { return &m_Physics; }
 
+    // Get script systems
+    Scripting::ScriptEngine* GetScriptEngine() { return &m_ScriptEngine; }
+    Scripting::ScriptSystem* GetScriptSystem() { return &m_ScriptSystem; }
+    Scripting::CoroutineScheduler* GetCoroutineScheduler() { return &m_CoroutineScheduler; }
+    Scripting::ScriptEventBus* GetEventBus() { return &m_EventBus; }
+
+    // Get gameplay systems
+    ECS::EntityEventBus* GetEntityEventBus() { return &m_EntityEventBus; }
+    Gameplay::HUDSystem* GetHUDSystem() { return &m_HUDSystem; }
+    Gameplay::QuestSystem* GetQuestSystem() { return &m_QuestSystem; }
+    Gameplay::FootstepSystem* GetFootstepSystem() { return &m_FootstepSystem; }
+    Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
+    Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
+
 private:
     void SaveEditorState();
     void RestoreEditorState();
@@ -70,6 +94,22 @@ private:
 
     // Physics system
     Physics::SimplePhysics m_Physics;
+
+    // Scripting
+    Scripting::ScriptEngine m_ScriptEngine;
+    Scripting::ScriptSystem m_ScriptSystem;
+    Scripting::CoroutineScheduler m_CoroutineScheduler;
+    Scripting::ScriptEventBus m_EventBus;
+
+    // C++ entity event bus
+    ECS::EntityEventBus m_EntityEventBus;
+
+    // Gameplay systems
+    Gameplay::HUDSystem m_HUDSystem;
+    Gameplay::QuestSystem m_QuestSystem;
+    Gameplay::FootstepSystem m_FootstepSystem;
+    Gameplay::ObjectPool m_ObjectPool;
+    Gameplay::CinematicSystem m_CinematicSystem;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

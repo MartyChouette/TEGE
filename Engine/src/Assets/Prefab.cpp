@@ -3,6 +3,8 @@
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
@@ -208,6 +210,144 @@ void PrefabManager::RegisterBuiltInComponents() {
 
             auto bIt = data.boolProperties.find("castShadows");
             if (bIt != data.boolProperties.end()) l->castShadows = bIt->second;
+        }
+    );
+
+    // Mesh — encode vertex/index data as JSON string in stringProperties
+    RegisterComponentType("Mesh",
+        [](ECS::World* world, ECS::Entity entity) -> PrefabComponentData {
+            PrefabComponentData data;
+            data.typeName = "Mesh";
+            if (world->HasComponent<ECS::MeshComponent>(entity)) {
+                auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+                json j;
+                json verts = json::array();
+                for (const auto& v : mesh->vertices) {
+                    json vert;
+                    vert["p"] = {v.position.x, v.position.y, v.position.z};
+                    vert["n"] = {v.normal.x, v.normal.y, v.normal.z};
+                    vert["u"] = {v.uv.x, v.uv.y};
+                    if (v.color.x != 1.0f || v.color.y != 1.0f ||
+                        v.color.z != 1.0f || v.color.w != 1.0f) {
+                        vert["c"] = {v.color.x, v.color.y, v.color.z, v.color.w};
+                    }
+                    if (v.tangent.x != 0.0f || v.tangent.y != 0.0f ||
+                        v.tangent.z != 0.0f || v.tangent.w != 1.0f) {
+                        vert["t"] = {v.tangent.x, v.tangent.y, v.tangent.z, v.tangent.w};
+                    }
+                    verts.push_back(vert);
+                }
+                j["v"] = verts;
+                j["i"] = mesh->indices;
+                data.stringProperties["meshJson"] = j.dump();
+            }
+            return data;
+        },
+        [](ECS::World* world, ECS::Entity entity, const PrefabComponentData& data) {
+            auto sIt = data.stringProperties.find("meshJson");
+            if (sIt == data.stringProperties.end()) return;
+
+            ECS::MeshComponent* mesh = nullptr;
+            if (world->HasComponent<ECS::MeshComponent>(entity)) {
+                mesh = world->GetComponent<ECS::MeshComponent>(entity);
+            } else {
+                mesh = &world->AddComponent<ECS::MeshComponent>(entity);
+            }
+
+            try {
+                json j = json::parse(sIt->second);
+                mesh->vertices.clear();
+                mesh->indices.clear();
+
+                if (j.contains("v")) {
+                    for (const auto& vert : j["v"]) {
+                        ECS::MeshComponent::Vertex v;
+                        auto& p = vert["p"];
+                        v.position = Math::Vector3(p[0], p[1], p[2]);
+                        auto& n = vert["n"];
+                        v.normal = Math::Vector3(n[0], n[1], n[2]);
+                        auto& u = vert["u"];
+                        v.uv = Math::Vector2(u[0], u[1]);
+                        if (vert.contains("c")) {
+                            auto& c = vert["c"];
+                            v.color = Math::Vector4(c[0], c[1], c[2], c[3]);
+                        }
+                        if (vert.contains("t")) {
+                            auto& t = vert["t"];
+                            v.tangent = Math::Vector4(t[0], t[1], t[2], t[3]);
+                        }
+                        mesh->vertices.push_back(v);
+                    }
+                }
+                if (j.contains("i")) {
+                    mesh->indices = j["i"].get<std::vector<u32>>();
+                }
+            } catch (const json::exception& e) {
+                ENJIN_LOG_ERROR(Assets, "Failed to deserialize mesh data: %s", e.what());
+            }
+        }
+    );
+
+    // Camera
+    RegisterComponentType("Camera",
+        [](ECS::World* world, ECS::Entity entity) -> PrefabComponentData {
+            PrefabComponentData data;
+            data.typeName = "Camera";
+            if (world->HasComponent<ECS::CameraComponent>(entity)) {
+                auto* cam = world->GetComponent<ECS::CameraComponent>(entity);
+                data.floatProperties["fieldOfView"] = cam->fieldOfView;
+                data.floatProperties["nearPlane"] = cam->nearPlane;
+                data.floatProperties["farPlane"] = cam->farPlane;
+                data.boolProperties["isActive"] = cam->isActive;
+                data.intProperties["projectionType"] = static_cast<i32>(cam->projectionType);
+                data.floatProperties["orthoSize"] = cam->orthoSize;
+            }
+            return data;
+        },
+        [](ECS::World* world, ECS::Entity entity, const PrefabComponentData& data) {
+            ECS::CameraComponent* cam = nullptr;
+            if (world->HasComponent<ECS::CameraComponent>(entity)) {
+                cam = world->GetComponent<ECS::CameraComponent>(entity);
+            } else {
+                cam = &world->AddComponent<ECS::CameraComponent>(entity);
+            }
+
+            auto fIt = data.floatProperties.find("fieldOfView");
+            if (fIt != data.floatProperties.end()) cam->fieldOfView = fIt->second;
+            fIt = data.floatProperties.find("nearPlane");
+            if (fIt != data.floatProperties.end()) cam->nearPlane = fIt->second;
+            fIt = data.floatProperties.find("farPlane");
+            if (fIt != data.floatProperties.end()) cam->farPlane = fIt->second;
+            fIt = data.floatProperties.find("orthoSize");
+            if (fIt != data.floatProperties.end()) cam->orthoSize = fIt->second;
+
+            auto bIt = data.boolProperties.find("isActive");
+            if (bIt != data.boolProperties.end()) cam->isActive = bIt->second;
+
+            auto iIt = data.intProperties.find("projectionType");
+            if (iIt != data.intProperties.end()) cam->projectionType = static_cast<ECS::ProjectionType>(iIt->second);
+        }
+    );
+
+    // Notes
+    RegisterComponentType("Notes",
+        [](ECS::World* world, ECS::Entity entity) -> PrefabComponentData {
+            PrefabComponentData data;
+            data.typeName = "Notes";
+            if (world->HasComponent<ECS::NotesComponent>(entity)) {
+                data.stringProperties["notes"] = world->GetComponent<ECS::NotesComponent>(entity)->notes;
+            }
+            return data;
+        },
+        [](ECS::World* world, ECS::Entity entity, const PrefabComponentData& data) {
+            ECS::NotesComponent* n = nullptr;
+            if (world->HasComponent<ECS::NotesComponent>(entity)) {
+                n = world->GetComponent<ECS::NotesComponent>(entity);
+            } else {
+                n = &world->AddComponent<ECS::NotesComponent>(entity);
+            }
+            auto it = data.stringProperties.find("notes");
+            if (it != data.stringProperties.end()) n->notes = it->second;
         }
     );
 }

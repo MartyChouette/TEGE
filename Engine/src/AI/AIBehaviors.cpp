@@ -1,5 +1,7 @@
 #include "Enjin/AI/AIBehaviors.h"
+#include "Enjin/AI/Navmesh.h"
 #include "Enjin/Math/Math.h"
+#include "Enjin/Logging/Log.h"
 #include <memory>
 
 namespace Enjin {
@@ -74,7 +76,12 @@ void PatrolBehavior::Enter(AIAgent* agent) {
     m_WaitTimer = 0.0f;
 
     if (m_Mode == PatrolMode::Waypoints && !m_Waypoints.empty()) {
-        agent->MoveTo(m_Waypoints[m_CurrentWaypoint]);
+        // Use navmesh pathfinding if available, otherwise direct movement
+        if (agent->HasNavmesh()) {
+            agent->MoveToNav(m_Waypoints[m_CurrentWaypoint]);
+        } else {
+            agent->MoveTo(m_Waypoints[m_CurrentWaypoint]);
+        }
     } else if (m_Mode == PatrolMode::Spline) {
         m_SplineT = 0.0f;
     }
@@ -117,7 +124,12 @@ void PatrolBehavior::Update(AIAgent* agent, f32 deltaTime) {
                     }
                 }
 
-                agent->MoveTo(m_Waypoints[m_CurrentWaypoint]);
+                // Use navmesh pathfinding for next waypoint
+                if (agent->HasNavmesh()) {
+                    agent->MoveToNav(m_Waypoints[m_CurrentWaypoint]);
+                } else {
+                    agent->MoveTo(m_Waypoints[m_CurrentWaypoint]);
+                }
             }
         } else if (agent->HasReachedDestination()) {
             m_IsWaiting = true;
@@ -160,7 +172,12 @@ void ChaseBehavior::Enter(AIAgent* agent) {
     m_LostSightTimer = 0.0f;
     if (agent->HasTarget()) {
         m_LastKnownPosition = agent->GetTarget().position;
-        agent->MoveTo(m_LastKnownPosition);
+        // Use A* pathfinding for chase if navmesh is available
+        if (agent->HasNavmesh()) {
+            agent->MoveToNav(m_LastKnownPosition);
+        } else {
+            agent->MoveTo(m_LastKnownPosition);
+        }
     }
 }
 
@@ -182,7 +199,12 @@ void ChaseBehavior::Update(AIAgent* agent, f32 deltaTime) {
     if (agent->CanSeeTarget()) {
         m_LostSightTimer = 0.0f;
         m_LastKnownPosition = target.position;
-        agent->MoveTo(m_LastKnownPosition);
+        // Re-path to target using A* when available
+        if (agent->HasNavmesh()) {
+            agent->MoveToNav(m_LastKnownPosition);
+        } else {
+            agent->MoveTo(m_LastKnownPosition);
+        }
     } else {
         m_LostSightTimer += deltaTime;
 
@@ -275,18 +297,36 @@ void FleeBehavior::Enter(AIAgent* agent) {
             Math::Random(-1.0f, 1.0f)
         ).Normalized();
     }
+
+    // If navmesh is available, find a valid flee destination on the navmesh
+    if (agent->HasNavmesh()) {
+        Math::Vector3 fleeTarget = agent->GetPosition() + m_FleeDirection * 15.0f;
+        // Clamp to nearest point on navmesh
+        fleeTarget = agent->GetNavmesh()->GetNearestPoint(fleeTarget);
+        agent->MoveToNav(fleeTarget);
+    }
 }
 
 void FleeBehavior::Update(AIAgent* agent, f32 deltaTime) {
     m_FleeTimer += deltaTime;
 
-    // Run at full speed
-    agent->MoveInDirection(m_FleeDirection, agent->GetMovement().runSpeed);
-
     // Update flee direction if target is still visible
     if (agent->HasTarget() && agent->CanSeeTarget()) {
         m_FleeDirection = (agent->GetPosition() - agent->GetTarget().position).Normalized();
         m_FleeTimer = 0.0f; // Reset timer while target visible
+
+        // Re-path using navmesh if available
+        if (agent->HasNavmesh()) {
+            Math::Vector3 fleeTarget = agent->GetPosition() + m_FleeDirection * 15.0f;
+            fleeTarget = agent->GetNavmesh()->GetNearestPoint(fleeTarget);
+            agent->MoveToNav(fleeTarget);
+        }
+    }
+
+    // If following a nav path, let the path movement handle it
+    // Otherwise, use direct directional movement
+    if (!agent->IsFollowingNavPath()) {
+        agent->MoveInDirection(m_FleeDirection, agent->GetMovement().runSpeed);
     }
 
     // Stop fleeing after some time
@@ -316,7 +356,12 @@ void InvestigateBehavior::Enter(AIAgent* agent) {
         m_InvestigatePosition = agent->GetTarget().position;
     }
 
-    agent->MoveTo(m_InvestigatePosition);
+    // Use A* pathfinding to navigate to investigate position
+    if (agent->HasNavmesh()) {
+        agent->MoveToNav(m_InvestigatePosition);
+    } else {
+        agent->MoveTo(m_InvestigatePosition);
+    }
 }
 
 void InvestigateBehavior::Update(AIAgent* agent, f32 deltaTime) {
@@ -351,7 +396,12 @@ void InvestigateBehavior::Exit(AIAgent* /*agent*/) {
 // ============================================================================
 
 void ReturnBehavior::Enter(AIAgent* agent) {
-    agent->MoveTo(agent->GetSpawnPosition());
+    // Use A* pathfinding to return to spawn
+    if (agent->HasNavmesh()) {
+        agent->MoveToNav(agent->GetSpawnPosition());
+    } else {
+        agent->MoveTo(agent->GetSpawnPosition());
+    }
 }
 
 void ReturnBehavior::Update(AIAgent* agent, f32 deltaTime) {
@@ -448,6 +498,27 @@ void AIAgent::Update(f32 deltaTime) {
 void AIAgent::MoveTo(const Math::Vector3& target) {
     m_MoveTarget = target;
     m_IsMoving = true;
+    m_HasNavPath = false; // Direct movement, no nav path
+}
+
+void AIAgent::MoveToNav(const Math::Vector3& target) {
+    // Try navmesh pathfinding first
+    if (HasNavmesh()) {
+        PathResult result = m_Pathfinder->FindPath(m_Position, target);
+        if (result.success && !result.waypoints.empty()) {
+            m_NavPathWaypoints = result.waypoints;
+            m_NavPathIndex = 0;
+            m_HasNavPath = true;
+            m_IsMoving = true;
+            m_MoveTarget = target;
+            ENJIN_LOG_INFO(AI, "AIAgent: Nav path found with %zu waypoints (cost: %.2f)",
+                           result.waypoints.size(), result.totalCost);
+            return;
+        }
+    }
+
+    // Fallback to direct movement
+    MoveTo(target);
 }
 
 void AIAgent::MoveInDirection(const Math::Vector3& direction, f32 speed) {
@@ -472,6 +543,14 @@ void AIAgent::LookAt(const Math::Vector3& target) {
 
 bool AIAgent::HasReachedDestination() const {
     if (!m_IsMoving) return true;
+
+    // If following a nav path, check against final waypoint
+    if (m_HasNavPath && !m_NavPathWaypoints.empty()) {
+        Math::Vector3 diff = m_NavPathWaypoints.back() - m_Position;
+        diff.y = 0;
+        return diff.LengthSquared() < m_NavArrivalRadius * m_NavArrivalRadius;
+    }
+
     Math::Vector3 diff = m_MoveTarget - m_Position;
     diff.y = 0; // Ignore height
     return diff.LengthSquared() < 0.5f * 0.5f;
@@ -516,6 +595,12 @@ f32 AIAgent::GetDistanceToTarget() const {
 }
 
 void AIAgent::UpdateMovement(f32 deltaTime) {
+    // If following a navmesh path, use nav path movement
+    if (m_HasNavPath && m_IsMoving) {
+        UpdateNavPathMovement(deltaTime);
+        return;
+    }
+
     if (!m_IsMoving) {
         // Decelerate
         f32 speed = m_Velocity.Length();
@@ -562,6 +647,86 @@ void AIAgent::UpdateMovement(f32 deltaTime) {
         targetSpeed = m_Movement.runSpeed;
     }
 
+    f32 currentSpeed = m_Velocity.Length();
+    f32 speedDiff = targetSpeed - currentSpeed;
+    f32 accel = (speedDiff > 0 ? m_Movement.acceleration : m_Movement.deceleration) * deltaTime;
+
+    if (Math::Abs(speedDiff) <= accel) {
+        currentSpeed = targetSpeed;
+    } else {
+        currentSpeed += (speedDiff > 0 ? accel : -accel);
+    }
+
+    m_Velocity = m_Forward * currentSpeed;
+    m_Position = m_Position + m_Velocity * deltaTime;
+}
+
+void AIAgent::UpdateNavPathMovement(f32 deltaTime) {
+    // Navigate waypoint by waypoint along the A* path
+    if (m_NavPathIndex >= m_NavPathWaypoints.size()) {
+        // Reached end of path
+        m_IsMoving = false;
+        m_HasNavPath = false;
+        m_Velocity = Math::Vector3(0, 0, 0);
+        return;
+    }
+
+    // Skip the start waypoint (index 0 is where we started)
+    if (m_NavPathIndex == 0 && m_NavPathWaypoints.size() > 1) {
+        m_NavPathIndex = 1;
+    }
+
+    Math::Vector3 target = m_NavPathWaypoints[m_NavPathIndex];
+    Math::Vector3 toTarget = target - m_Position;
+    toTarget.y = 0.0f; // Stay on ground plane
+    f32 dist = toTarget.Length();
+
+    // Reached current waypoint?
+    if (dist < m_NavArrivalRadius) {
+        m_NavPathIndex++;
+        if (m_NavPathIndex >= m_NavPathWaypoints.size()) {
+            m_IsMoving = false;
+            m_HasNavPath = false;
+            m_Velocity = Math::Vector3(0, 0, 0);
+            return;
+        }
+        // Update target to next waypoint
+        target = m_NavPathWaypoints[m_NavPathIndex];
+        toTarget = target - m_Position;
+        toTarget.y = 0.0f;
+        dist = toTarget.Length();
+    }
+
+    if (dist < 0.001f) return;
+
+    Math::Vector3 desiredDir = toTarget * (1.0f / dist);
+
+    // Turn towards next waypoint
+    f32 currentAngle = Math::Atan2(m_Forward.x, m_Forward.z);
+    f32 targetAngle = Math::Atan2(desiredDir.x, desiredDir.z);
+    f32 angleDiff = targetAngle - currentAngle;
+
+    while (angleDiff > Math::PI) angleDiff -= 2.0f * Math::PI;
+    while (angleDiff < -Math::PI) angleDiff += 2.0f * Math::PI;
+
+    f32 maxTurn = Math::Radians(m_Movement.turnSpeed) * deltaTime;
+    f32 turn = Math::Clamp(angleDiff, -maxTurn, maxTurn);
+    f32 newAngle = currentAngle + turn;
+
+    m_Forward = Math::Vector3(Math::Sin(newAngle), 0, Math::Cos(newAngle));
+
+    // Determine target speed
+    f32 targetSpeed = m_Movement.walkSpeed;
+    if (m_CurrentState == AIState::Chase || m_CurrentState == AIState::Flee) {
+        targetSpeed = m_Movement.runSpeed;
+    }
+
+    // Slow down near the final waypoint
+    if (m_NavPathIndex == m_NavPathWaypoints.size() - 1 && dist < 2.0f) {
+        targetSpeed *= Math::Clamp(dist / 2.0f, 0.2f, 1.0f);
+    }
+
+    // Accelerate/decelerate
     f32 currentSpeed = m_Velocity.Length();
     f32 speedDiff = targetSpeed - currentSpeed;
     f32 accel = (speedDiff > 0 ? m_Movement.acceleration : m_Movement.deceleration) * deltaTime;

@@ -189,6 +189,14 @@ public:
     // Any gamepad input detected this frame (for auto-switching UI prompts)
     static bool IsGamepadActive(i32 gamepadIndex = 0);
 
+    // Raw mouse input (bypasses OS acceleration/smoothing)
+    static void SetRawMouseInput(bool enabled);
+    static bool IsRawMouseInput();
+
+    // Mouse smoothing (0.0 = none, 1.0 = heavy temporal smoothing)
+    static void SetMouseSmoothing(f32 amount);
+    static f32 GetMouseSmoothing();
+
     // Clear all input state (call on focus loss to prevent stuck keys)
     static void ClearAllState();
 

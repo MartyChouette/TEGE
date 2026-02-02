@@ -7,6 +7,7 @@
 #include "Enjin/Math/Vector.h"
 #include <cfloat>
 #include <algorithm>
+#include <vector>
 
 namespace Enjin {
 namespace Editor {
@@ -59,6 +60,12 @@ public:
 
     // Calculate AABB for an entity's mesh (in world space)
     static AABB CalculateEntityAABB(ECS::World* world, ECS::Entity entity);
+
+    // Pick all entities whose world-space position projects inside a screen-space rectangle
+    static std::vector<ECS::Entity> PickEntitiesInScreenRect(
+        ECS::World* world, const Renderer::Camera* camera,
+        f32 rectMinX, f32 rectMinY, f32 rectMaxX, f32 rectMaxY,
+        f32 viewportWidth, f32 viewportHeight);
 };
 
 } // namespace Editor

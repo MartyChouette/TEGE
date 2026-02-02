@@ -22,6 +22,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
+#include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/Skybox.h"
@@ -864,6 +865,79 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
     return ctrl;
 }
 
+json SerializeVehicle(const ECS::VehicleController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["maxSpeed"] = ctrl.maxSpeed;
+    j["reverseMaxSpeed"] = ctrl.reverseMaxSpeed;
+    j["acceleration"] = ctrl.acceleration;
+    j["brakeForce"] = ctrl.brakeForce;
+    j["engineBrake"] = ctrl.engineBrake;
+    j["maxSteerAngle"] = ctrl.maxSteerAngle;
+    j["steerSpeed"] = ctrl.steerSpeed;
+    j["steerReturnSpeed"] = ctrl.steerReturnSpeed;
+    j["wheelBase"] = ctrl.wheelBase;
+    j["grip"] = ctrl.grip;
+    j["driftFactor"] = ctrl.driftFactor;
+    j["downforceMultiplier"] = ctrl.downforceMultiplier;
+    j["mass"] = ctrl.mass;
+    j["cameraDistance"] = ctrl.cameraDistance;
+    j["cameraHeight"] = ctrl.cameraHeight;
+    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
+    j["cameraLookAhead"] = ctrl.cameraLookAhead;
+    j["bodyRollAmount"] = ctrl.bodyRollAmount;
+    j["bodyPitchAmount"] = ctrl.bodyPitchAmount;
+    return j;
+}
+
+ECS::VehicleController DeserializeVehicle(const json& j) {
+    ECS::VehicleController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("maxSpeed")) ctrl.maxSpeed = j["maxSpeed"].get<f32>();
+    if (j.contains("reverseMaxSpeed")) ctrl.reverseMaxSpeed = j["reverseMaxSpeed"].get<f32>();
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("brakeForce")) ctrl.brakeForce = j["brakeForce"].get<f32>();
+    if (j.contains("engineBrake")) ctrl.engineBrake = j["engineBrake"].get<f32>();
+    if (j.contains("maxSteerAngle")) ctrl.maxSteerAngle = j["maxSteerAngle"].get<f32>();
+    if (j.contains("steerSpeed")) ctrl.steerSpeed = j["steerSpeed"].get<f32>();
+    if (j.contains("steerReturnSpeed")) ctrl.steerReturnSpeed = j["steerReturnSpeed"].get<f32>();
+    if (j.contains("wheelBase")) ctrl.wheelBase = j["wheelBase"].get<f32>();
+    if (j.contains("grip")) ctrl.grip = j["grip"].get<f32>();
+    if (j.contains("driftFactor")) ctrl.driftFactor = j["driftFactor"].get<f32>();
+    if (j.contains("downforceMultiplier")) ctrl.downforceMultiplier = j["downforceMultiplier"].get<f32>();
+    if (j.contains("mass")) ctrl.mass = j["mass"].get<f32>();
+    if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
+    if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
+    if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
+    if (j.contains("cameraLookAhead")) ctrl.cameraLookAhead = j["cameraLookAhead"].get<f32>();
+    if (j.contains("bodyRollAmount")) ctrl.bodyRollAmount = j["bodyRollAmount"].get<f32>();
+    if (j.contains("bodyPitchAmount")) ctrl.bodyPitchAmount = j["bodyPitchAmount"].get<f32>();
+    return ctrl;
+}
+
+json SerializePossessable(const ECS::PossessableComponent& comp) {
+    json j;
+    j["isPossessed"] = comp.isPossessed;
+    j["autoDetect"] = comp.autoDetect;
+    j["playerIndex"] = comp.playerIndex;
+    j["possessRange"] = comp.possessRange;
+    j["promptText"] = comp.promptText;
+    j["transitionDuration"] = comp.transitionDuration;
+    j["disableOnUnpossess"] = comp.disableOnUnpossess;
+    return j;
+}
+
+ECS::PossessableComponent DeserializePossessable(const json& j) {
+    ECS::PossessableComponent comp;
+    if (j.contains("isPossessed")) comp.isPossessed = j["isPossessed"].get<bool>();
+    if (j.contains("autoDetect")) comp.autoDetect = j["autoDetect"].get<bool>();
+    if (j.contains("playerIndex")) comp.playerIndex = j["playerIndex"].get<i32>();
+    if (j.contains("possessRange")) comp.possessRange = j["possessRange"].get<f32>();
+    if (j.contains("promptText")) comp.promptText = j["promptText"].get<std::string>();
+    if (j.contains("transitionDuration")) comp.transitionDuration = j["transitionDuration"].get<f32>();
+    if (j.contains("disableOnUnpossess")) comp.disableOnUnpossess = j["disableOnUnpossess"].get<bool>();
+    return comp;
+}
+
 json SerializeContentFlags(const Accessibility::SceneContentFlags& flags) {
     json j;
     j["flags"] = static_cast<u32>(flags.flags);
@@ -1535,6 +1609,15 @@ json SerializeAIControllerComponent(const ECS::AIControllerComponent& ai) {
     }
     j["patrolPoints"] = patrolArr;
     j["patrolWaitTime"] = ai.patrolWaitTime;
+    j["patrolLoop"] = ai.patrolLoop;
+    j["useNavmesh"] = ai.useNavmesh;
+    j["repathInterval"] = ai.repathInterval;
+    j["arrivalRadius"] = ai.arrivalRadius;
+    j["chaseSpeed"] = ai.chaseSpeed;
+    j["fleeSpeed"] = ai.fleeSpeed;
+    j["fleeDistance"] = ai.fleeDistance;
+    j["debugDrawPath"] = ai.debugDrawPath;
+    j["debugDrawDetection"] = ai.debugDrawDetection;
     return j;
 }
 
@@ -1555,6 +1638,15 @@ ECS::AIControllerComponent DeserializeAIControllerComponent(const json& j) {
         }
     }
     if (j.contains("patrolWaitTime")) ai.patrolWaitTime = j["patrolWaitTime"].get<f32>();
+    if (j.contains("patrolLoop")) ai.patrolLoop = j["patrolLoop"].get<bool>();
+    if (j.contains("useNavmesh")) ai.useNavmesh = j["useNavmesh"].get<bool>();
+    if (j.contains("repathInterval")) ai.repathInterval = j["repathInterval"].get<f32>();
+    if (j.contains("arrivalRadius")) ai.arrivalRadius = j["arrivalRadius"].get<f32>();
+    if (j.contains("chaseSpeed")) ai.chaseSpeed = j["chaseSpeed"].get<f32>();
+    if (j.contains("fleeSpeed")) ai.fleeSpeed = j["fleeSpeed"].get<f32>();
+    if (j.contains("fleeDistance")) ai.fleeDistance = j["fleeDistance"].get<f32>();
+    if (j.contains("debugDrawPath")) ai.debugDrawPath = j["debugDrawPath"].get<bool>();
+    if (j.contains("debugDrawDetection")) ai.debugDrawDetection = j["debugDrawDetection"].get<bool>();
     return ai;
 }
 
@@ -1915,6 +2007,839 @@ ECS::VegetationComponent DeserializeVegetationComponent(const json& j) {
     return v;
 }
 
+json SerializeDamageResistanceComponent(const ECS::DamageResistanceComponent& r) {
+    json j;
+    j["physicalMult"] = r.physicalMult;
+    j["fireMult"] = r.fireMult;
+    j["iceMult"] = r.iceMult;
+    j["electricMult"] = r.electricMult;
+    j["poisonMult"] = r.poisonMult;
+    j["magicMult"] = r.magicMult;
+    return j;
+}
+
+ECS::DamageResistanceComponent DeserializeDamageResistanceComponent(const json& j) {
+    ECS::DamageResistanceComponent r;
+    if (j.contains("physicalMult")) r.physicalMult = j["physicalMult"].get<f32>();
+    if (j.contains("fireMult")) r.fireMult = j["fireMult"].get<f32>();
+    if (j.contains("iceMult")) r.iceMult = j["iceMult"].get<f32>();
+    if (j.contains("electricMult")) r.electricMult = j["electricMult"].get<f32>();
+    if (j.contains("poisonMult")) r.poisonMult = j["poisonMult"].get<f32>();
+    if (j.contains("magicMult")) r.magicMult = j["magicMult"].get<f32>();
+    return r;
+}
+
+json SerializeResourceComponent(const ECS::ResourceComponent& r) {
+    json j;
+    j["resourceName"] = r.resourceName;
+    j["maxValue"] = r.maxValue;
+    j["currentValue"] = r.currentValue;
+    j["regenRate"] = r.regenRate;
+    j["regenDelay"] = r.regenDelay;
+    j["depletedThreshold"] = r.depletedThreshold;
+    j["sprintCostPerSec"] = r.sprintCostPerSec;
+    j["jumpCost"] = r.jumpCost;
+    j["dashCost"] = r.dashCost;
+    j["attackCost"] = r.attackCost;
+    return j;
+}
+
+ECS::ResourceComponent DeserializeResourceComponent(const json& j) {
+    ECS::ResourceComponent r;
+    if (j.contains("resourceName")) r.resourceName = j["resourceName"].get<std::string>();
+    if (j.contains("maxValue")) r.maxValue = j["maxValue"].get<f32>();
+    if (j.contains("currentValue")) r.currentValue = j["currentValue"].get<f32>();
+    if (j.contains("regenRate")) r.regenRate = j["regenRate"].get<f32>();
+    if (j.contains("regenDelay")) r.regenDelay = j["regenDelay"].get<f32>();
+    if (j.contains("depletedThreshold")) r.depletedThreshold = j["depletedThreshold"].get<f32>();
+    if (j.contains("sprintCostPerSec")) r.sprintCostPerSec = j["sprintCostPerSec"].get<f32>();
+    if (j.contains("jumpCost")) r.jumpCost = j["jumpCost"].get<f32>();
+    if (j.contains("dashCost")) r.dashCost = j["dashCost"].get<f32>();
+    if (j.contains("attackCost")) r.attackCost = j["attackCost"].get<f32>();
+    return r;
+}
+
+json SerializeFootstepComponent(const ECS::FootstepComponent& f) {
+    json j;
+    j["defaultWalkSound"] = f.defaultWalkSound;
+    j["defaultRunSound"] = f.defaultRunSound;
+    j["walkStepInterval"] = f.walkStepInterval;
+    j["runStepInterval"] = f.runStepInterval;
+    j["volume"] = f.volume;
+    j["pitchVariance"] = f.pitchVariance;
+    j["currentSurface"] = f.currentSurface;
+    json surfaces = json::array();
+    for (const auto& s : f.surfaceSounds) {
+        json sj;
+        sj["surfaceTag"] = s.surfaceTag;
+        sj["walkSound"] = s.walkSound;
+        sj["runSound"] = s.runSound;
+        sj["volumeScale"] = s.volumeScale;
+        surfaces.push_back(sj);
+    }
+    j["surfaceSounds"] = surfaces;
+    return j;
+}
+
+ECS::FootstepComponent DeserializeFootstepComponent(const json& j) {
+    ECS::FootstepComponent f;
+    if (j.contains("defaultWalkSound")) f.defaultWalkSound = j["defaultWalkSound"].get<std::string>();
+    if (j.contains("defaultRunSound")) f.defaultRunSound = j["defaultRunSound"].get<std::string>();
+    if (j.contains("walkStepInterval")) f.walkStepInterval = j["walkStepInterval"].get<f32>();
+    if (j.contains("runStepInterval")) f.runStepInterval = j["runStepInterval"].get<f32>();
+    if (j.contains("volume")) f.volume = j["volume"].get<f32>();
+    if (j.contains("pitchVariance")) f.pitchVariance = j["pitchVariance"].get<f32>();
+    if (j.contains("currentSurface")) f.currentSurface = j["currentSurface"].get<std::string>();
+    if (j.contains("surfaceSounds") && j["surfaceSounds"].is_array()) {
+        for (const auto& sj : j["surfaceSounds"]) {
+            ECS::FootstepComponent::SurfaceSound s;
+            if (sj.contains("surfaceTag")) s.surfaceTag = sj["surfaceTag"].get<std::string>();
+            if (sj.contains("walkSound")) s.walkSound = sj["walkSound"].get<std::string>();
+            if (sj.contains("runSound")) s.runSound = sj["runSound"].get<std::string>();
+            if (sj.contains("volumeScale")) s.volumeScale = sj["volumeScale"].get<f32>();
+            f.surfaceSounds.push_back(s);
+        }
+    }
+    return f;
+}
+
+json SerializePoolableComponent(const ECS::PoolableComponent& p) {
+    json j;
+    j["poolId"] = p.poolId;
+    j["lifetime"] = p.lifetime;
+    return j;
+}
+
+ECS::PoolableComponent DeserializePoolableComponent(const json& j) {
+    ECS::PoolableComponent p;
+    if (j.contains("poolId")) p.poolId = j["poolId"].get<std::string>();
+    if (j.contains("lifetime")) p.lifetime = j["lifetime"].get<f32>();
+    return p;
+}
+
+json SerializeQuestStateComponent(const ECS::QuestStateComponent& q) {
+    json j;
+    j["questId"] = q.questId;
+    j["status"] = static_cast<u8>(q.status);
+    j["currentObjective"] = q.currentObjective;
+    j["timeElapsed"] = q.timeElapsed;
+    json flags = json::array();
+    for (const auto& [name, complete] : q.objectiveFlags) {
+        json fj;
+        fj["name"] = name;
+        fj["complete"] = complete;
+        flags.push_back(fj);
+    }
+    j["objectiveFlags"] = flags;
+    return j;
+}
+
+ECS::QuestStateComponent DeserializeQuestStateComponent(const json& j) {
+    ECS::QuestStateComponent q;
+    if (j.contains("questId")) q.questId = j["questId"].get<std::string>();
+    if (j.contains("status")) q.status = static_cast<ECS::QuestStateComponent::Status>(j["status"].get<u8>());
+    if (j.contains("currentObjective")) q.currentObjective = j["currentObjective"].get<i32>();
+    if (j.contains("timeElapsed")) q.timeElapsed = j["timeElapsed"].get<f32>();
+    if (j.contains("objectiveFlags") && j["objectiveFlags"].is_array()) {
+        for (const auto& fj : j["objectiveFlags"]) {
+            std::string name = fj.value("name", "");
+            bool complete = fj.value("complete", false);
+            q.objectiveFlags.push_back({name, complete});
+        }
+    }
+    return q;
+}
+
+json SerializeHUDWidgetComponent(const ECS::HUDWidgetComponent& h) {
+    json j;
+    j["type"] = static_cast<u8>(h.type);
+    j["visible"] = h.visible;
+    j["screenSpace"] = h.screenSpace;
+    j["anchorX"] = h.anchorX;
+    j["anchorY"] = h.anchorY;
+    j["width"] = h.width;
+    j["height"] = h.height;
+    j["fillColor"] = SerializeVector3(h.fillColor);
+    j["bgColor"] = SerializeVector3(h.bgColor);
+    j["textColor"] = SerializeVector3(h.textColor);
+    j["fontSize"] = h.fontSize;
+    j["text"] = h.text;
+    j["sourceEntity"] = static_cast<u64>(h.sourceEntity);
+    j["bindField"] = h.bindField;
+    j["currentValue"] = h.currentValue;
+    j["maxValue"] = h.maxValue;
+    j["worldOffset"] = SerializeVector3(h.worldOffset);
+    j["maxRenderDistance"] = h.maxRenderDistance;
+    return j;
+}
+
+ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
+    ECS::HUDWidgetComponent h;
+    if (j.contains("type")) h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(j["type"].get<u8>());
+    if (j.contains("visible")) h.visible = j["visible"].get<bool>();
+    if (j.contains("screenSpace")) h.screenSpace = j["screenSpace"].get<bool>();
+    if (j.contains("anchorX")) h.anchorX = j["anchorX"].get<f32>();
+    if (j.contains("anchorY")) h.anchorY = j["anchorY"].get<f32>();
+    if (j.contains("width")) h.width = j["width"].get<f32>();
+    if (j.contains("height")) h.height = j["height"].get<f32>();
+    if (j.contains("fillColor")) h.fillColor = DeserializeVector3(j["fillColor"]);
+    if (j.contains("bgColor")) h.bgColor = DeserializeVector3(j["bgColor"]);
+    if (j.contains("textColor")) h.textColor = DeserializeVector3(j["textColor"]);
+    if (j.contains("fontSize")) h.fontSize = j["fontSize"].get<f32>();
+    if (j.contains("text")) h.text = j["text"].get<std::string>();
+    if (j.contains("sourceEntity")) h.sourceEntity = static_cast<ECS::Entity>(j["sourceEntity"].get<u64>());
+    if (j.contains("bindField")) h.bindField = j["bindField"].get<std::string>();
+    if (j.contains("currentValue")) h.currentValue = j["currentValue"].get<f32>();
+    if (j.contains("maxValue")) h.maxValue = j["maxValue"].get<f32>();
+    if (j.contains("worldOffset")) h.worldOffset = DeserializeVector3(j["worldOffset"]);
+    if (j.contains("maxRenderDistance")) h.maxRenderDistance = j["maxRenderDistance"].get<f32>();
+    return h;
+}
+
+json SerializeCinematicCameraComponent(const ECS::CinematicCameraComponent& c) {
+    json j;
+    j["loop"] = c.loop;
+    j["autoPlay"] = c.autoPlay;
+    j["hideHUD"] = c.hideHUD;
+    j["disableInput"] = c.disableInput;
+    j["onCompleteNotify"] = static_cast<u64>(c.onCompleteNotify);
+    j["onWaypointReachNotify"] = static_cast<u64>(c.onWaypointReachNotify);
+    json wps = json::array();
+    for (const auto& wp : c.waypoints) {
+        json wj;
+        wj["position"] = SerializeVector3(wp.position);
+        wj["lookAt"] = SerializeVector3(wp.lookAt);
+        wj["fov"] = wp.fov;
+        wj["duration"] = wp.duration;
+        wj["holdTime"] = wp.holdTime;
+        wj["easing"] = static_cast<u8>(wp.easing);
+        wps.push_back(wj);
+    }
+    j["waypoints"] = wps;
+    return j;
+}
+
+ECS::CinematicCameraComponent DeserializeCinematicCameraComponent(const json& j) {
+    ECS::CinematicCameraComponent c;
+    if (j.contains("loop")) c.loop = j["loop"].get<bool>();
+    if (j.contains("autoPlay")) c.autoPlay = j["autoPlay"].get<bool>();
+    if (j.contains("hideHUD")) c.hideHUD = j["hideHUD"].get<bool>();
+    if (j.contains("disableInput")) c.disableInput = j["disableInput"].get<bool>();
+    if (j.contains("onCompleteNotify")) c.onCompleteNotify = static_cast<ECS::Entity>(j["onCompleteNotify"].get<u64>());
+    if (j.contains("onWaypointReachNotify")) c.onWaypointReachNotify = static_cast<ECS::Entity>(j["onWaypointReachNotify"].get<u64>());
+    if (j.contains("waypoints") && j["waypoints"].is_array()) {
+        for (const auto& wj : j["waypoints"]) {
+            ECS::CinematicCameraComponent::Waypoint wp;
+            if (wj.contains("position")) wp.position = DeserializeVector3(wj["position"]);
+            if (wj.contains("lookAt")) wp.lookAt = DeserializeVector3(wj["lookAt"]);
+            if (wj.contains("fov")) wp.fov = wj["fov"].get<f32>();
+            if (wj.contains("duration")) wp.duration = wj["duration"].get<f32>();
+            if (wj.contains("holdTime")) wp.holdTime = wj["holdTime"].get<f32>();
+            if (wj.contains("easing")) wp.easing = static_cast<ECS::CinematicCameraComponent::Waypoint::Easing>(wj["easing"].get<u8>());
+            c.waypoints.push_back(wp);
+        }
+    }
+    return c;
+}
+
+// ============================================================================
+// Joint & Ragdoll Components
+// ============================================================================
+
+json SerializeDistanceJointComponent(const ECS::DistanceJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["restDistance"] = j.restDistance;
+    o["tolerance"] = j.tolerance;
+    o["stiffness"] = j.stiffness;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::DistanceJointComponent DeserializeDistanceJointComponent(const json& j) {
+    ECS::DistanceJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("restDistance")) c.restDistance = j["restDistance"].get<f32>();
+    if (j.contains("tolerance")) c.tolerance = j["tolerance"].get<f32>();
+    if (j.contains("stiffness")) c.stiffness = j["stiffness"].get<f32>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeHingeJointComponent(const ECS::HingeJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["axis"] = SerializeVector3(j.axis);
+    o["useLimits"] = j.useLimits;
+    o["lowerLimit"] = j.lowerLimit;
+    o["upperLimit"] = j.upperLimit;
+    o["useMotor"] = j.useMotor;
+    o["motorSpeed"] = j.motorSpeed;
+    o["motorMaxForce"] = j.motorMaxForce;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::HingeJointComponent DeserializeHingeJointComponent(const json& j) {
+    ECS::HingeJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("axis")) c.axis = DeserializeVector3(j["axis"]);
+    if (j.contains("useLimits")) c.useLimits = j["useLimits"].get<bool>();
+    if (j.contains("lowerLimit")) c.lowerLimit = j["lowerLimit"].get<f32>();
+    if (j.contains("upperLimit")) c.upperLimit = j["upperLimit"].get<f32>();
+    if (j.contains("useMotor")) c.useMotor = j["useMotor"].get<bool>();
+    if (j.contains("motorSpeed")) c.motorSpeed = j["motorSpeed"].get<f32>();
+    if (j.contains("motorMaxForce")) c.motorMaxForce = j["motorMaxForce"].get<f32>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeBallSocketJointComponent(const ECS::BallSocketJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["useConeLimit"] = j.useConeLimit;
+    o["coneAngleLimit"] = j.coneAngleLimit;
+    o["useTwistLimit"] = j.useTwistLimit;
+    o["twistLowerLimit"] = j.twistLowerLimit;
+    o["twistUpperLimit"] = j.twistUpperLimit;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::BallSocketJointComponent DeserializeBallSocketJointComponent(const json& j) {
+    ECS::BallSocketJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("useConeLimit")) c.useConeLimit = j["useConeLimit"].get<bool>();
+    if (j.contains("coneAngleLimit")) c.coneAngleLimit = j["coneAngleLimit"].get<f32>();
+    if (j.contains("useTwistLimit")) c.useTwistLimit = j["useTwistLimit"].get<bool>();
+    if (j.contains("twistLowerLimit")) c.twistLowerLimit = j["twistLowerLimit"].get<f32>();
+    if (j.contains("twistUpperLimit")) c.twistUpperLimit = j["twistUpperLimit"].get<f32>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeSpringJointComponent(const ECS::SpringJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["restLength"] = j.restLength;
+    o["springConstant"] = j.springConstant;
+    o["dampingCoefficient"] = j.dampingCoefficient;
+    o["minDistance"] = j.minDistance;
+    o["maxDistance"] = j.maxDistance;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::SpringJointComponent DeserializeSpringJointComponent(const json& j) {
+    ECS::SpringJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("restLength")) c.restLength = j["restLength"].get<f32>();
+    if (j.contains("springConstant")) c.springConstant = j["springConstant"].get<f32>();
+    if (j.contains("dampingCoefficient")) c.dampingCoefficient = j["dampingCoefficient"].get<f32>();
+    if (j.contains("minDistance")) c.minDistance = j["minDistance"].get<f32>();
+    if (j.contains("maxDistance")) c.maxDistance = j["maxDistance"].get<f32>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeFixedJointComponent(const ECS::FixedJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["relativePosition"] = SerializeVector3(j.relativePosition);
+    o["relativeRotation"] = SerializeVector3(j.relativeRotation);
+    o["initialized"] = j.initialized;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::FixedJointComponent DeserializeFixedJointComponent(const json& j) {
+    ECS::FixedJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("relativePosition")) c.relativePosition = DeserializeVector3(j["relativePosition"]);
+    if (j.contains("relativeRotation")) c.relativeRotation = DeserializeVector3(j["relativeRotation"]);
+    if (j.contains("initialized")) c.initialized = j["initialized"].get<bool>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeSliderJointComponent(const ECS::SliderJointComponent& j) {
+    json o;
+    o["entityA"] = static_cast<u64>(j.entityA);
+    o["entityB"] = static_cast<u64>(j.entityB);
+    o["anchorA"] = SerializeVector3(j.anchorA);
+    o["anchorB"] = SerializeVector3(j.anchorB);
+    o["slideAxis"] = SerializeVector3(j.slideAxis);
+    o["useLimits"] = j.useLimits;
+    o["lowerLimit"] = j.lowerLimit;
+    o["upperLimit"] = j.upperLimit;
+    o["useMotor"] = j.useMotor;
+    o["motorSpeed"] = j.motorSpeed;
+    o["motorMaxForce"] = j.motorMaxForce;
+    o["breakable"] = j.breakable;
+    o["breakForce"] = j.breakForce;
+    return o;
+}
+
+ECS::SliderJointComponent DeserializeSliderJointComponent(const json& j) {
+    ECS::SliderJointComponent c;
+    if (j.contains("entityA")) c.entityA = static_cast<ECS::Entity>(j["entityA"].get<u64>());
+    if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
+    if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
+    if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
+    if (j.contains("slideAxis")) c.slideAxis = DeserializeVector3(j["slideAxis"]);
+    if (j.contains("useLimits")) c.useLimits = j["useLimits"].get<bool>();
+    if (j.contains("lowerLimit")) c.lowerLimit = j["lowerLimit"].get<f32>();
+    if (j.contains("upperLimit")) c.upperLimit = j["upperLimit"].get<f32>();
+    if (j.contains("useMotor")) c.useMotor = j["useMotor"].get<bool>();
+    if (j.contains("motorSpeed")) c.motorSpeed = j["motorSpeed"].get<f32>();
+    if (j.contains("motorMaxForce")) c.motorMaxForce = j["motorMaxForce"].get<f32>();
+    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
+    return c;
+}
+
+json SerializeRagdollComponent(const ECS::RagdollComponent& r) {
+    json o;
+    o["enabled"] = r.enabled;
+    o["autoDisableAfterSettle"] = r.autoDisableAfterSettle;
+    o["settleThreshold"] = r.settleThreshold;
+    o["settleTime"] = r.settleTime;
+    o["blendWeight"] = r.blendWeight;
+    o["blendSpeed"] = r.blendSpeed;
+    o["gravityScale"] = r.gravityScale;
+    o["linearDamping"] = r.linearDamping;
+    o["angularDamping"] = r.angularDamping;
+    json joints = json::array();
+    for (const auto& bj : r.boneJoints) {
+        json bjJson;
+        bjJson["boneName"] = bj.boneName;
+        bjJson["boneIndex"] = bj.boneIndex;
+        bjJson["jointType"] = static_cast<u8>(bj.jointType);
+        bjJson["jointEntity"] = static_cast<u64>(bj.jointEntity);
+        bjJson["mass"] = bj.mass;
+        bjJson["colliderRadius"] = bj.colliderRadius;
+        bjJson["coneAngleLimit"] = bj.coneAngleLimit;
+        bjJson["twistLimit"] = bj.twistLimit;
+        joints.push_back(bjJson);
+    }
+    o["boneJoints"] = joints;
+    return o;
+}
+
+ECS::RagdollComponent DeserializeRagdollComponent(const json& j) {
+    ECS::RagdollComponent r;
+    if (j.contains("enabled")) r.enabled = j["enabled"].get<bool>();
+    if (j.contains("autoDisableAfterSettle")) r.autoDisableAfterSettle = j["autoDisableAfterSettle"].get<bool>();
+    if (j.contains("settleThreshold")) r.settleThreshold = j["settleThreshold"].get<f32>();
+    if (j.contains("settleTime")) r.settleTime = j["settleTime"].get<f32>();
+    if (j.contains("blendWeight")) r.blendWeight = j["blendWeight"].get<f32>();
+    if (j.contains("blendSpeed")) r.blendSpeed = j["blendSpeed"].get<f32>();
+    if (j.contains("gravityScale")) r.gravityScale = j["gravityScale"].get<f32>();
+    if (j.contains("linearDamping")) r.linearDamping = j["linearDamping"].get<f32>();
+    if (j.contains("angularDamping")) r.angularDamping = j["angularDamping"].get<f32>();
+    if (j.contains("boneJoints") && j["boneJoints"].is_array()) {
+        for (const auto& bjJson : j["boneJoints"]) {
+            ECS::RagdollComponent::BoneJoint bj;
+            if (bjJson.contains("boneName")) bj.boneName = bjJson["boneName"].get<std::string>();
+            if (bjJson.contains("boneIndex")) bj.boneIndex = bjJson["boneIndex"].get<i32>();
+            if (bjJson.contains("jointType")) bj.jointType = static_cast<ECS::JointType>(bjJson["jointType"].get<u8>());
+            if (bjJson.contains("jointEntity")) bj.jointEntity = static_cast<ECS::Entity>(bjJson["jointEntity"].get<u64>());
+            if (bjJson.contains("mass")) bj.mass = bjJson["mass"].get<f32>();
+            if (bjJson.contains("colliderRadius")) bj.colliderRadius = bjJson["colliderRadius"].get<f32>();
+            if (bjJson.contains("coneAngleLimit")) bj.coneAngleLimit = bjJson["coneAngleLimit"].get<f32>();
+            if (bjJson.contains("twistLimit")) bj.twistLimit = bjJson["twistLimit"].get<f32>();
+            r.boneJoints.push_back(bj);
+        }
+    }
+    return r;
+}
+
+json SerializeScriptPropertyValue(const ECS::ScriptPropertyValue& val, ECS::ScriptPropertyType type) {
+    switch (type) {
+        case ECS::ScriptPropertyType::Int:
+        case ECS::ScriptPropertyType::Enum:
+            return val.intVal;
+        case ECS::ScriptPropertyType::Float:
+            return val.floatVal;
+        case ECS::ScriptPropertyType::Bool:
+            return val.boolVal;
+        case ECS::ScriptPropertyType::String:
+            return val.stringVal;
+        case ECS::ScriptPropertyType::Vector2:
+            return SerializeVector2(val.vec2Val);
+        case ECS::ScriptPropertyType::Vector3:
+            return SerializeVector3(val.vec3Val);
+        case ECS::ScriptPropertyType::Vector4:
+            return SerializeVector4(val.vec4Val);
+        case ECS::ScriptPropertyType::Entity:
+            return val.entityVal;
+    }
+    return nullptr;
+}
+
+ECS::ScriptPropertyValue DeserializeScriptPropertyValue(const json& j, ECS::ScriptPropertyType type) {
+    ECS::ScriptPropertyValue val;
+    switch (type) {
+        case ECS::ScriptPropertyType::Int:
+        case ECS::ScriptPropertyType::Enum:
+            if (j.is_number_integer()) val.intVal = j.get<i32>();
+            break;
+        case ECS::ScriptPropertyType::Float:
+            if (j.is_number()) val.floatVal = j.get<f32>();
+            break;
+        case ECS::ScriptPropertyType::Bool:
+            if (j.is_boolean()) val.boolVal = j.get<bool>();
+            break;
+        case ECS::ScriptPropertyType::String:
+            if (j.is_string()) val.stringVal = j.get<std::string>();
+            break;
+        case ECS::ScriptPropertyType::Vector2:
+            if (j.is_array() && j.size() >= 2) val.vec2Val = DeserializeVector2(j);
+            break;
+        case ECS::ScriptPropertyType::Vector3:
+            if (j.is_array() && j.size() >= 3) val.vec3Val = DeserializeVector3(j);
+            break;
+        case ECS::ScriptPropertyType::Vector4:
+            if (j.is_array() && j.size() >= 4) val.vec4Val = DeserializeVector4(j);
+            break;
+        case ECS::ScriptPropertyType::Entity:
+            if (j.is_number_unsigned()) val.entityVal = j.get<u64>();
+            break;
+    }
+    return val;
+}
+
+json SerializeScriptComponent(const ECS::ScriptComponent& sc) {
+    json j;
+    json scriptsArr = json::array();
+    for (const auto& script : sc.scripts) {
+        json sj;
+        sj["path"] = script.scriptPath;
+        sj["class"] = script.className;
+        sj["enabled"] = script.enabled;
+        // Only serialize overridden properties
+        json props;
+        for (const auto& prop : script.properties) {
+            if (prop.isOverridden) {
+                json pj;
+                pj["type"] = static_cast<int>(prop.type);
+                pj["value"] = SerializeScriptPropertyValue(prop.instanceValue, prop.type);
+                props[prop.name] = pj;
+            }
+        }
+        if (!props.empty()) {
+            sj["properties"] = props;
+        }
+        scriptsArr.push_back(sj);
+    }
+    j["scripts"] = scriptsArr;
+    return j;
+}
+
+ECS::ScriptComponent DeserializeScriptComponent(const json& j) {
+    ECS::ScriptComponent sc;
+    if (j.contains("scripts") && j["scripts"].is_array()) {
+        for (const auto& sj : j["scripts"]) {
+            ECS::ScriptAttachment script;
+            if (sj.contains("path")) script.scriptPath = sj["path"].get<std::string>();
+            if (sj.contains("class")) script.className = sj["class"].get<std::string>();
+            if (sj.contains("enabled")) script.enabled = sj["enabled"].get<bool>();
+            if (sj.contains("properties") && sj["properties"].is_object()) {
+                for (auto it = sj["properties"].begin(); it != sj["properties"].end(); ++it) {
+                    ECS::ScriptProperty prop;
+                    prop.name = it.key();
+                    prop.isOverridden = true;
+                    if (it.value().contains("type")) {
+                        prop.type = static_cast<ECS::ScriptPropertyType>(it.value()["type"].get<int>());
+                    }
+                    if (it.value().contains("value")) {
+                        prop.instanceValue = DeserializeScriptPropertyValue(it.value()["value"], prop.type);
+                    }
+                    script.properties.push_back(prop);
+                }
+            }
+            sc.scripts.push_back(script);
+        }
+    }
+    return sc;
+}
+
+// ============================================================================
+// Puzzle & Interaction
+// ============================================================================
+
+json SerializeLockComponent(const ECS::LockComponent& lk) {
+    json j;
+    j["requiredKey"] = lk.requiredKey;
+    j["isLocked"] = lk.isLocked;
+    j["consumeKey"] = lk.consumeKey;
+    j["autoOpen"] = lk.autoOpen;
+    j["interactRange"] = lk.interactRange;
+    j["openMode"] = static_cast<i32>(lk.openMode);
+    j["openDuration"] = lk.openDuration;
+    j["closedPosition"] = SerializeVector3(lk.closedPosition);
+    j["openPosition"] = SerializeVector3(lk.openPosition);
+    j["closedRotation"] = SerializeVector3(lk.closedRotation);
+    j["openRotation"] = SerializeVector3(lk.openRotation);
+    j["openSpeed"] = lk.openSpeed;
+    j["lockedPrompt"] = lk.lockedPrompt;
+    j["unlockedPrompt"] = lk.unlockedPrompt;
+    return j;
+}
+
+ECS::LockComponent DeserializeLockComponent(const json& j) {
+    ECS::LockComponent lk;
+    if (j.contains("requiredKey")) lk.requiredKey = j["requiredKey"].get<std::string>();
+    if (j.contains("isLocked")) lk.isLocked = j["isLocked"].get<bool>();
+    if (j.contains("consumeKey")) lk.consumeKey = j["consumeKey"].get<bool>();
+    if (j.contains("autoOpen")) lk.autoOpen = j["autoOpen"].get<bool>();
+    if (j.contains("interactRange")) lk.interactRange = j["interactRange"].get<f32>();
+    if (j.contains("openMode")) lk.openMode = static_cast<ECS::LockComponent::OpenMode>(j["openMode"].get<i32>());
+    if (j.contains("openDuration")) lk.openDuration = j["openDuration"].get<f32>();
+    if (j.contains("closedPosition")) lk.closedPosition = DeserializeVector3(j["closedPosition"]);
+    if (j.contains("openPosition")) lk.openPosition = DeserializeVector3(j["openPosition"]);
+    if (j.contains("closedRotation")) lk.closedRotation = DeserializeVector3(j["closedRotation"]);
+    if (j.contains("openRotation")) lk.openRotation = DeserializeVector3(j["openRotation"]);
+    if (j.contains("openSpeed")) lk.openSpeed = j["openSpeed"].get<f32>();
+    if (j.contains("lockedPrompt")) lk.lockedPrompt = j["lockedPrompt"].get<std::string>();
+    if (j.contains("unlockedPrompt")) lk.unlockedPrompt = j["unlockedPrompt"].get<std::string>();
+    return lk;
+}
+
+json SerializePushableComponent(const ECS::PushableComponent& pb) {
+    json j;
+    j["mass"] = pb.mass;
+    j["pushSpeed"] = pb.pushSpeed;
+    j["friction"] = pb.friction;
+    j["gridSnap"] = pb.gridSnap;
+    j["gridCellSize"] = pb.gridCellSize;
+    j["gridMoveSpeed"] = pb.gridMoveSpeed;
+    j["pushableX"] = pb.pushableX;
+    j["pushableY"] = pb.pushableY;
+    j["pushableZ"] = pb.pushableZ;
+    j["canBePushedOff"] = pb.canBePushedOff;
+    return j;
+}
+
+ECS::PushableComponent DeserializePushableComponent(const json& j) {
+    ECS::PushableComponent pb;
+    if (j.contains("mass")) pb.mass = j["mass"].get<f32>();
+    if (j.contains("pushSpeed")) pb.pushSpeed = j["pushSpeed"].get<f32>();
+    if (j.contains("friction")) pb.friction = j["friction"].get<f32>();
+    if (j.contains("gridSnap")) pb.gridSnap = j["gridSnap"].get<bool>();
+    if (j.contains("gridCellSize")) pb.gridCellSize = j["gridCellSize"].get<f32>();
+    if (j.contains("gridMoveSpeed")) pb.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();
+    if (j.contains("pushableX")) pb.pushableX = j["pushableX"].get<bool>();
+    if (j.contains("pushableY")) pb.pushableY = j["pushableY"].get<bool>();
+    if (j.contains("pushableZ")) pb.pushableZ = j["pushableZ"].get<bool>();
+    if (j.contains("canBePushedOff")) pb.canBePushedOff = j["canBePushedOff"].get<bool>();
+    return pb;
+}
+
+json SerializeSwitchComponent(const ECS::SwitchComponent& sw) {
+    json j;
+    j["type"] = static_cast<i32>(sw.type);
+    j["requireSpecificTag"] = sw.requireSpecificTag;
+    j["requiredTag"] = sw.requiredTag;
+    j["activationWeight"] = sw.activationWeight;
+    j["activeDuration"] = sw.activeDuration;
+    j["sequenceIndex"] = sw.sequenceIndex;
+    j["sequenceGroup"] = sw.sequenceGroup;
+    json linked = json::array();
+    for (auto e : sw.linkedEntities) {
+        linked.push_back(static_cast<u64>(e));
+    }
+    j["linkedEntities"] = linked;
+    j["offPosition"] = SerializeVector3(sw.offPosition);
+    j["onPosition"] = SerializeVector3(sw.onPosition);
+    j["transitionSpeed"] = sw.transitionSpeed;
+    j["promptText"] = sw.promptText;
+    j["showPrompt"] = sw.showPrompt;
+    return j;
+}
+
+ECS::SwitchComponent DeserializeSwitchComponent(const json& j) {
+    ECS::SwitchComponent sw;
+    if (j.contains("type")) sw.type = static_cast<ECS::SwitchComponent::SwitchType>(j["type"].get<i32>());
+    if (j.contains("requireSpecificTag")) sw.requireSpecificTag = j["requireSpecificTag"].get<bool>();
+    if (j.contains("requiredTag")) sw.requiredTag = j["requiredTag"].get<std::string>();
+    if (j.contains("activationWeight")) sw.activationWeight = j["activationWeight"].get<f32>();
+    if (j.contains("activeDuration")) sw.activeDuration = j["activeDuration"].get<f32>();
+    if (j.contains("sequenceIndex")) sw.sequenceIndex = j["sequenceIndex"].get<i32>();
+    if (j.contains("sequenceGroup")) sw.sequenceGroup = j["sequenceGroup"].get<i32>();
+    if (j.contains("linkedEntities") && j["linkedEntities"].is_array()) {
+        for (const auto& e : j["linkedEntities"]) {
+            sw.linkedEntities.push_back(static_cast<ECS::Entity>(e.get<u64>()));
+        }
+    }
+    if (j.contains("offPosition")) sw.offPosition = DeserializeVector3(j["offPosition"]);
+    if (j.contains("onPosition")) sw.onPosition = DeserializeVector3(j["onPosition"]);
+    if (j.contains("transitionSpeed")) sw.transitionSpeed = j["transitionSpeed"].get<f32>();
+    if (j.contains("promptText")) sw.promptText = j["promptText"].get<std::string>();
+    if (j.contains("showPrompt")) sw.showPrompt = j["showPrompt"].get<bool>();
+    return sw;
+}
+
+json SerializeGoalZoneComponent(const ECS::GoalZoneComponent& gz) {
+    json j;
+    j["type"] = static_cast<i32>(gz.type);
+    j["requiredTag"] = gz.requiredTag;
+    j["requiredItem"] = gz.requiredItem;
+    j["goalGroup"] = gz.goalGroup;
+    j["inactiveColor"] = SerializeVector3(gz.inactiveColor);
+    j["activeColor"] = SerializeVector3(gz.activeColor);
+    j["nextScene"] = gz.nextScene;
+    return j;
+}
+
+ECS::GoalZoneComponent DeserializeGoalZoneComponent(const json& j) {
+    ECS::GoalZoneComponent gz;
+    if (j.contains("type")) gz.type = static_cast<ECS::GoalZoneComponent::GoalType>(j["type"].get<i32>());
+    if (j.contains("requiredTag")) gz.requiredTag = j["requiredTag"].get<std::string>();
+    if (j.contains("requiredItem")) gz.requiredItem = j["requiredItem"].get<std::string>();
+    if (j.contains("goalGroup")) gz.goalGroup = j["goalGroup"].get<i32>();
+    if (j.contains("inactiveColor")) gz.inactiveColor = DeserializeVector3(j["inactiveColor"]);
+    if (j.contains("activeColor")) gz.activeColor = DeserializeVector3(j["activeColor"]);
+    if (j.contains("nextScene")) gz.nextScene = j["nextScene"].get<std::string>();
+    return gz;
+}
+
+json SerializeConveyorComponent(const ECS::ConveyorComponent& cv) {
+    json j;
+    j["direction"] = SerializeVector3(cv.direction);
+    j["speed"] = cv.speed;
+    j["affectsPlayer"] = cv.affectsPlayer;
+    j["affectsPushables"] = cv.affectsPushables;
+    j["isActive"] = cv.isActive;
+    return j;
+}
+
+ECS::ConveyorComponent DeserializeConveyorComponent(const json& j) {
+    ECS::ConveyorComponent cv;
+    if (j.contains("direction")) cv.direction = DeserializeVector3(j["direction"]);
+    if (j.contains("speed")) cv.speed = j["speed"].get<f32>();
+    if (j.contains("affectsPlayer")) cv.affectsPlayer = j["affectsPlayer"].get<bool>();
+    if (j.contains("affectsPushables")) cv.affectsPushables = j["affectsPushables"].get<bool>();
+    if (j.contains("isActive")) cv.isActive = j["isActive"].get<bool>();
+    return cv;
+}
+
+json SerializeTeleporterComponent(const ECS::TeleporterComponent& tp) {
+    json j;
+    j["targetPosition"] = SerializeVector3(tp.targetPosition);
+    j["targetRotation"] = SerializeVector3(tp.targetRotation);
+    j["linkedTeleporter"] = static_cast<u64>(tp.linkedTeleporter);
+    j["cooldown"] = tp.cooldown;
+    j["preserveVelocity"] = tp.preserveVelocity;
+    j["requiredTag"] = tp.requiredTag;
+    return j;
+}
+
+ECS::TeleporterComponent DeserializeTeleporterComponent(const json& j) {
+    ECS::TeleporterComponent tp;
+    if (j.contains("targetPosition")) tp.targetPosition = DeserializeVector3(j["targetPosition"]);
+    if (j.contains("targetRotation")) tp.targetRotation = DeserializeVector3(j["targetRotation"]);
+    if (j.contains("linkedTeleporter")) tp.linkedTeleporter = static_cast<ECS::Entity>(j["linkedTeleporter"].get<u64>());
+    if (j.contains("cooldown")) tp.cooldown = j["cooldown"].get<f32>();
+    if (j.contains("preserveVelocity")) tp.preserveVelocity = j["preserveVelocity"].get<bool>();
+    if (j.contains("requiredTag")) tp.requiredTag = j["requiredTag"].get<std::string>();
+    return tp;
+}
+
+json SerializeDestructibleComponent(const ECS::DestructibleComponent& dc) {
+    json j;
+    j["health"] = dc.health;
+    j["destroyOnHit"] = dc.destroyOnHit;
+    j["spawnPickup"] = dc.spawnPickup;
+    j["pickupId"] = dc.pickupId;
+    j["pickupCount"] = dc.pickupCount;
+    j["canRespawn"] = dc.canRespawn;
+    j["respawnTime"] = dc.respawnTime;
+    j["shakeOnHit"] = dc.shakeOnHit;
+    return j;
+}
+
+ECS::DestructibleComponent DeserializeDestructibleComponent(const json& j) {
+    ECS::DestructibleComponent dc;
+    if (j.contains("health")) dc.health = j["health"].get<f32>();
+    if (j.contains("destroyOnHit")) dc.destroyOnHit = j["destroyOnHit"].get<bool>();
+    if (j.contains("spawnPickup")) dc.spawnPickup = j["spawnPickup"].get<bool>();
+    if (j.contains("pickupId")) dc.pickupId = j["pickupId"].get<std::string>();
+    if (j.contains("pickupCount")) dc.pickupCount = j["pickupCount"].get<i32>();
+    if (j.contains("canRespawn")) dc.canRespawn = j["canRespawn"].get<bool>();
+    if (j.contains("respawnTime")) dc.respawnTime = j["respawnTime"].get<f32>();
+    if (j.contains("shakeOnHit")) dc.shakeOnHit = j["shakeOnHit"].get<f32>();
+    return dc;
+}
+
+json SerializeMovingPlatformComponent(const ECS::MovingPlatformComponent& mp) {
+    json j;
+    json wpArr = json::array();
+    for (const auto& wp : mp.waypoints) {
+        wpArr.push_back(SerializeVector3(wp));
+    }
+    j["waypoints"] = wpArr;
+    j["speed"] = mp.speed;
+    j["waitTime"] = mp.waitTime;
+    j["mode"] = static_cast<i32>(mp.mode);
+    j["carryEntities"] = mp.carryEntities;
+    return j;
+}
+
+ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
+    ECS::MovingPlatformComponent mp;
+    if (j.contains("waypoints") && j["waypoints"].is_array()) {
+        for (const auto& wp : j["waypoints"]) {
+            mp.waypoints.push_back(DeserializeVector3(wp));
+        }
+    }
+    if (j.contains("speed")) mp.speed = j["speed"].get<f32>();
+    if (j.contains("waitTime")) mp.waitTime = j["waitTime"].get<f32>();
+    if (j.contains("mode")) mp.mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(j["mode"].get<i32>());
+    if (j.contains("carryEntities")) mp.carryEntities = j["carryEntities"].get<bool>();
+    return mp;
+}
+
 } // anonymous namespace
 
 SceneSerializer::SceneSerializer(ECS::World* world)
@@ -2059,6 +2984,39 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
                 entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
+            if (m_World->HasComponent<ECS::VehicleController>(entity)) {
+                entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
+            }
+            if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
+                entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::LockComponent>(entity)) {
+                entityJson["lock"] = SerializeLockComponent(*m_World->GetComponent<ECS::LockComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PushableComponent>(entity)) {
+                entityJson["pushable"] = SerializePushableComponent(*m_World->GetComponent<ECS::PushableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SwitchComponent>(entity)) {
+                entityJson["switch"] = SerializeSwitchComponent(*m_World->GetComponent<ECS::SwitchComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::GoalZoneComponent>(entity)) {
+                entityJson["goalZone"] = SerializeGoalZoneComponent(*m_World->GetComponent<ECS::GoalZoneComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ConveyorComponent>(entity)) {
+                entityJson["conveyor"] = SerializeConveyorComponent(*m_World->GetComponent<ECS::ConveyorComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::TeleporterComponent>(entity)) {
+                entityJson["teleporter"] = SerializeTeleporterComponent(*m_World->GetComponent<ECS::TeleporterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
+                entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
+                entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ScriptComponent>(entity)) {
+                entityJson["scriptComponent"] = SerializeScriptComponent(*m_World->GetComponent<ECS::ScriptComponent>(entity));
+            }
 
             // Hierarchy
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
@@ -2122,6 +3080,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
+            }
+
+            // Damage Resistance
+            if (m_World->HasComponent<ECS::DamageResistanceComponent>(entity)) {
+                entityJson["damageResistance"] = SerializeDamageResistanceComponent(*m_World->GetComponent<ECS::DamageResistanceComponent>(entity));
             }
 
             // Triggers & Interaction
@@ -2201,6 +3164,49 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
                 entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
+            }
+
+            // New Gameplay Components
+            if (m_World->HasComponent<ECS::ResourceComponent>(entity)) {
+                entityJson["resource"] = SerializeResourceComponent(*m_World->GetComponent<ECS::ResourceComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FootstepComponent>(entity)) {
+                entityJson["footstep"] = SerializeFootstepComponent(*m_World->GetComponent<ECS::FootstepComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PoolableComponent>(entity)) {
+                entityJson["poolable"] = SerializePoolableComponent(*m_World->GetComponent<ECS::PoolableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
+                entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
+                entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
+                entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
+            }
+
+            // Joint & Ragdoll Components
+            if (m_World->HasComponent<ECS::DistanceJointComponent>(entity)) {
+                entityJson["distanceJoint"] = SerializeDistanceJointComponent(*m_World->GetComponent<ECS::DistanceJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::HingeJointComponent>(entity)) {
+                entityJson["hingeJoint"] = SerializeHingeJointComponent(*m_World->GetComponent<ECS::HingeJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::BallSocketJointComponent>(entity)) {
+                entityJson["ballSocketJoint"] = SerializeBallSocketJointComponent(*m_World->GetComponent<ECS::BallSocketJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SpringJointComponent>(entity)) {
+                entityJson["springJoint"] = SerializeSpringJointComponent(*m_World->GetComponent<ECS::SpringJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FixedJointComponent>(entity)) {
+                entityJson["fixedJoint"] = SerializeFixedJointComponent(*m_World->GetComponent<ECS::FixedJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SliderJointComponent>(entity)) {
+                entityJson["sliderJoint"] = SerializeSliderJointComponent(*m_World->GetComponent<ECS::SliderJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
+                entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
             }
 
             // Flower Components
@@ -2479,6 +3485,39 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("firstPerson")) {
                 m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
             }
+            if (entityJson.contains("vehicle")) {
+                m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
+            }
+            if (entityJson.contains("possessable")) {
+                m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
+            }
+            if (entityJson.contains("lock")) {
+                m_World->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(entityJson["lock"]));
+            }
+            if (entityJson.contains("pushable")) {
+                m_World->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(entityJson["pushable"]));
+            }
+            if (entityJson.contains("switch")) {
+                m_World->AddComponent<ECS::SwitchComponent>(entity, DeserializeSwitchComponent(entityJson["switch"]));
+            }
+            if (entityJson.contains("goalZone")) {
+                m_World->AddComponent<ECS::GoalZoneComponent>(entity, DeserializeGoalZoneComponent(entityJson["goalZone"]));
+            }
+            if (entityJson.contains("conveyor")) {
+                m_World->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(entityJson["conveyor"]));
+            }
+            if (entityJson.contains("teleporter")) {
+                m_World->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
+            }
+            if (entityJson.contains("destructible")) {
+                m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
+            }
+            if (entityJson.contains("movingPlatform")) {
+                m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
+            }
+            if (entityJson.contains("scriptComponent")) {
+                m_World->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
+            }
 
             // Hierarchy
             if (entityJson.contains("parent")) {
@@ -2544,6 +3583,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
+            }
+            if (entityJson.contains("damageResistance")) {
+                m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
             }
 
             // Triggers & Interaction
@@ -2623,6 +3665,49 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
             if (entityJson.contains("saveData")) {
                 m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
+            }
+
+            // New Gameplay Components
+            if (entityJson.contains("resource")) {
+                m_World->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
+            }
+            if (entityJson.contains("footstep")) {
+                m_World->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(entityJson["footstep"]));
+            }
+            if (entityJson.contains("poolable")) {
+                m_World->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
+            }
+            if (entityJson.contains("questState")) {
+                m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
+            }
+            if (entityJson.contains("hudWidget")) {
+                m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
+            }
+            if (entityJson.contains("cinematicCamera")) {
+                m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
+            }
+
+            // Joint & Ragdoll Components
+            if (entityJson.contains("distanceJoint")) {
+                m_World->AddComponent<ECS::DistanceJointComponent>(entity, DeserializeDistanceJointComponent(entityJson["distanceJoint"]));
+            }
+            if (entityJson.contains("hingeJoint")) {
+                m_World->AddComponent<ECS::HingeJointComponent>(entity, DeserializeHingeJointComponent(entityJson["hingeJoint"]));
+            }
+            if (entityJson.contains("ballSocketJoint")) {
+                m_World->AddComponent<ECS::BallSocketJointComponent>(entity, DeserializeBallSocketJointComponent(entityJson["ballSocketJoint"]));
+            }
+            if (entityJson.contains("springJoint")) {
+                m_World->AddComponent<ECS::SpringJointComponent>(entity, DeserializeSpringJointComponent(entityJson["springJoint"]));
+            }
+            if (entityJson.contains("fixedJoint")) {
+                m_World->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(entityJson["fixedJoint"]));
+            }
+            if (entityJson.contains("sliderJoint")) {
+                m_World->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
+            }
+            if (entityJson.contains("ragdoll")) {
+                m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
             }
 
             // Flower Components
@@ -2784,6 +3869,39 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::FirstPersonController>(entity)) {
                 entityJson["firstPerson"] = SerializeFirstPerson(*m_World->GetComponent<ECS::FirstPersonController>(entity));
             }
+            if (m_World->HasComponent<ECS::VehicleController>(entity)) {
+                entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
+            }
+            if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
+                entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::LockComponent>(entity)) {
+                entityJson["lock"] = SerializeLockComponent(*m_World->GetComponent<ECS::LockComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PushableComponent>(entity)) {
+                entityJson["pushable"] = SerializePushableComponent(*m_World->GetComponent<ECS::PushableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SwitchComponent>(entity)) {
+                entityJson["switch"] = SerializeSwitchComponent(*m_World->GetComponent<ECS::SwitchComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::GoalZoneComponent>(entity)) {
+                entityJson["goalZone"] = SerializeGoalZoneComponent(*m_World->GetComponent<ECS::GoalZoneComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ConveyorComponent>(entity)) {
+                entityJson["conveyor"] = SerializeConveyorComponent(*m_World->GetComponent<ECS::ConveyorComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::TeleporterComponent>(entity)) {
+                entityJson["teleporter"] = SerializeTeleporterComponent(*m_World->GetComponent<ECS::TeleporterComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
+                entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
+                entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::ScriptComponent>(entity)) {
+                entityJson["scriptComponent"] = SerializeScriptComponent(*m_World->GetComponent<ECS::ScriptComponent>(entity));
+            }
 
             // Hierarchy
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
@@ -2847,6 +3965,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DamageComponent>(entity)) {
                 entityJson["damage"] = SerializeDamageComponent(*m_World->GetComponent<ECS::DamageComponent>(entity));
+            }
+
+            // Damage Resistance
+            if (m_World->HasComponent<ECS::DamageResistanceComponent>(entity)) {
+                entityJson["damageResistance"] = SerializeDamageResistanceComponent(*m_World->GetComponent<ECS::DamageResistanceComponent>(entity));
             }
 
             // Triggers & Interaction
@@ -2926,6 +4049,49 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
                 entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
+            }
+
+            // New Gameplay Components
+            if (m_World->HasComponent<ECS::ResourceComponent>(entity)) {
+                entityJson["resource"] = SerializeResourceComponent(*m_World->GetComponent<ECS::ResourceComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FootstepComponent>(entity)) {
+                entityJson["footstep"] = SerializeFootstepComponent(*m_World->GetComponent<ECS::FootstepComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PoolableComponent>(entity)) {
+                entityJson["poolable"] = SerializePoolableComponent(*m_World->GetComponent<ECS::PoolableComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::QuestStateComponent>(entity)) {
+                entityJson["questState"] = SerializeQuestStateComponent(*m_World->GetComponent<ECS::QuestStateComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::HUDWidgetComponent>(entity)) {
+                entityJson["hudWidget"] = SerializeHUDWidgetComponent(*m_World->GetComponent<ECS::HUDWidgetComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::CinematicCameraComponent>(entity)) {
+                entityJson["cinematicCamera"] = SerializeCinematicCameraComponent(*m_World->GetComponent<ECS::CinematicCameraComponent>(entity));
+            }
+
+            // Joint & Ragdoll Components
+            if (m_World->HasComponent<ECS::DistanceJointComponent>(entity)) {
+                entityJson["distanceJoint"] = SerializeDistanceJointComponent(*m_World->GetComponent<ECS::DistanceJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::HingeJointComponent>(entity)) {
+                entityJson["hingeJoint"] = SerializeHingeJointComponent(*m_World->GetComponent<ECS::HingeJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::BallSocketJointComponent>(entity)) {
+                entityJson["ballSocketJoint"] = SerializeBallSocketJointComponent(*m_World->GetComponent<ECS::BallSocketJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SpringJointComponent>(entity)) {
+                entityJson["springJoint"] = SerializeSpringJointComponent(*m_World->GetComponent<ECS::SpringJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FixedJointComponent>(entity)) {
+                entityJson["fixedJoint"] = SerializeFixedJointComponent(*m_World->GetComponent<ECS::FixedJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SliderJointComponent>(entity)) {
+                entityJson["sliderJoint"] = SerializeSliderJointComponent(*m_World->GetComponent<ECS::SliderJointComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::RagdollComponent>(entity)) {
+                entityJson["ragdoll"] = SerializeRagdollComponent(*m_World->GetComponent<ECS::RagdollComponent>(entity));
             }
 
             // Flower Components
@@ -3159,6 +4325,39 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("firstPerson")) {
                 m_World->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
             }
+            if (entityJson.contains("vehicle")) {
+                m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
+            }
+            if (entityJson.contains("possessable")) {
+                m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
+            }
+            if (entityJson.contains("lock")) {
+                m_World->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(entityJson["lock"]));
+            }
+            if (entityJson.contains("pushable")) {
+                m_World->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(entityJson["pushable"]));
+            }
+            if (entityJson.contains("switch")) {
+                m_World->AddComponent<ECS::SwitchComponent>(entity, DeserializeSwitchComponent(entityJson["switch"]));
+            }
+            if (entityJson.contains("goalZone")) {
+                m_World->AddComponent<ECS::GoalZoneComponent>(entity, DeserializeGoalZoneComponent(entityJson["goalZone"]));
+            }
+            if (entityJson.contains("conveyor")) {
+                m_World->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(entityJson["conveyor"]));
+            }
+            if (entityJson.contains("teleporter")) {
+                m_World->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
+            }
+            if (entityJson.contains("destructible")) {
+                m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
+            }
+            if (entityJson.contains("movingPlatform")) {
+                m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
+            }
+            if (entityJson.contains("scriptComponent")) {
+                m_World->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
+            }
 
             // Hierarchy
             if (entityJson.contains("parent")) {
@@ -3224,6 +4423,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("damage")) {
                 m_World->AddComponent<ECS::DamageComponent>(entity, DeserializeDamageComponent(entityJson["damage"]));
+            }
+            if (entityJson.contains("damageResistance")) {
+                m_World->AddComponent<ECS::DamageResistanceComponent>(entity, DeserializeDamageResistanceComponent(entityJson["damageResistance"]));
             }
 
             // Triggers & Interaction
@@ -3303,6 +4505,49 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("saveData")) {
                 m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
+            }
+
+            // New Gameplay Components
+            if (entityJson.contains("resource")) {
+                m_World->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
+            }
+            if (entityJson.contains("footstep")) {
+                m_World->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(entityJson["footstep"]));
+            }
+            if (entityJson.contains("poolable")) {
+                m_World->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(entityJson["poolable"]));
+            }
+            if (entityJson.contains("questState")) {
+                m_World->AddComponent<ECS::QuestStateComponent>(entity, DeserializeQuestStateComponent(entityJson["questState"]));
+            }
+            if (entityJson.contains("hudWidget")) {
+                m_World->AddComponent<ECS::HUDWidgetComponent>(entity, DeserializeHUDWidgetComponent(entityJson["hudWidget"]));
+            }
+            if (entityJson.contains("cinematicCamera")) {
+                m_World->AddComponent<ECS::CinematicCameraComponent>(entity, DeserializeCinematicCameraComponent(entityJson["cinematicCamera"]));
+            }
+
+            // Joint & Ragdoll Components
+            if (entityJson.contains("distanceJoint")) {
+                m_World->AddComponent<ECS::DistanceJointComponent>(entity, DeserializeDistanceJointComponent(entityJson["distanceJoint"]));
+            }
+            if (entityJson.contains("hingeJoint")) {
+                m_World->AddComponent<ECS::HingeJointComponent>(entity, DeserializeHingeJointComponent(entityJson["hingeJoint"]));
+            }
+            if (entityJson.contains("ballSocketJoint")) {
+                m_World->AddComponent<ECS::BallSocketJointComponent>(entity, DeserializeBallSocketJointComponent(entityJson["ballSocketJoint"]));
+            }
+            if (entityJson.contains("springJoint")) {
+                m_World->AddComponent<ECS::SpringJointComponent>(entity, DeserializeSpringJointComponent(entityJson["springJoint"]));
+            }
+            if (entityJson.contains("fixedJoint")) {
+                m_World->AddComponent<ECS::FixedJointComponent>(entity, DeserializeFixedJointComponent(entityJson["fixedJoint"]));
+            }
+            if (entityJson.contains("sliderJoint")) {
+                m_World->AddComponent<ECS::SliderJointComponent>(entity, DeserializeSliderJointComponent(entityJson["sliderJoint"]));
+            }
+            if (entityJson.contains("ragdoll")) {
+                m_World->AddComponent<ECS::RagdollComponent>(entity, DeserializeRagdollComponent(entityJson["ragdoll"]));
             }
 
             // Flower Components

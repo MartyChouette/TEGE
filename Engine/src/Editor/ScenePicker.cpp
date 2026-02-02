@@ -148,5 +148,52 @@ ECS::Entity ScenePicker::PickEntity(ECS::World* world, const Renderer::Camera* c
     return closestEntity;
 }
 
+std::vector<ECS::Entity> ScenePicker::PickEntitiesInScreenRect(
+    ECS::World* world, const Renderer::Camera* camera,
+    f32 rectMinX, f32 rectMinY, f32 rectMaxX, f32 rectMaxY,
+    f32 viewportWidth, f32 viewportHeight) {
+
+    std::vector<ECS::Entity> result;
+    if (!world || !camera || viewportWidth <= 0 || viewportHeight <= 0) {
+        return result;
+    }
+
+    // Normalize rect so min < max
+    if (rectMinX > rectMaxX) std::swap(rectMinX, rectMaxX);
+    if (rectMinY > rectMaxY) std::swap(rectMinY, rectMaxY);
+
+    Math::Matrix4 viewProj = camera->GetViewProjectionMatrix();
+
+    const auto& entities = world->GetAllEntities();
+    for (ECS::Entity entity : entities) {
+        auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Project entity center to screen space
+        Math::Vector4 clipPos = viewProj * Math::Vector4(
+            transform->position.x, transform->position.y,
+            transform->position.z, 1.0f);
+
+        // Behind camera
+        if (clipPos.w <= 0.0f) continue;
+
+        // Perspective divide to NDC
+        f32 ndcX = clipPos.x / clipPos.w;
+        f32 ndcY = clipPos.y / clipPos.w;
+
+        // NDC to screen (Vulkan: Y-down matches screen)
+        f32 screenX = (ndcX * 0.5f + 0.5f) * viewportWidth;
+        f32 screenY = (ndcY * 0.5f + 0.5f) * viewportHeight;
+
+        // Check if inside rectangle
+        if (screenX >= rectMinX && screenX <= rectMaxX &&
+            screenY >= rectMinY && screenY <= rectMaxY) {
+            result.push_back(entity);
+        }
+    }
+
+    return result;
+}
+
 } // namespace Editor
 } // namespace Enjin

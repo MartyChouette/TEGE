@@ -35,6 +35,7 @@ struct TetherComponent {
 
     // Runtime state
     bool isBroken = false;
+    bool justBroke = false;          // One-frame flag for particle spawn
     f32 currentTension = 0.0f;       // 0..1 normalized for feedback
     f32 computedRestLength = 0.0f;   // Auto-computed rest length
     bool restLengthInitialized = false;
@@ -48,6 +49,7 @@ struct GrabbableComponent {
 
     // Runtime state
     bool isGrabbed = false;
+    bool isBroken = false;  // True after tether breaks — petal follows cursor freely
     Math::Vector3 grabWorldPoint = Math::Vector3(0, 0, 0);
     Math::Vector3 cursorWorldPoint = Math::Vector3(0, 0, 0);
 };

@@ -2,10 +2,12 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
@@ -13,6 +15,7 @@
 #include <cmath>
 #include <cfloat>
 #include <cstdio>
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -31,6 +34,9 @@ void FlowerSystem::Update(f32 deltaTime) {
     UpdateTethers(deltaTime);
     UpdateJellyMeshes(deltaTime);
     CheckBreaks();
+    UpdateBrokenParts(deltaTime);
+    UpdateParticles(deltaTime);
+    CheckGroundImpact();
 }
 
 // ---------------------------------------------------------------------------
@@ -127,11 +133,23 @@ void FlowerSystem::ProcessInput() {
         }
     }
 
-    // LMB released - clear grab
+    // LMB released - release or drop
     if (Input::IsMouseButtonReleased(MouseButton::Left)) {
         if (m_GrabbedEntity != INVALID_ENTITY) {
             auto* grab = m_World->GetComponent<GrabbableComponent>(m_GrabbedEntity);
             if (grab) {
+                if (grab->isBroken) {
+                    // Broken petal: drop with gravity
+                    if (!m_World->HasComponent<RigidbodyComponent>(m_GrabbedEntity)) {
+                        m_World->AddComponent<RigidbodyComponent>(m_GrabbedEntity);
+                    }
+                    auto* rb = m_World->GetComponent<RigidbodyComponent>(m_GrabbedEntity);
+                    if (rb) {
+                        rb->velocity = Math::Vector3(0.0f, -0.5f, 0.0f);
+                        rb->useGravity = true;
+                        rb->mass = 0.1f;
+                    }
+                }
                 grab->isGrabbed = false;
             }
             m_GrabbedEntity = INVALID_ENTITY;
@@ -288,6 +306,21 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
             }
         }
 
+        // Find stem direction in local space for anchor weighting
+        // Vertices on the stem side resist deformation (anchored), far side stretches freely
+        Math::Vector3 stemDirLocal(0, -1, 0); // Default: stem is below
+        auto* tether = m_World->GetComponent<TetherComponent>(entity);
+        if (tether && transform) {
+            auto* stemTransform = m_World->GetComponent<TransformComponent>(tether->stemEntity);
+            if (stemTransform) {
+                Math::Vector3 toStem = stemTransform->position + tether->attachLocalPos - transform->position;
+                f32 toStemLen = toStem.Length();
+                if (toStemLen > 1e-6f) {
+                    stemDirLocal = toStem * (1.0f / toStemLen);
+                }
+            }
+        }
+
         bool anyMoved = false;
         for (usize i = 0; i < mesh->vertices.size(); ++i) {
             Math::Vector3& pos = mesh->vertices[i].position;
@@ -297,11 +330,23 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
             // Target position: rest position with optional pull deformation
             Math::Vector3 target = rest;
             if (isGrabbed && pullMagnitude > 0.01f) {
-                // Weight by distance from center: vertices farther from center deform more
-                f32 distFromCenter = (rest - localCenter).Length();
-                f32 maxDist = 1.0f; // Normalize to roughly unit scale
-                f32 weight = Math::Clamp(distFromCenter / maxDist, 0.0f, 1.0f);
-                target = rest + localPullDir * (pullMagnitude * weight * 0.3f);
+                // Directional weight: how much this vertex is on the "pull side" vs "stem side"
+                // Project vertex offset from center onto pull direction
+                Math::Vector3 fromCenter = rest - localCenter;
+                f32 pullAlignment = fromCenter.Dot(localPullDir);  // positive = pull side
+                f32 stemAlignment = fromCenter.Dot(stemDirLocal);  // positive = stem side
+
+                // Vertices toward stem get near-zero weight (anchored)
+                // Vertices away from stem get full weight (stretchy)
+                f32 distFromCenter = fromCenter.Length();
+                f32 maxDist = 1.0f;
+                f32 radialWeight = Math::Clamp(distFromCenter / maxDist, 0.0f, 1.0f);
+
+                // Anchor factor: 0 for stem-side vertices, 1 for pull-side vertices
+                f32 anchorFactor = Math::Clamp((pullAlignment * 0.5f - stemAlignment * 0.3f + 0.5f), 0.05f, 1.0f);
+
+                f32 weight = radialWeight * anchorFactor;
+                target = rest + localPullDir * (pullMagnitude * weight * 1.0f);
             }
 
             // Spring force toward target
@@ -359,31 +404,22 @@ void FlowerSystem::CheckBreaks() {
 
         if (stretch >= tether->breakDistance) {
             tether->isBroken = true;
+            tether->justBroke = true;
 
-            // Clear grab state
+            // Mark grab as broken — petal stays under cursor
             auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
             if (grab) {
-                grab->isGrabbed = false;
-            }
-            if (m_GrabbedEntity == entity) {
-                m_GrabbedEntity = INVALID_ENTITY;
+                grab->isBroken = true;
+                // Keep isGrabbed = true so petal follows cursor
             }
 
-            // Give the entity a fling velocity via RigidbodyComponent
-            if (!m_World->HasComponent<RigidbodyComponent>(entity)) {
-                m_World->AddComponent<RigidbodyComponent>(entity);
+            // Spawn break particles at petal position
+            Math::Vector3 particleColor(1.0f, 1.0f, 1.0f);
+            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+            if (mat) {
+                particleColor = mat->baseColor;
             }
-            auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
-            if (rb) {
-                Math::Vector3 flingDir = (transform->position - attachWorld);
-                f32 flingLen = flingDir.Length();
-                if (flingLen > 1e-6f) {
-                    flingDir = flingDir * (1.0f / flingLen);
-                }
-                rb->velocity = flingDir * 3.0f + Math::Vector3(0, 2.0f, 0);
-                rb->useGravity = true;
-                rb->mass = 0.1f;
-            }
+            SpawnBreakParticles(transform->position, particleColor);
 
             // Update FlowerStemComponent counters
             auto* stemComp = m_World->GetComponent<FlowerStemComponent>(tether->stemEntity);
@@ -403,6 +439,190 @@ void FlowerSystem::CheckBreaks() {
 
             ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)entity);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 5: UpdateBrokenParts — gravity for released broken parts
+// ---------------------------------------------------------------------------
+void FlowerSystem::UpdateBrokenParts(f32 dt) {
+    if (!m_World) return;
+
+    for (Entity entity : m_World->GetAllEntities()) {
+        auto* tether = m_World->GetComponent<TetherComponent>(entity);
+        if (!tether || !tether->isBroken) continue;
+
+        // Clear one-frame justBroke flag
+        if (tether->justBroke) {
+            tether->justBroke = false;
+        }
+
+        auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
+
+        // If still grabbed (holding broken petal), move petal to cursor
+        if (grab && grab->isGrabbed && grab->isBroken) {
+            auto* transform = m_World->GetComponent<TransformComponent>(entity);
+            if (transform) {
+                transform->position = grab->cursorWorldPoint;
+            }
+            continue;
+        }
+
+        // If released (has rigidbody), apply gravity
+        auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (rb && transform && rb->useGravity) {
+            rb->velocity = rb->velocity + Math::Vector3(0.0f, -9.81f * rb->mass, 0.0f) * dt;
+            transform->position = transform->position + rb->velocity * dt;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 6: UpdateParticles — tick particle entity lifetimes and gravity
+// ---------------------------------------------------------------------------
+void FlowerSystem::UpdateParticles(f32 dt) {
+    if (!m_World) return;
+
+    for (auto it = m_Particles.begin(); it != m_Particles.end(); ) {
+        it->lifetime += dt;
+        if (it->lifetime >= it->maxLifetime) {
+            // Destroy particle entity
+            m_World->DestroyEntity(it->entity);
+            it = m_Particles.erase(it);
+            continue;
+        }
+
+        // Apply gravity to particle velocity
+        it->velocity = it->velocity + Math::Vector3(0.0f, -9.81f, 0.0f) * dt;
+
+        // Move particle entity
+        auto* transform = m_World->GetComponent<TransformComponent>(it->entity);
+        if (transform) {
+            transform->position = transform->position + it->velocity * dt;
+
+            // Fade by shrinking scale
+            f32 t = it->lifetime / it->maxLifetime;
+            f32 scale = 0.06f * (1.0f - t * t); // Quadratic fade-out
+            transform->scale = Math::Vector3(scale, scale, scale);
+        }
+
+        ++it;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 7: CheckGroundImpact — detect broken+released parts hitting ground
+// ---------------------------------------------------------------------------
+void FlowerSystem::CheckGroundImpact() {
+    if (!m_World) return;
+
+    for (Entity entity : m_World->GetAllEntities()) {
+        auto* tether = m_World->GetComponent<TetherComponent>(entity);
+        if (!tether || !tether->isBroken) continue;
+
+        auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
+        if (grab && grab->isGrabbed) continue; // Still held
+
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
+        if (!transform || !rb) continue;
+
+        // Check if fallen to ground level
+        if (transform->position.y <= 0.0f) {
+            transform->position.y = 0.0f;
+            rb->velocity = Math::Vector3(0, 0, 0);
+            rb->useGravity = false;
+
+            // Spawn splash particles
+            Math::Vector3 splashColor(1.0f, 1.0f, 1.0f);
+            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+            if (mat) {
+                splashColor = mat->baseColor;
+            }
+            SpawnGroundSplash(transform->position, splashColor);
+
+            // Remove rigidbody so we don't keep checking
+            m_World->RemoveComponent<RigidbodyComponent>(entity);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SpawnBreakParticles — burst of 14 droplets radiating outward
+// ---------------------------------------------------------------------------
+void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color) {
+    if (!m_World) return;
+
+    const int count = 14;
+    for (int i = 0; i < count; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        Entity p = m_World->CreateEntity();
+        auto& pt = m_World->AddComponent<TransformComponent>(p);
+        pt.position = position;
+        pt.scale = Math::Vector3(0.06f, 0.06f, 0.06f);
+
+        auto& pmat = m_World->AddComponent<MaterialComponent>(p);
+        pmat.baseColor = color;
+        pmat.roughness = 0.9f;
+
+        m_World->AddComponent<MeshComponent>(p, Renderer::MeshFactory::CreateCube(1.0f));
+
+        // Radial velocity with upward bias
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
+        f32 speed = 2.0f + static_cast<f32>(i % 3) * 0.5f;
+        Math::Vector3 vel(
+            std::cos(angle) * speed,
+            1.5f + static_cast<f32>(i % 4) * 0.4f,
+            std::sin(angle) * speed
+        );
+
+        FlowerParticle fp;
+        fp.entity = p;
+        fp.velocity = vel;
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 0.8f + static_cast<f32>(i % 3) * 0.2f;
+        m_Particles.push_back(fp);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SpawnGroundSplash — 8 droplets spraying upward from impact point
+// ---------------------------------------------------------------------------
+void FlowerSystem::SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color) {
+    if (!m_World) return;
+
+    const int count = 8;
+    for (int i = 0; i < count; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        Entity p = m_World->CreateEntity();
+        auto& pt = m_World->AddComponent<TransformComponent>(p);
+        pt.position = position + Math::Vector3(0.0f, 0.05f, 0.0f);
+        pt.scale = Math::Vector3(0.04f, 0.04f, 0.04f);
+
+        auto& pmat = m_World->AddComponent<MaterialComponent>(p);
+        pmat.baseColor = color;
+        pmat.roughness = 0.9f;
+
+        m_World->AddComponent<MeshComponent>(p, Renderer::MeshFactory::CreateCube(1.0f));
+
+        // Spray upward with radial spread
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
+        f32 speed = 1.0f + static_cast<f32>(i % 3) * 0.3f;
+        Math::Vector3 vel(
+            std::cos(angle) * speed * 0.5f,
+            2.0f + static_cast<f32>(i % 3) * 0.5f,
+            std::sin(angle) * speed * 0.5f
+        );
+
+        FlowerParticle fp;
+        fp.entity = p;
+        fp.velocity = vel;
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 0.6f + static_cast<f32>(i % 3) * 0.15f;
+        m_Particles.push_back(fp);
     }
 }
 

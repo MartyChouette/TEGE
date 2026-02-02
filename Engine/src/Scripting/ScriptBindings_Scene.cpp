@@ -1,0 +1,357 @@
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Logging/Log.h"
+#include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Quaternion.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Entity.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Scene/SceneManager.h"
+#include <angelscript.h>
+#include <string>
+#include <cassert>
+
+using namespace Enjin;
+using namespace Enjin::Math;
+using namespace Enjin::ECS;
+
+#define AS_CHECK(expr) \
+    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+
+// The world pointer is set in ScriptBindings.cpp via SetBindingsWorld()
+extern Enjin::ECS::World* s_BindingsWorld;
+
+// Scene manager pointer for scene loading from scripts
+static Enjin::Scene::SceneManager* s_BindingsSceneManager = nullptr;
+
+namespace Enjin {
+namespace Scripting {
+void SetBindingsSceneManager(Scene::SceneManager* mgr) { s_BindingsSceneManager = mgr; }
+} // namespace Scripting
+} // namespace Enjin
+
+// ============================================================================
+// Entity transform/name functions (called by TegeBehavior.as)
+// ============================================================================
+
+static Vector3 Entity_GetPosition(u64 id) {
+    if (!s_BindingsWorld) return Vector3();
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    return t ? t->position : Vector3();
+}
+
+static void Entity_SetPosition(u64 id, const Vector3& pos) {
+    if (!s_BindingsWorld) return;
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (t) t->position = pos;
+}
+
+static Vector3 Entity_GetRotation(u64 id) {
+    if (!s_BindingsWorld) return Vector3();
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (!t) return Vector3();
+    Vector3 euler = t->rotation.ToEuler();
+    return Vector3(Degrees(euler.x), Degrees(euler.y), Degrees(euler.z));
+}
+
+static void Entity_SetRotation(u64 id, const Vector3& eulerDeg) {
+    if (!s_BindingsWorld) return;
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (t) {
+        t->rotation = Quaternion::FromEuler(
+            Vector3(Radians(eulerDeg.x), Radians(eulerDeg.y), Radians(eulerDeg.z)));
+    }
+}
+
+static Vector3 Entity_GetScale(u64 id) {
+    if (!s_BindingsWorld) return Vector3(1.0f);
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    return t ? t->scale : Vector3(1.0f);
+}
+
+static void Entity_SetScale(u64 id, const Vector3& s) {
+    if (!s_BindingsWorld) return;
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (t) t->scale = s;
+}
+
+static std::string Entity_GetName(u64 id) {
+    if (!s_BindingsWorld) return "";
+    auto* n = s_BindingsWorld->GetComponent<NameComponent>(static_cast<Entity>(id));
+    return n ? n->name : "";
+}
+
+// ============================================================================
+// Scene functions
+// ============================================================================
+
+static u64 Scene_FindEntity(const std::string& name) {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_FindEntity: no active world");
+        return INVALID_ENTITY;
+    }
+
+    const auto& entities = s_BindingsWorld->GetAllEntities();
+    for (Entity e : entities) {
+        auto* nc = s_BindingsWorld->GetComponent<NameComponent>(e);
+        if (nc && nc->name == name) {
+            return static_cast<u64>(e);
+        }
+    }
+
+    return static_cast<u64>(INVALID_ENTITY);
+}
+
+static u64 Scene_FindEntityByTag(const std::string& tag) {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_FindEntityByTag: no active world");
+        return INVALID_ENTITY;
+    }
+
+    const auto& entities = s_BindingsWorld->GetAllEntities();
+    for (Entity e : entities) {
+        auto* tc = s_BindingsWorld->GetComponent<TagComponent>(e);
+        if (tc && tc->HasTag(tag)) {
+            return static_cast<u64>(e);
+        }
+    }
+
+    return static_cast<u64>(INVALID_ENTITY);
+}
+
+static void Scene_DestroyEntity(u64 id) {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_DestroyEntity: no active world");
+        return;
+    }
+
+    Entity entity = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(entity)) {
+        ENJIN_LOG_WARN(Script, "Scene_DestroyEntity: entity %llu is not valid", id);
+        return;
+    }
+
+    s_BindingsWorld->DestroyEntity(entity);
+}
+
+static u64 Scene_Instantiate() {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_Instantiate: no active world");
+        return INVALID_ENTITY;
+    }
+
+    Entity entity = s_BindingsWorld->CreateEntity();
+    // New entities get a TransformComponent by default so scripts can
+    // immediately set position/rotation/scale.
+    s_BindingsWorld->AddComponent<TransformComponent>(entity);
+    return static_cast<u64>(entity);
+}
+
+static u64 Scene_InstantiateNamed(const std::string& name) {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_InstantiateNamed: no active world");
+        return INVALID_ENTITY;
+    }
+
+    Entity entity = s_BindingsWorld->CreateEntity();
+    s_BindingsWorld->AddComponent<TransformComponent>(entity);
+    s_BindingsWorld->AddComponent<NameComponent>(entity, NameComponent(name));
+    return static_cast<u64>(entity);
+}
+
+static u64 Scene_InstantiateAt(const Vector3& position) {
+    if (!s_BindingsWorld) {
+        ENJIN_LOG_WARN(Script, "Scene_InstantiateAt: no active world");
+        return INVALID_ENTITY;
+    }
+
+    Entity entity = s_BindingsWorld->CreateEntity();
+    TransformComponent tc;
+    tc.position = position;
+    s_BindingsWorld->AddComponent<TransformComponent>(entity, tc);
+    return static_cast<u64>(entity);
+}
+
+static bool Scene_IsValid(u64 id) {
+    if (!s_BindingsWorld) return false;
+    return s_BindingsWorld->IsValid(static_cast<Entity>(id));
+}
+
+static u64 Scene_GetEntityCount() {
+    if (!s_BindingsWorld) return 0;
+    return static_cast<u64>(s_BindingsWorld->GetEntityCount());
+}
+
+static std::string Scene_GetEntityName(u64 id) {
+    if (!s_BindingsWorld) return "";
+    auto* nc = s_BindingsWorld->GetComponent<NameComponent>(static_cast<Entity>(id));
+    return nc ? nc->name : "";
+}
+
+static void Scene_SetEntityName(u64 id, const std::string& name) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(entity)) return;
+
+    auto* nc = s_BindingsWorld->GetComponent<NameComponent>(entity);
+    if (nc) {
+        nc->name = name;
+    } else {
+        s_BindingsWorld->AddComponent<NameComponent>(entity, NameComponent(name));
+    }
+}
+
+static void Scene_AddTag(u64 id, const std::string& tag) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(entity)) return;
+
+    if (s_BindingsWorld->HasComponent<TagComponent>(entity)) {
+        auto* tc = s_BindingsWorld->GetComponent<TagComponent>(entity);
+        tc->AddTag(tag);
+    } else {
+        TagComponent tc;
+        tc.AddTag(tag);
+        s_BindingsWorld->AddComponent<TagComponent>(entity, tc);
+    }
+}
+
+static void Scene_RemoveTag(u64 id, const std::string& tag) {
+    if (!s_BindingsWorld) return;
+    Entity entity = static_cast<Entity>(id);
+    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(entity);
+    if (tc) tc->RemoveTag(tag);
+}
+
+static bool Scene_HasTag(u64 id, const std::string& tag) {
+    if (!s_BindingsWorld) return false;
+    auto* tc = s_BindingsWorld->GetComponent<TagComponent>(static_cast<Entity>(id));
+    return tc ? tc->HasTag(tag) : false;
+}
+
+// ============================================================================
+// Scene management functions
+// ============================================================================
+
+static void Scene_LoadScene(const std::string& sceneName) {
+    if (!s_BindingsSceneManager) {
+        ENJIN_LOG_WARN(Script, "Scene_LoadScene: no scene manager set");
+        return;
+    }
+    if (!s_BindingsSceneManager->LoadScene(sceneName)) {
+        ENJIN_LOG_WARN(Script, "Scene_LoadScene: failed to load scene '%s'", sceneName.c_str());
+    }
+}
+
+static std::string Scene_GetCurrentScene() {
+    if (!s_BindingsSceneManager) return "";
+    return s_BindingsSceneManager->GetCurrentSceneName();
+}
+
+// ============================================================================
+// Registration
+// ============================================================================
+
+namespace Enjin {
+namespace Scripting {
+
+void RegisterSceneBindings(asIScriptEngine* engine) {
+    // Entity transform/name functions (used by TegeBehavior.as)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetPosition(uint64)",
+        asFUNCTION(Entity_GetPosition), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_SetPosition(uint64, const Vector3 &in)",
+        asFUNCTION(Entity_SetPosition), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetRotation(uint64)",
+        asFUNCTION(Entity_GetRotation), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_SetRotation(uint64, const Vector3 &in)",
+        asFUNCTION(Entity_SetRotation), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 Entity_GetScale(uint64)",
+        asFUNCTION(Entity_GetScale), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_SetScale(uint64, const Vector3 &in)",
+        asFUNCTION(Entity_SetScale), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string Entity_GetName(uint64)",
+        asFUNCTION(Entity_GetName), asCALL_CDECL));
+
+    // Entity lookup
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_FindEntity(const string &in)",
+        asFUNCTION(Scene_FindEntity), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_FindEntityByTag(const string &in)",
+        asFUNCTION(Scene_FindEntityByTag), asCALL_CDECL));
+
+    // Entity lifecycle
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_DestroyEntity(uint64)",
+        asFUNCTION(Scene_DestroyEntity), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_Instantiate()",
+        asFUNCTION(Scene_Instantiate), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_InstantiateNamed(const string &in)",
+        asFUNCTION(Scene_InstantiateNamed), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_InstantiateAt(const Vector3 &in)",
+        asFUNCTION(Scene_InstantiateAt), asCALL_CDECL));
+
+    // Entity queries
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Scene_IsValid(uint64)",
+        asFUNCTION(Scene_IsValid), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "uint64 Scene_GetEntityCount()",
+        asFUNCTION(Scene_GetEntityCount), asCALL_CDECL));
+
+    // Name management
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string Scene_GetEntityName(uint64)",
+        asFUNCTION(Scene_GetEntityName), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_SetEntityName(uint64, const string &in)",
+        asFUNCTION(Scene_SetEntityName), asCALL_CDECL));
+
+    // Tag management
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_AddTag(uint64, const string &in)",
+        asFUNCTION(Scene_AddTag), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_RemoveTag(uint64, const string &in)",
+        asFUNCTION(Scene_RemoveTag), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Scene_HasTag(uint64, const string &in)",
+        asFUNCTION(Scene_HasTag), asCALL_CDECL));
+
+    // Scene management (SceneManager integration)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Scene_LoadScene(const string &in)",
+        asFUNCTION(Scene_LoadScene), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string Scene_GetCurrentScene()",
+        asFUNCTION(Scene_GetCurrentScene), asCALL_CDECL));
+}
+
+} // namespace Scripting
+} // namespace Enjin

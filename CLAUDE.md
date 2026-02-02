@@ -47,12 +47,15 @@ enjin/
 │
 ├── Engine/                  # Engine layer
 │   ├── include/Enjin/
-│   │   ├── AI/             # AIBehaviors, Navmesh (stubs)
-│   │   ├── Animation/      # Sprite + skeletal animation framework
+│   │   ├── AI/             # AIBehaviors, Navmesh, A* Pathfinding
+│   │   ├── Animation/      # Sprite + skeletal animation, Timeline/Sequencer
 │   │   ├── Assets/         # GLTFLoader, SceneImporter, Prefab
-│   │   ├── Audio/          # AudioSystem, SimpleAudio (stubs)
+│   │   ├── Audio/          # AudioSystem, SimpleAudio (miniaudio backend)
+│   │   ├── Debug/          # Profiler, ScopeTimer, FrameData
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # Transform, Mesh, Light, Material, Camera, Skeleton, Controllers
+│   │   │   ├── Components/ # 60+ component types (incl. joints, ragdoll, script, LOD)
+│   │   │   │   ├── Controllers/  # 5 character controller types + Vehicle
+│   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Accessibility/  # ColorblindFilter, SubtitleSystem, ContentWarning
 │   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, PerformanceStats
@@ -60,11 +63,15 @@ enjin/
 │   │   ├── Input/          # InputAction (remappable input action map)
 │   │   ├── GUI/            # ImGui integration
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
-│   │   ├── Physics/        # SimplePhysics
+│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
+│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
 │   │   ├── Platform/       # FileDialog
-│   │   ├── Procedural/     # LevelGenerator (stub)
-│   │   └── Renderer/       # Vulkan renderer
-│   │       └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   ├── Plugin/         # PluginSystem, HotReload
+│   │   ├── Procedural/     # LevelGenerator
+│   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
+│   │   │   └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
+│   │   └── Scripting/      # ScriptEngine, ScriptBindings, TegeBehavior
 │   ├── shaders/            # GLSL shaders (triangle.vert/frag)
 │   └── src/
 │
@@ -143,8 +150,13 @@ struct PushConstants {
 ### Editor
 
 - **`EditorLayer`** - Main editor class with ImGui panels
-- **`ScenePicker`** - Ray casting for entity selection (click-to-select)
+- **`ScenePicker`** - Ray casting for entity selection (click-to-select, rect-pick for marquee)
 - **`PlayMode`** - Play/Pause/Stop game preview controls
+- **Multi-select system:**
+  - `m_SelectedEntities` (`std::unordered_set<ECS::Entity>`) — all currently selected entities
+  - `m_PrimarySelected` — last-clicked entity, used by inspector/gizmo
+  - Helper methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `IsSelected()`, `SelectRange()`, `SelectEntitiesInRect()`
+  - Backward-compatible API: `GetSelectedEntity()` returns primary, `SetSelectedEntity()` clears and selects one
 - **Keyboard shortcuts:**
   - `1` - Translate gizmo
   - `2` - Rotate gizmo
@@ -155,7 +167,15 @@ struct PushConstants {
   - `Shift` - Sprint
   - Hold RMB + Mouse - Look around
   - Left-click - Select entity, Double-click - Focus on entity
+  - Ctrl+click - Toggle entity in/out of selection (hierarchy + viewport)
+  - Shift+click - Range select in hierarchy (from primary to clicked)
+  - Drag in viewport - Marquee/rubber-band selection (adds enclosed entities)
+  - `Delete` - Delete all selected entities
+  - `Ctrl+D` - Duplicate all selected entities
+  - `F` - Focus camera on selection centroid
   - Scroll - Adjust move speed
+- **Inspector multi-select:** When multiple entities selected, shows entity list + batch transform editing (position offset, rotation offset, scale multiplier with Apply buttons)
+- **Gizmo multi-select:** Single entity = direct manipulation; multiple = gizmo at centroid, delta applied to all
 
 ### Skybox
 
@@ -197,6 +217,14 @@ struct PushConstants {
 - **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
 - **`SceneImporter`** - Converts GLTFScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes
 
+### Window Icon
+
+- **`WindowDesc::iconPath`** (`const char* iconPath = nullptr`) - Optional path to a PNG icon file
+- `Application.cpp` sets `windowDesc.iconPath = "icon.png"` at startup
+- The engine loads the PNG via `stb_image` and calls `glfwSetWindowIcon()` to set the window icon
+- Place `icon.png` next to the executable (32x32 or 64x64 recommended)
+- If the file is missing, the OS default icon is used silently
+
 ### Build Pipeline & Player
 
 - **`BuildPipeline`** (`Engine/include/Enjin/Build/BuildPipeline.h`) - Orchestrates full game export: scan project → validate assets → pack → copy player → write manifest → verify CRC32s
@@ -222,7 +250,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 ## Code Conventions
 
 - **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`, `Enjin::Gameplay`
 - **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)` — categories include Build, Player
 - **API export:** `ENJIN_API` macro for DLL export
 
@@ -293,7 +321,8 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Scene serialization of content warning flags
 - 15 startup templates: Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third Person, 3D First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, 4P Racing, Arena Fighter, PS1 RPG, City Builder
 - World time and seasonal weather systems
-- Terrain editing with brush tools
+- Terrain editing with brush tools (viewport sculpting: raise, lower, flatten, smooth, paint with ray-heightmap intersection)
+- 2D terrain control point drag-to-edit in viewport
 - Shrub/Tree vegetation rendering
 - Audio system (miniaudio cross-platform backend, 3D spatialization, multi-channel mixing)
 - Audio scene serialization (AudioSourceComponent, AudioListenerComponent)
@@ -301,9 +330,44 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Standalone game player (Player/ app, loads .enjpak asset packs)
 - Asset pack build pipeline (.enjpak packaging)
 - Splitscreen rendering (2P/4P viewport subdivision, per-viewport uniform buffers, 4P Racing template)
-
-**Next Up:**
-- AI/Navmesh integration (framework exists, needs gameplay logic)
+- Multi-select system (Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection)
+- Multi-entity gizmo (centroid-based transform, delta applied to all selected)
+- Batch transform inspector (position offset, rotation offset, scale multiplier for multiple entities)
+- Raw mouse input (GLFW_RAW_MOUSE_MOTION, bypasses OS acceleration) + temporal smoothing
+- C++ Entity Event Bus (decoupled entity communication with deferred dispatch)
+- Damage resistance/weakness system (per-type multipliers: physical, fire, ice, electric, poison, magic)
+- Stamina/Resource system (generic ResourceComponent with regen, depletion, action costs integrated into controllers)
+- Footstep system (surface-based audio with walk/run intervals and pitch variance)
+- Object pooling (entity recycling with lifetime-based auto-release)
+- Quest/Objective system (QuestStateComponent with objective flags, QuestSystem with start/complete/fail)
+- HUD overlay system (health bars, resource bars, labels, crosshair during play mode)
+- Game state save/load system (SaveSystem with 10 slots, quick save/load, disk persistence)
+- Cinematic camera system (spline-based waypoint sequences with easing, hold times, loop)
+- Window icon support (PNG via stb_image, glfwSetWindowIcon)
+- AngelScript scripting system (ScriptEngine, TegeBehavior base class, hot-reload)
+- Script bindings: entity transform access (Get/Set Position/Rotation/Scale/Name)
+- Script bindings: physics (Raycast, CheckSphere, CheckBox, AddForce, AddImpulse, SetVelocity, SetGravityScale)
+- Script bindings: audio (Play, Stop, SetVolume, SetPitch, PlayAtPosition, MasterVolume)
+- Script bindings: component access (Health, Material, Light, Camera, AudioSource, Animator, Controller — 40+ functions)
+- Script coroutines (StartCoroutine, YieldSeconds, YieldFrames, YieldEndOfFrame)
+- Script event system (Events_Listen, Events_Send, Events_Broadcast with EventData)
+- Scene management from scripts (Scene_LoadScene, Scene_GetCurrentScene)
+- Physics constraint solver (sequential impulse, 8 iterations, warm starting, Baumgarte stabilization)
+- 6 physics joint types (Distance, Hinge, BallSocket, Spring, Fixed, Slider) with breakable mode
+- Ragdoll component (bone-to-joint mapping, animation-to-ragdoll blend, auto-settle)
+- PhysicsWorld-ECS integration bridge (automatic sync between RigidBody objects and ECS components)
+- Joint and ragdoll serialization + inspector UI
+- Cubemap skybox loading (stb_image 6-face loading with fallback)
+- Quest log overlay rendering (ImGui overlay with objective checkmarks)
+- LOD system with distance-based mesh swapping
+- RenderSystem hot path optimizations (single-pass rendering, cached player entity, iterator reuse)
+- Profiler system (ENJIN_PROFILE_SCOPE macro, per-frame breakdown, FPS graph, ImGui panel)
+- Plugin/extension system (IPlugin interface, DLL/SO loading, manifest JSON, editor panel)
+- Animation timeline/sequencer (property/event/animation tracks, easing, loop/ping-pong)
+- C++ gameplay hot-reload (file watching, DLL reload, state save/restore)
+- Mobile/console export foundations (IRenderBackend interface, PlatformInput, BuildTarget enum)
+- Level streaming (chunk-based, distance-based loading, priority queue, async, StreamingVolume/Portal components)
+- AI/Navmesh A* pathfinding with debug visualization
 
 ## Common Tasks
 
@@ -340,3 +404,7 @@ if (result.success) {
 2. Run `BuildPipeline::Execute(config)` — scans scenes, validates assets, packs into `.enjpak`
 3. The pipeline copies `EnjinPlayer` executable alongside the pack
 4. Player loads `game.enjpak` from its own directory at startup
+
+### Setting the window icon
+
+Place an `icon.png` file (32x32 or 64x64 PNG recommended) next to the executable. The engine loads it via stb_image and calls `glfwSetWindowIcon()` at startup. If the file is missing, the OS default icon is used.

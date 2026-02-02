@@ -4,9 +4,11 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Logging/Log.h"
 #include <cfloat>
 #include <filesystem>
@@ -125,6 +127,41 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
             collider.center = (minBounds + maxBounds) * 0.5f;
             collider.size = maxBounds - minBounds;
+
+            // Extract material from the first primitive that has one
+            i32 matIdx = -1;
+            for (const auto& primitive : gltfMesh.primitives) {
+                if (primitive.materialIndex >= 0) {
+                    matIdx = primitive.materialIndex;
+                    break;
+                }
+            }
+            if (matIdx >= 0 && matIdx < static_cast<i32>(scene.materials.size())) {
+                const GLTFMaterial& gmat = scene.materials[matIdx];
+                auto& mat = world->AddComponent<ECS::MaterialComponent>(entity);
+                mat.baseColor = Math::Vector3(gmat.baseColorFactor.x,
+                                              gmat.baseColorFactor.y,
+                                              gmat.baseColorFactor.z);
+                mat.opacity = gmat.baseColorFactor.w;
+                mat.metallic = gmat.metallicFactor;
+                mat.roughness = gmat.roughnessFactor;
+                mat.emissiveColor = gmat.emissiveFactor;
+                mat.emissiveStrength = (gmat.emissiveFactor.x + gmat.emissiveFactor.y + gmat.emissiveFactor.z > 0.01f) ? 1.0f : 0.0f;
+                mat.doubleSided = gmat.doubleSided;
+                mat.alphaCutoff = gmat.alphaCutoff;
+                if (gmat.alphaMode == GLTFMaterial::AlphaMode::Mask) {
+                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Mask;
+                } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
+                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                }
+            }
+
+            // Auto-generate LODs for imported meshes with enough geometry
+            auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
+            if (importedMesh && importedMesh->vertices.size() > 64) {
+                auto& lod = world->AddComponent<ECS::LODComponent>(entity);
+                Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+            }
         }
     }
 
@@ -421,6 +458,13 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 matComp.doubleSided = assimpMat.doubleSided;
 
                 world->AddComponent<ECS::MaterialComponent>(entity, matComp);
+            }
+
+            // Auto-generate LODs for imported meshes with enough geometry
+            auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
+            if (importedMesh && importedMesh->vertices.size() > 64) {
+                auto& lod = world->AddComponent<ECS::LODComponent>(entity);
+                Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
             }
         }
     }

@@ -272,36 +272,35 @@ int main() {
         ctrl.snapTurnAngle = 90.0f;
         ctrl.yaw = 180.0f;  // Facing south
 
-        // Turn right: yaw -= 90 => 90 (facing east)
-        ctrl.yaw -= ctrl.snapTurnAngle;
+        // Turn right (D key): yaw += 90 => 270
+        ctrl.yaw += ctrl.snapTurnAngle;
         while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
         while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
-        CHECK_FLOAT(ctrl.yaw, 90.0f, "After right turn: yaw=90 (east)");
+        CHECK_FLOAT(ctrl.yaw, 270.0f, "After right turn: yaw=270");
 
-        // Turn right again: 90 - 90 = 0 (facing north)
-        ctrl.yaw -= ctrl.snapTurnAngle;
+        // Turn right again: 270 + 90 = 360 => 0
+        ctrl.yaw += ctrl.snapTurnAngle;
         while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
         while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
         CHECK_FLOAT(ctrl.yaw, 0.0f, "After 2nd right turn: yaw=0 (north)");
 
-        // Turn left: 0 + 90 = 90... wait, from 0, left should go to 270 (west)
-        // Actually in the code: left is yaw += snapTurnAngle
-        ctrl.yaw += ctrl.snapTurnAngle;
+        // Turn left (A key): 0 - 90 = -90 => 270
+        ctrl.yaw -= ctrl.snapTurnAngle;
         while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
         while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
-        CHECK_FLOAT(ctrl.yaw, 90.0f, "After left turn from north: yaw=90 (east)");
+        CHECK_FLOAT(ctrl.yaw, 270.0f, "After left turn from north: yaw=270");
 
         // Reset to 0 (north), turn left
         ctrl.yaw = 0.0f;
-        ctrl.yaw += ctrl.snapTurnAngle;
+        ctrl.yaw -= ctrl.snapTurnAngle;
         while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
         while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
-        CHECK_FLOAT(ctrl.yaw, 90.0f, "Left from north: yaw=90");
+        CHECK_FLOAT(ctrl.yaw, 270.0f, "Left from north: yaw=270");
 
         // Full rotation: 4 right turns from 180 should return to 180
         ctrl.yaw = 180.0f;
         for (int i = 0; i < 4; i++) {
-            ctrl.yaw -= ctrl.snapTurnAngle;
+            ctrl.yaw += ctrl.snapTurnAngle;
             while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
             while (ctrl.yaw >= 360.0f) ctrl.yaw -= 360.0f;
         }

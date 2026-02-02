@@ -4,6 +4,8 @@
 #include <cstring>
 #include <cmath>
 #include <algorithm>
+#include <memory>
+#include "stb_image.h"
 
 namespace Enjin {
 namespace Renderer {
@@ -156,11 +158,11 @@ bool Skybox::CreateProcedural(const Math::Vector3& topColor, const Math::Vector3
         { 0, 0,-1}, { 0, 0, 1}, { 1, 0, 0}, { 1, 0, 0}, { 1, 0, 0}, {-1, 0, 0}
     };
 
-    std::vector<u8*> faceData(6);
+    std::vector<std::unique_ptr<u8[]>> faceData(6);
     usize faceBytes = faceSize * faceSize * 4;
 
     for (int f = 0; f < 6; ++f) {
-        faceData[f] = new u8[faceBytes];
+        faceData[f] = std::make_unique<u8[]>(faceBytes);
         for (u32 y = 0; y < faceSize; ++y) {
             for (u32 x = 0; x < faceSize; ++x) {
                 float u = (x + 0.5f) / faceSize * 2.0f - 1.0f;
@@ -197,10 +199,6 @@ bool Skybox::CreateProcedural(const Math::Vector3& topColor, const Math::Vector3
 
     UploadFaces(faceData, faceSize);
 
-    for (int f = 0; f < 6; ++f) {
-        delete[] faceData[f];
-    }
-
     ENJIN_LOG_INFO(Renderer, "Created procedural skybox (%ux%u per face)", faceSize, faceSize);
     return true;
 }
@@ -216,11 +214,11 @@ bool Skybox::CreateSolidColor(const Math::Vector3& color) {
     u8 g = static_cast<u8>(std::clamp(color.y * 255.0f, 0.0f, 255.0f));
     u8 b = static_cast<u8>(std::clamp(color.z * 255.0f, 0.0f, 255.0f));
 
-    std::vector<u8*> faceData(6);
+    std::vector<std::unique_ptr<u8[]>> faceData(6);
     usize faceBytes = faceSize * faceSize * 4;
 
     for (int f = 0; f < 6; ++f) {
-        faceData[f] = new u8[faceBytes];
+        faceData[f] = std::make_unique<u8[]>(faceBytes);
         for (u32 i = 0; i < faceSize * faceSize; ++i) {
             faceData[f][i * 4 + 0] = r;
             faceData[f][i * 4 + 1] = g;
@@ -231,26 +229,139 @@ bool Skybox::CreateSolidColor(const Math::Vector3& color) {
 
     UploadFaces(faceData, faceSize);
 
-    for (int f = 0; f < 6; ++f) {
-        delete[] faceData[f];
-    }
-
     ENJIN_LOG_INFO(Renderer, "Created solid color skybox");
     return true;
 }
 
 bool Skybox::LoadCubemap(const std::array<std::string, 6>& facePaths) {
-    // Stub: full implementation requires stb_image loading of 6 face images
-    // For now, create a procedural skybox as placeholder
-    ENJIN_LOG_WARN(Renderer, "Cubemap loading not yet implemented, using procedural fallback");
-    return CreateProcedural(
-        Math::Vector3(0.1f, 0.2f, 0.6f),
-        Math::Vector3(0.4f, 0.3f, 0.2f),
-        Math::Vector3(0.5f, 0.7f, 0.9f)
-    );
+    static const char* faceNames[6] = {
+        "+X (Right)", "-X (Left)", "+Y (Top)", "-Y (Bottom)", "+Z (Front)", "-Z (Back)"
+    };
+
+    // Load the first face to determine dimensions
+    int firstWidth = 0, firstHeight = 0, firstChannels = 0;
+    bool isHdr = stbi_is_hdr(facePaths[0].c_str()) != 0;
+
+    // Load all 6 faces as RGBA8
+    std::vector<std::unique_ptr<u8[]>> faceData(6);
+    u32 faceSize = 0;
+
+    for (usize i = 0; i < 6; ++i) {
+        if (facePaths[i].empty()) {
+            ENJIN_LOG_WARN(Renderer, "Cubemap face %s has empty path, falling back to procedural", faceNames[i]);
+            return CreateProcedural(
+                Math::Vector3(0.1f, 0.2f, 0.6f),
+                Math::Vector3(0.4f, 0.3f, 0.2f),
+                Math::Vector3(0.5f, 0.7f, 0.9f)
+            );
+        }
+
+        int width = 0, height = 0, channels = 0;
+
+        if (isHdr) {
+            // Load HDR image as float, then convert to RGBA8
+            float* hdrPixels = stbi_loadf(facePaths[i].c_str(), &width, &height, &channels, 4);
+            if (!hdrPixels) {
+                ENJIN_LOG_WARN(Renderer, "Failed to load HDR cubemap face %s: %s, falling back to procedural",
+                    faceNames[i], facePaths[i].c_str());
+                return CreateProcedural(
+                    Math::Vector3(0.1f, 0.2f, 0.6f),
+                    Math::Vector3(0.4f, 0.3f, 0.2f),
+                    Math::Vector3(0.5f, 0.7f, 0.9f)
+                );
+            }
+
+            // Use first face dimensions as the canonical size
+            if (i == 0) {
+                firstWidth = width;
+                firstHeight = height;
+                faceSize = static_cast<u32>(std::min(firstWidth, firstHeight));
+            }
+
+            // Verify all faces match the first face dimensions
+            if (width != firstWidth || height != firstHeight) {
+                ENJIN_LOG_WARN(Renderer, "Cubemap face %s size %dx%d differs from first face %dx%d, falling back to procedural",
+                    faceNames[i], width, height, firstWidth, firstHeight);
+                stbi_image_free(hdrPixels);
+                return CreateProcedural(
+                    Math::Vector3(0.1f, 0.2f, 0.6f),
+                    Math::Vector3(0.4f, 0.3f, 0.2f),
+                    Math::Vector3(0.5f, 0.7f, 0.9f)
+                );
+            }
+
+            // Convert HDR float data to RGBA8 with tone mapping
+            usize pixelCount = static_cast<usize>(width) * static_cast<usize>(height);
+            faceData[i] = std::make_unique<u8[]>(pixelCount * 4);
+            for (usize p = 0; p < pixelCount; ++p) {
+                for (usize c = 0; c < 3; ++c) {
+                    // Simple Reinhard tone mapping
+                    f32 val = hdrPixels[p * 4 + c];
+                    val = val / (1.0f + val);
+                    faceData[i][p * 4 + c] = static_cast<u8>(std::clamp(val * 255.0f, 0.0f, 255.0f));
+                }
+                faceData[i][p * 4 + 3] = 255;
+            }
+            stbi_image_free(hdrPixels);
+        } else {
+            // Load LDR image directly as RGBA8
+            u8* pixels = stbi_load(facePaths[i].c_str(), &width, &height, &channels, 4);
+            if (!pixels) {
+                ENJIN_LOG_WARN(Renderer, "Failed to load cubemap face %s: %s, falling back to procedural",
+                    faceNames[i], facePaths[i].c_str());
+                return CreateProcedural(
+                    Math::Vector3(0.1f, 0.2f, 0.6f),
+                    Math::Vector3(0.4f, 0.3f, 0.2f),
+                    Math::Vector3(0.5f, 0.7f, 0.9f)
+                );
+            }
+
+            // Use first face dimensions as the canonical size
+            if (i == 0) {
+                firstWidth = width;
+                firstHeight = height;
+                faceSize = static_cast<u32>(std::min(firstWidth, firstHeight));
+            }
+
+            // Verify all faces match the first face dimensions
+            if (width != firstWidth || height != firstHeight) {
+                ENJIN_LOG_WARN(Renderer, "Cubemap face %s size %dx%d differs from first face %dx%d, falling back to procedural",
+                    faceNames[i], width, height, firstWidth, firstHeight);
+                stbi_image_free(pixels);
+                return CreateProcedural(
+                    Math::Vector3(0.1f, 0.2f, 0.6f),
+                    Math::Vector3(0.4f, 0.3f, 0.2f),
+                    Math::Vector3(0.5f, 0.7f, 0.9f)
+                );
+            }
+
+            // Transfer ownership to unique_ptr
+            usize faceBytes = static_cast<usize>(width) * static_cast<usize>(height) * 4;
+            faceData[i] = std::make_unique<u8[]>(faceBytes);
+            std::memcpy(faceData[i].get(), pixels, faceBytes);
+            stbi_image_free(pixels);
+        }
+    }
+
+    // Create the Vulkan cubemap image
+    if (!CreateCubemapImage(faceSize)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create cubemap image for loaded faces");
+        return CreateProcedural(
+            Math::Vector3(0.1f, 0.2f, 0.6f),
+            Math::Vector3(0.4f, 0.3f, 0.2f),
+            Math::Vector3(0.5f, 0.7f, 0.9f)
+        );
+    }
+
+    // Upload all 6 faces to the GPU
+    UploadFaces(faceData, faceSize);
+
+    ENJIN_LOG_INFO(Renderer, "Loaded cubemap skybox (%ux%u per face, %s)",
+        faceSize, faceSize, isHdr ? "HDR" : "LDR");
+    return true;
 }
 
-void Skybox::UploadFaces(const std::vector<u8*>& faceData, u32 faceSize) {
+void Skybox::UploadFaces(const std::vector<std::unique_ptr<u8[]>>& faceData, u32 faceSize) {
     if (!m_Context || faceData.size() < 6) return;
 
     VkDevice device = m_Context->GetDevice();
@@ -296,7 +407,7 @@ void Skybox::UploadFaces(const std::vector<u8*>& faceData, u32 faceSize) {
     void* mapped;
     vkMapMemory(device, stagingMemory, 0, totalBytes, 0, &mapped);
     for (int f = 0; f < 6; ++f) {
-        memcpy(static_cast<u8*>(mapped) + f * faceBytes, faceData[f], faceBytes);
+        memcpy(static_cast<u8*>(mapped) + f * faceBytes, faceData[f].get(), faceBytes);
     }
     vkUnmapMemory(device, stagingMemory);
 

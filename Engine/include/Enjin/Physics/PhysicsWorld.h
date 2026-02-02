@@ -3,8 +3,12 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Matrix.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include <memory>
 #include <vector>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Physics {
@@ -81,6 +85,30 @@ public:
         return m_RigidBodies;
     }
 
+    /**
+     * @brief Set the ECS world for physics-ECS synchronization
+     * @param world Pointer to the ECS world (nullptr to disable sync)
+     */
+    void SetECSWorld(ECS::World* world) { m_ECSWorld = world; }
+
+    /**
+     * @brief Sync ECS components into PhysicsWorld rigid bodies
+     *
+     * Reads RigidbodyComponent, TransformComponent, and collider components
+     * from the ECS world, creating or updating RigidBody objects as needed.
+     * Removes bodies for entities that no longer have a RigidbodyComponent.
+     */
+    void SyncFromECS();
+
+    /**
+     * @brief Write PhysicsWorld simulation results back to ECS components
+     *
+     * Copies RigidBody positions and velocities back into
+     * TransformComponent and RigidbodyComponent, applying freeze
+     * constraints and linear drag.
+     */
+    void SyncToECS();
+
 private:
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
     std::vector<std::shared_ptr<RigidBody>> m_RigidBodies;
@@ -93,6 +121,11 @@ private:
     bool TestSphereSphere(usize a, usize b, CollisionPair& pair);
     bool TestAABBAABB(usize a, usize b, CollisionPair& pair);
     bool TestSphereAABB(usize sphereIdx, usize boxIdx, CollisionPair& pair);
+
+    // ECS integration
+    ECS::World* m_ECSWorld = nullptr;
+    std::unordered_map<ECS::Entity, std::shared_ptr<RigidBody>> m_EntityBodyMap;
+    f32 m_LastDeltaTime = 0.0f;
 };
 
 class ENJIN_API RigidBody {

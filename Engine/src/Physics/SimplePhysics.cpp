@@ -1,4 +1,5 @@
 #include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/ConstraintSolver.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -8,6 +9,20 @@
 
 namespace Enjin {
 namespace Physics {
+
+SimplePhysics::SimplePhysics()
+    : m_ConstraintSolver(std::make_unique<ConstraintSolver>())
+{
+}
+
+SimplePhysics::~SimplePhysics() = default;
+
+void SimplePhysics::SetWorld(ECS::World* world) {
+    m_World = world;
+    if (m_ConstraintSolver) {
+        m_ConstraintSolver->SetWorld(world);
+    }
+}
 
 void SimplePhysics::Update(f32 deltaTime) {
     if (!m_World) return;
@@ -59,7 +74,7 @@ void SimplePhysics::Update(f32 deltaTime) {
         if (rb->freezePositionY) rb->velocity.y = 0.0f;
         if (rb->freezePositionZ) rb->velocity.z = 0.0f;
 
-        // Update position
+        // Update position (predicted)
         transform->position = transform->position + rb->velocity * deltaTime;
 
         // Ground check using actual colliders via downward raycast
@@ -111,6 +126,11 @@ void SimplePhysics::Update(f32 deltaTime) {
             rb->velocity.y = 0.0f;
             rb->isGrounded = true;
         }
+    }
+
+    // Solve joint constraints after all bodies have been integrated
+    if (m_ConstraintSolver) {
+        m_ConstraintSolver->SolveConstraints(deltaTime);
     }
 }
 

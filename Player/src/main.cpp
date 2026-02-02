@@ -18,6 +18,9 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
+#include "Enjin/GUI/ImGuiLayer.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include <imgui.h>
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -26,6 +29,11 @@
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Build/AssetReader.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptSystem.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/CoroutineScheduler.h"
+#include "Enjin/Scripting/ScriptEvents.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -103,8 +111,37 @@ public:
         m_RenderSystem->SetCamera(m_Camera.get());
         m_RenderSystem->Initialize();
 
+        // Initialize ImGui layer for pause menu and dialogue overlays
+        m_ImGuiLayer = std::make_unique<Enjin::GUI::ImGuiLayer>();
+        if (!m_ImGuiLayer->Initialize(GetWindow(), m_Renderer.get())) {
+            ENJIN_LOG_WARN(Player, "Failed to initialize ImGui layer — menus will not render");
+            m_ImGuiLayer.reset();
+        }
+
+        // Connect game menu to input system
+        m_GameMenu.SetInputMap(&m_InputMap);
+        m_GameMenu.SetGameTitle(m_WindowTitle.empty() ? "Game" : m_WindowTitle);
+
         // Initialize audio system
         Enjin::Audio::AudioManager::Get().Initialize();
+
+        // Initialize scripting engine
+        if (m_ScriptEngine.Init()) {
+            Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
+            m_ScriptEngine.SetWorld(m_World.get());
+            m_ScriptEngine.SetScriptDirectory("scripts");
+
+            m_ScriptSystem.SetWorld(m_World.get());
+            m_ScriptSystem.SetScriptEngine(&m_ScriptEngine);
+            m_ScriptSystem.SetCoroutineScheduler(&m_CoroutineScheduler);
+
+            m_CoroutineScheduler.SetEngine(m_ScriptEngine.GetASEngine());
+            m_ScriptEventBus.SetScriptEngine(&m_ScriptEngine);
+
+            ENJIN_LOG_INFO(Player, "Script engine initialized");
+        } else {
+            ENJIN_LOG_WARN(Player, "Failed to initialize script engine");
+        }
 
         // Show splash screen before loading game
         SetupSplashScreen();
@@ -116,7 +153,19 @@ public:
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
 
+        // Shutdown scripts before world is destroyed
+        m_ScriptSystem.ShutdownAllScripts();
+        m_ScriptSystem.SetEnabled(false);
+        m_CoroutineScheduler.Clear();
+        m_ScriptEventBus.Clear();
+        m_ScriptEngine.Shutdown();
+
         Enjin::Audio::AudioManager::Get().Shutdown();
+
+        if (m_ImGuiLayer) {
+            m_ImGuiLayer->Shutdown();
+            m_ImGuiLayer.reset();
+        }
 
         if (m_RenderSystem) {
             m_RenderSystem->Shutdown();
@@ -185,6 +234,17 @@ public:
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
             }
         }
+
+        // Update active dialogue typewriter
+        if (!m_GameMenu.IsMenuOpen()) {
+            UpdateDialogue(deltaTime);
+        }
+
+        // Update scripts
+        if (!m_GameMenu.IsMenuOpen()) {
+            m_ScriptSystem.Update(deltaTime);
+            m_CoroutineScheduler.EndOfFrame();
+        }
     }
 
     void Render() override {
@@ -237,6 +297,25 @@ public:
 
         if (m_World) {
             m_World->Update(0.0f);
+        }
+
+        // Render ImGui overlays (pause menu, dialogue)
+        VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
+        if (m_ImGuiLayer && cmd != VK_NULL_HANDLE) {
+            m_ImGuiLayer->BeginFrame();
+
+            // Pause menu
+            if (m_GameMenu.IsMenuOpen()) {
+                m_GameMenu.Render(static_cast<Enjin::f32>(extent.width),
+                                  static_cast<Enjin::f32>(extent.height));
+            }
+
+            // Runtime dialogue overlay
+            if (!m_ShowingSplash) {
+                DrawDialogueOverlay();
+            }
+
+            m_ImGuiLayer->EndFrame(cmd);
         }
 
         m_Renderer->EndFrame();
@@ -329,6 +408,13 @@ private:
             LoadSceneFromPack(m_StartScene);
         }
 
+        // Start scripts on loaded entities
+        if (m_ScriptEngine.GetASEngine()) {
+            m_ScriptSystem.SetEnabled(true);
+            Enjin::Scripting::SetBindingsWorld(m_World.get());
+            m_ScriptSystem.InitializeAllScripts();
+        }
+
         ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
     }
 
@@ -391,6 +477,196 @@ private:
     // Input & menus
     Enjin::InputSystem::InputActionMap m_InputMap;
     Enjin::GUI::GameMenuSystem m_GameMenu;
+
+    // Scripting
+    Enjin::Scripting::ScriptEngine m_ScriptEngine;
+    Enjin::Scripting::ScriptSystem m_ScriptSystem;
+    Enjin::Scripting::CoroutineScheduler m_CoroutineScheduler;
+    Enjin::Scripting::ScriptEventBus m_ScriptEventBus;
+
+    // ImGui overlay
+    std::unique_ptr<Enjin::GUI::ImGuiLayer> m_ImGuiLayer;
+
+    // Dialogue system
+    Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
+
+    void UpdateDialogue(Enjin::f32 deltaTime) {
+        if (!m_World) return;
+
+        Enjin::ECS::Entity activeDialogue = 0;
+
+        for (Enjin::ECS::Entity entity : m_World->GetAllEntities()) {
+            if (!m_World->HasComponent<Enjin::ECS::DialogueComponent>(entity)) continue;
+            auto* dlg = m_World->GetComponent<Enjin::ECS::DialogueComponent>(entity);
+            if (!dlg || dlg->dialogueLines.empty() || dlg->IsComplete()) continue;
+
+            activeDialogue = entity;
+            auto& d = *dlg;
+
+            // Advance typewriter
+            if (d.isTyping && d.currentLine < d.dialogueLines.size()) {
+                d.charTimer += deltaTime;
+                while (d.charTimer >= d.charDelay && d.currentChar < d.dialogueLines[d.currentLine].size()) {
+                    d.currentChar++;
+                    d.charTimer -= d.charDelay;
+                }
+                if (d.currentChar >= d.dialogueLines[d.currentLine].size()) {
+                    d.isTyping = false;
+                    d.waitingForInput = true;
+                }
+            }
+
+            // Input: advance
+            if (d.waitingForInput) {
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
+                    if (d.currentLine + 1 >= d.dialogueLines.size() && !d.choices.empty()) {
+                        // Wait for choice selection
+                    } else {
+                        d.currentLine++;
+                        d.currentChar = 0;
+                        d.charTimer = 0.0f;
+                        d.waitingForInput = false;
+                        if (!d.IsComplete()) d.isTyping = true;
+                    }
+                }
+            }
+
+            // Skip to end of line while typing
+            if (d.isTyping) {
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter)) {
+                    d.currentChar = static_cast<Enjin::u32>(d.dialogueLines[d.currentLine].size());
+                    d.isTyping = false;
+                    d.waitingForInput = true;
+                }
+            }
+
+            // Choice navigation
+            if (d.waitingForInput && !d.choices.empty() &&
+                d.currentLine + 1 >= d.dialogueLines.size()) {
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Up) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::W)) {
+                    d.selectedChoice--;
+                    if (d.selectedChoice < 0)
+                        d.selectedChoice = static_cast<Enjin::i32>(d.choices.size()) - 1;
+                }
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Down) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::S)) {
+                    d.selectedChoice++;
+                    if (d.selectedChoice >= static_cast<Enjin::i32>(d.choices.size()))
+                        d.selectedChoice = 0;
+                }
+                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
+                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space)) {
+                    d.currentLine = static_cast<Enjin::u32>(d.dialogueLines.size());
+                    d.waitingForInput = false;
+                }
+            }
+
+            break;
+        }
+
+        m_ActiveDialogueEntity = activeDialogue;
+    }
+
+    void DrawDialogueOverlay() {
+        if (!m_World || m_ActiveDialogueEntity == 0) return;
+
+        auto* dlg = m_World->GetComponent<Enjin::ECS::DialogueComponent>(m_ActiveDialogueEntity);
+        if (!dlg || dlg->IsComplete()) return;
+
+        ImGuiIO& io = ImGui::GetIO();
+        Enjin::f32 screenW = io.DisplaySize.x;
+        Enjin::f32 screenH = io.DisplaySize.y;
+
+        Enjin::f32 boxW = screenW * 0.75f;
+        Enjin::f32 boxH = 140.0f;
+        Enjin::f32 boxX = (screenW - boxW) * 0.5f;
+        Enjin::f32 boxY = screenH - boxH - 30.0f;
+        Enjin::f32 padding = 16.0f;
+
+        ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
+            ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+            ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
+        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.1f, 0.92f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.45f, 0.65f, 0.8f));
+
+        ImGui::SetNextWindowPos(ImVec2(boxX, boxY));
+        ImGui::SetNextWindowSize(ImVec2(boxW, boxH));
+
+        if (ImGui::Begin("##DialogueBox", nullptr, flags)) {
+            if (!dlg->speakerName.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.75f, 1.0f, 1.0f));
+                ImGui::Text("%s", dlg->speakerName.c_str());
+                ImGui::PopStyleColor();
+                ImGui::Separator();
+                ImGui::Spacing();
+            }
+
+            std::string visibleText = dlg->GetVisibleText();
+            if (!visibleText.empty()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.98f, 1.0f));
+                ImGui::TextWrapped("%s", visibleText.c_str());
+                ImGui::PopStyleColor();
+            }
+
+            if (dlg->isTyping) {
+                ImGui::SameLine(0, 0);
+                Enjin::f32 blink = std::fmod(static_cast<Enjin::f32>(ImGui::GetTime()) * 3.0f, 2.0f);
+                if (blink < 1.0f) {
+                    ImGui::TextColored(ImVec4(0.7f, 0.8f, 1.0f, 0.8f), "_");
+                }
+            }
+
+            if (dlg->waitingForInput && dlg->choices.empty()) {
+                Enjin::f32 bounce = std::sin(static_cast<Enjin::f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
+                ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
+                ImGui::Text("[Space]");
+                ImGui::PopStyleColor();
+            }
+        }
+        ImGui::End();
+
+        // Choice box
+        bool showChoices = dlg->waitingForInput && !dlg->choices.empty() &&
+                           dlg->currentLine + 1 >= dlg->dialogueLines.size();
+        if (showChoices) {
+            Enjin::f32 choiceH = static_cast<Enjin::f32>(dlg->choices.size()) * 28.0f + padding * 2.0f;
+            Enjin::f32 choiceW = 300.0f;
+            Enjin::f32 choiceX = boxX + boxW - choiceW - 10.0f;
+            Enjin::f32 choiceY = boxY - choiceH - 8.0f;
+
+            ImGui::SetNextWindowPos(ImVec2(choiceX, choiceY));
+            ImGui::SetNextWindowSize(ImVec2(choiceW, choiceH));
+
+            if (ImGui::Begin("##ChoiceBox", nullptr, flags)) {
+                for (Enjin::usize i = 0; i < dlg->choices.size(); ++i) {
+                    bool selected = (static_cast<Enjin::i32>(i) == dlg->selectedChoice);
+                    if (selected) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                        ImGui::Text("> %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                        ImGui::Text("  %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                }
+            }
+            ImGui::End();
+        }
+
+        ImGui::PopStyleColor(2);
+        ImGui::PopStyleVar(3);
+    }
 };
 
 Enjin::Application* CreateApplication() {

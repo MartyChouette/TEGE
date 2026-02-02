@@ -20,6 +20,8 @@ bool PhysicsWorld::Initialize() {
 
 void PhysicsWorld::Shutdown() {
     m_RigidBodies.clear();
+    m_EntityBodyMap.clear();
+    m_ECSWorld = nullptr;
 }
 
 void PhysicsWorld::SetGravity(const Math::Vector3& gravity) {
@@ -40,10 +42,19 @@ void PhysicsWorld::RemoveRigidBody(std::shared_ptr<RigidBody> body) {
 }
 
 void PhysicsWorld::Step(f32 deltaTime) {
-    // Simple physics step
+    if (m_ECSWorld) {
+        SyncFromECS();
+    }
+
     Integrate(deltaTime);
     DetectCollisions();
     ResolveCollisions();
+
+    if (m_ECSWorld) {
+        SyncToECS();
+    }
+
+    m_LastDeltaTime = deltaTime;
 }
 
 void PhysicsWorld::Integrate(f32 deltaTime) {
@@ -275,6 +286,131 @@ bool PhysicsWorld::TestSphereAABB(usize sphereIdx, usize boxIdx, CollisionPair& 
     }
 
     return true;
+}
+
+void PhysicsWorld::SyncFromECS() {
+    if (!m_ECSWorld) return;
+
+    auto entities = m_ECSWorld->GetEntitiesWithComponent<ECS::RigidbodyComponent>();
+
+    // Track which entities are still alive so we can prune stale bodies
+    std::unordered_map<ECS::Entity, bool> aliveEntities;
+    aliveEntities.reserve(entities.size());
+
+    for (auto entity : entities) {
+        aliveEntities[entity] = true;
+
+        auto* rb = m_ECSWorld->GetComponent<ECS::RigidbodyComponent>(entity);
+        auto* transform = m_ECSWorld->GetComponent<ECS::TransformComponent>(entity);
+        if (!rb || !transform) continue;
+
+        // Create body if this entity is new to the physics world
+        auto it = m_EntityBodyMap.find(entity);
+        if (it == m_EntityBodyMap.end()) {
+            auto body = std::make_shared<RigidBody>();
+            AddRigidBody(body);
+            m_EntityBodyMap[entity] = body;
+            it = m_EntityBodyMap.find(entity);
+            ENJIN_LOG_INFO(Physics, "Created RigidBody for entity %llu", static_cast<unsigned long long>(entity));
+        }
+
+        auto& body = it->second;
+
+        // Determine collider center offset and configure shape
+        Math::Vector3 colliderOffset(0.0f, 0.0f, 0.0f);
+
+        if (m_ECSWorld->HasComponent<ECS::BoxColliderComponent>(entity)) {
+            auto* box = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity);
+            body->SetShape(RigidBody::Shape::Box);
+            colliderOffset = box->center;
+
+            // Half extents scaled by entity transform scale
+            Math::Vector3 halfExtents(
+                box->size.x * 0.5f * transform->scale.x,
+                box->size.y * 0.5f * transform->scale.y,
+                box->size.z * 0.5f * transform->scale.z
+            );
+            body->SetHalfExtents(halfExtents);
+            body->SetFriction(box->friction);
+            body->SetRestitution(box->bounciness);
+        } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
+            auto* sphere = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity);
+            body->SetShape(RigidBody::Shape::Sphere);
+            colliderOffset = sphere->center;
+
+            // Bounding radius scaled by the largest scale axis
+            f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+            body->SetBoundingRadius(sphere->radius * maxScale);
+            body->SetFriction(sphere->friction);
+            body->SetRestitution(sphere->bounciness);
+        }
+
+        // Set body position from transform position + collider center offset
+        body->SetPosition(transform->position + colliderOffset);
+
+        // Set mass and static flag from RigidbodyComponent
+        body->SetMass(rb->mass);
+        body->SetStatic(rb->bodyType == ECS::RigidbodyComponent::BodyType::Static);
+
+        // Set velocity from ECS component
+        body->SetVelocity(rb->velocity);
+    }
+
+    // Remove bodies for entities that no longer have a RigidbodyComponent
+    for (auto it = m_EntityBodyMap.begin(); it != m_EntityBodyMap.end(); ) {
+        if (aliveEntities.find(it->first) == aliveEntities.end()) {
+            RemoveRigidBody(it->second);
+            ENJIN_LOG_INFO(Physics, "Removed RigidBody for entity %llu", static_cast<unsigned long long>(it->first));
+            it = m_EntityBodyMap.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void PhysicsWorld::SyncToECS() {
+    if (!m_ECSWorld) return;
+
+    for (auto& [entity, body] : m_EntityBodyMap) {
+        if (!m_ECSWorld->IsValid(entity)) continue;
+
+        auto* rb = m_ECSWorld->GetComponent<ECS::RigidbodyComponent>(entity);
+        auto* transform = m_ECSWorld->GetComponent<ECS::TransformComponent>(entity);
+        if (!rb || !transform) continue;
+
+        // Static and kinematic bodies are not driven by physics results
+        if (rb->bodyType != ECS::RigidbodyComponent::BodyType::Dynamic) continue;
+
+        // Determine collider center offset to subtract when writing back
+        Math::Vector3 colliderOffset(0.0f, 0.0f, 0.0f);
+        if (m_ECSWorld->HasComponent<ECS::BoxColliderComponent>(entity)) {
+            colliderOffset = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity)->center;
+        } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
+            colliderOffset = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity)->center;
+        }
+
+        // Write position back (subtract collider offset)
+        transform->position = body->GetPosition() - colliderOffset;
+
+        // Get velocity from physics body
+        Math::Vector3 velocity = body->GetVelocity();
+
+        // Apply freeze constraints: zero out frozen axes
+        if (rb->freezePositionX) velocity.x = 0.0f;
+        if (rb->freezePositionY) velocity.y = 0.0f;
+        if (rb->freezePositionZ) velocity.z = 0.0f;
+
+        // Apply linear drag: velocity *= (1.0 - drag * deltaTime)
+        if (rb->drag > 0.0f && m_LastDeltaTime > 0.0f) {
+            f32 dragFactor = 1.0f - rb->drag * m_LastDeltaTime;
+            if (dragFactor < 0.0f) dragFactor = 0.0f;
+            velocity = velocity * dragFactor;
+        }
+
+        // Write velocity back to both the RigidBody and the ECS component
+        body->SetVelocity(velocity);
+        rb->velocity = velocity;
+    }
 }
 
 RigidBody::RigidBody() {

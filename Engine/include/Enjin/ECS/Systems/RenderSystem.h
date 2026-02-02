@@ -165,7 +165,9 @@ private:
     void CreateUniformBuffers();
     void CreateDescriptorSets();
     void UpdateUniformBuffer(Entity entity);
-    void SetupEntityBuffers(Entity entity);
+    // Sets up GPU buffers for an entity's mesh. Returns iterator into m_EntityRenderData,
+    // or m_EntityRenderData.end() if the entity has no valid mesh.
+    std::unordered_map<Entity, EntityRenderData>::iterator SetupEntityBuffers(Entity entity);
     void RenderShadowPass();
 
     World* m_World = nullptr;
@@ -291,6 +293,10 @@ private:
     // Draw call / triangle counters
     u32 m_DrawCallCount = 0;
     u32 m_TriangleCount = 0;
+
+    // Cached player entity (any entity with a CharacterController) for per-frame position lookup.
+    // Updated in OnEntityAdded/OnEntityRemoved to avoid linear search each frame.
+    Entity m_CachedPlayerEntity = INVALID_ENTITY;
 
     // Asset hot-reload watcher (polls texture files for changes)
     Assets::FileWatcher m_TextureWatcher;

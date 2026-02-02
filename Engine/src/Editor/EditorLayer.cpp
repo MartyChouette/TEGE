@@ -25,6 +25,7 @@
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
+#include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Renderer/Skybox.h"
@@ -114,6 +115,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     m_EditorSettings.Load();
     m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme);
     m_ImGuiLayer->SetGlobalScale(m_EditorSettings.uiScale);
+    Input::SetRawMouseInput(m_EditorSettings.rawMouseInput);
+    Input::SetMouseSmoothing(m_EditorSettings.mouseSmoothing);
 
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
@@ -184,6 +187,9 @@ void EditorLayer::Shutdown() {
 }
 
 void EditorLayer::Update(f32 deltaTime) {
+    // Begin profiler frame measurement
+    Debug::Profiler::Instance().BeginFrame();
+
     // Update input action map each frame
     m_InputMap.Update(deltaTime);
 
@@ -224,6 +230,15 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Feed counters to profiler
+    if (m_World) {
+        Debug::Profiler::Instance().SetEntityCount(static_cast<u32>(m_World->GetEntityCount()));
+    }
+    if (m_RenderSystem) {
+        Debug::Profiler::Instance().SetDrawCalls(m_RenderSystem->GetDrawCallCount());
+        Debug::Profiler::Instance().SetTriangleCount(m_RenderSystem->GetTriangleCount());
+    }
+
     // Update scene transitions (fade in/out between scenes)
     m_SceneManager.UpdateTransition(deltaTime);
 
@@ -240,8 +255,8 @@ void EditorLayer::Update(f32 deltaTime) {
         m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && !inPlayMode);
 
         // Set orbit target to selected entity position for MMB orbit
-        if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
-            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
+        if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
             if (transform) {
                 m_CameraController->SetOrbitTarget(transform->position);
             }
@@ -280,15 +295,15 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
-        // Delete selected entity
-        if (Input::IsKeyPressed(KeyCode::Delete) && m_SelectedEntity != ECS::INVALID_ENTITY) {
-            DeleteSelectedEntity();
+        // Delete selected entities
+        if (Input::IsKeyPressed(KeyCode::Delete) && !m_SelectedEntities.empty()) {
+            DeleteSelectedEntities();
         }
 
-        // Duplicate selected entity (Ctrl+D)
+        // Duplicate selected entities (Ctrl+D)
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::D)) {
-            if (m_SelectedEntity != ECS::INVALID_ENTITY) {
-                DuplicateEntity(m_SelectedEntity);
+            if (!m_SelectedEntities.empty()) {
+                DuplicateSelectedEntities();
             }
         }
 
@@ -309,9 +324,9 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
-        // Focus on selected entity (F key)
-        if (Input::IsKeyPressed(KeyCode::F) && m_SelectedEntity != ECS::INVALID_ENTITY) {
-            FocusOnEntity(m_SelectedEntity);
+        // Focus on selected entity/entities (F key)
+        if (Input::IsKeyPressed(KeyCode::F) && !m_SelectedEntities.empty()) {
+            FocusOnSelection();
         }
     }
 
@@ -362,9 +377,15 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
 
+    // Handle terrain brush painting (intercepts mouse before viewport picking)
+    if (m_TerrainEditMode && m_PlayMode.IsStopped()) {
+        HandleTerrainBrush(deltaTime);
+    }
+
     // Handle viewport picking (left-click to select, but not when using gizmo)
     // Only allow picking in editor mode, not play mode
-    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped()) {
+    // Skip viewport picking while terrain edit mode is active to prevent entity deselection
+    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped() && !m_TerrainEditMode) {
         HandleViewportPicking();
     }
 
@@ -500,6 +521,8 @@ void EditorLayer::Update(f32 deltaTime) {
 }
 
 void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
+    ENJIN_PROFILE_SCOPE("Render");
+
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
         return;
     }
@@ -1019,6 +1042,12 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             DrawDialogueOverlay();
         }
 
+        // Render HUD widgets during play mode (fullscreen)
+        if (m_PlayMode.IsPlaying()) {
+            m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
+                0.0f, 0.0f, io.DisplaySize.x, io.DisplaySize.y);
+        }
+
         // Render pause menu overlay on top of fullscreen game view
         if (m_GameMenu.IsMenuOpen()) {
             m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
@@ -1101,6 +1130,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(300, 400), layoutCond);
         DrawSkyboxPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(520, 450), layoutCond);
+        Debug::Profiler::Instance().DrawProfilerPanel();
+    }
 
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
@@ -1115,6 +1149,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Draw gizmos for selected entity
     DrawGizmos();
+
+    // Draw marquee selection rectangle
+    DrawMarqueeRect();
 
     // Draw grid overlay
     if (m_ShowGrid) {
@@ -1194,7 +1231,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (zone && transform) {
-                        bool isSelected = (entity == m_SelectedEntity);
+                        bool isSelected = IsSelected(entity);
                         ImU32 color = isSelected ? IM_COL32(100, 180, 255, 200) : IM_COL32(100, 180, 255, 80);
                         f32 thickness = isSelected ? 2.0f : 1.0f;
                         drawWireBox(bgDrawList, transform->position, zone->halfExtents, color, thickness);
@@ -1205,7 +1242,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
                     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (volume && transform) {
-                        bool isSelected = (entity == m_SelectedEntity);
+                        bool isSelected = IsSelected(entity);
                         ImU32 color = isSelected ? IM_COL32(50, 220, 200, 200) : IM_COL32(50, 220, 200, 80);
                         f32 thickness = isSelected ? 2.0f : 1.0f;
                         drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
@@ -1260,10 +1297,21 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawDialogueOverlay();
     }
 
+    // Render HUD widgets during play mode (editor game view)
+    if (m_PlayMode.IsPlaying()) {
+        m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
+            m_GameViewImageMinX, m_GameViewImageMinY,
+            m_GameViewImageMaxX - m_GameViewImageMinX,
+            m_GameViewImageMaxY - m_GameViewImageMinY);
+    }
+
     // Render pause menu overlay on top of editor panels
     if (m_GameMenu.IsMenuOpen()) {
         m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
     }
+
+    // End profiler frame measurement
+    Debug::Profiler::Instance().EndFrame();
 
     m_ImGuiLayer->EndFrame(commandBuffer);
 }
@@ -1289,13 +1337,85 @@ bool EditorLayer::WantsMouseInput() const {
     return ImGui::GetIO().WantCaptureMouse;
 }
 
+// --- Multi-select helpers ---
+
+void EditorLayer::SelectEntity(ECS::Entity entity, bool addToSelection) {
+    if (entity == ECS::INVALID_ENTITY) return;
+    if (!addToSelection) {
+        m_SelectedEntities.clear();
+    }
+    m_SelectedEntities.insert(entity);
+    m_PrimarySelected = entity;
+    if (m_OnEntitySelected) m_OnEntitySelected(entity);
+}
+
+void EditorLayer::DeselectEntity(ECS::Entity entity) {
+    m_SelectedEntities.erase(entity);
+    if (m_PrimarySelected == entity) {
+        m_PrimarySelected = m_SelectedEntities.empty() ? ECS::INVALID_ENTITY : *m_SelectedEntities.begin();
+    }
+}
+
+void EditorLayer::ClearSelection() {
+    m_SelectedEntities.clear();
+    m_PrimarySelected = ECS::INVALID_ENTITY;
+}
+
+bool EditorLayer::IsSelected(ECS::Entity entity) const {
+    return m_SelectedEntities.count(entity) > 0;
+}
+
+void EditorLayer::SetSelectedEntity(ECS::Entity entity) {
+    ClearSelection();
+    if (entity != ECS::INVALID_ENTITY) {
+        SelectEntity(entity);
+    }
+}
+
+void EditorLayer::SelectRange(ECS::Entity from, ECS::Entity to) {
+    if (!m_World) return;
+    const auto& entities = m_World->GetAllEntities();
+
+    // Find indices of from and to in the entity list
+    i64 fromIdx = -1, toIdx = -1;
+    for (usize i = 0; i < entities.size(); i++) {
+        if (entities[i] == from) fromIdx = static_cast<i64>(i);
+        if (entities[i] == to) toIdx = static_cast<i64>(i);
+    }
+    if (fromIdx < 0 || toIdx < 0) return;
+
+    // Ensure from <= to
+    if (fromIdx > toIdx) std::swap(fromIdx, toIdx);
+
+    for (i64 i = fromIdx; i <= toIdx; i++) {
+        m_SelectedEntities.insert(entities[static_cast<usize>(i)]);
+    }
+    m_PrimarySelected = to;
+}
+
+void EditorLayer::SelectEntitiesInRect(ImVec2 min, ImVec2 max) {
+    if (!m_World || !m_Camera || !m_Renderer) return;
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) return;
+
+    auto entities = ScenePicker::PickEntitiesInScreenRect(
+        m_World, m_Camera,
+        min.x, min.y, max.x, max.y,
+        static_cast<f32>(extent.width), static_cast<f32>(extent.height));
+
+    for (ECS::Entity e : entities) {
+        m_SelectedEntities.insert(e);
+        m_PrimarySelected = e;
+    }
+}
+
 void EditorLayer::DrawMenuBar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
                 if (m_World) {
                     m_World->Clear();
-                    m_SelectedEntity = ECS::INVALID_ENTITY;
+                    ClearSelection();
                     m_CurrentScenePath.clear();
                     m_ShowTemplateSelector = true;
                     ENJIN_LOG_INFO(Editor, "Created new scene");
@@ -1349,7 +1469,7 @@ void EditorLayer::DrawMenuBar() {
                 m_SceneManager.NewProject("Untitled Project");
                 if (m_World) {
                     m_World->Clear();
-                    m_SelectedEntity = ECS::INVALID_ENTITY;
+                    ClearSelection();
                     m_CurrentScenePath.clear();
                     m_ShowTemplateSelector = true;
                 }
@@ -1441,15 +1561,15 @@ void EditorLayer::DrawMenuBar() {
                 m_UndoRedo.Redo();
             }
             ImGui::Separator();
-            bool hasSelection = m_SelectedEntity != ECS::INVALID_ENTITY && m_World;
+            bool hasSelection = !m_SelectedEntities.empty() && m_World;
             if (ImGui::MenuItem("Cut", "Ctrl+X", false, hasSelection)) {
                 Scene::SceneSerializer serializer(m_World);
                 Scene::SerializationOptions opts;
                 opts.includeVertexData = true;
                 m_ClipboardEntityJson = serializer.SaveToString(opts);
                 m_ClipboardIsCut = true;
-                m_ClipboardSourceEntity = m_SelectedEntity;
-                DeleteSelectedEntity();
+                m_ClipboardSourceEntity = m_PrimarySelected;
+                DeleteSelectedEntities();
             }
             if (ImGui::MenuItem("Copy", "Ctrl+C", false, hasSelection)) {
                 Scene::SceneSerializer serializer(m_World);
@@ -1457,13 +1577,13 @@ void EditorLayer::DrawMenuBar() {
                 opts.includeVertexData = true;
                 m_ClipboardEntityJson = serializer.SaveToString(opts);
                 m_ClipboardIsCut = false;
-                m_ClipboardSourceEntity = m_SelectedEntity;
+                m_ClipboardSourceEntity = m_PrimarySelected;
             }
             if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_ClipboardEntityJson.empty())) {
                 Scene::SceneSerializer serializer(m_World);
                 auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
                 if (result.success && result.rootEntity != ECS::INVALID_ENTITY) {
-                    m_SelectedEntity = result.rootEntity;
+                    SelectEntity(result.rootEntity);
                 }
                 if (m_ClipboardIsCut) {
                     m_ClipboardEntityJson.clear();
@@ -1515,6 +1635,10 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::MenuItem("Skybox", nullptr, &skybox)) {
                 SetPanelVisibility(EditorPanel::Skybox, skybox);
             }
+            bool profiler = IsPanelVisible(EditorPanel::Profiler);
+            if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
+                SetPanelVisibility(EditorPanel::Profiler, profiler);
+            }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
@@ -1534,7 +1658,7 @@ void EditorLayer::DrawMenuBar() {
                 if (m_World) {
                     ECS::Entity entity = m_World->CreateEntity();
                     m_World->AddComponent<ECS::TransformComponent>(entity);
-                    m_SelectedEntity = entity;
+                    SelectEntity(entity);
                 }
             }
             if (ImGui::BeginMenu("3D Object")) {
@@ -1543,7 +1667,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCube(1.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Sphere")) {
@@ -1551,7 +1675,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Plane")) {
@@ -1559,7 +1683,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreatePlane(10.0f, 10.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Cylinder")) {
@@ -1567,7 +1691,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCylinder(0.5f, 1.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Cone")) {
@@ -1575,7 +1699,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCone(0.5f, 1.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Capsule")) {
@@ -1583,7 +1707,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Pyramid")) {
@@ -1591,7 +1715,7 @@ void EditorLayer::DrawMenuBar() {
                         ECS::Entity entity = m_World->CreateEntity();
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreatePyramid(1.0f, 1.0f));
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1603,7 +1727,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateTriangle(1.0f));
                         m_World->AddComponent<ECS::NameComponent>(entity, "Triangle");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Quad")) {
@@ -1612,7 +1736,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                         m_World->AddComponent<ECS::NameComponent>(entity, "Quad");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Sprite")) {
@@ -1624,7 +1748,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& material = m_World->AddComponent<ECS::MaterialComponent>(entity);
                         material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;  // Support transparency for sprites
                         m_World->AddComponent<ECS::NameComponent>(entity, "Sprite");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Circle")) {
@@ -1635,7 +1759,7 @@ void EditorLayer::DrawMenuBar() {
                         // Use a highly tessellated plane to approximate a circle (flat disc)
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateSphere(0.5f, 32, 1));
                         m_World->AddComponent<ECS::NameComponent>(entity, "Circle");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Capsule 2D")) {
@@ -1644,7 +1768,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::MeshComponent>(entity, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
                         m_World->AddComponent<ECS::NameComponent>(entity, "Capsule 2D");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Ground Strip")) {
@@ -1658,7 +1782,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::NameComponent>(entity, "Ground");
                         auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                         collider.size = Math::Vector3(20.0f, 0.5f, 1.0f);
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Panel (UI)")) {
@@ -1671,7 +1795,7 @@ void EditorLayer::DrawMenuBar() {
                         material.opacity = 0.9f;
                         material.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
                         m_World->AddComponent<ECS::NameComponent>(entity, "UI Panel");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1688,7 +1812,7 @@ void EditorLayer::DrawMenuBar() {
                     auto& collider = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
                     collider.size = Math::Vector3(50.0f, 0.1f, 50.0f);
                     collider.center = Math::Vector3(0.0f, -0.05f, 0.0f);
-                    m_SelectedEntity = entity;
+                    SelectEntity(entity);
                 }
             }
             ImGui::Separator();
@@ -1701,7 +1825,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Directional;
                         light.intensity = 1.0f;
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Point Light")) {
@@ -1711,7 +1835,7 @@ void EditorLayer::DrawMenuBar() {
                         transform.position = Math::Vector3(0, 2, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Point;
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Spot Light")) {
@@ -1721,7 +1845,7 @@ void EditorLayer::DrawMenuBar() {
                         transform.position = Math::Vector3(0, 3, 0);
                         auto& light = m_World->AddComponent<ECS::LightComponent>(entity);
                         light.type = ECS::LightType::Spot;
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1736,7 +1860,7 @@ void EditorLayer::DrawMenuBar() {
                         cam.projectionType = ECS::ProjectionType::Perspective;
                         cam.fieldOfView = 60.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Game Camera");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Orthographic Camera")) {
@@ -1749,7 +1873,7 @@ void EditorLayer::DrawMenuBar() {
                         cam.projectionType = ECS::ProjectionType::Orthographic;
                         cam.orthoSize = 10.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "2D Camera");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1761,7 +1885,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::WeatherZoneComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Weather Zone");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Water Volume")) {
@@ -1770,7 +1894,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::WaterVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Water Volume");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Grass Volume")) {
@@ -1779,7 +1903,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::GrassVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Grass Volume");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Shrub Volume")) {
@@ -1788,7 +1912,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::ShrubVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Shrub Volume");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Tree Volume")) {
@@ -1797,7 +1921,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::TreeVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Tree Volume");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Camera Trigger")) {
@@ -1806,7 +1930,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::CameraTriggerComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Camera Trigger");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Temperature Zone")) {
@@ -1815,7 +1939,7 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::TemperatureZoneComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Temperature Zone");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -1831,7 +1955,7 @@ void EditorLayer::DrawMenuBar() {
                     terrain.InitializeFlat(0.0f);
                     m_World->AddComponent<ECS::MaterialComponent>(entity);
                     m_World->AddComponent<ECS::NameComponent>(entity, "Terrain");
-                    m_SelectedEntity = entity;
+                    SelectEntity(entity);
                 }
             }
 
@@ -1846,7 +1970,7 @@ void EditorLayer::DrawMenuBar() {
                     terrain2d.AddPoint(Math::Vector2(10.0f, 0.0f));
                     m_World->AddComponent<ECS::MaterialComponent>(entity);
                     m_World->AddComponent<ECS::NameComponent>(entity, "2D Terrain");
-                    m_SelectedEntity = entity;
+                    SelectEntity(entity);
                 }
             }
 
@@ -1869,7 +1993,7 @@ void EditorLayer::DrawMenuBar() {
                         dialogue.dialogueLines.push_back("Be careful out there.");
                         m_World->AddComponent<ECS::StateMachineComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "NPC");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Health Pickup")) {
@@ -1888,7 +2012,7 @@ void EditorLayer::DrawMenuBar() {
                         pickup.value = 25.0f;
                         pickup.magnetRange = 2.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Health Pickup");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Coin Collectible")) {
@@ -1907,7 +2031,7 @@ void EditorLayer::DrawMenuBar() {
                         pickup.type = ECS::PickupComponent::PickupType::Coin;
                         pickup.value = 1.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Coin");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Damage Zone")) {
@@ -1926,7 +2050,7 @@ void EditorLayer::DrawMenuBar() {
                         dmg.damage = 5.0f;
                         dmg.damageInterval = 1.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Damage Zone");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Patrol Enemy")) {
@@ -1946,7 +2070,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& dmg = m_World->AddComponent<ECS::DamageComponent>(entity);
                         dmg.damage = 10.0f;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Patrol Enemy");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 if (ImGui::MenuItem("Interactable Chest")) {
@@ -1964,7 +2088,7 @@ void EditorLayer::DrawMenuBar() {
                         auto& inv = m_World->AddComponent<ECS::InventoryComponent>(entity);
                         inv.maxSlots = 5;
                         m_World->AddComponent<ECS::NameComponent>(entity, "Chest");
-                        m_SelectedEntity = entity;
+                        SelectEntity(entity);
                     }
                 }
                 ImGui::EndMenu();
@@ -2083,7 +2207,7 @@ void EditorLayer::DrawMenuBar() {
 
 void EditorLayer::DrawHierarchyPanel() {
     ImGuiWindowFlags flags = 0;
-    if (!m_PlayMode.IsStopped()) {
+    if (m_FocusMode) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     ImGui::Begin("Hierarchy", nullptr, flags);
@@ -2112,7 +2236,7 @@ void EditorLayer::DrawHierarchyPanel() {
             if (ImGui::MenuItem("Create Empty Entity")) {
                 ECS::Entity entity = m_World->CreateEntity();
                 m_World->AddComponent<ECS::TransformComponent>(entity);
-                m_SelectedEntity = entity;
+                SelectEntity(entity);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Load Prefab...")) {
@@ -2124,7 +2248,7 @@ void EditorLayer::DrawHierarchyPanel() {
                         ECS::Entity root = Assets::PrefabManager::Get().Instantiate(
                             m_World, *prefab);
                         if (root != ECS::INVALID_ENTITY) {
-                            m_SelectedEntity = root;
+                            SelectEntity(root);
                         }
                     }
                 }
@@ -2143,16 +2267,29 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
                                ImGuiTreeNodeFlags_SpanAvailWidth |
                                ImGuiTreeNodeFlags_Leaf; // No children for now
 
-    if (entity == m_SelectedEntity) {
+    if (IsSelected(entity)) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", name.c_str());
 
-    if (ImGui::IsItemClicked()) {
-        m_SelectedEntity = entity;
-        if (m_OnEntitySelected) {
-            m_OnEntitySelected(entity);
+    if (ImGui::IsItemClicked() && !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+        bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
+        bool shiftHeld = Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
+
+        if (ctrlHeld) {
+            // Toggle selection
+            if (IsSelected(entity)) {
+                DeselectEntity(entity);
+            } else {
+                SelectEntity(entity, true);
+            }
+        } else if (shiftHeld && m_PrimarySelected != ECS::INVALID_ENTITY) {
+            // Range select
+            SelectRange(m_PrimarySelected, entity);
+        } else {
+            // Normal click - replace selection
+            SelectEntity(entity);
         }
     }
 
@@ -2165,9 +2302,7 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Delete", "Del")) {
             m_World->DestroyEntity(entity);
-            if (m_SelectedEntity == entity) {
-                m_SelectedEntity = ECS::INVALID_ENTITY;
-            }
+            DeselectEntity(entity);
         }
         if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
             DuplicateEntity(entity);
@@ -2208,14 +2343,17 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
 
 void EditorLayer::DrawInspectorPanel() {
     ImGuiWindowFlags flags = 0;
-    if (!m_PlayMode.IsStopped()) {
+    if (m_FocusMode) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     ImGui::Begin("Inspector", nullptr, flags);
 
-    if (m_SelectedEntity != ECS::INVALID_ENTITY && m_World) {
+    if (m_SelectedEntities.size() > 1 && m_World) {
+        // Multi-select inspector
+        DrawMultiSelectInspector();
+    } else if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
         // Entity name (editable)
-        ECS::NameComponent* nameComp = m_World->GetComponent<ECS::NameComponent>(m_SelectedEntity);
+        ECS::NameComponent* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
         if (nameComp) {
             char nameBuffer[256];
             strncpy(nameBuffer, nameComp->name.c_str(), sizeof(nameBuffer) - 1);
@@ -2226,15 +2364,15 @@ void EditorLayer::DrawInspectorPanel() {
             }
         } else {
             // No name component - show entity ID and add button
-            ImGui::Text("Entity %llu", (unsigned long long)m_SelectedEntity);
+            ImGui::Text("Entity %llu", (unsigned long long)m_PrimarySelected);
             ImGui::SameLine();
             if (ImGui::SmallButton("Add Name")) {
-                m_World->AddComponent<ECS::NameComponent>(m_SelectedEntity, "Unnamed");
+                m_World->AddComponent<ECS::NameComponent>(m_PrimarySelected, "Unnamed");
             }
         }
         // Prefab instance indicator
-        if (Assets::PrefabUtils::IsPrefabInstance(m_World, m_SelectedEntity)) {
-            auto* prefabInst = m_World->GetComponent<Assets::PrefabInstanceComponent>(m_SelectedEntity);
+        if (Assets::PrefabUtils::IsPrefabInstance(m_World, m_PrimarySelected)) {
+            auto* prefabInst = m_World->GetComponent<Assets::PrefabInstanceComponent>(m_PrimarySelected);
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.7f, 1.0f, 1.0f));
             ImGui::Text("Prefab Instance");
             ImGui::PopStyleColor();
@@ -2246,176 +2384,176 @@ void EditorLayer::DrawInspectorPanel() {
         ImGui::Separator();
 
         // Transform component
-        if (m_World->HasComponent<ECS::TransformComponent>(m_SelectedEntity)) {
-            DrawTransformComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TransformComponent>(m_PrimarySelected)) {
+            DrawTransformComponent(m_PrimarySelected);
         }
 
         // Mesh component
-        if (m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
-            DrawMeshComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected)) {
+            DrawMeshComponent(m_PrimarySelected);
         }
 
         // LOD component
-        if (m_World->HasComponent<ECS::LODComponent>(m_SelectedEntity)) {
-            DrawLODComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::LODComponent>(m_PrimarySelected)) {
+            DrawLODComponent(m_PrimarySelected);
         }
 
         // Material component
-        if (m_World->HasComponent<ECS::MaterialComponent>(m_SelectedEntity)) {
-            DrawMaterialComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::MaterialComponent>(m_PrimarySelected)) {
+            DrawMaterialComponent(m_PrimarySelected);
         }
 
         // Light component
-        if (m_World->HasComponent<ECS::LightComponent>(m_SelectedEntity)) {
-            DrawLightComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::LightComponent>(m_PrimarySelected)) {
+            DrawLightComponent(m_PrimarySelected);
         }
 
         // Camera component
-        if (m_World->HasComponent<ECS::CameraComponent>(m_SelectedEntity)) {
-            DrawCameraComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::CameraComponent>(m_PrimarySelected)) {
+            DrawCameraComponent(m_PrimarySelected);
         }
 
         // Weather Zone component
-        if (m_World->HasComponent<ECS::WeatherZoneComponent>(m_SelectedEntity)) {
-            DrawWeatherZoneComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::WeatherZoneComponent>(m_PrimarySelected)) {
+            DrawWeatherZoneComponent(m_PrimarySelected);
         }
 
         // Water Volume component
-        if (m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
-            DrawWaterVolumeComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::WaterVolumeComponent>(m_PrimarySelected)) {
+            DrawWaterVolumeComponent(m_PrimarySelected);
         }
 
         // Grass Volume component
-        if (m_World->HasComponent<ECS::GrassVolumeComponent>(m_SelectedEntity)) {
-            DrawGrassVolumeComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::GrassVolumeComponent>(m_PrimarySelected)) {
+            DrawGrassVolumeComponent(m_PrimarySelected);
         }
 
         // Shrub Volume component
-        if (m_World->HasComponent<ECS::ShrubVolumeComponent>(m_SelectedEntity)) {
-            DrawShrubVolumeComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected)) {
+            DrawShrubVolumeComponent(m_PrimarySelected);
         }
 
         // Tree Volume component
-        if (m_World->HasComponent<ECS::TreeVolumeComponent>(m_SelectedEntity)) {
-            DrawTreeVolumeComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TreeVolumeComponent>(m_PrimarySelected)) {
+            DrawTreeVolumeComponent(m_PrimarySelected);
         }
 
         // 3D Terrain component
-        if (m_World->HasComponent<ECS::TerrainComponent>(m_SelectedEntity)) {
-            DrawTerrainComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TerrainComponent>(m_PrimarySelected)) {
+            DrawTerrainComponent(m_PrimarySelected);
         }
 
         // 2D Terrain component
-        if (m_World->HasComponent<ECS::Terrain2DComponent>(m_SelectedEntity)) {
-            DrawTerrain2DComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::Terrain2DComponent>(m_PrimarySelected)) {
+            DrawTerrain2DComponent(m_PrimarySelected);
         }
 
         // Vegetation component
-        if (m_World->HasComponent<ECS::VegetationComponent>(m_SelectedEntity)) {
-            DrawVegetationComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::VegetationComponent>(m_PrimarySelected)) {
+            DrawVegetationComponent(m_PrimarySelected);
         }
 
         // Camera Trigger component
-        if (m_World->HasComponent<ECS::CameraTriggerComponent>(m_SelectedEntity)) {
-            DrawCameraTriggerComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::CameraTriggerComponent>(m_PrimarySelected)) {
+            DrawCameraTriggerComponent(m_PrimarySelected);
         }
 
         // Temperature Zone component
-        if (m_World->HasComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity)) {
-            DrawTemperatureZoneComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TemperatureZoneComponent>(m_PrimarySelected)) {
+            DrawTemperatureZoneComponent(m_PrimarySelected);
         }
 
         // Gravity Zone component
-        if (m_World->HasComponent<ECS::GravityZoneComponent>(m_SelectedEntity)) {
-            DrawGravityZoneComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::GravityZoneComponent>(m_PrimarySelected)) {
+            DrawGravityZoneComponent(m_PrimarySelected);
         }
 
         // Notes component
-        if (m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
-            DrawNotesComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
+            DrawNotesComponent(m_PrimarySelected);
         }
 
         // Text component
-        if (m_World->HasComponent<ECS::TextComponent>(m_SelectedEntity)) {
-            DrawTextComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TextComponent>(m_PrimarySelected)) {
+            DrawTextComponent(m_PrimarySelected);
         }
 
         // Character Controller components
-        if (m_World->HasComponent<ECS::Platformer2DController>(m_SelectedEntity)) {
-            DrawPlatformer2DController(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::Platformer2DController>(m_PrimarySelected)) {
+            DrawPlatformer2DController(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TopDown2DController>(m_SelectedEntity)) {
-            DrawTopDown2DController(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TopDown2DController>(m_PrimarySelected)) {
+            DrawTopDown2DController(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TopDown3DController>(m_SelectedEntity)) {
-            DrawTopDown3DController(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TopDown3DController>(m_PrimarySelected)) {
+            DrawTopDown3DController(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::ThirdPersonController>(m_SelectedEntity)) {
-            DrawThirdPersonController(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::ThirdPersonController>(m_PrimarySelected)) {
+            DrawThirdPersonController(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::FirstPersonController>(m_SelectedEntity)) {
-            DrawFirstPersonController(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::FirstPersonController>(m_PrimarySelected)) {
+            DrawFirstPersonController(m_PrimarySelected);
         }
 
         // Gameplay components
-        if (m_World->HasComponent<ECS::HealthComponent>(m_SelectedEntity)) {
-            DrawHealthComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected)) {
+            DrawHealthComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::RigidbodyComponent>(m_SelectedEntity)) {
-            DrawRigidbodyComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::RigidbodyComponent>(m_PrimarySelected)) {
+            DrawRigidbodyComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::BoxColliderComponent>(m_SelectedEntity)) {
-            DrawBoxColliderComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::BoxColliderComponent>(m_PrimarySelected)) {
+            DrawBoxColliderComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::SphereColliderComponent>(m_SelectedEntity)) {
-            DrawSphereColliderComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::SphereColliderComponent>(m_PrimarySelected)) {
+            DrawSphereColliderComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity)) {
-            DrawCapsuleColliderComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected)) {
+            DrawCapsuleColliderComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TriggerZoneComponent>(m_SelectedEntity)) {
-            DrawTriggerZoneComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TriggerZoneComponent>(m_PrimarySelected)) {
+            DrawTriggerZoneComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::DamageComponent>(m_SelectedEntity)) {
-            DrawDamageComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::DamageComponent>(m_PrimarySelected)) {
+            DrawDamageComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::InteractableComponent>(m_SelectedEntity)) {
-            DrawInteractableComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::InteractableComponent>(m_PrimarySelected)) {
+            DrawInteractableComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::PickupComponent>(m_SelectedEntity)) {
-            DrawPickupComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::PickupComponent>(m_PrimarySelected)) {
+            DrawPickupComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::InventoryComponent>(m_SelectedEntity)) {
-            DrawInventoryComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::InventoryComponent>(m_PrimarySelected)) {
+            DrawInventoryComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TimerComponent>(m_SelectedEntity)) {
-            DrawTimerComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TimerComponent>(m_PrimarySelected)) {
+            DrawTimerComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::AudioSourceComponent>(m_SelectedEntity)) {
-            DrawAudioSourceComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::AudioSourceComponent>(m_PrimarySelected)) {
+            DrawAudioSourceComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::AudioListenerComponent>(m_SelectedEntity)) {
-            DrawAudioListenerComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::AudioListenerComponent>(m_PrimarySelected)) {
+            DrawAudioListenerComponent(m_PrimarySelected);
         }
 
         // AI components
-        if (m_World->HasComponent<ECS::AIControllerComponent>(m_SelectedEntity)) {
-            DrawAIControllerComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::AIControllerComponent>(m_PrimarySelected)) {
+            DrawAIControllerComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::FollowTargetComponent>(m_SelectedEntity)) {
-            DrawFollowTargetComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::FollowTargetComponent>(m_PrimarySelected)) {
+            DrawFollowTargetComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::LookAtTargetComponent>(m_SelectedEntity)) {
-            DrawLookAtTargetComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::LookAtTargetComponent>(m_PrimarySelected)) {
+            DrawLookAtTargetComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::WaypointComponent>(m_SelectedEntity)) {
-            DrawWaypointComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::WaypointComponent>(m_PrimarySelected)) {
+            DrawWaypointComponent(m_PrimarySelected);
         }
 
         // IK Components
-        if (m_World->HasComponent<ECS::LookAtIKComponent>(m_SelectedEntity)) {
+        if (m_World->HasComponent<ECS::LookAtIKComponent>(m_PrimarySelected)) {
             if (ImGui::CollapsingHeader("Look-At IK")) {
-                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(m_SelectedEntity);
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(m_PrimarySelected);
                 char headBone[128];
                 strncpy(headBone, ik->headBoneName.c_str(), sizeof(headBone) - 1);
                 headBone[sizeof(headBone) - 1] = '\0';
@@ -2435,9 +2573,9 @@ void EditorLayer::DrawInspectorPanel() {
             }
         }
 
-        if (m_World->HasComponent<ECS::InteractionIKComponent>(m_SelectedEntity)) {
+        if (m_World->HasComponent<ECS::InteractionIKComponent>(m_PrimarySelected)) {
             if (ImGui::CollapsingHeader("Interaction IK")) {
-                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(m_SelectedEntity);
+                auto* ik = m_World->GetComponent<ECS::InteractionIKComponent>(m_PrimarySelected);
                 char handBone[128];
                 strncpy(handBone, ik->handBoneName.c_str(), sizeof(handBone) - 1);
                 handBone[sizeof(handBone) - 1] = '\0';
@@ -2469,53 +2607,134 @@ void EditorLayer::DrawInspectorPanel() {
         }
 
         // Visual components
-        if (m_World->HasComponent<ECS::BillboardComponent>(m_SelectedEntity)) {
-            DrawBillboardComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::BillboardComponent>(m_PrimarySelected)) {
+            DrawBillboardComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity)) {
-            DrawParticleEmitterComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected)) {
+            DrawParticleEmitterComponent(m_PrimarySelected);
         }
 
         // 2D components
-        if (m_World->HasComponent<ECS::Sprite2DComponent>(m_SelectedEntity)) {
-            DrawSprite2DComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::Sprite2DComponent>(m_PrimarySelected)) {
+            DrawSprite2DComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity)) {
-            DrawAnimatedSprite2DComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_PrimarySelected)) {
+            DrawAnimatedSprite2DComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TilemapComponent>(m_SelectedEntity)) {
-            DrawTilemapComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TilemapComponent>(m_PrimarySelected)) {
+            DrawTilemapComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::StateMachineComponent>(m_SelectedEntity)) {
-            DrawStateMachineComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::StateMachineComponent>(m_PrimarySelected)) {
+            DrawStateMachineComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity)) {
-            DrawCamera2DBoundsComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected)) {
+            DrawCamera2DBoundsComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::DialogueComponent>(m_SelectedEntity)) {
-            DrawDialogueComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::DialogueComponent>(m_PrimarySelected)) {
+            DrawDialogueComponent(m_PrimarySelected);
         }
 
         // Other components
-        if (m_World->HasComponent<ECS::TagComponent>(m_SelectedEntity)) {
-            DrawTagComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TagComponent>(m_PrimarySelected)) {
+            DrawTagComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::SpawnPointComponent>(m_SelectedEntity)) {
-            DrawSpawnPointComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::SpawnPointComponent>(m_PrimarySelected)) {
+            DrawSpawnPointComponent(m_PrimarySelected);
         }
 
         // Flower components
-        if (m_World->HasComponent<ECS::JellyMeshComponent>(m_SelectedEntity)) {
-            DrawJellyMeshComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::JellyMeshComponent>(m_PrimarySelected)) {
+            DrawJellyMeshComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::TetherComponent>(m_SelectedEntity)) {
-            DrawTetherComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::TetherComponent>(m_PrimarySelected)) {
+            DrawTetherComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::GrabbableComponent>(m_SelectedEntity)) {
-            DrawGrabbableComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::GrabbableComponent>(m_PrimarySelected)) {
+            DrawGrabbableComponent(m_PrimarySelected);
         }
-        if (m_World->HasComponent<ECS::FlowerStemComponent>(m_SelectedEntity)) {
-            DrawFlowerStemComponent(m_SelectedEntity);
+        if (m_World->HasComponent<ECS::FlowerStemComponent>(m_PrimarySelected)) {
+            DrawFlowerStemComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::ScriptComponent>(m_PrimarySelected)) {
+            DrawScriptComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::VehicleController>(m_PrimarySelected)) {
+            DrawVehicleController(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::PossessableComponent>(m_PrimarySelected)) {
+            DrawPossessableComponent(m_PrimarySelected);
+        }
+
+        // Puzzle components
+        if (m_World->HasComponent<ECS::LockComponent>(m_PrimarySelected)) {
+            DrawLockComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::PushableComponent>(m_PrimarySelected)) {
+            DrawPushableComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SwitchComponent>(m_PrimarySelected)) {
+            DrawSwitchComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::GoalZoneComponent>(m_PrimarySelected)) {
+            DrawGoalZoneComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::ConveyorComponent>(m_PrimarySelected)) {
+            DrawConveyorComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::TeleporterComponent>(m_PrimarySelected)) {
+            DrawTeleporterComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::DestructibleComponent>(m_PrimarySelected)) {
+            DrawDestructibleComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::MovingPlatformComponent>(m_PrimarySelected)) {
+            DrawMovingPlatformComponent(m_PrimarySelected);
+        }
+
+        // New gameplay components
+        if (m_World->HasComponent<ECS::DamageResistanceComponent>(m_PrimarySelected)) {
+            DrawDamageResistanceComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::ResourceComponent>(m_PrimarySelected)) {
+            DrawResourceComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::FootstepComponent>(m_PrimarySelected)) {
+            DrawFootstepComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::PoolableComponent>(m_PrimarySelected)) {
+            DrawPoolableComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::QuestStateComponent>(m_PrimarySelected)) {
+            DrawQuestStateComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
+            DrawHUDWidgetComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
+            DrawCinematicCameraComponent(m_PrimarySelected);
+        }
+
+        // Joint & Ragdoll components
+        if (m_World->HasComponent<ECS::DistanceJointComponent>(m_PrimarySelected)) {
+            DrawDistanceJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::HingeJointComponent>(m_PrimarySelected)) {
+            DrawHingeJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::BallSocketJointComponent>(m_PrimarySelected)) {
+            DrawBallSocketJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SpringJointComponent>(m_PrimarySelected)) {
+            DrawSpringJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::FixedJointComponent>(m_PrimarySelected)) {
+            DrawFixedJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SliderJointComponent>(m_PrimarySelected)) {
+            DrawSliderJointComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::RagdollComponent>(m_PrimarySelected)) {
+            DrawRagdollComponent(m_PrimarySelected);
         }
 
         ImGui::Separator();
@@ -2526,78 +2745,83 @@ void EditorLayer::DrawInspectorPanel() {
         }
 
         if (ImGui::BeginPopup("AddComponentPopup")) {
-            if (!m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Mesh")) {
-                    m_World->AddComponent<ECS::MeshComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::MeshComponent>(m_PrimarySelected);
                 }
             }
-            if (!m_World->HasComponent<ECS::LODComponent>(m_SelectedEntity) &&
-                m_World->HasComponent<ECS::MeshComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::LODComponent>(m_PrimarySelected) &&
+                m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("LOD (Auto-Generate)")) {
-                    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_SelectedEntity);
+                    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_PrimarySelected);
                     if (mesh && mesh->IsValid()) {
-                        auto& lod = m_World->AddComponent<ECS::LODComponent>(m_SelectedEntity);
+                        auto& lod = m_World->AddComponent<ECS::LODComponent>(m_PrimarySelected);
                         Renderer::MeshSimplifier::GenerateLODs(*mesh, lod);
                     }
                 }
             }
-            if (!m_World->HasComponent<ECS::MaterialComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::MaterialComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Material")) {
-                    m_World->AddComponent<ECS::MaterialComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::MaterialComponent>(m_PrimarySelected);
                 }
             }
-            if (!m_World->HasComponent<ECS::LightComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::LightComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Light")) {
-                    m_World->AddComponent<ECS::LightComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::LightComponent>(m_PrimarySelected);
                 }
             }
-            if (!m_World->HasComponent<ECS::CameraComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::CameraComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Camera")) {
-                    m_World->AddComponent<ECS::CameraComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::CameraComponent>(m_PrimarySelected);
                 }
             }
-            if (!m_World->HasComponent<ECS::NotesComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Notes")) {
-                    m_World->AddComponent<ECS::NotesComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::NotesComponent>(m_PrimarySelected);
                 }
             }
-            if (!m_World->HasComponent<ECS::TextComponent>(m_SelectedEntity)) {
+            if (!m_World->HasComponent<ECS::TextComponent>(m_PrimarySelected)) {
                 if (ImGui::MenuItem("Text")) {
-                    m_World->AddComponent<ECS::TextComponent>(m_SelectedEntity);
+                    m_World->AddComponent<ECS::TextComponent>(m_PrimarySelected);
                 }
             }
             ImGui::Separator();
 
             // Character Controllers submenu
             if (ImGui::BeginMenu("Character Controller")) {
-                if (!m_World->HasComponent<ECS::Platformer2DController>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::Platformer2DController>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("2D Platformer")) {
-                        m_World->AddComponent<ECS::Platformer2DController>(m_SelectedEntity);
-                        SetupCameraForController(m_SelectedEntity, "Platformer2D");
+                        m_World->AddComponent<ECS::Platformer2DController>(m_PrimarySelected);
+                        SetupCameraForController(m_PrimarySelected, "Platformer2D");
                     }
                 }
-                if (!m_World->HasComponent<ECS::TopDown2DController>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TopDown2DController>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("2D Top-Down")) {
-                        m_World->AddComponent<ECS::TopDown2DController>(m_SelectedEntity);
-                        SetupCameraForController(m_SelectedEntity, "TopDown2D");
+                        m_World->AddComponent<ECS::TopDown2DController>(m_PrimarySelected);
+                        SetupCameraForController(m_PrimarySelected, "TopDown2D");
                     }
                 }
-                if (!m_World->HasComponent<ECS::TopDown3DController>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TopDown3DController>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("3D Top-Down (Isometric)")) {
-                        m_World->AddComponent<ECS::TopDown3DController>(m_SelectedEntity);
-                        SetupCameraForController(m_SelectedEntity, "TopDown3D");
+                        m_World->AddComponent<ECS::TopDown3DController>(m_PrimarySelected);
+                        SetupCameraForController(m_PrimarySelected, "TopDown3D");
                     }
                 }
-                if (!m_World->HasComponent<ECS::ThirdPersonController>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::ThirdPersonController>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("3D Third Person")) {
-                        m_World->AddComponent<ECS::ThirdPersonController>(m_SelectedEntity);
-                        SetupCameraForController(m_SelectedEntity, "ThirdPerson");
+                        m_World->AddComponent<ECS::ThirdPersonController>(m_PrimarySelected);
+                        SetupCameraForController(m_PrimarySelected, "ThirdPerson");
                     }
                 }
-                if (!m_World->HasComponent<ECS::FirstPersonController>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::FirstPersonController>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("3D First Person")) {
-                        m_World->AddComponent<ECS::FirstPersonController>(m_SelectedEntity);
-                        SetupCameraForController(m_SelectedEntity, "FirstPerson");
+                        m_World->AddComponent<ECS::FirstPersonController>(m_PrimarySelected);
+                        SetupCameraForController(m_PrimarySelected, "FirstPerson");
+                    }
+                }
+                if (!m_World->HasComponent<ECS::VehicleController>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Vehicle")) {
+                        m_World->AddComponent<ECS::VehicleController>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2605,29 +2829,29 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Physics submenu
             if (ImGui::BeginMenu("Physics")) {
-                if (!m_World->HasComponent<ECS::RigidbodyComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::RigidbodyComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Rigidbody")) {
-                        m_World->AddComponent<ECS::RigidbodyComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::RigidbodyComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::BoxColliderComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::BoxColliderComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Box Collider")) {
-                        m_World->AddComponent<ECS::BoxColliderComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::BoxColliderComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::SphereColliderComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::SphereColliderComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Sphere Collider")) {
-                        m_World->AddComponent<ECS::SphereColliderComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::SphereColliderComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Capsule Collider")) {
-                        m_World->AddComponent<ECS::CapsuleColliderComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::TriggerZoneComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TriggerZoneComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Trigger Zone")) {
-                        m_World->AddComponent<ECS::TriggerZoneComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TriggerZoneComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2635,34 +2859,114 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Gameplay submenu
             if (ImGui::BeginMenu("Gameplay")) {
-                if (!m_World->HasComponent<ECS::HealthComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Health")) {
-                        m_World->AddComponent<ECS::HealthComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::HealthComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::DamageComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::DamageComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Damage")) {
-                        m_World->AddComponent<ECS::DamageComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::DamageComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::InteractableComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::InteractableComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Interactable")) {
-                        m_World->AddComponent<ECS::InteractableComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::InteractableComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::PickupComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::PickupComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Pickup")) {
-                        m_World->AddComponent<ECS::PickupComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::PickupComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::InventoryComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::InventoryComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Inventory")) {
-                        m_World->AddComponent<ECS::InventoryComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::InventoryComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::TimerComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TimerComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Timer")) {
-                        m_World->AddComponent<ECS::TimerComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TimerComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::PossessableComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Possessable")) {
+                        m_World->AddComponent<ECS::PossessableComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::DamageResistanceComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Damage Resistance")) {
+                        m_World->AddComponent<ECS::DamageResistanceComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::ResourceComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Resource/Stamina")) {
+                        m_World->AddComponent<ECS::ResourceComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::FootstepComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Footstep")) {
+                        m_World->AddComponent<ECS::FootstepComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::PoolableComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Poolable")) {
+                        m_World->AddComponent<ECS::PoolableComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::QuestStateComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Quest State")) {
+                        m_World->AddComponent<ECS::QuestStateComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("HUD Widget")) {
+                        m_World->AddComponent<ECS::HUDWidgetComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Cinematic Camera")) {
+                        m_World->AddComponent<ECS::CinematicCameraComponent>(m_PrimarySelected);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Joints submenu
+            if (ImGui::BeginMenu("Joints")) {
+                if (!m_World->HasComponent<ECS::DistanceJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Distance Joint")) {
+                        m_World->AddComponent<ECS::DistanceJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::HingeJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Hinge Joint")) {
+                        m_World->AddComponent<ECS::HingeJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::BallSocketJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Ball-Socket Joint")) {
+                        m_World->AddComponent<ECS::BallSocketJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::SpringJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Spring Joint")) {
+                        m_World->AddComponent<ECS::SpringJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::FixedJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Fixed Joint")) {
+                        m_World->AddComponent<ECS::FixedJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::SliderJointComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Slider Joint")) {
+                        m_World->AddComponent<ECS::SliderJointComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::RagdollComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Ragdoll")) {
+                        m_World->AddComponent<ECS::RagdollComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2670,24 +2974,24 @@ void EditorLayer::DrawInspectorPanel() {
 
             // AI submenu
             if (ImGui::BeginMenu("AI")) {
-                if (!m_World->HasComponent<ECS::AIControllerComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::AIControllerComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("AI Controller")) {
-                        m_World->AddComponent<ECS::AIControllerComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::AIControllerComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::FollowTargetComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::FollowTargetComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Follow Target")) {
-                        m_World->AddComponent<ECS::FollowTargetComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::FollowTargetComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::LookAtTargetComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::LookAtTargetComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Look At Target")) {
-                        m_World->AddComponent<ECS::LookAtTargetComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::LookAtTargetComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::WaypointComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::WaypointComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Waypoint")) {
-                        m_World->AddComponent<ECS::WaypointComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::WaypointComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2695,14 +2999,14 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Audio submenu
             if (ImGui::BeginMenu("Audio")) {
-                if (!m_World->HasComponent<ECS::AudioSourceComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::AudioSourceComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Audio Source")) {
-                        m_World->AddComponent<ECS::AudioSourceComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::AudioSourceComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::AudioListenerComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::AudioListenerComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Audio Listener")) {
-                        m_World->AddComponent<ECS::AudioListenerComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::AudioListenerComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2710,14 +3014,14 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Visual submenu
             if (ImGui::BeginMenu("Visual")) {
-                if (!m_World->HasComponent<ECS::BillboardComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::BillboardComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Billboard")) {
-                        m_World->AddComponent<ECS::BillboardComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::BillboardComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Particle Emitter")) {
-                        m_World->AddComponent<ECS::ParticleEmitterComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2725,49 +3029,49 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Effects submenu
             if (ImGui::BeginMenu("Effects")) {
-                if (!m_World->HasComponent<ECS::WeatherZoneComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::WeatherZoneComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Weather Zone")) {
-                        m_World->AddComponent<ECS::WeatherZoneComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::WeatherZoneComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::WaterVolumeComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::WaterVolumeComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Water Volume")) {
-                        m_World->AddComponent<ECS::WaterVolumeComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::WaterVolumeComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::GrassVolumeComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::GrassVolumeComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Grass Volume")) {
-                        m_World->AddComponent<ECS::GrassVolumeComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::GrassVolumeComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::ShrubVolumeComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Shrub Volume")) {
-                        m_World->AddComponent<ECS::ShrubVolumeComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::TreeVolumeComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TreeVolumeComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Tree Volume")) {
-                        m_World->AddComponent<ECS::TreeVolumeComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TreeVolumeComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::VegetationComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::VegetationComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Vegetation")) {
-                        m_World->AddComponent<ECS::VegetationComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::VegetationComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::CameraTriggerComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::CameraTriggerComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Camera Trigger")) {
-                        m_World->AddComponent<ECS::CameraTriggerComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::CameraTriggerComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Temperature Zone")) {
-                        m_World->AddComponent<ECS::TemperatureZoneComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TemperatureZoneComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::GravityZoneComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::GravityZoneComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Gravity Zone")) {
-                        m_World->AddComponent<ECS::GravityZoneComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::GravityZoneComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2775,24 +3079,76 @@ void EditorLayer::DrawInspectorPanel() {
 
             // 2D Graphics submenu
             if (ImGui::BeginMenu("2D Graphics")) {
-                if (!m_World->HasComponent<ECS::Sprite2DComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::Sprite2DComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Sprite")) {
-                        m_World->AddComponent<ECS::Sprite2DComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::Sprite2DComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Animated Sprite")) {
-                        m_World->AddComponent<ECS::AnimatedSprite2DComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::AnimatedSprite2DComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::TilemapComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TilemapComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Tilemap")) {
-                        m_World->AddComponent<ECS::TilemapComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TilemapComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("2D Camera Bounds")) {
-                        m_World->AddComponent<ECS::Camera2DBoundsComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected);
+                    }
+                }
+                ImGui::EndMenu();
+            }
+
+            // Scripting
+            if (!m_World->HasComponent<ECS::ScriptComponent>(m_PrimarySelected)) {
+                if (ImGui::MenuItem("Script")) {
+                    m_World->AddComponent<ECS::ScriptComponent>(m_PrimarySelected);
+                }
+            }
+
+            // Puzzle
+            if (ImGui::BeginMenu("Puzzle")) {
+                if (!m_World->HasComponent<ECS::LockComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Lock")) {
+                        m_World->AddComponent<ECS::LockComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::PushableComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Pushable")) {
+                        m_World->AddComponent<ECS::PushableComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::SwitchComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Switch")) {
+                        m_World->AddComponent<ECS::SwitchComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::GoalZoneComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Goal Zone")) {
+                        m_World->AddComponent<ECS::GoalZoneComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::ConveyorComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Conveyor")) {
+                        m_World->AddComponent<ECS::ConveyorComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::TeleporterComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Teleporter")) {
+                        m_World->AddComponent<ECS::TeleporterComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::DestructibleComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Destructible")) {
+                        m_World->AddComponent<ECS::DestructibleComponent>(m_PrimarySelected);
+                    }
+                }
+                if (!m_World->HasComponent<ECS::MovingPlatformComponent>(m_PrimarySelected)) {
+                    if (ImGui::MenuItem("Moving Platform")) {
+                        m_World->AddComponent<ECS::MovingPlatformComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -2800,14 +3156,14 @@ void EditorLayer::DrawInspectorPanel() {
 
             // Other
             if (ImGui::BeginMenu("Other")) {
-                if (!m_World->HasComponent<ECS::TagComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::TagComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Tags")) {
-                        m_World->AddComponent<ECS::TagComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::TagComponent>(m_PrimarySelected);
                     }
                 }
-                if (!m_World->HasComponent<ECS::SpawnPointComponent>(m_SelectedEntity)) {
+                if (!m_World->HasComponent<ECS::SpawnPointComponent>(m_PrimarySelected)) {
                     if (ImGui::MenuItem("Spawn Point")) {
-                        m_World->AddComponent<ECS::SpawnPointComponent>(m_SelectedEntity);
+                        m_World->AddComponent<ECS::SpawnPointComponent>(m_PrimarySelected);
                     }
                 }
                 ImGui::EndMenu();
@@ -3790,6 +4146,13 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
                     m_TerrainBrush.paintLayer = static_cast<u32>(layer);
                 }
             }
+
+            // Brush cursor feedback
+            if (m_BrushHitValid) {
+                ImGui::Separator();
+                ImGui::Text("Brush: (%.1f, %.1f, %.1f)",
+                            m_BrushHitPoint.x, m_BrushHitPoint.y, m_BrushHitPoint.z);
+            }
         }
 
         ImGui::Separator();
@@ -3835,6 +4198,14 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
         ImGui::DragFloat("Depth", &terrain->depth, 0.1f, 0.1f, 50.0f);
         ImGui::DragFloat("UV Scale", &terrain->uvScale, 0.01f, 0.01f, 10.0f);
         ImGui::Checkbox("Auto Colliders", &terrain->autoColliders);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Edit Mode (Drag Points)", &m_TerrainEditMode);
+        if (m_TerrainEditMode && m_BrushHitValid) {
+            ImGui::Text("Cursor: (%.1f, %.1f)", m_BrushHitPoint.x, m_BrushHitPoint.y);
+            if (m_Dragging2DPoint >= 0)
+                ImGui::Text("Dragging point %d", m_Dragging2DPoint);
+        }
 
         ImGui::Separator();
         ImGui::Text("Control Points (%zu)", terrain->controlPoints.size());
@@ -4816,6 +5187,17 @@ void EditorLayer::DrawSettingsPanel() {
                 settingsChanged = true;
             }
 
+            if (ImGui::Checkbox("Raw Mouse Input", &m_EditorSettings.rawMouseInput)) {
+                settingsChanged = true;
+            }
+
+            if (ImGui::SliderFloat("Mouse Smoothing", &m_EditorSettings.mouseSmoothing, 0.0f, 1.0f, "%.2f")) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("0.0 = no smoothing, 1.0 = heavy smoothing");
+            }
+
             ImGui::Separator();
             ImGui::TextDisabled("Input Presets");
             const char* presetNames[] = { "Default", "Left Hand Only", "Right Hand Only", "Gamepad Only" };
@@ -4878,6 +5260,10 @@ void EditorLayer::DrawSettingsPanel() {
                 ppSettings.colorblindMode = m_EditorSettings.colorblindMode;
                 ppSettings.colorblindStrength = m_EditorSettings.colorblindStrength;
             }
+
+            // Apply raw mouse input and smoothing settings
+            Input::SetRawMouseInput(m_EditorSettings.rawMouseInput);
+            Input::SetMouseSmoothing(m_EditorSettings.mouseSmoothing);
         }
     }
 
@@ -5370,7 +5756,7 @@ void EditorLayer::DrawEffectsPanel() {
 
                         ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
                         if (ImGui::IsItemClicked()) {
-                            m_SelectedEntity = entity;
+                            SelectEntity(entity);
                         }
                     }
                 }
@@ -5392,7 +5778,7 @@ void EditorLayer::DrawEffectsPanel() {
 
                         ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
                         if (ImGui::IsItemClicked()) {
-                            m_SelectedEntity = entity;
+                            SelectEntity(entity);
                         }
                     }
                 }
@@ -5600,7 +5986,7 @@ void EditorLayer::DrawGameViewPanel() {
             cam.fieldOfView = 60.0f;
             cam.nearPlane = 0.1f;
             cam.farPlane = 1000.0f;
-            m_SelectedEntity = camEntity;
+            SelectEntity(camEntity);
             ENJIN_LOG_INFO(Editor, "Created game camera entity");
         }
     } else {
@@ -6108,10 +6494,9 @@ void EditorLayer::DrawStatsOverlay() {
     ImVec2 windowPos = ImVec2(io.DisplaySize.x - DISTANCE, DISTANCE);
     ImVec2 windowPivot = ImVec2(1.0f, 0.0f);
     ImGui::SetNextWindowPos(windowPos, ImGuiCond_Always, windowPivot);
-    ImGui::SetNextWindowBgAlpha(0.35f);
+    ImGui::SetNextWindowBgAlpha(0.50f);
 
-    ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration |
-                             ImGuiWindowFlags_AlwaysAutoResize |
+    ImGuiWindowFlags flags = ImGuiWindowFlags_AlwaysAutoResize |
                              ImGuiWindowFlags_NoSavedSettings |
                              ImGuiWindowFlags_NoFocusOnAppearing |
                              ImGuiWindowFlags_NoNav |
@@ -6373,8 +6758,13 @@ void EditorLayer::DrawTemplateSelector() {
             { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f) },
             { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f) },
             { "dungeon",     "SMT Dungeon",   "First-person crawler\nGrid dungeon + encounters",          ImVec4(0.15f, 0.6f, 0.15f, 1.0f) },
+            { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f) },
+            { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f) },
+            { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f) },
+            { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f) },
+            { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f) },
         };
-        int builtinCount = 24;
+        int builtinCount = 29;
 
         f32 cardW = 345.0f;
         f32 cardH = 240.0f;
@@ -6642,7 +7032,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     // Clear existing scene and undo history
     m_World->Clear();
-    m_SelectedEntity = ECS::INVALID_ENTITY;
+    ClearSelection();
     m_UndoRedo.Clear();
 
     // --- Configure editor layout per template ---
@@ -6801,6 +7191,49 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.bottomHeight = 0.20f;
         m_Layout.gameViewW = 800.0f;
         m_Layout.gameViewH = 520.0f;
+    }
+    else if (templateId == "metroidvania") {
+        // 2D side-scroller: wide game view, compact side panels
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 750.0f;
+        m_Layout.gameViewH = 450.0f;
+    }
+    else if (templateId == "soulslike") {
+        // 3D action: big game view for combat readability, skybox panel
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.15f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 800.0f;
+        m_Layout.gameViewH = 500.0f;
+    }
+    else if (templateId == "vampsurvivor") {
+        // Top-down overhead: wide game view, small panels
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.16f;
+        m_Layout.gameViewW = 700.0f;
+        m_Layout.gameViewH = 700.0f;
+    }
+    else if (templateId == "roguelike") {
+        // 2D top-down grid: square-ish game view
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.18f;
+        m_Layout.gameViewW = 650.0f;
+        m_Layout.gameViewH = 650.0f;
+    }
+    else if (templateId == "couchcoop") {
+        // 2-player splitscreen: large game view for split viewports
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.gameViewW = 850.0f;
+        m_Layout.gameViewH = 480.0f;
     }
     else {
         // Fallback: standard layout
@@ -9956,6 +10389,1585 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
     }
 
+    else if (templateId == "metroidvania") {
+        // =====================================================================
+        // METROIDVANIA TEMPLATE - Interconnected 2D side-scrolling rooms
+        // =====================================================================
+        // Room layout (XY plane):
+        //   Room A (start)  -> Room B (upper) -> Room C (boss corridor)
+        //        |                                     |
+        //   Room D (lower)  -> Room E (hub)   -> Room F (ability room)
+        //
+        // Rooms are connected by openings. Locked doors block progression
+        // until the player finds keys or abilities.
+
+        // --- Room geometry constants ---
+        const f32 ROOM_W = 16.0f;
+        const f32 ROOM_H = 10.0f;
+        const f32 WALL_T = 0.5f;   // Wall thickness
+        const Math::Vector3 wallColor(0.22f, 0.18f, 0.25f);
+        const Math::Vector3 floorColor(0.15f, 0.13f, 0.18f);
+        const Math::Vector3 platColor(0.28f, 0.24f, 0.30f);
+
+        // Helper to create a wall/floor block
+        auto makeBlock = [&](const std::string& name, Math::Vector3 pos, Math::Vector3 scl,
+                             Math::Vector3 color) -> ECS::Entity {
+            ECS::Entity e = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(e, name);
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+            t.position = pos;
+            t.scale = scl;
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+            mat.baseColor = color;
+            mat.roughness = 0.85f;
+            m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(e);
+            col.size = scl;
+            return e;
+        };
+
+        // Helper to create a room shell (floor, ceiling, left wall, right wall)
+        auto makeRoom = [&](const std::string& prefix, f32 ox, f32 oy) {
+            // Floor
+            makeBlock(prefix + " Floor", Math::Vector3(ox, oy - ROOM_H * 0.5f, 0.0f),
+                      Math::Vector3(ROOM_W, WALL_T, 1.0f), floorColor);
+            // Ceiling
+            makeBlock(prefix + " Ceiling", Math::Vector3(ox, oy + ROOM_H * 0.5f, 0.0f),
+                      Math::Vector3(ROOM_W, WALL_T, 1.0f), wallColor);
+            // Left wall
+            makeBlock(prefix + " Wall L", Math::Vector3(ox - ROOM_W * 0.5f, oy, 0.0f),
+                      Math::Vector3(WALL_T, ROOM_H, 1.0f), wallColor);
+            // Right wall
+            makeBlock(prefix + " Wall R", Math::Vector3(ox + ROOM_W * 0.5f, oy, 0.0f),
+                      Math::Vector3(WALL_T, ROOM_H, 1.0f), wallColor);
+        };
+
+        // Room origins (center of each room)
+        const f32 rAx = 0.0f,   rAy = 0.0f;   // Room A - Start
+        const f32 rBx = 18.0f,  rBy = 6.0f;    // Room B - Upper right
+        const f32 rCx = 36.0f,  rCy = 6.0f;    // Room C - Boss corridor
+        const f32 rDx = 0.0f,   rDy = -12.0f;  // Room D - Lower left
+        const f32 rEx = 18.0f,  rEy = -12.0f;  // Room E - Hub
+        const f32 rFx = 36.0f,  rFy = -12.0f;  // Room F - Ability room
+
+        // Build room shells
+        makeRoom("Room A", rAx, rAy);
+        makeRoom("Room B", rBx, rBy);
+        makeRoom("Room C", rCx, rCy);
+        makeRoom("Room D", rDx, rDy);
+        makeRoom("Room E", rEx, rEy);
+        makeRoom("Room F", rFx, rFy);
+
+        // --- Platforms inside rooms ---
+        // Room A platforms (starting area with wall-jump practice)
+        makeBlock("A Platform 1", Math::Vector3(rAx - 4.0f, rAy - 2.0f, 0.0f),
+                  Math::Vector3(4.0f, 0.4f, 1.0f), platColor);
+        makeBlock("A Platform 2", Math::Vector3(rAx + 3.0f, rAy + 1.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+        makeBlock("A Platform 3", Math::Vector3(rAx - 2.0f, rAy + 3.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+
+        // Room B platforms (vertical challenge)
+        makeBlock("B Platform 1", Math::Vector3(rBx - 5.0f, rBy - 3.0f, 0.0f),
+                  Math::Vector3(4.0f, 0.4f, 1.0f), platColor);
+        makeBlock("B Platform 2", Math::Vector3(rBx + 2.0f, rBy - 1.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+        makeBlock("B Platform 3", Math::Vector3(rBx - 3.0f, rBy + 2.0f, 0.0f),
+                  Math::Vector3(5.0f, 0.4f, 1.0f), platColor);
+
+        // Room D platforms (lower maze)
+        makeBlock("D Platform 1", Math::Vector3(rDx + 4.0f, rDy - 2.0f, 0.0f),
+                  Math::Vector3(3.5f, 0.4f, 1.0f), platColor);
+        makeBlock("D Platform 2", Math::Vector3(rDx - 3.0f, rDy + 1.5f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+
+        // Room E platforms (hub - central area)
+        makeBlock("E Platform 1", Math::Vector3(rEx, rEy - 2.0f, 0.0f),
+                  Math::Vector3(6.0f, 0.4f, 1.0f), platColor);
+        makeBlock("E Platform 2", Math::Vector3(rEx - 5.0f, rEy + 1.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+        makeBlock("E Platform 3", Math::Vector3(rEx + 5.0f, rEy + 1.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+
+        // Room F platforms (ability room)
+        makeBlock("F Platform 1", Math::Vector3(rFx - 4.0f, rFy - 1.0f, 0.0f),
+                  Math::Vector3(3.0f, 0.4f, 1.0f), platColor);
+        makeBlock("F Platform 2", Math::Vector3(rFx + 3.0f, rFy + 2.0f, 0.0f),
+                  Math::Vector3(4.0f, 0.4f, 1.0f), platColor);
+
+        // --- Player ---
+        ECS::Entity player = createPlayer2D("Player");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player);
+            if (pt) pt->position = Math::Vector3(rAx, rAy - 2.0f, 0.0f);
+            auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
+            ctrl.moveSpeed = 6.0f;
+            ctrl.jumpForce = 12.0f;
+            ctrl.enableWallJump = true;
+            ctrl.enableWallSlide = true;
+            ctrl.wallSlideSpeed = 2.0f;
+            ctrl.wallJumpForce = 8.0f;
+            auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+            health.maxHealth = 100.0f;
+            health.currentHealth = 100.0f;
+            health.invulnerabilityTime = 1.0f;
+            m_World->AddComponent<ECS::InventoryComponent>(player);
+            SetupCameraForController(player, "Platformer2D");
+        }
+
+        // --- Locked Doors ---
+        // Door A->B (requires Red Key)
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Door A-B (Red Key)");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(rAx + ROOM_W * 0.5f, rAy + 2.0f, 0.0f);
+            dt.scale = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& dm = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dm.baseColor = Math::Vector3(0.7f, 0.15f, 0.1f);
+            dm.emissiveColor = Math::Vector3(0.3f, 0.05f, 0.02f);
+            dm.emissiveStrength = 0.4f;
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+            col.size = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& lock = m_World->AddComponent<ECS::LockComponent>(door);
+            lock.requiredKey = "red_key";
+            lock.isLocked = true;
+            lock.openMode = ECS::LockComponent::OpenMode::OpenOnly;
+            lock.lockedPrompt = "Requires Red Key";
+            lock.openPosition = Math::Vector3(0.0f, 3.5f, 0.0f);
+        }
+
+        // Door D->E (requires Blue Key)
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Door D-E (Blue Key)");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(rDx + ROOM_W * 0.5f, rDy, 0.0f);
+            dt.scale = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& dm = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dm.baseColor = Math::Vector3(0.1f, 0.2f, 0.7f);
+            dm.emissiveColor = Math::Vector3(0.02f, 0.05f, 0.3f);
+            dm.emissiveStrength = 0.4f;
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+            col.size = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& lock = m_World->AddComponent<ECS::LockComponent>(door);
+            lock.requiredKey = "blue_key";
+            lock.isLocked = true;
+            lock.openMode = ECS::LockComponent::OpenMode::OpenOnly;
+            lock.lockedPrompt = "Requires Blue Key";
+            lock.openPosition = Math::Vector3(0.0f, 3.5f, 0.0f);
+        }
+
+        // Door E->F (requires Boss Key)
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Door E-F (Boss Key)");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(rEx + ROOM_W * 0.5f, rEy, 0.0f);
+            dt.scale = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& dm = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dm.baseColor = Math::Vector3(0.6f, 0.5f, 0.1f);
+            dm.emissiveColor = Math::Vector3(0.3f, 0.25f, 0.02f);
+            dm.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+            col.size = Math::Vector3(0.5f, 3.0f, 1.0f);
+            auto& lock = m_World->AddComponent<ECS::LockComponent>(door);
+            lock.requiredKey = "boss_key";
+            lock.isLocked = true;
+            lock.openMode = ECS::LockComponent::OpenMode::OpenOnly;
+            lock.lockedPrompt = "Requires Boss Key";
+            lock.openPosition = Math::Vector3(0.0f, 3.5f, 0.0f);
+        }
+
+        // --- Key Pickups ---
+        // Red Key (in Room D)
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Red Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(rDx - 3.0f, rDy + 2.5f, 0.0f);
+            kt.scale = Math::Vector3(0.4f);
+            auto& km = m_World->AddComponent<ECS::MaterialComponent>(key);
+            km.baseColor = Math::Vector3(0.9f, 0.2f, 0.15f);
+            km.emissiveColor = Math::Vector3(0.5f, 0.1f, 0.05f);
+            km.emissiveStrength = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& pc = m_World->AddComponent<ECS::PickupComponent>(key);
+            pc.type = ECS::PickupComponent::PickupType::Key;
+            pc.customId = "red_key";
+            pc.bobSpeed = 2.0f;
+            pc.bobHeight = 0.15f;
+        }
+
+        // Blue Key (in Room B, on high platform)
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Blue Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(rBx - 3.0f, rBy + 3.0f, 0.0f);
+            kt.scale = Math::Vector3(0.4f);
+            auto& km = m_World->AddComponent<ECS::MaterialComponent>(key);
+            km.baseColor = Math::Vector3(0.15f, 0.3f, 0.9f);
+            km.emissiveColor = Math::Vector3(0.05f, 0.1f, 0.5f);
+            km.emissiveStrength = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& pc = m_World->AddComponent<ECS::PickupComponent>(key);
+            pc.type = ECS::PickupComponent::PickupType::Key;
+            pc.customId = "blue_key";
+            pc.bobSpeed = 2.0f;
+            pc.bobHeight = 0.15f;
+        }
+
+        // Boss Key (in Room C, guarded)
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Boss Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(rCx + 4.0f, rCy + 2.0f, 0.0f);
+            kt.scale = Math::Vector3(0.5f);
+            auto& km = m_World->AddComponent<ECS::MaterialComponent>(key);
+            km.baseColor = Math::Vector3(0.85f, 0.75f, 0.15f);
+            km.emissiveColor = Math::Vector3(0.4f, 0.35f, 0.05f);
+            km.emissiveStrength = 1.0f;
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& pc = m_World->AddComponent<ECS::PickupComponent>(key);
+            pc.type = ECS::PickupComponent::PickupType::Key;
+            pc.customId = "boss_key";
+            pc.bobSpeed = 3.0f;
+            pc.bobHeight = 0.2f;
+        }
+
+        // --- Ability Gate (blocks passage until player has double-jump ability) ---
+        {
+            ECS::Entity gate = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gate, "Ability Gate (Double Jump)");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(gate);
+            gt.position = Math::Vector3(rBx + ROOM_W * 0.5f, rBy + 1.0f, 0.0f);
+            gt.scale = Math::Vector3(0.4f, 4.0f, 1.0f);
+            auto& gm = m_World->AddComponent<ECS::MaterialComponent>(gate);
+            gm.baseColor = Math::Vector3(0.4f, 0.1f, 0.5f);
+            gm.emissiveColor = Math::Vector3(0.2f, 0.05f, 0.3f);
+            gm.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(gate, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(gate);
+            col.size = Math::Vector3(0.4f, 4.0f, 1.0f);
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(gate);
+            tag.tags.push_back("ability_gate");
+            tag.tags.push_back("requires_double_jump");
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(gate);
+            interact.promptText = "Requires Double Jump ability";
+            interact.isEnabled = false;
+        }
+
+        // Ability Gate (blocks Room A to Room D - requires dash)
+        {
+            ECS::Entity gate = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gate, "Ability Gate (Dash)");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(gate);
+            gt.position = Math::Vector3(rAx, rAy - ROOM_H * 0.5f - 1.0f, 0.0f);
+            gt.scale = Math::Vector3(3.0f, 0.4f, 1.0f);
+            auto& gm = m_World->AddComponent<ECS::MaterialComponent>(gate);
+            gm.baseColor = Math::Vector3(0.1f, 0.4f, 0.5f);
+            gm.emissiveColor = Math::Vector3(0.05f, 0.2f, 0.3f);
+            gm.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(gate, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(gate);
+            col.size = Math::Vector3(3.0f, 0.4f, 1.0f);
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(gate);
+            tag.tags.push_back("ability_gate");
+            tag.tags.push_back("requires_dash");
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(gate);
+            interact.promptText = "Requires Dash ability";
+            interact.isEnabled = false;
+        }
+
+        // --- Save Point (Room E hub) ---
+        {
+            ECS::Entity save = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(save, "Save Point");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(save);
+            st.position = Math::Vector3(rEx, rEy - 1.5f, 0.0f);
+            st.scale = Math::Vector3(0.6f);
+            auto& sm = m_World->AddComponent<ECS::MaterialComponent>(save);
+            sm.baseColor = Math::Vector3(0.9f, 0.9f, 0.4f);
+            sm.emissiveColor = Math::Vector3(0.6f, 0.6f, 0.2f);
+            sm.emissiveStrength = 1.2f;
+            m_World->AddComponent<ECS::MeshComponent>(save, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(save);
+            tag.tags.push_back("save_point");
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(save);
+            interact.promptText = "Save Progress";
+            interact.interactionRange = 2.0f;
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(save);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Sphere;
+            trigger.sphereRadius = 2.0f;
+        }
+
+        // --- Health Pickups ---
+        {
+            Math::Vector3 hpPositions[] = {
+                Math::Vector3(rAx + 5.0f, rAy - 3.0f, 0.0f),
+                Math::Vector3(rBx + 4.0f, rBy - 2.0f, 0.0f),
+                Math::Vector3(rDx + 5.0f, rDy + 0.5f, 0.0f),
+                Math::Vector3(rEx - 6.0f, rEy - 3.0f, 0.0f)
+            };
+            for (int i = 0; i < 4; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Health Pickup %d", i + 1);
+                ECS::Entity hp = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(hp, name);
+                auto& ht = m_World->AddComponent<ECS::TransformComponent>(hp);
+                ht.position = hpPositions[i];
+                ht.scale = Math::Vector3(0.3f);
+                auto& hm = m_World->AddComponent<ECS::MaterialComponent>(hp);
+                hm.baseColor = Math::Vector3(0.2f, 0.85f, 0.3f);
+                hm.emissiveColor = Math::Vector3(0.1f, 0.4f, 0.1f);
+                hm.emissiveStrength = 0.6f;
+                m_World->AddComponent<ECS::MeshComponent>(hp, Renderer::MeshFactory::CreateSphere(0.5f));
+                auto& pc = m_World->AddComponent<ECS::PickupComponent>(hp);
+                pc.type = ECS::PickupComponent::PickupType::Health;
+                pc.value = 25.0f;
+                pc.bobSpeed = 1.5f;
+                pc.bobHeight = 0.1f;
+            }
+        }
+
+        // --- Enemies ---
+        // Patrol enemy in Room B
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Crawler (Room B)");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(rBx, rBy - 3.5f, 0.0f);
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = Math::Vector3(0.75f, 0.12f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.7f, 1.2f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            ai.moveSpeed = 2.5f;
+            ai.patrolPoints.push_back(Math::Vector3(rBx - 5.0f, rBy - 3.5f, 0.0f));
+            ai.patrolPoints.push_back(Math::Vector3(rBx + 5.0f, rBy - 3.5f, 0.0f));
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 30.0f;
+            eh.currentHealth = 30.0f;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 15.0f;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            tag.tags.push_back("enemy");
+        }
+
+        // Flying enemy in Room C
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Flyer (Room C)");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(rCx - 2.0f, rCy + 1.0f, 0.0f);
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = Math::Vector3(0.6f, 0.1f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.6f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            ai.moveSpeed = 3.0f;
+            ai.patrolPoints.push_back(Math::Vector3(rCx - 5.0f, rCy + 2.0f, 0.0f));
+            ai.patrolPoints.push_back(Math::Vector3(rCx + 5.0f, rCy - 1.0f, 0.0f));
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 20.0f;
+            eh.currentHealth = 20.0f;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 10.0f;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            tag.tags.push_back("enemy");
+            tag.tags.push_back("flying");
+        }
+
+        // Heavy enemy in Room D
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Brute (Room D)");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(rDx + 4.0f, rDy - 3.0f, 0.0f);
+            et.scale = Math::Vector3(1.2f, 1.2f, 1.0f);
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = Math::Vector3(0.5f, 0.15f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.9f, 1.6f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            ai.moveSpeed = 1.5f;
+            ai.attackDamage = 25.0f;
+            ai.patrolPoints.push_back(Math::Vector3(rDx + 2.0f, rDy - 3.0f, 0.0f));
+            ai.patrolPoints.push_back(Math::Vector3(rDx + 6.0f, rDy - 3.0f, 0.0f));
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 60.0f;
+            eh.currentHealth = 60.0f;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 25.0f;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            tag.tags.push_back("enemy");
+            tag.tags.push_back("heavy");
+        }
+
+        // --- Lighting (dark atmospheric) ---
+        // Dim directional light
+        {
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Ambient Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
+            lt.position = Math::Vector3(0.0f, 20.0f, 0.0f);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(sun);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(0.4f, 0.35f, 0.5f);
+            lc.intensity = 0.3f;
+            lc.castShadows = true;
+        }
+
+        // Point lights in each room for atmosphere
+        {
+            struct RoomLight {
+                const char* name;
+                Math::Vector3 pos;
+                Math::Vector3 color;
+                f32 intensity;
+            };
+            RoomLight lights[] = {
+                {"Light Room A", Math::Vector3(rAx, rAy, -1.0f), Math::Vector3(0.6f, 0.5f, 0.4f), 1.2f},
+                {"Light Room B", Math::Vector3(rBx, rBy, -1.0f), Math::Vector3(0.4f, 0.4f, 0.7f), 1.0f},
+                {"Light Room C", Math::Vector3(rCx, rCy, -1.0f), Math::Vector3(0.7f, 0.3f, 0.3f), 1.0f},
+                {"Light Room D", Math::Vector3(rDx, rDy, -1.0f), Math::Vector3(0.3f, 0.5f, 0.4f), 0.8f},
+                {"Light Room E", Math::Vector3(rEx, rEy, -1.0f), Math::Vector3(0.5f, 0.5f, 0.6f), 1.5f},
+                {"Light Room F", Math::Vector3(rFx, rFy, -1.0f), Math::Vector3(0.6f, 0.3f, 0.6f), 1.0f}
+            };
+            for (auto& rl : lights) {
+                ECS::Entity le = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(le, rl.name);
+                auto& lt = m_World->AddComponent<ECS::TransformComponent>(le);
+                lt.position = rl.pos;
+                auto& lc = m_World->AddComponent<ECS::LightComponent>(le);
+                lc.type = ECS::LightType::Point;
+                lc.color = rl.color;
+                lc.intensity = rl.intensity;
+                lc.range = ROOM_W * 0.8f;
+            }
+        }
+
+        // --- Skybox: dark underground ---
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.03f, 0.02f, 0.06f);
+            skyConfig.horizonColor = Math::Vector3(0.06f, 0.04f, 0.09f);
+            skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.03f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+    }
+
+    // ===== Vampire Survivors-style Top-Down Survivor =====
+    else if (templateId == "vampsurvivor") {
+        // Large grassy field
+        createGround();
+        // Bright overhead sunlight
+        {
+            ECS::Entity sun = createLight();
+            auto* lt = m_World->GetComponent<ECS::TransformComponent>(sun);
+            if (lt) lt->position = Math::Vector3(0.0f, 20.0f, 0.0f);
+            auto* lc = m_World->GetComponent<ECS::LightComponent>(sun);
+            if (lc) {
+                lc->intensity = 1.6f;
+                lc->castShadows = true;
+            }
+        }
+
+        // Player entity - fast top-down survivor
+        ECS::Entity player = createPlayer3D("Player");
+        auto& ctrl = m_World->AddComponent<ECS::TopDown3DController>(player);
+        ctrl.moveSpeed = 8.0f;
+        ctrl.enableClickToMove = false;
+        ctrl.rotateToFaceMovement = true;
+        ctrl.rotationSpeed = 900.0f;
+        SetupCameraForController(player, "TopDown3D");
+        // Override camera: high angle looking straight down, far distance
+        ctrl.cameraAngle = 80.0f;
+        ctrl.cameraDistance = 25.0f;
+        ctrl.cameraHeight = 22.0f;
+        ctrl.lockCameraToPlayer = true;
+
+        // Player gameplay components
+        auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+        health.maxHealth = 200.0f;
+        health.currentHealth = 200.0f;
+        health.regenRate = 1.0f;
+        health.regenDelay = 5.0f;
+        health.invulnerabilityTime = 0.5f;
+        auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
+        inv.maxSlots = 10;
+        auto& playerTag = m_World->AddComponent<ECS::TagComponent>(player);
+        playerTag.tags.push_back("player");
+        playerTag.tags.push_back("survivor");
+
+        // --- Enemy swarm spawned in a circle around the player ---
+        const int enemyCount = 10;
+        const f32 spawnRadius = 18.0f;
+        Math::Vector3 enemyColors[] = {
+            Math::Vector3(0.7f, 0.15f, 0.1f),
+            Math::Vector3(0.6f, 0.1f, 0.3f),
+            Math::Vector3(0.5f, 0.2f, 0.5f),
+        };
+        for (int i = 0; i < enemyCount; ++i) {
+            f32 angle = (f32)i / (f32)enemyCount * 6.28318f;
+            f32 px = std::cos(angle) * spawnRadius;
+            f32 pz = std::sin(angle) * spawnRadius;
+
+            char ename[32];
+            snprintf(ename, sizeof(ename), "Enemy_%d", i + 1);
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, ename);
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(px, 0.5f, pz);
+            et.scale = Math::Vector3(0.8f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = enemyColors[i % 3];
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Chase;
+            ai.moveSpeed = 2.5f;
+            ai.detectionRange = 30.0f;
+            ai.attackRange = 1.5f;
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 15.0f;
+            eh.currentHealth = 15.0f;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 5.0f;
+            dmg.destroyOnHit = false;
+            dmg.damageInterval = 1.0f;
+            auto& etag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            etag.tags.push_back("enemy");
+            etag.tags.push_back("wave_1");
+        }
+
+        // --- XP gem pickups scattered around ---
+        const int xpGemCount = 12;
+        for (int i = 0; i < xpGemCount; ++i) {
+            f32 angle = (f32)i / (f32)xpGemCount * 6.28318f;
+            f32 radius = 6.0f + (f32)(i % 3) * 4.0f;
+            f32 gx = std::cos(angle) * radius;
+            f32 gz = std::sin(angle) * radius;
+
+            char gname[32];
+            snprintf(gname, sizeof(gname), "XP_Gem_%d", i + 1);
+            ECS::Entity gem = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gem, gname);
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(gem);
+            gt.position = Math::Vector3(gx, 0.3f, gz);
+            gt.scale = Math::Vector3(0.25f);
+            m_World->AddComponent<ECS::MeshComponent>(gem, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(gem);
+            gmat.baseColor = Math::Vector3(0.1f, 0.9f, 0.7f);
+            gmat.emissiveColor = Math::Vector3(0.05f, 0.5f, 0.35f);
+            gmat.emissiveStrength = 0.8f;
+            auto& pc = m_World->AddComponent<ECS::PickupComponent>(gem);
+            pc.type = ECS::PickupComponent::PickupType::Custom;
+            pc.customId = "xp_gem";
+            pc.value = 5.0f;
+            pc.pickupRange = 1.5f;
+            pc.magnetToPlayer = true;
+            pc.magnetRange = 4.0f;
+            pc.magnetSpeed = 8.0f;
+            auto& gtag = m_World->AddComponent<ECS::TagComponent>(gem);
+            gtag.tags.push_back("xp_gem");
+        }
+
+        // --- Health pickup orbs ---
+        Math::Vector3 healthPositions[] = {
+            Math::Vector3(-10.0f, 0.4f, 10.0f),
+            Math::Vector3(10.0f, 0.4f, -10.0f),
+            Math::Vector3(12.0f, 0.4f, 8.0f),
+        };
+        for (int i = 0; i < 3; ++i) {
+            char hname[32];
+            snprintf(hname, sizeof(hname), "Health_Orb_%d", i + 1);
+            ECS::Entity orb = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(orb, hname);
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(orb);
+            ht.position = healthPositions[i];
+            ht.scale = Math::Vector3(0.35f);
+            m_World->AddComponent<ECS::MeshComponent>(orb, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& hmat = m_World->AddComponent<ECS::MaterialComponent>(orb);
+            hmat.baseColor = Math::Vector3(0.9f, 0.2f, 0.2f);
+            hmat.emissiveColor = Math::Vector3(0.5f, 0.1f, 0.1f);
+            hmat.emissiveStrength = 0.6f;
+            auto& hpc = m_World->AddComponent<ECS::PickupComponent>(orb);
+            hpc.type = ECS::PickupComponent::PickupType::Health;
+            hpc.value = 50.0f;
+            hpc.pickupRange = 1.5f;
+            hpc.magnetToPlayer = true;
+            hpc.magnetRange = 3.0f;
+        }
+
+        // --- HUD text entities ---
+        // Timer
+        {
+            ECS::Entity timer = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(timer, "HUD Timer");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(timer);
+            tt.position = Math::Vector3(0.0f, 8.0f, 0.0f);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(timer);
+            tc.text = "Time: 0:00";
+            tc.fontSize = 28.0f;
+            tc.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            tc.bgOpacity = 0.0f;
+            tc.horizontalAlign = ECS::TextAlign::Center;
+            auto& ttag = m_World->AddComponent<ECS::TagComponent>(timer);
+            ttag.tags.push_back("hud_timer");
+        }
+        // Level / XP display
+        {
+            ECS::Entity lvl = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lvl, "HUD Level");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(lvl);
+            lt.position = Math::Vector3(-3.0f, 7.0f, 0.0f);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(lvl);
+            tc.text = "Lv 1  XP: 0/10";
+            tc.fontSize = 24.0f;
+            tc.textColor = Math::Vector3(0.6f, 1.0f, 0.6f);
+            tc.bgOpacity = 0.0f;
+            auto& ltag = m_World->AddComponent<ECS::TagComponent>(lvl);
+            ltag.tags.push_back("hud_level");
+        }
+        // Wave counter
+        {
+            ECS::Entity wave = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wave, "HUD Wave");
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wave);
+            wt.position = Math::Vector3(3.0f, 7.0f, 0.0f);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(wave);
+            tc.text = "Wave 1";
+            tc.fontSize = 24.0f;
+            tc.textColor = Math::Vector3(1.0f, 0.8f, 0.3f);
+            tc.bgOpacity = 0.0f;
+            auto& wtag = m_World->AddComponent<ECS::TagComponent>(wave);
+            wtag.tags.push_back("hud_wave");
+        }
+
+        // --- Arena boundary pillars (4 corners) ---
+        const f32 arenaHalf = 24.0f;
+        Math::Vector3 pillarPositions[] = {
+            Math::Vector3(-arenaHalf, 2.5f,  arenaHalf),
+            Math::Vector3( arenaHalf, 2.5f,  arenaHalf),
+            Math::Vector3( arenaHalf, 2.5f, -arenaHalf),
+            Math::Vector3(-arenaHalf, 2.5f, -arenaHalf),
+        };
+        for (int i = 0; i < 4; ++i) {
+            char pname[32];
+            snprintf(pname, sizeof(pname), "Boundary_Pillar_%d", i + 1);
+            ECS::Entity pillar = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillar, pname);
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pillar);
+            pt.position = pillarPositions[i];
+            pt.scale = Math::Vector3(0.6f, 5.0f, 0.6f);
+            m_World->AddComponent<ECS::MeshComponent>(pillar, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(pillar);
+            pm.baseColor = Math::Vector3(0.5f, 0.5f, 0.55f);
+            pm.roughness = 0.4f;
+            pm.emissiveColor = Math::Vector3(0.15f, 0.15f, 0.3f);
+            pm.emissiveStrength = 0.3f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(pillar);
+            col.size = Math::Vector3(0.6f, 5.0f, 0.6f);
+        }
+
+        // --- Arena boundary trigger zone ---
+        {
+            ECS::Entity boundary = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(boundary, "Arena Boundary");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(boundary);
+            bt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            bt.scale = Math::Vector3(arenaHalf * 2.0f, 5.0f, arenaHalf * 2.0f);
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(boundary);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            auto& btag = m_World->AddComponent<ECS::TagComponent>(boundary);
+            btag.tags.push_back("arena_boundary");
+        }
+
+        // Bright midday procedural skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.2f, 0.5f, 0.95f);
+            skyConfig.horizonColor = Math::Vector3(0.6f, 0.8f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+    }
+
+    else if (templateId == "roguelike") {
+        // 2D Roguelike — grid-based dungeon crawl in XY plane
+        // Top-down camera looking at XY, Z=0 is the play plane
+
+        const f32 CELL = 1.0f;  // Grid cell size (matches gridCellSize)
+
+        // --- Dungeon layout (10x8 grid) ---
+        // 0=wall, 1=floor, 2=door, 3=enemy, 4=stairs, 5=treasure
+        const int COLS = 10;
+        const int ROWS = 8;
+        int layout[ROWS][COLS] = {
+            {0,0,0,0,0,0,0,0,0,0},
+            {0,1,1,1,0,1,1,1,1,0},
+            {0,1,0,1,0,1,0,0,1,0},
+            {0,1,0,2,1,1,3,0,1,0},
+            {0,1,0,1,0,0,1,0,1,0},
+            {0,1,3,1,1,5,1,1,1,0},
+            {0,1,0,0,0,1,0,3,4,0},
+            {0,0,0,0,0,0,0,0,0,0},
+        };
+
+        // Palette
+        Math::Vector3 wallColor(0.12f, 0.10f, 0.14f);
+        Math::Vector3 floorColor(0.25f, 0.24f, 0.22f);
+        Math::Vector3 doorColor(0.50f, 0.35f, 0.15f);
+        Math::Vector3 enemyColor(0.75f, 0.15f, 0.10f);
+        Math::Vector3 stairsColor(0.55f, 0.55f, 0.60f);
+        Math::Vector3 treasureColor(0.85f, 0.75f, 0.20f);
+        Math::Vector3 keyColor(0.90f, 0.80f, 0.10f);
+        Math::Vector3 potionColor(0.20f, 0.80f, 0.25f);
+
+        int wallIdx = 0;
+        int floorIdx = 0;
+        int enemyIdx = 0;
+        char nameBuf[64];
+
+        // --- Player (grid cell 1,1) ---
+        ECS::Entity player = createPlayer2D("Player");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player);
+            pt->position = Math::Vector3(1.0f * CELL + CELL * 0.5f,
+                                         1.0f * CELL + CELL * 0.5f, 0.0f);
+            auto& ctrl = m_World->AddComponent<ECS::TopDown2DController>(player);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.gridMovement = true;
+            ctrl.gridCellSize = CELL;
+            ctrl.rotateToFaceMovement = false;
+            SetupCameraForController(player, "TopDown2D");
+
+            auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+            health.maxHealth = 10.0f;
+            health.currentHealth = 10.0f;
+            health.invulnerabilityTime = 0.5f;
+
+            m_World->AddComponent<ECS::InventoryComponent>(player);
+        }
+
+        // --- Build dungeon tiles ---
+        for (int row = 0; row < ROWS; ++row) {
+            for (int col = 0; col < COLS; ++col) {
+                f32 cx = static_cast<f32>(col) * CELL + CELL * 0.5f;
+                f32 cy = static_cast<f32>(row) * CELL + CELL * 0.5f;
+
+                if (layout[row][col] == 0) {
+                    // Wall tile — dark cube with collider
+                    snprintf(nameBuf, sizeof(nameBuf), "Wall_%d", wallIdx++);
+                    ECS::Entity wall = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(wall, nameBuf);
+                    auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+                    wt.position = Math::Vector3(cx, cy, 0.0f);
+                    wt.scale = Math::Vector3(CELL, CELL, CELL);
+                    auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+                    wmat.baseColor = wallColor;
+                    wmat.roughness = 0.95f;
+                    m_World->AddComponent<ECS::MeshComponent>(wall,
+                        Renderer::MeshFactory::CreateCube(1.0f));
+                    auto& wcol = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+                    wcol.size = Math::Vector3(CELL, CELL, CELL);
+                } else {
+                    // Floor tile — lighter quad slightly behind entities
+                    snprintf(nameBuf, sizeof(nameBuf), "Floor_%d", floorIdx++);
+                    ECS::Entity floor = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(floor, nameBuf);
+                    auto& ft = m_World->AddComponent<ECS::TransformComponent>(floor);
+                    ft.position = Math::Vector3(cx, cy, -0.05f);
+                    ft.scale = Math::Vector3(CELL, CELL, 1.0f);
+                    auto& fmat = m_World->AddComponent<ECS::MaterialComponent>(floor);
+                    fmat.baseColor = floorColor;
+                    fmat.roughness = 0.9f;
+                    m_World->AddComponent<ECS::MeshComponent>(floor,
+                        Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+
+                    // --- Special cells ---
+                    if (layout[row][col] == 2) {
+                        // Locked door
+                        snprintf(nameBuf, sizeof(nameBuf), "Door_%d_%d", col, row);
+                        ECS::Entity door = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(door, nameBuf);
+                        auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+                        dt.position = Math::Vector3(cx, cy, 0.0f);
+                        dt.scale = Math::Vector3(CELL * 0.9f, CELL * 0.9f, 0.5f);
+                        auto& dmat = m_World->AddComponent<ECS::MaterialComponent>(door);
+                        dmat.baseColor = doorColor;
+                        dmat.roughness = 0.6f;
+                        m_World->AddComponent<ECS::MeshComponent>(door,
+                            Renderer::MeshFactory::CreateCube(1.0f));
+                        auto& dcol = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+                        dcol.size = Math::Vector3(CELL * 0.9f, CELL * 0.9f, 0.5f);
+                        auto& dtag = m_World->AddComponent<ECS::TagComponent>(door);
+                        dtag.tags.push_back("door");
+                        dtag.tags.push_back("locked");
+                        auto& lock = m_World->AddComponent<ECS::LockComponent>(door);
+                        lock.requiredKey = "dungeon_key";
+                        lock.isLocked = true;
+                        lock.consumeKey = true;
+                        lock.openMode = ECS::LockComponent::OpenMode::OpenOnly;
+                        lock.lockedPrompt = "Locked - requires key";
+                        lock.unlockedPrompt = "Open";
+                        auto& dinteract = m_World->AddComponent<ECS::InteractableComponent>(door);
+                        dinteract.promptText = "Locked";
+                        dinteract.interactionRange = CELL;
+                    }
+                    else if (layout[row][col] == 3) {
+                        // Enemy — melee creature
+                        snprintf(nameBuf, sizeof(nameBuf), "Enemy_%d", enemyIdx++);
+                        ECS::Entity enemy = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(enemy, nameBuf);
+                        auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+                        et.position = Math::Vector3(cx, cy, 0.0f);
+                        et.scale = Math::Vector3(0.7f, 0.7f, 0.7f);
+                        auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+                        emat.baseColor = enemyColor;
+                        emat.roughness = 0.7f;
+                        m_World->AddComponent<ECS::MeshComponent>(enemy,
+                            Renderer::MeshFactory::CreateCapsule2D(0.6f, 0.8f));
+                        m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+                        auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+                        ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                        ai.moveSpeed = 2.0f;
+                        ai.detectionRange = 3.0f;
+                        ai.attackRange = CELL;
+                        ai.attackDamage = 2.0f;
+                        auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+                        eh.maxHealth = 3.0f;
+                        eh.currentHealth = 3.0f;
+                        auto& edmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+                        edmg.damage = 2.0f;
+                        auto& etag = m_World->AddComponent<ECS::TagComponent>(enemy);
+                        etag.tags.push_back("enemy");
+                        etag.tags.push_back("melee");
+                    }
+                    else if (layout[row][col] == 4) {
+                        // Stairs down — level exit
+                        snprintf(nameBuf, sizeof(nameBuf), "Stairs_%d_%d", col, row);
+                        ECS::Entity stairs = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(stairs, nameBuf);
+                        auto& st = m_World->AddComponent<ECS::TransformComponent>(stairs);
+                        st.position = Math::Vector3(cx, cy, 0.01f);
+                        st.scale = Math::Vector3(CELL * 0.8f, CELL * 0.8f, 1.0f);
+                        auto& smat = m_World->AddComponent<ECS::MaterialComponent>(stairs);
+                        smat.baseColor = stairsColor;
+                        smat.roughness = 0.5f;
+                        m_World->AddComponent<ECS::MeshComponent>(stairs,
+                            Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                        auto& stag = m_World->AddComponent<ECS::TagComponent>(stairs);
+                        stag.tags.push_back("stairs_down");
+                        auto& sinteract = m_World->AddComponent<ECS::InteractableComponent>(stairs);
+                        sinteract.promptText = "Descend";
+                        sinteract.interactionRange = CELL;
+                        auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(stairs);
+                        trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+                        trigger.boxSize = Math::Vector3(CELL * 0.6f, CELL * 0.6f, 1.0f);
+                        trigger.triggerOnce = true;
+                    }
+                    else if (layout[row][col] == 5) {
+                        // Treasure chest
+                        snprintf(nameBuf, sizeof(nameBuf), "Treasure_%d_%d", col, row);
+                        ECS::Entity chest = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::NameComponent>(chest, nameBuf);
+                        auto& ct = m_World->AddComponent<ECS::TransformComponent>(chest);
+                        ct.position = Math::Vector3(cx, cy, 0.0f);
+                        ct.scale = Math::Vector3(0.6f, 0.5f, 0.5f);
+                        auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(chest);
+                        cmat.baseColor = treasureColor;
+                        cmat.roughness = 0.4f;
+                        cmat.metallic = 0.6f;
+                        m_World->AddComponent<ECS::MeshComponent>(chest,
+                            Renderer::MeshFactory::CreateCube(1.0f));
+                        auto& ctag = m_World->AddComponent<ECS::TagComponent>(chest);
+                        ctag.tags.push_back("treasure");
+                        auto& cinteract = m_World->AddComponent<ECS::InteractableComponent>(chest);
+                        cinteract.promptText = "Open Chest";
+                        cinteract.interactionRange = CELL;
+                        cinteract.singleUse = true;
+                    }
+                }
+            }
+        }
+
+        // --- Key pickup (placed on floor cell 1,5 area) ---
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Dungeon Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(1.0f * CELL + CELL * 0.5f,
+                                        5.0f * CELL + CELL * 0.5f, 0.0f);
+            kt.scale = Math::Vector3(0.3f, 0.3f, 0.3f);
+            auto& kmat = m_World->AddComponent<ECS::MaterialComponent>(key);
+            kmat.baseColor = keyColor;
+            kmat.emissiveColor = Math::Vector3(0.5f, 0.45f, 0.05f);
+            kmat.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(key,
+                Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& kpc = m_World->AddComponent<ECS::PickupComponent>(key);
+            kpc.type = ECS::PickupComponent::PickupType::Key;
+            kpc.value = 1.0f;
+            kpc.pickupRange = CELL * 0.8f;
+            kpc.bobSpeed = 3.0f;
+            kpc.bobHeight = 0.1f;
+            auto& ktag = m_World->AddComponent<ECS::TagComponent>(key);
+            ktag.tags.push_back("dungeon_key");
+        }
+
+        // --- Health potion (placed on floor cell 5,1 area) ---
+        {
+            ECS::Entity potion = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(potion, "Health Potion");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(potion);
+            pt.position = Math::Vector3(5.0f * CELL + CELL * 0.5f,
+                                        1.0f * CELL + CELL * 0.5f, 0.0f);
+            pt.scale = Math::Vector3(0.25f, 0.25f, 0.25f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(potion);
+            pmat.baseColor = potionColor;
+            pmat.emissiveColor = Math::Vector3(0.1f, 0.4f, 0.1f);
+            pmat.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(potion,
+                Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& ppc = m_World->AddComponent<ECS::PickupComponent>(potion);
+            ppc.type = ECS::PickupComponent::PickupType::Health;
+            ppc.value = 5.0f;
+            ppc.pickupRange = CELL * 0.8f;
+            ppc.bobSpeed = 2.5f;
+            ppc.bobHeight = 0.08f;
+        }
+
+        // --- HUD: Floor indicator ---
+        {
+            ECS::Entity floorHud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(floorHud, "HUD Floor");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(floorHud);
+            ht.position = Math::Vector3(0.5f, 7.5f, 0.0f);
+            auto& htext = m_World->AddComponent<ECS::TextComponent>(floorHud);
+            htext.text = "Floor 1";
+            htext.fontSize = 22.0f;
+            htext.textColor = Math::Vector3(0.9f, 0.85f, 0.6f);
+            auto& htag = m_World->AddComponent<ECS::TagComponent>(floorHud);
+            htag.tags.push_back("hud_floor");
+        }
+
+        // --- HUD: Health display ---
+        {
+            ECS::Entity hpHud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hpHud, "HUD Health");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hpHud);
+            ht.position = Math::Vector3(8.0f, 7.5f, 0.0f);
+            auto& htext = m_World->AddComponent<ECS::TextComponent>(hpHud);
+            htext.text = "HP: 10/10";
+            htext.fontSize = 22.0f;
+            htext.textColor = Math::Vector3(0.9f, 0.25f, 0.2f);
+            auto& htag = m_World->AddComponent<ECS::TagComponent>(hpHud);
+            htag.tags.push_back("hud_health");
+        }
+
+        // --- Dim overhead light ---
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Dungeon Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(5.0f, 4.0f, 5.0f);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-60.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(0.7f, 0.65f, 0.55f);
+            lc.intensity = 0.6f;
+        }
+    }
+
+    // ===== Soulslike 3D Action Template =====
+    else if (templateId == "soulslike") {
+        // Dark stone ground plane (large arena)
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Arena Floor");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0.0f, -0.05f, 0.0f);
+            gt.scale = Math::Vector3(40.0f, 0.1f, 40.0f);
+            auto& gm = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gm.baseColor = Math::Vector3(0.10f, 0.09f, 0.08f);
+            gm.roughness = 0.85f;
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
+            col.size = Math::Vector3(40.0f, 0.1f, 40.0f);
+        }
+
+        // Dim directional light — oppressive atmosphere
+        {
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Dim Sun");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(sun);
+            lt.position = Math::Vector3(0.0f, 15.0f, 10.0f);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-40.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(sun);
+            lc.type = ECS::LightType::Directional;
+            lc.intensity = 0.25f;
+            lc.color = Math::Vector3(0.6f, 0.55f, 0.5f);
+            lc.castShadows = true;
+        }
+
+        // Player — slow, methodical third-person character
+        ECS::Entity player;
+        {
+            player = createPlayer3D("Player");
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player);
+            if (pt) pt->position = Math::Vector3(0.0f, 1.0f, -12.0f);
+            auto* pm = m_World->GetComponent<ECS::MaterialComponent>(player);
+            if (pm) pm->baseColor = Math::Vector3(0.25f, 0.25f, 0.30f);
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
+            ctrl.moveSpeed = 3.0f;
+            ctrl.acceleration = 20.0f;
+            ctrl.deceleration = 18.0f;
+            ctrl.cameraDistance = 4.5f;
+            ctrl.cameraHeight = 2.0f;
+            ctrl.jumpForce = 6.0f;
+            ctrl.rotateToFaceMovement = true;
+            SetupCameraForController(player, "ThirdPerson");
+
+            auto& health = m_World->AddComponent<ECS::HealthComponent>(player);
+            health.maxHealth = 100.0f;
+            health.currentHealth = 100.0f;
+            health.invulnerabilityTime = 0.8f;
+
+            m_World->AddComponent<ECS::InventoryComponent>(player);
+
+            auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(player);
+            rb.mass = 70.0f;
+            rb.useGravity = true;
+        }
+
+        // Bonfire save point (emissive orange glow + point light)
+        {
+            ECS::Entity bonfire = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bonfire, "Bonfire");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(bonfire);
+            bt.position = Math::Vector3(0.0f, 0.3f, -10.0f);
+            bt.scale = Math::Vector3(0.5f, 0.8f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(bonfire, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& bm = m_World->AddComponent<ECS::MaterialComponent>(bonfire);
+            bm.baseColor = Math::Vector3(0.6f, 0.25f, 0.05f);
+            bm.emissiveColor = Math::Vector3(1.0f, 0.5f, 0.1f);
+            bm.emissiveStrength = 2.0f;
+            bm.roughness = 0.4f;
+            auto& btag = m_World->AddComponent<ECS::TagComponent>(bonfire);
+            btag.tags.push_back("bonfire");
+            auto& bint = m_World->AddComponent<ECS::InteractableComponent>(bonfire);
+            bint.interactionRange = 2.5f;
+            bint.promptText = "Rest at Bonfire";
+
+            // Bonfire point light
+            ECS::Entity bfLight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bfLight, "Bonfire Light");
+            auto& blt = m_World->AddComponent<ECS::TransformComponent>(bfLight);
+            blt.position = Math::Vector3(0.0f, 1.2f, -10.0f);
+            auto& blc = m_World->AddComponent<ECS::LightComponent>(bfLight);
+            blc.type = ECS::LightType::Point;
+            blc.intensity = 2.5f;
+            blc.color = Math::Vector3(1.0f, 0.6f, 0.15f);
+            blc.range = 12.0f;
+        }
+
+        // Fog Gate — tall translucent barrier with emissive
+        {
+            ECS::Entity fogGate = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fogGate, "Fog Gate");
+            auto& ft = m_World->AddComponent<ECS::TransformComponent>(fogGate);
+            ft.position = Math::Vector3(0.0f, 2.5f, -3.0f);
+            ft.scale = Math::Vector3(6.0f, 5.0f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(fogGate, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& fm = m_World->AddComponent<ECS::MaterialComponent>(fogGate);
+            fm.baseColor = Math::Vector3(0.7f, 0.75f, 0.9f);
+            fm.emissiveColor = Math::Vector3(0.4f, 0.45f, 0.7f);
+            fm.emissiveStrength = 1.2f;
+            fm.opacity = 0.35f;
+            fm.roughness = 0.1f;
+            auto& ftag = m_World->AddComponent<ECS::TagComponent>(fogGate);
+            ftag.tags.push_back("fog_gate");
+            auto& fint = m_World->AddComponent<ECS::InteractableComponent>(fogGate);
+            fint.interactionRange = 3.0f;
+            fint.promptText = "Enter Fog";
+        }
+
+        // Enemies — spread around the arena
+        struct EnemyDef {
+            const char* name;
+            Math::Vector3 pos;
+            f32 hp;
+            f32 dmg;
+            f32 speed;
+            Math::Vector3 color;
+        };
+        EnemyDef enemies[] = {
+            {"Hollow Soldier",  Math::Vector3( 6.0f, 1.0f,  2.0f), 60.0f, 12.0f, 2.0f, Math::Vector3(0.35f, 0.30f, 0.25f)},
+            {"Hollow Knight",   Math::Vector3(-5.0f, 1.0f,  5.0f), 80.0f, 18.0f, 1.8f, Math::Vector3(0.30f, 0.28f, 0.32f)},
+            {"Undead Sentinel", Math::Vector3( 8.0f, 1.2f,  8.0f), 120.0f, 25.0f, 1.5f, Math::Vector3(0.20f, 0.20f, 0.22f)},
+            {"Hollow Archer",   Math::Vector3(-7.0f, 1.0f, 10.0f), 45.0f, 15.0f, 2.5f, Math::Vector3(0.40f, 0.32f, 0.28f)},
+        };
+        for (auto& def : enemies) {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, def.name);
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = def.pos;
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = def.color;
+            em.roughness = 0.7f;
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            ai.moveSpeed = def.speed;
+            ai.detectionRange = 8.0f;
+            ai.attackRange = 2.0f;
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = def.hp;
+            eh.currentHealth = def.hp;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = def.dmg;
+            dmg.knockbackForce = 3.0f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(enemy);
+            col.size = Math::Vector3(0.6f, 1.8f, 0.6f);
+        }
+
+        // Treasure Chest
+        {
+            ECS::Entity chest = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(chest, "Treasure Chest");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(chest);
+            ct.position = Math::Vector3(10.0f, 0.3f, 6.0f);
+            ct.scale = Math::Vector3(0.8f, 0.6f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& cm = m_World->AddComponent<ECS::MaterialComponent>(chest);
+            cm.baseColor = Math::Vector3(0.45f, 0.30f, 0.12f);
+            cm.roughness = 0.65f;
+            auto& ci = m_World->AddComponent<ECS::InteractableComponent>(chest);
+            ci.interactionRange = 2.0f;
+            ci.promptText = "Open Chest";
+            ci.singleUse = true;
+            auto& lock = m_World->AddComponent<ECS::LockComponent>(chest);
+            lock.requiredKey = "";
+            lock.isLocked = false;
+            lock.openMode = ECS::LockComponent::OpenMode::OpenOnly;
+            auto& inv = m_World->AddComponent<ECS::InventoryComponent>(chest);
+            inv.maxSlots = 3;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(chest);
+            col.size = Math::Vector3(0.8f, 0.6f, 0.5f);
+        }
+
+        // Stone pillars — arena structure
+        Math::Vector3 pillarPositions[] = {
+            Math::Vector3(-8.0f, 2.0f,  0.0f),
+            Math::Vector3( 8.0f, 2.0f,  0.0f),
+            Math::Vector3(-4.0f, 2.0f,  8.0f),
+            Math::Vector3( 4.0f, 2.0f,  8.0f),
+            Math::Vector3( 0.0f, 2.0f, 12.0f),
+        };
+        for (int i = 0; i < 5; ++i) {
+            ECS::Entity pillar = m_World->CreateEntity();
+            char name[32]; snprintf(name, sizeof(name), "Stone Pillar %d", i + 1);
+            m_World->AddComponent<ECS::NameComponent>(pillar, name);
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pillar);
+            pt.position = pillarPositions[i];
+            pt.scale = Math::Vector3(1.0f, 4.0f, 1.0f);
+            m_World->AddComponent<ECS::MeshComponent>(pillar, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(pillar);
+            pm.baseColor = Math::Vector3(0.18f, 0.17f, 0.16f);
+            pm.roughness = 0.8f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(pillar);
+            col.size = Math::Vector3(1.0f, 4.0f, 1.0f);
+        }
+
+        // Arena walls (perimeter)
+        struct WallDef {
+            const char* name;
+            Math::Vector3 pos;
+            Math::Vector3 scale;
+        };
+        WallDef walls[] = {
+            {"North Wall", Math::Vector3( 0.0f, 1.5f, 15.0f), Math::Vector3(30.0f, 3.0f, 0.5f)},
+            {"South Wall", Math::Vector3( 0.0f, 1.5f,-15.0f), Math::Vector3(30.0f, 3.0f, 0.5f)},
+            {"East Wall",  Math::Vector3(15.0f, 1.5f,  0.0f), Math::Vector3( 0.5f, 3.0f, 30.0f)},
+            {"West Wall",  Math::Vector3(-15.0f,1.5f,  0.0f), Math::Vector3( 0.5f, 3.0f, 30.0f)},
+        };
+        for (auto& w : walls) {
+            ECS::Entity wall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wall, w.name);
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+            wt.position = w.pos;
+            wt.scale = w.scale;
+            m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& wm = m_World->AddComponent<ECS::MaterialComponent>(wall);
+            wm.baseColor = Math::Vector3(0.12f, 0.11f, 0.10f);
+            wm.roughness = 0.9f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+            col.size = w.scale;
+        }
+
+        // HUD — HP text
+        {
+            ECS::Entity hpText = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hpText, "HP Display");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hpText);
+            ht.position = Math::Vector3(1.0f, 8.5f, 0.0f);
+            auto& text = m_World->AddComponent<ECS::TextComponent>(hpText);
+            text.text = "HP  |||||||||||||||||||";
+            text.fontSize = 22.0f;
+            text.textColor = Math::Vector3(0.8f, 0.15f, 0.1f);
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(hpText);
+            tag.tags.push_back("hud_hp");
+        }
+
+        // HUD — Stamina text
+        {
+            ECS::Entity staminaText = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(staminaText, "Stamina Display");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(staminaText);
+            st.position = Math::Vector3(1.0f, 8.0f, 0.0f);
+            auto& text = m_World->AddComponent<ECS::TextComponent>(staminaText);
+            text.text = "STA |||||||||||||||||||";
+            text.fontSize = 20.0f;
+            text.textColor = Math::Vector3(0.2f, 0.7f, 0.2f);
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(staminaText);
+            tag.tags.push_back("hud_stamina");
+        }
+
+        // Dark procedural skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.03f, 0.03f, 0.05f);
+            skyConfig.horizonColor = Math::Vector3(0.08f, 0.06f, 0.05f);
+            skyConfig.bottomColor = Math::Vector3(0.02f, 0.02f, 0.02f);
+            skyConfig.sunDirection = Math::Vector3(0.3f, 0.2f, -0.5f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+    }
+
+    // ===== Couch Co-op Template (2-Player Horizontal Splitscreen) =====
+    else if (templateId == "couchcoop") {
+        // --- Ground Plane ---
+        createGround();
+
+        // --- Sun Light ---
+        createLight();
+
+        // --- Player 1 (Blue, WASD) ---
+        ECS::Entity player1 = createPlayer3D("Player 1");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player1);
+            pt->position = Math::Vector3(-3.0f, 1.0f, 0.0f);
+            auto* pmat = m_World->GetComponent<ECS::MaterialComponent>(player1);
+            pmat->baseColor = Math::Vector3(0.2f, 0.35f, 0.9f);  // Blue
+
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player1);
+            ctrl.moveSpeed = 6.0f;
+            ctrl.useWASD = true;
+            ctrl.useArrowKeys = false;
+            ctrl.useGamepad = false;
+            ctrl.gamepadIndex = 0;
+
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player1);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+            m_World->AddComponent<ECS::InventoryComponent>(player1);
+            auto& rb1 = m_World->AddComponent<ECS::RigidbodyComponent>(player1);
+            rb1.mass = 1.0f;
+
+            auto& tag1 = m_World->AddComponent<ECS::TagComponent>(player1);
+            tag1.tags.push_back("player");
+            tag1.tags.push_back("player1");
+        }
+
+        // Camera 1 (left half) via SetupCameraForController, then override viewport
+        SetupCameraForController(player1, "ThirdPerson");
+        ECS::Entity cam1 = ECS::CameraManager::GetActiveCamera(m_World);
+        if (cam1 != ECS::INVALID_ENTITY) {
+            auto* nc1 = m_World->GetComponent<ECS::NameComponent>(cam1);
+            if (nc1) nc1->name = "Camera P1";
+            auto* camC1 = m_World->GetComponent<ECS::CameraComponent>(cam1);
+            if (camC1) {
+                camC1->viewportX = 0.0f;
+                camC1->viewportY = 0.0f;
+                camC1->viewportWidth = 0.5f;
+                camC1->viewportHeight = 1.0f;
+                camC1->fieldOfView = 60.0f;
+            }
+            // Override follow/lookAt for co-op offset
+            if (auto* f = m_World->GetComponent<ECS::FollowTargetComponent>(cam1)) {
+                f->target = player1;
+                f->offset = Math::Vector3(0.0f, 5.0f, 8.0f);
+                f->moveSpeed = 5.0f;
+            }
+            if (auto* l = m_World->GetComponent<ECS::LookAtTargetComponent>(cam1)) {
+                l->target = player1;
+            }
+            m_SelectedGameCamera = cam1;
+        }
+
+        // --- Player 2 (Red, Arrow Keys / Gamepad) ---
+        ECS::Entity player2 = createPlayer3D("Player 2");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player2);
+            pt->position = Math::Vector3(3.0f, 1.0f, 0.0f);
+            auto* pmat = m_World->GetComponent<ECS::MaterialComponent>(player2);
+            pmat->baseColor = Math::Vector3(0.9f, 0.2f, 0.15f);  // Red
+
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player2);
+            ctrl.moveSpeed = 6.0f;
+            ctrl.useWASD = false;
+            ctrl.useArrowKeys = true;
+            ctrl.useGamepad = true;
+            ctrl.gamepadIndex = 1;
+
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player2);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+            m_World->AddComponent<ECS::InventoryComponent>(player2);
+            auto& rb2 = m_World->AddComponent<ECS::RigidbodyComponent>(player2);
+            rb2.mass = 1.0f;
+
+            auto& tag2 = m_World->AddComponent<ECS::TagComponent>(player2);
+            tag2.tags.push_back("player");
+            tag2.tags.push_back("player2");
+        }
+
+        // Camera 2 (right half) -- manually created to avoid overriding active camera
+        {
+            ECS::Entity cam2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam2, "Camera P2");
+            auto& camT2 = m_World->AddComponent<ECS::TransformComponent>(cam2);
+            camT2.position = Math::Vector3(3.0f, 6.0f, 8.0f);
+
+            auto& camC2 = m_World->AddComponent<ECS::CameraComponent>(cam2);
+            camC2.fieldOfView = 60.0f;
+            camC2.nearPlane = 0.1f;
+            camC2.farPlane = 500.0f;
+            camC2.viewportX = 0.5f;
+            camC2.viewportY = 0.0f;
+            camC2.viewportWidth = 0.5f;
+            camC2.viewportHeight = 1.0f;
+
+            auto& follow2 = m_World->AddComponent<ECS::FollowTargetComponent>(cam2);
+            follow2.target = player2;
+            follow2.offset = Math::Vector3(0.0f, 5.0f, 8.0f);
+            follow2.moveSpeed = 5.0f;
+            auto& lookAt2 = m_World->AddComponent<ECS::LookAtTargetComponent>(cam2);
+            lookAt2.target = player2;
+        }
+
+        // --- Shared Objectives ---
+
+        // Collectible objective (glowing sphere)
+        {
+            ECS::Entity objective = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(objective, "Objective");
+            auto& ot = m_World->AddComponent<ECS::TransformComponent>(objective);
+            ot.position = Math::Vector3(0.0f, 1.5f, -15.0f);
+            m_World->AddComponent<ECS::MeshComponent>(objective, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& omat = m_World->AddComponent<ECS::MaterialComponent>(objective);
+            omat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            omat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            omat.emissiveStrength = 0.6f;
+            auto& pickup = m_World->AddComponent<ECS::PickupComponent>(objective);
+            pickup.type = ECS::PickupComponent::PickupType::Custom;
+            pickup.customId = "objective";
+            pickup.pickupRange = 1.5f;
+            auto& otag = m_World->AddComponent<ECS::TagComponent>(objective);
+            otag.tags.push_back("objective");
+        }
+
+        // Key pickup
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Gate Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(-10.0f, 0.8f, -8.0f);
+            kt.scale = Math::Vector3(0.4f, 0.4f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& km = m_World->AddComponent<ECS::MaterialComponent>(key);
+            km.baseColor = Math::Vector3(0.9f, 0.75f, 0.1f);
+            km.emissiveColor = Math::Vector3(0.9f, 0.75f, 0.1f);
+            km.emissiveStrength = 0.4f;
+            auto& kp = m_World->AddComponent<ECS::PickupComponent>(key);
+            kp.type = ECS::PickupComponent::PickupType::Key;
+            kp.customId = "gate_key";
+            auto& ktag = m_World->AddComponent<ECS::TagComponent>(key);
+            ktag.tags.push_back("key");
+        }
+
+        // Locked gate
+        {
+            ECS::Entity gate = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gate, "Locked Gate");
+            auto& gateT = m_World->AddComponent<ECS::TransformComponent>(gate);
+            gateT.position = Math::Vector3(0.0f, 1.5f, -10.0f);
+            gateT.scale = Math::Vector3(3.0f, 3.0f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(gate, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gm = m_World->AddComponent<ECS::MaterialComponent>(gate);
+            gm.baseColor = Math::Vector3(0.4f, 0.25f, 0.15f);
+            gm.roughness = 0.8f;
+            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(gate);
+            col.size = Math::Vector3(3.0f, 3.0f, 0.3f);
+            auto& lock = m_World->AddComponent<ECS::LockComponent>(gate);
+            lock.requiredKey = "gate_key";
+            lock.isLocked = true;
+            lock.consumeKey = true;
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(gate);
+            interact.promptText = "Use Gate Key to open";
+            interact.interactionRange = 2.5f;
+        }
+
+        // Enemies (patrol around the arena)
+        {
+            Math::Vector3 enemyPositions[] = {
+                Math::Vector3(-8.0f, 0.5f, -5.0f),
+                Math::Vector3(8.0f, 0.5f, -5.0f),
+                Math::Vector3(0.0f, 0.5f, -18.0f),
+            };
+            const char* enemyNames[] = { "Enemy Scout", "Enemy Brute", "Enemy Sniper" };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity enemy = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(enemy, enemyNames[i]);
+                auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+                et.position = enemyPositions[i];
+                m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+                auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+                em.baseColor = Math::Vector3(0.6f, 0.1f, 0.5f);
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+                ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                ai.moveSpeed = 2.5f;
+                auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+                eh.maxHealth = 40.0f + i * 15.0f;
+                eh.currentHealth = eh.maxHealth;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+                dmg.damage = 10.0f + i * 5.0f;
+                auto& etag = m_World->AddComponent<ECS::TagComponent>(enemy);
+                etag.tags.push_back("enemy");
+            }
+        }
+
+        // --- Decorative Elements ---
+
+        // Crates for cover
+        {
+            Math::Vector3 cratePositions[] = {
+                Math::Vector3(-5.0f, 0.5f, -3.0f),
+                Math::Vector3(5.0f, 0.5f, -3.0f),
+                Math::Vector3(-2.0f, 0.5f, -7.0f),
+                Math::Vector3(2.0f, 0.5f, -7.0f),
+            };
+            for (int i = 0; i < 4; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Crate %d", i + 1);
+                ECS::Entity crate = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(crate, name);
+                auto& ct = m_World->AddComponent<ECS::TransformComponent>(crate);
+                ct.position = cratePositions[i];
+                m_World->AddComponent<ECS::MeshComponent>(crate, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& cm = m_World->AddComponent<ECS::MaterialComponent>(crate);
+                cm.baseColor = Math::Vector3(0.55f, 0.4f, 0.2f);
+                cm.roughness = 0.85f;
+                auto& ccol = m_World->AddComponent<ECS::BoxColliderComponent>(crate);
+                ccol.size = Math::Vector3(1.0f, 1.0f, 1.0f);
+            }
+        }
+
+        // Barriers
+        {
+            Math::Vector3 barrierPositions[] = {
+                Math::Vector3(-12.0f, 0.75f, 0.0f),
+                Math::Vector3(12.0f, 0.75f, 0.0f),
+            };
+            for (int i = 0; i < 2; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Barrier %d", i + 1);
+                ECS::Entity barrier = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(barrier, name);
+                auto& bt = m_World->AddComponent<ECS::TransformComponent>(barrier);
+                bt.position = barrierPositions[i];
+                bt.scale = Math::Vector3(0.5f, 1.5f, 4.0f);
+                m_World->AddComponent<ECS::MeshComponent>(barrier, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& bm = m_World->AddComponent<ECS::MaterialComponent>(barrier);
+                bm.baseColor = Math::Vector3(0.45f, 0.45f, 0.5f);
+                bm.roughness = 0.7f;
+                auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(barrier);
+                bcol.size = Math::Vector3(0.5f, 1.5f, 4.0f);
+            }
+        }
+
+        // --- HUD Text ---
+        {
+            ECS::Entity hud1 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hud1, "P1 HUD");
+            auto& h1t = m_World->AddComponent<ECS::TransformComponent>(hud1);
+            h1t.position = Math::Vector3(-3.0f, 4.5f, 0.0f);
+            auto& h1text = m_World->AddComponent<ECS::TextComponent>(hud1);
+            h1text.text = "P1 HP: 100";
+            h1text.fontSize = 22.0f;
+            h1text.textColor = Math::Vector3(0.2f, 0.5f, 1.0f);
+            auto& h1tag = m_World->AddComponent<ECS::TagComponent>(hud1);
+            h1tag.tags.push_back("hud_p1");
+        }
+        {
+            ECS::Entity hud2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hud2, "P2 HUD");
+            auto& h2t = m_World->AddComponent<ECS::TransformComponent>(hud2);
+            h2t.position = Math::Vector3(3.0f, 4.5f, 0.0f);
+            auto& h2text = m_World->AddComponent<ECS::TextComponent>(hud2);
+            h2text.text = "P2 HP: 100";
+            h2text.fontSize = 22.0f;
+            h2text.textColor = Math::Vector3(1.0f, 0.3f, 0.2f);
+            auto& h2tag = m_World->AddComponent<ECS::TagComponent>(hud2);
+            h2tag.tags.push_back("hud_p2");
+        }
+
+        // --- Procedural Skybox (bright day) ---
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.3f, 0.5f, 0.95f);
+            skyConfig.horizonColor = Math::Vector3(0.7f, 0.8f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.4f, 0.55f, 0.35f);
+            skyConfig.sunDirection = Math::Vector3(0.3f, 0.8f, 0.5f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // --- Setup Notes ---
+        {
+            ECS::Entity notes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(notes, "Co-op Setup Notes");
+            auto& nt = m_World->AddComponent<ECS::TransformComponent>(notes);
+            nt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            auto& nc = m_World->AddComponent<ECS::NotesComponent>(notes);
+            nc.notes = "2-PLAYER COUCH CO-OP (Horizontal Splitscreen)\n"
+                "================================================\n"
+                "Player 1 (Blue): WASD controls, left screen half\n"
+                "Player 2 (Red): Arrow Keys / Gamepad 2, right screen half\n"
+                "\n"
+                "Objectives:\n"
+                "  - Find the Gate Key and unlock the gate\n"
+                "  - Collect the Objective item behind the gate\n"
+                "  - Defeat enemies together\n"
+                "\n"
+                "Each player has their own camera with FollowTarget + LookAtTarget.\n"
+                "Viewport subdivision: P1 left 50%, P2 right 50%.\n";
+        }
+    }
+
     m_CurrentScenePath.clear();
     ENJIN_LOG_INFO(Editor, "Applied template: %s", templateId.c_str());
 }
@@ -10041,7 +12053,7 @@ void EditorLayer::ImportModel(const std::string& path) {
 
         // Select the root entity
         if (result.rootEntity != ECS::INVALID_ENTITY) {
-            m_SelectedEntity = result.rootEntity;
+            SelectEntity(result.rootEntity);
         }
     } else {
         std::stringstream ss;
@@ -10065,6 +12077,10 @@ bool EditorLayer::SceneHasMouseLookController() const {
 void EditorLayer::HandleViewportPicking() {
     // Don't pick if ImGui wants the mouse (hovering over a panel)
     if (WantsMouseInput()) {
+        // Cancel any active marquee if mouse enters a panel
+        if (m_MarqueeDragging) {
+            m_MarqueeDragging = false;
+        }
         return;
     }
 
@@ -10072,64 +12088,104 @@ void EditorLayer::HandleViewportPicking() {
         return;
     }
 
-    // Check for double-click to focus on entity
-    static f64 lastClickTime = 0.0;
-    static ECS::Entity lastClickedEntity = ECS::INVALID_ENTITY;
-    const f64 doubleClickTime = 0.3;  // 300ms
-
-    // Only pick when left mouse is clicked
-    if (!Input::IsMouseButtonPressed(MouseButton::Left)) {
-        return;
-    }
-
-    // Get mouse position and viewport size
     Math::Vector2 mousePos = Input::GetMousePosition();
     auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) return;
 
-    if (extent.width == 0 || extent.height == 0) {
-        return;
+    bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
+
+    // --- Marquee drag handling ---
+    if (Input::IsMouseButtonPressed(MouseButton::Left) && !ImGuizmo::IsOver()) {
+        // Start potential marquee drag
+        m_MarqueeStart = ImVec2(mousePos.x, mousePos.y);
+        m_MarqueeEnd = m_MarqueeStart;
+        m_MarqueeDragging = true;
     }
 
-    // Pick entity at mouse position
-    ECS::Entity picked = ScenePicker::PickEntity(
-        m_World, m_Camera,
-        mousePos.x, mousePos.y,
-        static_cast<f32>(extent.width), static_cast<f32>(extent.height)
-    );
+    if (m_MarqueeDragging && Input::IsMouseButtonDown(MouseButton::Left)) {
+        m_MarqueeEnd = ImVec2(mousePos.x, mousePos.y);
+    }
 
-    // Get current time for double-click detection
-    f64 currentTime = ImGui::GetTime();
+    if (m_MarqueeDragging && !Input::IsMouseButtonDown(MouseButton::Left)) {
+        m_MarqueeDragging = false;
 
-    if (picked != ECS::INVALID_ENTITY) {
-        // Check for double-click on same entity
-        if (picked == lastClickedEntity && (currentTime - lastClickTime) < doubleClickTime) {
-            FocusOnEntity(picked);
-            lastClickedEntity = ECS::INVALID_ENTITY;  // Reset to prevent triple-click
-        } else {
-            // Single click - select entity
-            m_SelectedEntity = picked;
-            if (m_OnEntitySelected) {
-                m_OnEntitySelected(picked);
+        // Check if it was a real drag (> 5 pixels) or just a click
+        f32 dx = m_MarqueeEnd.x - m_MarqueeStart.x;
+        f32 dy = m_MarqueeEnd.y - m_MarqueeStart.y;
+        f32 dragDist = std::sqrt(dx * dx + dy * dy);
+
+        if (dragDist > 5.0f) {
+            // Marquee selection
+            ImVec2 rectMin(std::min(m_MarqueeStart.x, m_MarqueeEnd.x),
+                           std::min(m_MarqueeStart.y, m_MarqueeEnd.y));
+            ImVec2 rectMax(std::max(m_MarqueeStart.x, m_MarqueeEnd.x),
+                           std::max(m_MarqueeStart.y, m_MarqueeEnd.y));
+
+            if (!ctrlHeld) {
+                ClearSelection();
             }
-            lastClickedEntity = picked;
-            lastClickTime = currentTime;
-            ENJIN_LOG_DEBUG(Editor, "Selected entity %llu", (unsigned long long)picked);
+            SelectEntitiesInRect(rectMin, rectMax);
+            return;
         }
-    } else {
-        // Clicked on empty space - deselect
-        m_SelectedEntity = ECS::INVALID_ENTITY;
-        lastClickedEntity = ECS::INVALID_ENTITY;
+
+        // It was a click — fall through to pick logic
+        // Double-click detection
+        static f64 lastClickTime = 0.0;
+        static ECS::Entity lastClickedEntity = ECS::INVALID_ENTITY;
+        const f64 doubleClickTime = 0.3;
+
+        ECS::Entity picked = ScenePicker::PickEntity(
+            m_World, m_Camera,
+            mousePos.x, mousePos.y,
+            static_cast<f32>(extent.width), static_cast<f32>(extent.height)
+        );
+
+        f64 currentTime = ImGui::GetTime();
+
+        if (picked != ECS::INVALID_ENTITY) {
+            if (picked == lastClickedEntity && (currentTime - lastClickTime) < doubleClickTime) {
+                FocusOnEntity(picked);
+                lastClickedEntity = ECS::INVALID_ENTITY;
+            } else {
+                if (ctrlHeld) {
+                    // Toggle selection
+                    if (IsSelected(picked)) {
+                        DeselectEntity(picked);
+                    } else {
+                        SelectEntity(picked, true);
+                    }
+                } else {
+                    SelectEntity(picked);
+                }
+                lastClickedEntity = picked;
+                lastClickTime = currentTime;
+                ENJIN_LOG_DEBUG(Editor, "Selected entity %llu", (unsigned long long)picked);
+            }
+        } else {
+            // Clicked on empty space
+            if (!ctrlHeld) {
+                ClearSelection();
+            }
+            lastClickedEntity = ECS::INVALID_ENTITY;
+        }
     }
 }
 
-void EditorLayer::DrawGizmos() {
-    if (m_SelectedEntity == ECS::INVALID_ENTITY || !m_World || !m_Camera || !m_Renderer) {
-        return;
-    }
+void EditorLayer::DrawMarqueeRect() {
+    if (!m_MarqueeDragging) return;
 
-    // Check if entity has transform
-    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
-    if (!transform) {
+    f32 dx = m_MarqueeEnd.x - m_MarqueeStart.x;
+    f32 dy = m_MarqueeEnd.y - m_MarqueeStart.y;
+    f32 dragDist = std::sqrt(dx * dx + dy * dy);
+    if (dragDist <= 5.0f) return;
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    dl->AddRect(m_MarqueeStart, m_MarqueeEnd, IM_COL32(100, 150, 255, 200));
+    dl->AddRectFilled(m_MarqueeStart, m_MarqueeEnd, IM_COL32(100, 150, 255, 40));
+}
+
+void EditorLayer::DrawGizmos() {
+    if (m_SelectedEntities.empty() || !m_World || !m_Camera || !m_Renderer) {
         return;
     }
 
@@ -10139,22 +12195,46 @@ void EditorLayer::DrawGizmos() {
         return;
     }
 
+    // Compute gizmo position: centroid for multi-select, entity position for single
+    Math::Vector3 gizmoPos(0.0f, 0.0f, 0.0f);
+    Math::Quaternion gizmoRot;
+    Math::Vector3 gizmoScale(1.0f, 1.0f, 1.0f);
+    u32 transformCount = 0;
+
+    if (m_SelectedEntities.size() == 1) {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+        if (!transform) return;
+        gizmoPos = transform->position;
+        gizmoRot = transform->rotation;
+        gizmoScale = transform->scale;
+        transformCount = 1;
+    } else {
+        // Multi-select: centroid position, identity rotation, unit scale
+        for (ECS::Entity e : m_SelectedEntities) {
+            auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+            if (t) {
+                gizmoPos = gizmoPos + t->position;
+                transformCount++;
+            }
+        }
+        if (transformCount == 0) return;
+        gizmoPos = gizmoPos * (1.0f / static_cast<f32>(transformCount));
+    }
+
     // Set ImGuizmo to use the full screen as the viewport
     ImGuizmo::SetOrthographic(false);
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
     ImGuizmo::SetRect(0, 0, static_cast<f32>(extent.width), static_cast<f32>(extent.height));
 
-    // Get camera matrices (need to convert to float arrays for ImGuizmo)
+    // Get camera matrices
     Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
     Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+    projMat.m[5] *= -1.0f; // ImGuizmo expects OpenGL Y-up
 
-    // ImGuizmo expects OpenGL Y-up convention; undo the Vulkan negate baked into Perspective
-    projMat.m[5] *= -1.0f;
-
-    // Build entity transform matrix
-    Math::Matrix4 entityMat = Math::Matrix4::Translation(transform->position) *
-                               transform->rotation.ToMatrix() *
-                               Math::Matrix4::Scale(transform->scale);
+    // Build gizmo transform matrix
+    Math::Matrix4 entityMat = Math::Matrix4::Translation(gizmoPos) *
+                               gizmoRot.ToMatrix() *
+                               Math::Matrix4::Scale(gizmoScale);
 
     // Determine ImGuizmo operation
     ImGuizmo::OPERATION op = ImGuizmo::TRANSLATE;
@@ -10164,7 +12244,6 @@ void EditorLayer::DrawGizmos() {
         case GizmoOperation::Scale: op = ImGuizmo::SCALE; break;
     }
 
-    // Determine ImGuizmo mode (local/world)
     ImGuizmo::MODE mode = (m_GizmoSpace == GizmoSpace::Local) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
 
     // Snap values
@@ -10172,68 +12251,92 @@ void EditorLayer::DrawGizmos() {
     if (m_UseSnap) {
         switch (m_GizmoOperation) {
             case GizmoOperation::Translate:
-                snapValues[0] = snapValues[1] = snapValues[2] = m_TranslateSnap;
-                break;
+                snapValues[0] = snapValues[1] = snapValues[2] = m_TranslateSnap; break;
             case GizmoOperation::Rotate:
-                snapValues[0] = snapValues[1] = snapValues[2] = m_RotateSnap;
-                break;
+                snapValues[0] = snapValues[1] = snapValues[2] = m_RotateSnap; break;
             case GizmoOperation::Scale:
-                snapValues[0] = snapValues[1] = snapValues[2] = m_ScaleSnap;
-                break;
+                snapValues[0] = snapValues[1] = snapValues[2] = m_ScaleSnap; break;
         }
     }
 
     // Track gizmo drag start/end for undo/redo
     bool gizmoActive = ImGuizmo::IsUsing();
     if (gizmoActive && !m_GizmoDragging) {
-        // Drag just started - capture the initial transform
         m_GizmoDragging = true;
         m_GizmoStartTransform = entityMat;
     }
 
     // Draw and manipulate gizmo
+    Math::Matrix4 prevMat = entityMat;
     if (ImGuizmo::Manipulate(viewMat.m, projMat.m, op, mode, entityMat.m,
                               nullptr, m_UseSnap ? snapValues : nullptr)) {
-        // Decompose the modified matrix back to transform components
-        f32 translation[3], rotation[3], scale[3];
-        ImGuizmo::DecomposeMatrixToComponents(entityMat.m, translation, rotation, scale);
+        // Compute delta between old and new gizmo matrix
+        f32 newTrans[3], newRot[3], newScale[3];
+        ImGuizmo::DecomposeMatrixToComponents(entityMat.m, newTrans, newRot, newScale);
+        f32 oldTrans[3], oldRot[3], oldScale[3];
+        ImGuizmo::DecomposeMatrixToComponents(prevMat.m, oldTrans, oldRot, oldScale);
 
-        transform->position = Math::Vector3(translation[0], translation[1], translation[2]);
-        transform->scale = Math::Vector3(scale[0], scale[1], scale[2]);
+        Math::Vector3 deltaPos(newTrans[0] - oldTrans[0], newTrans[1] - oldTrans[1], newTrans[2] - oldTrans[2]);
+        Math::Vector3 deltaRot(newRot[0] - oldRot[0], newRot[1] - oldRot[1], newRot[2] - oldRot[2]);
+        Math::Vector3 deltaScale(
+            oldScale[0] != 0.0f ? newScale[0] / oldScale[0] : 1.0f,
+            oldScale[1] != 0.0f ? newScale[1] / oldScale[1] : 1.0f,
+            oldScale[2] != 0.0f ? newScale[2] / oldScale[2] : 1.0f);
 
-        // Convert euler angles to quaternion
-        f32 rx = Math::Radians(rotation[0]);
-        f32 ry = Math::Radians(rotation[1]);
-        f32 rz = Math::Radians(rotation[2]);
-
-        Math::Quaternion qx(Math::Vector3(1, 0, 0), rx);
-        Math::Quaternion qy(Math::Vector3(0, 1, 0), ry);
-        Math::Quaternion qz(Math::Vector3(0, 0, 1), rz);
-        transform->rotation = qy * qx * qz; // YXZ order
+        if (m_SelectedEntities.size() == 1) {
+            // Single entity: apply directly
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+            if (transform) {
+                transform->position = Math::Vector3(newTrans[0], newTrans[1], newTrans[2]);
+                transform->scale = Math::Vector3(newScale[0], newScale[1], newScale[2]);
+                f32 rx = Math::Radians(newRot[0]);
+                f32 ry = Math::Radians(newRot[1]);
+                f32 rz = Math::Radians(newRot[2]);
+                transform->rotation = Math::Quaternion(Math::Vector3(0, 1, 0), ry)
+                                    * Math::Quaternion(Math::Vector3(1, 0, 0), rx)
+                                    * Math::Quaternion(Math::Vector3(0, 0, 1), rz);
+            }
+        } else {
+            // Multi-entity: apply delta to all selected
+            for (ECS::Entity e : m_SelectedEntities) {
+                auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (!t) continue;
+                t->position = t->position + deltaPos;
+                t->scale = Math::Vector3(t->scale.x * deltaScale.x,
+                                         t->scale.y * deltaScale.y,
+                                         t->scale.z * deltaScale.z);
+                if (deltaRot.x != 0.0f || deltaRot.y != 0.0f || deltaRot.z != 0.0f) {
+                    Math::Quaternion dr = Math::Quaternion(Math::Vector3(0,1,0), Math::Radians(deltaRot.y))
+                                        * Math::Quaternion(Math::Vector3(1,0,0), Math::Radians(deltaRot.x))
+                                        * Math::Quaternion(Math::Vector3(0,0,1), Math::Radians(deltaRot.z));
+                    t->rotation = dr * t->rotation;
+                }
+            }
+        }
     }
 
-    // Gizmo drag ended - create undo command
+    // Gizmo drag ended - create undo command for primary entity
     if (!gizmoActive && m_GizmoDragging) {
         m_GizmoDragging = false;
 
-        // Decompose old transform from saved matrix
-        f32 oldTrans[3], oldRot[3], oldScale[3];
-        ImGuizmo::DecomposeMatrixToComponents(m_GizmoStartTransform.m, oldTrans, oldRot, oldScale);
+        if (m_SelectedEntities.size() == 1) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+            if (transform) {
+                f32 oldT[3], oldR[3], oldS[3];
+                ImGuizmo::DecomposeMatrixToComponents(m_GizmoStartTransform.m, oldT, oldR, oldS);
 
-        ECS::TransformComponent oldTransform;
-        oldTransform.position = Math::Vector3(oldTrans[0], oldTrans[1], oldTrans[2]);
-        oldTransform.scale = Math::Vector3(oldScale[0], oldScale[1], oldScale[2]);
-        f32 orx = Math::Radians(oldRot[0]);
-        f32 ory = Math::Radians(oldRot[1]);
-        f32 orz = Math::Radians(oldRot[2]);
-        oldTransform.rotation = Math::Quaternion(Math::Vector3(0,1,0), ory)
-                              * Math::Quaternion(Math::Vector3(1,0,0), orx)
-                              * Math::Quaternion(Math::Vector3(0,0,1), orz);
+                ECS::TransformComponent oldTransform;
+                oldTransform.position = Math::Vector3(oldT[0], oldT[1], oldT[2]);
+                oldTransform.scale = Math::Vector3(oldS[0], oldS[1], oldS[2]);
+                oldTransform.rotation = Math::Quaternion(Math::Vector3(0,1,0), Math::Radians(oldR[1]))
+                                      * Math::Quaternion(Math::Vector3(1,0,0), Math::Radians(oldR[0]))
+                                      * Math::Quaternion(Math::Vector3(0,0,1), Math::Radians(oldR[2]));
 
-        ECS::TransformComponent newTransform = *transform;
-
-        auto cmd = std::make_unique<TransformCommand>(m_World, m_SelectedEntity, oldTransform, newTransform);
-        m_UndoRedo.Execute(std::move(cmd));
+                auto cmd = std::make_unique<TransformCommand>(m_World, m_PrimarySelected, oldTransform, *transform);
+                m_UndoRedo.Execute(std::move(cmd));
+            }
+        }
+        // Note: multi-entity undo is not tracked per-entity to keep complexity manageable
     }
 }
 
@@ -10425,7 +12528,7 @@ void EditorLayer::OpenScene(const std::string& path) {
 
     if (result.success) {
         m_CurrentScenePath = path;
-        m_SelectedEntity = ECS::INVALID_ENTITY;
+        ClearSelection();
         m_UndoRedo.Clear();
         usize entityCount = result.entities.size();
         std::stringstream ss;
@@ -11717,8 +13820,11 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
 
         if (ImGui::TreeNode("Movement")) {
             ImGui::DragFloat("Move Speed", &ai->moveSpeed, 0.1f, 0.0f, 50.0f);
+            ImGui::DragFloat("Chase Speed", &ai->chaseSpeed, 0.1f, 0.0f, 50.0f);
+            ImGui::DragFloat("Flee Speed", &ai->fleeSpeed, 0.1f, 0.0f, 50.0f);
             ImGui::DragFloat("Turn Speed", &ai->turnSpeed, 5.0f, 0.0f, 720.0f);
             ImGui::DragFloat("Stopping Distance", &ai->stoppingDistance, 0.1f, 0.0f, 10.0f);
+            ImGui::DragFloat("Arrival Radius", &ai->arrivalRadius, 0.1f, 0.1f, 5.0f);
             ImGui::TreePop();
         }
 
@@ -11730,8 +13836,25 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
 
         if (ImGui::TreeNode("Patrol")) {
             ImGui::DragFloat("Wait Time", &ai->patrolWaitTime, 0.1f, 0.0f, 30.0f);
+            ImGui::Checkbox("Loop Patrol", &ai->patrolLoop);
             ImGui::Text("Patrol Points: %zu", ai->patrolPoints.size());
             ImGui::Text("Current Index: %zu", ai->currentPatrolIndex);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Navigation (A* Pathfinding)")) {
+            ImGui::Checkbox("Use Navmesh", &ai->useNavmesh);
+            if (ai->useNavmesh) {
+                ImGui::DragFloat("Repath Interval", &ai->repathInterval, 0.1f, 0.0f, 5.0f,
+                                 "%.1f s");
+                ImGui::DragFloat("Flee Distance", &ai->fleeDistance, 0.5f, 1.0f, 100.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Debug")) {
+            ImGui::Checkbox("Draw Path", &ai->debugDrawPath);
+            ImGui::Checkbox("Draw Detection", &ai->debugDrawDetection);
             ImGui::TreePop();
         }
 
@@ -12177,6 +14300,1397 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
 }
 
 // ============================================================================
+// Script Component Inspector
+// ============================================================================
+
+void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
+    bool scriptOpen = ImGui::CollapsingHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ScriptComponentCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::ScriptComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (scriptOpen) {
+        auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
+        if (!sc) return;
+
+        // Draw each script attachment
+        int removeIdx = -1;
+        for (int i = 0; i < static_cast<int>(sc->scripts.size()); i++) {
+            auto& script = sc->scripts[i];
+            ImGui::PushID(i);
+
+            // Script header with enabled toggle
+            bool nodeOpen = ImGui::TreeNodeEx(
+                script.className.empty() ? script.scriptPath.c_str() : script.className.c_str(),
+                ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+
+            // Enabled checkbox on same line
+            ImGui::SameLine(ImGui::GetWindowWidth() - 50);
+            ImGui::Checkbox("##Enabled", &script.enabled);
+
+            if (ImGui::BeginPopupContextItem("ScriptAttachCtx")) {
+                if (ImGui::MenuItem("Remove Script")) {
+                    removeIdx = i;
+                }
+                ImGui::EndPopup();
+            }
+
+            if (nodeOpen) {
+                // Script path
+                char pathBuf[256];
+                strncpy(pathBuf, script.scriptPath.c_str(), sizeof(pathBuf) - 1);
+                pathBuf[sizeof(pathBuf) - 1] = '\0';
+                if (ImGui::InputText("Script File", pathBuf, sizeof(pathBuf))) {
+                    script.scriptPath = pathBuf;
+                }
+
+                // Class name
+                char classBuf[128];
+                strncpy(classBuf, script.className.c_str(), sizeof(classBuf) - 1);
+                classBuf[sizeof(classBuf) - 1] = '\0';
+                if (ImGui::InputText("Class Name", classBuf, sizeof(classBuf))) {
+                    script.className = classBuf;
+                }
+
+                // Error state
+                if (script.hasError) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+                    ImGui::TextWrapped("Error: %s", script.lastError.c_str());
+                    ImGui::PopStyleColor();
+                }
+
+                // Status
+                if (script.initialized) {
+                    ImGui::TextDisabled("Status: Initialized%s", script.started ? " + Started" : "");
+                } else {
+                    ImGui::TextDisabled("Status: Not initialized (enter play mode)");
+                }
+
+                // Properties
+                if (!script.properties.empty()) {
+                    ImGui::Separator();
+                    ImGui::TextDisabled("Properties:");
+                    for (auto& prop : script.properties) {
+                        ImGui::PushID(prop.name.c_str());
+
+                        // Show tooltip if available
+                        if (!prop.tooltip.empty()) {
+                            ImGui::TextDisabled("(?)");
+                            if (ImGui::IsItemHovered()) {
+                                ImGui::SetTooltip("%s", prop.tooltip.c_str());
+                            }
+                            ImGui::SameLine();
+                        }
+
+                        auto& val = prop.isOverridden ? prop.instanceValue : prop.defaultValue;
+                        bool changed = false;
+
+                        switch (prop.type) {
+                        case ECS::ScriptPropertyType::Int: {
+                            int v = val.intVal;
+                            if (prop.hasRange) {
+                                changed = ImGui::SliderInt(prop.name.c_str(), &v,
+                                    static_cast<int>(prop.rangeMin), static_cast<int>(prop.rangeMax));
+                            } else {
+                                changed = ImGui::DragInt(prop.name.c_str(), &v);
+                            }
+                            if (changed) {
+                                prop.instanceValue.intVal = v;
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Float: {
+                            f32 v = val.floatVal;
+                            if (prop.hasRange) {
+                                changed = ImGui::SliderFloat(prop.name.c_str(), &v, prop.rangeMin, prop.rangeMax);
+                            } else {
+                                changed = ImGui::DragFloat(prop.name.c_str(), &v, 0.1f);
+                            }
+                            if (changed) {
+                                prop.instanceValue.floatVal = v;
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Bool: {
+                            bool v = val.boolVal;
+                            if (ImGui::Checkbox(prop.name.c_str(), &v)) {
+                                prop.instanceValue.boolVal = v;
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::String: {
+                            char strBuf[512];
+                            strncpy(strBuf, val.stringVal.c_str(), sizeof(strBuf) - 1);
+                            strBuf[sizeof(strBuf) - 1] = '\0';
+                            if (ImGui::InputText(prop.name.c_str(), strBuf, sizeof(strBuf))) {
+                                prop.instanceValue.stringVal = strBuf;
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Vector2: {
+                            f32 v[2] = { val.vec2Val.x, val.vec2Val.y };
+                            if (ImGui::DragFloat2(prop.name.c_str(), v, 0.1f)) {
+                                prop.instanceValue.vec2Val = Math::Vector2(v[0], v[1]);
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Vector3: {
+                            f32 v[3] = { val.vec3Val.x, val.vec3Val.y, val.vec3Val.z };
+                            if (ImGui::DragFloat3(prop.name.c_str(), v, 0.1f)) {
+                                prop.instanceValue.vec3Val = Math::Vector3(v[0], v[1], v[2]);
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Vector4: {
+                            f32 v[4] = { val.vec4Val.x, val.vec4Val.y, val.vec4Val.z, val.vec4Val.w };
+                            if (ImGui::DragFloat4(prop.name.c_str(), v, 0.1f)) {
+                                prop.instanceValue.vec4Val = Math::Vector4(v[0], v[1], v[2], v[3]);
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Entity: {
+                            u64 eid = val.entityVal;
+                            int eidInt = static_cast<int>(eid);
+                            if (ImGui::DragInt(prop.name.c_str(), &eidInt, 1.0f, 0, 100000)) {
+                                prop.instanceValue.entityVal = static_cast<u64>(eidInt);
+                                prop.isOverridden = true;
+                            }
+                            break;
+                        }
+                        case ECS::ScriptPropertyType::Enum: {
+                            int v = val.intVal;
+                            if (!val.enumNames.empty()) {
+                                const char* preview = (v >= 0 && v < static_cast<int>(val.enumNames.size()))
+                                    ? val.enumNames[v].c_str() : "Unknown";
+                                if (ImGui::BeginCombo(prop.name.c_str(), preview)) {
+                                    for (int e = 0; e < static_cast<int>(val.enumNames.size()); e++) {
+                                        bool selected = (v == e);
+                                        if (ImGui::Selectable(val.enumNames[e].c_str(), selected)) {
+                                            prop.instanceValue.intVal = e;
+                                            prop.isOverridden = true;
+                                        }
+                                    }
+                                    ImGui::EndCombo();
+                                }
+                            } else {
+                                if (ImGui::DragInt(prop.name.c_str(), &v)) {
+                                    prop.instanceValue.intVal = v;
+                                    prop.isOverridden = true;
+                                }
+                            }
+                            break;
+                        }
+                        }
+
+                        // Reset to default button
+                        if (prop.isOverridden) {
+                            ImGui::SameLine();
+                            if (ImGui::SmallButton("Reset")) {
+                                prop.isOverridden = false;
+                            }
+                        }
+
+                        ImGui::PopID();
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        // Remove script if requested
+        if (removeIdx >= 0 && removeIdx < static_cast<int>(sc->scripts.size())) {
+            sc->scripts.erase(sc->scripts.begin() + removeIdx);
+        }
+
+        // Add script button
+        ImGui::Separator();
+        if (ImGui::Button("Add Script")) {
+            ECS::ScriptAttachment attachment;
+            attachment.scriptPath = "scripts/";
+            sc->scripts.push_back(std::move(attachment));
+        }
+    }
+}
+
+// ============================================================================
+// Vehicle Controller Inspector
+// ============================================================================
+
+void EditorLayer::DrawVehicleController(ECS::Entity entity) {
+    bool ctrlOpen = ImGui::CollapsingHeader("Vehicle Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("VehicleControllerCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::VehicleController>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
+        auto* ctrl = m_World->GetComponent<ECS::VehicleController>(entity);
+        if (!ctrl) return;
+
+        ImGui::Checkbox("Enabled", &ctrl->isEnabled);
+
+        if (ImGui::TreeNode("Engine")) {
+            ImGui::DragFloat("Max Speed", &ctrl->maxSpeed, 0.5f, 0.0f, 200.0f);
+            ImGui::DragFloat("Reverse Max Speed", &ctrl->reverseMaxSpeed, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Acceleration", &ctrl->acceleration, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Brake Force", &ctrl->brakeForce, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Engine Brake", &ctrl->engineBrake, 0.5f, 0.0f, 50.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Steering")) {
+            ImGui::DragFloat("Max Steer Angle", &ctrl->maxSteerAngle, 0.5f, 0.0f, 90.0f);
+            ImGui::DragFloat("Steer Speed", &ctrl->steerSpeed, 1.0f, 0.0f, 500.0f);
+            ImGui::DragFloat("Steer Return Speed", &ctrl->steerReturnSpeed, 1.0f, 0.0f, 500.0f);
+            ImGui::DragFloat("Wheel Base", &ctrl->wheelBase, 0.1f, 0.1f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Physics")) {
+            ImGui::SliderFloat("Grip", &ctrl->grip, 0.0f, 2.0f);
+            ImGui::SliderFloat("Drift Factor", &ctrl->driftFactor, 0.0f, 1.0f);
+            ImGui::DragFloat("Downforce Multiplier", &ctrl->downforceMultiplier, 0.1f, 0.0f, 5.0f);
+            ImGui::DragFloat("Mass (kg)", &ctrl->mass, 10.0f, 1.0f, 10000.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Camera")) {
+            ImGui::DragFloat("Camera Distance", &ctrl->cameraDistance, 0.1f, 1.0f, 30.0f);
+            ImGui::DragFloat("Camera Height", &ctrl->cameraHeight, 0.1f, 0.0f, 20.0f);
+            ImGui::DragFloat("Camera Lerp Speed", &ctrl->cameraLerpSpeed, 0.1f, 0.1f, 20.0f);
+            ImGui::DragFloat("Camera Look Ahead", &ctrl->cameraLookAhead, 0.1f, 0.0f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Visuals")) {
+            ImGui::DragFloat("Body Roll Amount", &ctrl->bodyRollAmount, 0.5f, 0.0f, 30.0f);
+            ImGui::DragFloat("Body Pitch Amount", &ctrl->bodyPitchAmount, 0.5f, 0.0f, 20.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Base Controller")) {
+            ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            ImGui::Checkbox("WASD", &ctrl->useWASD);
+            ImGui::SameLine();
+            ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+            }
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Speed: %.1f  Steer: %.1f deg  Drifting: %s",
+            ctrl->currentSpeed, ctrl->currentSteerAngle, ctrl->isDrifting ? "Yes" : "No");
+    }
+}
+
+// ============================================================================
+// Possessable Component Inspector
+// ============================================================================
+
+void EditorLayer::DrawPossessableComponent(ECS::Entity entity) {
+    bool possOpen = ImGui::CollapsingHeader("Possessable", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("PossessableCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::PossessableComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (possOpen) {
+        auto* poss = m_World->GetComponent<ECS::PossessableComponent>(entity);
+        if (!poss) return;
+
+        ImGui::Checkbox("Is Possessed", &poss->isPossessed);
+        ImGui::Checkbox("Auto Detect Controller", &poss->autoDetect);
+        ImGui::Checkbox("Disable On Unpossess", &poss->disableOnUnpossess);
+
+        ImGui::DragInt("Player Index", &poss->playerIndex, 1, 0, 3);
+        ImGui::DragFloat("Possess Range", &poss->possessRange, 0.5f, 0.0f, 100.0f);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = unlimited range");
+        ImGui::DragFloat("Transition Duration", &poss->transitionDuration, 0.05f, 0.0f, 3.0f);
+
+        char promptBuf[256];
+        strncpy(promptBuf, poss->promptText.c_str(), sizeof(promptBuf) - 1);
+        promptBuf[sizeof(promptBuf) - 1] = '\0';
+        if (ImGui::InputText("Prompt Text", promptBuf, sizeof(promptBuf))) {
+            poss->promptText = promptBuf;
+        }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Previous Possessor: %llu",
+            static_cast<unsigned long long>(poss->previousPossessor));
+    }
+}
+
+// ============================================================================
+// Puzzle Component Inspectors
+// ============================================================================
+
+void EditorLayer::DrawLockComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Lock", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("LockCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::LockComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* lock = m_World->GetComponent<ECS::LockComponent>(entity);
+        if (!lock) return;
+
+        char keyBuf[128];
+        strncpy(keyBuf, lock->requiredKey.c_str(), sizeof(keyBuf) - 1);
+        keyBuf[sizeof(keyBuf) - 1] = '\0';
+        if (ImGui::InputText("Required Key##Lock", keyBuf, sizeof(keyBuf))) {
+            lock->requiredKey = keyBuf;
+        }
+
+        ImGui::Checkbox("Is Locked##Lock", &lock->isLocked);
+        ImGui::Checkbox("Consume Key##Lock", &lock->consumeKey);
+        ImGui::Checkbox("Auto Open##Lock", &lock->autoOpen);
+        ImGui::DragFloat("Interact Range##Lock", &lock->interactRange, 0.1f, 0.0f, 100.0f);
+
+        const char* openModes[] = { "Toggle", "Open Only", "Timed" };
+        int modeIdx = static_cast<int>(lock->openMode);
+        if (ImGui::Combo("Open Mode##Lock", &modeIdx, openModes, 3)) {
+            lock->openMode = static_cast<ECS::LockComponent::OpenMode>(modeIdx);
+        }
+
+        if (lock->openMode == ECS::LockComponent::OpenMode::Timed) {
+            ImGui::DragFloat("Open Duration##Lock", &lock->openDuration, 0.1f, 0.0f, 60.0f);
+        }
+
+        f32 closedPos[3] = { lock->closedPosition.x, lock->closedPosition.y, lock->closedPosition.z };
+        if (ImGui::DragFloat3("Closed Position##Lock", closedPos, 0.1f)) {
+            lock->closedPosition = Math::Vector3(closedPos[0], closedPos[1], closedPos[2]);
+        }
+        f32 openPos[3] = { lock->openPosition.x, lock->openPosition.y, lock->openPosition.z };
+        if (ImGui::DragFloat3("Open Position##Lock", openPos, 0.1f)) {
+            lock->openPosition = Math::Vector3(openPos[0], openPos[1], openPos[2]);
+        }
+        f32 closedRot[3] = { lock->closedRotation.x, lock->closedRotation.y, lock->closedRotation.z };
+        if (ImGui::DragFloat3("Closed Rotation##Lock", closedRot, 0.1f)) {
+            lock->closedRotation = Math::Vector3(closedRot[0], closedRot[1], closedRot[2]);
+        }
+        f32 openRot[3] = { lock->openRotation.x, lock->openRotation.y, lock->openRotation.z };
+        if (ImGui::DragFloat3("Open Rotation##Lock", openRot, 0.1f)) {
+            lock->openRotation = Math::Vector3(openRot[0], openRot[1], openRot[2]);
+        }
+
+        ImGui::DragFloat("Open Speed##Lock", &lock->openSpeed, 0.1f, 0.0f, 50.0f);
+
+        char lockedBuf[256];
+        strncpy(lockedBuf, lock->lockedPrompt.c_str(), sizeof(lockedBuf) - 1);
+        lockedBuf[sizeof(lockedBuf) - 1] = '\0';
+        if (ImGui::InputText("Locked Prompt##Lock", lockedBuf, sizeof(lockedBuf))) {
+            lock->lockedPrompt = lockedBuf;
+        }
+
+        char unlockedBuf[256];
+        strncpy(unlockedBuf, lock->unlockedPrompt.c_str(), sizeof(unlockedBuf) - 1);
+        unlockedBuf[sizeof(unlockedBuf) - 1] = '\0';
+        if (ImGui::InputText("Unlocked Prompt##Lock", unlockedBuf, sizeof(unlockedBuf))) {
+            lock->unlockedPrompt = unlockedBuf;
+        }
+    }
+}
+
+void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Pushable", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("PushableCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::PushableComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* push = m_World->GetComponent<ECS::PushableComponent>(entity);
+        if (!push) return;
+
+        ImGui::DragFloat("Mass##Push", &push->mass, 0.1f, 0.01f, 1000.0f);
+        ImGui::DragFloat("Push Speed##Push", &push->pushSpeed, 0.1f, 0.0f, 50.0f);
+        ImGui::DragFloat("Friction##Push", &push->friction, 0.01f, 0.0f, 1.0f);
+
+        ImGui::Checkbox("Grid Snap##Push", &push->gridSnap);
+        if (push->gridSnap) {
+            ImGui::DragFloat("Grid Cell Size##Push", &push->gridCellSize, 0.1f, 0.1f, 50.0f);
+            ImGui::DragFloat("Grid Move Speed##Push", &push->gridMoveSpeed, 0.1f, 0.1f, 50.0f);
+        }
+
+        ImGui::Checkbox("Pushable X##Push", &push->pushableX);
+        ImGui::SameLine();
+        ImGui::Checkbox("Pushable Y##Push", &push->pushableY);
+        ImGui::SameLine();
+        ImGui::Checkbox("Pushable Z##Push", &push->pushableZ);
+        ImGui::Checkbox("Can Be Pushed Off##Push", &push->canBePushedOff);
+    }
+}
+
+void EditorLayer::DrawSwitchComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Switch", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SwitchCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::SwitchComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* sw = m_World->GetComponent<ECS::SwitchComponent>(entity);
+        if (!sw) return;
+
+        const char* types[] = { "Pressure Plate", "Toggle", "One Shot", "Timed", "Sequence" };
+        int typeIdx = static_cast<int>(sw->type);
+        if (ImGui::Combo("Type##Switch", &typeIdx, types, 5)) {
+            sw->type = static_cast<ECS::SwitchComponent::SwitchType>(typeIdx);
+        }
+
+        ImGui::Checkbox("Require Specific Tag##Switch", &sw->requireSpecificTag);
+        if (sw->requireSpecificTag) {
+            char tagBuf[128];
+            strncpy(tagBuf, sw->requiredTag.c_str(), sizeof(tagBuf) - 1);
+            tagBuf[sizeof(tagBuf) - 1] = '\0';
+            if (ImGui::InputText("Required Tag##Switch", tagBuf, sizeof(tagBuf))) {
+                sw->requiredTag = tagBuf;
+            }
+        }
+
+        if (sw->type == ECS::SwitchComponent::SwitchType::PressurePlate) {
+            ImGui::DragFloat("Activation Weight##Switch", &sw->activationWeight, 0.1f, 0.0f, 1000.0f);
+        }
+        if (sw->type == ECS::SwitchComponent::SwitchType::Timed) {
+            ImGui::DragFloat("Active Duration##Switch", &sw->activeDuration, 0.1f, 0.0f, 60.0f);
+        }
+        if (sw->type == ECS::SwitchComponent::SwitchType::Sequence) {
+            ImGui::DragInt("Sequence Index##Switch", &sw->sequenceIndex, 1, 0, 100);
+            ImGui::DragInt("Sequence Group##Switch", &sw->sequenceGroup, 1, 0, 100);
+        }
+
+        f32 offPos[3] = { sw->offPosition.x, sw->offPosition.y, sw->offPosition.z };
+        if (ImGui::DragFloat3("Off Position##Switch", offPos, 0.1f)) {
+            sw->offPosition = Math::Vector3(offPos[0], offPos[1], offPos[2]);
+        }
+        f32 onPos[3] = { sw->onPosition.x, sw->onPosition.y, sw->onPosition.z };
+        if (ImGui::DragFloat3("On Position##Switch", onPos, 0.1f)) {
+            sw->onPosition = Math::Vector3(onPos[0], onPos[1], onPos[2]);
+        }
+
+        ImGui::DragFloat("Transition Speed##Switch", &sw->transitionSpeed, 0.1f, 0.0f, 50.0f);
+
+        char promptBuf[256];
+        strncpy(promptBuf, sw->promptText.c_str(), sizeof(promptBuf) - 1);
+        promptBuf[sizeof(promptBuf) - 1] = '\0';
+        if (ImGui::InputText("Prompt Text##Switch", promptBuf, sizeof(promptBuf))) {
+            sw->promptText = promptBuf;
+        }
+        ImGui::Checkbox("Show Prompt##Switch", &sw->showPrompt);
+    }
+}
+
+void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Goal Zone", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("GoalZoneCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::GoalZoneComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* goal = m_World->GetComponent<ECS::GoalZoneComponent>(entity);
+        if (!goal) return;
+
+        const char* types[] = { "Push Target", "Stand On", "Item Deposit", "Checkpoint", "Level Exit" };
+        int typeIdx = static_cast<int>(goal->type);
+        if (ImGui::Combo("Type##Goal", &typeIdx, types, 5)) {
+            goal->type = static_cast<ECS::GoalZoneComponent::GoalType>(typeIdx);
+        }
+
+        char tagBuf[128];
+        strncpy(tagBuf, goal->requiredTag.c_str(), sizeof(tagBuf) - 1);
+        tagBuf[sizeof(tagBuf) - 1] = '\0';
+        if (ImGui::InputText("Required Tag##Goal", tagBuf, sizeof(tagBuf))) {
+            goal->requiredTag = tagBuf;
+        }
+
+        char itemBuf[128];
+        strncpy(itemBuf, goal->requiredItem.c_str(), sizeof(itemBuf) - 1);
+        itemBuf[sizeof(itemBuf) - 1] = '\0';
+        if (ImGui::InputText("Required Item##Goal", itemBuf, sizeof(itemBuf))) {
+            goal->requiredItem = itemBuf;
+        }
+
+        ImGui::DragInt("Goal Group##Goal", &goal->goalGroup, 1, 0, 100);
+
+        f32 inactiveCol[3] = { goal->inactiveColor.x, goal->inactiveColor.y, goal->inactiveColor.z };
+        if (ImGui::ColorEdit3("Inactive Color##Goal", inactiveCol)) {
+            goal->inactiveColor = Math::Vector3(inactiveCol[0], inactiveCol[1], inactiveCol[2]);
+        }
+        f32 activeCol[3] = { goal->activeColor.x, goal->activeColor.y, goal->activeColor.z };
+        if (ImGui::ColorEdit3("Active Color##Goal", activeCol)) {
+            goal->activeColor = Math::Vector3(activeCol[0], activeCol[1], activeCol[2]);
+        }
+
+        if (goal->type == ECS::GoalZoneComponent::GoalType::LevelExit) {
+            char sceneBuf[256];
+            strncpy(sceneBuf, goal->nextScene.c_str(), sizeof(sceneBuf) - 1);
+            sceneBuf[sizeof(sceneBuf) - 1] = '\0';
+            if (ImGui::InputText("Next Scene##Goal", sceneBuf, sizeof(sceneBuf))) {
+                goal->nextScene = sceneBuf;
+            }
+        }
+
+        ImGui::TextDisabled("Satisfied: %s", goal->isSatisfied ? "Yes" : "No");
+    }
+}
+
+void EditorLayer::DrawConveyorComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Conveyor", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ConveyorCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::ConveyorComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* conv = m_World->GetComponent<ECS::ConveyorComponent>(entity);
+        if (!conv) return;
+
+        f32 dir[3] = { conv->direction.x, conv->direction.y, conv->direction.z };
+        if (ImGui::DragFloat3("Direction##Conv", dir, 0.01f, -1.0f, 1.0f)) {
+            conv->direction = Math::Vector3(dir[0], dir[1], dir[2]);
+        }
+
+        ImGui::DragFloat("Speed##Conv", &conv->speed, 0.1f, 0.0f, 100.0f);
+        ImGui::Checkbox("Affects Player##Conv", &conv->affectsPlayer);
+        ImGui::Checkbox("Affects Pushables##Conv", &conv->affectsPushables);
+        ImGui::Checkbox("Is Active##Conv", &conv->isActive);
+    }
+}
+
+void EditorLayer::DrawTeleporterComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Teleporter", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TeleporterCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TeleporterComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* tp = m_World->GetComponent<ECS::TeleporterComponent>(entity);
+        if (!tp) return;
+
+        f32 targetPos[3] = { tp->targetPosition.x, tp->targetPosition.y, tp->targetPosition.z };
+        if (ImGui::DragFloat3("Target Position##Tele", targetPos, 0.1f)) {
+            tp->targetPosition = Math::Vector3(targetPos[0], targetPos[1], targetPos[2]);
+        }
+        f32 targetRot[3] = { tp->targetRotation.x, tp->targetRotation.y, tp->targetRotation.z };
+        if (ImGui::DragFloat3("Target Rotation##Tele", targetRot, 0.1f)) {
+            tp->targetRotation = Math::Vector3(targetRot[0], targetRot[1], targetRot[2]);
+        }
+
+        ImGui::DragFloat("Cooldown##Tele", &tp->cooldown, 0.1f, 0.0f, 30.0f);
+        ImGui::Checkbox("Preserve Velocity##Tele", &tp->preserveVelocity);
+
+        char tagBuf[128];
+        strncpy(tagBuf, tp->requiredTag.c_str(), sizeof(tagBuf) - 1);
+        tagBuf[sizeof(tagBuf) - 1] = '\0';
+        if (ImGui::InputText("Required Tag##Tele", tagBuf, sizeof(tagBuf))) {
+            tp->requiredTag = tagBuf;
+        }
+    }
+}
+
+void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Destructible", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DestructibleCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::DestructibleComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* dest = m_World->GetComponent<ECS::DestructibleComponent>(entity);
+        if (!dest) return;
+
+        ImGui::DragFloat("Health##Dest", &dest->health, 0.1f, 0.0f, 10000.0f);
+        ImGui::Checkbox("Destroy On Hit##Dest", &dest->destroyOnHit);
+
+        ImGui::Checkbox("Spawn Pickup##Dest", &dest->spawnPickup);
+        if (dest->spawnPickup) {
+            char pickupBuf[128];
+            strncpy(pickupBuf, dest->pickupId.c_str(), sizeof(pickupBuf) - 1);
+            pickupBuf[sizeof(pickupBuf) - 1] = '\0';
+            if (ImGui::InputText("Pickup ID##Dest", pickupBuf, sizeof(pickupBuf))) {
+                dest->pickupId = pickupBuf;
+            }
+            ImGui::DragInt("Pickup Count##Dest", &dest->pickupCount, 1, 0, 100);
+        }
+
+        ImGui::Checkbox("Can Respawn##Dest", &dest->canRespawn);
+        if (dest->canRespawn) {
+            ImGui::DragFloat("Respawn Time##Dest", &dest->respawnTime, 0.1f, 0.0f, 300.0f);
+        }
+
+        ImGui::DragFloat("Shake On Hit##Dest", &dest->shakeOnHit, 0.01f, 0.0f, 2.0f);
+    }
+}
+
+void EditorLayer::DrawMovingPlatformComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Moving Platform", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("MovingPlatformCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::MovingPlatformComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* plat = m_World->GetComponent<ECS::MovingPlatformComponent>(entity);
+        if (!plat) return;
+
+        // Waypoints list
+        ImGui::Text("Waypoints: %zu", plat->waypoints.size());
+        for (usize i = 0; i < plat->waypoints.size(); i++) {
+            ImGui::PushID(static_cast<int>(i));
+            f32 wp[3] = { plat->waypoints[i].x, plat->waypoints[i].y, plat->waypoints[i].z };
+            char label[32];
+            snprintf(label, sizeof(label), "WP %zu##Plat", i);
+            if (ImGui::DragFloat3(label, wp, 0.1f)) {
+                plat->waypoints[i] = Math::Vector3(wp[0], wp[1], wp[2]);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                plat->waypoints.erase(plat->waypoints.begin() + i);
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+        }
+        if (ImGui::Button("Add Waypoint##Plat")) {
+            plat->waypoints.push_back(Math::Vector3(0, 0, 0));
+        }
+
+        ImGui::DragFloat("Speed##Plat", &plat->speed, 0.1f, 0.0f, 50.0f);
+        ImGui::DragFloat("Wait Time##Plat", &plat->waitTime, 0.1f, 0.0f, 30.0f);
+
+        const char* modes[] = { "Loop", "Ping Pong", "One Way", "Triggered" };
+        int modeIdx = static_cast<int>(plat->mode);
+        if (ImGui::Combo("Mode##Plat", &modeIdx, modes, 4)) {
+            plat->mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(modeIdx);
+        }
+
+        ImGui::Checkbox("Carry Entities##Plat", &plat->carryEntities);
+    }
+}
+
+void EditorLayer::DrawDamageResistanceComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Damage Resistance", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DamResCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::DamageResistanceComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* r = m_World->GetComponent<ECS::DamageResistanceComponent>(entity);
+        if (!r) return;
+        ImGui::SliderFloat("Physical", &r->physicalMult, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Fire", &r->fireMult, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Ice", &r->iceMult, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Electric", &r->electricMult, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Poison", &r->poisonMult, 0.0f, 3.0f, "%.2f");
+        ImGui::SliderFloat("Magic", &r->magicMult, 0.0f, 3.0f, "%.2f");
+        ImGui::TextWrapped("0.0 = Immune, 1.0 = Normal, 2.0+ = Weakness");
+    }
+}
+
+void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Resource", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ResCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::ResourceComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* r = m_World->GetComponent<ECS::ResourceComponent>(entity);
+        if (!r) return;
+
+        char buf[64];
+        strncpy(buf, r->resourceName.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+        if (ImGui::InputText("Name", buf, sizeof(buf))) {
+            r->resourceName = buf;
+        }
+
+        // Progress bar
+        f32 pct = r->GetPercent();
+        ImGui::ProgressBar(pct, ImVec2(-1, 0),
+            (std::to_string((int)r->currentValue) + " / " + std::to_string((int)r->maxValue)).c_str());
+
+        ImGui::DragFloat("Max Value", &r->maxValue, 1.0f, 1.0f, 10000.0f);
+        ImGui::DragFloat("Current Value", &r->currentValue, 1.0f, 0.0f, r->maxValue);
+
+        if (ImGui::TreeNode("Regeneration##Res")) {
+            ImGui::DragFloat("Regen Rate (/s)", &r->regenRate, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Regen Delay (s)", &r->regenDelay, 0.1f, 0.0f, 10.0f);
+            ImGui::DragFloat("Depleted Threshold", &r->depletedThreshold, 1.0f, 0.0f, r->maxValue);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Action Costs")) {
+            ImGui::DragFloat("Sprint Cost/s", &r->sprintCostPerSec, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Jump Cost", &r->jumpCost, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Dash Cost", &r->dashCost, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Attack Cost", &r->attackCost, 0.5f, 0.0f, 100.0f);
+            ImGui::TreePop();
+        }
+
+        ImGui::Text("Depleted: %s", r->depleted ? "Yes" : "No");
+    }
+}
+
+void EditorLayer::DrawFootstepComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Footsteps", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("FootCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::FootstepComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* f = m_World->GetComponent<ECS::FootstepComponent>(entity);
+        if (!f) return;
+
+        char walkBuf[256], runBuf[256];
+        strncpy(walkBuf, f->defaultWalkSound.c_str(), sizeof(walkBuf) - 1); walkBuf[sizeof(walkBuf) - 1] = '\0';
+        strncpy(runBuf, f->defaultRunSound.c_str(), sizeof(runBuf) - 1); runBuf[sizeof(runBuf) - 1] = '\0';
+        if (ImGui::InputText("Default Walk Sound", walkBuf, sizeof(walkBuf))) f->defaultWalkSound = walkBuf;
+        if (ImGui::InputText("Default Run Sound", runBuf, sizeof(runBuf))) f->defaultRunSound = runBuf;
+
+        ImGui::DragFloat("Walk Interval (s)", &f->walkStepInterval, 0.01f, 0.1f, 2.0f);
+        ImGui::DragFloat("Run Interval (s)", &f->runStepInterval, 0.01f, 0.05f, 1.0f);
+        ImGui::DragFloat("Volume", &f->volume, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("Pitch Variance", &f->pitchVariance, 0.01f, 0.0f, 0.5f);
+
+        if (ImGui::TreeNode("Surface Sounds")) {
+            for (usize i = 0; i < f->surfaceSounds.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto& ss = f->surfaceSounds[i];
+                char tag[64], walk[256], run[256];
+                strncpy(tag, ss.surfaceTag.c_str(), sizeof(tag) - 1); tag[sizeof(tag) - 1] = '\0';
+                strncpy(walk, ss.walkSound.c_str(), sizeof(walk) - 1); walk[sizeof(walk) - 1] = '\0';
+                strncpy(run, ss.runSound.c_str(), sizeof(run) - 1); run[sizeof(run) - 1] = '\0';
+                if (ImGui::InputText("Tag", tag, sizeof(tag))) ss.surfaceTag = tag;
+                if (ImGui::InputText("Walk", walk, sizeof(walk))) ss.walkSound = walk;
+                if (ImGui::InputText("Run", run, sizeof(run))) ss.runSound = run;
+                ImGui::DragFloat("Vol Scale", &ss.volumeScale, 0.01f, 0.0f, 2.0f);
+                if (ImGui::Button("Remove")) {
+                    f->surfaceSounds.erase(f->surfaceSounds.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::Separator();
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Add Surface")) {
+                f->surfaceSounds.push_back({});
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawPoolableComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Poolable", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("PoolCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::PoolableComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* p = m_World->GetComponent<ECS::PoolableComponent>(entity);
+        if (!p) return;
+
+        char buf[64];
+        strncpy(buf, p->poolId.c_str(), sizeof(buf) - 1); buf[sizeof(buf) - 1] = '\0';
+        if (ImGui::InputText("Pool ID", buf, sizeof(buf))) p->poolId = buf;
+        ImGui::Checkbox("Active", &p->isActive);
+        ImGui::DragFloat("Lifetime (0=inf)", &p->lifetime, 0.1f, 0.0f, 60.0f);
+        ImGui::Text("Active Time: %.1f", p->activeTime);
+    }
+}
+
+void EditorLayer::DrawQuestStateComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Quest State", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("QuestCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::QuestStateComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* q = m_World->GetComponent<ECS::QuestStateComponent>(entity);
+        if (!q) return;
+
+        char buf[128];
+        strncpy(buf, q->questId.c_str(), sizeof(buf) - 1); buf[sizeof(buf) - 1] = '\0';
+        if (ImGui::InputText("Quest ID", buf, sizeof(buf))) q->questId = buf;
+
+        const char* statuses[] = { "Not Started", "Active", "Completed", "Failed" };
+        int status = static_cast<int>(q->status);
+        if (ImGui::Combo("Status", &status, statuses, 4)) {
+            q->status = static_cast<ECS::QuestStateComponent::Status>(status);
+        }
+
+        ImGui::DragInt("Current Objective", &q->currentObjective, 1, 0, 100);
+        ImGui::Text("Time Elapsed: %.1f s", q->timeElapsed);
+
+        if (ImGui::TreeNode("Objectives")) {
+            for (usize i = 0; i < q->objectiveFlags.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto& [name, complete] = q->objectiveFlags[i];
+                char objBuf[128];
+                strncpy(objBuf, name.c_str(), sizeof(objBuf) - 1); objBuf[sizeof(objBuf) - 1] = '\0';
+                ImGui::Checkbox("##done", &complete);
+                ImGui::SameLine();
+                if (ImGui::InputText("##name", objBuf, sizeof(objBuf))) name = objBuf;
+                ImGui::SameLine();
+                if (ImGui::Button("X")) {
+                    q->objectiveFlags.erase(q->objectiveFlags.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Add Objective")) {
+                q->objectiveFlags.push_back({"New Objective", false});
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawHUDWidgetComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("HUD Widget", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("HUDCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::HUDWidgetComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* h = m_World->GetComponent<ECS::HUDWidgetComponent>(entity);
+        if (!h) return;
+
+        const char* types[] = { "Health Bar", "Resource Bar", "Label", "Objective Marker", "Crosshair", "Minimap" };
+        int type = static_cast<int>(h->type);
+        if (ImGui::Combo("Widget Type", &type, types, 6)) {
+            h->type = static_cast<ECS::HUDWidgetComponent::WidgetType>(type);
+        }
+
+        ImGui::Checkbox("Visible", &h->visible);
+        ImGui::Checkbox("Screen Space", &h->screenSpace);
+
+        if (ImGui::TreeNode("Position & Size")) {
+            ImGui::DragFloat("Anchor X", &h->anchorX, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Anchor Y", &h->anchorY, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Width", &h->width, 0.01f, 0.01f, 1.0f);
+            ImGui::DragFloat("Height", &h->height, 0.01f, 0.01f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Colors")) {
+            ImGui::ColorEdit3("Fill Color", &h->fillColor.x);
+            ImGui::ColorEdit3("Bg Color", &h->bgColor.x);
+            ImGui::ColorEdit3("Text Color", &h->textColor.x);
+            ImGui::TreePop();
+        }
+
+        ImGui::DragFloat("Font Size", &h->fontSize, 1.0f, 8.0f, 64.0f);
+
+        char textBuf[256];
+        strncpy(textBuf, h->text.c_str(), sizeof(textBuf) - 1); textBuf[sizeof(textBuf) - 1] = '\0';
+        if (ImGui::InputText("Text", textBuf, sizeof(textBuf))) h->text = textBuf;
+
+        char bindBuf[64];
+        strncpy(bindBuf, h->bindField.c_str(), sizeof(bindBuf) - 1); bindBuf[sizeof(bindBuf) - 1] = '\0';
+        if (ImGui::InputText("Bind Field", bindBuf, sizeof(bindBuf))) h->bindField = bindBuf;
+
+        ImGui::DragFloat("Current Value", &h->currentValue, 0.1f, 0.0f, 10000.0f);
+        ImGui::DragFloat("Max Value", &h->maxValue, 0.1f, 0.1f, 10000.0f);
+
+        if (!h->screenSpace) {
+            ImGui::DragFloat3("World Offset", &h->worldOffset.x, 0.1f);
+            ImGui::DragFloat("Max Render Distance", &h->maxRenderDistance, 1.0f, 1.0f, 500.0f);
+        }
+    }
+}
+
+void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Cinematic Camera", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("CineCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::CinematicCameraComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* c = m_World->GetComponent<ECS::CinematicCameraComponent>(entity);
+        if (!c) return;
+
+        ImGui::Checkbox("Loop", &c->loop);
+        ImGui::Checkbox("Auto Play", &c->autoPlay);
+        ImGui::Checkbox("Hide HUD", &c->hideHUD);
+        ImGui::Checkbox("Disable Input", &c->disableInput);
+
+        ImGui::Text("Status: %s", c->isPlaying ? "Playing" : (c->isComplete ? "Complete" : "Stopped"));
+        ImGui::Text("Time: %.1f s | Segment: %d / %d", c->currentTime, c->currentSegment, (int)c->waypoints.size() - 1);
+
+        if (ImGui::TreeNode("Waypoints")) {
+            for (usize i = 0; i < c->waypoints.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto& wp = c->waypoints[i];
+                if (ImGui::TreeNode("Waypoint", "Waypoint %d", (int)i)) {
+                    ImGui::DragFloat3("Position", &wp.position.x, 0.1f);
+                    ImGui::DragFloat3("Look At", &wp.lookAt.x, 0.1f);
+                    ImGui::DragFloat("FOV", &wp.fov, 1.0f, 10.0f, 120.0f);
+                    ImGui::DragFloat("Duration (s)", &wp.duration, 0.1f, 0.0f, 30.0f);
+                    ImGui::DragFloat("Hold Time (s)", &wp.holdTime, 0.1f, 0.0f, 10.0f);
+
+                    const char* easings[] = { "Linear", "Ease In", "Ease Out", "Ease In-Out", "Smash Cut" };
+                    int easing = static_cast<int>(wp.easing);
+                    if (ImGui::Combo("Easing", &easing, easings, 5)) {
+                        wp.easing = static_cast<ECS::CinematicCameraComponent::Waypoint::Easing>(easing);
+                    }
+
+                    // Use current camera position for this waypoint
+                    if (m_Camera && ImGui::Button("Set From Camera")) {
+                        wp.position = m_Camera->GetPosition();
+                        wp.lookAt = m_Camera->GetPosition() + m_Camera->GetForward() * 10.0f;
+                        wp.fov = m_Camera->GetFOV();
+                    }
+
+                    if (ImGui::Button("Remove")) {
+                        c->waypoints.erase(c->waypoints.begin() + i);
+                        ImGui::TreePop();
+                        ImGui::PopID();
+                        break;
+                    }
+
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Add Waypoint")) {
+                ECS::CinematicCameraComponent::Waypoint wp;
+                if (m_Camera) {
+                    wp.position = m_Camera->GetPosition();
+                    wp.lookAt = m_Camera->GetPosition() + m_Camera->GetForward() * 10.0f;
+                    wp.fov = m_Camera->GetFOV();
+                }
+                c->waypoints.push_back(wp);
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+// ============================================================================
+// Joint & Ragdoll Components
+// ============================================================================
+
+void EditorLayer::DrawDistanceJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Distance Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("DistanceJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::DistanceJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::DistanceJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##DistJoint", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##DistJoint", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##DistJoint", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##DistJoint", &j->anchorB.x, 0.01f);
+
+        ImGui::DragFloat("Rest Distance", &j->restDistance, 0.1f, 0.0f, 1000.0f);
+        ImGui::DragFloat("Tolerance", &j->tolerance, 0.01f, 0.0f, 100.0f);
+        ImGui::SliderFloat("Stiffness", &j->stiffness, 0.0f, 1.0f);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##DistJoint", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##DistJoint", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawHingeJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Hinge Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("HingeJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::HingeJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::HingeJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##HingeJoint", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##HingeJoint", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##HingeJoint", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##HingeJoint", &j->anchorB.x, 0.01f);
+        ImGui::DragFloat3("Axis##HingeJoint", &j->axis.x, 0.01f);
+
+        ImGui::Checkbox("Use Limits##HingeJoint", &j->useLimits);
+        if (j->useLimits) {
+            ImGui::DragFloat("Lower Limit (deg)##HingeJoint", &j->lowerLimit, 1.0f, -360.0f, 0.0f);
+            ImGui::DragFloat("Upper Limit (deg)##HingeJoint", &j->upperLimit, 1.0f, 0.0f, 360.0f);
+        }
+        ImGui::Text("Current Angle: %.1f deg", j->currentAngle);
+
+        ImGui::Checkbox("Use Motor##HingeJoint", &j->useMotor);
+        if (j->useMotor) {
+            ImGui::DragFloat("Motor Speed (deg/s)##HingeJoint", &j->motorSpeed, 1.0f, -1000.0f, 1000.0f);
+            ImGui::DragFloat("Max Motor Force##HingeJoint", &j->motorMaxForce, 1.0f, 0.0f, 100000.0f);
+        }
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##HingeJoint", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##HingeJoint", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawBallSocketJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Ball-Socket Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("BallSocketJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::BallSocketJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::BallSocketJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##BallSocket", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##BallSocket", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##BallSocket", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##BallSocket", &j->anchorB.x, 0.01f);
+
+        ImGui::Checkbox("Use Cone Limit##BallSocket", &j->useConeLimit);
+        if (j->useConeLimit) {
+            ImGui::DragFloat("Cone Angle Limit (deg)", &j->coneAngleLimit, 1.0f, 0.0f, 180.0f);
+        }
+
+        ImGui::Checkbox("Use Twist Limit##BallSocket", &j->useTwistLimit);
+        if (j->useTwistLimit) {
+            ImGui::DragFloat("Twist Lower (deg)##BallSocket", &j->twistLowerLimit, 1.0f, -180.0f, 0.0f);
+            ImGui::DragFloat("Twist Upper (deg)##BallSocket", &j->twistUpperLimit, 1.0f, 0.0f, 180.0f);
+        }
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##BallSocket", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##BallSocket", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawSpringJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Spring Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SpringJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::SpringJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::SpringJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##SpringJoint", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##SpringJoint", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##SpringJoint", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##SpringJoint", &j->anchorB.x, 0.01f);
+
+        ImGui::DragFloat("Rest Length", &j->restLength, 0.1f, 0.0f, 1000.0f);
+        ImGui::DragFloat("Spring Constant (k)", &j->springConstant, 1.0f, 0.0f, 10000.0f);
+        ImGui::DragFloat("Damping Coefficient", &j->dampingCoefficient, 0.1f, 0.0f, 1000.0f);
+        ImGui::DragFloat("Min Distance##SpringJoint", &j->minDistance, 0.1f, 0.0f, 1000.0f);
+        ImGui::DragFloat("Max Distance##SpringJoint", &j->maxDistance, 0.1f, 0.0f, 10000.0f);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##SpringJoint", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##SpringJoint", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawFixedJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Fixed Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("FixedJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::FixedJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::FixedJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##FixedJoint", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##FixedJoint", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##FixedJoint", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##FixedJoint", &j->anchorB.x, 0.01f);
+
+        ImGui::DragFloat3("Relative Position", &j->relativePosition.x, 0.01f);
+        ImGui::DragFloat3("Relative Rotation (deg)", &j->relativeRotation.x, 1.0f);
+
+        ImGui::Checkbox("Initialized", &j->initialized);
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##FixedJoint", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##FixedJoint", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawSliderJointComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Slider Joint", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SliderJointCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::SliderJointComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* j = m_World->GetComponent<ECS::SliderJointComponent>(entity);
+        if (!j) return;
+
+        u64 eA = static_cast<u64>(j->entityA);
+        u64 eB = static_cast<u64>(j->entityB);
+        if (ImGui::InputScalar("Entity A##SliderJoint", ImGuiDataType_U64, &eA)) {
+            j->entityA = static_cast<ECS::Entity>(eA);
+        }
+        if (ImGui::InputScalar("Entity B##SliderJoint", ImGuiDataType_U64, &eB)) {
+            j->entityB = static_cast<ECS::Entity>(eB);
+        }
+
+        ImGui::DragFloat3("Anchor A##SliderJoint", &j->anchorA.x, 0.01f);
+        ImGui::DragFloat3("Anchor B##SliderJoint", &j->anchorB.x, 0.01f);
+        ImGui::DragFloat3("Slide Axis", &j->slideAxis.x, 0.01f);
+
+        ImGui::Checkbox("Use Limits##SliderJoint", &j->useLimits);
+        if (j->useLimits) {
+            ImGui::DragFloat("Lower Limit##SliderJoint", &j->lowerLimit, 0.1f, -1000.0f, 0.0f);
+            ImGui::DragFloat("Upper Limit##SliderJoint", &j->upperLimit, 0.1f, 0.0f, 1000.0f);
+        }
+        ImGui::Text("Current Displacement: %.3f", j->currentDisplacement);
+
+        ImGui::Checkbox("Use Motor##SliderJoint", &j->useMotor);
+        if (j->useMotor) {
+            ImGui::DragFloat("Motor Speed##SliderJoint", &j->motorSpeed, 0.1f, -1000.0f, 1000.0f);
+            ImGui::DragFloat("Max Motor Force##SliderJoint", &j->motorMaxForce, 1.0f, 0.0f, 100000.0f);
+        }
+
+        ImGui::Separator();
+        ImGui::Checkbox("Breakable##SliderJoint", &j->breakable);
+        if (j->breakable) {
+            ImGui::DragFloat("Break Force##SliderJoint", &j->breakForce, 1.0f, 0.0f, 100000.0f);
+        }
+        ImGui::Text("Current Stress: %.2f", j->currentStress);
+    }
+}
+
+void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Ragdoll", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("RagdollCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::RagdollComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* r = m_World->GetComponent<ECS::RagdollComponent>(entity);
+        if (!r) return;
+
+        ImGui::Checkbox("Enabled##Ragdoll", &r->enabled);
+        ImGui::SliderFloat("Blend Weight", &r->blendWeight, 0.0f, 1.0f);
+        ImGui::DragFloat("Blend Speed", &r->blendSpeed, 0.1f, 0.0f, 50.0f);
+
+        ImGui::DragFloat("Gravity Scale##Ragdoll", &r->gravityScale, 0.1f, -10.0f, 10.0f);
+        ImGui::DragFloat("Linear Damping##Ragdoll", &r->linearDamping, 0.01f, 0.0f, 10.0f);
+        ImGui::DragFloat("Angular Damping##Ragdoll", &r->angularDamping, 0.01f, 0.0f, 10.0f);
+
+        if (ImGui::TreeNode("Settle Settings")) {
+            ImGui::Checkbox("Auto Disable After Settle", &r->autoDisableAfterSettle);
+            ImGui::DragFloat("Settle Threshold", &r->settleThreshold, 0.001f, 0.0f, 1.0f, "%.4f");
+            ImGui::DragFloat("Settle Time (s)", &r->settleTime, 0.1f, 0.0f, 30.0f);
+            ImGui::Text("Settle Timer: %.2f s", r->settleTimer);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Bone Joints")) {
+            for (usize i = 0; i < r->boneJoints.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                auto& bj = r->boneJoints[i];
+                if (ImGui::TreeNode("BoneJoint", "%s (idx %d)", bj.boneName.empty() ? "(unnamed)" : bj.boneName.c_str(), bj.boneIndex)) {
+                    char nameBuf[128];
+                    strncpy(nameBuf, bj.boneName.c_str(), sizeof(nameBuf) - 1);
+                    nameBuf[sizeof(nameBuf) - 1] = '\0';
+                    if (ImGui::InputText("Bone Name", nameBuf, sizeof(nameBuf))) {
+                        bj.boneName = nameBuf;
+                    }
+                    ImGui::InputInt("Bone Index", &bj.boneIndex);
+
+                    const char* jointTypes[] = { "Distance", "Hinge", "BallSocket", "Spring", "Fixed", "Slider" };
+                    int jt = static_cast<int>(bj.jointType);
+                    if (ImGui::Combo("Joint Type##BJ", &jt, jointTypes, 6)) {
+                        bj.jointType = static_cast<ECS::JointType>(jt);
+                    }
+
+                    u64 je = static_cast<u64>(bj.jointEntity);
+                    if (ImGui::InputScalar("Joint Entity##BJ", ImGuiDataType_U64, &je)) {
+                        bj.jointEntity = static_cast<ECS::Entity>(je);
+                    }
+
+                    ImGui::DragFloat("Mass##BJ", &bj.mass, 0.1f, 0.001f, 1000.0f);
+                    ImGui::DragFloat("Collider Radius##BJ", &bj.colliderRadius, 0.01f, 0.001f, 10.0f);
+                    ImGui::DragFloat("Cone Angle Limit##BJ", &bj.coneAngleLimit, 1.0f, 0.0f, 180.0f);
+                    ImGui::DragFloat("Twist Limit##BJ", &bj.twistLimit, 1.0f, 0.0f, 180.0f);
+
+                    if (ImGui::Button("Remove##BJ")) {
+                        r->boneJoints.erase(r->boneJoints.begin() + i);
+                        ImGui::TreePop();
+                        ImGui::PopID();
+                        break;
+                    }
+
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+            if (ImGui::Button("Add Bone Joint")) {
+                r->boneJoints.push_back(ECS::RagdollComponent::BoneJoint{});
+            }
+            ImGui::TreePop();
+        }
+    }
+}
+
+// ============================================================================
 // Runtime Dialogue System
 // ============================================================================
 
@@ -12457,17 +15971,151 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
     }
 
     // Select the new entity
-    m_SelectedEntity = newEntity;
+    SelectEntity(newEntity);
     ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
 }
 
-void EditorLayer::DeleteSelectedEntity() {
-    if (!m_World || m_SelectedEntity == ECS::INVALID_ENTITY) return;
+void EditorLayer::DeleteSelectedEntities() {
+    if (!m_World || m_SelectedEntities.empty()) return;
 
-    ECS::Entity toDelete = m_SelectedEntity;
-    m_SelectedEntity = ECS::INVALID_ENTITY;
-    m_World->DestroyEntity(toDelete);
-    ENJIN_LOG_INFO(Editor, "Deleted entity %llu", toDelete);
+    // Copy set since we modify it
+    auto toDelete = m_SelectedEntities;
+    ClearSelection();
+    for (ECS::Entity e : toDelete) {
+        m_World->DestroyEntity(e);
+    }
+    ENJIN_LOG_INFO(Editor, "Deleted %zu entities", toDelete.size());
+}
+
+void EditorLayer::DuplicateSelectedEntities() {
+    if (!m_World || m_SelectedEntities.empty()) return;
+
+    auto originals = m_SelectedEntities;
+    ClearSelection();
+    for (ECS::Entity e : originals) {
+        DuplicateEntity(e);
+    }
+    // After DuplicateEntity calls, the last duplicated entity is selected;
+    // re-select all duplicated entities (they were selected one by one via DuplicateEntity's SelectEntity call)
+    ENJIN_LOG_INFO(Editor, "Duplicated %zu entities", originals.size());
+}
+
+void EditorLayer::FocusOnSelection() {
+    if (!m_Camera || !m_CameraController || !m_World || m_SelectedEntities.empty()) return;
+
+    if (m_SelectedEntities.size() == 1) {
+        FocusOnEntity(*m_SelectedEntities.begin());
+        return;
+    }
+
+    // Compute centroid of all selected entities
+    Math::Vector3 centroid(0.0f, 0.0f, 0.0f);
+    u32 count = 0;
+    for (ECS::Entity e : m_SelectedEntities) {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+        if (transform) {
+            centroid = centroid + transform->position;
+            count++;
+        }
+    }
+    if (count == 0) return;
+    centroid = centroid * (1.0f / static_cast<f32>(count));
+
+    // Focus camera on centroid
+    f32 distance = 10.0f;
+    Math::Vector3 cameraForward = m_Camera->GetForward();
+    Math::Vector3 newCameraPos = centroid - cameraForward * distance;
+
+    m_Camera->SetPosition(newCameraPos);
+    m_Camera->SetLookAt(newCameraPos, centroid, Math::Vector3(0.0f, 1.0f, 0.0f));
+    m_CameraController->SetOrbitTarget(centroid);
+    m_CameraController->SetOrbitDistance(distance);
+    m_CameraController->SyncFromCamera();
+
+    ENJIN_LOG_INFO(Editor, "Focused on %zu entities at centroid (%.2f, %.2f, %.2f)",
+        m_SelectedEntities.size(), centroid.x, centroid.y, centroid.z);
+}
+
+void EditorLayer::DrawMultiSelectInspector() {
+    ImGui::Text("%zu entities selected", m_SelectedEntities.size());
+    ImGui::Separator();
+
+    // List selected entity names
+    if (ImGui::CollapsingHeader("Selected Entities", ImGuiTreeNodeFlags_DefaultOpen)) {
+        for (ECS::Entity e : m_SelectedEntities) {
+            std::string name = "Entity " + std::to_string(e);
+            if (m_World->HasComponent<ECS::NameComponent>(e)) {
+                name = m_World->GetComponent<ECS::NameComponent>(e)->name;
+            }
+            bool isPrimary = (e == m_PrimarySelected);
+            if (isPrimary) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+            ImGui::BulletText("%s [%llu]%s", name.c_str(), (unsigned long long)e,
+                              isPrimary ? " (primary)" : "");
+            if (isPrimary) ImGui::PopStyleColor();
+        }
+    }
+
+    // Batch transform editing
+    if (ImGui::CollapsingHeader("Batch Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::TextDisabled("Changes apply as delta to all selected");
+        ImGui::Spacing();
+
+        static Math::Vector3 batchOffset(0.0f, 0.0f, 0.0f);
+        static Math::Vector3 batchRotation(0.0f, 0.0f, 0.0f);
+        static Math::Vector3 batchScale(1.0f, 1.0f, 1.0f);
+
+        // Position offset
+        ImGui::Text("Position Offset");
+        f32 pos[3] = { batchOffset.x, batchOffset.y, batchOffset.z };
+        if (ImGui::DragFloat3("##BatchPos", pos, 0.1f)) {
+            batchOffset = Math::Vector3(pos[0], pos[1], pos[2]);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Apply##Pos")) {
+            for (ECS::Entity e : m_SelectedEntities) {
+                auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (t) t->position = t->position + batchOffset;
+            }
+            batchOffset = Math::Vector3(0.0f, 0.0f, 0.0f);
+        }
+
+        // Rotation offset (euler degrees)
+        ImGui::Text("Rotation Offset (degrees)");
+        f32 rot[3] = { batchRotation.x, batchRotation.y, batchRotation.z };
+        if (ImGui::DragFloat3("##BatchRot", rot, 1.0f)) {
+            batchRotation = Math::Vector3(rot[0], rot[1], rot[2]);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Apply##Rot")) {
+            Math::Quaternion dq = Math::Quaternion(Math::Vector3(0,1,0), Math::Radians(batchRotation.y))
+                                * Math::Quaternion(Math::Vector3(1,0,0), Math::Radians(batchRotation.x))
+                                * Math::Quaternion(Math::Vector3(0,0,1), Math::Radians(batchRotation.z));
+            for (ECS::Entity e : m_SelectedEntities) {
+                auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (t) t->rotation = dq * t->rotation;
+            }
+            batchRotation = Math::Vector3(0.0f, 0.0f, 0.0f);
+        }
+
+        // Scale multiplier
+        ImGui::Text("Scale Multiplier");
+        f32 scl[3] = { batchScale.x, batchScale.y, batchScale.z };
+        if (ImGui::DragFloat3("##BatchScale", scl, 0.01f, 0.01f, 100.0f)) {
+            batchScale = Math::Vector3(scl[0], scl[1], scl[2]);
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Apply##Scale")) {
+            for (ECS::Entity e : m_SelectedEntities) {
+                auto* t = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (t) {
+                    t->scale = Math::Vector3(t->scale.x * batchScale.x,
+                                             t->scale.y * batchScale.y,
+                                             t->scale.z * batchScale.z);
+                }
+            }
+            batchScale = Math::Vector3(1.0f, 1.0f, 1.0f);
+        }
+    }
 }
 
 void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
@@ -12542,7 +16190,7 @@ void EditorLayer::DrawCameraFrustum(ECS::Entity cameraEntity) {
     Math::Vector3 farBottomRight = farCenter - up * (farHeight * 0.5f) + right * (farWidth * 0.5f);
 
     // Colors - yellow/orange for selected camera, gray for others
-    bool isSelected = (cameraEntity == m_SelectedEntity);
+    bool isSelected = IsSelected(cameraEntity);
     ImU32 frustumColor = isSelected ? IM_COL32(255, 200, 50, 180) : IM_COL32(150, 150, 150, 100);
     ImU32 directionColor = isSelected ? IM_COL32(255, 100, 50, 255) : IM_COL32(200, 100, 50, 180);
     f32 lineThickness = isSelected ? 2.0f : 1.0f;
@@ -12737,13 +16385,13 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
                 name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
             }
             std::string line = "  [" + std::to_string(entity) + "] " + name;
-            if (entity == m_SelectedEntity) line += " (selected)";
+            if (IsSelected(entity)) line += " (selected)";
             m_ConsoleLog.push_back(line);
         }
     } else if (cmdLower == "select") {
         u64 id = 0;
         if (iss >> id) {
-            m_SelectedEntity = static_cast<ECS::Entity>(id);
+            SelectEntity(static_cast<ECS::Entity>(id));
             m_ConsoleLog.push_back("Selected entity " + std::to_string(id));
         } else {
             m_ConsoleLog.push_back("Usage: select <entity_id>");
@@ -12759,24 +16407,24 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
         ECS::Entity entity = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(entity, name);
         m_World->AddComponent<ECS::TransformComponent>(entity);
-        m_SelectedEntity = entity;
+        SelectEntity(entity);
         m_ConsoleLog.push_back("Created entity [" + std::to_string(entity) + "] '" + name + "'");
     } else if (cmdLower == "delete") {
-        if (m_SelectedEntity == ECS::INVALID_ENTITY) {
+        if (m_SelectedEntities.empty()) {
             m_ConsoleLog.push_back("No entity selected");
         } else {
-            u64 id = m_SelectedEntity;
-            DeleteSelectedEntity();
-            m_ConsoleLog.push_back("Deleted entity " + std::to_string(id));
+            usize count = m_SelectedEntities.size();
+            DeleteSelectedEntities();
+            m_ConsoleLog.push_back("Deleted " + std::to_string(count) + " entity(ies)");
         }
     } else if (cmdLower == "pos") {
-        if (m_SelectedEntity == ECS::INVALID_ENTITY || !m_World) {
+        if (m_SelectedEntities.empty() || !m_World) {
             m_ConsoleLog.push_back("No entity selected");
             return;
         }
         f32 x, y, z;
         if (iss >> x >> y >> z) {
-            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_SelectedEntity);
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
             if (transform) {
                 transform->position = Math::Vector3(x, y, z);
                 m_ConsoleLog.push_back("Set position to " + std::to_string(x) + ", " + std::to_string(y) + ", " + std::to_string(z));
@@ -13015,6 +16663,319 @@ void EditorLayer::DrawBuildDialog() {
     }
 
     ImGui::End();
+}
+
+// ---------------------------------------------------------------------------
+// Terrain Brush Implementation
+// ---------------------------------------------------------------------------
+
+bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
+                                  const ECS::TransformComponent* transform,
+                                  Math::Vector3& hitPoint) {
+    if (!terrain || terrain->heightmap.empty()) return false;
+
+    Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+    f32 terrainWidth = terrain->gridWidth * terrain->cellSize;
+    f32 terrainDepth = terrain->gridHeight * terrain->cellSize;
+
+    // Quick reject: if ray is parallel to XZ plane and above max height, no hit
+    if (std::abs(ray.direction.y) < 1e-6f) return false;
+
+    // Find approximate t where ray reaches terrain base plane (Y = origin.y)
+    f32 tBase = (origin.y - ray.origin.y) / ray.direction.y;
+    // Also check top plane
+    f32 tTop = (origin.y + terrain->maxHeight - ray.origin.y) / ray.direction.y;
+
+    f32 tMin = std::min(tBase, tTop);
+    f32 tMax = std::max(tBase, tTop);
+    if (tMin < 0.0f) tMin = 0.0f;
+    if (tMax < 0.0f) return false;
+
+    // March along the ray in small steps
+    f32 stepSize = terrain->cellSize * 0.5f;
+    f32 t = tMin;
+
+    for (int i = 0; i < 500 && t <= tMax + stepSize; ++i, t += stepSize) {
+        Math::Vector3 p = ray.origin + ray.direction * t;
+
+        // Convert to grid-local coordinates
+        f32 localX = p.x - origin.x;
+        f32 localZ = p.z - origin.z;
+
+        // Bounds check
+        if (localX < 0.0f || localZ < 0.0f || localX >= terrainWidth || localZ >= terrainDepth)
+            continue;
+
+        // Bilinear interpolation of height
+        f32 gx = localX / terrain->cellSize;
+        f32 gz = localZ / terrain->cellSize;
+        u32 ix = static_cast<u32>(gx);
+        u32 iz = static_cast<u32>(gz);
+        if (ix >= terrain->gridWidth - 1) ix = terrain->gridWidth - 2;
+        if (iz >= terrain->gridHeight - 1) iz = terrain->gridHeight - 2;
+        f32 fx = gx - static_cast<f32>(ix);
+        f32 fz = gz - static_cast<f32>(iz);
+
+        f32 h00 = terrain->GetHeight(ix, iz);
+        f32 h10 = terrain->GetHeight(ix + 1, iz);
+        f32 h01 = terrain->GetHeight(ix, iz + 1);
+        f32 h11 = terrain->GetHeight(ix + 1, iz + 1);
+        f32 terrainH = h00 * (1 - fx) * (1 - fz) + h10 * fx * (1 - fz)
+                      + h01 * (1 - fx) * fz + h11 * fx * fz;
+
+        f32 worldTerrainY = origin.y + terrainH;
+
+        if (p.y <= worldTerrainY) {
+            // Binary search refinement
+            f32 lo = t - stepSize;
+            f32 hi = t;
+            for (int r = 0; r < 8; ++r) {
+                f32 mid = (lo + hi) * 0.5f;
+                Math::Vector3 mp = ray.origin + ray.direction * mid;
+                f32 mlx = mp.x - origin.x;
+                f32 mlz = mp.z - origin.z;
+                f32 mgx = mlx / terrain->cellSize;
+                f32 mgz = mlz / terrain->cellSize;
+                u32 mix = static_cast<u32>(std::max(0.0f, std::min(mgx, static_cast<f32>(terrain->gridWidth - 2))));
+                u32 miz = static_cast<u32>(std::max(0.0f, std::min(mgz, static_cast<f32>(terrain->gridHeight - 2))));
+                f32 mfx = mgx - static_cast<f32>(mix);
+                f32 mfz = mgz - static_cast<f32>(miz);
+                mfx = std::max(0.0f, std::min(1.0f, mfx));
+                mfz = std::max(0.0f, std::min(1.0f, mfz));
+
+                f32 mh = terrain->GetHeight(mix, miz) * (1 - mfx) * (1 - mfz)
+                        + terrain->GetHeight(mix + 1, miz) * mfx * (1 - mfz)
+                        + terrain->GetHeight(mix, miz + 1) * (1 - mfx) * mfz
+                        + terrain->GetHeight(mix + 1, miz + 1) * mfx * mfz;
+
+                if (mp.y <= origin.y + mh) hi = mid;
+                else lo = mid;
+            }
+            hitPoint = ray.origin + ray.direction * ((lo + hi) * 0.5f);
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void EditorLayer::ApplyBrush(ECS::TerrainComponent* terrain,
+                              const ECS::TransformComponent* transform,
+                              const Math::Vector3& worldHit, f32 deltaTime) {
+    if (!terrain || terrain->heightmap.empty()) return;
+
+    Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+
+    // Convert hit to grid coordinates
+    f32 localX = worldHit.x - origin.x;
+    f32 localZ = worldHit.z - origin.z;
+    f32 centerGX = localX / terrain->cellSize;
+    f32 centerGZ = localZ / terrain->cellSize;
+
+    f32 radiusCells = m_TerrainBrush.radius / terrain->cellSize;
+    i32 minX = static_cast<i32>(std::floor(centerGX - radiusCells));
+    i32 maxX = static_cast<i32>(std::ceil(centerGX + radiusCells));
+    i32 minZ = static_cast<i32>(std::floor(centerGZ - radiusCells));
+    i32 maxZ = static_cast<i32>(std::ceil(centerGZ + radiusCells));
+
+    minX = std::max(minX, 0);
+    maxX = std::min(maxX, static_cast<i32>(terrain->gridWidth) - 1);
+    minZ = std::max(minZ, 0);
+    maxZ = std::min(maxZ, static_cast<i32>(terrain->gridHeight) - 1);
+
+    // For Smooth mode: pre-compute neighbor averages
+    std::vector<f32> avgCache;
+    if (m_TerrainBrush.mode == TerrainBrushMode::Smooth) {
+        usize count = static_cast<usize>((maxX - minX + 1)) * (maxZ - minZ + 1);
+        avgCache.resize(count);
+        for (i32 z = minZ; z <= maxZ; ++z) {
+            for (i32 x = minX; x <= maxX; ++x) {
+                f32 sum = 0.0f;
+                i32 n = 0;
+                for (i32 dz = -1; dz <= 1; ++dz) {
+                    for (i32 dx = -1; dx <= 1; ++dx) {
+                        i32 nx = x + dx, nz = z + dz;
+                        if (nx >= 0 && nx < static_cast<i32>(terrain->gridWidth) &&
+                            nz >= 0 && nz < static_cast<i32>(terrain->gridHeight)) {
+                            sum += terrain->GetHeight(static_cast<u32>(nx), static_cast<u32>(nz));
+                            ++n;
+                        }
+                    }
+                }
+                usize idx = static_cast<usize>((z - minZ) * (maxX - minX + 1) + (x - minX));
+                avgCache[idx] = (n > 0) ? sum / static_cast<f32>(n) : 0.0f;
+            }
+        }
+    }
+
+    for (i32 z = minZ; z <= maxZ; ++z) {
+        for (i32 x = minX; x <= maxX; ++x) {
+            f32 dx = static_cast<f32>(x) - centerGX;
+            f32 dz = static_cast<f32>(z) - centerGZ;
+            f32 dist = std::sqrt(dx * dx + dz * dz);
+
+            if (dist > radiusCells) continue;
+
+            // Smoothstep falloff
+            f32 t = dist / radiusCells;
+            f32 smoothT = t * t * (3.0f - 2.0f * t);  // smoothstep(0, 1, t)
+            f32 weight = m_TerrainBrush.strength * (1.0f - smoothT * m_TerrainBrush.falloff);
+
+            u32 ux = static_cast<u32>(x);
+            u32 uz = static_cast<u32>(z);
+            f32 h = terrain->GetHeight(ux, uz);
+
+            switch (m_TerrainBrush.mode) {
+                case TerrainBrushMode::Raise:
+                    h += weight * deltaTime;
+                    break;
+                case TerrainBrushMode::Lower:
+                    h -= weight * deltaTime;
+                    break;
+                case TerrainBrushMode::Flatten: {
+                    f32 diff = m_TerrainBrush.flattenHeight - h;
+                    h += diff * weight * deltaTime;
+                    break;
+                }
+                case TerrainBrushMode::Smooth: {
+                    usize idx = static_cast<usize>((z - minZ) * (maxX - minX + 1) + (x - minX));
+                    f32 avg = avgCache[idx];
+                    h += (avg - h) * weight * deltaTime;
+                    break;
+                }
+                case TerrainBrushMode::Paint: {
+                    // Paint splatmap instead of modifying height
+                    usize cellIdx = static_cast<usize>(uz) * terrain->gridWidth + ux;
+                    usize splatBase = cellIdx * 4;
+                    if (splatBase + 3 < terrain->splatmap.size()) {
+                        terrain->splatmap[splatBase + m_TerrainBrush.paintLayer] += weight * deltaTime;
+                        // Normalize weights so they sum to 1
+                        f32 total = 0.0f;
+                        for (u32 l = 0; l < 4; ++l)
+                            total += terrain->splatmap[splatBase + l];
+                        if (total > 0.0f) {
+                            for (u32 l = 0; l < 4; ++l)
+                                terrain->splatmap[splatBase + l] /= total;
+                        }
+                    }
+                    terrain->meshDirty = true;
+                    continue;  // Skip SetHeight for paint mode
+                }
+            }
+
+            h = std::max(0.0f, std::min(terrain->maxHeight, h));
+            terrain->SetHeight(ux, uz, h);
+        }
+    }
+}
+
+void EditorLayer::ApplyBrush2D(ECS::Terrain2DComponent* terrain2d,
+                                const ECS::TransformComponent* transform,
+                                const Math::Vector3& worldHit) {
+    if (!terrain2d || terrain2d->controlPoints.empty()) return;
+
+    Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+    f32 localX = worldHit.x - origin.x;
+    f32 localY = worldHit.y - origin.y;
+
+    f32 grabRadius = m_TerrainBrush.radius;
+
+    if (Input::IsMouseButtonPressed(MouseButton::Left)) {
+        // Find nearest control point
+        f32 bestDist = grabRadius;
+        m_Dragging2DPoint = -1;
+        for (usize i = 0; i < terrain2d->controlPoints.size(); ++i) {
+            f32 dx = terrain2d->controlPoints[i].x - localX;
+            f32 dy = terrain2d->controlPoints[i].y - localY;
+            f32 d = std::sqrt(dx * dx + dy * dy);
+            if (d < bestDist) {
+                bestDist = d;
+                m_Dragging2DPoint = static_cast<i32>(i);
+            }
+        }
+    }
+
+    if (m_Dragging2DPoint >= 0 && Input::IsMouseButtonDown(MouseButton::Left)) {
+        if (m_Dragging2DPoint < static_cast<i32>(terrain2d->controlPoints.size())) {
+            terrain2d->controlPoints[static_cast<usize>(m_Dragging2DPoint)] =
+                Math::Vector2(localX, localY);
+            terrain2d->SortPoints();
+            terrain2d->meshDirty = true;
+        }
+    }
+
+    if (Input::IsMouseButtonReleased(MouseButton::Left)) {
+        m_Dragging2DPoint = -1;
+    }
+}
+
+void EditorLayer::HandleTerrainBrush(f32 deltaTime) {
+    if (!m_World || !m_Camera || !m_Renderer) return;
+    if (WantsMouseInput()) return;
+
+    // Determine which terrain entity we're editing
+    ECS::Entity target = m_PrimarySelected;
+    if (target == ECS::INVALID_ENTITY) {
+        m_BrushHitValid = false;
+        return;
+    }
+
+    auto* terrain3D = m_World->GetComponent<ECS::TerrainComponent>(target);
+    auto* terrain2D = m_World->GetComponent<ECS::Terrain2DComponent>(target);
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(target);
+
+    if (!terrain3D && !terrain2D) {
+        m_BrushHitValid = false;
+        return;
+    }
+
+    Math::Vector2 mousePos = Input::GetMousePosition();
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (extent.width == 0 || extent.height == 0) return;
+
+    Ray ray = ScenePicker::ScreenToRay(m_Camera, mousePos.x, mousePos.y,
+                                        static_cast<f32>(extent.width),
+                                        static_cast<f32>(extent.height));
+
+    if (terrain3D) {
+        Math::Vector3 hitPoint;
+        if (RaycastTerrain(ray, terrain3D, transform, hitPoint)) {
+            m_BrushHitPoint = hitPoint;
+            m_BrushHitValid = true;
+
+            if (Input::IsMouseButtonPressed(MouseButton::Left)) {
+                m_BrushActive = true;
+            }
+
+            if (m_BrushActive && Input::IsMouseButtonDown(MouseButton::Left)) {
+                ApplyBrush(terrain3D, transform, hitPoint, deltaTime);
+            }
+        } else {
+            m_BrushHitValid = false;
+        }
+
+        if (Input::IsMouseButtonReleased(MouseButton::Left)) {
+            m_BrushActive = false;
+        }
+    } else if (terrain2D) {
+        // Raycast to XY plane (Z = entity Z position)
+        Math::Vector3 origin = transform ? transform->position : Math::Vector3(0.0f);
+        f32 planeZ = origin.z;
+
+        if (std::abs(ray.direction.z) > 1e-6f) {
+            f32 t = (planeZ - ray.origin.z) / ray.direction.z;
+            if (t > 0.0f) {
+                Math::Vector3 hitPoint = ray.origin + ray.direction * t;
+                m_BrushHitPoint = hitPoint;
+                m_BrushHitValid = true;
+                ApplyBrush2D(terrain2D, transform, hitPoint);
+            } else {
+                m_BrushHitValid = false;
+            }
+        } else {
+            m_BrushHitValid = false;
+        }
+    }
 }
 
 } // namespace Editor

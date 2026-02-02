@@ -83,6 +83,11 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<Platformer2DController>(entity) &&
             m_World->HasComponent<TransformComponent>(entity)) {
+            // Skip unpossessed entities
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
             auto* controller = m_World->GetComponent<Platformer2DController>(entity);
             auto* transform = m_World->GetComponent<TransformComponent>(entity);
             if (controller->isEnabled) {
@@ -95,6 +100,10 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<TopDown2DController>(entity) &&
             m_World->HasComponent<TransformComponent>(entity)) {
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
             auto* controller = m_World->GetComponent<TopDown2DController>(entity);
             auto* transform = m_World->GetComponent<TransformComponent>(entity);
             if (controller->isEnabled) {
@@ -107,6 +116,10 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<TopDown3DController>(entity) &&
             m_World->HasComponent<TransformComponent>(entity)) {
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
             auto* controller = m_World->GetComponent<TopDown3DController>(entity);
             auto* transform = m_World->GetComponent<TransformComponent>(entity);
             if (controller->isEnabled) {
@@ -119,6 +132,10 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<ThirdPersonController>(entity) &&
             m_World->HasComponent<TransformComponent>(entity)) {
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
             auto* controller = m_World->GetComponent<ThirdPersonController>(entity);
             auto* transform = m_World->GetComponent<TransformComponent>(entity);
             if (controller->isEnabled) {
@@ -131,10 +148,30 @@ void ControllerSystem::Update(f32 deltaTime) {
     for (Entity entity : m_World->GetAllEntities()) {
         if (m_World->HasComponent<FirstPersonController>(entity) &&
             m_World->HasComponent<TransformComponent>(entity)) {
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
             auto* controller = m_World->GetComponent<FirstPersonController>(entity);
             auto* transform = m_World->GetComponent<TransformComponent>(entity);
             if (controller->isEnabled) {
                 UpdateFirstPerson(entity, *controller, *transform, deltaTime);
+            }
+        }
+    }
+
+    // Update all Vehicle controllers
+    for (Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<VehicleController>(entity) &&
+            m_World->HasComponent<TransformComponent>(entity)) {
+            if (m_World->HasComponent<PossessableComponent>(entity)) {
+                auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+                if (!possess->isPossessed) continue;
+            }
+            auto* controller = m_World->GetComponent<VehicleController>(entity);
+            auto* transform = m_World->GetComponent<TransformComponent>(entity);
+            if (controller->isEnabled) {
+                UpdateVehicle(entity, *controller, *transform, deltaTime);
             }
         }
     }
@@ -772,8 +809,16 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         moveMag = 1.0f;
     }
 
-    // Calculate speed
+    // Calculate speed (check stamina if ResourceComponent exists)
     ctrl.isSprinting = IsSprintHeld() && moveMag > 0.1f;
+    if (ctrl.isSprinting && m_World) {
+        auto* resource = m_World->GetComponent<ResourceComponent>(entity);
+        if (resource && (resource->depleted || resource->currentValue <= 0.0f)) {
+            ctrl.isSprinting = false;
+        } else if (resource && ctrl.isSprinting) {
+            resource->TryConsume(resource->sprintCostPerSec * dt);
+        }
+    }
     f32 speed = ctrl.moveSpeed;
     if (ctrl.isSprinting) {
         speed *= ctrl.sprintMultiplier;
@@ -864,11 +909,15 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
     (void)entity;
 
     // Mouse look
+    // In dungeon crawler mode, yaw is locked to snap turns — only allow pitch
     if (!ctrl.disableMouseLook) {
+        bool lockYaw = ctrl.dungeonCrawlerMode && ctrl.gridMovement;
         if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Left)) {
             Math::Vector2 mouseDelta = Input::GetMouseDelta();
 
-            ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
+            if (!lockYaw) {
+                ctrl.yaw -= mouseDelta.x * ctrl.mouseSensitivity;
+            }
             if (ctrl.invertY) {
                 ctrl.pitch -= mouseDelta.y * ctrl.mouseSensitivity;
             } else {
@@ -881,7 +930,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
             Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
             if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
-                ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                if (!lockYaw) {
+                    ctrl.yaw -= rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                }
                 if (ctrl.invertY) {
                     ctrl.pitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
                 } else {
@@ -913,9 +964,9 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 if (!ctrl.snapTurnPending) {
                     ctrl.snapTurnPending = true;
                     if (input.x < 0.0f) {
-                        ctrl.yaw += ctrl.snapTurnAngle;  // Turn left
+                        ctrl.yaw -= ctrl.snapTurnAngle;  // Turn left (A key)
                     } else {
-                        ctrl.yaw -= ctrl.snapTurnAngle;  // Turn right
+                        ctrl.yaw += ctrl.snapTurnAngle;  // Turn right (D key)
                     }
                     // Normalize yaw to 0-360
                     while (ctrl.yaw < 0.0f) ctrl.yaw += 360.0f;
@@ -1045,8 +1096,16 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         moveMag = 1.0f;
     }
 
-    // Calculate speed
+    // Calculate speed (check stamina if ResourceComponent exists)
     ctrl.isSprinting = IsSprintHeld() && moveMag > 0.1f && !ctrl.isCrouching;
+    if (ctrl.isSprinting && m_World) {
+        auto* resource = m_World->GetComponent<ResourceComponent>(entity);
+        if (resource && (resource->depleted || resource->currentValue <= 0.0f)) {
+            ctrl.isSprinting = false; // Can't sprint without stamina
+        } else if (resource && ctrl.isSprinting) {
+            resource->TryConsume(resource->sprintCostPerSec * dt);
+        }
+    }
     f32 speed = ctrl.moveSpeed;
     if (ctrl.isSprinting) {
         speed *= ctrl.sprintMultiplier;
@@ -1066,8 +1125,17 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
         ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
     }
 
-    // Jumping
+    // Jumping (check stamina cost)
     if (IsJumpPressed() && ctrl.isGrounded && !ctrl.isCrouching) {
+        bool canJump = true;
+        if (m_World) {
+            auto* resource = m_World->GetComponent<ResourceComponent>(entity);
+            if (resource && resource->jumpCost > 0.0f) {
+                canJump = resource->TryConsume(resource->jumpCost);
+            }
+        }
+        if (!canJump) {} // Skip jump
+        else
         ctrl.velocity.y = ctrl.jumpForce;
         ctrl.isJumping = true;
         ctrl.isGrounded = false;
@@ -1125,6 +1193,176 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
 
     // Update entity rotation to match yaw (body rotation)
     transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.yaw));
+}
+
+void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt) {
+    (void)entity;
+
+    Math::Vector2 input = GetMovementInput(ctrl);
+    bool handbrakeInput = IsJumpPressed();
+
+    // --- Throttle / Brake ---
+    f32 throttle = input.y;   // W/S or left stick Y
+    f32 steerInput = input.x; // A/D or left stick X
+
+    // Determine braking: pressing opposite direction to current speed, or handbrake
+    ctrl.handbrake = handbrakeInput;
+    ctrl.isBraking = false;
+    ctrl.isReversing = false;
+
+    if (ctrl.handbrake) {
+        // Handbrake: strong deceleration, reduced drift factor for skidding
+        ctrl.isBraking = true;
+        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * 1.5f * dt);
+    } else if (throttle > 0.01f) {
+        // Forward throttle
+        if (ctrl.currentSpeed < 0.0f) {
+            // Currently reversing, apply brake first
+            ctrl.isBraking = true;
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * dt);
+        } else {
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, ctrl.maxSpeed * throttle, ctrl.acceleration * dt);
+        }
+    } else if (throttle < -0.01f) {
+        // Reverse / brake
+        if (ctrl.currentSpeed > 0.5f) {
+            // Moving forward: treat as brake
+            ctrl.isBraking = true;
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.brakeForce * dt);
+        } else {
+            // Slow enough: allow reverse
+            ctrl.isReversing = true;
+            ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, -ctrl.reverseMaxSpeed * (-throttle), ctrl.acceleration * 0.5f * dt);
+        }
+    } else {
+        // No input: engine brake (coast to stop)
+        ctrl.currentSpeed = Math::MoveTowards(ctrl.currentSpeed, 0.0f, ctrl.engineBrake * dt);
+    }
+
+    // --- Steering ---
+    if (Math::Abs(steerInput) > 0.01f) {
+        ctrl.currentSteerAngle = Math::MoveTowards(ctrl.currentSteerAngle,
+            ctrl.maxSteerAngle * steerInput, ctrl.steerSpeed * dt);
+    } else {
+        // Auto-center steering
+        ctrl.currentSteerAngle = Math::MoveTowards(ctrl.currentSteerAngle, 0.0f, ctrl.steerReturnSpeed * dt);
+    }
+
+    // Reduce max steer at high speed for stability
+    f32 speedFactor = Math::Clamp(Math::Abs(ctrl.currentSpeed) / ctrl.maxSpeed, 0.0f, 1.0f);
+    f32 effectiveSteer = ctrl.currentSteerAngle * (1.0f - speedFactor * 0.5f);
+
+    // --- Bicycle model (Ackermann approximation) ---
+    // turning radius = wheelBase / tan(steerAngle)
+    // angular velocity = speed / turningRadius = speed * tan(steerAngle) / wheelBase
+    f32 steerRad = Math::Radians(effectiveSteer);
+    f32 angularVelocity = 0.0f;
+    if (Math::Abs(steerRad) > 0.001f) {
+        angularVelocity = ctrl.currentSpeed * std::tan(steerRad) / ctrl.wheelBase;
+    }
+
+    // Update heading
+    ctrl.heading += Math::Degrees(angularVelocity * dt);
+    // Normalize heading to 0-360
+    while (ctrl.heading < 0.0f) ctrl.heading += 360.0f;
+    while (ctrl.heading >= 360.0f) ctrl.heading -= 360.0f;
+
+    // Compute forward direction from heading
+    f32 headingRad = Math::Radians(ctrl.heading);
+    ctrl.forwardDir = Math::Vector3(-Math::Sin(headingRad), 0.0f, -Math::Cos(headingRad));
+
+    // --- Lateral velocity damping (drift) ---
+    // Decompose velocity into forward and lateral components
+    Math::Vector3 velocityWorld = ctrl.forwardDir * ctrl.currentSpeed;
+
+    // Right vector (perpendicular to forward on XZ plane)
+    Math::Vector3 rightDir(ctrl.forwardDir.z, 0.0f, -ctrl.forwardDir.x);
+
+    // Project current velocity onto forward and right
+    Math::Vector3 currentVel = ctrl.velocity;
+    f32 forwardVel = currentVel.x * ctrl.forwardDir.x + currentVel.z * ctrl.forwardDir.z;
+    f32 lateralVel = currentVel.x * rightDir.x + currentVel.z * rightDir.z;
+
+    // Damp lateral velocity (driftFactor: 1.0 = full grip, 0.0 = ice)
+    f32 driftDamp = ctrl.handbrake ? ctrl.driftFactor * 0.3f : ctrl.driftFactor;
+    lateralVel *= std::pow(1.0f - driftDamp, dt * 60.0f);
+
+    // Detect drifting
+    ctrl.isDrifting = Math::Abs(lateralVel) > 1.0f;
+
+    // Reconstruct velocity from forward speed + damped lateral
+    ctrl.velocity.x = ctrl.forwardDir.x * ctrl.currentSpeed + rightDir.x * lateralVel;
+    ctrl.velocity.y = 0.0f;
+    ctrl.velocity.z = ctrl.forwardDir.z * ctrl.currentSpeed + rightDir.z * lateralVel;
+    ctrl.lateralVelocity = rightDir * lateralVel;
+
+    // --- Apply position ---
+    transform.position.x += ctrl.velocity.x * dt;
+    transform.position.z += ctrl.velocity.z * dt;
+
+    // Ground check (keep on ground)
+    f32 groundY = 0.0f;
+    if (CheckGround(transform.position, groundY) && transform.position.y <= groundY + 0.1f) {
+        transform.position.y = groundY;
+        ctrl.isGrounded = true;
+    } else {
+        ctrl.isGrounded = false;
+    }
+
+    // --- Body rotation (heading + visual roll/pitch) ---
+    f32 rollAngle = 0.0f;
+    f32 pitchAngle = 0.0f;
+    if (!m_ReducedMotion) {
+        // Body roll from steering (lean into turns)
+        rollAngle = -effectiveSteer / ctrl.maxSteerAngle * ctrl.bodyRollAmount * speedFactor;
+        // Body pitch from acceleration/braking
+        if (ctrl.isBraking) {
+            pitchAngle = ctrl.bodyPitchAmount * Math::Clamp(ctrl.currentSpeed / ctrl.maxSpeed, 0.0f, 1.0f);
+        } else if (Math::Abs(throttle) > 0.01f && ctrl.currentSpeed > 0.0f) {
+            pitchAngle = -ctrl.bodyPitchAmount * 0.5f * throttle;
+        }
+    }
+
+    // Compose rotation: yaw (heading) then pitch then roll
+    Math::Quaternion yawQ = Math::Quaternion(Math::Vector3(0, 1, 0), headingRad);
+    Math::Quaternion pitchQ = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(pitchAngle));
+    Math::Quaternion rollQ = Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(rollAngle));
+    transform.rotation = (yawQ * pitchQ * rollQ).Normalized();
+
+    // --- RPM (cosmetic, for sound/effects) ---
+    ctrl.currentRPM = Math::Abs(ctrl.currentSpeed) / ctrl.maxSpeed * 6000.0f;
+    if (ctrl.currentRPM < 800.0f) ctrl.currentRPM = 800.0f; // Idle RPM
+
+    // --- Camera: chase cam behind vehicle ---
+    {
+        // Camera position: behind and above the vehicle
+        Math::Vector3 camTargetPos = transform.position
+            - ctrl.forwardDir * ctrl.cameraDistance
+            + Math::Vector3(0.0f, ctrl.cameraHeight, 0.0f);
+
+        // Look-ahead: shift look target forward based on speed
+        Math::Vector3 lookTarget = transform.position
+            + ctrl.forwardDir * ctrl.cameraLookAhead * (ctrl.currentSpeed / ctrl.maxSpeed);
+        lookTarget.y += ctrl.cameraHeight * 0.3f;
+
+        // Smooth follow via lerp
+        Math::Vector3 currentCamPos = camTargetPos;
+        if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
+            auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
+            if (camTransform) currentCamPos = camTransform->position;
+        } else if (m_Camera) {
+            currentCamPos = m_Camera->GetPosition();
+        }
+
+        f32 lerpT = 1.0f - std::exp(-ctrl.cameraLerpSpeed * dt);
+        Math::Vector3 newCamPos = Math::Vector3(
+            currentCamPos.x + (camTargetPos.x - currentCamPos.x) * lerpT,
+            currentCamPos.y + (camTargetPos.y - currentCamPos.y) * lerpT,
+            currentCamPos.z + (camTargetPos.z - currentCamPos.z) * lerpT
+        );
+
+        UpdateGameCameraTransform(newCamPos, lookTarget, Math::Vector3(0, 1, 0));
+    }
 }
 
 } // namespace ECS

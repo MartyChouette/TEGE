@@ -10,6 +10,7 @@ struct WindowDesc {
     u32 width = 1280;
     u32 height = 720;
     const char* title = "Enjin Engine";
+    const char* iconPath = nullptr; // Path to PNG icon file (nullptr = no icon)
     bool resizable = true;
     bool fullscreen = false;
 };

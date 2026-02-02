@@ -15,6 +15,8 @@ namespace AI {
 // Forward declarations
 class AIAgent;
 class AIBehavior;
+class Pathfinder;
+class Navmesh;
 
 // ============================================================================
 // AI State - Base states for AI agents
@@ -297,8 +299,26 @@ public:
     // Entity ID
     u64 GetEntityId() const { return m_EntityId; }
 
+    // Navmesh pathfinding integration
+    void SetPathfinder(class Pathfinder* pathfinder) { m_Pathfinder = pathfinder; }
+    Pathfinder* GetPathfinder() const { return m_Pathfinder; }
+    void SetNavmesh(const class Navmesh* navmesh) { m_Navmesh = navmesh; }
+    const Navmesh* GetNavmesh() const { return m_Navmesh; }
+    bool HasNavmesh() const { return m_Navmesh != nullptr && m_Pathfinder != nullptr; }
+
+    /// Move to target using navmesh A* pathfinding when available, direct otherwise.
+    void MoveToNav(const Math::Vector3& target);
+
+    /// Check if currently following a navmesh path
+    bool IsFollowingNavPath() const { return m_HasNavPath; }
+
+    /// Get current navmesh path (for debug drawing)
+    const std::vector<Math::Vector3>& GetCurrentNavPath() const { return m_NavPathWaypoints; }
+    u32 GetCurrentNavWaypointIndex() const { return m_NavPathIndex; }
+
 private:
     void UpdateMovement(f32 deltaTime);
+    void UpdateNavPathMovement(f32 deltaTime);
 
     u64 m_EntityId = 0;
     Math::Vector3 m_Position;
@@ -310,6 +330,14 @@ private:
     Math::Vector3 m_MoveTarget;
     bool m_IsMoving = false;
     f32 m_CurrentSpeed = 0.0f;
+
+    // Navmesh path following
+    Pathfinder* m_Pathfinder = nullptr;
+    const Navmesh* m_Navmesh = nullptr;
+    std::vector<Math::Vector3> m_NavPathWaypoints;
+    u32 m_NavPathIndex = 0;
+    bool m_HasNavPath = false;
+    f32 m_NavArrivalRadius = 0.5f;
 
     // Target
     AITarget m_Target;

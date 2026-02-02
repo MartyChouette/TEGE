@@ -7,6 +7,7 @@
 #include <string>
 #include <array>
 #include <vector>
+#include <memory>
 
 namespace Enjin {
 namespace Renderer {
@@ -60,7 +61,7 @@ public:
 
 private:
     bool CreateCubemapImage(u32 faceSize);
-    void UploadFaces(const std::vector<u8*>& faceData, u32 faceSize);
+    void UploadFaces(const std::vector<std::unique_ptr<u8[]>>& faceData, u32 faceSize);
     bool CreateSampler();
     void DestroyImage();
 

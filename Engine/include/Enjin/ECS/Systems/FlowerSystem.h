@@ -3,12 +3,22 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/Math/Vector.h"
 #include "Enjin/Renderer/Camera.h"
+#include <vector>
 
 namespace Enjin {
 namespace ECS {
 
 class RenderSystem;
+
+// Particle spawned on tether break or ground impact
+struct FlowerParticle {
+    Entity entity = INVALID_ENTITY;
+    Math::Vector3 velocity;
+    f32 lifetime = 0.0f;
+    f32 maxLifetime = 1.0f;
+};
 
 class ENJIN_API FlowerSystem {
 public:
@@ -41,6 +51,12 @@ private:
     void UpdateTethers(f32 dt);
     void UpdateJellyMeshes(f32 dt);
     void CheckBreaks();
+    void UpdateBrokenParts(f32 dt);
+    void UpdateParticles(f32 dt);
+    void CheckGroundImpact();
+
+    void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color);
+    void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color);
 
     // Helper: project screen point to world plane at given depth facing camera
     Math::Vector3 ScreenToWorldOnPlane(f32 screenX, f32 screenY, f32 planeDepth);
@@ -60,6 +76,10 @@ private:
     // Current grab state
     Entity m_GrabbedEntity = INVALID_ENTITY;
     f32 m_GrabDepth = 0.0f;  // Distance from camera at grab time
+
+    // Particle entities (break bursts + ground splashes)
+    std::vector<FlowerParticle> m_Particles;
+    static constexpr usize MAX_PARTICLES = 100;
 };
 
 } // namespace ECS

@@ -45,6 +45,7 @@ private:
     void UpdateTopDown3D(Entity entity, TopDown3DController& controller, TransformComponent& transform, f32 dt);
     void UpdateThirdPerson(Entity entity, ThirdPersonController& controller, TransformComponent& transform, f32 dt);
     void UpdateFirstPerson(Entity entity, FirstPersonController& controller, TransformComponent& transform, f32 dt);
+    void UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt);
 
     // Helper methods
     Math::Vector2 GetMovementInput(const CharacterControllerBase& controller);

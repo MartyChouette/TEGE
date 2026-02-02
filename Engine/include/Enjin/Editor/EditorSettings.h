@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include <string>
+#include <vector>
 
 namespace Enjin {
 namespace Editor {
@@ -45,6 +46,14 @@ struct EditorSettings {
     u32 crouchMode = 0;      // 0=Hold, 1=Toggle
     f32 mouseSensitivity = 1.0f;
     u32 inputPreset = 0;     // 0=Default, 1=LeftHand, 2=RightHand, 3=GamepadOnly
+    bool rawMouseInput = true;
+    f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy
+
+    // Recent projects (most recent first, max 8)
+    std::vector<std::string> recentProjects;
+    static constexpr int MAX_RECENT_PROJECTS = 8;
+
+    void AddRecentProject(const std::string& path);
 
     // Save/Load
     bool Save(const std::string& path = "") const;
