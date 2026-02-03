@@ -21,6 +21,7 @@ public:
     using ResizeCallback = std::function<void(u32, u32)>;
     using FocusCallback = std::function<void(bool)>;
     using IconifyCallback = std::function<void(bool)>;
+    using DropCallback = std::function<void(int count, const char** paths)>;
 
     virtual ~Window() = default;
 
@@ -38,6 +39,7 @@ public:
     virtual void SetResizeCallback(const ResizeCallback& callback) = 0;
     virtual void SetFocusCallback(const FocusCallback& callback) = 0;
     virtual void SetIconifyCallback(const IconifyCallback& callback) = 0;
+    virtual void SetDropCallback(const DropCallback& callback) = 0;
 
     virtual bool IsFocused() const = 0;
     virtual bool IsIconified() const = 0;

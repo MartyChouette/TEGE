@@ -549,6 +549,11 @@ struct ParticleEmitterComponent {
     enum class SimulationSpace : u8 { World, Local };
     SimulationSpace simulationSpace = SimulationSpace::World;
 
+    // Render mode
+    enum class RenderMode : u8 { Billboard, VelocityStretch };
+    RenderMode renderMode = RenderMode::Billboard;
+    f32 velocityStretchScale = 0.0f;  // 0 = no stretch, 1 = normal, 2+ = exaggerated
+
     // Texture
     std::string texturePath;
     i32 textureSheetX = 1;         // Animation frames

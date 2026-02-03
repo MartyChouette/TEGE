@@ -145,6 +145,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         }
     });
 
+    // Register file drop callback for drag-and-drop import
+    if (m_Window) {
+        m_Window->SetDropCallback([this](int count, const char** paths) {
+            OnFileDrop(count, paths);
+        });
+    }
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
 }
@@ -12441,6 +12448,30 @@ void EditorLayer::ImportModel(const std::string& path) {
     }
 }
 
+void EditorLayer::OnFileDrop(int count, const char** paths) {
+    for (int i = 0; i < count; ++i) {
+        std::filesystem::path filePath(paths[i]);
+        std::string ext = filePath.extension().string();
+        // Case-insensitive extension comparison
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".glb" ||
+            ext == ".dae" || ext == ".3ds") {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop import: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop import: ") + paths[i]);
+            ImportModel(filePath.string());
+        } else if (ext == ".enjin") {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);
+            OpenScene(filePath.string());
+        } else {
+            ENJIN_LOG_WARN(Editor, "Unsupported file dropped: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Warn] Unsupported file type: ") + paths[i]);
+        }
+    }
+}
+
 bool EditorLayer::SceneHasMouseLookController() const {
     if (!m_World) return false;
     for (ECS::Entity entity : m_World->GetAllEntities()) {
@@ -18755,6 +18786,142 @@ static void ApplyParticlePreset(ECS::ParticleEmitterComponent& e, const std::str
         e.rotationSpeedVariance = 3.0f;
         e.loop = false;
         e.maxParticles = 256;
+    } else if (preset == "Water Splash") {
+        e.emissionRate = 0.0f;
+        e.burstCount = 40;
+        e.burstInterval = 0.0f;
+        e.lifetime = 0.8f;
+        e.lifetimeVariance = 0.2f;
+        e.startSpeed = 8.0f;
+        e.speedVariance = 3.0f;
+        e.startSize = 0.15f;
+        e.sizeMid = 0.2f;
+        e.endSize = 0.05f;
+        e.startColor = Math::Vector3(0.4f, 0.7f, 1.0f);
+        e.endColor = Math::Vector3(0.2f, 0.5f, 0.9f);
+        e.startAlpha = 0.9f;
+        e.endAlpha = 0.1f;
+        e.speedMultiplierMid = 0.6f;
+        e.speedMultiplierEnd = 0.1f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Hemisphere;
+        e.shapeRadius = 0.3f;
+        e.coneAngle = 45.0f;
+        e.gravity = Math::Vector3(0, -12.0f, 0);
+        e.drag = 0.3f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.loop = false;
+        e.maxParticles = 256;
+        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
+        e.velocityStretchScale = 1.5f;
+    } else if (preset == "Blood/Sap") {
+        e.emissionRate = 15.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 1.5f;
+        e.lifetimeVariance = 0.4f;
+        e.startSpeed = 3.0f;
+        e.speedVariance = 1.0f;
+        e.startSize = 0.12f;
+        e.sizeMid = 0.18f;
+        e.endSize = 0.06f;
+        e.startColor = Math::Vector3(0.6f, 0.05f, 0.05f);
+        e.endColor = Math::Vector3(0.3f, 0.0f, 0.0f);
+        e.startAlpha = 1.0f;
+        e.endAlpha = 0.3f;
+        e.speedMultiplierMid = 0.7f;
+        e.speedMultiplierEnd = 0.2f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
+        e.shapeRadius = 0.05f;
+        e.coneAngle = 20.0f;
+        e.gravity = Math::Vector3(0, -6.0f, 0);
+        e.drag = 2.0f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.maxParticles = 256;
+        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
+        e.velocityStretchScale = 2.0f;
+    } else if (preset == "Lava") {
+        e.emissionRate = 8.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 3.0f;
+        e.lifetimeVariance = 0.8f;
+        e.startSpeed = 2.0f;
+        e.speedVariance = 0.8f;
+        e.startSize = 0.6f;
+        e.sizeMid = 0.8f;
+        e.endSize = 0.3f;
+        e.startColor = Math::Vector3(1.0f, 0.5f, 0.0f);
+        e.endColor = Math::Vector3(0.4f, 0.05f, 0.0f);
+        e.startAlpha = 1.0f;
+        e.endAlpha = 0.6f;
+        e.speedMultiplierMid = 0.5f;
+        e.speedMultiplierEnd = 0.1f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Hemisphere;
+        e.shapeRadius = 0.5f;
+        e.coneAngle = 30.0f;
+        e.gravity = Math::Vector3(0, -2.0f, 0);
+        e.drag = 1.0f;
+        e.rotationSpeed = 0.2f;
+        e.rotationSpeedVariance = 0.3f;
+        e.maxParticles = 256;
+        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::Billboard;
+        e.velocityStretchScale = 0.0f;
+    } else if (preset == "Fountain") {
+        e.emissionRate = 40.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 2.0f;
+        e.lifetimeVariance = 0.3f;
+        e.startSpeed = 10.0f;
+        e.speedVariance = 2.0f;
+        e.startSize = 0.1f;
+        e.sizeMid = 0.15f;
+        e.endSize = 0.05f;
+        e.startColor = Math::Vector3(0.6f, 0.85f, 1.0f);
+        e.endColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        e.startAlpha = 0.8f;
+        e.endAlpha = 0.0f;
+        e.speedMultiplierMid = 0.5f;
+        e.speedMultiplierEnd = 0.1f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
+        e.shapeRadius = 0.1f;
+        e.coneAngle = 10.0f;
+        e.gravity = Math::Vector3(0, -9.8f, 0);
+        e.drag = 0.2f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.maxParticles = 512;
+        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
+        e.velocityStretchScale = 1.2f;
+    } else if (preset == "Drip") {
+        e.emissionRate = 2.0f;
+        e.burstCount = 0;
+        e.burstInterval = 0.0f;
+        e.lifetime = 2.5f;
+        e.lifetimeVariance = 0.5f;
+        e.startSpeed = 0.5f;
+        e.speedVariance = 0.2f;
+        e.startSize = 0.1f;
+        e.sizeMid = 0.15f;
+        e.endSize = 0.08f;
+        e.startColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        e.endColor = Math::Vector3(0.2f, 0.4f, 0.7f);
+        e.startAlpha = 0.9f;
+        e.endAlpha = 0.2f;
+        e.speedMultiplierMid = 1.5f;
+        e.speedMultiplierEnd = 2.0f;
+        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
+        e.shapeRadius = 0.02f;
+        e.coneAngle = 5.0f;
+        e.gravity = Math::Vector3(0, -9.8f, 0);
+        e.drag = 0.5f;
+        e.rotationSpeed = 0.0f;
+        e.rotationSpeedVariance = 0.0f;
+        e.maxParticles = 64;
+        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
+        e.velocityStretchScale = 2.5f;
     }
 }
 
@@ -18828,6 +18995,15 @@ void EditorLayer::DrawParticleEditorPanel() {
             if (i > 0) ImGui::SameLine();
             if (ImGui::Button(presets[i])) {
                 ApplyParticlePreset(*emitter, presets[i]);
+            }
+        }
+        ImGui::Spacing();
+        ImGui::TextDisabled("Liquids:");
+        const char* liquidPresets[] = { "Water Splash", "Blood/Sap", "Lava", "Fountain", "Drip" };
+        for (int i = 0; i < 5; ++i) {
+            if (i > 0) ImGui::SameLine();
+            if (ImGui::Button(liquidPresets[i])) {
+                ApplyParticlePreset(*emitter, liquidPresets[i]);
             }
         }
     }
@@ -19039,6 +19215,17 @@ void EditorLayer::DrawParticleEditorPanel() {
             emitter->gravity = Math::Vector3(grav[0], grav[1], grav[2]);
         }
         ImGui::DragFloat("Drag##pe", &emitter->drag, 0.01f, 0.0f, 10.0f);
+    }
+
+    if (ImGui::CollapsingHeader("Rendering##pe")) {
+        const char* renderModes[] = { "Billboard", "Velocity Stretch" };
+        int currentMode = static_cast<int>(emitter->renderMode);
+        if (ImGui::Combo("Render Mode##pe", &currentMode, renderModes, 2)) {
+            emitter->renderMode = static_cast<ECS::ParticleEmitterComponent::RenderMode>(currentMode);
+        }
+        if (emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch) {
+            ImGui::DragFloat("Stretch Scale##pe", &emitter->velocityStretchScale, 0.01f, 0.0f, 5.0f);
+        }
     }
 
     ImGui::End();

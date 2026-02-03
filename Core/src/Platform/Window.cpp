@@ -109,6 +109,10 @@ public:
         m_IconifyCallback = callback;
     }
 
+    void SetDropCallback(const DropCallback& callback) override {
+        m_DropCallback = callback;
+    }
+
     bool IsFocused() const override { return m_Focused; }
     bool IsIconified() const override { return m_Iconified; }
 
@@ -149,6 +153,13 @@ private:
                 }
             }
         });
+
+        glfwSetDropCallback(m_Window, [](GLFWwindow* window, int count, const char** paths) {
+            GLFWWindow* self = static_cast<GLFWWindow*>(glfwGetWindowUserPointer(window));
+            if (self && self->m_DropCallback) {
+                self->m_DropCallback(count, paths);
+            }
+        });
     }
 
     GLFWwindow* m_Window = nullptr;
@@ -157,6 +168,7 @@ private:
     ResizeCallback m_ResizeCallback;
     FocusCallback m_FocusCallback;
     IconifyCallback m_IconifyCallback;
+    DropCallback m_DropCallback;
     bool m_Focused = true;
     bool m_Iconified = false;
 };

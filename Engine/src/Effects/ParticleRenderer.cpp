@@ -199,15 +199,33 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
         const auto& pool = emitter->pool;
         if (!pool.initialized || pool.activeCount == 0) continue;
 
+        const bool velocityStretch = emitter->renderMode == ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
+        const f32 stretchScale = emitter->velocityStretchScale;
+
         for (u32 i = 0; i < pool.activeCount && m_InstanceDataCache.size() < MAX_PARTICLES; ++i) {
             const auto& p = pool.particles[i];
             ParticleInstanceData inst;
             inst.position = p.position;
             inst.size = p.size * 2.0f;
             inst.alpha = p.alpha;
-            inst.stretch = 1.0f;
-            inst.stretchDirX = 0.0f;
-            inst.stretchDirY = 0.0f;
+
+            if (velocityStretch && stretchScale > 0.0f) {
+                f32 velLen = p.velocity.Length();
+                inst.stretch = std::max(1.0f, velLen * stretchScale);
+                // Normalize velocity for stretch direction (Y-up default if near zero)
+                if (velLen > 0.001f) {
+                    inst.stretchDirX = p.velocity.x / velLen;
+                    inst.stretchDirY = p.velocity.y / velLen;
+                } else {
+                    inst.stretchDirX = 0.0f;
+                    inst.stretchDirY = 1.0f;
+                }
+            } else {
+                inst.stretch = 1.0f;
+                inst.stretchDirX = 0.0f;
+                inst.stretchDirY = 0.0f;
+            }
+
             m_InstanceDataCache.push_back(inst);
         }
     }

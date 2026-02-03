@@ -355,6 +355,7 @@ private:
 
     // Helper methods
     void ImportModel(const std::string& path);
+    void OnFileDrop(int count, const char** paths);
     void HandleViewportPicking();
     bool SceneHasMouseLookController() const;
     void DrawGizmos();

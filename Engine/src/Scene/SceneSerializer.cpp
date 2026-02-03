@@ -1350,6 +1350,8 @@ json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) 
     j["rotationSpeedVariance"] = pe.rotationSpeedVariance;
     j["maxParticles"] = pe.maxParticles;
     j["simulationSpace"] = static_cast<u8>(pe.simulationSpace);
+    j["renderMode"] = static_cast<u8>(pe.renderMode);
+    j["velocityStretchScale"] = pe.velocityStretchScale;
     return j;
 }
 
@@ -1387,6 +1389,11 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("rotationSpeedVariance")) pe.rotationSpeedVariance = j["rotationSpeedVariance"].get<f32>();
     if (j.contains("maxParticles")) pe.maxParticles = j["maxParticles"].get<u32>();
     if (j.contains("simulationSpace")) pe.simulationSpace = static_cast<ECS::ParticleEmitterComponent::SimulationSpace>(j["simulationSpace"].get<u8>());
+    if (j.contains("renderMode")) {
+        u8 rm = j["renderMode"].get<u8>();
+        if (rm <= 1) pe.renderMode = static_cast<ECS::ParticleEmitterComponent::RenderMode>(rm);
+    }
+    if (j.contains("velocityStretchScale")) pe.velocityStretchScale = j["velocityStretchScale"].get<f32>();
     return pe;
 }
 
