@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
@@ -154,6 +155,20 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
                     mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
                 }
+
+                // Resolve texture paths from glTF image URIs
+                auto resolveGltfTex = [&](i32 texIdx) -> std::string {
+                    if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
+                    const std::string& uri = scene.images[texIdx].uri;
+                    if (uri.empty()) return "";
+                    std::filesystem::path resolved = std::filesystem::path(scene.basePath) / uri;
+                    if (std::filesystem::exists(resolved)) return resolved.string();
+                    return uri;
+                };
+                mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
+                mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
+                mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
+                mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
             }
 
             // Auto-generate LODs for imported meshes with enough geometry
@@ -312,9 +327,12 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         }
     }
 
-    // Recursively create child entities
+    // Recursively create child entities with parent-child hierarchy
     for (i32 childIndex : node.children) {
-        CreateEntityFromNode(scene, childIndex, world, options, outEntities);
+        ECS::Entity childEntity = CreateEntityFromNode(scene, childIndex, world, options, outEntities);
+        if (childEntity != ECS::INVALID_ENTITY) {
+            ECS::SetParent(world, childEntity, entity);
+        }
     }
 
     return entity;
@@ -393,37 +411,44 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     transform.rotation = node.rotation;
     transform.scale = node.scale * options.scale;
 
-    // Add mesh component if node has a mesh
-    if (node.meshIndex >= 0 && node.meshIndex < static_cast<i32>(scene.meshes.size())) {
-        const AssimpMesh& assimpMesh = scene.meshes[node.meshIndex];
+    // Add mesh component if node has meshes
+    // Combine all meshes referenced by this node into one MeshComponent
+    const auto& meshIndices = node.meshIndices.empty()
+        ? (node.meshIndex >= 0 ? std::vector<i32>{node.meshIndex} : std::vector<i32>{})
+        : node.meshIndices;
 
-        // For simplicity, combine all primitives into one mesh component
+    if (!meshIndices.empty()) {
         ECS::MeshComponent meshComp;
 
         u32 vertexOffset = 0;
         i32 materialIndex = -1;
 
-        for (const auto& primitive : assimpMesh.primitives) {
-            // Track material index
-            if (materialIndex < 0 && primitive.materialIndex >= 0) {
-                materialIndex = primitive.materialIndex;
-            }
+        for (i32 meshIdx : meshIndices) {
+            if (meshIdx < 0 || meshIdx >= static_cast<i32>(scene.meshes.size())) continue;
+            const AssimpMesh& assimpMesh = scene.meshes[meshIdx];
 
-            // Add vertices
-            for (const auto& assimpVert : primitive.vertices) {
-                ECS::MeshComponent::Vertex vertex;
-                vertex.position = assimpVert.position;
-                vertex.normal = assimpVert.normal;
-                vertex.uv = assimpVert.texCoord;
-                meshComp.vertices.push_back(vertex);
-            }
+            for (const auto& primitive : assimpMesh.primitives) {
+                // Track material index
+                if (materialIndex < 0 && primitive.materialIndex >= 0) {
+                    materialIndex = primitive.materialIndex;
+                }
 
-            // Add indices (offset by current vertex count)
-            for (u32 index : primitive.indices) {
-                meshComp.indices.push_back(index + vertexOffset);
-            }
+                // Add vertices
+                for (const auto& assimpVert : primitive.vertices) {
+                    ECS::MeshComponent::Vertex vertex;
+                    vertex.position = assimpVert.position;
+                    vertex.normal = assimpVert.normal;
+                    vertex.uv = assimpVert.texCoord;
+                    meshComp.vertices.push_back(vertex);
+                }
 
-            vertexOffset += static_cast<u32>(primitive.vertices.size());
+                // Add indices (offset by current vertex count)
+                for (u32 index : primitive.indices) {
+                    meshComp.indices.push_back(index + vertexOffset);
+                }
+
+                vertexOffset += static_cast<u32>(primitive.vertices.size());
+            }
         }
 
         if (!meshComp.vertices.empty()) {
@@ -438,6 +463,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 if (v.position.y > maxBounds.y) maxBounds.y = v.position.y;
                 if (v.position.z > maxBounds.z) maxBounds.z = v.position.z;
             }
+
+            ENJIN_LOG_INFO(Asset, "Assimp mesh '%s': %zu vertices, %zu indices, bounds [%.1f,%.1f,%.1f]-[%.1f,%.1f,%.1f] (size %.1fx%.1fx%.1f)",
+                name.c_str(), meshComp.vertices.size(), meshComp.indices.size(),
+                minBounds.x, minBounds.y, minBounds.z,
+                maxBounds.x, maxBounds.y, maxBounds.z,
+                maxBounds.x - minBounds.x, maxBounds.y - minBounds.y, maxBounds.z - minBounds.z);
 
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
@@ -463,6 +494,25 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 matComp.emissiveColor = assimpMat.emissiveFactor;
                 matComp.doubleSided = assimpMat.doubleSided;
 
+                // Resolve texture paths relative to model directory
+                auto resolveTexPath = [&](const std::string& texPath) -> std::string {
+                    if (texPath.empty()) return "";
+                    std::filesystem::path p(texPath);
+                    if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
+                    // Try relative to model's base directory
+                    std::filesystem::path resolved = std::filesystem::path(scene.basePath) / p;
+                    if (std::filesystem::exists(resolved)) return resolved.string();
+                    // Try just the filename in the base directory
+                    resolved = std::filesystem::path(scene.basePath) / p.filename();
+                    if (std::filesystem::exists(resolved)) return resolved.string();
+                    return texPath; // Return as-is, RenderSystem will attempt to load
+                };
+
+                matComp.baseColorTexturePath = resolveTexPath(assimpMat.baseColorTexture);
+                matComp.normalTexturePath = resolveTexPath(assimpMat.normalTexture);
+                matComp.metallicRoughnessTexturePath = resolveTexPath(assimpMat.metallicRoughnessTexture);
+                matComp.emissiveTexturePath = resolveTexPath(assimpMat.emissiveTexture);
+
                 world->AddComponent<ECS::MaterialComponent>(entity, matComp);
             }
 
@@ -475,9 +525,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
     }
 
-    // Recursively create child entities
+    // Recursively create child entities with parent-child hierarchy
     for (i32 childIndex : node.children) {
-        CreateEntityFromAssimpNode(scene, childIndex, world, options, outEntities);
+        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options, outEntities);
+        if (childEntity != ECS::INVALID_ENTITY) {
+            ECS::SetParent(world, childEntity, entity);
+        }
     }
 
     return entity;

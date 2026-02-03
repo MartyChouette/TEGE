@@ -3,6 +3,10 @@
 #include "Enjin/Core/Assert.h"
 #include <cstring>
 #include <cmath>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 // stb_image for image loading
 #define STB_IMAGE_IMPLEMENTATION
@@ -21,8 +25,26 @@ VulkanImage::~VulkanImage() {
 
 bool VulkanImage::LoadFromFile(const std::string& filepath) {
     int width, height, channels;
-    stbi_uc* pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-    
+    stbi_uc* pixels = nullptr;
+
+#ifdef _WIN32
+    // Convert UTF-8 path to wide string for Unicode support on Windows
+    {
+        int wlen = MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, nullptr, 0);
+        if (wlen > 0) {
+            std::wstring wpath(wlen - 1, L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, filepath.c_str(), -1, wpath.data(), wlen);
+            FILE* f = _wfopen(wpath.c_str(), L"rb");
+            if (f) {
+                pixels = stbi_load_from_file(f, &width, &height, &channels, STBI_rgb_alpha);
+                fclose(f);
+            }
+        }
+    }
+#else
+    pixels = stbi_load(filepath.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+#endif
+
     if (!pixels) {
         ENJIN_LOG_ERROR(Renderer, "Failed to load image: %s", filepath.c_str());
         return false;

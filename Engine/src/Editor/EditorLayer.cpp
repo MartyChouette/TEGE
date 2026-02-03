@@ -2332,13 +2332,14 @@ void EditorLayer::DrawHierarchyPanel() {
     ImGui::Begin("Hierarchy", nullptr, flags);
 
     if (m_World) {
-        // Get all entities
+        // Only show root entities (no parent) at top level; children are drawn recursively
         const auto& entities = m_World->GetAllEntities();
 
         for (ECS::Entity entity : entities) {
-            std::string name;
+            // Skip entities that have a parent — they'll be drawn under their parent
+            if (ECS::HasParent(m_World, entity)) continue;
 
-            // Use name component if available
+            std::string name;
             if (m_World->HasComponent<ECS::NameComponent>(entity)) {
                 name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
             } else {
@@ -2348,6 +2349,15 @@ void EditorLayer::DrawHierarchyPanel() {
             }
 
             DrawEntityNode(entity, name);
+        }
+
+        // Drop target for the empty area — unparent entities dropped here
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+                ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
+                ECS::SetParent(m_World, droppedEntity, ECS::INVALID_ENTITY);
+            }
+            ImGui::EndDragDropTarget();
         }
 
         // Right-click context menu
@@ -2382,32 +2392,36 @@ void EditorLayer::DrawHierarchyPanel() {
 }
 
 void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
-    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
-                               ImGuiTreeNodeFlags_SpanAvailWidth |
-                               ImGuiTreeNodeFlags_Leaf; // No children for now
+    // Check if this entity has children
+    auto childEntities = ECS::GetChildren(m_World, entity);
+    bool hasChildren = !childEntities.empty();
 
+    ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow |
+                               ImGuiTreeNodeFlags_SpanAvailWidth;
+
+    if (!hasChildren) {
+        flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+    }
     if (IsSelected(entity)) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", name.c_str());
 
+    // Click handling
     if (ImGui::IsItemClicked() && !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
         bool shiftHeld = Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
 
         if (ctrlHeld) {
-            // Toggle selection
             if (IsSelected(entity)) {
                 DeselectEntity(entity);
             } else {
                 SelectEntity(entity, true);
             }
         } else if (shiftHeld && m_PrimarySelected != ECS::INVALID_ENTITY) {
-            // Range select
             SelectRange(m_PrimarySelected, entity);
         } else {
-            // Normal click - replace selection
             SelectEntity(entity);
         }
     }
@@ -2415,6 +2429,33 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     // Double-click to focus camera on entity
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         FocusOnEntity(entity);
+    }
+
+    // Drag source — start dragging this entity for reparenting
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        ImGui::SetDragDropPayload("ENTITY_REPARENT", &entity, sizeof(ECS::Entity));
+        ImGui::Text("%s", name.c_str());
+        ImGui::EndDragDropSource();
+    }
+
+    // Drop target — drop an entity onto this one to make it a child
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+            ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
+            // Prevent parenting to self or to own descendant
+            if (droppedEntity != entity) {
+                bool isDescendant = false;
+                ECS::Entity check = entity;
+                while (check != ECS::INVALID_ENTITY) {
+                    if (check == droppedEntity) { isDescendant = true; break; }
+                    check = ECS::GetParent(m_World, check);
+                }
+                if (!isDescendant) {
+                    ECS::SetParent(m_World, droppedEntity, entity);
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
     }
 
     // Context menu
@@ -2428,6 +2469,12 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         }
         if (ImGui::MenuItem("Focus", "F")) {
             FocusOnEntity(entity);
+        }
+        // Unparent option if entity has a parent
+        if (ECS::HasParent(m_World, entity)) {
+            if (ImGui::MenuItem("Unparent")) {
+                ECS::SetParent(m_World, entity, ECS::INVALID_ENTITY);
+            }
         }
         ImGui::Separator();
         if (ImGui::MenuItem("Save as Prefab...")) {
@@ -2455,7 +2502,19 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         ImGui::EndPopup();
     }
 
-    if (opened) {
+    // Recursively draw children if node is open
+    if (hasChildren && opened) {
+        for (ECS::Entity child : childEntities) {
+            std::string childName;
+            if (m_World->HasComponent<ECS::NameComponent>(child)) {
+                childName = m_World->GetComponent<ECS::NameComponent>(child)->name;
+            } else {
+                std::stringstream ss;
+                ss << "Entity " << child;
+                childName = ss.str();
+            }
+            DrawEntityNode(child, childName);
+        }
         ImGui::TreePop();
     }
 }
@@ -12436,9 +12495,10 @@ void EditorLayer::ImportModel(const std::string& path) {
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Imported %zu entities from %s", result.entities.size(), path.c_str());
 
-        // Select the root entity
+        // Select the root entity and focus camera on it
         if (result.rootEntity != ECS::INVALID_ENTITY) {
             SelectEntity(result.rootEntity);
+            FocusOnEntity(result.rootEntity);
         }
     } else {
         std::stringstream ss;
@@ -12465,6 +12525,59 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
             ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);
             OpenScene(filePath.string());
+        } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
+            // Assign texture to selected entity's material (or all mesh children if container)
+            ECS::Entity selected = m_PrimarySelected;
+            if (selected != ECS::INVALID_ENTITY && m_World) {
+                std::string texPath = filePath.string();
+
+                // Helper: assign texture to a single entity
+                auto assignTexture = [&](ECS::Entity e) {
+                    auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
+                    if (mat) {
+                        mat->baseColorTexturePath = texPath;
+                        mat->baseColorTexture = -1;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(texPath);
+                        return true;
+                    }
+                    if (m_World->HasComponent<ECS::MeshComponent>(e)) {
+                        auto& newMat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                        newMat.baseColorTexturePath = texPath;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(texPath);
+                        return true;
+                    }
+                    return false;
+                };
+
+                if (assignTexture(selected)) {
+                    ENJIN_LOG_INFO(Editor, "Assigned texture to entity %llu: %s",
+                        (unsigned long long)selected, paths[i]);
+                    m_ConsoleLog.push_back(std::string("[Info] Texture assigned: ") + paths[i]);
+                } else {
+                    // Selected entity has no mesh — walk all descendants and apply to mesh children
+                    int applied = 0;
+                    std::function<void(ECS::Entity)> walkChildren = [&](ECS::Entity e) {
+                        auto* ch = m_World->GetComponent<ECS::ChildrenComponent>(e);
+                        if (!ch) return;
+                        for (ECS::Entity child : ch->children) {
+                            if (assignTexture(child)) ++applied;
+                            walkChildren(child);
+                        }
+                    };
+                    walkChildren(selected);
+                    if (applied > 0) {
+                        ENJIN_LOG_INFO(Editor, "Assigned texture to %d mesh children: %s", applied, paths[i]);
+                        m_ConsoleLog.push_back(std::string("[Info] Texture assigned to ") +
+                            std::to_string(applied) + " mesh children: " + paths[i]);
+                    } else {
+                        ENJIN_LOG_WARN(Editor, "No mesh entities found for texture: %s", paths[i]);
+                        m_ConsoleLog.push_back(std::string("[Warn] Select a mesh entity first, then drop texture: ") + paths[i]);
+                    }
+                }
+            } else {
+                ENJIN_LOG_WARN(Editor, "No entity selected for texture drop: %s", paths[i]);
+                m_ConsoleLog.push_back(std::string("[Warn] Select an entity first, then drop texture: ") + paths[i]);
+            }
         } else {
             ENJIN_LOG_WARN(Editor, "Unsupported file dropped: %s", paths[i]);
             m_ConsoleLog.push_back(std::string("[Warn] Unsupported file type: ") + paths[i]);
@@ -12858,21 +12971,61 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
 
     // Calculate bounding size for appropriate distance
     f32 boundingSize = 2.0f;  // Default size
+    Math::Vector3 targetPos = transform->position;
 
-    // If entity has a mesh, estimate size from scale
-    if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
-        boundingSize = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z)) * 2.0f;
+    // If entity has a box collider, use its AABB for accurate sizing
+    if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
+        auto* collider = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
+        boundingSize = Math::Max(collider->size.x, Math::Max(collider->size.y, collider->size.z));
+        boundingSize *= Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+        f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+        targetPos = transform->position + collider->center * maxScale;
+    } else if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+        // Estimate from mesh vertices
+        auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+        if (mesh && mesh->IsValid()) {
+            Math::Vector3 minB(FLT_MAX, FLT_MAX, FLT_MAX);
+            Math::Vector3 maxB(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+            for (const auto& v : mesh->vertices) {
+                if (v.position.x < minB.x) minB.x = v.position.x;
+                if (v.position.y < minB.y) minB.y = v.position.y;
+                if (v.position.z < minB.z) minB.z = v.position.z;
+                if (v.position.x > maxB.x) maxB.x = v.position.x;
+                if (v.position.y > maxB.y) maxB.y = v.position.y;
+                if (v.position.z > maxB.z) maxB.z = v.position.z;
+            }
+            Math::Vector3 size = maxB - minB;
+            boundingSize = Math::Max(size.x, Math::Max(size.y, size.z));
+            boundingSize *= Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+            Math::Vector3 center = (minB + maxB) * 0.5f;
+            f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+            targetPos = transform->position + center * maxScale;
+        }
+    } else {
+        // Container node: scan children for mesh bounds
+        for (ECS::Entity child : m_World->GetAllEntities()) {
+            auto* childTransform = m_World->GetComponent<ECS::TransformComponent>(child);
+            auto* childCollider = m_World->GetComponent<ECS::BoxColliderComponent>(child);
+            if (childTransform && childCollider && child != entity) {
+                f32 childSize = Math::Max(childCollider->size.x, Math::Max(childCollider->size.y, childCollider->size.z));
+                childSize *= Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
+                if (childSize > boundingSize) {
+                    boundingSize = childSize;
+                    f32 childMaxScale = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
+                    targetPos = childTransform->position + childCollider->center * childMaxScale;
+                }
+            }
+        }
     }
+
+    if (boundingSize < 0.01f) boundingSize = 2.0f;
 
     // Calculate camera distance based on bounding size
     f32 distance = boundingSize * 2.5f;
-    distance = Math::Clamp(distance, 2.0f, 50.0f);
+    distance = Math::Clamp(distance, 2.0f, 200.0f);
 
     // Get current camera direction (maintain viewing angle)
     Math::Vector3 cameraForward = m_Camera->GetForward();
-
-    // Calculate new camera position
-    Math::Vector3 targetPos = transform->position;
     Math::Vector3 newCameraPos = targetPos - cameraForward * distance;
 
     // Set camera position and update orbit target

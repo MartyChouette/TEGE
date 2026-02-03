@@ -27,6 +27,7 @@
 #include "Enjin/Assets/FileWatcher.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <vector>
 
@@ -193,6 +194,9 @@ public:
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
 
+    // Clear a path from the failed texture cache so it will be retried on next load
+    void ClearFailedTexture(const std::string& path) { m_FailedTextures.erase(path); }
+
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
 
@@ -256,6 +260,7 @@ private:
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
     std::unordered_map<std::string, std::shared_ptr<Renderer::Texture>> m_TextureCache;
+    std::unordered_set<std::string> m_FailedTextures; // Paths that failed to load (avoid per-frame retry)
 
     // Text rendering
     Renderer::TextRasterizer m_TextRasterizer;

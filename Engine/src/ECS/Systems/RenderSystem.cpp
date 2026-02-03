@@ -2602,10 +2602,16 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         return it->second;
     }
 
+    // Check failed cache (avoid retrying broken paths every frame)
+    if (m_FailedTextures.count(path)) {
+        return nullptr;
+    }
+
     // Load new texture
     auto texture = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
     if (!texture->LoadFromFile(path)) {
-        ENJIN_LOG_WARN(Renderer, "Failed to load texture: %s", path.c_str());
+        ENJIN_LOG_WARN(Renderer, "Failed to load texture (will not retry): %s", path.c_str());
+        m_FailedTextures.insert(path);
         return nullptr;
     }
 

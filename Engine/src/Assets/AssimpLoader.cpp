@@ -206,31 +206,37 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     }
 
     // Process node hierarchy
+    // NOTE: We must use indices (not references) to access outScene.nodes after
+    // recursive calls, because emplace_back() can reallocate the vector and
+    // invalidate all references/pointers to its elements.
     std::function<i32(aiNode*, i32)> processNode = [&](aiNode* node, i32 parentIdx) -> i32 {
         i32 nodeIdx = static_cast<i32>(outScene.nodes.size());
         outScene.nodes.emplace_back();
-        AssimpNode& outNode = outScene.nodes.back();
 
-        outNode.name = node->mName.C_Str();
+        // Populate node data via index (safe across reallocation)
+        outScene.nodes[nodeIdx].name = node->mName.C_Str();
 
         // Decompose transformation matrix
         aiVector3D scale, position;
         aiQuaternion rotation;
         node->mTransformation.Decompose(scale, rotation, position);
 
-        outNode.translation = Math::Vector3(position.x, position.y, position.z);
-        outNode.rotation = Math::Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
-        outNode.scale = Math::Vector3(scale.x, scale.y, scale.z);
+        outScene.nodes[nodeIdx].translation = Math::Vector3(position.x, position.y, position.z);
+        outScene.nodes[nodeIdx].rotation = Math::Quaternion(rotation.x, rotation.y, rotation.z, rotation.w);
+        outScene.nodes[nodeIdx].scale = Math::Vector3(scale.x, scale.y, scale.z);
 
-        // Mesh reference (use first mesh if multiple)
-        if (node->mNumMeshes > 0) {
-            outNode.meshIndex = static_cast<i32>(node->mMeshes[0]);
+        // Mesh references (store all meshes for this node)
+        for (unsigned int m = 0; m < node->mNumMeshes; ++m) {
+            outScene.nodes[nodeIdx].meshIndices.push_back(static_cast<i32>(node->mMeshes[m]));
+        }
+        if (!outScene.nodes[nodeIdx].meshIndices.empty()) {
+            outScene.nodes[nodeIdx].meshIndex = outScene.nodes[nodeIdx].meshIndices[0];
         }
 
-        // Process children
+        // Process children (vector may reallocate, so always use index)
         for (unsigned int i = 0; i < node->mNumChildren; ++i) {
             i32 childIdx = processNode(node->mChildren[i], nodeIdx);
-            outNode.children.push_back(childIdx);
+            outScene.nodes[nodeIdx].children.push_back(childIdx);
         }
 
         return nodeIdx;

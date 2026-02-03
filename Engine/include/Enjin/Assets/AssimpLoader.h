@@ -52,7 +52,8 @@ struct AssimpMaterial {
 // Node in the scene hierarchy
 struct AssimpNode {
     std::string name;
-    i32 meshIndex = -1;
+    i32 meshIndex = -1;                    // Primary mesh (first mesh, for backward compat)
+    std::vector<i32> meshIndices;          // All meshes referenced by this node
     Math::Vector3 translation = Math::Vector3(0.0f);
     Math::Quaternion rotation = Math::Quaternion::Identity();
     Math::Vector3 scale = Math::Vector3(1.0f);
