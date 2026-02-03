@@ -213,6 +213,20 @@ struct PushConstants {
   - Inspector tree synced via `m_UIEditSelectedElementId`
   - Mutual exclusion with terrain/tilemap edit modes
 
+### Flower System
+
+- **`FlowerSystem`** (`Engine/include/Enjin/ECS/Systems/FlowerSystem.h`) — Play-mode system for interactive flower plucking gameplay
+  - Manages click-drag petal/leaf plucking via `GrabbableComponent` (ray-sphere picking in game view)
+  - `TetherComponent` spring physics connects parts to stem (`stemEntity` + `attachLocalPos`). Weakens spring to 0.2x when grabbed so parts stretch toward break
+  - `JellyMeshComponent` per-vertex spring deformation for organic feel. Mesh data cleared on break to prevent GPU buffer churn
+  - `FlowerStemComponent` tracks score (partsRemoved, healthyRemoved, witheredRemoved), `liquidIntensity` (0=off, 1=normal, 2=extra gush)
+  - `FlowerParticle` lightweight internal particles (no ECS entities — avoids Vulkan buffer race conditions). Rendered as projected ImGui shapes in game view overlay
+  - Liquid particles: green sap streaks (`isLiquid=true`) rendered as thick lines + head blobs. Squirt direction follows pull vector
+  - Break flow: entity hidden offscreen (scale=0, y=-100) on mouse release — NOT destroyed (keeps GPU buffers valid)
+  - Evaluate: computes final score from stem counters, locks display via `stem->evaluated` flag
+  - Inspector: `DrawFlowerStemComponent` with Healthy Bonus, Withered Penalty, Liquid Intensity slider + Off button
+  - Template: Flower Garden (stem + 10 petals + 5 leaves + crown + game camera + score display + sun light)
+
 ### Effects Systems
 
 - **`WeatherSystem`** - Rain, snow, fog, storm with lightning (global scene effect)
@@ -429,6 +443,8 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Particle Editor panel (7 presets, color gradient bar, size/speed curve visualization, shape preview, playback controls)
 - Per-scene rendering settings (SceneRenderSettings config struct, project-level defaults in .enjinproject, per-scene overrides in .enjin, play mode save/restore, Project Settings UI)
 - Shadow quality settings (resolution 512-4096, shadow distance 10-500, shadow strength 0-1, serialized per-scene)
+- Flower system (FlowerSystem: tether-based petal/leaf/crown attachment to stem, click-drag plucking, jelly mesh deformation, break detection, green sap liquid particles with streak rendering, configurable liquidIntensity, evaluate scoring, ImGui game view particle projection and button overlay)
+- Flower Garden startup template (stem + 10 petals + 5 leaves + crown + game camera + score display)
 
 ## AngelScript API Reference
 
