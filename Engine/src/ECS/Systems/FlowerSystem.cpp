@@ -387,6 +387,18 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
 void FlowerSystem::CheckBreaks() {
     if (!m_World) return;
 
+    // Collect break events first — spawning particles during iteration would
+    // create entities and invalidate the entity list iterator, causing a freeze.
+    struct BreakEvent {
+        Entity entity;
+        Math::Vector3 position;
+        Math::Vector3 color;
+        Entity stemEntity;
+        bool hasWitheredTag;
+        bool hasHealthyTag;
+    };
+    std::vector<BreakEvent> breaks;
+
     for (Entity entity : m_World->GetAllEntities()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
@@ -413,32 +425,32 @@ void FlowerSystem::CheckBreaks() {
                 // Keep isGrabbed = true so petal follows cursor
             }
 
-            // Spawn break particles at petal position
-            Math::Vector3 particleColor(1.0f, 1.0f, 1.0f);
+            BreakEvent evt;
+            evt.entity = entity;
+            evt.position = transform->position;
+            evt.color = Math::Vector3(1.0f, 1.0f, 1.0f);
             auto* mat = m_World->GetComponent<MaterialComponent>(entity);
-            if (mat) {
-                particleColor = mat->baseColor;
-            }
-            SpawnBreakParticles(transform->position, particleColor);
-
-            // Update FlowerStemComponent counters
-            auto* stemComp = m_World->GetComponent<FlowerStemComponent>(tether->stemEntity);
-            if (stemComp) {
-                stemComp->partsRemoved++;
-
-                // Check tags to determine healthy vs withered
-                auto* tags = m_World->GetComponent<TagComponent>(entity);
-                if (tags) {
-                    if (tags->HasTag("withered")) {
-                        stemComp->witheredRemoved++;
-                    } else if (tags->HasTag("healthy")) {
-                        stemComp->healthyRemoved++;
-                    }
-                }
-            }
-
-            ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)entity);
+            if (mat) evt.color = mat->baseColor;
+            evt.stemEntity = tether->stemEntity;
+            auto* tags = m_World->GetComponent<TagComponent>(entity);
+            evt.hasWitheredTag = tags && tags->HasTag("withered");
+            evt.hasHealthyTag = tags && tags->HasTag("healthy");
+            breaks.push_back(evt);
         }
+    }
+
+    // Now spawn particles and update counters outside the entity iteration
+    for (const auto& evt : breaks) {
+        SpawnBreakParticles(evt.position, evt.color);
+
+        auto* stemComp = m_World->GetComponent<FlowerStemComponent>(evt.stemEntity);
+        if (stemComp) {
+            stemComp->partsRemoved++;
+            if (evt.hasWitheredTag) stemComp->witheredRemoved++;
+            else if (evt.hasHealthyTag) stemComp->healthyRemoved++;
+        }
+
+        ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)evt.entity);
     }
 }
 
@@ -517,6 +529,15 @@ void FlowerSystem::UpdateParticles(f32 dt) {
 void FlowerSystem::CheckGroundImpact() {
     if (!m_World) return;
 
+    // Collect impact events first — spawning particles and removing components
+    // during iteration would invalidate the entity list iterator, causing a freeze.
+    struct ImpactEvent {
+        Entity entity;
+        Math::Vector3 position;
+        Math::Vector3 color;
+    };
+    std::vector<ImpactEvent> impacts;
+
     for (Entity entity : m_World->GetAllEntities()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || !tether->isBroken) continue;
@@ -534,17 +555,20 @@ void FlowerSystem::CheckGroundImpact() {
             rb->velocity = Math::Vector3(0, 0, 0);
             rb->useGravity = false;
 
-            // Spawn splash particles
-            Math::Vector3 splashColor(1.0f, 1.0f, 1.0f);
+            ImpactEvent evt;
+            evt.entity = entity;
+            evt.position = transform->position;
+            evt.color = Math::Vector3(1.0f, 1.0f, 1.0f);
             auto* mat = m_World->GetComponent<MaterialComponent>(entity);
-            if (mat) {
-                splashColor = mat->baseColor;
-            }
-            SpawnGroundSplash(transform->position, splashColor);
-
-            // Remove rigidbody so we don't keep checking
-            m_World->RemoveComponent<RigidbodyComponent>(entity);
+            if (mat) evt.color = mat->baseColor;
+            impacts.push_back(evt);
         }
+    }
+
+    // Spawn splash particles and remove rigidbodies outside the entity iteration
+    for (const auto& evt : impacts) {
+        SpawnGroundSplash(evt.position, evt.color);
+        m_World->RemoveComponent<RigidbodyComponent>(evt.entity);
     }
 }
 

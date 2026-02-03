@@ -300,6 +300,7 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
             } else {
                 extent = m_Renderer->GetSwapchainExtent();
             }
+            if (extent.width == 0 || extent.height == 0) return;
             VkViewport viewport{};
             viewport.x = 0.0f;
             viewport.y = 0.0f;

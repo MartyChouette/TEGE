@@ -2853,57 +2853,62 @@ void RenderSystem::EnsureWaterMeshes() {
 
 void RenderSystem::RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                            u32 viewportWidth, u32 viewportHeight) {
-    if (!m_WeatherRenderer || !m_Renderer || !m_Initialized) return;
+    if (!m_WeatherRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_WeatherRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, weather, isRain,
+    m_WeatherRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                              GetActiveBufferIndex(currentFrame), weather, isRain,
                               viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
-    if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+    if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_ParticleRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+    m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                               GetActiveBufferIndex(currentFrame), m_World,
                                viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
-    if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+    if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_GrassRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+    m_GrassRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                            GetActiveBufferIndex(currentFrame), m_World,
                             viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderShrubs(u32 viewportWidth, u32 viewportHeight) {
-    if (!m_ShrubRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+    if (!m_ShrubRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_ShrubRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+    m_ShrubRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                            GetActiveBufferIndex(currentFrame), m_World,
                             viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderTrees(u32 viewportWidth, u32 viewportHeight) {
-    if (!m_TreeRenderer || !m_Renderer || !m_Initialized || !m_World) return;
+    if (!m_TreeRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
     if (commandBuffer == VK_NULL_HANDLE) return;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
-    m_TreeRenderer->Render(commandBuffer, m_DescriptorSets, currentFrame, m_World,
+    m_TreeRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                           GetActiveBufferIndex(currentFrame), m_World,
                            viewportWidth, viewportHeight);
 }
 

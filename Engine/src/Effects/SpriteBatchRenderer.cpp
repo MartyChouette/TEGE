@@ -377,6 +377,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     } else {
         extent = m_Renderer->GetSwapchainExtent();
     }
+    if (extent.width == 0 || extent.height == 0) return;
 
     // Build instance data and batch by texture path
     m_InstanceDataCache.clear();

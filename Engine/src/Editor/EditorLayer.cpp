@@ -1297,6 +1297,39 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                         drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
                     }
                 }
+                // Grass volume wireframe (green)
+                if (m_World->HasComponent<ECS::GrassVolumeComponent>(entity)) {
+                    auto* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (grass && transform) {
+                        bool isSelected = IsSelected(entity);
+                        ImU32 color = isSelected ? IM_COL32(80, 200, 80, 200) : IM_COL32(80, 200, 80, 60);
+                        f32 thickness = isSelected ? 2.0f : 1.0f;
+                        drawWireBox(bgDrawList, transform->position, grass->halfExtents, color, thickness);
+                    }
+                }
+                // Shrub volume wireframe (yellow-green)
+                if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
+                    auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (shrub && transform) {
+                        bool isSelected = IsSelected(entity);
+                        ImU32 color = isSelected ? IM_COL32(160, 200, 60, 200) : IM_COL32(160, 200, 60, 60);
+                        f32 thickness = isSelected ? 2.0f : 1.0f;
+                        drawWireBox(bgDrawList, transform->position, shrub->halfExtents, color, thickness);
+                    }
+                }
+                // Tree volume wireframe (dark green)
+                if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
+                    auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (tree && transform) {
+                        bool isSelected = IsSelected(entity);
+                        ImU32 color = isSelected ? IM_COL32(40, 160, 40, 200) : IM_COL32(40, 160, 40, 60);
+                        f32 thickness = isSelected ? 2.0f : 1.0f;
+                        drawWireBox(bgDrawList, transform->position, tree->halfExtents, color, thickness);
+                    }
+                }
             }
         }
     }
