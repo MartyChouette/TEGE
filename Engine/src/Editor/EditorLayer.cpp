@@ -1007,9 +1007,6 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->RenderParticles(rtWidth, rtHeight);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
-        m_RenderSystem->RenderGrass(rtWidth, rtHeight);
-        m_RenderSystem->RenderShrubs(rtWidth, rtHeight);
-        m_RenderSystem->RenderTrees(rtWidth, rtHeight);
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }

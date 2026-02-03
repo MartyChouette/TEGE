@@ -957,10 +957,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderSprites();
 
     // Render effect passes (grass, shrubs, trees, particles)
-    RenderGrass(0, 0);
-    RenderShrubs(0, 0);
-    RenderTrees(0, 0);
-    RenderParticles(0, 0);
+    // Pass render target dimensions so vegetation renderers use the correct viewport
+    u32 targetW = target->GetWidth();
+    u32 targetH = target->GetHeight();
+    RenderGrass(targetW, targetH);
+    RenderShrubs(targetW, targetH);
+    RenderTrees(targetW, targetH);
+    RenderParticles(targetW, targetH);
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
