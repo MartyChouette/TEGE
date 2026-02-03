@@ -10005,10 +10005,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(petal);
             tether.stemEntity = stemEntity;
+            tether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
+            tether.tetherStiffness = 80.0f;
             tether.breakDistance = 1.5f;
             tether.tensionRamp = 2.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
-            grab.pullForce = 12.0f;
+            grab.pullForce = 50.0f;
         }
 
         // Leaves along the stem
@@ -10040,10 +10042,42 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(leaf);
             tether.stemEntity = stemEntity;
+            tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
+            tether.tetherStiffness = 60.0f;
             tether.breakDistance = 1.5f;
             tether.tensionRamp = 2.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
-            grab.pullForce = 15.0f;
+            grab.pullForce = 60.0f;
+        }
+
+        // Crown (central disc at stem top where petals radiate from)
+        {
+            ECS::Entity crown = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(crown, "Flower_Crown");
+            auto& crt = m_World->AddComponent<ECS::TransformComponent>(crown);
+            crt.position = Math::Vector3(0.0f, petalHeight, 0.0f);
+            crt.scale = Math::Vector3(0.25f, 0.1f, 0.25f);
+            auto& crmat = m_World->AddComponent<ECS::MaterialComponent>(crown);
+            crmat.baseColor = Math::Vector3(0.95f, 0.8f, 0.2f); // golden yellow
+            crmat.roughness = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(crown, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& crPickup = m_World->AddComponent<ECS::PickupComponent>(crown);
+            crPickup.type = ECS::PickupComponent::PickupType::Custom;
+            crPickup.value = 25.0f;
+            auto& crTag = m_World->AddComponent<ECS::TagComponent>(crown);
+            crTag.tags.push_back("healthy");
+
+            auto& crJelly = m_World->AddComponent<ECS::JellyMeshComponent>(crown);
+            crJelly.springStiffness = 100.0f;
+            crJelly.maxStretch = 0.6f;
+            auto& crTether = m_World->AddComponent<ECS::TetherComponent>(crown);
+            crTether.stemEntity = stemEntity;
+            crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
+            crTether.tetherStiffness = 100.0f;
+            crTether.breakDistance = 1.8f;
+            crTether.tensionRamp = 3.0f;
+            auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crown);
+            crGrab.pullForce = 40.0f;
         }
 
         // Camera
@@ -10084,7 +10118,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& tt = m_World->AddComponent<ECS::TransformComponent>(scoreText);
             tt.position = Math::Vector3(0.0f, 3.0f, 0.0f);
             auto& text = m_World->AddComponent<ECS::TextComponent>(scoreText);
-            text.text = "Petals: 0/10 | Leaves: 0/5 | Score: 0";
+            text.text = "Plucked: 0/16 | Score: 0";
             text.fontSize = 24.0f;
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
             auto& scoreTag = m_World->AddComponent<ECS::TagComponent>(scoreText);

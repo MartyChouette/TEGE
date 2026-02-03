@@ -238,12 +238,18 @@ void FlowerSystem::UpdateTethers(f32 dt) {
 
         Math::Vector3 direction = (distance > 1e-6f) ? delta * (1.0f / distance) : Math::Vector3(0, 1, 0);
 
-        // Spring force: pull back toward stem with non-linear ramp
-        f32 rampFactor = 1.0f + std::pow(stretch / tether->breakDistance, tether->tensionRamp);
-        Math::Vector3 springForce = direction * (-tether->tetherStiffness * stretch * rampFactor);
-
         // If grabbed, add pull force toward cursor
         auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
+
+        // Spring force: pull back toward stem with non-linear ramp
+        // Weaken spring when actively grabbed so the part stretches toward break
+        f32 effectiveStiffness = tether->tetherStiffness;
+        if (grab && grab->isGrabbed) {
+            effectiveStiffness *= 0.2f;
+        }
+        f32 rampFactor = 1.0f + std::pow(stretch / tether->breakDistance, tether->tensionRamp);
+        Math::Vector3 springForce = direction * (-effectiveStiffness * stretch * rampFactor);
+
         Math::Vector3 velocity(0, 0, 0);
 
         // Use rigidbody velocity if present, otherwise track implicitly via position
@@ -266,7 +272,7 @@ void FlowerSystem::UpdateTethers(f32 dt) {
             f32 heightFactor = Math::Clamp(transform->position.y / 2.0f, 0.1f, 1.0f);
             f32 phase = transform->position.x * 0.5f + transform->position.z * 0.3f + windVec.w * 2.0f;
             f32 sway = std::sin(phase) * heightFactor;
-            totalForce = totalForce + windForce * sway * 0.5f;
+            totalForce = totalForce + windForce * sway * 0.15f;
         }
 
         // Damping
