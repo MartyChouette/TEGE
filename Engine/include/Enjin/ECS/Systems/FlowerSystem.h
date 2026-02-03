@@ -21,6 +21,7 @@ struct FlowerParticle {
     f32 lifetime = 0.0f;
     f32 maxLifetime = 1.0f;
     f32 scale = 0.06f;
+    bool isLiquid = false;  // true = render as streak/droplet, false = round burst
 };
 
 class ENJIN_API FlowerSystem {
@@ -50,6 +51,9 @@ public:
     // Evaluate all flowers and update score displays
     void Evaluate();
 
+    // Access particles for rendering (EditorLayer projects these to screen)
+    const std::vector<FlowerParticle>& GetParticles() const { return m_Particles; }
+
 private:
     void ProcessInput();
     void UpdateTethers(f32 dt);
@@ -61,6 +65,8 @@ private:
 
     void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color);
     void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color);
+    void SpawnTensionDrip(const Math::Vector3& position, const Math::Vector3& color,
+                          f32 tension, const Math::Vector3& squirtDir, f32 intensity);
     void UpdateScoreDisplay();
 
     // Helper: project screen point to world plane at given depth facing camera
@@ -83,9 +89,10 @@ private:
     Entity m_GrabbedEntity = INVALID_ENTITY;
     f32 m_GrabDepth = 0.0f;  // Distance from camera at grab time
 
-    // Particle entities (break bursts + ground splashes)
+    // Lightweight particles (break bursts, ground splashes, tension drips)
     std::vector<FlowerParticle> m_Particles;
-    static constexpr usize MAX_PARTICLES = 100;
+    static constexpr usize MAX_PARTICLES = 300;
+    f32 m_DripAccumulator = 0.0f;
 };
 
 } // namespace ECS

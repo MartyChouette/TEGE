@@ -1385,40 +1385,6 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             m_GameViewImageMaxY - m_GameViewImageMinY);
     }
 
-    // Flower Evaluate button overlay in game view (during play mode)
-    if (m_PlayMode.IsPlaying() && m_World) {
-        bool hasFlowerStem = false;
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
-                hasFlowerStem = true;
-                break;
-            }
-        }
-        if (hasFlowerStem) {
-            f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
-            f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
-            if (gvW > 0 && gvH > 0) {
-                ImGui::SetNextWindowPos(ImVec2(m_GameViewImageMinX + gvW * 0.5f - 60.0f,
-                                               m_GameViewImageMaxY - 50.0f));
-                ImGui::SetNextWindowSize(ImVec2(120.0f, 36.0f));
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
-                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
-                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.75f));
-                if (ImGui::Begin("##FlowerEval", nullptr,
-                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
-                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
-                    ImGuiWindowFlags_NoSavedSettings)) {
-                    if (ImGui::Button("Evaluate", ImVec2(104.0f, 24.0f))) {
-                        m_PlayMode.GetFlowerSystem()->Evaluate();
-                    }
-                }
-                ImGui::End();
-                ImGui::PopStyleColor();
-                ImGui::PopStyleVar(2);
-            }
-        }
-    }
-
     // Render UI canvases during play mode (editor game view)
     if (m_PlayMode.IsPlaying()) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
@@ -6404,6 +6370,107 @@ void EditorLayer::DrawGameViewPanel() {
             ImVec2 dbgPos((p0.x + p1.x - dbgSize.x) * 0.5f, p1.y - 20);
             drawList->AddText(dbgPos, IM_COL32(180, 180, 100, 200), debugBuf);
 
+            // Render flower particles as projected shapes in game view
+            // Liquid particles render as elongated streaks, burst particles as circles
+            if (m_PlayMode.IsPlaying() && gameCameraComp && gameCameraTransform) {
+                auto* flowerSys = m_PlayMode.GetFlowerSystem();
+                const auto& particles = flowerSys->GetParticles();
+                if (!particles.empty()) {
+                    // Build view-projection matrix from game camera
+                    Renderer::Camera projCam;
+                    f32 camAspect = gameCameraComp->GetAspectRatio(m_GameViewWidth, m_GameViewHeight);
+                    projCam.SetPerspective(gameCameraComp->fieldOfView, camAspect,
+                                           gameCameraComp->nearPlane, gameCameraComp->farPlane);
+                    projCam.SetPosition(gameCameraTransform->position);
+                    Math::Vector3 fwd = gameCameraTransform->rotation.Rotate(Math::Vector3(0, 0, -1));
+                    Math::Vector3 camUp = gameCameraTransform->rotation.Rotate(Math::Vector3(0, 1, 0));
+                    projCam.SetLookAt(gameCameraTransform->position,
+                                      gameCameraTransform->position + fwd, camUp);
+                    Math::Matrix4 vp = projCam.GetProjectionMatrix() * projCam.GetViewMatrix();
+
+                    f32 gvW = p1.x - p0.x;
+                    f32 gvH = p1.y - p0.y;
+                    for (const auto& fp : particles) {
+                        // Skip NaN particles
+                        if (std::isnan(fp.position.x) || std::isnan(fp.position.y) || std::isnan(fp.position.z)) continue;
+                        // Project 3D position to clip space
+                        Math::Vector4 clip = vp * Math::Vector4(fp.position.x, fp.position.y, fp.position.z, 1.0f);
+                        if (clip.w <= 0.01f) continue;
+                        f32 ndcX = clip.x / clip.w;
+                        f32 ndcY = clip.y / clip.w;
+                        if (ndcX < -1.5f || ndcX > 1.5f || ndcY < -1.5f || ndcY > 1.5f) continue;
+                        f32 sx = p0.x + (ndcX * 0.5f + 0.5f) * gvW;
+                        f32 sy = p0.y + (1.0f - (ndcY * 0.5f + 0.5f)) * gvH;
+
+                        f32 t = fp.lifetime / fp.maxLifetime;
+                        f32 alpha = (1.0f - t * t) * 255.0f;
+                        f32 perspScale = 1.0f / (clip.w * 0.3f + 0.3f);
+                        f32 radius = fp.scale * 200.0f * perspScale;
+                        if (radius < 1.5f) radius = 1.5f;
+                        if (radius > 30.0f) radius = 30.0f;
+                        int r = static_cast<int>(fp.color.x * 255);
+                        int g = static_cast<int>(fp.color.y * 255);
+                        int b = static_cast<int>(fp.color.z * 255);
+                        int a = static_cast<int>(alpha);
+                        ImU32 col = IM_COL32(r, g, b, a);
+
+                        if (fp.isLiquid) {
+                            // Streak rendering: draw thick line from head to tail
+                            // Tail position = where the particle was a moment ago
+                            Math::Vector3 tailPos = fp.position - fp.velocity * 0.03f;
+                            Math::Vector4 tailClip = vp * Math::Vector4(tailPos.x, tailPos.y, tailPos.z, 1.0f);
+                            f32 tx = sx, ty = sy;
+                            if (tailClip.w > 0.01f) {
+                                f32 tndcX = tailClip.x / tailClip.w;
+                                f32 tndcY = tailClip.y / tailClip.w;
+                                tx = p0.x + (tndcX * 0.5f + 0.5f) * gvW;
+                                ty = p0.y + (1.0f - (tndcY * 0.5f + 0.5f)) * gvH;
+                            }
+                            f32 thickness = radius * 0.8f;
+                            if (thickness < 2.0f) thickness = 2.0f;
+                            drawList->AddLine(ImVec2(sx, sy), ImVec2(tx, ty), col, thickness);
+                            // Head blob
+                            drawList->AddCircleFilled(ImVec2(sx, sy), radius * 0.6f, col);
+                        } else {
+                            drawList->AddCircleFilled(ImVec2(sx, sy), radius, col);
+                        }
+                    }
+                }
+            }
+
+            // Flower Evaluate button overlay in game view
+            if (m_PlayMode.IsPlaying() && m_World) {
+                bool hasFlowerStem = false;
+                for (ECS::Entity entity : m_World->GetAllEntities()) {
+                    if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
+                        hasFlowerStem = true;
+                        break;
+                    }
+                }
+                if (hasFlowerStem) {
+                    f32 gvW = p1.x - p0.x;
+                    f32 btnW = 100.0f, btnH = 28.0f;
+                    ImVec2 btnPos(p0.x + gvW * 0.5f - btnW * 0.5f, p1.y - 42.0f);
+                    ImVec2 btnEnd(btnPos.x + btnW, btnPos.y + btnH);
+                    // Background
+                    drawList->AddRectFilled(btnPos, btnEnd, IM_COL32(20, 20, 20, 190), 6.0f);
+                    drawList->AddRect(btnPos, btnEnd, IM_COL32(180, 180, 180, 200), 6.0f);
+                    // Text
+                    const char* btnText = "Evaluate";
+                    ImVec2 textSize = ImGui::CalcTextSize(btnText);
+                    ImVec2 textPos(btnPos.x + (btnW - textSize.x) * 0.5f,
+                                  btnPos.y + (btnH - textSize.y) * 0.5f);
+                    drawList->AddText(textPos, IM_COL32(255, 255, 255, 230), btnText);
+                    // Click detection
+                    ImVec2 mousePos = ImGui::GetMousePos();
+                    if (mousePos.x >= btnPos.x && mousePos.x <= btnEnd.x &&
+                        mousePos.y >= btnPos.y && mousePos.y <= btnEnd.y &&
+                        ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+                        m_PlayMode.GetFlowerSystem()->Evaluate();
+                    }
+                }
+            }
+
             // Reserve space only if we didn't use ImGui::Image (which reserves its own)
             if (!usedImage) {
                 ImGui::Dummy(ImVec2(previewWidth, previewHeight));
@@ -9986,7 +10053,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             smat.baseColor = Math::Vector3(0.2f, 0.5f, 0.15f);
             smat.roughness = 0.8f;
             m_World->AddComponent<ECS::MeshComponent>(stemEntity, Renderer::MeshFactory::CreateCube(1.0f));
-            m_World->AddComponent<ECS::FlowerStemComponent>(stemEntity);
+            auto& stemFlower = m_World->AddComponent<ECS::FlowerStemComponent>(stemEntity);
+            stemFlower.liquidIntensity = 1.0f;
         }
 
         // Petals (arranged radially)
@@ -10026,7 +10094,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.stemEntity = stemEntity;
             tether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
             tether.tetherStiffness = 80.0f;
-            tether.breakDistance = 0.5f;
+            tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 50.0f;
@@ -10064,7 +10132,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.stemEntity = stemEntity;
             tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
             tether.tetherStiffness = 60.0f;
-            tether.breakDistance = 0.5f;
+            tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
@@ -10095,7 +10163,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             crTether.stemEntity = stemEntity;
             crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
             crTether.tetherStiffness = 100.0f;
-            crTether.breakDistance = 0.7f;
+            crTether.breakDistance = 1.0f;
             crTether.tensionRamp = 3.0f;
             auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crown);
             crGrab.pullForce = 40.0f;
@@ -14933,6 +15001,9 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
 
         ImGui::SliderFloat("Healthy Bonus", &stem->healthyBonus, 0.0f, 50.0f);
         ImGui::SliderFloat("Withered Penalty", &stem->witheredPenalty, 0.0f, 50.0f);
+        ImGui::SliderFloat("Liquid Intensity", &stem->liquidIntensity, 0.0f, 2.0f, "%.2f");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Off##liq")) stem->liquidIntensity = 0.0f;
 
         ImGui::Separator();
         ImGui::Text("Parts Removed: %d", stem->partsRemoved);

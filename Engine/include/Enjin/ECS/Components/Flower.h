@@ -59,6 +59,7 @@ struct FlowerStemComponent {
     // Authored parameters
     f32 healthyBonus = 10.0f;
     f32 witheredPenalty = 5.0f;
+    f32 liquidIntensity = 1.0f;  // 0 = off, 0.5 = mild, 1.0 = full gush
 
     // Runtime state
     i32 partsRemoved = 0;

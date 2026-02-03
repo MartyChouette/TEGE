@@ -161,15 +161,15 @@ void FlowerSystem::ProcessInput() {
             auto* grab = m_World->GetComponent<GrabbableComponent>(m_GrabbedEntity);
             if (grab) {
                 if (grab->isBroken) {
-                    // Broken petal: drop with gravity
-                    if (!m_World->HasComponent<RigidbodyComponent>(m_GrabbedEntity)) {
-                        m_World->AddComponent<RigidbodyComponent>(m_GrabbedEntity);
-                    }
-                    auto* rb = m_World->GetComponent<RigidbodyComponent>(m_GrabbedEntity);
-                    if (rb) {
-                        rb->velocity = Math::Vector3(0.0f, -0.5f, 0.0f);
-                        rb->useGravity = true;
-                        rb->mass = 0.1f;
+                    // Broken petal released: spawn splash and hide offscreen
+                    auto* transform = m_World->GetComponent<TransformComponent>(m_GrabbedEntity);
+                    if (transform) {
+                        auto* mat = m_World->GetComponent<MaterialComponent>(m_GrabbedEntity);
+                        Math::Vector3 color = mat ? mat->baseColor : Math::Vector3(1, 1, 1);
+                        SpawnGroundSplash(transform->position, color);
+                        // Hide offscreen (keeps GPU buffers valid, avoids freeze)
+                        transform->position = Math::Vector3(0.0f, -100.0f, 0.0f);
+                        transform->scale = Math::Vector3(0.0f, 0.0f, 0.0f);
                     }
                 }
                 grab->isGrabbed = false;
@@ -261,6 +261,11 @@ void FlowerSystem::UpdateTethers(f32 dt) {
 
         if (grab && grab->isGrabbed) {
             Math::Vector3 pullDir = grab->cursorWorldPoint - transform->position;
+            // Clamp pull distance to prevent extreme forces from rapid mouse shaking
+            f32 pullLen = pullDir.Length();
+            if (pullLen > 2.0f) {
+                pullDir = pullDir * (2.0f / pullLen);
+            }
             totalForce = totalForce + pullDir * grab->pullForce;
         }
 
@@ -285,8 +290,17 @@ void FlowerSystem::UpdateTethers(f32 dt) {
         if (speed > 50.0f) {
             velocity = velocity * (50.0f / speed);
         }
+        // Hard NaN guard — reset to zero if physics exploded
+        if (std::isnan(velocity.x) || std::isnan(velocity.y) || std::isnan(velocity.z)) {
+            velocity = Math::Vector3(0, 0, 0);
+        }
 
         transform->position = transform->position + velocity * dt;
+
+        // NaN guard on position
+        if (std::isnan(transform->position.x) || std::isnan(transform->position.y) || std::isnan(transform->position.z)) {
+            transform->position = attachWorld;
+        }
 
         if (rb) {
             rb->velocity = velocity;
@@ -297,6 +311,23 @@ void FlowerSystem::UpdateTethers(f32 dt) {
         f32 currentStretch = currentDist - restLen;
         if (currentStretch < 0.0f) currentStretch = 0.0f;
         tether->currentTension = Math::Clamp(currentStretch / tether->breakDistance, 0.0f, 1.0f);
+
+        // Spawn sap/liquid drip particles when grabbed and under tension
+        if (grab && grab->isGrabbed && tether->currentTension > 0.15f) {
+            // Check liquidIntensity on the stem
+            auto* stemComp = m_World->GetComponent<FlowerStemComponent>(tether->stemEntity);
+            f32 liquidIntensity = stemComp ? stemComp->liquidIntensity : 1.0f;
+            if (liquidIntensity > 0.0f) {
+                // Green sap color
+                Math::Vector3 sapColor(0.15f, 0.45f, 0.1f);
+                // Direction: from stem toward the pulled part (squirt direction)
+                Math::Vector3 squirtDir = transform->position - attachWorld;
+                f32 squirtLen = squirtDir.Length();
+                if (squirtLen > 0.01f) squirtDir = squirtDir * (1.0f / squirtLen);
+                SpawnTensionDrip(attachWorld, sapColor, tether->currentTension,
+                                 squirtDir, liquidIntensity);
+            }
+        }
     }
 }
 
@@ -405,6 +436,13 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
 
             // Semi-implicit Euler
             vel = vel + force * dt;
+
+            // Clamp jelly vertex velocity to prevent runaway from rapid shaking
+            f32 jellySpeed = vel.Length();
+            if (jellySpeed > 30.0f) {
+                vel = vel * (30.0f / jellySpeed);
+            }
+
             pos = pos + vel * dt;
 
             // Clamp to max stretch from rest
@@ -490,9 +528,8 @@ void FlowerSystem::CheckBreaks() {
         }
     }
 
-    // Now spawn particles, update counters, and destroy entities outside the iteration.
-    // Destroying the entity eliminates all post-break rendering/physics processing
-    // that was causing GPU buffer race conditions and freezes.
+    // Spawn particles and update counters outside the entity iteration.
+    // The entity stays visible while held by cursor, hidden on release.
     for (const auto& evt : breaks) {
         SpawnBreakParticles(evt.position, evt.color);
 
@@ -503,13 +540,19 @@ void FlowerSystem::CheckBreaks() {
             else if (evt.hasHealthyTag) stemComp->healthyRemoved++;
         }
 
-        // Release grab reference before destroying
-        if (m_GrabbedEntity == evt.entity) {
-            m_GrabbedEntity = INVALID_ENTITY;
+        // Critical: clear meshDirty and remove JellyMeshComponent to stop
+        // the RenderSystem from erasing/recreating GPU buffers on this entity.
+        // Leaving meshDirty=true on a broken entity causes buffer churn that
+        // can race with in-flight Vulkan commands and freeze the GPU.
+        auto* jelly = m_World->GetComponent<JellyMeshComponent>(evt.entity);
+        if (jelly) {
+            jelly->meshDirty = false;
+            jelly->initialized = false;
+            jelly->velocities.clear();
+            jelly->restPositions.clear();
         }
 
-        ENJIN_LOG_INFO(Editor, "Tether broken — destroying entity %llu", (unsigned long long)evt.entity);
-        m_World->DestroyEntity(evt.entity);
+        ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)evt.entity);
     }
 }
 
@@ -624,55 +667,129 @@ void FlowerSystem::CheckGroundImpact() {
 }
 
 // ---------------------------------------------------------------------------
-// SpawnBreakParticles — burst of 14 droplets radiating outward
-// Particles are purely internal (no ECS entities) to avoid entity
-// creation/destruction issues that cause freezes and crashes.
+// SpawnBreakParticles — violent sap burst when a petal/leaf tears off.
+// Green liquid jets outward + drips down. Big, dramatic, satisfying.
 // ---------------------------------------------------------------------------
 void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color) {
-    const int count = 14;
-    for (int i = 0; i < count; ++i) {
+    // Green sap color mixed with petal color
+    Math::Vector3 sapColor(0.1f, 0.5f, 0.08f);
+    Math::Vector3 mixColor = sapColor * 0.7f + color * 0.3f;
+
+    // Main burst — violent jets radiating outward
+    const int burstCount = 20;
+    for (int i = 0; i < burstCount; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
-        f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
-        f32 speed = 2.0f + static_cast<f32>(i % 3) * 0.5f;
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(burstCount) * 6.28318f;
+        f32 speed = 2.5f + static_cast<f32>(i % 5) * 0.8f;
+        f32 upKick = 2.0f + static_cast<f32>(i % 4) * 0.8f;
 
         FlowerParticle fp;
         fp.position = position;
-        fp.color = color;
+        fp.color = mixColor;
         fp.velocity = Math::Vector3(
             std::cos(angle) * speed,
-            1.5f + static_cast<f32>(i % 4) * 0.4f,
+            upKick,
             std::sin(angle) * speed
         );
         fp.lifetime = 0.0f;
-        fp.maxLifetime = 0.8f + static_cast<f32>(i % 3) * 0.2f;
-        fp.scale = 0.06f;
+        fp.maxLifetime = 0.9f + static_cast<f32>(i % 3) * 0.3f;
+        fp.scale = 0.08f + static_cast<f32>(i % 3) * 0.03f;
+        fp.isLiquid = true;
+        m_Particles.push_back(fp);
+    }
+
+    // Secondary drips — slower, fall straight down like dripping sap
+    const int dripCount = 8;
+    for (int i = 0; i < dripCount; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(dripCount) * 6.28318f;
+
+        FlowerParticle fp;
+        fp.position = position + Math::Vector3(
+            std::cos(angle) * 0.05f, -0.02f, std::sin(angle) * 0.05f);
+        fp.color = sapColor;
+        fp.velocity = Math::Vector3(
+            std::cos(angle) * 0.3f,
+            -0.5f - static_cast<f32>(i % 3) * 0.5f,
+            std::sin(angle) * 0.3f
+        );
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 1.2f + static_cast<f32>(i % 3) * 0.3f;
+        fp.scale = 0.05f;
+        fp.isLiquid = true;
         m_Particles.push_back(fp);
     }
 }
 
 // ---------------------------------------------------------------------------
-// SpawnGroundSplash — 8 droplets spraying upward from impact point
+// SpawnGroundSplash — sap splat when broken petal is released
 // ---------------------------------------------------------------------------
 void FlowerSystem::SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color) {
-    const int count = 8;
+    Math::Vector3 sapColor(0.1f, 0.5f, 0.08f);
+    Math::Vector3 mixColor = sapColor * 0.6f + color * 0.4f;
+
+    const int count = 12;
     for (int i = 0; i < count; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
         f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
-        f32 speed = 1.0f + static_cast<f32>(i % 3) * 0.3f;
+        f32 speed = 1.5f + static_cast<f32>(i % 3) * 0.5f;
 
         FlowerParticle fp;
         fp.position = position + Math::Vector3(0.0f, 0.05f, 0.0f);
-        fp.color = color;
+        fp.color = mixColor;
         fp.velocity = Math::Vector3(
-            std::cos(angle) * speed * 0.5f,
-            2.0f + static_cast<f32>(i % 3) * 0.5f,
-            std::sin(angle) * speed * 0.5f
+            std::cos(angle) * speed * 0.6f,
+            2.5f + static_cast<f32>(i % 3) * 0.8f,
+            std::sin(angle) * speed * 0.6f
         );
         fp.lifetime = 0.0f;
-        fp.maxLifetime = 0.6f + static_cast<f32>(i % 3) * 0.15f;
-        fp.scale = 0.04f;
+        fp.maxLifetime = 0.7f + static_cast<f32>(i % 3) * 0.2f;
+        fp.scale = 0.06f;
+        fp.isLiquid = true;
+        m_Particles.push_back(fp);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SpawnTensionDrip — squirting green sap from attachment point while pulling.
+// Liquid shoots in the pull direction, then drips down under gravity.
+// Rate and violence scale with tension and liquidIntensity.
+// ---------------------------------------------------------------------------
+void FlowerSystem::SpawnTensionDrip(const Math::Vector3& position, const Math::Vector3& color,
+                                     f32 tension, const Math::Vector3& squirtDir, f32 intensity) {
+    // Accumulate — higher tension + intensity = more particles per frame
+    m_DripAccumulator += tension * intensity * 3.0f;
+    i32 spawnCount = static_cast<i32>(m_DripAccumulator);
+    m_DripAccumulator -= static_cast<f32>(spawnCount);
+    if (spawnCount < 1) return;
+
+    for (i32 i = 0; i < spawnCount; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        // Pseudo-random spread using particle count
+        f32 seed = static_cast<f32>((m_Particles.size() * 73 + i * 37) % 100) / 100.0f;
+        f32 angle = seed * 6.28318f;
+
+        // Squirt primarily in pull direction with random cone spread
+        f32 squirtSpeed = (2.0f + tension * 5.0f) * intensity;
+        f32 spread = 0.3f + seed * 0.5f;
+
+        FlowerParticle fp;
+        fp.position = position + Math::Vector3(
+            std::cos(angle) * 0.03f, 0.02f, std::sin(angle) * 0.03f);
+        fp.color = color;
+        fp.velocity = squirtDir * squirtSpeed + Math::Vector3(
+            std::cos(angle) * spread,
+            0.5f + seed * 1.5f,  // Slight upward squirt
+            std::sin(angle) * spread
+        );
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 0.4f + tension * 0.4f;
+        fp.scale = 0.04f + tension * 0.04f;
+        fp.isLiquid = true;
         m_Particles.push_back(fp);
     }
 }
