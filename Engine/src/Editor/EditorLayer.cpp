@@ -418,7 +418,7 @@ void EditorLayer::Update(f32 deltaTime) {
         HandleViewportPicking();
     }
 
-    // Pass game view bounds and render system to FlowerSystem each frame
+    // Pass game view bounds, render system, and wind to FlowerSystem each frame
     {
         auto* flowerSys = m_PlayMode.GetFlowerSystem();
         flowerSys->SetGameViewBounds(m_GameViewImageMinX, m_GameViewImageMinY,
@@ -426,6 +426,7 @@ void EditorLayer::Update(f32 deltaTime) {
         flowerSys->SetRenderTargetSize(m_GameViewWidth, m_GameViewHeight);
         flowerSys->SetRenderSystem(m_RenderSystem);
         flowerSys->SetGameCameraEntity(m_SelectedGameCamera);
+        flowerSys->SetWindSystem(&m_WindSystem);
     }
 
     // Update play mode
@@ -5973,7 +5974,7 @@ void EditorLayer::DrawEffectsPanel() {
     if (ImGui::CollapsingHeader("World Curvature")) {
         ImGui::Checkbox("Enable Curvature", &m_WorldCurvatureEnabled);
         if (m_WorldCurvatureEnabled) {
-            ImGui::DragFloat("Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
+            ImGui::DragFloat("Curvature Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
             ImGui::TextDisabled("Bends distant geometry downward. Try 0.0001-0.001.");
         }
     }
@@ -6057,7 +6058,7 @@ void EditorLayer::DrawEffectsPanel() {
             if (len > 0.001f) params.direction = params.direction * (1.0f / len);
             changed = true;
         }
-        if (ImGui::DragFloat("Strength", &params.strength, 0.05f, 0.0f, 10.0f)) changed = true;
+        if (ImGui::DragFloat("Wind Strength", &params.strength, 0.05f, 0.0f, 10.0f)) changed = true;
         if (ImGui::DragFloat("Gust Strength", &params.gustStrength, 0.05f, 0.0f, 5.0f)) changed = true;
         if (ImGui::DragFloat("Gust Frequency", &params.gustFrequency, 0.01f, 0.0f, 2.0f, "%.2f Hz")) changed = true;
         if (ImGui::DragFloat("Turbulence", &params.turbulence, 0.01f, 0.0f, 2.0f)) changed = true;

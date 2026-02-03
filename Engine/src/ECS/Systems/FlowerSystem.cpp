@@ -31,12 +31,35 @@ void FlowerSystem::Update(f32 deltaTime) {
     if (!m_Enabled || !m_World) return;
 
     ProcessInput();
+
+    // Apply subtle wind sway to stem entities so the whole flower leans
+    if (m_WindSystem) {
+        Math::Vector4 windVec = m_WindSystem->GetWindVector();
+        Math::Vector3 windDir(windVec.x, 0.0f, windVec.z); // horizontal only
+        f32 windMag = windDir.Length();
+        if (windMag > 1e-6f) {
+            windDir = windDir * (1.0f / windMag);
+            for (Entity entity : m_World->GetAllEntities()) {
+                auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
+                if (!stem) continue;
+                auto* transform = m_World->GetComponent<TransformComponent>(entity);
+                if (!transform) continue;
+
+                f32 phase = transform->position.x * 0.7f + transform->position.z * 0.4f + windVec.w * 1.5f;
+                f32 sway = std::sin(phase) * 0.07f * windMag;
+                transform->position.x += windDir.x * sway * deltaTime;
+                transform->position.z += windDir.z * sway * deltaTime;
+            }
+        }
+    }
+
     UpdateTethers(deltaTime);
     UpdateJellyMeshes(deltaTime);
     CheckBreaks();
     UpdateBrokenParts(deltaTime);
     UpdateParticles(deltaTime);
     CheckGroundImpact();
+    UpdateScoreDisplay();
 }
 
 // ---------------------------------------------------------------------------
@@ -234,6 +257,16 @@ void FlowerSystem::UpdateTethers(f32 dt) {
         if (grab && grab->isGrabbed) {
             Math::Vector3 pullDir = grab->cursorWorldPoint - transform->position;
             totalForce = totalForce + pullDir * grab->pullForce;
+        }
+
+        // Wind sway: higher parts sway more, sinusoidal variation for organic feel
+        if (m_WindSystem) {
+            Math::Vector4 windVec = m_WindSystem->GetWindVector();
+            Math::Vector3 windForce(windVec.x, windVec.y, windVec.z);
+            f32 heightFactor = Math::Clamp(transform->position.y / 2.0f, 0.1f, 1.0f);
+            f32 phase = transform->position.x * 0.5f + transform->position.z * 0.3f + windVec.w * 2.0f;
+            f32 sway = std::sin(phase) * heightFactor;
+            totalForce = totalForce + windForce * sway * 0.5f;
         }
 
         // Damping
@@ -647,6 +680,45 @@ void FlowerSystem::SpawnGroundSplash(const Math::Vector3& position, const Math::
         fp.lifetime = 0.0f;
         fp.maxLifetime = 0.6f + static_cast<f32>(i % 3) * 0.15f;
         m_Particles.push_back(fp);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UpdateScoreDisplay — live score each frame
+// ---------------------------------------------------------------------------
+void FlowerSystem::UpdateScoreDisplay() {
+    if (!m_World) return;
+
+    // Gather totals from all stems
+    i32 totalParts = 0, totalHealthy = 0, totalWithered = 0;
+    for (Entity entity : m_World->GetAllEntities()) {
+        auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
+        if (!stem) continue;
+        totalParts += stem->partsRemoved;
+        totalHealthy += stem->healthyRemoved;
+        totalWithered += stem->witheredRemoved;
+    }
+
+    // Count total pluckable parts (entities with TetherComponent)
+    i32 totalPluckable = 0;
+    for (Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<TetherComponent>(entity))
+            totalPluckable++;
+    }
+
+    // Update score_display text entity
+    for (Entity entity : m_World->GetAllEntities()) {
+        auto* tags = m_World->GetComponent<TagComponent>(entity);
+        if (!tags || !tags->HasTag("score_display")) continue;
+        auto* text = m_World->GetComponent<TextComponent>(entity);
+        if (!text) continue;
+
+        char buf[256];
+        snprintf(buf, sizeof(buf), "Plucked: %d/%d | Score: %d",
+                 totalParts, totalPluckable + totalParts,
+                 totalHealthy * 10 - totalWithered * 5);
+        text->text = buf;
+        text->dirty = true;
     }
 }
 

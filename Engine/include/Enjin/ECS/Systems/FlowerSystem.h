@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Renderer/Camera.h"
+#include "Enjin/Effects/Wind.h"
 #include <vector>
 
 namespace Enjin {
@@ -28,6 +29,7 @@ public:
     void SetWorld(World* world) { m_World = world; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     void SetRenderSystem(RenderSystem* rs) { m_RenderSystem = rs; }
+    void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
@@ -57,6 +59,7 @@ private:
 
     void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color);
     void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color);
+    void UpdateScoreDisplay();
 
     // Helper: project screen point to world plane at given depth facing camera
     Math::Vector3 ScreenToWorldOnPlane(f32 screenX, f32 screenY, f32 planeDepth);
@@ -64,6 +67,7 @@ private:
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     RenderSystem* m_RenderSystem = nullptr;
+    Effects::WindSystem* m_WindSystem = nullptr;
     bool m_Enabled = false;
 
     // Game view bounds in screen space
