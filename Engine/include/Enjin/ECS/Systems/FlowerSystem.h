@@ -13,12 +13,14 @@ namespace ECS {
 
 class RenderSystem;
 
-// Particle spawned on tether break or ground impact
+// Lightweight particle (no ECS entity — avoids entity creation/destruction crashes)
 struct FlowerParticle {
-    Entity entity = INVALID_ENTITY;
+    Math::Vector3 position;
     Math::Vector3 velocity;
+    Math::Vector3 color;
     f32 lifetime = 0.0f;
     f32 maxLifetime = 1.0f;
+    f32 scale = 0.06f;
 };
 
 class ENJIN_API FlowerSystem {

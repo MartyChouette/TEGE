@@ -7,7 +7,6 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Name.h"
-#include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
@@ -533,30 +532,20 @@ void FlowerSystem::UpdateBrokenParts(f32 dt) {
 // Phase 6: UpdateParticles — tick particle entity lifetimes and gravity
 // ---------------------------------------------------------------------------
 void FlowerSystem::UpdateParticles(f32 dt) {
-    if (!m_World) return;
-
     for (auto it = m_Particles.begin(); it != m_Particles.end(); ) {
         it->lifetime += dt;
         if (it->lifetime >= it->maxLifetime) {
-            // Destroy particle entity
-            m_World->DestroyEntity(it->entity);
             it = m_Particles.erase(it);
             continue;
         }
 
-        // Apply gravity to particle velocity
+        // Apply gravity and move
         it->velocity = it->velocity + Math::Vector3(0.0f, -9.81f, 0.0f) * dt;
+        it->position = it->position + it->velocity * dt;
 
-        // Move particle entity
-        auto* transform = m_World->GetComponent<TransformComponent>(it->entity);
-        if (transform) {
-            transform->position = transform->position + it->velocity * dt;
-
-            // Fade by shrinking scale
-            f32 t = it->lifetime / it->maxLifetime;
-            f32 scale = 0.06f * (1.0f - t * t); // Quadratic fade-out
-            transform->scale = Math::Vector3(scale, scale, scale);
-        }
+        // Quadratic fade-out
+        f32 t = it->lifetime / it->maxLifetime;
+        it->scale = 0.06f * (1.0f - t * t);
 
         ++it;
     }
@@ -613,39 +602,28 @@ void FlowerSystem::CheckGroundImpact() {
 
 // ---------------------------------------------------------------------------
 // SpawnBreakParticles — burst of 14 droplets radiating outward
+// Particles are purely internal (no ECS entities) to avoid entity
+// creation/destruction issues that cause freezes and crashes.
 // ---------------------------------------------------------------------------
 void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color) {
-    if (!m_World) return;
-
     const int count = 14;
     for (int i = 0; i < count; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
-        Entity p = m_World->CreateEntity();
-        auto& pt = m_World->AddComponent<TransformComponent>(p);
-        pt.position = position;
-        pt.scale = Math::Vector3(0.06f, 0.06f, 0.06f);
-
-        auto& pmat = m_World->AddComponent<MaterialComponent>(p);
-        pmat.baseColor = color;
-        pmat.roughness = 0.9f;
-
-        m_World->AddComponent<MeshComponent>(p, Renderer::MeshFactory::CreateCube(1.0f));
-
-        // Radial velocity with upward bias
         f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
         f32 speed = 2.0f + static_cast<f32>(i % 3) * 0.5f;
-        Math::Vector3 vel(
+
+        FlowerParticle fp;
+        fp.position = position;
+        fp.color = color;
+        fp.velocity = Math::Vector3(
             std::cos(angle) * speed,
             1.5f + static_cast<f32>(i % 4) * 0.4f,
             std::sin(angle) * speed
         );
-
-        FlowerParticle fp;
-        fp.entity = p;
-        fp.velocity = vel;
         fp.lifetime = 0.0f;
         fp.maxLifetime = 0.8f + static_cast<f32>(i % 3) * 0.2f;
+        fp.scale = 0.06f;
         m_Particles.push_back(fp);
     }
 }
@@ -654,37 +632,24 @@ void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math
 // SpawnGroundSplash — 8 droplets spraying upward from impact point
 // ---------------------------------------------------------------------------
 void FlowerSystem::SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color) {
-    if (!m_World) return;
-
     const int count = 8;
     for (int i = 0; i < count; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
-        Entity p = m_World->CreateEntity();
-        auto& pt = m_World->AddComponent<TransformComponent>(p);
-        pt.position = position + Math::Vector3(0.0f, 0.05f, 0.0f);
-        pt.scale = Math::Vector3(0.04f, 0.04f, 0.04f);
-
-        auto& pmat = m_World->AddComponent<MaterialComponent>(p);
-        pmat.baseColor = color;
-        pmat.roughness = 0.9f;
-
-        m_World->AddComponent<MeshComponent>(p, Renderer::MeshFactory::CreateCube(1.0f));
-
-        // Spray upward with radial spread
         f32 angle = static_cast<f32>(i) / static_cast<f32>(count) * 6.28318f;
         f32 speed = 1.0f + static_cast<f32>(i % 3) * 0.3f;
-        Math::Vector3 vel(
+
+        FlowerParticle fp;
+        fp.position = position + Math::Vector3(0.0f, 0.05f, 0.0f);
+        fp.color = color;
+        fp.velocity = Math::Vector3(
             std::cos(angle) * speed * 0.5f,
             2.0f + static_cast<f32>(i % 3) * 0.5f,
             std::sin(angle) * speed * 0.5f
         );
-
-        FlowerParticle fp;
-        fp.entity = p;
-        fp.velocity = vel;
         fp.lifetime = 0.0f;
         fp.maxLifetime = 0.6f + static_cast<f32>(i % 3) * 0.15f;
+        fp.scale = 0.04f;
         m_Particles.push_back(fp);
     }
 }
