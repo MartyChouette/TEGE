@@ -279,6 +279,13 @@ void FlowerSystem::UpdateTethers(f32 dt) {
 
         // Semi-implicit Euler
         velocity = velocity + totalForce * dt;
+
+        // Clamp velocity to prevent NaN/infinity from extreme forces
+        f32 speed = velocity.Length();
+        if (speed > 50.0f) {
+            velocity = velocity * (50.0f / speed);
+        }
+
         transform->position = transform->position + velocity * dt;
 
         if (rb) {
@@ -302,6 +309,12 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
     for (Entity entity : m_World->GetAllEntities()) {
         auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
         if (!jelly) continue;
+
+        // Skip broken entities — jelly deformation on a teleporting petal
+        // causes meshDirty every frame, forcing GPU buffer recreation that
+        // can race with the in-flight render and crash the driver.
+        auto* tetherCheck = m_World->GetComponent<TetherComponent>(entity);
+        if (tetherCheck && tetherCheck->isBroken) continue;
 
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || mesh->vertices.empty()) continue;
@@ -477,7 +490,9 @@ void FlowerSystem::CheckBreaks() {
         }
     }
 
-    // Now spawn particles and update counters outside the entity iteration
+    // Now spawn particles, update counters, and destroy entities outside the iteration.
+    // Destroying the entity eliminates all post-break rendering/physics processing
+    // that was causing GPU buffer race conditions and freezes.
     for (const auto& evt : breaks) {
         SpawnBreakParticles(evt.position, evt.color);
 
@@ -488,7 +503,13 @@ void FlowerSystem::CheckBreaks() {
             else if (evt.hasHealthyTag) stemComp->healthyRemoved++;
         }
 
-        ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)evt.entity);
+        // Release grab reference before destroying
+        if (m_GrabbedEntity == evt.entity) {
+            m_GrabbedEntity = INVALID_ENTITY;
+        }
+
+        ENJIN_LOG_INFO(Editor, "Tether broken — destroying entity %llu", (unsigned long long)evt.entity);
+        m_World->DestroyEntity(evt.entity);
     }
 }
 
@@ -596,7 +617,9 @@ void FlowerSystem::CheckGroundImpact() {
     // Spawn splash particles and remove rigidbodies outside the entity iteration
     for (const auto& evt : impacts) {
         SpawnGroundSplash(evt.position, evt.color);
-        m_World->RemoveComponent<RigidbodyComponent>(evt.entity);
+        if (m_World->HasComponent<RigidbodyComponent>(evt.entity)) {
+            m_World->RemoveComponent<RigidbodyComponent>(evt.entity);
+        }
     }
 }
 
@@ -662,12 +685,18 @@ void FlowerSystem::UpdateScoreDisplay() {
 
     // Gather totals from all stems
     i32 totalParts = 0, totalHealthy = 0, totalWithered = 0;
+    bool anyEvaluated = false;
+    f32 totalScore = 0.0f;
     for (Entity entity : m_World->GetAllEntities()) {
         auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
         if (!stem) continue;
         totalParts += stem->partsRemoved;
         totalHealthy += stem->healthyRemoved;
         totalWithered += stem->witheredRemoved;
+        if (stem->evaluated) {
+            anyEvaluated = true;
+            totalScore += stem->score;
+        }
     }
 
     // Count total pluckable parts (entities with TetherComponent)
@@ -685,9 +714,16 @@ void FlowerSystem::UpdateScoreDisplay() {
         if (!text) continue;
 
         char buf[256];
-        snprintf(buf, sizeof(buf), "Plucked: %d/%d | Score: %d",
-                 totalParts, totalPluckable + totalParts,
-                 totalHealthy * 10 - totalWithered * 5);
+        if (anyEvaluated) {
+            // Show final evaluated score
+            snprintf(buf, sizeof(buf), "Score: %.0f | Healthy: %d | Withered: %d | Plucked: %d",
+                     totalScore, totalHealthy, totalWithered, totalParts);
+        } else {
+            // Show live plucking progress
+            snprintf(buf, sizeof(buf), "Plucked: %d/%d | Score: %d",
+                     totalParts, totalPluckable + totalParts,
+                     totalHealthy * 10 - totalWithered * 5);
+        }
         text->text = buf;
         text->dirty = true;
     }

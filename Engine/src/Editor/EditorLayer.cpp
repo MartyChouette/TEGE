@@ -1385,6 +1385,40 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             m_GameViewImageMaxY - m_GameViewImageMinY);
     }
 
+    // Flower Evaluate button overlay in game view (during play mode)
+    if (m_PlayMode.IsPlaying() && m_World) {
+        bool hasFlowerStem = false;
+        for (ECS::Entity entity : m_World->GetAllEntities()) {
+            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
+                hasFlowerStem = true;
+                break;
+            }
+        }
+        if (hasFlowerStem) {
+            f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
+            f32 gvH = m_GameViewImageMaxY - m_GameViewImageMinY;
+            if (gvW > 0 && gvH > 0) {
+                ImGui::SetNextWindowPos(ImVec2(m_GameViewImageMinX + gvW * 0.5f - 60.0f,
+                                               m_GameViewImageMaxY - 50.0f));
+                ImGui::SetNextWindowSize(ImVec2(120.0f, 36.0f));
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+                ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8, 4));
+                ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.1f, 0.1f, 0.1f, 0.75f));
+                if (ImGui::Begin("##FlowerEval", nullptr,
+                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar |
+                    ImGuiWindowFlags_NoSavedSettings)) {
+                    if (ImGui::Button("Evaluate", ImVec2(104.0f, 24.0f))) {
+                        m_PlayMode.GetFlowerSystem()->Evaluate();
+                    }
+                }
+                ImGui::End();
+                ImGui::PopStyleColor();
+                ImGui::PopStyleVar(2);
+            }
+        }
+    }
+
     // Render UI canvases during play mode (editor game view)
     if (m_PlayMode.IsPlaying()) {
         f32 gvW = m_GameViewImageMaxX - m_GameViewImageMinX;
@@ -6169,22 +6203,7 @@ void EditorLayer::DrawGameViewPanel() {
         }
     }
 
-    // Evaluate Flower button (shown when playing and a FlowerStemComponent exists)
-    if (isPlaying && m_World) {
-        bool hasFlowerStem = false;
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
-                hasFlowerStem = true;
-                break;
-            }
-        }
-        if (hasFlowerStem) {
-            ImGui::SameLine();
-            if (ImGui::Button("Evaluate Flower")) {
-                m_PlayMode.GetFlowerSystem()->Evaluate();
-            }
-        }
-    }
+    // (Evaluate Flower button moved to game view overlay — see DrawFlowerEvaluateOverlay)
 
     // Camera selector dropdown (when multiple cameras exist)
     if (cameraEntities.size() > 1) {
@@ -10007,10 +10026,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.stemEntity = stemEntity;
             tether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
             tether.tetherStiffness = 80.0f;
-            tether.breakDistance = 1.5f;
+            tether.breakDistance = 0.5f;
             tether.tensionRamp = 2.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 50.0f;
+            grab.grabRadius = 0.15f;
         }
 
         // Leaves along the stem
@@ -10044,10 +10064,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.stemEntity = stemEntity;
             tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
             tether.tetherStiffness = 60.0f;
-            tether.breakDistance = 1.5f;
+            tether.breakDistance = 0.5f;
             tether.tensionRamp = 2.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
+            grab.grabRadius = 0.12f;
         }
 
         // Crown (central disc at stem top where petals radiate from)
@@ -10074,10 +10095,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             crTether.stemEntity = stemEntity;
             crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
             crTether.tetherStiffness = 100.0f;
-            crTether.breakDistance = 1.8f;
+            crTether.breakDistance = 0.7f;
             crTether.tensionRamp = 3.0f;
             auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crown);
             crGrab.pullForce = 40.0f;
+            crGrab.grabRadius = 0.12f;
         }
 
         // Camera
