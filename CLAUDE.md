@@ -240,11 +240,13 @@ struct PushConstants {
   - Gravity, drag, rotation, burst spawning, accumulator-based continuous emission
 - **`ParticleRenderer`** (`Engine/include/Enjin/Effects/ParticleRenderer.h`) - GPU instanced billboard renderer (same pipeline as WeatherRenderer)
   - Gathers all emitter pools into single instanced draw call (up to 16384 particles)
+  - Supports two render modes: Billboard (default) and VelocityStretch (elongates particles along velocity)
 - **Particle Editor** (`View > Particle Editor`, `EditorPanel::ParticleEditor = 1 << 13`)
   - Operates on selected entity's `ParticleEmitterComponent`
-  - 7 presets: Fire, Smoke, Sparks, Snow, Rain, Magic, Explosion
+  - 12 presets: Fire, Smoke, Sparks, Snow, Rain, Magic, Explosion + liquid presets (Water Splash, Blood/Sap, Lava, Fountain, Drip)
   - Color gradient bar with alpha, piecewise-linear size/speed curve visualizations
   - 2D wireframe shape preview, emission/rotation/forces editors
+  - Rendering section: render mode combo (Billboard/Velocity Stretch), stretch scale slider
   - Play/Pause/Restart playback controls, active particle stats
 - Effects are configured globally and rendered only in Game View (not editor camera)
 
@@ -440,11 +442,14 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Security hardening: vector deserialization bounds checks, AssetReader size caps and I/O validation, GLTFLoader attribute count clamping, animation keyframe bounds validation, script execution timeout (1M instruction limit)
 - Particle system runtime (CPU simulation: 5 emitter shapes, size/speed curves, gravity/drag/rotation, burst spawning)
 - GPU instanced particle renderer (billboard quads, alpha-blended, depth-tested, up to 16384 particles)
-- Particle Editor panel (7 presets, color gradient bar, size/speed curve visualization, shape preview, playback controls)
+- Particle Editor panel (12 presets incl. 5 liquid presets, velocity stretch render mode, color gradient bar, size/speed curve visualization, shape preview, playback controls)
 - Per-scene rendering settings (SceneRenderSettings config struct, project-level defaults in .enjinproject, per-scene overrides in .enjin, play mode save/restore, Project Settings UI)
 - Shadow quality settings (resolution 512-4096, shadow distance 10-500, shadow strength 0-1, serialized per-scene)
 - Flower system (FlowerSystem: tether-based petal/leaf/crown attachment to stem, click-drag plucking, jelly mesh deformation, break detection, green sap liquid particles with streak rendering, configurable liquidIntensity, evaluate scoring, ImGui game view particle projection and button overlay)
 - Flower Garden startup template (stem + 10 petals + 5 leaves + crown + game camera + score display)
+- Particle velocity stretch render mode (VelocityStretch elongates particles along velocity vector, configurable scale, serialized per-emitter)
+- Particle liquid presets (Water Splash, Blood/Sap, Lava, Fountain, Drip with tuned velocity stretch, gravity, drag)
+- Drag-and-drop file import (GLFW drop callback, imports FBX/OBJ/glTF/GLB/DAE/3DS models and opens .enjin scene files)
 
 ## AngelScript API Reference
 
@@ -607,7 +612,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 ### Editor Tools & UX
 
 - **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
-- **Particle Editor** — ~~DONE (Phase 1)~~ CPU particle simulation + GPU instanced renderer + editor panel with 7 presets, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
+- **Particle Editor** — ~~DONE (Phase 2)~~ CPU particle simulation + GPU instanced renderer + editor panel with 12 presets (7 standard + 5 liquid), velocity stretch render mode, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
 - **Node/Graph Editor** — generic node graph framework powering three systems:
   - Visual scripting (blueprint-style alternative to AngelScript)
   - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
@@ -615,7 +620,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
 - **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
 - **Undo/Redo Across All Operations** — extend existing UndoRedoManager to cover every inspector edit, hierarchy change, component add/remove, tilemap paint, terrain sculpt, etc.
-- **Drag and Drop** — drag assets (textures, models, scenes, scripts) from asset browser into viewport/inspector fields. Drag entities in hierarchy for reparenting.
+- **Drag and Drop** — ~~PARTIAL~~ File drop from OS (Explorer/Finder) imports models (FBX/OBJ/glTF/GLB/DAE/3DS) and opens scenes (.enjin) via GLFW drop callback. Future work: drag assets from asset browser into viewport/inspector fields, drag entities in hierarchy for reparenting.
 - **Hot-Swap Shaders** — edit shaders at runtime and see changes live without restarting. File watcher on .vert/.frag files, recompile GLSL to SPIR-V, recreate pipeline.
 - **Improved Asset Import Pipeline** — on model/texture import, auto-process like Unity does: generate thumbnails, extract materials, set up serialization metadata, configure import settings (scale, axis, compression). Clean .enjinasset metadata files.
 - **Extended Model Format Support** — add PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders. PLY is useful for photogrammetry/scan data; VOX enables voxel art workflows. Also verify Assimp's existing FBX/OBJ/DAE import paths are robust (fix any crash-on-malformed-input issues).
