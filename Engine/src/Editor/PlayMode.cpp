@@ -62,6 +62,7 @@ void PlayMode::Play() {
 
     // Enable controller system, flower system, scripting, and gameplay systems
     m_ControllerSystem.SetEnabled(true);
+    m_FlowerSystem.Reset();
     m_FlowerSystem.SetEnabled(true);
     m_ScriptSystem.SetEnabled(true);
     m_HUDSystem.SetEnabled(true);

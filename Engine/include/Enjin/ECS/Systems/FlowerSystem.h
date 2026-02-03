@@ -36,6 +36,14 @@ public:
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 
+    // Reset internal state (call when starting/restarting play mode)
+    void Reset() {
+        m_GrabbedEntity = INVALID_ENTITY;
+        m_GrabDepth = 0.0f;
+        m_Particles.clear();
+        m_DripAccumulator = 0.0f;
+    }
+
     // Set the game view bounds in screen space (for mouse coordinate conversion)
     void SetGameViewBounds(f32 minX, f32 minY, f32 maxX, f32 maxY);
 

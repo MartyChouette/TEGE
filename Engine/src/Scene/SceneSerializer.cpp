@@ -1897,6 +1897,7 @@ ECS::JellyMeshComponent DeserializeJellyMeshComponent(const json& j) {
 
 json SerializeTetherComponent(const ECS::TetherComponent& t) {
     json j;
+    j["stemEntity"] = static_cast<u64>(t.stemEntity);
     j["attachLocalPos"] = SerializeVector3(t.attachLocalPos);
     j["restLength"] = t.restLength;
     j["tetherStiffness"] = t.tetherStiffness;
@@ -1908,6 +1909,7 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
 
 ECS::TetherComponent DeserializeTetherComponent(const json& j) {
     ECS::TetherComponent t;
+    if (j.contains("stemEntity")) t.stemEntity = static_cast<ECS::Entity>(j["stemEntity"].get<u64>());
     if (j.contains("attachLocalPos")) t.attachLocalPos = DeserializeVector3(j["attachLocalPos"]);
     if (j.contains("restLength")) t.restLength = j["restLength"].get<f32>();
     if (j.contains("tetherStiffness")) t.tetherStiffness = j["tetherStiffness"].get<f32>();
@@ -1935,6 +1937,7 @@ json SerializeFlowerStemComponent(const ECS::FlowerStemComponent& fs) {
     json j;
     j["healthyBonus"] = fs.healthyBonus;
     j["witheredPenalty"] = fs.witheredPenalty;
+    j["liquidIntensity"] = fs.liquidIntensity;
     return j;
 }
 
@@ -1942,6 +1945,7 @@ ECS::FlowerStemComponent DeserializeFlowerStemComponent(const json& j) {
     ECS::FlowerStemComponent fs;
     if (j.contains("healthyBonus")) fs.healthyBonus = j["healthyBonus"].get<f32>();
     if (j.contains("witheredPenalty")) fs.witheredPenalty = j["witheredPenalty"].get<f32>();
+    if (j.contains("liquidIntensity")) fs.liquidIntensity = j["liquidIntensity"].get<f32>();
     return fs;
 }
 

@@ -166,6 +166,9 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                     return uri;
                 };
                 mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
+                if (!mat.baseColorTexturePath.empty()) {
+                    mat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                }
                 mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
                 mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
                 mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
@@ -509,6 +512,11 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 };
 
                 matComp.baseColorTexturePath = resolveTexPath(assimpMat.baseColorTexture);
+                // When a diffuse texture exists, use white base color so the texture
+                // provides all color (FBX diffuse color would otherwise tint/darken it)
+                if (!matComp.baseColorTexturePath.empty()) {
+                    matComp.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                }
                 matComp.normalTexturePath = resolveTexPath(assimpMat.normalTexture);
                 matComp.metallicRoughnessTexturePath = resolveTexPath(assimpMat.metallicRoughnessTexture);
                 matComp.emissiveTexturePath = resolveTexPath(assimpMat.emissiveTexture);

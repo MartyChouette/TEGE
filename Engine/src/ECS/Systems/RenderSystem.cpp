@@ -310,10 +310,21 @@ void RenderSystem::Update(f32 deltaTime) {
             }
         }
         // JellyMesh dirty check (flower system vertex deformation)
+        // Re-upload vertex data to existing buffer instead of erase/recreate,
+        // because destroying buffers while the GPU is still reading them crashes the driver.
         for (Entity entity : m_World->GetEntitiesWithComponent<JellyMeshComponent>()) {
             auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
             if (jelly && jelly->meshDirty) {
-                m_EntityRenderData.erase(entity);
+                auto it = m_EntityRenderData.find(entity);
+                if (it != m_EntityRenderData.end() && it->second.vertexBuffer) {
+                    auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                    if (mesh && !mesh->vertices.empty()) {
+                        usize dataSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
+                        it->second.vertexBuffer->UploadData(mesh->vertices.data(), dataSize);
+                    }
+                } else {
+                    // No existing buffer — will be created on next render via SetupEntityBuffers
+                }
                 jelly->meshDirty = false;
             }
         }
@@ -785,6 +796,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     auto tex = GetOrLoadTexture(material->baseColorTexturePath);
                     if (tex && tex->IsValid()) {
                         boundTexture = tex.get();
+                        if (material->baseColorTexture != 1) {
+                            ENJIN_LOG_INFO(Renderer, "Texture bound entity %llu: %s (%dx%d) baseColor=(%.2f,%.2f,%.2f)",
+                                (unsigned long long)entity, material->baseColorTexturePath.c_str(),
+                                tex->GetWidth(), tex->GetHeight(),
+                                material->baseColor.x, material->baseColor.y, material->baseColor.z);
+                        }
                         material->baseColorTexture = 1;
                     }
                 }
