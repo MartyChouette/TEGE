@@ -52,15 +52,18 @@ layout(binding = 1) uniform LightingUBO {
     uint pointLightCount;
     uint spotLightCount;
     uint _pad1;
-    mat4 lightSpaceMatrix;
+    mat4 cascadeViewProj[4];
+    vec4 cascadeSplits;
     float shadowBias;
     int shadowEnabled;
-    vec2 _shadowPad;
+    float shadowStrength;
+    float shadowMaxDistance;
     vec4 windData;
     vec4 fogParams;
     vec4 fogColorSnow;
     vec4 playerPosition;
-    vec4 worldCurvature; // layout must match
+    vec4 worldCurvature;
+    vec4 skyReflectColor;
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];

@@ -41,15 +41,18 @@ layout(binding = 1) uniform LightingUBO {
     uint pointLightCount;
     uint spotLightCount;
     uint _pad1;
-    mat4 lightSpaceMatrix;
+    mat4 cascadeViewProj[4];
+    vec4 cascadeSplits;
     float shadowBias;
     int shadowEnabled;
-    vec2 _shadowPad;
+    float shadowStrength;
+    float shadowMaxDistance;
     vec4 windData;  // xyz = wind direction * strength, w = time
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved
+    vec4 skyReflectColor;
 } lighting;
 
 layout(location = 0) out vec3 fragWorldPos;
