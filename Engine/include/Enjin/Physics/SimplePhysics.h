@@ -91,18 +91,18 @@ public:
                                CollisionResult& result);
 
     // Raycasting
-    RaycastHit Raycast(const Ray& ray, f32 maxDistance = 1000.0f);
-    std::vector<RaycastHit> RaycastAll(const Ray& ray, f32 maxDistance = 1000.0f);
+    RaycastHit Raycast(const Ray& ray, f32 maxDistance = 1000.0f, u32 layerMask = 0xFFFFFFFF);
+    std::vector<RaycastHit> RaycastAll(const Ray& ray, f32 maxDistance = 1000.0f, u32 layerMask = 0xFFFFFFFF);
 
     // Ground check (raycast downward)
-    bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit);
+    bool CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask = 0xFFFFFFFF);
 
     // Move and slide (for character controllers)
     Math::Vector3 MoveAndSlide(const Math::Vector3& position, const Math::Vector3& velocity,
-                                const AABB& collider, f32 deltaTime);
+                                const AABB& collider, f32 deltaTime, u32 layerMask = 0xFFFFFFFF);
 
     // Get all entities with colliders
-    std::vector<ECS::Entity> GetCollidersInRadius(const Math::Vector3& center, f32 radius);
+    std::vector<ECS::Entity> GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask = 0xFFFFFFFF);
 
     // Gravity
     void SetGravity(const Math::Vector3& gravity) { m_Gravity = gravity; }
@@ -111,6 +111,9 @@ public:
 private:
     // Get world-space AABB for an entity
     AABB GetEntityAABB(ECS::Entity entity);
+
+    // Get categoryBits from whichever collider exists on an entity
+    u32 GetEntityCategoryBits(ECS::Entity entity);
 
     ECS::World* m_World = nullptr;
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);

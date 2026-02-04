@@ -1057,7 +1057,7 @@ json SerializeBoxColliderComponent(const ECS::BoxColliderComponent& col) {
     j["isTrigger"] = col.isTrigger;
     j["friction"] = col.friction;
     j["bounciness"] = col.bounciness;
-    j["layer"] = col.layer;
+    j["categoryBits"] = col.categoryBits;
     j["collisionMask"] = col.collisionMask;
     return j;
 }
@@ -1069,7 +1069,13 @@ ECS::BoxColliderComponent DeserializeBoxColliderComponent(const json& j) {
     if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
-    if (j.contains("layer")) col.layer = j["layer"].get<u32>();
+    if (j.contains("categoryBits")) {
+        col.categoryBits = j["categoryBits"].get<u32>();
+    } else if (j.contains("layer")) {
+        // Migrate old "layer" field: layer 0 → bit 0, layer N → bit N
+        u32 oldLayer = j["layer"].get<u32>();
+        col.categoryBits = (oldLayer == 0) ? 1 : (1u << oldLayer);
+    }
     if (j.contains("collisionMask")) col.collisionMask = j["collisionMask"].get<u32>();
     return col;
 }
@@ -1081,7 +1087,7 @@ json SerializeSphereColliderComponent(const ECS::SphereColliderComponent& col) {
     j["isTrigger"] = col.isTrigger;
     j["friction"] = col.friction;
     j["bounciness"] = col.bounciness;
-    j["layer"] = col.layer;
+    j["categoryBits"] = col.categoryBits;
     j["collisionMask"] = col.collisionMask;
     return j;
 }
@@ -1093,7 +1099,12 @@ ECS::SphereColliderComponent DeserializeSphereColliderComponent(const json& j) {
     if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
-    if (j.contains("layer")) col.layer = j["layer"].get<u32>();
+    if (j.contains("categoryBits")) {
+        col.categoryBits = j["categoryBits"].get<u32>();
+    } else if (j.contains("layer")) {
+        u32 oldLayer = j["layer"].get<u32>();
+        col.categoryBits = (oldLayer == 0) ? 1 : (1u << oldLayer);
+    }
     if (j.contains("collisionMask")) col.collisionMask = j["collisionMask"].get<u32>();
     return col;
 }
@@ -1107,7 +1118,7 @@ json SerializeCapsuleColliderComponent(const ECS::CapsuleColliderComponent& col)
     j["isTrigger"] = col.isTrigger;
     j["friction"] = col.friction;
     j["bounciness"] = col.bounciness;
-    j["layer"] = col.layer;
+    j["categoryBits"] = col.categoryBits;
     j["collisionMask"] = col.collisionMask;
     return j;
 }
@@ -1121,7 +1132,12 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
     if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
-    if (j.contains("layer")) col.layer = j["layer"].get<u32>();
+    if (j.contains("categoryBits")) {
+        col.categoryBits = j["categoryBits"].get<u32>();
+    } else if (j.contains("layer")) {
+        u32 oldLayer = j["layer"].get<u32>();
+        col.categoryBits = (oldLayer == 0) ? 1 : (1u << oldLayer);
+    }
     if (j.contains("collisionMask")) col.collisionMask = j["collisionMask"].get<u32>();
     return col;
 }

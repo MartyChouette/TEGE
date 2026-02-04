@@ -93,10 +93,32 @@ void SimplePhysics::Update(f32 deltaTime) {
             groundRay.direction = Math::Vector3(0, -1, 0);
 
             // Check against all other entities with colliders
+            u32 entityCatBits = GetEntityCategoryBits(entity);
+            u32 entityColMask = 0xFFFFFFFF;
+            if (m_World->HasComponent<ECS::BoxColliderComponent>(entity))
+                entityColMask = m_World->GetComponent<ECS::BoxColliderComponent>(entity)->collisionMask;
+            else if (m_World->HasComponent<ECS::SphereColliderComponent>(entity))
+                entityColMask = m_World->GetComponent<ECS::SphereColliderComponent>(entity)->collisionMask;
+            else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))
+                entityColMask = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)->collisionMask;
+
             for (ECS::Entity other : m_World->GetAllEntities()) {
                 if (other == entity) continue;
                 AABB otherBounds = GetEntityAABB(other);
                 if (otherBounds.GetSize().x <= 0) continue;
+
+                // Bilateral collision filter
+                u32 otherCat = GetEntityCategoryBits(other);
+                u32 otherMask = 0xFFFFFFFF;
+                if (m_World->HasComponent<ECS::BoxColliderComponent>(other))
+                    otherMask = m_World->GetComponent<ECS::BoxColliderComponent>(other)->collisionMask;
+                else if (m_World->HasComponent<ECS::SphereColliderComponent>(other))
+                    otherMask = m_World->GetComponent<ECS::SphereColliderComponent>(other)->collisionMask;
+                else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(other))
+                    otherMask = m_World->GetComponent<ECS::CapsuleColliderComponent>(other)->collisionMask;
+
+                if (!(entityCatBits & otherMask) || !(otherCat & entityColMask))
+                    continue;
 
                 // Quick AABB overlap test for the ground check region
                 AABB checkRegion = AABB::FromCenterSize(
@@ -202,7 +224,7 @@ bool SimplePhysics::CheckSphereCollision(const Math::Vector3& centerA, f32 radiu
     return true;
 }
 
-RaycastHit SimplePhysics::Raycast(const Ray& ray, f32 maxDistance) {
+RaycastHit SimplePhysics::Raycast(const Ray& ray, f32 maxDistance, u32 layerMask) {
     RaycastHit closestHit;
     closestHit.distance = maxDistance;
 
@@ -211,6 +233,9 @@ RaycastHit SimplePhysics::Raycast(const Ray& ray, f32 maxDistance) {
     for (ECS::Entity entity : m_World->GetAllEntities()) {
         AABB aabb = GetEntityAABB(entity);
         if (aabb.GetSize().x <= 0) continue;  // No collider
+
+        // Skip entities whose category doesn't match the query mask
+        if (!(GetEntityCategoryBits(entity) & layerMask)) continue;
 
         // Ray-AABB intersection (slab method)
         f32 tmin = 0.0f;
@@ -268,7 +293,7 @@ RaycastHit SimplePhysics::Raycast(const Ray& ray, f32 maxDistance) {
     return closestHit;
 }
 
-std::vector<RaycastHit> SimplePhysics::RaycastAll(const Ray& ray, f32 maxDistance) {
+std::vector<RaycastHit> SimplePhysics::RaycastAll(const Ray& ray, f32 maxDistance, u32 layerMask) {
     std::vector<RaycastHit> hits;
 
     if (!m_World) return hits;
@@ -276,6 +301,8 @@ std::vector<RaycastHit> SimplePhysics::RaycastAll(const Ray& ray, f32 maxDistanc
     for (ECS::Entity entity : m_World->GetAllEntities()) {
         AABB aabb = GetEntityAABB(entity);
         if (aabb.GetSize().x <= 0) continue;
+
+        if (!(GetEntityCategoryBits(entity) & layerMask)) continue;
 
         // Ray-AABB intersection
         f32 tmin = 0.0f;
@@ -318,17 +345,17 @@ std::vector<RaycastHit> SimplePhysics::RaycastAll(const Ray& ray, f32 maxDistanc
     return hits;
 }
 
-bool SimplePhysics::CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit) {
+bool SimplePhysics::CheckGround(const Math::Vector3& position, f32 checkDistance, RaycastHit& hit, u32 layerMask) {
     Ray ray;
     ray.origin = position;
     ray.direction = Math::Vector3(0, -1, 0);
 
-    hit = Raycast(ray, checkDistance);
+    hit = Raycast(ray, checkDistance, layerMask);
     return hit.hit;
 }
 
 Math::Vector3 SimplePhysics::MoveAndSlide(const Math::Vector3& position, const Math::Vector3& velocity,
-                                           const AABB& collider, f32 deltaTime) {
+                                           const AABB& collider, f32 deltaTime, u32 layerMask) {
     if (!m_World) return position + velocity * deltaTime;
 
     Math::Vector3 newPos = position + velocity * deltaTime;
@@ -338,6 +365,8 @@ Math::Vector3 SimplePhysics::MoveAndSlide(const Math::Vector3& position, const M
     for (ECS::Entity entity : m_World->GetAllEntities()) {
         AABB otherAABB = GetEntityAABB(entity);
         if (otherAABB.GetSize().x <= 0) continue;
+
+        if (!(GetEntityCategoryBits(entity) & layerMask)) continue;
 
         CollisionResult result;
         if (CheckAABBCollision(movedCollider, otherAABB, result)) {
@@ -350,7 +379,7 @@ Math::Vector3 SimplePhysics::MoveAndSlide(const Math::Vector3& position, const M
     return newPos;
 }
 
-std::vector<ECS::Entity> SimplePhysics::GetCollidersInRadius(const Math::Vector3& center, f32 radius) {
+std::vector<ECS::Entity> SimplePhysics::GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask) {
     std::vector<ECS::Entity> result;
 
     if (!m_World) return result;
@@ -360,6 +389,8 @@ std::vector<ECS::Entity> SimplePhysics::GetCollidersInRadius(const Math::Vector3
     for (ECS::Entity entity : m_World->GetAllEntities()) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
+
+        if (!(GetEntityCategoryBits(entity) & layerMask)) continue;
 
         Math::Vector3 diff = transform->position - center;
         f32 distSq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
@@ -416,6 +447,16 @@ AABB SimplePhysics::GetEntityAABB(ECS::Entity entity) {
     }
 
     return aabb;
+}
+
+u32 SimplePhysics::GetEntityCategoryBits(ECS::Entity entity) {
+    if (m_World->HasComponent<ECS::BoxColliderComponent>(entity))
+        return m_World->GetComponent<ECS::BoxColliderComponent>(entity)->categoryBits;
+    if (m_World->HasComponent<ECS::SphereColliderComponent>(entity))
+        return m_World->GetComponent<ECS::SphereColliderComponent>(entity)->categoryBits;
+    if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))
+        return m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)->categoryBits;
+    return 1;  // Default group
 }
 
 } // namespace Physics

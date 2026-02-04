@@ -84,6 +84,12 @@ void PhysicsWorld::DetectCollisions() {
                 continue;
             }
 
+            // Bilateral collision filtering: both entities must agree to collide
+            if (!(m_RigidBodies[i]->GetCategoryBits() & m_RigidBodies[j]->GetCollisionMask()) ||
+                !(m_RigidBodies[j]->GetCategoryBits() & m_RigidBodies[i]->GetCollisionMask())) {
+                continue;
+            }
+
             CollisionPair pair;
             bool collided = false;
 
@@ -333,6 +339,8 @@ void PhysicsWorld::SyncFromECS() {
             body->SetHalfExtents(halfExtents);
             body->SetFriction(box->friction);
             body->SetRestitution(box->bounciness);
+            body->SetCategoryBits(box->categoryBits);
+            body->SetCollisionMask(box->collisionMask);
         } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
             auto* sphere = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity);
             body->SetShape(RigidBody::Shape::Sphere);
@@ -343,6 +351,19 @@ void PhysicsWorld::SyncFromECS() {
             body->SetBoundingRadius(sphere->radius * maxScale);
             body->SetFriction(sphere->friction);
             body->SetRestitution(sphere->bounciness);
+            body->SetCategoryBits(sphere->categoryBits);
+            body->SetCollisionMask(sphere->collisionMask);
+        } else if (m_ECSWorld->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
+            auto* capsule = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity);
+            body->SetShape(RigidBody::Shape::Sphere);  // Approximate capsule as sphere
+            colliderOffset = capsule->center;
+
+            f32 maxScale = Math::Max(transform->scale.x, Math::Max(transform->scale.y, transform->scale.z));
+            body->SetBoundingRadius(capsule->radius * maxScale);
+            body->SetFriction(capsule->friction);
+            body->SetRestitution(capsule->bounciness);
+            body->SetCategoryBits(capsule->categoryBits);
+            body->SetCollisionMask(capsule->collisionMask);
         }
 
         // Set body position from transform position + collider center offset
@@ -387,6 +408,8 @@ void PhysicsWorld::SyncToECS() {
             colliderOffset = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity)->center;
         } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
             colliderOffset = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity)->center;
+        } else if (m_ECSWorld->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
+            colliderOffset = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity)->center;
         }
 
         // Write position back (subtract collider offset)

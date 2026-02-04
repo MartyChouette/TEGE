@@ -163,6 +163,11 @@ public:
     Shape GetShape() const { return m_Shape; }
     void SetShape(Shape s) { m_Shape = s; }
 
+    u32 GetCategoryBits() const { return m_CategoryBits; }
+    void SetCategoryBits(u32 bits) { m_CategoryBits = bits; }
+    u32 GetCollisionMask() const { return m_CollisionMask; }
+    void SetCollisionMask(u32 mask) { m_CollisionMask = mask; }
+
 private:
     Math::Vector3 m_Position = Math::Vector3(0.0f);
     Math::Vector3 m_Velocity = Math::Vector3(0.0f);
@@ -174,6 +179,8 @@ private:
     Math::Vector3 m_HalfExtents = Math::Vector3(0.5f, 0.5f, 0.5f);
     f32 m_Restitution = 0.3f;
     f32 m_Friction = 0.5f;
+    u32 m_CategoryBits = 1;
+    u32 m_CollisionMask = 0xFFFFFFFF;
 };
 
 } // namespace Physics

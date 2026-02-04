@@ -115,6 +115,71 @@ static bool Physics_CheckBox(const Vector3& center, const Vector3& halfExtents) 
     return false;
 }
 
+// Masked overloads — filter by collision layer mask
+static bool Physics_Raycast_Masked(const Vector3& origin, const Vector3& direction, f32 maxDistance, u32 layerMask) {
+    if (!s_BindingsPhysics) return false;
+
+    Physics::Ray ray;
+    ray.origin = origin;
+    ray.direction = direction.Normalized();
+
+    Physics::RaycastHit hit = s_BindingsPhysics->Raycast(ray, maxDistance, layerMask);
+    return hit.hit;
+}
+
+static bool Physics_RaycastHit_Masked(const Vector3& origin, const Vector3& direction,
+                                      f32 maxDistance, u32 layerMask, RaycastHit& outHit) {
+    if (!s_BindingsPhysics) {
+        outHit = RaycastHit();
+        return false;
+    }
+
+    Physics::Ray ray;
+    ray.origin = origin;
+    ray.direction = direction.Normalized();
+
+    Physics::RaycastHit hit = s_BindingsPhysics->Raycast(ray, maxDistance, layerMask);
+    if (hit.hit) {
+        outHit.point = hit.point;
+        outHit.normal = hit.normal;
+        outHit.distance = hit.distance;
+        outHit.entity = static_cast<u64>(hit.entity);
+        return true;
+    }
+
+    outHit = RaycastHit();
+    return false;
+}
+
+static bool Physics_CheckSphere_Masked(const Vector3& center, f32 radius, u32 layerMask) {
+    if (!s_BindingsPhysics) return false;
+
+    auto entities = s_BindingsPhysics->GetCollidersInRadius(center, radius, layerMask);
+    return !entities.empty();
+}
+
+static bool Physics_CheckBox_Masked(const Vector3& center, const Vector3& halfExtents, u32 layerMask) {
+    if (!s_BindingsPhysics || !s_BindingsWorld) return false;
+
+    Physics::AABB testBox = Physics::AABB::FromCenterSize(center, halfExtents * 2.0f);
+
+    auto entities = s_BindingsWorld->GetEntitiesWithComponent<BoxColliderComponent>();
+    for (Entity e : entities) {
+        auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(e);
+        auto* bc = s_BindingsWorld->GetComponent<BoxColliderComponent>(e);
+        if (!tc || !bc) continue;
+
+        if (!(bc->categoryBits & layerMask)) continue;
+
+        Vector3 worldCenter = tc->position + bc->center;
+        Physics::AABB entityBox = Physics::AABB::FromCenterSize(worldCenter, bc->size);
+        if (testBox.Intersects(entityBox)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void Physics_AddForce(u64 entityId, const Vector3& force) {
     if (!s_BindingsWorld) return;
 
@@ -205,6 +270,23 @@ void RegisterPhysicsBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool Physics_CheckBox(const Vector3 &in, const Vector3 &in)",
         asFUNCTION(Physics_CheckBox), asCALL_CDECL));
+
+    // Masked overloads (with layerMask parameter)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Physics_Raycast(const Vector3 &in, const Vector3 &in, float, uint)",
+        asFUNCTION(Physics_Raycast_Masked), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Physics_RaycastHit(const Vector3 &in, const Vector3 &in, float, uint, RaycastHit &out)",
+        asFUNCTION(Physics_RaycastHit_Masked), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Physics_CheckSphere(const Vector3 &in, float, uint)",
+        asFUNCTION(Physics_CheckSphere_Masked), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Physics_CheckBox(const Vector3 &in, const Vector3 &in, uint)",
+        asFUNCTION(Physics_CheckBox_Masked), asCALL_CDECL));
 
     // ---- Physics body manipulation ----
     AS_CHECK(engine->RegisterGlobalFunction(

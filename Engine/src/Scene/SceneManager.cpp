@@ -10,6 +10,9 @@ namespace Enjin {
 namespace Scene {
 
 SceneManager::SceneManager() {
+    // Initialize 32 collision group slots, index 0 = "Default"
+    m_CollisionGroupNames.resize(32);
+    m_CollisionGroupNames[0] = "Default";
 }
 
 // --- Project / Manifest ---
@@ -21,6 +24,9 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_ProjectRoot.clear();
     m_CurrentSceneName.clear();
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+    m_CollisionGroupNames.clear();
+    m_CollisionGroupNames.resize(32);
+    m_CollisionGroupNames[0] = "Default";
 }
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
@@ -48,6 +54,17 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
                 entry.buildIndex = sceneJson.value("buildIndex", -1);
                 entry.isStartScene = sceneJson.value("isStartScene", false);
                 m_Scenes.push_back(entry);
+            }
+        }
+
+        // Load collision group names
+        m_CollisionGroupNames.clear();
+        m_CollisionGroupNames.resize(32);
+        m_CollisionGroupNames[0] = "Default";
+        if (root.contains("collisionGroups") && root["collisionGroups"].is_array()) {
+            const auto& groups = root["collisionGroups"];
+            for (usize i = 0; i < groups.size() && i < 32; ++i) {
+                m_CollisionGroupNames[i] = groups[i].get<std::string>();
             }
         }
 
@@ -84,6 +101,13 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
             scenesArray.push_back(sceneJson);
         }
         root["scenes"] = scenesArray;
+
+        // Save collision group names
+        nlohmann::json groupsArray = nlohmann::json::array();
+        for (const auto& name : m_CollisionGroupNames) {
+            groupsArray.push_back(name);
+        }
+        root["collisionGroups"] = groupsArray;
 
         // Save project-level render defaults
         root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);

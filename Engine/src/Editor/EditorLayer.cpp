@@ -5794,6 +5794,44 @@ void EditorLayer::DrawPostProcessingPanel() {
         }
     }
 
+    // Collision Groups
+    if (ImGui::CollapsingHeader("Collision Groups")) {
+        auto& groupNames = m_SceneManager.GetCollisionGroupNames();
+
+        // Determine visible count: all named groups + 2 blank slots
+        int visibleCount = 1;
+        for (int i = 1; i < 32; ++i) {
+            if (!groupNames[i].empty()) visibleCount = i + 1;
+        }
+        visibleCount = std::min(visibleCount + 2, 32);
+
+        for (int i = 0; i < visibleCount; ++i) {
+            ImGui::PushID(i);
+            char label[32];
+            snprintf(label, sizeof(label), "Group %d", i);
+
+            if (i == 0) {
+                // Group 0 "Default" is read-only
+                ImGui::TextDisabled("%s", label);
+                ImGui::SameLine();
+                ImGui::TextDisabled("Default");
+            } else {
+                ImGui::Text("%s", label);
+                ImGui::SameLine();
+                char buf[64];
+                strncpy(buf, groupNames[i].c_str(), sizeof(buf) - 1);
+                buf[sizeof(buf) - 1] = '\0';
+                ImGui::SetNextItemWidth(150.0f);
+                if (ImGui::InputText("##name", buf, sizeof(buf))) {
+                    groupNames[i] = buf;
+                }
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::TextDisabled("Named groups appear as checkboxes on collider components.");
+    }
+
     ImGui::End();
 }
 
@@ -10095,6 +10133,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     else if (templateId == "flower") {
         // Flower Garden template - procedural flower with pluckable leaves and petals
 
+        // Set up collision group names for flower parts
+        auto& groups = m_SceneManager.GetCollisionGroupNames();
+        groups[1] = "Petals";
+        groups[2] = "Leaves";
+
         // Ground plane
         {
             ECS::Entity ground = m_World->CreateEntity();
@@ -10196,6 +10239,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 50.0f;
             grab.grabRadius = 0.15f;
+
+            // Collision filtering: petals don't collide with other petals
+            auto& petalCol = m_World->AddComponent<ECS::SphereColliderComponent>(petal);
+            petalCol.radius = 0.2f;
+            petalCol.categoryBits = (1u << 1);       // "Petals" group
+            petalCol.collisionMask = ~(1u << 1);      // Collide with everything except petals
         }
 
         // Leaves along the stem (connected to stem)
@@ -10234,6 +10283,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
             grab.grabRadius = 0.12f;
+
+            // Collision filtering: leaves don't collide with other leaves
+            auto& leafCol = m_World->AddComponent<ECS::SphereColliderComponent>(leaf);
+            leafCol.radius = 0.15f;
+            leafCol.categoryBits = (1u << 2);        // "Leaves" group
+            leafCol.collisionMask = ~(1u << 2);       // Collide with everything except leaves
         }
 
         // Camera
@@ -13655,6 +13710,8 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
             ImGui::DragFloat("Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
             ImGui::TreePop();
         }
+
+        DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
     }
 }
 
@@ -14380,13 +14437,7 @@ void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNode("Collision Filtering")) {
-            int layer = static_cast<int>(col->layer);
-            if (ImGui::InputInt("Layer", &layer)) {
-                col->layer = static_cast<u32>(layer);
-            }
-            ImGui::TreePop();
-        }
+        DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
 
         if (ImGui::BeginPopupContextItem("SphereColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
@@ -14418,11 +14469,13 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
 
         ImGui::Checkbox("Is Trigger", &col->isTrigger);
 
-        if (ImGui::TreeNode("Physics Material")) {
+        if (ImGui::TreeNode("Physics Material##Capsule")) {
             ImGui::DragFloat("Friction", &col->friction, 0.05f, 0.0f, 1.0f);
             ImGui::DragFloat("Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
             ImGui::TreePop();
         }
+
+        DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
 
         if (ImGui::BeginPopupContextItem("CapsuleColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
@@ -14430,6 +14483,55 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
             }
             ImGui::EndPopup();
         }
+    }
+}
+
+void EditorLayer::DrawCollisionFilteringUI(u32& categoryBits, u32& collisionMask) {
+    if (ImGui::TreeNode("Collision Filtering")) {
+        const auto& groupNames = m_SceneManager.GetCollisionGroupNames();
+
+        // Determine how many groups to show: all named groups + 2 blank slots
+        int visibleCount = 1; // Always show at least "Default"
+        for (int i = 1; i < 32; ++i) {
+            if (!groupNames[i].empty()) visibleCount = i + 1;
+        }
+        visibleCount = std::min(visibleCount + 2, 32); // Show 2 extra blank slots
+
+        ImGui::Text("Category (belongs to):");
+        for (int i = 0; i < visibleCount; ++i) {
+            const char* label = groupNames[i].empty() ?
+                nullptr : groupNames[i].c_str();
+            if (!label) continue; // Skip unnamed groups in category list
+
+            ImGui::PushID(i);
+            bool belongs = (categoryBits & (1u << i)) != 0;
+            if (ImGui::Checkbox(label, &belongs)) {
+                if (belongs) categoryBits |= (1u << i);
+                else         categoryBits &= ~(1u << i);
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::Text("Collides with:");
+        for (int i = 0; i < visibleCount; ++i) {
+            const char* label = groupNames[i].empty() ?
+                nullptr : groupNames[i].c_str();
+            if (!label) continue;
+
+            ImGui::PushID(1000 + i);
+            bool collides = (collisionMask & (1u << i)) != 0;
+            if (ImGui::Checkbox(label, &collides)) {
+                if (collides) collisionMask |= (1u << i);
+                else          collisionMask &= ~(1u << i);
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Category: 0x%08X  Mask: 0x%08X", categoryBits, collisionMask);
+
+        ImGui::TreePop();
     }
 }
 

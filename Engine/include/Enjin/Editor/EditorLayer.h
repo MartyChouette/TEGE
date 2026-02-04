@@ -227,6 +227,7 @@ private:
     void DrawBoxColliderComponent(ECS::Entity entity);
     void DrawSphereColliderComponent(ECS::Entity entity);
     void DrawCapsuleColliderComponent(ECS::Entity entity);
+    void DrawCollisionFilteringUI(u32& categoryBits, u32& collisionMask);
     void DrawTriggerZoneComponent(ECS::Entity entity);
     void DrawDamageComponent(ECS::Entity entity);
     void DrawInteractableComponent(ECS::Entity entity);

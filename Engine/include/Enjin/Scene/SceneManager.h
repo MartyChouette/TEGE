@@ -117,6 +117,10 @@ public:
     f32 GetTransitionAlpha() const { return m_TransitionAlpha; }
     bool IsTransitioning() const { return m_TransitionState != TransitionState::None; }
 
+    // --- Collision group names (up to 32 groups, one per bit) ---
+    const std::vector<std::string>& GetCollisionGroupNames() const { return m_CollisionGroupNames; }
+    std::vector<std::string>& GetCollisionGroupNames() { return m_CollisionGroupNames; }
+
     // --- Project-level render defaults ---
     void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
@@ -136,6 +140,9 @@ private:
     std::string m_ManifestPath;    // Path to the .enjinproject file
     std::string m_ProjectRoot;     // Directory containing the manifest
     std::vector<SceneEntry> m_Scenes;
+
+    // Collision group names (index = bit number, up to 32)
+    std::vector<std::string> m_CollisionGroupNames;
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;

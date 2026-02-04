@@ -103,7 +103,7 @@ int main() {
         box.isTrigger = true;
         box.friction = 0.8f;
         box.bounciness = 0.4f;
-        box.layer = 3;
+        box.categoryBits = (1u << 3);
         box.collisionMask = 0xFF00FF00;
 
         auto& sphere = srcWorld.AddComponent<ECS::SphereColliderComponent>(e);
@@ -505,6 +505,7 @@ int main() {
             CHECK_VEC3(box->size, 2, 3, 4, "box.size");
             CHECK_BOOL(box->isTrigger, true, "box.isTrigger");
             CHECK_FLOAT(box->friction, 0.8f, "box.friction");
+            CHECK_EQ(box->categoryBits, (1u << 3), "box.categoryBits");
             CHECK_EQ(box->collisionMask, 0xFF00FF00u, "box.collisionMask");
         }
         HAS_COMPONENT(dstWorld, e, ECS::SphereColliderComponent, "SphereColliderComponent");

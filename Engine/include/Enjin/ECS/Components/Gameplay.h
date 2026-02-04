@@ -121,9 +121,9 @@ struct BoxColliderComponent {
     f32 friction = 0.5f;
     f32 bounciness = 0.0f;
 
-    // Layer for collision filtering
-    u32 layer = 0;
-    u32 collisionMask = 0xFFFFFFFF;  // Collides with all layers by default
+    // Collision filtering (bitmask system)
+    u32 categoryBits = 1;            // Bit 0 = "Default" group
+    u32 collisionMask = 0xFFFFFFFF;  // Collides with all groups by default
 };
 
 // Sphere Collider
@@ -135,7 +135,7 @@ struct SphereColliderComponent {
     f32 friction = 0.5f;
     f32 bounciness = 0.0f;
 
-    u32 layer = 0;
+    u32 categoryBits = 1;
     u32 collisionMask = 0xFFFFFFFF;
 };
 
@@ -152,7 +152,7 @@ struct CapsuleColliderComponent {
     f32 friction = 0.5f;
     f32 bounciness = 0.0f;
 
-    u32 layer = 0;
+    u32 categoryBits = 1;
     u32 collisionMask = 0xFFFFFFFF;
 };
 
