@@ -6020,6 +6020,33 @@ void EditorLayer::DrawEffectsPanel() {
                 ImGui::TreePop();
             }
 
+            // Vertex Jitter (PS1 style)
+            if (ImGui::TreeNode("Vertex Jitter (PS1)")) {
+                auto& jitter = m_RetroEffects.GetVertexJitter();
+                ImGui::Checkbox("Enabled##Jitter", &jitter.enabled);
+                if (jitter.enabled) {
+                    ImGui::DragFloat("Amount", &jitter.jitterAmount, 0.1f, 0.0f, 5.0f);
+                    ImGui::Checkbox("Snap to Grid", &jitter.snapToGrid);
+                    int gridRes = static_cast<int>(jitter.gridResolution);
+                    if (ImGui::DragInt("Grid Resolution", &gridRes, 1, 80, 320)) {
+                        jitter.gridResolution = static_cast<u32>(gridRes);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            // Affine Texture Warping (PS1)
+            if (ImGui::TreeNode("Affine Warping (PS1)")) {
+                auto& affine = m_RetroEffects.GetAffineSettings();
+                ImGui::Checkbox("Enabled##Affine", &affine.enabled);
+                if (affine.enabled) {
+                    ImGui::DragFloat("Warp Strength", &affine.warpStrength, 0.1f, 0.0f, 2.0f);
+                    ImGui::Checkbox("Vertex Snapping", &affine.vertexSnapping);
+                    ImGui::DragFloat("Snap Grid Size", &affine.snapGridSize, 0.1f, 0.5f, 4.0f);
+                }
+                ImGui::TreePop();
+            }
+
             // CRT Filter
             if (ImGui::TreeNode("CRT Filter")) {
                 auto& crt = m_RetroEffects.GetCRTSettings();
@@ -6072,6 +6099,16 @@ void EditorLayer::DrawEffectsPanel() {
                     ImGui::Checkbox("Screen Tear", &vhs.screenTear);
                     ImGui::Checkbox("Interlacing", &vhs.interlacing);
                 }
+                ImGui::TreePop();
+            }
+
+            // Global Gouraud-only mode
+            if (ImGui::TreeNode("Global Retro Shading")) {
+                bool gouraud = m_RetroEffects.GetGouraudOnly();
+                if (ImGui::Checkbox("Force Gouraud Shading", &gouraud)) {
+                    m_RetroEffects.SetGouraudOnly(gouraud);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use vertex-interpolated lighting for all entities (faceted look)");
                 ImGui::TreePop();
             }
 
