@@ -116,23 +116,59 @@ std::string FileDialog::OpenFolder(
     const std::string& title,
     const std::string& defaultPath
 ) {
-    char path[MAX_PATH] = "";
+    // Use modern IFileOpenDialog with FOS_PICKFOLDERS (Vista+)
+    // This matches the dialog style of GetOpenFileNameA and avoids
+    // the SHBrowseForFolder COM/re-entrancy issues.
+    std::string result;
 
-    BROWSEINFOA bi = {};
-    bi.hwndOwner = nullptr;
-    bi.lpszTitle = title.c_str();
-    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
+    bool comInitialized = SUCCEEDED(hr) || hr == S_FALSE; // S_FALSE = already initialized
+    if (!comInitialized && hr != RPC_E_CHANGED_MODE) return "";
 
-    LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
-    if (pidl != nullptr) {
-        if (SHGetPathFromIDListA(pidl, path)) {
-            CoTaskMemFree(pidl);
-            return std::string(path);
+    IFileOpenDialog* pDialog = nullptr;
+    hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
+                          IID_IFileOpenDialog, reinterpret_cast<void**>(&pDialog));
+    if (SUCCEEDED(hr)) {
+        DWORD options = 0;
+        pDialog->GetOptions(&options);
+        pDialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
+
+        // Set title
+        std::wstring wTitle(title.begin(), title.end());
+        pDialog->SetTitle(wTitle.c_str());
+
+        // Set default folder if provided
+        if (!defaultPath.empty()) {
+            std::wstring wPath(defaultPath.begin(), defaultPath.end());
+            IShellItem* pFolder = nullptr;
+            if (SUCCEEDED(SHCreateItemFromParsingName(wPath.c_str(), nullptr,
+                          IID_IShellItem, reinterpret_cast<void**>(&pFolder)))) {
+                pDialog->SetFolder(pFolder);
+                pFolder->Release();
+            }
         }
-        CoTaskMemFree(pidl);
+
+        hr = pDialog->Show(nullptr);
+        if (SUCCEEDED(hr)) {
+            IShellItem* pItem = nullptr;
+            if (SUCCEEDED(pDialog->GetResult(&pItem))) {
+                PWSTR pszPath = nullptr;
+                if (SUCCEEDED(pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszPath))) {
+                    int len = WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, nullptr, 0, nullptr, nullptr);
+                    if (len > 0) {
+                        result.resize(len - 1);
+                        WideCharToMultiByte(CP_UTF8, 0, pszPath, -1, result.data(), len, nullptr, nullptr);
+                    }
+                    CoTaskMemFree(pszPath);
+                }
+                pItem->Release();
+            }
+        }
+        pDialog->Release();
     }
 
-    return "";
+    if (comInitialized) CoUninitialize();
+    return result;
 }
 
 #elif defined(__APPLE__)
