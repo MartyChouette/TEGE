@@ -588,6 +588,10 @@ private:
     ImVec2 m_UIEditDragStart = {0, 0};
     GUI::UIAnchor m_UIEditDragStartAnchor;
 
+    // Component search popup state
+    char m_ComponentSearchBuf[256] = {};
+    int m_ComponentSearchSelectedIndex = -1;
+
     void DrawUIEditorOverlay();
     void HandleUIEditorInput();
     void UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY);

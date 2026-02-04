@@ -24,6 +24,16 @@ void EditorSettings::AddRecentProject(const std::string& path) {
     }
 }
 
+void EditorSettings::AddRecentComponent(const std::string& name) {
+    recentComponents.erase(
+        std::remove(recentComponents.begin(), recentComponents.end(), name),
+        recentComponents.end());
+    recentComponents.insert(recentComponents.begin(), name);
+    if (static_cast<int>(recentComponents.size()) > MAX_RECENT_COMPONENTS) {
+        recentComponents.resize(MAX_RECENT_COMPONENTS);
+    }
+}
+
 std::string EditorSettings::GetDefaultPath() {
 #ifdef _WIN32
     const char* appdata = std::getenv("APPDATA");
@@ -99,6 +109,12 @@ bool EditorSettings::Save(const std::string& path) const {
         j["recentProjects"] = json::array();
         for (const auto& rp : recentProjects) {
             j["recentProjects"].push_back(rp);
+        }
+
+        // Recent components
+        j["recentComponents"] = json::array();
+        for (const auto& rc : recentComponents) {
+            j["recentComponents"].push_back(rc);
         }
 
         std::ofstream file(savePath);
@@ -177,6 +193,16 @@ bool EditorSettings::Load(const std::string& path) {
             for (const auto& rp : j["recentProjects"]) {
                 if (rp.is_string()) {
                     recentProjects.push_back(rp.get<std::string>());
+                }
+            }
+        }
+
+        // Recent components
+        if (j.contains("recentComponents") && j["recentComponents"].is_array()) {
+            recentComponents.clear();
+            for (const auto& rc : j["recentComponents"]) {
+                if (rc.is_string()) {
+                    recentComponents.push_back(rc.get<std::string>());
                 }
             }
         }

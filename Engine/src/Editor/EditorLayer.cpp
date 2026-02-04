@@ -58,6 +58,289 @@
 namespace Enjin {
 namespace Editor {
 
+// --- Component search bar data ---
+
+struct ComponentEntry {
+    const char* displayName;
+    const char* category;
+    const char* controllerType; // non-null for controllers needing camera setup
+    std::function<bool(ECS::World*, ECS::Entity)> hasComponent;
+    std::function<void(ECS::World*, ECS::Entity)> addComponent;
+};
+
+static const std::vector<ComponentEntry>& GetComponentEntries() {
+    static const std::vector<ComponentEntry> entries = {
+        // -- Rendering --
+        {"Mesh", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshComponent>(e); }},
+        {"LOD (Auto-Generate)", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LODComponent>(e) || !w->HasComponent<ECS::MeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) {
+                auto* mesh = w->GetComponent<ECS::MeshComponent>(e);
+                if (mesh && mesh->IsValid()) {
+                    auto& lod = w->AddComponent<ECS::LODComponent>(e);
+                    Renderer::MeshSimplifier::GenerateLODs(*mesh, lod);
+                }
+            }},
+        {"Material", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MaterialComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); }},
+        {"Light", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LightComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LightComponent>(e); }},
+        {"Camera", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraComponent>(e); }},
+        {"Text", "Rendering", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TextComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); }},
+
+        // -- Character Controller --
+        {"2D Platformer", "Character Controller", "Platformer2D",
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Platformer2DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Platformer2DController>(e); }},
+        {"2D Top-Down", "Character Controller", "TopDown2D",
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown2DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown2DController>(e); }},
+        {"3D Top-Down (Isometric)", "Character Controller", "TopDown3D",
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown3DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown3DController>(e); }},
+        {"3D Third Person", "Character Controller", "ThirdPerson",
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ThirdPersonController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ThirdPersonController>(e); }},
+        {"3D First Person", "Character Controller", "FirstPerson",
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FirstPersonController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FirstPersonController>(e); }},
+        {"Vehicle", "Character Controller", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VehicleController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); }},
+
+        // -- Physics --
+        {"Rigidbody", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RigidbodyComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RigidbodyComponent>(e); }},
+        {"Box Collider", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BoxColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoxColliderComponent>(e); }},
+        {"Sphere Collider", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SphereColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SphereColliderComponent>(e); }},
+        {"Capsule Collider", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CapsuleColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CapsuleColliderComponent>(e); }},
+        {"Trigger Zone", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TriggerZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TriggerZoneComponent>(e); }},
+
+        // -- Gameplay --
+        {"Health", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HealthComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); }},
+        {"Damage", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DamageComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageComponent>(e); }},
+        {"Interactable", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::InteractableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractableComponent>(e); }},
+        {"Pickup", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PickupComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PickupComponent>(e); }},
+        {"Inventory", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::InventoryComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InventoryComponent>(e); }},
+        {"Timer", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TimerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TimerComponent>(e); }},
+        {"Possessable", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PossessableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PossessableComponent>(e); }},
+        {"Damage Resistance", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DamageResistanceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageResistanceComponent>(e); }},
+        {"Resource/Stamina", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ResourceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ResourceComponent>(e); }},
+        {"Footstep", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FootstepComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FootstepComponent>(e); }},
+        {"Poolable", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoolableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoolableComponent>(e); }},
+        {"Quest State", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::QuestStateComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::QuestStateComponent>(e); }},
+        {"HUD Widget", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HUDWidgetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HUDWidgetComponent>(e); }},
+        {"UI Canvas", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<GUI::UICanvasComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<GUI::UICanvasComponent>(e); }},
+        {"Cinematic Camera", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CinematicCameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CinematicCameraComponent>(e); }},
+
+        // -- Joints --
+        {"Distance Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DistanceJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DistanceJointComponent>(e); }},
+        {"Hinge Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HingeJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HingeJointComponent>(e); }},
+        {"Ball-Socket Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BallSocketJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BallSocketJointComponent>(e); }},
+        {"Spring Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SpringJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpringJointComponent>(e); }},
+        {"Fixed Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FixedJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FixedJointComponent>(e); }},
+        {"Slider Joint", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SliderJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SliderJointComponent>(e); }},
+        {"Ragdoll", "Joints", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RagdollComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RagdollComponent>(e); }},
+
+        // -- AI --
+        {"AI Controller", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AIControllerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AIControllerComponent>(e); }},
+        {"Follow Target", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FollowTargetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FollowTargetComponent>(e); }},
+        {"Look At Target", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LookAtTargetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LookAtTargetComponent>(e); }},
+        {"Waypoint", "AI", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaypointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaypointComponent>(e); }},
+
+        // -- Audio --
+        {"Audio Source", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioSourceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioSourceComponent>(e); }},
+        {"Audio Listener", "Audio", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioListenerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioListenerComponent>(e); }},
+
+        // -- Visual --
+        {"Billboard", "Visual", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BillboardComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BillboardComponent>(e); }},
+        {"Particle Emitter", "Visual", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ParticleEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParticleEmitterComponent>(e); }},
+
+        // -- Effects --
+        {"Weather Zone", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WeatherZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WeatherZoneComponent>(e); }},
+        {"Water Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaterVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVolumeComponent>(e); }},
+        {"Grass Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GrassVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrassVolumeComponent>(e); }},
+        {"Shrub Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ShrubVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ShrubVolumeComponent>(e); }},
+        {"Tree Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TreeVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TreeVolumeComponent>(e); }},
+        {"Vegetation", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VegetationComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VegetationComponent>(e); }},
+        {"Camera Trigger", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraTriggerComponent>(e); }},
+        {"Temperature Zone", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TemperatureZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TemperatureZoneComponent>(e); }},
+        {"Gravity Zone", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GravityZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); }},
+
+        // -- 2D Graphics --
+        {"Sprite", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Sprite2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Sprite2DComponent>(e); }},
+        {"Animated Sprite", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimatedSprite2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatedSprite2DComponent>(e); }},
+        {"Tilemap", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TilemapComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TilemapComponent>(e); }},
+        {"2D Camera Bounds", "2D Graphics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Camera2DBoundsComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Camera2DBoundsComponent>(e); }},
+
+        // -- Scripting --
+        {"Script", "Scripting", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ScriptComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ScriptComponent>(e); }},
+        {"Notes", "Scripting", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NotesComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NotesComponent>(e); }},
+
+        // -- Puzzle --
+        {"Lock", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LockComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LockComponent>(e); }},
+        {"Pushable", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PushableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PushableComponent>(e); }},
+        {"Switch", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SwitchComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwitchComponent>(e); }},
+        {"Goal Zone", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GoalZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GoalZoneComponent>(e); }},
+        {"Conveyor", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ConveyorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ConveyorComponent>(e); }},
+        {"Teleporter", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TeleporterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TeleporterComponent>(e); }},
+        {"Destructible", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DestructibleComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DestructibleComponent>(e); }},
+        {"Moving Platform", "Puzzle", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MovingPlatformComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MovingPlatformComponent>(e); }},
+
+        // -- Other --
+        {"Tags", "Other", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TagComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TagComponent>(e); }},
+        {"Spawn Point", "Other", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SpawnPointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpawnPointComponent>(e); }},
+    };
+    return entries;
+}
+
+static bool ComponentMatchesFilter(const ComponentEntry& entry, const char* filter) {
+    if (!filter || filter[0] == '\0') return true;
+
+    // Case-insensitive substring match on displayName and category
+    std::string lowerFilter(filter);
+    std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::string lowerName(entry.displayName);
+    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::string lowerCat(entry.category);
+    std::transform(lowerCat.begin(), lowerCat.end(), lowerCat.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    return lowerName.find(lowerFilter) != std::string::npos ||
+           lowerCat.find(lowerFilter) != std::string::npos;
+}
+
 EditorLayer::EditorLayer() {
 }
 
@@ -2928,437 +3211,166 @@ void EditorLayer::DrawInspectorPanel() {
             ImGui::OpenPopup("AddComponentPopup");
         }
 
+        ImGui::SetNextWindowSizeConstraints(ImVec2(300, 0), ImVec2(400, 500));
         if (ImGui::BeginPopup("AddComponentPopup")) {
-            if (!m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Mesh")) {
-                    m_World->AddComponent<ECS::MeshComponent>(m_PrimarySelected);
-                }
+            const auto& allEntries = GetComponentEntries();
+            bool hasFilter = m_ComponentSearchBuf[0] != '\0';
+
+            // Auto-focus search field on first frame
+            if (ImGui::IsWindowAppearing()) {
+                ImGui::SetKeyboardFocusHere();
             }
-            if (!m_World->HasComponent<ECS::LODComponent>(m_PrimarySelected) &&
-                m_World->HasComponent<ECS::MeshComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("LOD (Auto-Generate)")) {
-                    auto* mesh = m_World->GetComponent<ECS::MeshComponent>(m_PrimarySelected);
-                    if (mesh && mesh->IsValid()) {
-                        auto& lod = m_World->AddComponent<ECS::LODComponent>(m_PrimarySelected);
-                        Renderer::MeshSimplifier::GenerateLODs(*mesh, lod);
-                    }
-                }
+
+            // Track previous filter to detect changes
+            char prevFilter[256];
+            std::memcpy(prevFilter, m_ComponentSearchBuf, sizeof(prevFilter));
+
+            ImGui::SetNextItemWidth(-1);
+            ImGui::InputTextWithHint("##ComponentSearch", "Search components...", m_ComponentSearchBuf, sizeof(m_ComponentSearchBuf));
+
+            // Reset selection index when filter changes
+            if (std::strcmp(prevFilter, m_ComponentSearchBuf) != 0) {
+                m_ComponentSearchSelectedIndex = 0;
             }
-            if (!m_World->HasComponent<ECS::MaterialComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Material")) {
-                    m_World->AddComponent<ECS::MaterialComponent>(m_PrimarySelected);
-                }
-            }
-            if (!m_World->HasComponent<ECS::LightComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Light")) {
-                    m_World->AddComponent<ECS::LightComponent>(m_PrimarySelected);
-                }
-            }
-            if (!m_World->HasComponent<ECS::CameraComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Camera")) {
-                    m_World->AddComponent<ECS::CameraComponent>(m_PrimarySelected);
-                }
-            }
-            if (!m_World->HasComponent<ECS::NotesComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Notes")) {
-                    m_World->AddComponent<ECS::NotesComponent>(m_PrimarySelected);
-                }
-            }
-            if (!m_World->HasComponent<ECS::TextComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Text")) {
-                    m_World->AddComponent<ECS::TextComponent>(m_PrimarySelected);
-                }
-            }
+
             ImGui::Separator();
 
-            // Character Controllers submenu
-            if (ImGui::BeginMenu("Character Controller")) {
-                if (!m_World->HasComponent<ECS::Platformer2DController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("2D Platformer")) {
-                        m_World->AddComponent<ECS::Platformer2DController>(m_PrimarySelected);
-                        SetupCameraForController(m_PrimarySelected, "Platformer2D");
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TopDown2DController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("2D Top-Down")) {
-                        m_World->AddComponent<ECS::TopDown2DController>(m_PrimarySelected);
-                        SetupCameraForController(m_PrimarySelected, "TopDown2D");
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TopDown3DController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("3D Top-Down (Isometric)")) {
-                        m_World->AddComponent<ECS::TopDown3DController>(m_PrimarySelected);
-                        SetupCameraForController(m_PrimarySelected, "TopDown3D");
-                    }
-                }
-                if (!m_World->HasComponent<ECS::ThirdPersonController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("3D Third Person")) {
-                        m_World->AddComponent<ECS::ThirdPersonController>(m_PrimarySelected);
-                        SetupCameraForController(m_PrimarySelected, "ThirdPerson");
-                    }
-                }
-                if (!m_World->HasComponent<ECS::FirstPersonController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("3D First Person")) {
-                        m_World->AddComponent<ECS::FirstPersonController>(m_PrimarySelected);
-                        SetupCameraForController(m_PrimarySelected, "FirstPerson");
-                    }
-                }
-                if (!m_World->HasComponent<ECS::VehicleController>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Vehicle")) {
-                        m_World->AddComponent<ECS::VehicleController>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
+            // Build visible entries list (not already on entity, matches filter)
+            struct VisibleEntry {
+                int originalIndex;
+                const ComponentEntry* entry;
+            };
+            std::vector<VisibleEntry> visible;
+            for (int i = 0; i < static_cast<int>(allEntries.size()); i++) {
+                const auto& e = allEntries[i];
+                if (e.hasComponent(m_World, m_PrimarySelected)) continue;
+                if (!ComponentMatchesFilter(e, m_ComponentSearchBuf)) continue;
+                visible.push_back({i, &e});
             }
 
-            // Physics submenu
-            if (ImGui::BeginMenu("Physics")) {
-                if (!m_World->HasComponent<ECS::RigidbodyComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Rigidbody")) {
-                        m_World->AddComponent<ECS::RigidbodyComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::BoxColliderComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Box Collider")) {
-                        m_World->AddComponent<ECS::BoxColliderComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::SphereColliderComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Sphere Collider")) {
-                        m_World->AddComponent<ECS::SphereColliderComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Capsule Collider")) {
-                        m_World->AddComponent<ECS::CapsuleColliderComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TriggerZoneComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Trigger Zone")) {
-                        m_World->AddComponent<ECS::TriggerZoneComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
+            // Clamp selection index
+            if (m_ComponentSearchSelectedIndex >= static_cast<int>(visible.size())) {
+                m_ComponentSearchSelectedIndex = static_cast<int>(visible.size()) - 1;
+            }
+            if (m_ComponentSearchSelectedIndex < 0 && !visible.empty()) {
+                m_ComponentSearchSelectedIndex = 0;
             }
 
-            // Gameplay submenu
-            if (ImGui::BeginMenu("Gameplay")) {
-                if (!m_World->HasComponent<ECS::HealthComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Health")) {
-                        m_World->AddComponent<ECS::HealthComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::DamageComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Damage")) {
-                        m_World->AddComponent<ECS::DamageComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::InteractableComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Interactable")) {
-                        m_World->AddComponent<ECS::InteractableComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::PickupComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Pickup")) {
-                        m_World->AddComponent<ECS::PickupComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::InventoryComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Inventory")) {
-                        m_World->AddComponent<ECS::InventoryComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TimerComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Timer")) {
-                        m_World->AddComponent<ECS::TimerComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::PossessableComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Possessable")) {
-                        m_World->AddComponent<ECS::PossessableComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::DamageResistanceComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Damage Resistance")) {
-                        m_World->AddComponent<ECS::DamageResistanceComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::ResourceComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Resource/Stamina")) {
-                        m_World->AddComponent<ECS::ResourceComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::FootstepComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Footstep")) {
-                        m_World->AddComponent<ECS::FootstepComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::PoolableComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Poolable")) {
-                        m_World->AddComponent<ECS::PoolableComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::QuestStateComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Quest State")) {
-                        m_World->AddComponent<ECS::QuestStateComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::HUDWidgetComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("HUD Widget")) {
-                        m_World->AddComponent<ECS::HUDWidgetComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<GUI::UICanvasComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("UI Canvas")) {
-                        m_World->AddComponent<GUI::UICanvasComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Cinematic Camera")) {
-                        m_World->AddComponent<ECS::CinematicCameraComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
+            // Keyboard navigation
+            if (ImGui::IsKeyPressed(ImGuiKey_DownArrow) && m_ComponentSearchSelectedIndex < static_cast<int>(visible.size()) - 1) {
+                m_ComponentSearchSelectedIndex++;
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_UpArrow) && m_ComponentSearchSelectedIndex > 0) {
+                m_ComponentSearchSelectedIndex--;
+            }
+            bool enterPressed = ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter);
+
+            // Trigger selected entry on Enter
+            int activatedIndex = -1;
+            if (enterPressed && m_ComponentSearchSelectedIndex >= 0 && m_ComponentSearchSelectedIndex < static_cast<int>(visible.size())) {
+                activatedIndex = m_ComponentSearchSelectedIndex;
             }
 
-            // Joints submenu
-            if (ImGui::BeginMenu("Joints")) {
-                if (!m_World->HasComponent<ECS::DistanceJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Distance Joint")) {
-                        m_World->AddComponent<ECS::DistanceJointComponent>(m_PrimarySelected);
+            if (ImGui::BeginChild("ComponentList", ImVec2(0, 350), false)) {
+                // Recently-used section (only when no filter)
+                if (!hasFilter && !m_EditorSettings.recentComponents.empty()) {
+                    bool anyRecent = false;
+                    for (const auto& rcName : m_EditorSettings.recentComponents) {
+                        // Find matching entry that isn't already on the entity
+                        for (const auto& e : allEntries) {
+                            if (std::strcmp(e.displayName, rcName.c_str()) == 0 && !e.hasComponent(m_World, m_PrimarySelected)) {
+                                if (!anyRecent) {
+                                    ImGui::TextDisabled("Recently Used");
+                                    anyRecent = true;
+                                }
+                                if (ImGui::Selectable(e.displayName)) {
+                                    e.addComponent(m_World, m_PrimarySelected);
+                                    if (e.controllerType) {
+                                        SetupCameraForController(m_PrimarySelected, e.controllerType);
+                                    }
+                                    m_EditorSettings.AddRecentComponent(e.displayName);
+                                    m_EditorSettings.Save();
+                                    ImGui::CloseCurrentPopup();
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    if (anyRecent) {
+                        ImGui::Separator();
                     }
                 }
-                if (!m_World->HasComponent<ECS::HingeJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Hinge Joint")) {
-                        m_World->AddComponent<ECS::HingeJointComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::BallSocketJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Ball-Socket Joint")) {
-                        m_World->AddComponent<ECS::BallSocketJointComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::SpringJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Spring Joint")) {
-                        m_World->AddComponent<ECS::SpringJointComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::FixedJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Fixed Joint")) {
-                        m_World->AddComponent<ECS::FixedJointComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::SliderJointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Slider Joint")) {
-                        m_World->AddComponent<ECS::SliderJointComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::RagdollComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Ragdoll")) {
-                        m_World->AddComponent<ECS::RagdollComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
 
-            // AI submenu
-            if (ImGui::BeginMenu("AI")) {
-                if (!m_World->HasComponent<ECS::AIControllerComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("AI Controller")) {
-                        m_World->AddComponent<ECS::AIControllerComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::FollowTargetComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Follow Target")) {
-                        m_World->AddComponent<ECS::FollowTargetComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::LookAtTargetComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Look At Target")) {
-                        m_World->AddComponent<ECS::LookAtTargetComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::WaypointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Waypoint")) {
-                        m_World->AddComponent<ECS::WaypointComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
+                if (hasFilter) {
+                    // Filtered flat list with category hints
+                    for (int vi = 0; vi < static_cast<int>(visible.size()); vi++) {
+                        const auto& ve = visible[vi];
+                        bool isSelected = (vi == m_ComponentSearchSelectedIndex);
 
-            // Audio submenu
-            if (ImGui::BeginMenu("Audio")) {
-                if (!m_World->HasComponent<ECS::AudioSourceComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Audio Source")) {
-                        m_World->AddComponent<ECS::AudioSourceComponent>(m_PrimarySelected);
+                        if (ImGui::Selectable(ve.entry->displayName, isSelected)) {
+                            activatedIndex = vi;
+                        }
+                        if (isSelected && (ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_UpArrow))) {
+                            ImGui::SetScrollHereY();
+                        }
+                        // Show category hint on the right
+                        ImGui::SameLine(ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(ve.entry->category).x);
+                        ImGui::TextDisabled("%s", ve.entry->category);
                     }
-                }
-                if (!m_World->HasComponent<ECS::AudioListenerComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Audio Listener")) {
-                        m_World->AddComponent<ECS::AudioListenerComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
+                } else {
+                    // Categorized view with collapsible headers
+                    const char* currentCategory = nullptr;
+                    int viIndex = 0;
+                    for (int vi = 0; vi < static_cast<int>(visible.size()); vi++) {
+                        const auto& ve = visible[vi];
+                        // New category header
+                        if (!currentCategory || std::strcmp(currentCategory, ve.entry->category) != 0) {
+                            currentCategory = ve.entry->category;
+                            if (!ImGui::CollapsingHeader(currentCategory, ImGuiTreeNodeFlags_DefaultOpen)) {
+                                // Skip all entries in this collapsed category
+                                while (vi + 1 < static_cast<int>(visible.size()) &&
+                                       std::strcmp(visible[vi + 1].entry->category, currentCategory) == 0) {
+                                    vi++;
+                                }
+                                continue;
+                            }
+                        }
 
-            // Visual submenu
-            if (ImGui::BeginMenu("Visual")) {
-                if (!m_World->HasComponent<ECS::BillboardComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Billboard")) {
-                        m_World->AddComponent<ECS::BillboardComponent>(m_PrimarySelected);
+                        bool isSelected = (vi == m_ComponentSearchSelectedIndex);
+                        ImGui::Indent(8.0f);
+                        if (ImGui::Selectable(ve.entry->displayName, isSelected)) {
+                            activatedIndex = vi;
+                        }
+                        if (isSelected && (ImGui::IsKeyPressed(ImGuiKey_DownArrow) || ImGui::IsKeyPressed(ImGuiKey_UpArrow))) {
+                            ImGui::SetScrollHereY();
+                        }
+                        ImGui::Unindent(8.0f);
                     }
                 }
-                if (!m_World->HasComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Particle Emitter")) {
-                        m_World->AddComponent<ECS::ParticleEmitterComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
 
-            // Effects submenu
-            if (ImGui::BeginMenu("Effects")) {
-                if (!m_World->HasComponent<ECS::WeatherZoneComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Weather Zone")) {
-                        m_World->AddComponent<ECS::WeatherZoneComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::WaterVolumeComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Water Volume")) {
-                        m_World->AddComponent<ECS::WaterVolumeComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::GrassVolumeComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Grass Volume")) {
-                        m_World->AddComponent<ECS::GrassVolumeComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Shrub Volume")) {
-                        m_World->AddComponent<ECS::ShrubVolumeComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TreeVolumeComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Tree Volume")) {
-                        m_World->AddComponent<ECS::TreeVolumeComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::VegetationComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Vegetation")) {
-                        m_World->AddComponent<ECS::VegetationComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::CameraTriggerComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Camera Trigger")) {
-                        m_World->AddComponent<ECS::CameraTriggerComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Temperature Zone")) {
-                        m_World->AddComponent<ECS::TemperatureZoneComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::GravityZoneComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Gravity Zone")) {
-                        m_World->AddComponent<ECS::GravityZoneComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
-
-            // 2D Graphics submenu
-            if (ImGui::BeginMenu("2D Graphics")) {
-                if (!m_World->HasComponent<ECS::Sprite2DComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Sprite")) {
-                        m_World->AddComponent<ECS::Sprite2DComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::AnimatedSprite2DComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Animated Sprite")) {
-                        m_World->AddComponent<ECS::AnimatedSprite2DComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TilemapComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Tilemap")) {
-                        m_World->AddComponent<ECS::TilemapComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("2D Camera Bounds")) {
-                        m_World->AddComponent<ECS::Camera2DBoundsComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
-
-            // Scripting
-            if (!m_World->HasComponent<ECS::ScriptComponent>(m_PrimarySelected)) {
-                if (ImGui::MenuItem("Script")) {
-                    m_World->AddComponent<ECS::ScriptComponent>(m_PrimarySelected);
+                if (visible.empty()) {
+                    ImGui::TextDisabled("No matching components");
                 }
             }
+            ImGui::EndChild();
 
-            // Puzzle
-            if (ImGui::BeginMenu("Puzzle")) {
-                if (!m_World->HasComponent<ECS::LockComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Lock")) {
-                        m_World->AddComponent<ECS::LockComponent>(m_PrimarySelected);
-                    }
+            // Handle activation (click or Enter)
+            if (activatedIndex >= 0 && activatedIndex < static_cast<int>(visible.size())) {
+                const auto& ve = visible[activatedIndex];
+                ve.entry->addComponent(m_World, m_PrimarySelected);
+                if (ve.entry->controllerType) {
+                    SetupCameraForController(m_PrimarySelected, ve.entry->controllerType);
                 }
-                if (!m_World->HasComponent<ECS::PushableComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Pushable")) {
-                        m_World->AddComponent<ECS::PushableComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::SwitchComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Switch")) {
-                        m_World->AddComponent<ECS::SwitchComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::GoalZoneComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Goal Zone")) {
-                        m_World->AddComponent<ECS::GoalZoneComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::ConveyorComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Conveyor")) {
-                        m_World->AddComponent<ECS::ConveyorComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::TeleporterComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Teleporter")) {
-                        m_World->AddComponent<ECS::TeleporterComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::DestructibleComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Destructible")) {
-                        m_World->AddComponent<ECS::DestructibleComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::MovingPlatformComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Moving Platform")) {
-                        m_World->AddComponent<ECS::MovingPlatformComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
-            }
-
-            // Other
-            if (ImGui::BeginMenu("Other")) {
-                if (!m_World->HasComponent<ECS::TagComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Tags")) {
-                        m_World->AddComponent<ECS::TagComponent>(m_PrimarySelected);
-                    }
-                }
-                if (!m_World->HasComponent<ECS::SpawnPointComponent>(m_PrimarySelected)) {
-                    if (ImGui::MenuItem("Spawn Point")) {
-                        m_World->AddComponent<ECS::SpawnPointComponent>(m_PrimarySelected);
-                    }
-                }
-                ImGui::EndMenu();
+                m_EditorSettings.AddRecentComponent(ve.entry->displayName);
+                m_EditorSettings.Save();
+                ImGui::CloseCurrentPopup();
             }
 
             ImGui::EndPopup();
+        } else {
+            // Popup closed — reset search state
+            m_ComponentSearchBuf[0] = '\0';
+            m_ComponentSearchSelectedIndex = -1;
         }
     } else {
         ImGui::TextDisabled("No entity selected");

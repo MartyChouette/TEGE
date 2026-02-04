@@ -59,6 +59,12 @@ struct EditorSettings {
 
     void AddRecentProject(const std::string& path);
 
+    // Recently-used components (most recent first, max 5)
+    std::vector<std::string> recentComponents;
+    static constexpr int MAX_RECENT_COMPONENTS = 5;
+
+    void AddRecentComponent(const std::string& name);
+
     // Save/Load
     bool Save(const std::string& path = "") const;
     bool Load(const std::string& path = "");
