@@ -286,6 +286,7 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
         auto* tree = world->GetComponent<ECS::TreeVolumeComponent>(entity);
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
         if (!tree || !transform) continue;
+        if (!transform->visible) continue;
 
         if (!hasBound) {
             m_Pipeline->Bind(commandBuffer);

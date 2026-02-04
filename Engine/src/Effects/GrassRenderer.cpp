@@ -260,6 +260,7 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
         auto* grass = world->GetComponent<ECS::GrassVolumeComponent>(entity);
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
         if (!grass || !transform) continue;
+        if (!transform->visible) continue;
 
         if (!hasBound) {
             // Bind pipeline and shared resources once

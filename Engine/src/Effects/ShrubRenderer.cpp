@@ -249,6 +249,7 @@ void ShrubRenderer::Render(VkCommandBuffer commandBuffer,
         auto* shrub = world->GetComponent<ECS::ShrubVolumeComponent>(entity);
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
         if (!shrub || !transform) continue;
+        if (!transform->visible) continue;
 
         if (!hasBound) {
             m_Pipeline->Bind(commandBuffer);

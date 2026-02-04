@@ -195,6 +195,8 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
 
         auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);
         if (!emitter) continue;
+        auto* transformPR = world->GetComponent<ECS::TransformComponent>(entity);
+        if (transformPR && !transformPR->visible) continue;
 
         const auto& pool = emitter->pool;
         if (!pool.initialized || pool.activeCount == 0) continue;
