@@ -907,7 +907,7 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.cameraYaw));
     }
 
-    // Update camera position
+    // Update camera position — orbit directly around the player
     {
         f32 pitchRad = Math::Radians(ctrl.cameraPitch);
         f32 yawRad2 = Math::Radians(ctrl.cameraYaw);
@@ -917,20 +917,10 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
         cameraOffset.y = Math::Sin(pitchRad) * ctrl.cameraDistance + ctrl.cameraHeight;
         cameraOffset.z = Math::Cos(pitchRad) * Math::Cos(yawRad2) * ctrl.cameraDistance;
 
-        Math::Vector3 targetCameraPos = transform.position + cameraOffset;
+        Math::Vector3 cameraPos = transform.position + cameraOffset;
         Math::Vector3 lookTarget = transform.position + Math::Vector3(0, ctrl.cameraHeight * 0.5f, 0);
 
-        // Smooth camera follow: read current pos from entity or editor camera
-        Math::Vector3 currentPos = targetCameraPos;
-        if (m_GameCameraEntity != INVALID_ENTITY && m_World) {
-            auto* camTransform = m_World->GetComponent<TransformComponent>(m_GameCameraEntity);
-            if (camTransform) currentPos = camTransform->position;
-        } else if (m_Camera) {
-            currentPos = m_Camera->GetPosition();
-        }
-        Math::Vector3 newPos = currentPos + (targetCameraPos - currentPos) * Math::Min(ctrl.cameraLerpSpeed * dt, 1.0f);
-
-        UpdateGameCameraTransform(newPos, lookTarget, Math::Vector3(0, 1, 0));
+        UpdateGameCameraTransform(cameraPos, lookTarget, Math::Vector3(0, 1, 0));
     }
 }
 
