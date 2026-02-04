@@ -268,6 +268,7 @@ private:
     void DrawTetherComponent(ECS::Entity entity);
     void DrawGrabbableComponent(ECS::Entity entity);
     void DrawFlowerStemComponent(ECS::Entity entity);
+    void DrawFlowerParticleConfigComponent(ECS::Entity entity);
 
     // Scripting
     void DrawScriptComponent(ECS::Entity entity);

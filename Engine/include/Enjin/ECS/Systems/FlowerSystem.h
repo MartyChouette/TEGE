@@ -12,6 +12,7 @@ namespace Enjin {
 namespace ECS {
 
 class RenderSystem;
+struct FlowerParticleConfigComponent;
 
 // Lightweight particle (no ECS entity — avoids entity creation/destruction crashes)
 struct FlowerParticle {
@@ -73,10 +74,13 @@ private:
     void UpdateParticles(f32 dt);
     void CheckGroundImpact();
 
-    void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color);
-    void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color);
+    void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color,
+                             const FlowerParticleConfigComponent* config = nullptr);
+    void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color,
+                           const FlowerParticleConfigComponent* config = nullptr);
     void SpawnTensionDrip(const Math::Vector3& position, const Math::Vector3& color,
-                          f32 tension, const Math::Vector3& squirtDir, f32 intensity);
+                          f32 tension, const Math::Vector3& squirtDir, f32 intensity,
+                          const FlowerParticleConfigComponent* config = nullptr);
     void UpdateScoreDisplay();
 
     // Helper: project screen point to world plane at given depth facing camera

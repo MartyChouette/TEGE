@@ -1918,6 +1918,11 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
     j["attachLocalPos"] = SerializeVector3(t.attachLocalPos);
     j["breakDistance"] = t.breakDistance;
     j["tensionRamp"] = t.tensionRamp;
+    j["autoMass"] = t.autoMass;
+    j["autoSpringK"] = t.autoSpringK;
+    j["autoDamping"] = t.autoDamping;
+    j["autoBreakForce"] = t.autoBreakForce;
+    j["autoDrag"] = t.autoDrag;
     return j;
 }
 
@@ -1928,6 +1933,11 @@ ECS::TetherComponent DeserializeTetherComponent(const json& j) {
     if (j.contains("attachLocalPos")) t.attachLocalPos = DeserializeVector3(j["attachLocalPos"]);
     if (j.contains("breakDistance")) t.breakDistance = j["breakDistance"].get<f32>();
     if (j.contains("tensionRamp")) t.tensionRamp = j["tensionRamp"].get<f32>();
+    if (j.contains("autoMass")) t.autoMass = j["autoMass"].get<f32>();
+    if (j.contains("autoSpringK")) t.autoSpringK = j["autoSpringK"].get<f32>();
+    if (j.contains("autoDamping")) t.autoDamping = j["autoDamping"].get<f32>();
+    if (j.contains("autoBreakForce")) t.autoBreakForce = j["autoBreakForce"].get<f32>();
+    if (j.contains("autoDrag")) t.autoDrag = j["autoDrag"].get<f32>();
     // Backward compat: if connectedEntity missing, default to stemEntity
     if (!j.contains("connectedEntity") && t.connectedEntity == ECS::INVALID_ENTITY) {
         t.connectedEntity = t.stemEntity;
@@ -1939,6 +1949,9 @@ json SerializeGrabbableComponent(const ECS::GrabbableComponent& g) {
     json j;
     j["pullForce"] = g.pullForce;
     j["grabRadius"] = g.grabRadius;
+    j["maxPullDistance"] = g.maxPullDistance;
+    j["maxVelocity"] = g.maxVelocity;
+    j["windSwayScale"] = g.windSwayScale;
     return j;
 }
 
@@ -1946,6 +1959,9 @@ ECS::GrabbableComponent DeserializeGrabbableComponent(const json& j) {
     ECS::GrabbableComponent g;
     if (j.contains("pullForce")) g.pullForce = j["pullForce"].get<f32>();
     if (j.contains("grabRadius")) g.grabRadius = j["grabRadius"].get<f32>();
+    if (j.contains("maxPullDistance")) g.maxPullDistance = j["maxPullDistance"].get<f32>();
+    if (j.contains("maxVelocity")) g.maxVelocity = j["maxVelocity"].get<f32>();
+    if (j.contains("windSwayScale")) g.windSwayScale = j["windSwayScale"].get<f32>();
     return g;
 }
 
@@ -1954,6 +1970,9 @@ json SerializeFlowerStemComponent(const ECS::FlowerStemComponent& fs) {
     j["healthyBonus"] = fs.healthyBonus;
     j["witheredPenalty"] = fs.witheredPenalty;
     j["liquidIntensity"] = fs.liquidIntensity;
+    j["groundLevel"] = fs.groundLevel;
+    j["sapColor"] = SerializeVector3(fs.sapColor);
+    j["stemSwayAmplitude"] = fs.stemSwayAmplitude;
     return j;
 }
 
@@ -1962,7 +1981,52 @@ ECS::FlowerStemComponent DeserializeFlowerStemComponent(const json& j) {
     if (j.contains("healthyBonus")) fs.healthyBonus = j["healthyBonus"].get<f32>();
     if (j.contains("witheredPenalty")) fs.witheredPenalty = j["witheredPenalty"].get<f32>();
     if (j.contains("liquidIntensity")) fs.liquidIntensity = j["liquidIntensity"].get<f32>();
+    if (j.contains("groundLevel")) fs.groundLevel = j["groundLevel"].get<f32>();
+    if (j.contains("sapColor")) fs.sapColor = DeserializeVector3(j["sapColor"]);
+    if (j.contains("stemSwayAmplitude")) fs.stemSwayAmplitude = j["stemSwayAmplitude"].get<f32>();
     return fs;
+}
+
+json SerializeFlowerParticleConfigComponent(const ECS::FlowerParticleConfigComponent& fp) {
+    json j;
+    j["breakBurstCount"] = fp.breakBurstCount;
+    j["breakBurstSpeed"] = fp.breakBurstSpeed;
+    j["breakBurstUpKick"] = fp.breakBurstUpKick;
+    j["breakBurstLifetime"] = fp.breakBurstLifetime;
+    j["breakBurstScale"] = fp.breakBurstScale;
+    j["breakDripCount"] = fp.breakDripCount;
+    j["breakDripSpeed"] = fp.breakDripSpeed;
+    j["breakDripLifetime"] = fp.breakDripLifetime;
+    j["splashCount"] = fp.splashCount;
+    j["splashSpeed"] = fp.splashSpeed;
+    j["splashUpKick"] = fp.splashUpKick;
+    j["splashLifetime"] = fp.splashLifetime;
+    j["tensionDripRate"] = fp.tensionDripRate;
+    j["tensionDripThreshold"] = fp.tensionDripThreshold;
+    j["tensionSquirtSpeed"] = fp.tensionSquirtSpeed;
+    j["particleGravity"] = fp.particleGravity;
+    return j;
+}
+
+ECS::FlowerParticleConfigComponent DeserializeFlowerParticleConfigComponent(const json& j) {
+    ECS::FlowerParticleConfigComponent fp;
+    if (j.contains("breakBurstCount")) fp.breakBurstCount = j["breakBurstCount"].get<i32>();
+    if (j.contains("breakBurstSpeed")) fp.breakBurstSpeed = j["breakBurstSpeed"].get<f32>();
+    if (j.contains("breakBurstUpKick")) fp.breakBurstUpKick = j["breakBurstUpKick"].get<f32>();
+    if (j.contains("breakBurstLifetime")) fp.breakBurstLifetime = j["breakBurstLifetime"].get<f32>();
+    if (j.contains("breakBurstScale")) fp.breakBurstScale = j["breakBurstScale"].get<f32>();
+    if (j.contains("breakDripCount")) fp.breakDripCount = j["breakDripCount"].get<i32>();
+    if (j.contains("breakDripSpeed")) fp.breakDripSpeed = j["breakDripSpeed"].get<f32>();
+    if (j.contains("breakDripLifetime")) fp.breakDripLifetime = j["breakDripLifetime"].get<f32>();
+    if (j.contains("splashCount")) fp.splashCount = j["splashCount"].get<i32>();
+    if (j.contains("splashSpeed")) fp.splashSpeed = j["splashSpeed"].get<f32>();
+    if (j.contains("splashUpKick")) fp.splashUpKick = j["splashUpKick"].get<f32>();
+    if (j.contains("splashLifetime")) fp.splashLifetime = j["splashLifetime"].get<f32>();
+    if (j.contains("tensionDripRate")) fp.tensionDripRate = j["tensionDripRate"].get<f32>();
+    if (j.contains("tensionDripThreshold")) fp.tensionDripThreshold = j["tensionDripThreshold"].get<f32>();
+    if (j.contains("tensionSquirtSpeed")) fp.tensionSquirtSpeed = j["tensionSquirtSpeed"].get<f32>();
+    if (j.contains("particleGravity")) fp.particleGravity = j["particleGravity"].get<f32>();
+    return fp;
 }
 
 // ============================================================================
@@ -3511,6 +3575,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
                 entityJson["flowerStem"] = SerializeFlowerStemComponent(*m_World->GetComponent<ECS::FlowerStemComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::FlowerParticleConfigComponent>(entity)) {
+                entityJson["flowerParticleConfig"] = SerializeFlowerParticleConfigComponent(*m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity));
+            }
 
             // LOD, Grass, Vegetation
             if (m_World->HasComponent<ECS::LODComponent>(entity)) {
@@ -4025,6 +4092,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("flowerStem")) {
                 m_World->AddComponent<ECS::FlowerStemComponent>(entity, DeserializeFlowerStemComponent(entityJson["flowerStem"]));
             }
+            if (entityJson.contains("flowerParticleConfig")) {
+                m_World->AddComponent<ECS::FlowerParticleConfigComponent>(entity, DeserializeFlowerParticleConfigComponent(entityJson["flowerParticleConfig"]));
+            }
 
             // LOD, Grass, Vegetation
             if (entityJson.contains("lod")) {
@@ -4411,6 +4481,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
                 entityJson["flowerStem"] = SerializeFlowerStemComponent(*m_World->GetComponent<ECS::FlowerStemComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FlowerParticleConfigComponent>(entity)) {
+                entityJson["flowerParticleConfig"] = SerializeFlowerParticleConfigComponent(*m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity));
             }
 
             // LOD, Grass, Vegetation
@@ -4880,6 +4953,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("flowerStem")) {
                 m_World->AddComponent<ECS::FlowerStemComponent>(entity, DeserializeFlowerStemComponent(entityJson["flowerStem"]));
+            }
+            if (entityJson.contains("flowerParticleConfig")) {
+                m_World->AddComponent<ECS::FlowerParticleConfigComponent>(entity, DeserializeFlowerParticleConfigComponent(entityJson["flowerParticleConfig"]));
             }
 
             // LOD, Grass, Vegetation

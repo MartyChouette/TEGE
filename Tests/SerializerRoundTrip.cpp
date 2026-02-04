@@ -382,14 +382,43 @@ int main() {
         te.connectedEntity = e;  // Self-ref for test purposes
         te.breakDistance = 3.0f;
         te.tensionRamp = 3.0f;
+        te.autoMass = 0.5f;
+        te.autoSpringK = 200.0f;
+        te.autoDamping = 12.0f;
+        te.autoBreakForce = 60.0f;
+        te.autoDrag = 2.0f;
 
         auto& gr = srcWorld.AddComponent<ECS::GrabbableComponent>(e);
         gr.pullForce = 20.0f;
         gr.grabRadius = 1.0f;
+        gr.maxPullDistance = 3.0f;
+        gr.maxVelocity = 75.0f;
+        gr.windSwayScale = 0.25f;
 
         auto& fs = srcWorld.AddComponent<ECS::FlowerStemComponent>(e);
         fs.healthyBonus = 15.0f;
         fs.witheredPenalty = 8.0f;
+        fs.groundLevel = -0.5f;
+        fs.sapColor = Math::Vector3(0.2f, 0.6f, 0.1f);
+        fs.stemSwayAmplitude = 0.1f;
+
+        auto& fpc = srcWorld.AddComponent<ECS::FlowerParticleConfigComponent>(e);
+        fpc.breakBurstCount = 25;
+        fpc.breakBurstSpeed = 3.0f;
+        fpc.breakBurstUpKick = 2.5f;
+        fpc.breakBurstLifetime = 1.0f;
+        fpc.breakBurstScale = 0.1f;
+        fpc.breakDripCount = 10;
+        fpc.breakDripSpeed = 0.7f;
+        fpc.breakDripLifetime = 1.5f;
+        fpc.splashCount = 15;
+        fpc.splashSpeed = 2.0f;
+        fpc.splashUpKick = 3.0f;
+        fpc.splashLifetime = 0.8f;
+        fpc.tensionDripRate = 4.0f;
+        fpc.tensionDripThreshold = 0.2f;
+        fpc.tensionSquirtSpeed = 3.0f;
+        fpc.particleGravity = 12.0f;
     }
 
     // Entity 12: LOD, Grass, Vegetation
@@ -793,6 +822,11 @@ int main() {
             CHECK_VEC3(te->attachLocalPos, 0, 1, 0, "te.attachLocalPos");
             CHECK_FLOAT(te->breakDistance, 3.0f, "te.breakDistance");
             CHECK_FLOAT(te->tensionRamp, 3.0f, "te.tensionRamp");
+            CHECK_FLOAT(te->autoMass, 0.5f, "te.autoMass");
+            CHECK_FLOAT(te->autoSpringK, 200.0f, "te.autoSpringK");
+            CHECK_FLOAT(te->autoDamping, 12.0f, "te.autoDamping");
+            CHECK_FLOAT(te->autoBreakForce, 60.0f, "te.autoBreakForce");
+            CHECK_FLOAT(te->autoDrag, 2.0f, "te.autoDrag");
             CHECK_BOOL(te->isBroken, false, "te.isBroken (runtime reset)");
         }
         HAS_COMPONENT(dstWorld, e, ECS::GrabbableComponent, "GrabbableComponent");
@@ -800,6 +834,9 @@ int main() {
         if (gr) {
             CHECK_FLOAT(gr->pullForce, 20.0f, "gr.pullForce");
             CHECK_FLOAT(gr->grabRadius, 1.0f, "gr.grabRadius");
+            CHECK_FLOAT(gr->maxPullDistance, 3.0f, "gr.maxPullDistance");
+            CHECK_FLOAT(gr->maxVelocity, 75.0f, "gr.maxVelocity");
+            CHECK_FLOAT(gr->windSwayScale, 0.25f, "gr.windSwayScale");
             CHECK_BOOL(gr->isGrabbed, false, "gr.isGrabbed (runtime reset)");
         }
         HAS_COMPONENT(dstWorld, e, ECS::FlowerStemComponent, "FlowerStemComponent");
@@ -807,7 +844,30 @@ int main() {
         if (fs) {
             CHECK_FLOAT(fs->healthyBonus, 15.0f, "fs.healthyBonus");
             CHECK_FLOAT(fs->witheredPenalty, 8.0f, "fs.witheredPenalty");
+            CHECK_FLOAT(fs->groundLevel, -0.5f, "fs.groundLevel");
+            CHECK_VEC3(fs->sapColor, 0.2f, 0.6f, 0.1f, "fs.sapColor");
+            CHECK_FLOAT(fs->stemSwayAmplitude, 0.1f, "fs.stemSwayAmplitude");
             CHECK_BOOL(fs->evaluated, false, "fs.evaluated (runtime reset)");
+        }
+        HAS_COMPONENT(dstWorld, e, ECS::FlowerParticleConfigComponent, "FlowerParticleConfigComponent");
+        auto* fpc = dstWorld.GetComponent<ECS::FlowerParticleConfigComponent>(e);
+        if (fpc) {
+            CHECK_EQ(fpc->breakBurstCount, 25, "fpc.breakBurstCount");
+            CHECK_FLOAT(fpc->breakBurstSpeed, 3.0f, "fpc.breakBurstSpeed");
+            CHECK_FLOAT(fpc->breakBurstUpKick, 2.5f, "fpc.breakBurstUpKick");
+            CHECK_FLOAT(fpc->breakBurstLifetime, 1.0f, "fpc.breakBurstLifetime");
+            CHECK_FLOAT(fpc->breakBurstScale, 0.1f, "fpc.breakBurstScale");
+            CHECK_EQ(fpc->breakDripCount, 10, "fpc.breakDripCount");
+            CHECK_FLOAT(fpc->breakDripSpeed, 0.7f, "fpc.breakDripSpeed");
+            CHECK_FLOAT(fpc->breakDripLifetime, 1.5f, "fpc.breakDripLifetime");
+            CHECK_EQ(fpc->splashCount, 15, "fpc.splashCount");
+            CHECK_FLOAT(fpc->splashSpeed, 2.0f, "fpc.splashSpeed");
+            CHECK_FLOAT(fpc->splashUpKick, 3.0f, "fpc.splashUpKick");
+            CHECK_FLOAT(fpc->splashLifetime, 0.8f, "fpc.splashLifetime");
+            CHECK_FLOAT(fpc->tensionDripRate, 4.0f, "fpc.tensionDripRate");
+            CHECK_FLOAT(fpc->tensionDripThreshold, 0.2f, "fpc.tensionDripThreshold");
+            CHECK_FLOAT(fpc->tensionSquirtSpeed, 3.0f, "fpc.tensionSquirtSpeed");
+            CHECK_FLOAT(fpc->particleGravity, 12.0f, "fpc.particleGravity");
         }
     }
 

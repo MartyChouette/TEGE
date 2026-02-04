@@ -2833,6 +2833,9 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::FlowerStemComponent>(m_PrimarySelected)) {
             DrawFlowerStemComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::FlowerParticleConfigComponent>(m_PrimarySelected)) {
+            DrawFlowerParticleConfigComponent(m_PrimarySelected);
+        }
         if (m_World->HasComponent<ECS::ScriptComponent>(m_PrimarySelected)) {
             DrawScriptComponent(m_PrimarySelected);
         }
@@ -5124,6 +5127,111 @@ void EditorLayer::DrawSettingsPanel() {
         ImGui::BulletText("RB - Dash");
         ImGui::BulletText("LT / RT - Move down / up (editor)");
         ImGui::BulletText("D-pad Up/Down - Adjust editor speed");
+    }
+
+    if (ImGui::CollapsingHeader("Controls")) {
+        if (ImGui::TreeNode("Active Controllers")) {
+            bool foundAny = false;
+            for (ECS::Entity entity : m_World->GetAllEntities()) {
+                auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                std::string entName = nameComp ? nameComp->name : "Entity " + std::to_string(entity);
+
+                if (auto* fps = m_World->GetComponent<ECS::FirstPersonController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [First Person]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Grounded: %s  Pitch: %.1f  Yaw: %.1f",
+                        fps->velocity.Length(), fps->isGrounded ? "Y" : "N", fps->pitch, fps->yaw);
+                    ImGui::Unindent();
+                }
+                if (auto* tps = m_World->GetComponent<ECS::ThirdPersonController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [Third Person]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Grounded: %s  Pitch: %.1f  Yaw: %.1f",
+                        tps->velocity.Length(), tps->isGrounded ? "Y" : "N", tps->cameraPitch, tps->cameraYaw);
+                    ImGui::Unindent();
+                }
+                if (auto* td3 = m_World->GetComponent<ECS::TopDown3DController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [Top-Down 3D]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Grounded: %s", td3->velocity.Length(), td3->isGrounded ? "Y" : "N");
+                    ImGui::Unindent();
+                }
+                if (auto* veh = m_World->GetComponent<ECS::VehicleController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [Vehicle]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Steer: %.1f  Heading: %.1f  Drifting: %s",
+                        veh->currentSpeed, veh->currentSteerAngle, veh->heading, veh->isDrifting ? "Y" : "N");
+                    ImGui::Unindent();
+                }
+                if (auto* p2d = m_World->GetComponent<ECS::Platformer2DController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [Platformer 2D]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Grounded: %s  Jumps: %d/%d",
+                        p2d->velocity.Length(), p2d->isGrounded ? "Y" : "N", p2d->currentJumps, p2d->maxJumps);
+                    ImGui::Unindent();
+                }
+                if (auto* td2 = m_World->GetComponent<ECS::TopDown2DController>(entity)) {
+                    foundAny = true;
+                    ImGui::BulletText("%s [Top-Down 2D]", entName.c_str());
+                    ImGui::Indent();
+                    ImGui::Text("Speed: %.1f  Facing: %.1f deg", td2->velocity.Length(), td2->facingAngle);
+                    ImGui::Unindent();
+                }
+            }
+            if (!foundAny) {
+                ImGui::TextDisabled("No controllers in scene");
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Input State")) {
+            ImGui::Text("WASD: %s%s%s%s  Arrows: %s%s%s%s",
+                Input::IsKeyDown(KeyCode::W) ? "W" : "-",
+                Input::IsKeyDown(KeyCode::A) ? "A" : "-",
+                Input::IsKeyDown(KeyCode::S) ? "S" : "-",
+                Input::IsKeyDown(KeyCode::D) ? "D" : "-",
+                Input::IsKeyDown(KeyCode::Up) ? "U" : "-",
+                Input::IsKeyDown(KeyCode::Left) ? "L" : "-",
+                Input::IsKeyDown(KeyCode::Down) ? "D" : "-",
+                Input::IsKeyDown(KeyCode::Right) ? "R" : "-");
+            ImGui::Text("Space: %s  Shift: %s  Ctrl: %s",
+                Input::IsKeyDown(KeyCode::Space) ? "Y" : "N",
+                Input::IsKeyDown(KeyCode::LeftShift) ? "Y" : "N",
+                Input::IsKeyDown(KeyCode::LeftControl) ? "Y" : "N");
+
+            Math::Vector2 mpos = Input::GetMousePosition();
+            Math::Vector2 mdelta = Input::GetMouseDelta();
+            ImGui::Text("Mouse: (%.0f, %.0f)  Delta: (%.1f, %.1f)", mpos.x, mpos.y, mdelta.x, mdelta.y);
+            ImGui::Text("Mouse Buttons: L:%s  R:%s  M:%s",
+                Input::IsMouseButtonDown(MouseButton::Left) ? "Y" : "N",
+                Input::IsMouseButtonDown(MouseButton::Right) ? "Y" : "N",
+                Input::IsMouseButtonDown(MouseButton::Middle) ? "Y" : "N");
+
+            for (int gp = 0; gp < 4; ++gp) {
+                if (!Input::IsGamepadConnected(gp)) continue;
+                ImGui::Separator();
+                ImGui::Text("Gamepad %d: %s", gp, Input::GetGamepadName(gp));
+                ImGui::Text("  L Stick: (%.2f, %.2f)  R Stick: (%.2f, %.2f)",
+                    Input::GetGamepadAxis(GamepadAxis::LeftX, gp), Input::GetGamepadAxis(GamepadAxis::LeftY, gp),
+                    Input::GetGamepadAxis(GamepadAxis::RightX, gp), Input::GetGamepadAxis(GamepadAxis::RightY, gp));
+                ImGui::Text("  L Trigger: %.2f  R Trigger: %.2f",
+                    Input::GetGamepadAxis(GamepadAxis::LeftTrigger, gp), Input::GetGamepadAxis(GamepadAxis::RightTrigger, gp));
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Mouse Settings")) {
+            ImGui::Text("Sensitivity: %.2f", m_EditorSettings.mouseSensitivity);
+            ImGui::Text("Raw Input: %s", m_EditorSettings.rawMouseInput ? "Enabled" : "Disabled");
+            ImGui::Text("Smoothing: %.2f", m_EditorSettings.mouseSmoothing);
+            ImGui::Text("Mouse Captured: %s", Input::IsMouseCaptured() ? "Yes" : "No");
+            ImGui::TreePop();
+        }
     }
 
     if (ImGui::CollapsingHeader("Keyboard Shortcuts")) {
@@ -10164,6 +10272,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::MeshComponent>(stemEntity, Renderer::MeshFactory::CreateCube(1.0f));
             auto& stemFlower = m_World->AddComponent<ECS::FlowerStemComponent>(stemEntity);
             stemFlower.liquidIntensity = 1.0f;
+            m_World->AddComponent<ECS::FlowerParticleConfigComponent>(stemEntity);
         }
 
         // Crown (created before petals so petals can reference it as connectedEntity)
@@ -10193,6 +10302,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
             crTether.breakDistance = 1.0f;
             crTether.tensionRamp = 3.0f;
+            crTether.autoMass = 0.5f;
+            crTether.autoSpringK = 200.0f;
+            crTether.autoDamping = 12.0f;
+            crTether.autoBreakForce = 60.0f;
+            crTether.autoDrag = 2.0f;
             auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crownEntity);
             crGrab.pullForce = 40.0f;
             crGrab.grabRadius = 0.12f;
@@ -10236,6 +10350,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.attachLocalPos = Math::Vector3(0.0f, 0.0f, 0.0f);  // Attach at crown center
             tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.5f;
+            // Petal auto-physics (matches struct defaults)
+            tether.autoMass = 0.3f;
+            tether.autoSpringK = 120.0f;
+            tether.autoDamping = 8.0f;
+            tether.autoBreakForce = 25.0f;
+            tether.autoDrag = 1.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 50.0f;
             grab.grabRadius = 0.15f;
@@ -10280,6 +10400,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
             tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.0f;
+            // Leaf auto-physics
+            tether.autoMass = 0.2f;
+            tether.autoSpringK = 100.0f;
+            tether.autoDamping = 6.0f;
+            tether.autoBreakForce = 20.0f;
+            tether.autoDrag = 1.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
             grab.grabRadius = 0.12f;
@@ -13389,9 +13515,12 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
             if (ctrl->gridMovement) {
                 ImGui::DragFloat("Cell Size##td3d", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
                 ImGui::DragFloat("Grid Move Speed##td3d", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+                ImGui::DragFloat3("Grid Origin##td3d", &ctrl->gridOrigin.x, 0.1f);
             } else {
                 ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
                 ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+                ImGui::DragFloat("Acceleration##td3d", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
+                ImGui::DragFloat("Deceleration##td3d", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
             }
             ImGui::Checkbox("Rotate To Face Movement", &ctrl->rotateToFaceMovement);
             ImGui::DragFloat("Rotation Speed", &ctrl->rotationSpeed, 10.0f, 0.0f, 1440.0f);
@@ -13407,7 +13536,15 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
         }
 
         ImGui::Checkbox("Enable Click-To-Move", &ctrl->enableClickToMove);
+        if (ctrl->enableClickToMove) {
+            ImGui::DragFloat("Arrival Threshold##td3d", &ctrl->arrivalThreshold, 0.05f, 0.1f, 3.0f);
+        }
         ImGui::Checkbox("Enable Dash", &ctrl->enableDash);
+        if (ctrl->enableDash) {
+            ImGui::DragFloat("Dash Speed##td3d", &ctrl->dashSpeed, 0.5f, 1.0f, 50.0f);
+            ImGui::DragFloat("Dash Duration##td3d", &ctrl->dashDuration, 0.05f, 0.05f, 2.0f);
+            ImGui::DragFloat("Dash Cooldown##td3d", &ctrl->dashCooldown, 0.1f, 0.0f, 10.0f);
+        }
     }
 }
 
@@ -13455,9 +13592,12 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
             if (ctrl->gridMovement) {
                 ImGui::DragFloat("Cell Size##tps", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
                 ImGui::DragFloat("Grid Move Speed##tps", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+                ImGui::DragFloat3("Grid Origin##tps", &ctrl->gridOrigin.x, 0.1f);
             } else {
                 ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
                 ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+                ImGui::DragFloat("Acceleration##tps", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
+                ImGui::DragFloat("Deceleration##tps", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
             }
             ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
             ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
@@ -13474,15 +13614,25 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
         if (ImGui::TreeNode("Camera")) {
             ImGui::Checkbox("Disable Mouse Look##tps", &ctrl->disableMouseLook);
             ImGui::DragFloat("Distance", &ctrl->cameraDistance, 0.1f, ctrl->cameraMinDistance, ctrl->cameraMaxDistance);
+            ImGui::DragFloat("Min Distance##tps", &ctrl->cameraMinDistance, 0.1f, 0.5f, ctrl->cameraMaxDistance);
+            ImGui::DragFloat("Max Distance##tps", &ctrl->cameraMaxDistance, 0.1f, ctrl->cameraMinDistance, 50.0f);
             ImGui::DragFloat("Height", &ctrl->cameraHeight, 0.1f, 0.0f, 10.0f);
             ImGui::DragFloat("Sensitivity", &ctrl->cameraSensitivity, 0.1f, 0.1f, 10.0f);
             ImGui::DragFloat("Lerp Speed", &ctrl->cameraLerpSpeed, 0.5f, 1.0f, 50.0f);
             ImGui::DragFloat("Pitch", &ctrl->cameraPitch, 1.0f, ctrl->cameraMinPitch, ctrl->cameraMaxPitch);
+            ImGui::DragFloat("Min Pitch##tps", &ctrl->cameraMinPitch, 1.0f, -89.0f, 0.0f);
+            ImGui::DragFloat("Max Pitch##tps", &ctrl->cameraMaxPitch, 1.0f, 0.0f, 89.0f);
             ImGui::Checkbox("Enable Collision", &ctrl->enableCameraCollision);
+            if (ctrl->enableCameraCollision) {
+                ImGui::DragFloat("Collision Radius##tps", &ctrl->cameraCollisionRadius, 0.05f, 0.05f, 2.0f);
+            }
             ImGui::TreePop();
         }
 
         ImGui::Checkbox("Enable Lock-On", &ctrl->enableLockOn);
+        if (ctrl->enableLockOn) {
+            ImGui::DragFloat("Lock-On Range", &ctrl->lockOnRange, 0.5f, 1.0f, 100.0f);
+        }
 
         ImGui::Separator();
         ImGui::TextDisabled("State:");
@@ -13534,9 +13684,12 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
             if (ctrl->gridMovement) {
                 ImGui::DragFloat("Cell Size##fps", &ctrl->gridCellSize, 0.1f, 0.25f, 10.0f);
                 ImGui::DragFloat("Grid Move Speed##fps", &ctrl->gridMoveSpeed, 0.5f, 1.0f, 30.0f);
+                ImGui::DragFloat3("Grid Origin##fps", &ctrl->gridOrigin.x, 0.1f);
             } else {
                 ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
                 ImGui::DragFloat("Sprint Multiplier", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+                ImGui::DragFloat("Acceleration##fps", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
+                ImGui::DragFloat("Deceleration##fps", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
             }
             ImGui::DragFloat("Jump Force", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
             ImGui::DragFloat("Gravity", &ctrl->gravity, 0.5f, 1.0f, 100.0f);
@@ -13548,6 +13701,8 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
             ImGui::DragFloat("Sensitivity", &ctrl->mouseSensitivity, 0.1f, 0.1f, 10.0f);
             ImGui::Checkbox("Invert Y", &ctrl->invertY);
             ImGui::DragFloat("Pitch", &ctrl->pitch, 1.0f, ctrl->minPitch, ctrl->maxPitch);
+            ImGui::DragFloat("Min Pitch##fps", &ctrl->minPitch, 1.0f, -89.0f, 0.0f);
+            ImGui::DragFloat("Max Pitch##fps", &ctrl->maxPitch, 1.0f, 0.0f, 89.0f);
             ImGui::DragFloat("Yaw", &ctrl->yaw, 1.0f, -180.0f, 180.0f);
             ImGui::TreePop();
         }
@@ -13564,6 +13719,16 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
             ImGui::Checkbox("Enable Head Bob", &ctrl->enableHeadBob);
             ImGui::DragFloat("Frequency", &ctrl->headBobFrequency, 0.5f, 1.0f, 20.0f);
             ImGui::DragFloat("Amplitude", &ctrl->headBobAmplitude, 0.01f, 0.0f, 0.2f);
+            ImGui::TreePop();
+        }
+
+        ImGui::DragFloat("Sprint FOV Increase", &ctrl->sprintFOVIncrease, 0.5f, 0.0f, 30.0f);
+
+        if (ImGui::TreeNode("Dungeon Crawler")) {
+            ImGui::Checkbox("Dungeon Crawler Mode", &ctrl->dungeonCrawlerMode);
+            if (ctrl->dungeonCrawlerMode) {
+                ImGui::DragFloat("Snap Turn Angle", &ctrl->snapTurnAngle, 5.0f, 15.0f, 180.0f);
+            }
             ImGui::TreePop();
         }
 
@@ -15250,7 +15415,15 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
         ImGui::DragFloat3("Attach Local Pos", &tether->attachLocalPos.x, 0.01f);
         ImGui::SliderFloat("Break Distance", &tether->breakDistance, 0.1f, 5.0f);
         ImGui::SliderFloat("Tension Ramp", &tether->tensionRamp, 0.5f, 5.0f);
-        ImGui::TextDisabled("Spring params are on SpringJointComponent");
+
+        if (ImGui::TreeNode("Auto Physics Setup")) {
+            ImGui::DragFloat("Mass##tether", &tether->autoMass, 0.05f, 0.01f, 10.0f);
+            ImGui::DragFloat("Spring K##tether", &tether->autoSpringK, 1.0f, 1.0f, 500.0f);
+            ImGui::DragFloat("Damping##tether", &tether->autoDamping, 0.5f, 0.0f, 50.0f);
+            ImGui::DragFloat("Break Force##tether", &tether->autoBreakForce, 1.0f, 1.0f, 200.0f);
+            ImGui::DragFloat("Drag##tether", &tether->autoDrag, 0.1f, 0.0f, 20.0f);
+            ImGui::TreePop();
+        }
 
         // Read-only tension bar
         ImGui::ProgressBar(tether->currentTension, ImVec2(-1, 0), tether->isBroken ? "BROKEN" : nullptr);
@@ -15274,6 +15447,9 @@ void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
 
         ImGui::SliderFloat("Pull Force", &grab->pullForce, 1.0f, 50.0f);
         ImGui::SliderFloat("Grab Radius", &grab->grabRadius, 0.1f, 5.0f);
+        ImGui::DragFloat("Max Pull Distance", &grab->maxPullDistance, 0.1f, 0.5f, 10.0f);
+        ImGui::DragFloat("Max Velocity", &grab->maxVelocity, 1.0f, 5.0f, 200.0f);
+        ImGui::SliderFloat("Wind Sway Scale", &grab->windSwayScale, 0.0f, 1.0f);
 
         if (grab->isGrabbed) {
             ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Currently grabbed");
@@ -15298,6 +15474,9 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
         ImGui::SliderFloat("Liquid Intensity", &stem->liquidIntensity, 0.0f, 2.0f, "%.2f");
         ImGui::SameLine();
         if (ImGui::SmallButton("Off##liq")) stem->liquidIntensity = 0.0f;
+        ImGui::DragFloat("Ground Level", &stem->groundLevel, 0.1f, -100.0f, 100.0f);
+        ImGui::ColorEdit3("Sap Color", &stem->sapColor.x);
+        ImGui::SliderFloat("Stem Sway Amplitude", &stem->stemSwayAmplitude, 0.0f, 0.5f);
 
         ImGui::Separator();
         ImGui::Text("Parts Removed: %d", stem->partsRemoved);
@@ -15311,6 +15490,56 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("FlowerStemContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 m_World->RemoveComponent<ECS::FlowerStemComponent>(entity);
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawFlowerParticleConfigComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Flower Particle Config", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* cfg = m_World->GetComponent<ECS::FlowerParticleConfigComponent>(entity);
+        if (!cfg) return;
+
+        if (ImGui::TreeNode("Break Burst")) {
+            ImGui::DragInt("Count##breakBurst", &cfg->breakBurstCount, 1, 1, 100);
+            ImGui::DragFloat("Speed##breakBurst", &cfg->breakBurstSpeed, 0.1f, 0.1f, 20.0f);
+            ImGui::DragFloat("Up Kick##breakBurst", &cfg->breakBurstUpKick, 0.1f, 0.0f, 20.0f);
+            ImGui::DragFloat("Lifetime##breakBurst", &cfg->breakBurstLifetime, 0.05f, 0.1f, 5.0f);
+            ImGui::DragFloat("Scale##breakBurst", &cfg->breakBurstScale, 0.01f, 0.01f, 0.5f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Break Drip")) {
+            ImGui::DragInt("Count##breakDrip", &cfg->breakDripCount, 1, 0, 50);
+            ImGui::DragFloat("Speed##breakDrip", &cfg->breakDripSpeed, 0.1f, 0.0f, 10.0f);
+            ImGui::DragFloat("Lifetime##breakDrip", &cfg->breakDripLifetime, 0.05f, 0.1f, 5.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Ground Splash")) {
+            ImGui::DragInt("Count##splash", &cfg->splashCount, 1, 1, 50);
+            ImGui::DragFloat("Speed##splash", &cfg->splashSpeed, 0.1f, 0.1f, 20.0f);
+            ImGui::DragFloat("Up Kick##splash", &cfg->splashUpKick, 0.1f, 0.0f, 20.0f);
+            ImGui::DragFloat("Lifetime##splash", &cfg->splashLifetime, 0.05f, 0.1f, 5.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Tension Drip")) {
+            ImGui::DragFloat("Drip Rate", &cfg->tensionDripRate, 0.1f, 0.1f, 20.0f);
+            ImGui::DragFloat("Threshold", &cfg->tensionDripThreshold, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Squirt Speed", &cfg->tensionSquirtSpeed, 0.1f, 0.1f, 20.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Particle Physics")) {
+            ImGui::DragFloat("Gravity##flowerParticle", &cfg->particleGravity, 0.1f, 0.0f, 50.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::BeginPopupContextItem("FlowerParticleConfigContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                m_World->RemoveComponent<ECS::FlowerParticleConfigComponent>(entity);
             }
             ImGui::EndPopup();
         }
@@ -15745,6 +15974,7 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
             ImGui::DragFloat("Acceleration", &ctrl->acceleration, 0.5f, 0.0f, 100.0f);
             ImGui::DragFloat("Brake Force", &ctrl->brakeForce, 0.5f, 0.0f, 100.0f);
             ImGui::DragFloat("Engine Brake", &ctrl->engineBrake, 0.5f, 0.0f, 50.0f);
+            ImGui::Checkbox("Handbrake", &ctrl->handbrake);
             ImGui::TreePop();
         }
 
@@ -15767,6 +15997,7 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
         if (ImGui::TreeNode("Camera")) {
             ImGui::DragFloat("Camera Distance", &ctrl->cameraDistance, 0.1f, 1.0f, 30.0f);
             ImGui::DragFloat("Camera Height", &ctrl->cameraHeight, 0.1f, 0.0f, 20.0f);
+            ImGui::DragFloat("Camera Pitch##veh", &ctrl->cameraPitch, 1.0f, -89.0f, 89.0f);
             ImGui::DragFloat("Camera Lerp Speed", &ctrl->cameraLerpSpeed, 0.1f, 0.1f, 20.0f);
             ImGui::DragFloat("Camera Look Ahead", &ctrl->cameraLookAhead, 0.1f, 0.0f, 10.0f);
             ImGui::TreePop();
@@ -15782,9 +16013,12 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
             ImGui::DragFloat("Move Speed", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
             ImGui::Checkbox("WASD", &ctrl->useWASD);
             ImGui::SameLine();
+            ImGui::Checkbox("Arrow Keys##veh", &ctrl->useArrowKeys);
+            ImGui::SameLine();
             ImGui::Checkbox("Gamepad", &ctrl->useGamepad);
             if (ctrl->useGamepad) {
                 ImGui::DragInt("Gamepad Index", &ctrl->gamepadIndex, 1, 0, 3);
+                ImGui::DragFloat("Stick Sensitivity##veh", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
             }
             ImGui::TreePop();
         }
