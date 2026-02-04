@@ -418,15 +418,38 @@ private:
     f32 m_SplashFadeStart = 2.0f;  // Start fading at 2 seconds
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
-    // Template selector (shown after splash)
-    bool m_ShowTemplateSelector = true;
-    i32 m_SelectedTemplate = -1;   // -1 = none selected (hovering)
-    std::vector<std::string> m_CustomTemplateNames;  // Saved custom template names
-    std::vector<std::string> m_CustomTemplatePaths;  // Saved custom template file paths
-    void DrawTemplateSelector();
+    // Project Hub (shown after splash)
+    enum class ProjectHubTab : u8 { Recent = 0, New, Open };
+    bool m_ShowProjectHub = true;
+    ProjectHubTab m_HubTab = ProjectHubTab::Recent;
+
+    // New Project wizard state
+    char m_NewProjectName[128] = "MyGame";
+    char m_NewProjectPath[512] = "";       // Filled with default (Documents/EnjinProjects)
+    char m_NewSceneName[128] = "Main";
+    i32 m_SelectedTemplate = -1;
+    u32 m_TemplateFilter = 0;             // 0 = All, bitmask for category filtering
+
+    // Template category flags
+    static constexpr u32 TMPL_ALL   = 0;
+    static constexpr u32 TMPL_2D    = 1 << 0;
+    static constexpr u32 TMPL_3D    = 1 << 1;
+    static constexpr u32 TMPL_MULTI = 1 << 2;
+
+    // Custom templates
+    std::vector<std::string> m_CustomTemplateNames;
+    std::vector<std::string> m_CustomTemplatePaths;
+
+    // Project Hub methods
+    void DrawProjectHub();
+    void DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
+    void DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
+    void DrawHubOpenTab(ImDrawList* dl, const ImVec2& area);
     void ApplyTemplate(const std::string& templateId);
     void SaveCustomTemplate(const std::string& name);
     void LoadCustomTemplates();
+    bool CreateProjectOnDisk(const std::string& projectDir, const std::string& projectName,
+                             const std::string& sceneName, const std::string& templateId);
 
     // Docking layout
     bool m_DockingInitialized = false;
