@@ -42,6 +42,7 @@ public:
         m_GrabDepth = 0.0f;
         m_Particles.clear();
         m_DripAccumulator = 0.0f;
+        m_JointsInitialized = false;
     }
 
     // Set the game view bounds in screen space (for mouse coordinate conversion)
@@ -64,9 +65,10 @@ public:
 
 private:
     void ProcessInput();
-    void UpdateTethers(f32 dt);
+    void SetupJointsIfNeeded();
+    void ProcessGrabForces(f32 dt);
     void UpdateJellyMeshes(f32 dt);
-    void CheckBreaks();
+    void UpdateJointTracking();
     void UpdateBrokenParts(f32 dt);
     void UpdateParticles(f32 dt);
     void CheckGroundImpact();
@@ -101,6 +103,9 @@ private:
     std::vector<FlowerParticle> m_Particles;
     static constexpr usize MAX_PARTICLES = 300;
     f32 m_DripAccumulator = 0.0f;
+
+    // Joint setup state
+    bool m_JointsInitialized = false;
 };
 
 } // namespace ECS

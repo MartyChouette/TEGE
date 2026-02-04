@@ -10123,9 +10123,40 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             stemFlower.liquidIntensity = 1.0f;
         }
 
-        // Petals (arranged radially)
-        const int petalCount = 10;
+        // Crown (created before petals so petals can reference it as connectedEntity)
         const float petalHeight = 1.7f;
+        ECS::Entity crownEntity = m_World->CreateEntity();
+        {
+            m_World->AddComponent<ECS::NameComponent>(crownEntity, "Flower_Crown");
+            auto& crt = m_World->AddComponent<ECS::TransformComponent>(crownEntity);
+            crt.position = Math::Vector3(0.0f, petalHeight, 0.0f);
+            crt.scale = Math::Vector3(0.25f, 0.1f, 0.25f);
+            auto& crmat = m_World->AddComponent<ECS::MaterialComponent>(crownEntity);
+            crmat.baseColor = Math::Vector3(0.95f, 0.8f, 0.2f); // golden yellow
+            crmat.roughness = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(crownEntity, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& crPickup = m_World->AddComponent<ECS::PickupComponent>(crownEntity);
+            crPickup.type = ECS::PickupComponent::PickupType::Custom;
+            crPickup.value = 25.0f;
+            auto& crTag = m_World->AddComponent<ECS::TagComponent>(crownEntity);
+            crTag.tags.push_back("healthy");
+
+            auto& crJelly = m_World->AddComponent<ECS::JellyMeshComponent>(crownEntity);
+            crJelly.springStiffness = 100.0f;
+            crJelly.maxStretch = 0.6f;
+            auto& crTether = m_World->AddComponent<ECS::TetherComponent>(crownEntity);
+            crTether.stemEntity = stemEntity;
+            crTether.connectedEntity = stemEntity;  // Crown connects to stem
+            crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
+            crTether.breakDistance = 1.0f;
+            crTether.tensionRamp = 3.0f;
+            auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crownEntity);
+            crGrab.pullForce = 40.0f;
+            crGrab.grabRadius = 0.12f;
+        }
+
+        // Petals (arranged radially, connected to crown)
+        const int petalCount = 10;
         for (int i = 0; i < petalCount; ++i) {
             ECS::Entity petal = m_World->CreateEntity();
             char pname[32]; snprintf(pname, sizeof(pname), "Petal_%d", i + 1);
@@ -10157,9 +10188,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.springStiffness = 80.0f;
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(petal);
-            tether.stemEntity = stemEntity;
-            tether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
-            tether.tetherStiffness = 80.0f;
+            tether.stemEntity = stemEntity;           // For scoring
+            tether.connectedEntity = crownEntity;     // Physics connection to crown
+            tether.attachLocalPos = Math::Vector3(0.0f, 0.0f, 0.0f);  // Attach at crown center
             tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
@@ -10167,7 +10198,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             grab.grabRadius = 0.15f;
         }
 
-        // Leaves along the stem
+        // Leaves along the stem (connected to stem)
         const int leafCount = 5;
         for (int i = 0; i < leafCount; ++i) {
             ECS::Entity leaf = m_World->CreateEntity();
@@ -10195,45 +10226,14 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.springStiffness = 60.0f;
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(leaf);
-            tether.stemEntity = stemEntity;
+            tether.stemEntity = stemEntity;           // For scoring
+            tether.connectedEntity = stemEntity;      // Physics connection to stem
             tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
-            tether.tetherStiffness = 60.0f;
             tether.breakDistance = 0.8f;
             tether.tensionRamp = 2.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
             grab.grabRadius = 0.12f;
-        }
-
-        // Crown (central disc at stem top where petals radiate from)
-        {
-            ECS::Entity crown = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(crown, "Flower_Crown");
-            auto& crt = m_World->AddComponent<ECS::TransformComponent>(crown);
-            crt.position = Math::Vector3(0.0f, petalHeight, 0.0f);
-            crt.scale = Math::Vector3(0.25f, 0.1f, 0.25f);
-            auto& crmat = m_World->AddComponent<ECS::MaterialComponent>(crown);
-            crmat.baseColor = Math::Vector3(0.95f, 0.8f, 0.2f); // golden yellow
-            crmat.roughness = 0.5f;
-            m_World->AddComponent<ECS::MeshComponent>(crown, Renderer::MeshFactory::CreateCube(1.0f));
-            auto& crPickup = m_World->AddComponent<ECS::PickupComponent>(crown);
-            crPickup.type = ECS::PickupComponent::PickupType::Custom;
-            crPickup.value = 25.0f;
-            auto& crTag = m_World->AddComponent<ECS::TagComponent>(crown);
-            crTag.tags.push_back("healthy");
-
-            auto& crJelly = m_World->AddComponent<ECS::JellyMeshComponent>(crown);
-            crJelly.springStiffness = 100.0f;
-            crJelly.maxStretch = 0.6f;
-            auto& crTether = m_World->AddComponent<ECS::TetherComponent>(crown);
-            crTether.stemEntity = stemEntity;
-            crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
-            crTether.tetherStiffness = 100.0f;
-            crTether.breakDistance = 1.0f;
-            crTether.tensionRamp = 3.0f;
-            auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crown);
-            crGrab.pullForce = 40.0f;
-            crGrab.grabRadius = 0.12f;
         }
 
         // Camera
@@ -15125,7 +15125,7 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
         auto* tether = m_World->GetComponent<ECS::TetherComponent>(entity);
         if (!tether) return;
 
-        // Stem entity picker (show name if available)
+        // Stem entity (for scoring)
         char stemLabel[128] = "None";
         if (tether->stemEntity != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(tether->stemEntity)) {
             auto* name = m_World->GetComponent<ECS::NameComponent>(tether->stemEntity);
@@ -15135,12 +15135,20 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
         }
         ImGui::Text("Stem: %s", stemLabel);
 
+        // Connected entity (physics joint target)
+        char connLabel[128] = "None";
+        if (tether->connectedEntity != ECS::INVALID_ENTITY && m_World->HasComponent<ECS::NameComponent>(tether->connectedEntity)) {
+            auto* name = m_World->GetComponent<ECS::NameComponent>(tether->connectedEntity);
+            snprintf(connLabel, sizeof(connLabel), "%s (%llu)", name->name.c_str(), (unsigned long long)tether->connectedEntity);
+        } else if (tether->connectedEntity != ECS::INVALID_ENTITY) {
+            snprintf(connLabel, sizeof(connLabel), "Entity %llu", (unsigned long long)tether->connectedEntity);
+        }
+        ImGui::Text("Connected: %s", connLabel);
+
         ImGui::DragFloat3("Attach Local Pos", &tether->attachLocalPos.x, 0.01f);
-        ImGui::SliderFloat("Rest Length (0=auto)", &tether->restLength, 0.0f, 5.0f);
-        ImGui::SliderFloat("Stiffness##Tether", &tether->tetherStiffness, 1.0f, 200.0f);
-        ImGui::SliderFloat("Damping##Tether", &tether->tetherDamping, 0.1f, 20.0f);
         ImGui::SliderFloat("Break Distance", &tether->breakDistance, 0.1f, 5.0f);
         ImGui::SliderFloat("Tension Ramp", &tether->tensionRamp, 0.5f, 5.0f);
+        ImGui::TextDisabled("Spring params are on SpringJointComponent");
 
         // Read-only tension bar
         ImGui::ProgressBar(tether->currentTension, ImVec2(-1, 0), tether->isBroken ? "BROKEN" : nullptr);

@@ -22,23 +22,23 @@ struct JellyMeshComponent {
     bool meshDirty = false;
 };
 
-// Spring connection to a stem entity. Breaks at distance threshold.
+// Spring connection via physics joints. Breaks when SpringJointComponent is destroyed.
 struct TetherComponent {
     // Authored parameters
-    Entity stemEntity = INVALID_ENTITY;
+    Entity stemEntity = INVALID_ENTITY;         // Stem entity for scoring
+    Entity connectedEntity = INVALID_ENTITY;    // Direct connection target (crown for petals, stem for leaves/crown)
     Math::Vector3 attachLocalPos = Math::Vector3(0, 0, 0);
-    f32 restLength = 0.0f;           // 0 = auto-compute from initial distance
-    f32 tetherStiffness = 40.0f;
-    f32 tetherDamping = 3.0f;
-    f32 breakDistance = 1.5f;
-    f32 tensionRamp = 2.0f;          // Exponent for non-linear resistance
+    f32 breakDistance = 1.5f;        // Informational (break now via SpringJoint breakForce)
+    f32 tensionRamp = 2.0f;          // Informational
 
     // Runtime state
     bool isBroken = false;
     bool justBroke = false;          // One-frame flag for particle spawn
     f32 currentTension = 0.0f;       // 0..1 normalized for feedback
-    f32 computedRestLength = 0.0f;   // Auto-computed rest length
-    bool restLengthInitialized = false;
+    bool hadJoint = false;           // True if SpringJointComponent existed last frame
+    Math::Vector3 lastAnchorWorldA = Math::Vector3(0, 0, 0);  // Cached joint anchor A world pos
+    Math::Vector3 lastAnchorWorldB = Math::Vector3(0, 0, 0);  // Cached joint anchor B world pos
+    Math::Vector3 junctionWorldPos = Math::Vector3(0, 0, 0);  // Where part meets connected entity (for particles)
 };
 
 // Marks entity as click-draggable in play mode

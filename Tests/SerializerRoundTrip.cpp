@@ -379,9 +379,7 @@ int main() {
 
         auto& te = srcWorld.AddComponent<ECS::TetherComponent>(e);
         te.attachLocalPos = Math::Vector3(0, 1, 0);
-        te.restLength = 2.0f;
-        te.tetherStiffness = 60.0f;
-        te.tetherDamping = 5.0f;
+        te.connectedEntity = e;  // Self-ref for test purposes
         te.breakDistance = 3.0f;
         te.tensionRamp = 3.0f;
 
@@ -792,9 +790,8 @@ int main() {
         auto* te = dstWorld.GetComponent<ECS::TetherComponent>(e);
         if (te) {
             CHECK_VEC3(te->attachLocalPos, 0, 1, 0, "te.attachLocalPos");
-            CHECK_FLOAT(te->restLength, 2.0f, "te.restLength");
-            CHECK_FLOAT(te->tetherStiffness, 60.0f, "te.tetherStiffness");
             CHECK_FLOAT(te->breakDistance, 3.0f, "te.breakDistance");
+            CHECK_FLOAT(te->tensionRamp, 3.0f, "te.tensionRamp");
             CHECK_BOOL(te->isBroken, false, "te.isBroken (runtime reset)");
         }
         HAS_COMPONENT(dstWorld, e, ECS::GrabbableComponent, "GrabbableComponent");

@@ -1898,10 +1898,8 @@ ECS::JellyMeshComponent DeserializeJellyMeshComponent(const json& j) {
 json SerializeTetherComponent(const ECS::TetherComponent& t) {
     json j;
     j["stemEntity"] = static_cast<u64>(t.stemEntity);
+    j["connectedEntity"] = static_cast<u64>(t.connectedEntity);
     j["attachLocalPos"] = SerializeVector3(t.attachLocalPos);
-    j["restLength"] = t.restLength;
-    j["tetherStiffness"] = t.tetherStiffness;
-    j["tetherDamping"] = t.tetherDamping;
     j["breakDistance"] = t.breakDistance;
     j["tensionRamp"] = t.tensionRamp;
     return j;
@@ -1910,12 +1908,14 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
 ECS::TetherComponent DeserializeTetherComponent(const json& j) {
     ECS::TetherComponent t;
     if (j.contains("stemEntity")) t.stemEntity = static_cast<ECS::Entity>(j["stemEntity"].get<u64>());
+    if (j.contains("connectedEntity")) t.connectedEntity = static_cast<ECS::Entity>(j["connectedEntity"].get<u64>());
     if (j.contains("attachLocalPos")) t.attachLocalPos = DeserializeVector3(j["attachLocalPos"]);
-    if (j.contains("restLength")) t.restLength = j["restLength"].get<f32>();
-    if (j.contains("tetherStiffness")) t.tetherStiffness = j["tetherStiffness"].get<f32>();
-    if (j.contains("tetherDamping")) t.tetherDamping = j["tetherDamping"].get<f32>();
     if (j.contains("breakDistance")) t.breakDistance = j["breakDistance"].get<f32>();
     if (j.contains("tensionRamp")) t.tensionRamp = j["tensionRamp"].get<f32>();
+    // Backward compat: if connectedEntity missing, default to stemEntity
+    if (!j.contains("connectedEntity") && t.connectedEntity == ECS::INVALID_ENTITY) {
+        t.connectedEntity = t.stemEntity;
+    }
     return t;
 }
 
