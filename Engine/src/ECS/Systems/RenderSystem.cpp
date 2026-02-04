@@ -581,6 +581,8 @@ void RenderSystem::Update(f32 deltaTime) {
             for (Entity entity : entities) {
                 if (m_World->HasComponent<TransformComponent>(entity) &&
                     m_World->HasComponent<MeshComponent>(entity)) {
+                    auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                    if (xform && !xform->visible) continue;
                     // Skip 2D sprites — rendered in sorted pass after 3D geometry
                     if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
                     RenderEntity(entity);
@@ -649,6 +651,12 @@ void RenderSystem::Update(f32 deltaTime) {
             if (!m_World->HasComponent<TransformComponent>(entity) ||
                 !m_World->HasComponent<MeshComponent>(entity)) {
                 continue;
+            }
+
+            // Skip invisible entities
+            {
+                auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                if (xform && !xform->visible) continue;
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
@@ -752,6 +760,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     for (Entity entity : entities) {
         if (m_World->HasComponent<TransformComponent>(entity) &&
             m_World->HasComponent<MeshComponent>(entity)) {
+
+            // Skip invisible entities
+            auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
+            if (xformRT && !xformRT->visible) continue;
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
@@ -1095,6 +1107,12 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (!m_World->HasComponent<TransformComponent>(entity) ||
                 !m_World->HasComponent<MeshComponent>(entity)) {
                 continue;
+            }
+
+            // Skip invisible entities
+            {
+                auto* xformSS = m_World->GetComponent<TransformComponent>(entity);
+                if (xformSS && !xformSS->visible) continue;
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
@@ -2229,6 +2247,9 @@ void RenderSystem::RenderEntity(Entity entity) {
         return;
     }
 
+    // Skip invisible entities (safety net — callers should also check)
+    if (!transform->visible) return;
+
     auto it = m_EntityRenderData.find(entity);
     if (it == m_EntityRenderData.end()) {
         it = SetupEntityBuffers(entity);
@@ -2476,6 +2497,8 @@ void RenderSystem::RenderSprites() {
         for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
             if (!m_World->HasComponent<TransformComponent>(entity)) continue;
             if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+            auto* xformTM = m_World->GetComponent<TransformComponent>(entity);
+            if (xformTM && !xformTM->visible) continue;
             tilemaps.push_back({ entity });
         }
         for (const auto& entry : tilemaps) {
@@ -2522,6 +2545,8 @@ void RenderSystem::RenderSprites() {
             auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
             if (!sprite || !sprite->visible) continue;
             if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+            auto* xformSprite = m_World->GetComponent<TransformComponent>(entity);
+            if (xformSprite && !xformSprite->visible) continue;
             if (!m_World->HasComponent<MeshComponent>(entity)) continue;
 
             sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
@@ -2602,6 +2627,10 @@ void RenderSystem::RenderShadowPass() {
         for (Entity entity : m_World->GetAllEntities()) {
             if (m_World->HasComponent<TransformComponent>(entity) &&
                 m_World->HasComponent<MeshComponent>(entity)) {
+                // Skip invisible entities
+                auto* xformShadow = m_World->GetComponent<TransformComponent>(entity);
+                if (xformShadow && !xformShadow->visible) continue;
+
                 // Skip 2D sprites from shadow pass
                 if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 

@@ -2713,6 +2713,33 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
 
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", name.c_str());
 
+    // Eye icon for visibility toggle (right-aligned on same line)
+    {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (transform) {
+            ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 18.0f);
+            ImGui::PushID(static_cast<int>((uintptr_t)entity ^ 0xEEEE));
+            const char* icon = transform->visible ? "O" : "-";
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.5f, 0.5f, 0.5f, 0.3f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.5f, 0.5f, 0.5f, 0.5f));
+            if (!transform->visible) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 0.5f));
+            }
+            if (ImGui::SmallButton(icon)) {
+                transform->visible = !transform->visible;
+            }
+            if (!transform->visible) {
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopStyleColor(3);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(transform->visible ? "Hide entity" : "Show entity");
+            }
+            ImGui::PopID();
+        }
+    }
+
     // Click handling
     if (ImGui::IsItemClicked() && !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
@@ -3405,6 +3432,8 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
         ECS::TransformComponent* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) return;
+
+        ImGui::Checkbox("Visible", &transform->visible);
 
         // Position
         f32 pos[3] = { transform->position.x, transform->position.y, transform->position.z };

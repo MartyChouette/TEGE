@@ -168,9 +168,8 @@ void FlowerSystem::ProcessInput() {
                         auto* mat = m_World->GetComponent<MaterialComponent>(m_GrabbedEntity);
                         Math::Vector3 color = mat ? mat->baseColor : Math::Vector3(1, 1, 1);
                         SpawnGroundSplash(transform->position, color);
-                        // Hide offscreen (keeps GPU buffers valid, avoids freeze)
-                        transform->position = Math::Vector3(0.0f, -100.0f, 0.0f);
-                        transform->scale = Math::Vector3(0.0f, 0.0f, 0.0f);
+                        // Hide entity (keeps GPU buffers valid, avoids freeze)
+                        transform->visible = false;
                     }
                 }
                 grab->isGrabbed = false;

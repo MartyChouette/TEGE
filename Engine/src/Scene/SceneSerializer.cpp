@@ -91,6 +91,7 @@ json SerializeTransformComponent(const ECS::TransformComponent& transform) {
     j["position"] = SerializeVector3(transform.position);
     j["rotation"] = SerializeQuaternion(transform.rotation);
     j["scale"] = SerializeVector3(transform.scale);
+    if (!transform.visible) j["visible"] = false;
     return j;
 }
 
@@ -226,6 +227,7 @@ ECS::TransformComponent DeserializeTransformComponent(const json& j) {
     transform.position = DeserializeVector3(j["position"]);
     transform.rotation = DeserializeQuaternion(j["rotation"]);
     transform.scale = DeserializeVector3(j["scale"]);
+    if (j.contains("visible")) transform.visible = j["visible"].get<bool>();
     return transform;
 }
 

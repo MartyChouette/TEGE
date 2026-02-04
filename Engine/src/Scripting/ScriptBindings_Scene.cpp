@@ -82,6 +82,18 @@ static std::string Entity_GetName(u64 id) {
     return n ? n->name : "";
 }
 
+static bool Entity_IsVisible(u64 id) {
+    if (!s_BindingsWorld) return true;
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    return t ? t->visible : true;
+}
+
+static void Entity_SetVisible(u64 id, bool visible) {
+    if (!s_BindingsWorld) return;
+    auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (t) t->visible = visible;
+}
+
 // ============================================================================
 // Scene functions
 // ============================================================================
@@ -285,6 +297,15 @@ void RegisterSceneBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "string Entity_GetName(uint64)",
         asFUNCTION(Entity_GetName), asCALL_CDECL));
+
+    // Entity visibility
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool Entity_IsVisible(uint64)",
+        asFUNCTION(Entity_IsVisible), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Entity_SetVisible(uint64, bool)",
+        asFUNCTION(Entity_SetVisible), asCALL_CDECL));
 
     // Entity lookup
     AS_CHECK(engine->RegisterGlobalFunction(
