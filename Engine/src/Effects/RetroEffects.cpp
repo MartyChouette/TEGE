@@ -52,6 +52,9 @@ void RetroEffects::ApplyPS1Preset() {
     m_VertexJitter.snapToGrid = true;
     m_VertexJitter.gridResolution = 160;
 
+    // PS1 used Gouraud shading
+    m_GouraudOnly = true;
+
     // No CRT by default (optional)
     m_CRT.enabled = false;
 
@@ -87,6 +90,9 @@ void RetroEffects::ApplyN64Preset() {
     m_VertexJitter.jitterAmount = 0.3f;
     m_VertexJitter.snapToGrid = false;
 
+    // N64 used Gouraud shading
+    m_GouraudOnly = true;
+
     // Heavy fog (N64 loved fog)
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.6f, 0.6f, 0.7f);
@@ -115,6 +121,7 @@ void RetroEffects::ApplyPS2Preset() {
 
     // No vertex jitter
     m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
 
     // Light fog
     m_Fog.enabled = true;
@@ -140,6 +147,7 @@ void RetroEffects::ApplyGameCubePreset() {
     // No retro artifacts
     m_Affine.enabled = false;
     m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
 
     // Optional fog
     m_Fog.enabled = true;
@@ -168,6 +176,7 @@ void RetroEffects::ApplySNESPreset() {
     // No 3D effects
     m_Affine.enabled = false;
     m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
 
     // No fog (2D focused)
     m_Fog.enabled = false;
@@ -193,12 +202,261 @@ void RetroEffects::ApplyDreamcastPreset() {
     // No artifacts
     m_Affine.enabled = false;
     m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
 
     // Light fog
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.6f, 0.65f, 0.75f);
     m_Fog.start = 40.0f;
     m_Fog.end = 120.0f;
+}
+
+void RetroEffects::ApplyNESPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 256;
+    m_Resolution.renderHeight = 240;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Palette16;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyGameBoyPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 160;
+    m_Resolution.renderHeight = 144;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Monochrome;
+    m_ColorPreset = ColorPreset::GameBoy;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyGBAPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 240;
+    m_Resolution.renderHeight = 160;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::HighColor;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyGenesisPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 320;
+    m_Resolution.renderHeight = 224;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Palette256;
+    m_ColorPreset = ColorPreset::Genesis;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplySaturnPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 352;
+    m_Resolution.renderHeight = 240;
+    m_Resolution.pointFiltering = false;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::Bayer4x4;
+    m_ColorMode = ColorMode::HighColor;
+    m_ColorPreset = ColorPreset::Saturn;
+    m_Affine.enabled = true;
+    m_Affine.warpStrength = 0.5f;
+    m_Affine.vertexSnapping = true;
+    m_Affine.snapGridSize = 1.0f;
+    m_VertexJitter.enabled = true;
+    m_VertexJitter.jitterAmount = 0.3f;
+    m_VertexJitter.snapToGrid = true;
+    m_VertexJitter.gridResolution = 200;
+    m_GouraudOnly = true;
+    m_CRT.enabled = false;
+    m_Fog.enabled = true;
+    m_Fog.color = Math::Vector3(0.5f, 0.5f, 0.55f);
+    m_Fog.start = 20.0f;
+    m_Fog.end = 60.0f;
+}
+
+void RetroEffects::ApplyMasterSystemPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 256;
+    m_Resolution.renderHeight = 192;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Palette16;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyPSPPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 480;
+    m_Resolution.renderHeight = 272;
+    m_Resolution.pointFiltering = false;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::Bayer2x2;
+    m_ColorMode = ColorMode::TrueColor;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = true;
+    m_Fog.color = Math::Vector3(0.55f, 0.55f, 0.6f);
+    m_Fog.start = 25.0f;
+    m_Fog.end = 80.0f;
+}
+
+void RetroEffects::ApplyDOSVGAPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 320;
+    m_Resolution.renderHeight = 200;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::Ordered;
+    m_ColorMode = ColorMode::Palette256;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyVirtualBoyPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 384;
+    m_Resolution.renderHeight = 224;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Monochrome;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyNeoGeoPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 320;
+    m_Resolution.renderHeight = 224;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::TrueColor;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::Apply3DOPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 320;
+    m_Resolution.renderHeight = 240;
+    m_Resolution.pointFiltering = false;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::Bayer2x2;
+    m_ColorMode = ColorMode::HighColor;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = true;
+    m_Affine.warpStrength = 1.0f;
+    m_Affine.vertexSnapping = true;
+    m_Affine.snapGridSize = 1.0f;
+    m_VertexJitter.enabled = true;
+    m_VertexJitter.jitterAmount = 0.5f;
+    m_VertexJitter.snapToGrid = true;
+    m_VertexJitter.gridResolution = 160;
+    m_GouraudOnly = true;
+    m_CRT.enabled = false;
+    m_Fog.enabled = true;
+    m_Fog.color = Math::Vector3(0.5f, 0.5f, 0.55f);
+    m_Fog.start = 15.0f;
+    m_Fog.end = 50.0f;
+}
+
+void RetroEffects::ApplyXboxPreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 640;
+    m_Resolution.renderHeight = 480;
+    m_Resolution.pointFiltering = false;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::TrueColor;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = true;
+    m_Fog.color = Math::Vector3(0.6f, 0.6f, 0.65f);
+    m_Fog.start = 40.0f;
+    m_Fog.end = 120.0f;
+}
+
+void RetroEffects::ApplyAtari2600Preset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 160;
+    m_Resolution.renderHeight = 192;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Palette16;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
+}
+
+void RetroEffects::ApplyPCEnginePreset() {
+    m_Enabled = true;
+    m_Resolution.renderWidth = 256;
+    m_Resolution.renderHeight = 240;
+    m_Resolution.pointFiltering = true;
+    m_Resolution.integerScaling = true;
+    m_DitherPattern = DitherPattern::None;
+    m_ColorMode = ColorMode::Palette256;
+    m_ColorPreset = ColorPreset::None;
+    m_Affine.enabled = false;
+    m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
+    m_CRT.enabled = false;
+    m_Fog.enabled = false;
 }
 
 void RetroEffects::ClearAllEffects() {
@@ -215,6 +473,7 @@ void RetroEffects::ClearAllEffects() {
 
     m_Affine.enabled = false;
     m_VertexJitter.enabled = false;
+    m_GouraudOnly = false;
     m_CRT.enabled = false;
     m_Fog.enabled = false;
 }

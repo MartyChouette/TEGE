@@ -186,6 +186,22 @@ public:
     void SetWorldCurvature(f32 strength) { m_WorldCurvature = strength; }
     f32 GetWorldCurvature() const { return m_WorldCurvature; }
 
+    // Global retro shader overrides (forced on all entities when true)
+    bool GetGlobalFlatShading() const { return m_GlobalFlatShading; }
+    void SetGlobalFlatShading(bool v) { m_GlobalFlatShading = v; }
+    bool GetGlobalAffineTexturing() const { return m_GlobalAffineTexturing; }
+    void SetGlobalAffineTexturing(bool v) { m_GlobalAffineTexturing = v; }
+    bool GetGlobalVertexSnapping() const { return m_GlobalVertexSnapping; }
+    void SetGlobalVertexSnapping(bool v) { m_GlobalVertexSnapping = v; }
+    bool GetGlobalStippleTransparency() const { return m_GlobalStippleTransparency; }
+    void SetGlobalStippleTransparency(bool v) { m_GlobalStippleTransparency = v; }
+    bool GetGlobalUVQuantize() const { return m_GlobalUVQuantize; }
+    void SetGlobalUVQuantize(bool v) { m_GlobalUVQuantize = v; }
+    bool GetGlobalGouraudOnly() const { return m_GlobalGouraudOnly; }
+    void SetGlobalGouraudOnly(bool v) { m_GlobalGouraudOnly = v; }
+    u8 GetGlobalVertexSnapResolution() const { return m_GlobalVertexSnapResolution; }
+    void SetGlobalVertexSnapResolution(u8 v) { m_GlobalVertexSnapResolution = v; }
+
     // Skybox
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
@@ -256,6 +272,15 @@ private:
     Math::Vector3 m_FogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
     f32 m_SnowIntensity = 0.0f;
     f32 m_WorldCurvature = 0.0f;
+
+    // Global retro shader overrides (forced on all entities when true)
+    bool m_GlobalFlatShading = false;
+    bool m_GlobalAffineTexturing = false;
+    bool m_GlobalVertexSnapping = false;
+    bool m_GlobalStippleTransparency = false;
+    bool m_GlobalUVQuantize = false;
+    bool m_GlobalGouraudOnly = false;
+    u8 m_GlobalVertexSnapResolution = 160;
 
     // Textures
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;

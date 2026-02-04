@@ -817,11 +817,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
                 // Height texture flag
                 if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
-                // Retro flags
+                // Retro flags (per-material)
                 if (material->flatShading) pushConstants.flags |= (1 << 20);
                 if (material->affineTexturing) pushConstants.flags |= (1 << 21);
                 if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+                if (material->uvQuantize) pushConstants.flags |= (1 << 12);
+                if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
             } else {
@@ -834,6 +836,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.alphaCutoff = 0.5f;
                 pushConstants.flags = 0;
                 pushConstants.parallaxScale = 0.0f;
+            }
+
+            // Global retro overrides (OR with per-material — global forces on)
+            if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
+            if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
+            if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
+            if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
+            if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
+            if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+            if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
+                pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
             }
 
             // Set wind sway flag for vegetation entities
@@ -1144,6 +1157,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (material->affineTexturing) pushConstants.flags |= (1 << 21);
                 if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+                if (material->uvQuantize) pushConstants.flags |= (1 << 12);
+                if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
             } else {
@@ -1156,6 +1171,17 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.alphaCutoff = 0.5f;
                 pushConstants.flags = 0;
                 pushConstants.parallaxScale = 0.0f;
+            }
+
+            // Global retro overrides (OR with per-material — global forces on)
+            if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
+            if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
+            if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
+            if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
+            if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
+            if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+            if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
+                pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
             }
 
             VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
@@ -2259,11 +2285,13 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (material->metallicRoughnessTexture >= 0) pushConstants.flags |= (1 << 18);
         if (material->emissiveTexture >= 0) pushConstants.flags |= (1 << 19);
         if (material->heightTexture >= 0) pushConstants.flags |= (1 << 10);
-        // Retro flags
+        // Retro flags (per-material)
         if (material->flatShading) pushConstants.flags |= (1 << 20);
         if (material->affineTexturing) pushConstants.flags |= (1 << 21);
         if (material->vertexSnapping) pushConstants.flags |= (1 << 22);
         if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
+        if (material->uvQuantize) pushConstants.flags |= (1 << 12);
+        if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
         pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
         pushConstants.parallaxScale = material->parallaxScale;
     } else {
@@ -2277,6 +2305,17 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.alphaCutoff = 0.5f;
         pushConstants.flags = 0;
         pushConstants.parallaxScale = 0.0f;
+    }
+
+    // Global retro overrides (OR with per-material — global forces on)
+    if (m_GlobalFlatShading) pushConstants.flags |= (1 << 20);
+    if (m_GlobalAffineTexturing) pushConstants.flags |= (1 << 21);
+    if (m_GlobalVertexSnapping) pushConstants.flags |= (1 << 22);
+    if (m_GlobalStippleTransparency) pushConstants.flags |= (1 << 23);
+    if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
+    if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
+    if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
+        pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
     }
 
     // Sprite texture override — use sprite's texturePath instead of material's

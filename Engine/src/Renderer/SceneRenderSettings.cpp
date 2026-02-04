@@ -31,6 +31,14 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.snowIntensity        = rs->GetSnowIntensity();
         s.worldCurvature       = rs->GetWorldCurvature();
         s.rainActive           = rs->IsRainActive();
+        // Global retro overrides
+        s.globalFlatShading          = rs->GetGlobalFlatShading();
+        s.globalAffineTexturing      = rs->GetGlobalAffineTexturing();
+        s.globalVertexSnapping       = rs->GetGlobalVertexSnapping();
+        s.globalStippleTransparency  = rs->GetGlobalStippleTransparency();
+        s.globalUVQuantize           = rs->GetGlobalUVQuantize();
+        s.globalGouraudOnly          = rs->GetGlobalGouraudOnly();
+        s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
     }
 
     if (pp) {
@@ -144,6 +152,14 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetSnowIntensity(snowIntensity);
         rs->SetWorldCurvature(worldCurvature);
         rs->SetRainActive(rainActive);
+        // Global retro overrides
+        rs->SetGlobalFlatShading(globalFlatShading);
+        rs->SetGlobalAffineTexturing(globalAffineTexturing);
+        rs->SetGlobalVertexSnapping(globalVertexSnapping);
+        rs->SetGlobalStippleTransparency(globalStippleTransparency);
+        rs->SetGlobalUVQuantize(globalUVQuantize);
+        rs->SetGlobalGouraudOnly(globalGouraudOnly);
+        rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
     }
 
     if (pp) {
@@ -372,6 +388,15 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["paletteEnabled"]    = s.paletteEnabled;
     j["paletteColors"]     = s.paletteColors;
 
+    // Global retro overrides
+    j["globalFlatShading"]          = s.globalFlatShading;
+    j["globalAffineTexturing"]      = s.globalAffineTexturing;
+    j["globalVertexSnapping"]       = s.globalVertexSnapping;
+    j["globalStippleTransparency"]  = s.globalStippleTransparency;
+    j["globalUVQuantize"]           = s.globalUVQuantize;
+    j["globalGouraudOnly"]          = s.globalGouraudOnly;
+    j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
+
     return j;
 }
 
@@ -484,6 +509,15 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     // Palette lock
     if (j.contains("paletteEnabled"))    s.paletteEnabled    = j["paletteEnabled"].get<bool>();
     if (j.contains("paletteColors"))     s.paletteColors     = j["paletteColors"].get<u32>();
+
+    // Global retro overrides
+    if (j.contains("globalFlatShading"))          s.globalFlatShading          = j["globalFlatShading"].get<bool>();
+    if (j.contains("globalAffineTexturing"))      s.globalAffineTexturing      = j["globalAffineTexturing"].get<bool>();
+    if (j.contains("globalVertexSnapping"))       s.globalVertexSnapping       = j["globalVertexSnapping"].get<bool>();
+    if (j.contains("globalStippleTransparency"))  s.globalStippleTransparency  = j["globalStippleTransparency"].get<bool>();
+    if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = j["globalUVQuantize"].get<bool>();
+    if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = j["globalGouraudOnly"].get<bool>();
+    if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
 
     return s;
 }

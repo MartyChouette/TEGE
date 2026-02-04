@@ -203,6 +203,20 @@ public:
     void ApplyGameCubePreset();
     void ApplySNESPreset();
     void ApplyDreamcastPreset();
+    void ApplyNESPreset();
+    void ApplyGameBoyPreset();
+    void ApplyGBAPreset();
+    void ApplyGenesisPreset();
+    void ApplySaturnPreset();
+    void ApplyMasterSystemPreset();
+    void ApplyPSPPreset();
+    void ApplyDOSVGAPreset();
+    void ApplyVirtualBoyPreset();
+    void ApplyNeoGeoPreset();
+    void Apply3DOPreset();
+    void ApplyXboxPreset();
+    void ApplyAtari2600Preset();
+    void ApplyPCEnginePreset();
     void ClearAllEffects();
 
 private:

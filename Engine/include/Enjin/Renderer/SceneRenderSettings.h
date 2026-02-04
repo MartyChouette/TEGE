@@ -127,6 +127,15 @@ struct SceneRenderSettings {
     bool paletteEnabled = false;
     u32 paletteColors = 16;
 
+    // Global retro shader overrides (force per-object flags on all entities)
+    bool globalFlatShading = false;
+    bool globalAffineTexturing = false;
+    bool globalVertexSnapping = false;
+    bool globalStippleTransparency = false;
+    bool globalUVQuantize = false;
+    bool globalGouraudOnly = false;
+    u32 globalVertexSnapResolution = 160;
+
     // --- Conversion helpers ---
     static SceneRenderSettings CaptureFromRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp);
     void ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const;

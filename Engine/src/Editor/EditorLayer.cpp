@@ -828,6 +828,18 @@ void EditorLayer::Update(f32 deltaTime) {
         settings.vhsScreenTear = vhs.screenTear ? 1 : 0;
         settings.vhsTearOffset = vhs.tearOffset;
         settings.vhsInterlacing = vhs.interlacing ? 1 : 0;
+
+        // Sync per-object retro overrides to RenderSystem
+        if (m_RenderSystem) {
+            auto& affine = m_RetroEffects.GetAffineSettings();
+            auto& jitter = m_RetroEffects.GetVertexJitter();
+            m_RenderSystem->SetGlobalAffineTexturing(affine.enabled);
+            m_RenderSystem->SetGlobalVertexSnapping(affine.vertexSnapping || jitter.enabled);
+            m_RenderSystem->SetGlobalVertexSnapResolution(
+                jitter.enabled ? static_cast<u8>(jitter.gridResolution) : 160);
+            m_RenderSystem->SetGlobalGouraudOnly(m_RetroEffects.GetGouraudOnly());
+            m_RenderSystem->SetGlobalUVQuantize(affine.enabled);
+        }
     } else if (m_PostProcessing) {
         // When retro effects are disabled, clear the retro post-process fields
         auto& settings = m_PostProcessing->GetSettings();
@@ -837,6 +849,16 @@ void EditorLayer::Update(f32 deltaTime) {
         settings.crtEnabled = 0;
         settings.crtPhosphorEnabled = 0;
         settings.vhsEnabled = 0;
+    }
+
+    // Clear global retro overrides when retro is disabled
+    if (!m_RetroEffects.IsEnabled() && m_RenderSystem) {
+        m_RenderSystem->SetGlobalFlatShading(false);
+        m_RenderSystem->SetGlobalAffineTexturing(false);
+        m_RenderSystem->SetGlobalVertexSnapping(false);
+        m_RenderSystem->SetGlobalStippleTransparency(false);
+        m_RenderSystem->SetGlobalUVQuantize(false);
+        m_RenderSystem->SetGlobalGouraudOnly(false);
     }
 }
 
@@ -5966,7 +5988,7 @@ void EditorLayer::DrawEffectsPanel() {
         }
 
         if (retroEnabled) {
-            ImGui::Text("Quick Presets:");
+            ImGui::Text("Console Presets:");
             if (ImGui::Button("PS1")) { m_RetroEffects.ApplyPS1Preset(); }
             ImGui::SameLine();
             if (ImGui::Button("N64")) { m_RetroEffects.ApplyN64Preset(); }
@@ -5979,6 +6001,34 @@ void EditorLayer::DrawEffectsPanel() {
             ImGui::SameLine();
             if (ImGui::Button("Dreamcast")) { m_RetroEffects.ApplyDreamcastPreset(); }
             ImGui::SameLine();
+            if (ImGui::Button("Saturn")) { m_RetroEffects.ApplySaturnPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("3DO")) { m_RetroEffects.Apply3DOPreset(); }
+
+            if (ImGui::Button("NES")) { m_RetroEffects.ApplyNESPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Game Boy")) { m_RetroEffects.ApplyGameBoyPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("GBA")) { m_RetroEffects.ApplyGBAPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Genesis")) { m_RetroEffects.ApplyGenesisPreset(); }
+
+            if (ImGui::Button("Master System")) { m_RetroEffects.ApplyMasterSystemPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PSP")) { m_RetroEffects.ApplyPSPPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("DOS/VGA")) { m_RetroEffects.ApplyDOSVGAPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PC Engine")) { m_RetroEffects.ApplyPCEnginePreset(); }
+
+            if (ImGui::Button("Virtual Boy")) { m_RetroEffects.ApplyVirtualBoyPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Neo Geo")) { m_RetroEffects.ApplyNeoGeoPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Atari 2600")) { m_RetroEffects.ApplyAtari2600Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Xbox")) { m_RetroEffects.ApplyXboxPreset(); }
+
             if (ImGui::Button("Clear All")) { m_RetroEffects.ClearAllEffects(); }
 
             ImGui::Separator();
