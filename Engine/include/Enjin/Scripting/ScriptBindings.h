@@ -29,6 +29,7 @@ void RegisterDebugBindings(asIScriptEngine* engine);
 void RegisterComponentBindings(asIScriptEngine* engine);
 void RegisterCoroutineBindings(asIScriptEngine* engine);
 void RegisterEventBindings(asIScriptEngine* engine);
+void RegisterTweenBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);

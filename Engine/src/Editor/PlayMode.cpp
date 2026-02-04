@@ -69,6 +69,7 @@ void PlayMode::Play() {
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
+    m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     m_ScriptSystem.InitializeAllScripts();
 
@@ -181,6 +182,7 @@ void PlayMode::Update(f32 deltaTime) {
         }
 
         // Gameplay systems
+        m_TweenSystem.Update(m_World, deltaTime);
         m_CinematicSystem.Update(m_World, m_Camera, deltaTime);
         m_QuestSystem.Update(m_World, deltaTime);
         m_FootstepSystem.Update(m_World, deltaTime);

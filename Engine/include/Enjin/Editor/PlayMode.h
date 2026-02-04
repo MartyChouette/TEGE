@@ -6,6 +6,7 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
+#include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -75,6 +76,7 @@ public:
     Gameplay::FootstepSystem* GetFootstepSystem() { return &m_FootstepSystem; }
     Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
     Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
+    ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
 
 private:
     void SaveEditorState();
@@ -110,6 +112,9 @@ private:
     Gameplay::FootstepSystem m_FootstepSystem;
     Gameplay::ObjectPool m_ObjectPool;
     Gameplay::CinematicSystem m_CinematicSystem;
+
+    // Tween system
+    ECS::TweenSystem m_TweenSystem;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

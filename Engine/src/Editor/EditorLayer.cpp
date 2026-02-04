@@ -26,6 +26,7 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
+#include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Renderer/Skybox.h"
@@ -179,6 +180,9 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
         {"Cinematic Camera", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CinematicCameraComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CinematicCameraComponent>(e); }},
+        {"Tween", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TweenComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TweenComponent>(e); }},
 
         // -- Joints --
         {"Distance Joint", "Joints", nullptr,
@@ -3228,6 +3232,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::CinematicCameraComponent>(m_PrimarySelected)) {
             DrawCinematicCameraComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::TweenComponent>(m_PrimarySelected)) {
+            DrawTweenComponent(m_PrimarySelected);
         }
 
         // Joint & Ragdoll components
@@ -16859,6 +16866,112 @@ void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
                 c->waypoints.push_back(wp);
             }
             ImGui::TreePop();
+        }
+    }
+}
+
+// ============================================================================
+// Tween Component
+// ============================================================================
+
+void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("TweenCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            m_World->RemoveComponent<ECS::TweenComponent>(entity);
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* tc = m_World->GetComponent<ECS::TweenComponent>(entity);
+        if (!tc) return;
+
+        ImGui::Checkbox("Auto-Play", &tc->autoPlay);
+
+        static const char* propertyNames[] = { "Position", "Rotation", "Scale", "Base Color", "Emissive Color", "Opacity" };
+        static const char* easingNames[] = {
+            "Linear",
+            "Ease In Quad", "Ease Out Quad", "Ease In-Out Quad",
+            "Ease In Cubic", "Ease Out Cubic", "Ease In-Out Cubic",
+            "Ease In Quart", "Ease Out Quart", "Ease In-Out Quart",
+            "Ease In Sine", "Ease Out Sine", "Ease In-Out Sine",
+            "Ease In Expo", "Ease Out Expo", "Ease In-Out Expo",
+            "Ease In Back", "Ease Out Back", "Ease In-Out Back",
+            "Ease In Elastic", "Ease Out Elastic", "Ease In-Out Elastic",
+            "Ease In Bounce", "Ease Out Bounce", "Ease In-Out Bounce"
+        };
+        static const char* modeNames[] = { "Once", "Loop", "Ping-Pong" };
+
+        int removeIdx = -1;
+        for (int i = 0; i < static_cast<int>(tc->tweens.size()); ++i) {
+            ImGui::PushID(i);
+            auto& tw = tc->tweens[i];
+
+            char label[32];
+            snprintf(label, sizeof(label), "Tween %d", i);
+            if (ImGui::TreeNode(label)) {
+                int prop = static_cast<int>(tw.property);
+                if (ImGui::Combo("Property", &prop, propertyNames, static_cast<int>(ECS::TweenProperty::COUNT))) {
+                    tw.property = static_cast<ECS::TweenProperty>(prop);
+                }
+
+                int easing = static_cast<int>(tw.easing);
+                if (ImGui::Combo("Easing", &easing, easingNames, static_cast<int>(ECS::EasingType::COUNT))) {
+                    tw.easing = static_cast<ECS::EasingType>(easing);
+                }
+
+                int mode = static_cast<int>(tw.mode);
+                if (ImGui::Combo("Mode", &mode, modeNames, static_cast<int>(ECS::TweenMode::COUNT))) {
+                    tw.mode = static_cast<ECS::TweenMode>(mode);
+                }
+
+                ImGui::Checkbox("Use Current as Start", &tw.useCurrentAsStart);
+
+                if (tw.useCurrentAsStart) {
+                    ImGui::BeginDisabled();
+                }
+                if (tw.property == ECS::TweenProperty::Opacity) {
+                    ImGui::DragFloat("Start Value", &tw.startValue.x, 0.01f, 0.0f, 1.0f);
+                } else {
+                    ImGui::DragFloat3("Start Value", &tw.startValue.x, 0.1f);
+                }
+                if (tw.useCurrentAsStart) {
+                    ImGui::EndDisabled();
+                }
+
+                if (tw.property == ECS::TweenProperty::Opacity) {
+                    ImGui::DragFloat("End Value", &tw.endValue.x, 0.01f, 0.0f, 1.0f);
+                } else {
+                    ImGui::DragFloat3("End Value", &tw.endValue.x, 0.1f);
+                }
+
+                ImGui::DragFloat("Duration (s)", &tw.duration, 0.05f, 0.01f, 60.0f);
+                ImGui::DragFloat("Delay (s)", &tw.delay, 0.05f, 0.0f, 30.0f);
+
+                // Progress bar during play mode
+                if (tw.isPlaying && tw.duration > 0.0f) {
+                    f32 progress = std::clamp((tw.elapsed - tw.delay) / tw.duration, 0.0f, 1.0f);
+                    ImGui::ProgressBar(progress);
+                } else if (tw.isComplete) {
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Complete");
+                }
+
+                if (ImGui::Button("Remove")) {
+                    removeIdx = i;
+                }
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+
+        if (removeIdx >= 0 && removeIdx < static_cast<int>(tc->tweens.size())) {
+            tc->tweens.erase(tc->tweens.begin() + removeIdx);
+        }
+
+        if (ImGui::Button("+ Add Tween")) {
+            tc->tweens.push_back(ECS::TweenEntry{});
         }
     }
 }

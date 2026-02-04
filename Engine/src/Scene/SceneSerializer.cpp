@@ -23,6 +23,7 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
+#include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/Skybox.h"
@@ -1637,6 +1638,58 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
         }
     }
     return d;
+}
+
+// ============================================================================
+// Tween
+// ============================================================================
+
+json SerializeTweenEntry(const ECS::TweenEntry& te) {
+    json j;
+    j["property"] = static_cast<i32>(te.property);
+    j["easing"] = static_cast<i32>(te.easing);
+    j["mode"] = static_cast<i32>(te.mode);
+    j["startValue"] = SerializeVector3(te.startValue);
+    j["endValue"] = SerializeVector3(te.endValue);
+    j["duration"] = te.duration;
+    j["delay"] = te.delay;
+    j["useCurrentAsStart"] = te.useCurrentAsStart;
+    return j;
+}
+
+ECS::TweenEntry DeserializeTweenEntry(const json& j) {
+    ECS::TweenEntry te;
+    if (j.contains("property")) te.property = static_cast<ECS::TweenProperty>(j["property"].get<i32>());
+    if (j.contains("easing")) te.easing = static_cast<ECS::EasingType>(j["easing"].get<i32>());
+    if (j.contains("mode")) te.mode = static_cast<ECS::TweenMode>(j["mode"].get<i32>());
+    if (j.contains("startValue")) te.startValue = DeserializeVector3(j["startValue"]);
+    if (j.contains("endValue")) te.endValue = DeserializeVector3(j["endValue"]);
+    if (j.contains("duration")) te.duration = j["duration"].get<f32>();
+    if (j.contains("delay")) te.delay = j["delay"].get<f32>();
+    if (j.contains("useCurrentAsStart")) te.useCurrentAsStart = j["useCurrentAsStart"].get<bool>();
+    return te;
+}
+
+json SerializeTweenComponent(const ECS::TweenComponent& tc) {
+    json j;
+    j["autoPlay"] = tc.autoPlay;
+    json tweensArr = json::array();
+    for (const auto& te : tc.tweens) {
+        tweensArr.push_back(SerializeTweenEntry(te));
+    }
+    j["tweens"] = tweensArr;
+    return j;
+}
+
+ECS::TweenComponent DeserializeTweenComponent(const json& j) {
+    ECS::TweenComponent tc;
+    if (j.contains("autoPlay")) tc.autoPlay = j["autoPlay"].get<bool>();
+    if (j.contains("tweens") && j["tweens"].is_array()) {
+        for (const auto& te : j["tweens"]) {
+            tc.tweens.push_back(DeserializeTweenEntry(te));
+        }
+    }
+    return tc;
 }
 
 // ============================================================================
@@ -3487,6 +3540,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
                 entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
+                entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
+            }
 
             // AI & Navigation
             if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
@@ -4004,6 +4060,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("dialogue")) {
                 m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
             }
+            if (entityJson.contains("tween")) {
+                m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
+            }
 
             // AI & Navigation
             if (entityJson.contains("aiController")) {
@@ -4393,6 +4452,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
                 entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
+                entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
             }
 
             // AI & Navigation
@@ -4865,6 +4927,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
             if (entityJson.contains("dialogue")) {
                 m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
+            }
+            if (entityJson.contains("tween")) {
+                m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
             }
 
             // AI & Navigation
