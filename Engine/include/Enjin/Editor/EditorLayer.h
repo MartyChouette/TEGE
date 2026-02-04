@@ -30,6 +30,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Build/BuildReport.h"
+#include "Enjin/GUI/DialogueTree.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -311,6 +312,7 @@ private:
     void UpdateDialogue(f32 deltaTime);
     void DrawDialogueOverlay();
     ECS::Entity m_ActiveDialogueEntity = ECS::INVALID_ENTITY;
+    GUI::DialogueTreeEditor m_DialogueTreeEditor;
 
     // Scene management
     void SaveScene(const std::string& path);

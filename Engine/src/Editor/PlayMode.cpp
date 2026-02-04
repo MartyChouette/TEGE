@@ -71,6 +71,7 @@ void PlayMode::Play() {
     m_CinematicSystem.SetEnabled(true);
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
+    Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
     m_ScriptSystem.InitializeAllScripts();
 
     // Disable editor camera controller
@@ -141,6 +142,7 @@ void PlayMode::Stop() {
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
+    m_DialogueSystem.Clear();
     m_ObjectPool.DestroyAll(m_World);
 
     // Re-enable editor camera controller
@@ -183,6 +185,8 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);
+        m_StateMachineSystem.Update(m_World, deltaTime);
+        m_DialogueSystem.Update(m_World, deltaTime);
         m_CinematicSystem.Update(m_World, m_Camera, deltaTime);
         m_QuestSystem.Update(m_World, deltaTime);
         m_FootstepSystem.Update(m_World, deltaTime);

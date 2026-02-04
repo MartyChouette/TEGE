@@ -7,6 +7,8 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
+#include "Enjin/ECS/Systems/StateMachineSystem.h"
+#include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -77,6 +79,8 @@ public:
     Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
     Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
+    ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
+    ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
 
 private:
     void SaveEditorState();
@@ -115,6 +119,12 @@ private:
 
     // Tween system
     ECS::TweenSystem m_TweenSystem;
+
+    // State machine system
+    ECS::StateMachineSystem m_StateMachineSystem;
+
+    // Dialogue system
+    ECS::DialogueSystem m_DialogueSystem;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

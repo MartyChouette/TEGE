@@ -270,6 +270,10 @@ int main() {
         sm.floatParams = {{"speed", 3.0f}, {"timer", 0.0f}};
         sm.intParams = {{"count", 5}};
         sm.boolParams = {{"alert", true}};
+        // Add a state for the upgraded component
+        ECS::SMState patrolState;
+        patrolState.name = "patrol";
+        sm.states.push_back(patrolState);
 
         auto& dl = srcWorld.AddComponent<ECS::DialogueComponent>(e);
         dl.dialogueLines = {"Hello traveler!", "Beware the dungeon ahead.", "Good luck!"};
@@ -699,10 +703,12 @@ int main() {
         if (sm) {
             CHECK_STR(sm->currentState, std::string("patrol"), "sm.currentState");
             CHECK_EQ(sm->floatParams.size(), (size_t)2, "sm.floatParams count");
-            CHECK_FLOAT(sm->floatParams[0].second, 3.0f, "sm.floatParams[0] speed");
+            CHECK_FLOAT(sm->GetFloat("speed"), 3.0f, "sm.floatParams speed");
             CHECK_EQ(sm->boolParams.size(), (size_t)1, "sm.boolParams count");
-            CHECK_BOOL(sm->boolParams[0].second, true, "sm.boolParams[0] alert");
-            CHECK_FLOAT(sm->stateTimer, 0.0f, "sm.stateTimer (runtime reset)");
+            CHECK_BOOL(sm->GetBool("alert"), true, "sm.boolParams alert");
+            CHECK_FLOAT(sm->stateTime, 0.0f, "sm.stateTime (runtime reset)");
+            CHECK_EQ(sm->states.size(), (size_t)1, "sm.states count");
+            CHECK_STR(sm->states[0].name, std::string("patrol"), "sm.states[0].name");
         }
         HAS_COMPONENT(dstWorld, e, ECS::DialogueComponent, "DialogueComponent");
         auto* dl = dstWorld.GetComponent<ECS::DialogueComponent>(e);

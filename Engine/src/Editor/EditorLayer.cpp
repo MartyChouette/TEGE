@@ -184,6 +184,12 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
         {"Tween", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TweenComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TweenComponent>(e); }},
+        {"State Machine", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::StateMachineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::StateMachineComponent>(e); }},
+        {"Dialogue", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DialogueComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); }},
 
         // -- Joints --
         {"Distance Joint", "Joints", nullptr,
@@ -1499,6 +1505,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(380, 600), layoutCond);
         DrawParticleEditorPanel();
     }
+
+    // Dialogue tree editor (owns its own window)
+    m_DialogueTreeEditor.Render();
 
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
@@ -15265,34 +15274,241 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
         auto* sm = m_World->GetComponent<ECS::StateMachineComponent>(entity);
         if (!sm) return;
 
-        // Current state (editable)
-        char stateBuffer[64];
-        strncpy(stateBuffer, sm->currentState.c_str(), sizeof(stateBuffer) - 1);
-        stateBuffer[sizeof(stateBuffer) - 1] = '\0';
-        if (ImGui::InputText("Current State", stateBuffer, sizeof(stateBuffer))) {
-            sm->SetState(stateBuffer);
+        // Current state display
+        if (!sm->states.empty()) {
+            // Combo to select current state from defined states
+            if (ImGui::BeginCombo("Current State", sm->currentState.c_str())) {
+                for (const auto& s : sm->states) {
+                    bool selected = (sm->currentState == s.name);
+                    if (ImGui::Selectable(s.name.c_str(), selected)) {
+                        sm->SetState(s.name);
+                    }
+                    if (selected) ImGui::SetItemDefaultFocus();
+                }
+                ImGui::EndCombo();
+            }
+        } else {
+            ImGui::TextDisabled("No states defined");
         }
 
-        ImGui::Text("Previous State: %s", sm->previousState.empty() ? "(none)" : sm->previousState.c_str());
-        ImGui::Text("Time in State: %.2f s", sm->stateTimer);
+        ImGui::Text("Previous: %s", sm->previousState.empty() ? "(none)" : sm->previousState.c_str());
+        ImGui::Text("State Time: %.2f s", sm->stateTime);
+        ImGui::Separator();
 
-        if (sm->stateJustChanged) {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "State just changed!");
-        }
+        // --- Parameters ---
+        if (ImGui::TreeNode("Parameters")) {
+            // Bool params
+            if (ImGui::TreeNode("Bool")) {
+                std::string toRemove;
+                for (auto& [name, val] : sm->boolParams) {
+                    ImGui::PushID(name.c_str());
+                    ImGui::Checkbox(name.c_str(), &val);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) toRemove = name;
+                    ImGui::PopID();
+                }
+                if (!toRemove.empty()) sm->boolParams.erase(toRemove);
 
-        // Parameters
-        if (ImGui::TreeNode("Float Parameters")) {
-            for (auto& p : sm->floatParams) {
-                ImGui::DragFloat(p.first.c_str(), &p.second, 0.1f);
+                static char newBoolName[64] = "";
+                ImGui::InputText("##newBool", newBoolName, sizeof(newBoolName));
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+ Bool") && newBoolName[0] != '\0') {
+                    sm->boolParams[newBoolName] = false;
+                    newBoolName[0] = '\0';
+                }
+                ImGui::TreePop();
+            }
+
+            // Float params
+            if (ImGui::TreeNode("Float")) {
+                std::string toRemove;
+                for (auto& [name, val] : sm->floatParams) {
+                    ImGui::PushID(name.c_str());
+                    ImGui::DragFloat(name.c_str(), &val, 0.1f);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) toRemove = name;
+                    ImGui::PopID();
+                }
+                if (!toRemove.empty()) sm->floatParams.erase(toRemove);
+
+                static char newFloatName[64] = "";
+                ImGui::InputText("##newFloat", newFloatName, sizeof(newFloatName));
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+ Float") && newFloatName[0] != '\0') {
+                    sm->floatParams[newFloatName] = 0.0f;
+                    newFloatName[0] = '\0';
+                }
+                ImGui::TreePop();
+            }
+
+            // Int params
+            if (ImGui::TreeNode("Int")) {
+                std::string toRemove;
+                for (auto& [name, val] : sm->intParams) {
+                    ImGui::PushID(name.c_str());
+                    ImGui::DragInt(name.c_str(), &val);
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("X")) toRemove = name;
+                    ImGui::PopID();
+                }
+                if (!toRemove.empty()) sm->intParams.erase(toRemove);
+
+                static char newIntName[64] = "";
+                ImGui::InputText("##newInt", newIntName, sizeof(newIntName));
+                ImGui::SameLine();
+                if (ImGui::SmallButton("+ Int") && newIntName[0] != '\0') {
+                    sm->intParams[newIntName] = 0;
+                    newIntName[0] = '\0';
+                }
+                ImGui::TreePop();
             }
             ImGui::TreePop();
         }
 
-        if (ImGui::TreeNode("Bool Parameters")) {
-            for (auto& p : sm->boolParams) {
-                ImGui::Checkbox(p.first.c_str(), &p.second);
+        // --- States ---
+        if (ImGui::TreeNode("States")) {
+            i32 stateToRemove = -1;
+            for (i32 si = 0; si < static_cast<i32>(sm->states.size()); si++) {
+                auto& state = sm->states[si];
+                ImGui::PushID(si);
+
+                bool isCurrent = (state.name == sm->currentState);
+                if (isCurrent) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 1.0f, 0.4f, 1.0f));
+
+                bool stateOpen = ImGui::TreeNode("##state", "%s%s", state.name.c_str(), isCurrent ? " (active)" : "");
+
+                if (isCurrent) ImGui::PopStyleColor();
+
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X##removeState")) stateToRemove = si;
+
+                if (stateOpen) {
+                    // State name
+                    char nameBuf[64];
+                    strncpy(nameBuf, state.name.c_str(), sizeof(nameBuf) - 1);
+                    nameBuf[sizeof(nameBuf) - 1] = '\0';
+                    if (ImGui::InputText("Name", nameBuf, sizeof(nameBuf))) {
+                        // Update currentState reference if renaming the active state
+                        if (sm->currentState == state.name) sm->currentState = nameBuf;
+                        if (sm->previousState == state.name) sm->previousState = nameBuf;
+                        state.name = nameBuf;
+                    }
+
+                    // Transitions
+                    i32 transToRemove = -1;
+                    for (i32 ti = 0; ti < static_cast<i32>(state.transitions.size()); ti++) {
+                        auto& trans = state.transitions[ti];
+                        ImGui::PushID(ti);
+
+                        bool transOpen = ImGui::TreeNode("##trans", "-> %s", trans.toState.c_str());
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("X##removeTrans")) transToRemove = ti;
+
+                        if (transOpen) {
+                            // Target state combo
+                            if (ImGui::BeginCombo("Target", trans.toState.c_str())) {
+                                for (const auto& s : sm->states) {
+                                    if (s.name == state.name) continue; // skip self
+                                    bool sel = (trans.toState == s.name);
+                                    if (ImGui::Selectable(s.name.c_str(), sel)) {
+                                        trans.toState = s.name;
+                                    }
+                                }
+                                ImGui::EndCombo();
+                            }
+
+                            // Conditions
+                            i32 condToRemove = -1;
+                            for (i32 ci = 0; ci < static_cast<i32>(trans.conditions.size()); ci++) {
+                                auto& cond = trans.conditions[ci];
+                                ImGui::PushID(ci);
+                                ImGui::Separator();
+
+                                // Condition type
+                                const char* condTypes[] = {"Bool True", "Bool False", "Float >", "Float <",
+                                                           "Int ==", "Int !=", "Trigger"};
+                                i32 condType = static_cast<i32>(cond.type);
+                                if (ImGui::Combo("Type", &condType, condTypes, 7)) {
+                                    cond.type = static_cast<ECS::SMConditionType>(condType);
+                                }
+
+                                // Param name
+                                char paramBuf[64];
+                                strncpy(paramBuf, cond.paramName.c_str(), sizeof(paramBuf) - 1);
+                                paramBuf[sizeof(paramBuf) - 1] = '\0';
+                                if (ImGui::InputText("Param", paramBuf, sizeof(paramBuf))) {
+                                    cond.paramName = paramBuf;
+                                }
+
+                                // Threshold / intValue based on type
+                                if (cond.type == ECS::SMConditionType::FloatGreater ||
+                                    cond.type == ECS::SMConditionType::FloatLess) {
+                                    ImGui::DragFloat("Threshold", &cond.threshold, 0.1f);
+                                }
+                                if (cond.type == ECS::SMConditionType::IntEquals ||
+                                    cond.type == ECS::SMConditionType::IntNotEquals) {
+                                    ImGui::DragInt("Value", &cond.intValue);
+                                }
+
+                                if (ImGui::SmallButton("Remove Condition")) condToRemove = ci;
+
+                                ImGui::PopID();
+                            }
+                            if (condToRemove >= 0) {
+                                trans.conditions.erase(trans.conditions.begin() + condToRemove);
+                            }
+
+                            if (ImGui::Button("+ Condition")) {
+                                trans.conditions.push_back({});
+                            }
+
+                            ImGui::TreePop();
+                        }
+                        ImGui::PopID();
+                    }
+                    if (transToRemove >= 0) {
+                        state.transitions.erase(state.transitions.begin() + transToRemove);
+                    }
+
+                    if (ImGui::Button("+ Transition")) {
+                        ECS::SMTransition t;
+                        // Default to first other state
+                        for (const auto& s : sm->states) {
+                            if (s.name != state.name) { t.toState = s.name; break; }
+                        }
+                        state.transitions.push_back(t);
+                    }
+
+                    ImGui::TreePop();
+                }
+                ImGui::PopID();
+            }
+            if (stateToRemove >= 0) {
+                sm->states.erase(sm->states.begin() + stateToRemove);
+            }
+
+            if (ImGui::Button("+ State")) {
+                ECS::SMState s;
+                s.name = "State " + std::to_string(sm->states.size());
+                sm->states.push_back(s);
+                // Auto-set current state if this is the first one
+                if (sm->states.size() == 1) {
+                    sm->currentState = s.name;
+                }
             }
             ImGui::TreePop();
+        }
+
+        // Play mode: send trigger
+        if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+            ImGui::Separator();
+            static char triggerBuf[64] = "";
+            ImGui::InputText("##trigger", triggerBuf, sizeof(triggerBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Send Trigger") && triggerBuf[0] != '\0') {
+                sm->SendTrigger(triggerBuf);
+                triggerBuf[0] = '\0';
+            }
         }
     }
 }
@@ -15398,6 +15614,65 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
                 ECS::DialogueComponent::Choice choice;
                 choice.text = "Choice";
                 dialogue->choices.push_back(choice);
+            }
+            ImGui::TreePop();
+        }
+
+        // --- Dialogue Tree section ---
+        ImGui::Separator();
+        if (ImGui::TreeNode("Dialogue Tree")) {
+            if (dialogue->dialogueTree.nodes.empty()) {
+                ImGui::TextWrapped("No dialogue tree. Add a root node to enable tree-based dialogue.");
+                if (ImGui::Button("Add Root Node")) {
+                    u32 rootId = dialogue->dialogueTree.AddNode(GUI::DialogueNodeType::Root);
+                    dialogue->dialogueTree.rootNodeId = rootId;
+                    auto* rootNode = dialogue->dialogueTree.GetNode(rootId);
+                    if (rootNode) rootNode->editorPosition = Math::Vector2(50, 100);
+                }
+            } else {
+                ImGui::Text("Nodes: %zu", dialogue->dialogueTree.nodes.size());
+                ImGui::Text("Tree Name: %s", dialogue->dialogueTree.treeName.empty() ? "(unnamed)" : dialogue->dialogueTree.treeName.c_str());
+                if (dlgOpen && ImGui::Button("Open Dialogue Editor")) {
+                    m_DialogueTreeEditor.SetTree(&dialogue->dialogueTree);
+                    m_DialogueTreeEditor.SetOpen(true);
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        // Variables section
+        if (ImGui::TreeNode("Dialogue Variables")) {
+            i32 removeIdx = -1;
+            i32 idx = 0;
+            for (auto& [key, val] : dialogue->variables) {
+                ImGui::PushID(idx);
+                ImGui::Text("%s", key.c_str());
+                ImGui::SameLine();
+                char valBuf[256];
+                strncpy(valBuf, val.c_str(), sizeof(valBuf) - 1);
+                valBuf[sizeof(valBuf) - 1] = '\0';
+                if (ImGui::InputText("##val", valBuf, sizeof(valBuf))) {
+                    val = valBuf;
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) {
+                    removeIdx = idx;
+                }
+                ImGui::PopID();
+                idx++;
+            }
+            if (removeIdx >= 0) {
+                auto it = dialogue->variables.begin();
+                std::advance(it, removeIdx);
+                dialogue->variables.erase(it);
+            }
+
+            static char newKeyBuf[128] = "";
+            ImGui::InputText("New Variable", newKeyBuf, sizeof(newKeyBuf));
+            ImGui::SameLine();
+            if (ImGui::Button("Add") && newKeyBuf[0] != '\0') {
+                dialogue->variables[newKeyBuf] = "";
+                newKeyBuf[0] = '\0';
             }
             ImGui::TreePop();
         }
@@ -18050,98 +18325,45 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::UpdateDialogue(f32 deltaTime) {
-    if (!m_World) return;
-
-    // Find active dialogue entity
-    ECS::Entity activeDialogue = ECS::INVALID_ENTITY;
-
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::DialogueComponent>(entity)) continue;
-        auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(entity);
-        if (!dlg || dlg->dialogueLines.empty() || dlg->IsComplete()) continue;
-
-        // This dialogue is active (has lines, not complete)
-        activeDialogue = entity;
-        auto& d = *dlg;
-
-        // Advance typewriter
-        if (d.isTyping && d.currentLine < d.dialogueLines.size()) {
-            d.charTimer += deltaTime;
-            while (d.charTimer >= d.charDelay && d.currentChar < d.dialogueLines[d.currentLine].size()) {
-                d.currentChar++;
-                d.charTimer -= d.charDelay;
-            }
-            // Line fully typed
-            if (d.currentChar >= d.dialogueLines[d.currentLine].size()) {
-                d.isTyping = false;
-                d.waitingForInput = true;
-            }
-        }
-
-        // Input: advance dialogue
-        if (d.waitingForInput) {
-            if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter) ||
-                Input::IsMouseButtonPressed(MouseButton::Left)) {
-                // If choices are available at end of dialogue, don't auto-advance
-                if (d.currentLine + 1 >= d.dialogueLines.size() && !d.choices.empty()) {
-                    // Wait for choice selection
-                } else {
-                    d.currentLine++;
-                    d.currentChar = 0;
-                    d.charTimer = 0.0f;
-                    d.waitingForInput = false;
-                    if (!d.IsComplete()) {
-                        d.isTyping = true;
-                    }
-                }
-            }
-        }
-
-        // If typing and player presses advance, skip to end of line
-        if (d.isTyping) {
-            if (Input::IsKeyPressed(KeyCode::Space) || Input::IsKeyPressed(KeyCode::Enter)) {
-                d.currentChar = static_cast<u32>(d.dialogueLines[d.currentLine].size());
-                d.isTyping = false;
-                d.waitingForInput = true;
-            }
-        }
-
-        // Choice navigation
-        if (d.waitingForInput && !d.choices.empty() &&
-            d.currentLine + 1 >= d.dialogueLines.size()) {
-            if (Input::IsKeyPressed(KeyCode::Up) || Input::IsKeyPressed(KeyCode::W)) {
-                d.selectedChoice--;
-                if (d.selectedChoice < 0) d.selectedChoice = static_cast<i32>(d.choices.size()) - 1;
-            }
-            if (Input::IsKeyPressed(KeyCode::Down) || Input::IsKeyPressed(KeyCode::S)) {
-                d.selectedChoice++;
-                if (d.selectedChoice >= static_cast<i32>(d.choices.size())) d.selectedChoice = 0;
-            }
-            // Select choice
-            if (Input::IsKeyPressed(KeyCode::Enter) || Input::IsKeyPressed(KeyCode::Space)) {
-                // Mark complete (game logic can read selectedChoice)
-                d.currentLine = static_cast<u32>(d.dialogueLines.size());
-                d.waitingForInput = false;
-            }
-        }
-
-        break;  // Only handle one active dialogue at a time
-    }
-
-    m_ActiveDialogueEntity = activeDialogue;
+    // DialogueSystem handles all logic (tree + legacy) via PlayMode.
+    // Just query active entity for overlay rendering.
+    m_ActiveDialogueEntity = m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity();
 }
 
 void EditorLayer::DrawDialogueOverlay() {
     if (!m_World || m_ActiveDialogueEntity == ECS::INVALID_ENTITY) return;
 
     auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_ActiveDialogueEntity);
-    if (!dlg || dlg->IsComplete()) return;
+    if (!dlg) return;
+
+    // Determine speaker, visible text, and choices based on mode
+    std::string speaker;
+    std::string visibleText;
+    bool isTyping = dlg->isTyping;
+    bool waiting = dlg->waitingForInput;
+    bool hasChoices = false;
+    i32 selectedChoice = dlg->selectedChoice;
+    i32 choiceCount = 0;
+
+    if (dlg->IsTreeMode()) {
+        if (!dlg->treeActive) return;
+        speaker = dlg->currentSpeaker;
+        visibleText = dlg->GetTreeVisibleText();
+        hasChoices = waiting && !dlg->currentChoices.empty();
+        choiceCount = static_cast<i32>(dlg->currentChoices.size());
+    } else {
+        if (dlg->IsComplete()) return;
+        speaker = dlg->speakerName;
+        visibleText = dlg->GetVisibleText();
+        hasChoices = waiting && !dlg->choices.empty() &&
+                     dlg->currentLine + 1 >= dlg->dialogueLines.size();
+        choiceCount = static_cast<i32>(dlg->choices.size());
+    }
 
     ImGuiIO& io = ImGui::GetIO();
     f32 screenW = io.DisplaySize.x;
     f32 screenH = io.DisplaySize.y;
 
-    // Dialogue box dimensions — bottom of screen, classic JRPG style
     f32 boxW = screenW * 0.75f;
     f32 boxH = 140.0f;
     f32 boxX = (screenW - boxW) * 0.5f;
@@ -18153,7 +18375,6 @@ void EditorLayer::DrawDialogueOverlay() {
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
         ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
 
-    // Style the dialogue box
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
@@ -18164,25 +18385,21 @@ void EditorLayer::DrawDialogueOverlay() {
     ImGui::SetNextWindowSize(ImVec2(boxW, boxH));
 
     if (ImGui::Begin("##DialogueBox", nullptr, flags)) {
-        // Speaker name header
-        if (!dlg->speakerName.empty()) {
+        if (!speaker.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.75f, 1.0f, 1.0f));
-            ImGui::Text("%s", dlg->speakerName.c_str());
+            ImGui::Text("%s", speaker.c_str());
             ImGui::PopStyleColor();
             ImGui::Separator();
             ImGui::Spacing();
         }
 
-        // Dialogue text with typewriter
-        std::string visibleText = dlg->GetVisibleText();
         if (!visibleText.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.98f, 1.0f));
             ImGui::TextWrapped("%s", visibleText.c_str());
             ImGui::PopStyleColor();
         }
 
-        // Blinking cursor indicator when typing
-        if (dlg->isTyping) {
+        if (isTyping) {
             ImGui::SameLine(0, 0);
             f32 blink = std::fmod(static_cast<f32>(ImGui::GetTime()) * 3.0f, 2.0f);
             if (blink < 1.0f) {
@@ -18190,8 +18407,7 @@ void EditorLayer::DrawDialogueOverlay() {
             }
         }
 
-        // "Press to continue" indicator
-        if (dlg->waitingForInput && dlg->choices.empty()) {
+        if (waiting && !hasChoices) {
             f32 bounce = std::sin(static_cast<f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
             ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
@@ -18201,11 +18417,8 @@ void EditorLayer::DrawDialogueOverlay() {
     }
     ImGui::End();
 
-    // Choice box (appears above dialogue box when choices are shown)
-    bool showChoices = dlg->waitingForInput && !dlg->choices.empty() &&
-                       dlg->currentLine + 1 >= dlg->dialogueLines.size();
-    if (showChoices) {
-        f32 choiceH = static_cast<f32>(dlg->choices.size()) * 28.0f + padding * 2.0f;
+    if (hasChoices) {
+        f32 choiceH = static_cast<f32>(choiceCount) * 28.0f + padding * 2.0f;
         f32 choiceW = 300.0f;
         f32 choiceX = boxX + boxW - choiceW - 10.0f;
         f32 choiceY = boxY - choiceH - 8.0f;
@@ -18214,17 +18427,31 @@ void EditorLayer::DrawDialogueOverlay() {
         ImGui::SetNextWindowSize(ImVec2(choiceW, choiceH));
 
         if (ImGui::Begin("##ChoiceBox", nullptr, flags)) {
-            for (usize i = 0; i < dlg->choices.size(); ++i) {
-                bool selected = (static_cast<i32>(i) == dlg->selectedChoice);
-
-                if (selected) {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
-                    ImGui::Text("> %s", dlg->choices[i].text.c_str());
-                    ImGui::PopStyleColor();
-                } else {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
-                    ImGui::Text("  %s", dlg->choices[i].text.c_str());
-                    ImGui::PopStyleColor();
+            if (dlg->IsTreeMode()) {
+                for (usize i = 0; i < dlg->currentChoices.size(); ++i) {
+                    bool sel = (static_cast<i32>(i) == selectedChoice);
+                    if (sel) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                        ImGui::Text("> %s", dlg->currentChoices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                        ImGui::Text("  %s", dlg->currentChoices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                }
+            } else {
+                for (usize i = 0; i < dlg->choices.size(); ++i) {
+                    bool sel = (static_cast<i32>(i) == selectedChoice);
+                    if (sel) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                        ImGui::Text("> %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                        ImGui::Text("  %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    }
                 }
             }
         }

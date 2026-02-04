@@ -1560,45 +1560,154 @@ ECS::Camera2DBoundsComponent DeserializeCamera2DBoundsComponent(const json& j) {
 // Logic
 // ============================================================================
 
+json SerializeSMCondition(const ECS::SMTransitionCondition& cond) {
+    json j;
+    j["param"] = cond.paramName;
+    j["type"] = static_cast<i32>(cond.type);
+    if (cond.type == ECS::SMConditionType::FloatGreater || cond.type == ECS::SMConditionType::FloatLess) {
+        j["threshold"] = cond.threshold;
+    }
+    if (cond.type == ECS::SMConditionType::IntEquals || cond.type == ECS::SMConditionType::IntNotEquals) {
+        j["intValue"] = cond.intValue;
+    }
+    return j;
+}
+
+ECS::SMTransitionCondition DeserializeSMCondition(const json& j) {
+    ECS::SMTransitionCondition cond;
+    if (j.contains("param")) cond.paramName = j["param"].get<std::string>();
+    if (j.contains("type")) {
+        i32 t = j["type"].get<i32>();
+        if (t >= 0 && t < static_cast<i32>(ECS::SMConditionType::COUNT))
+            cond.type = static_cast<ECS::SMConditionType>(t);
+    }
+    if (j.contains("threshold")) cond.threshold = j["threshold"].get<f32>();
+    if (j.contains("intValue")) cond.intValue = j["intValue"].get<i32>();
+    return cond;
+}
+
+json SerializeSMTransition(const ECS::SMTransition& trans) {
+    json j;
+    j["toState"] = trans.toState;
+    json conds = json::array();
+    for (const auto& c : trans.conditions) {
+        conds.push_back(SerializeSMCondition(c));
+    }
+    j["conditions"] = conds;
+    return j;
+}
+
+ECS::SMTransition DeserializeSMTransition(const json& j) {
+    ECS::SMTransition trans;
+    if (j.contains("toState")) trans.toState = j["toState"].get<std::string>();
+    if (j.contains("conditions") && j["conditions"].is_array()) {
+        for (const auto& c : j["conditions"]) {
+            trans.conditions.push_back(DeserializeSMCondition(c));
+        }
+    }
+    return trans;
+}
+
+json SerializeSMState(const ECS::SMState& state) {
+    json j;
+    j["name"] = state.name;
+    json transitions = json::array();
+    for (const auto& t : state.transitions) {
+        transitions.push_back(SerializeSMTransition(t));
+    }
+    j["transitions"] = transitions;
+    return j;
+}
+
+ECS::SMState DeserializeSMState(const json& j) {
+    ECS::SMState state;
+    if (j.contains("name")) state.name = j["name"].get<std::string>();
+    if (j.contains("transitions") && j["transitions"].is_array()) {
+        for (const auto& t : j["transitions"]) {
+            state.transitions.push_back(DeserializeSMTransition(t));
+        }
+    }
+    return state;
+}
+
 json SerializeStateMachineComponent(const ECS::StateMachineComponent& sm) {
     json j;
     j["currentState"] = sm.currentState;
-    json floats = json::array();
-    for (const auto& p : sm.floatParams) {
-        floats.push_back(json::array({p.first, p.second}));
-    }
-    j["floatParams"] = floats;
-    json ints = json::array();
-    for (const auto& p : sm.intParams) {
-        ints.push_back(json::array({p.first, p.second}));
-    }
-    j["intParams"] = ints;
-    json bools = json::array();
-    for (const auto& p : sm.boolParams) {
-        bools.push_back(json::array({p.first, p.second}));
-    }
+
+    // Parameters as objects (key -> value)
+    json bools = json::object();
+    for (const auto& [name, val] : sm.boolParams) bools[name] = val;
     j["boolParams"] = bools;
+
+    json floats = json::object();
+    for (const auto& [name, val] : sm.floatParams) floats[name] = val;
+    j["floatParams"] = floats;
+
+    json ints = json::object();
+    for (const auto& [name, val] : sm.intParams) ints[name] = val;
+    j["intParams"] = ints;
+
+    // States
+    json statesArr = json::array();
+    for (const auto& s : sm.states) {
+        statesArr.push_back(SerializeSMState(s));
+    }
+    j["states"] = statesArr;
+
     return j;
 }
 
 ECS::StateMachineComponent DeserializeStateMachineComponent(const json& j) {
     ECS::StateMachineComponent sm;
     if (j.contains("currentState")) sm.currentState = j["currentState"].get<std::string>();
+
+    // New format: params as objects
+    if (j.contains("boolParams") && j["boolParams"].is_object()) {
+        for (auto& [key, val] : j["boolParams"].items()) {
+            sm.boolParams[key] = val.get<bool>();
+        }
+    }
+    if (j.contains("floatParams") && j["floatParams"].is_object()) {
+        for (auto& [key, val] : j["floatParams"].items()) {
+            sm.floatParams[key] = val.get<f32>();
+        }
+    }
+    if (j.contains("intParams") && j["intParams"].is_object()) {
+        for (auto& [key, val] : j["intParams"].items()) {
+            sm.intParams[key] = val.get<i32>();
+        }
+    }
+
+    // Backward compat: old format used arrays of [name, value] pairs
     if (j.contains("floatParams") && j["floatParams"].is_array()) {
         for (const auto& p : j["floatParams"]) {
-            sm.floatParams.push_back({p[0].get<std::string>(), p[1].get<f32>()});
+            if (p.is_array() && p.size() >= 2) {
+                sm.floatParams[p[0].get<std::string>()] = p[1].get<f32>();
+            }
         }
     }
     if (j.contains("intParams") && j["intParams"].is_array()) {
         for (const auto& p : j["intParams"]) {
-            sm.intParams.push_back({p[0].get<std::string>(), p[1].get<i32>()});
+            if (p.is_array() && p.size() >= 2) {
+                sm.intParams[p[0].get<std::string>()] = p[1].get<i32>();
+            }
         }
     }
     if (j.contains("boolParams") && j["boolParams"].is_array()) {
         for (const auto& p : j["boolParams"]) {
-            sm.boolParams.push_back({p[0].get<std::string>(), p[1].get<bool>()});
+            if (p.is_array() && p.size() >= 2) {
+                sm.boolParams[p[0].get<std::string>()] = p[1].get<bool>();
+            }
         }
     }
+
+    // States
+    if (j.contains("states") && j["states"].is_array()) {
+        for (const auto& s : j["states"]) {
+            sm.states.push_back(DeserializeSMState(s));
+        }
+    }
+
     return sm;
 }
 
@@ -1618,6 +1727,14 @@ json SerializeDialogueComponent(const ECS::DialogueComponent& d) {
         choicesArr.push_back(choice);
     }
     j["choices"] = choicesArr;
+    if (!d.dialogueTree.nodes.empty()) {
+        j["dialogueTree"] = d.dialogueTree.ToJson();
+    }
+    if (!d.variables.empty()) {
+        json vars = json::object();
+        for (const auto& [k, v] : d.variables) vars[k] = v;
+        j["variables"] = vars;
+    }
     return j;
 }
 
@@ -1635,6 +1752,14 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
             if (cj.contains("text")) c.text = cj["text"].get<std::string>();
             if (cj.contains("nextDialogueId")) c.nextDialogueId = cj["nextDialogueId"].get<std::string>();
             d.choices.push_back(c);
+        }
+    }
+    if (j.contains("dialogueTree") && j["dialogueTree"].is_object()) {
+        d.dialogueTree = GUI::DialogueTreeData::FromJson(j["dialogueTree"]);
+    }
+    if (j.contains("variables") && j["variables"].is_object()) {
+        for (auto& [key, val] : j["variables"].items()) {
+            d.variables[key] = val.get<std::string>();
         }
     }
     return d;

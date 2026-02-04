@@ -3,9 +3,12 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/GUI/DialogueTree.h"
 #include <string>
 #include <vector>
 #include <functional>
+#include <unordered_map>
+#include <map>
 
 namespace Enjin {
 namespace ECS {
@@ -721,53 +724,92 @@ struct Camera2DBoundsComponent {
 // STATE MACHINE (for game logic)
 // ============================================================================
 
-// Simple state machine component (great for AI, animations, game states)
-struct StateMachineComponent {
-    std::string currentState = "idle";
-    std::string previousState;
-    f32 stateTimer = 0.0f;         // Time in current state
-    bool stateJustChanged = false;  // True on first frame of new state
+// Condition type for state machine transitions
+enum class SMConditionType : u8 {
+    BoolTrue = 0,    // parameter == true
+    BoolFalse,       // parameter == false
+    FloatGreater,    // parameter > threshold
+    FloatLess,       // parameter < threshold
+    IntEquals,       // parameter == intValue
+    IntNotEquals,    // parameter != intValue
+    Trigger,         // one-shot trigger (auto-reset after transition)
+    COUNT
+};
 
-    // State data (can store any state-specific values)
-    std::vector<std::pair<std::string, f32>> floatParams;
-    std::vector<std::pair<std::string, i32>> intParams;
-    std::vector<std::pair<std::string, bool>> boolParams;
+struct SMTransitionCondition {
+    std::string paramName;
+    SMConditionType type = SMConditionType::Trigger;
+    f32 threshold = 0.0f;
+    i32 intValue = 0;
+};
+
+struct SMTransition {
+    std::string toState;
+    std::vector<SMTransitionCondition> conditions;  // All must be true (AND)
+};
+
+struct SMState {
+    std::string name;
+    std::vector<SMTransition> transitions;
+};
+
+// State machine component with defined states, transitions, and conditions
+struct StateMachineComponent {
+    std::vector<SMState> states;
+    std::string currentState;
+    std::string previousState;
+    f32 stateTime = 0.0f;         // Time in current state
+
+    // Parameters — shared across all states
+    std::unordered_map<std::string, bool> boolParams;
+    std::unordered_map<std::string, f32> floatParams;
+    std::unordered_map<std::string, i32> intParams;
+    std::vector<std::string> activeTriggers;  // Consumed on transition
 
     void SetState(const std::string& newState) {
         if (currentState != newState) {
             previousState = currentState;
             currentState = newState;
-            stateTimer = 0.0f;
-            stateJustChanged = true;
+            stateTime = 0.0f;
         }
     }
 
     void SetFloat(const std::string& name, f32 value) {
-        for (auto& p : floatParams) {
-            if (p.first == name) { p.second = value; return; }
-        }
-        floatParams.push_back({name, value});
+        floatParams[name] = value;
     }
 
     f32 GetFloat(const std::string& name, f32 defaultValue = 0.0f) const {
-        for (const auto& p : floatParams) {
-            if (p.first == name) return p.second;
-        }
-        return defaultValue;
+        auto it = floatParams.find(name);
+        return it != floatParams.end() ? it->second : defaultValue;
+    }
+
+    void SetInt(const std::string& name, i32 value) {
+        intParams[name] = value;
+    }
+
+    i32 GetInt(const std::string& name, i32 defaultValue = 0) const {
+        auto it = intParams.find(name);
+        return it != intParams.end() ? it->second : defaultValue;
     }
 
     void SetBool(const std::string& name, bool value) {
-        for (auto& p : boolParams) {
-            if (p.first == name) { p.second = value; return; }
-        }
-        boolParams.push_back({name, value});
+        boolParams[name] = value;
     }
 
     bool GetBool(const std::string& name, bool defaultValue = false) const {
-        for (const auto& p : boolParams) {
-            if (p.first == name) return p.second;
+        auto it = boolParams.find(name);
+        return it != boolParams.end() ? it->second : defaultValue;
+    }
+
+    void SendTrigger(const std::string& trigger) {
+        activeTriggers.push_back(trigger);
+    }
+
+    bool HasState(const std::string& name) const {
+        for (const auto& s : states) {
+            if (s.name == name) return true;
         }
-        return defaultValue;
+        return false;
     }
 };
 
@@ -801,6 +843,29 @@ struct DialogueComponent {
     };
     std::vector<Choice> choices;
     i32 selectedChoice = 0;
+
+    // --- Tree-based dialogue (node graph) ---
+    GUI::DialogueTreeData dialogueTree;  // If nodes non-empty -> tree mode
+    std::map<std::string, std::string> variables;  // Persisted dialogue variables
+
+    // Runtime state for tree mode (not serialized — managed by DialogueSystem)
+    bool treeActive = false;
+    u32 currentNodeId = 0;
+    std::string currentSpeaker;
+    std::string currentText;
+    Math::Vector3 currentSpeakerColor = Math::Vector3(1, 1, 1);
+    std::vector<GUI::DialogueChoice> currentChoices;
+
+    bool IsTreeMode() const { return !dialogueTree.nodes.empty(); }
+
+    // Tree-mode visible text (typewriter on currentText)
+    std::string GetTreeVisibleText() const {
+        if (currentText.empty()) return "";
+        u32 visibleChars = currentChar;
+        if (visibleChars > static_cast<u32>(currentText.size()))
+            visibleChars = static_cast<u32>(currentText.size());
+        return currentText.substr(0, visibleChars);
+    }
 
     // Helpers
     bool IsComplete() const {

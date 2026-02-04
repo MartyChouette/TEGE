@@ -35,6 +35,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
+#include "Enjin/ECS/Systems/DialogueSystem.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -499,94 +500,43 @@ private:
     std::unique_ptr<Enjin::GUI::ImGuiLayer> m_ImGuiLayer;
 
     // Dialogue system
+    Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
-        if (!m_World) return;
-
-        Enjin::ECS::Entity activeDialogue = 0;
-
-        for (Enjin::ECS::Entity entity : m_World->GetAllEntities()) {
-            if (!m_World->HasComponent<Enjin::ECS::DialogueComponent>(entity)) continue;
-            auto* dlg = m_World->GetComponent<Enjin::ECS::DialogueComponent>(entity);
-            if (!dlg || dlg->dialogueLines.empty() || dlg->IsComplete()) continue;
-
-            activeDialogue = entity;
-            auto& d = *dlg;
-
-            // Advance typewriter
-            if (d.isTyping && d.currentLine < d.dialogueLines.size()) {
-                d.charTimer += deltaTime;
-                while (d.charTimer >= d.charDelay && d.currentChar < d.dialogueLines[d.currentLine].size()) {
-                    d.currentChar++;
-                    d.charTimer -= d.charDelay;
-                }
-                if (d.currentChar >= d.dialogueLines[d.currentLine].size()) {
-                    d.isTyping = false;
-                    d.waitingForInput = true;
-                }
-            }
-
-            // Input: advance
-            if (d.waitingForInput) {
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
-                    Enjin::Input::IsMouseButtonPressed(Enjin::MouseButton::Left)) {
-                    if (d.currentLine + 1 >= d.dialogueLines.size() && !d.choices.empty()) {
-                        // Wait for choice selection
-                    } else {
-                        d.currentLine++;
-                        d.currentChar = 0;
-                        d.charTimer = 0.0f;
-                        d.waitingForInput = false;
-                        if (!d.IsComplete()) d.isTyping = true;
-                    }
-                }
-            }
-
-            // Skip to end of line while typing
-            if (d.isTyping) {
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter)) {
-                    d.currentChar = static_cast<Enjin::u32>(d.dialogueLines[d.currentLine].size());
-                    d.isTyping = false;
-                    d.waitingForInput = true;
-                }
-            }
-
-            // Choice navigation
-            if (d.waitingForInput && !d.choices.empty() &&
-                d.currentLine + 1 >= d.dialogueLines.size()) {
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Up) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::W)) {
-                    d.selectedChoice--;
-                    if (d.selectedChoice < 0)
-                        d.selectedChoice = static_cast<Enjin::i32>(d.choices.size()) - 1;
-                }
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Down) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::S)) {
-                    d.selectedChoice++;
-                    if (d.selectedChoice >= static_cast<Enjin::i32>(d.choices.size()))
-                        d.selectedChoice = 0;
-                }
-                if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Enter) ||
-                    Enjin::Input::IsKeyPressed(Enjin::KeyCode::Space)) {
-                    d.currentLine = static_cast<Enjin::u32>(d.dialogueLines.size());
-                    d.waitingForInput = false;
-                }
-            }
-
-            break;
-        }
-
-        m_ActiveDialogueEntity = activeDialogue;
+        m_DialogueSystem.Update(m_World.get(), deltaTime);
+        m_ActiveDialogueEntity = m_DialogueSystem.GetActiveDialogueEntity();
     }
 
     void DrawDialogueOverlay() {
         if (!m_World || m_ActiveDialogueEntity == 0) return;
 
         auto* dlg = m_World->GetComponent<Enjin::ECS::DialogueComponent>(m_ActiveDialogueEntity);
-        if (!dlg || dlg->IsComplete()) return;
+        if (!dlg) return;
+
+        // Determine speaker, visible text, and choices based on mode
+        std::string speaker;
+        std::string visibleText;
+        bool isTyping = dlg->isTyping;
+        bool waiting = dlg->waitingForInput;
+        bool hasChoices = false;
+        Enjin::i32 selectedChoice = dlg->selectedChoice;
+        Enjin::i32 choiceCount = 0;
+
+        if (dlg->IsTreeMode()) {
+            if (!dlg->treeActive) return;
+            speaker = dlg->currentSpeaker;
+            visibleText = dlg->GetTreeVisibleText();
+            hasChoices = waiting && !dlg->currentChoices.empty();
+            choiceCount = static_cast<Enjin::i32>(dlg->currentChoices.size());
+        } else {
+            if (dlg->IsComplete()) return;
+            speaker = dlg->speakerName;
+            visibleText = dlg->GetVisibleText();
+            hasChoices = waiting && !dlg->choices.empty() &&
+                         dlg->currentLine + 1 >= dlg->dialogueLines.size();
+            choiceCount = static_cast<Enjin::i32>(dlg->choices.size());
+        }
 
         ImGuiIO& io = ImGui::GetIO();
         Enjin::f32 screenW = io.DisplaySize.x;
@@ -613,22 +563,21 @@ private:
         ImGui::SetNextWindowSize(ImVec2(boxW, boxH));
 
         if (ImGui::Begin("##DialogueBox", nullptr, flags)) {
-            if (!dlg->speakerName.empty()) {
+            if (!speaker.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.75f, 1.0f, 1.0f));
-                ImGui::Text("%s", dlg->speakerName.c_str());
+                ImGui::Text("%s", speaker.c_str());
                 ImGui::PopStyleColor();
                 ImGui::Separator();
                 ImGui::Spacing();
             }
 
-            std::string visibleText = dlg->GetVisibleText();
             if (!visibleText.empty()) {
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.98f, 1.0f));
                 ImGui::TextWrapped("%s", visibleText.c_str());
                 ImGui::PopStyleColor();
             }
 
-            if (dlg->isTyping) {
+            if (isTyping) {
                 ImGui::SameLine(0, 0);
                 Enjin::f32 blink = std::fmod(static_cast<Enjin::f32>(ImGui::GetTime()) * 3.0f, 2.0f);
                 if (blink < 1.0f) {
@@ -636,7 +585,7 @@ private:
                 }
             }
 
-            if (dlg->waitingForInput && dlg->choices.empty()) {
+            if (waiting && !hasChoices) {
                 Enjin::f32 bounce = std::sin(static_cast<Enjin::f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
                 ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
                 ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
@@ -646,11 +595,8 @@ private:
         }
         ImGui::End();
 
-        // Choice box
-        bool showChoices = dlg->waitingForInput && !dlg->choices.empty() &&
-                           dlg->currentLine + 1 >= dlg->dialogueLines.size();
-        if (showChoices) {
-            Enjin::f32 choiceH = static_cast<Enjin::f32>(dlg->choices.size()) * 28.0f + padding * 2.0f;
+        if (hasChoices) {
+            Enjin::f32 choiceH = static_cast<Enjin::f32>(choiceCount) * 28.0f + padding * 2.0f;
             Enjin::f32 choiceW = 300.0f;
             Enjin::f32 choiceX = boxX + boxW - choiceW - 10.0f;
             Enjin::f32 choiceY = boxY - choiceH - 8.0f;
@@ -659,16 +605,31 @@ private:
             ImGui::SetNextWindowSize(ImVec2(choiceW, choiceH));
 
             if (ImGui::Begin("##ChoiceBox", nullptr, flags)) {
-                for (Enjin::usize i = 0; i < dlg->choices.size(); ++i) {
-                    bool selected = (static_cast<Enjin::i32>(i) == dlg->selectedChoice);
-                    if (selected) {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
-                        ImGui::Text("> %s", dlg->choices[i].text.c_str());
-                        ImGui::PopStyleColor();
-                    } else {
-                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
-                        ImGui::Text("  %s", dlg->choices[i].text.c_str());
-                        ImGui::PopStyleColor();
+                if (dlg->IsTreeMode()) {
+                    for (Enjin::usize i = 0; i < dlg->currentChoices.size(); ++i) {
+                        bool sel = (static_cast<Enjin::i32>(i) == selectedChoice);
+                        if (sel) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                            ImGui::Text("> %s", dlg->currentChoices[i].text.c_str());
+                            ImGui::PopStyleColor();
+                        } else {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                            ImGui::Text("  %s", dlg->currentChoices[i].text.c_str());
+                            ImGui::PopStyleColor();
+                        }
+                    }
+                } else {
+                    for (Enjin::usize i = 0; i < dlg->choices.size(); ++i) {
+                        bool sel = (static_cast<Enjin::i32>(i) == selectedChoice);
+                        if (sel) {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                            ImGui::Text("> %s", dlg->choices[i].text.c_str());
+                            ImGui::PopStyleColor();
+                        } else {
+                            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                            ImGui::Text("  %s", dlg->choices[i].text.c_str());
+                            ImGui::PopStyleColor();
+                        }
                     }
                 }
             }
