@@ -38,25 +38,25 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
                     if (trace > 0.0f) {
                         f32 s = std::sqrt(trace + 1.0f) * 2.0f;
                         qw = 0.25f * s;
-                        qx = (m12 - m21) / s;
-                        qy = (m20 - m02) / s;
-                        qz = (m01 - m10) / s;
+                        qx = (m21 - m12) / s;
+                        qy = (m02 - m20) / s;
+                        qz = (m10 - m01) / s;
                     } else if (m00 > m11 && m00 > m22) {
                         f32 s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
-                        qw = (m12 - m21) / s;
+                        qw = (m21 - m12) / s;
                         qx = 0.25f * s;
                         qy = (m01 + m10) / s;
-                        qz = (m20 + m02) / s;
+                        qz = (m02 + m20) / s;
                     } else if (m11 > m22) {
                         f32 s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
-                        qw = (m20 - m02) / s;
+                        qw = (m02 - m20) / s;
                         qx = (m01 + m10) / s;
                         qy = 0.25f * s;
                         qz = (m12 + m21) / s;
                     } else {
                         f32 s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
-                        qw = (m01 - m10) / s;
-                        qx = (m20 + m02) / s;
+                        qw = (m10 - m01) / s;
+                        qx = (m02 + m20) / s;
                         qy = (m12 + m21) / s;
                         qz = 0.25f * s;
                     }
