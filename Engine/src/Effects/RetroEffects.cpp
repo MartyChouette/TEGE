@@ -40,18 +40,6 @@ void RetroEffects::ApplyPS1Preset() {
     m_ColorMode = ColorMode::HighColor;
     m_ColorPreset = ColorPreset::PS1;
 
-    // Affine texture warping
-    m_Affine.enabled = true;
-    m_Affine.warpStrength = 1.0f;
-    m_Affine.vertexSnapping = true;
-    m_Affine.snapGridSize = 1.0f;
-
-    // Vertex jitter
-    m_VertexJitter.enabled = true;
-    m_VertexJitter.jitterAmount = 1.0f;
-    m_VertexJitter.snapToGrid = true;
-    m_VertexJitter.gridResolution = 160;
-
     // No CRT by default (optional)
     m_CRT.enabled = false;
 
@@ -79,14 +67,6 @@ void RetroEffects::ApplyN64Preset() {
     m_ColorMode = ColorMode::HighColor;
     m_ColorPreset = ColorPreset::N64;
 
-    // No affine warping (N64 had perspective correct textures)
-    m_Affine.enabled = false;
-
-    // Slight vertex jitter
-    m_VertexJitter.enabled = true;
-    m_VertexJitter.jitterAmount = 0.3f;
-    m_VertexJitter.snapToGrid = false;
-
     // Heavy fog (N64 loved fog)
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.6f, 0.6f, 0.7f);
@@ -110,12 +90,6 @@ void RetroEffects::ApplyPS2Preset() {
     m_ColorMode = ColorMode::TrueColor;
     m_ColorPreset = ColorPreset::PS2;
 
-    // No affine warping
-    m_Affine.enabled = false;
-
-    // No vertex jitter
-    m_VertexJitter.enabled = false;
-
     // Light fog
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.5f, 0.55f, 0.6f);
@@ -136,10 +110,6 @@ void RetroEffects::ApplyGameCubePreset() {
     m_DitherPattern = DitherPattern::None;
     m_ColorMode = ColorMode::TrueColor;
     m_ColorPreset = ColorPreset::GameCube;
-
-    // No retro artifacts
-    m_Affine.enabled = false;
-    m_VertexJitter.enabled = false;
 
     // Optional fog
     m_Fog.enabled = true;
@@ -165,10 +135,6 @@ void RetroEffects::ApplySNESPreset() {
     m_ColorMode = ColorMode::HighColor;
     m_ColorPreset = ColorPreset::SNES;
 
-    // No 3D effects
-    m_Affine.enabled = false;
-    m_VertexJitter.enabled = false;
-
     // No fog (2D focused)
     m_Fog.enabled = false;
 
@@ -190,10 +156,6 @@ void RetroEffects::ApplyDreamcastPreset() {
     m_ColorMode = ColorMode::TrueColor;
     m_ColorPreset = ColorPreset::Dreamcast;
 
-    // No artifacts
-    m_Affine.enabled = false;
-    m_VertexJitter.enabled = false;
-
     // Light fog
     m_Fog.enabled = true;
     m_Fog.color = Math::Vector3(0.6f, 0.65f, 0.75f);
@@ -213,8 +175,6 @@ void RetroEffects::ClearAllEffects() {
     m_ColorMode = ColorMode::TrueColor;
     m_ColorPreset = ColorPreset::None;
 
-    m_Affine.enabled = false;
-    m_VertexJitter.enabled = false;
     m_CRT.enabled = false;
     m_Fog.enabled = false;
 }

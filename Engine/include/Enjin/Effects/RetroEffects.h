@@ -37,22 +37,6 @@ struct ResolutionSettings {
     f32 aspectRatio = 4.0f / 3.0f;  // Classic 4:3
 };
 
-// PS1-style affine texture warping
-struct AffineSettings {
-    bool enabled = false;
-    f32 warpStrength = 1.0f;    // How much texture warps
-    bool vertexSnapping = false; // Snap vertices to grid
-    f32 snapGridSize = 1.0f;    // Grid size for vertex snap
-};
-
-// Vertex jitter/wobble (PS1 lack of sub-pixel precision)
-struct VertexJitterSettings {
-    bool enabled = false;
-    f32 jitterAmount = 0.5f;    // Pixels of jitter
-    bool snapToGrid = false;    // Snap to pixel grid
-    u32 gridResolution = 160;   // Virtual resolution for snapping
-};
-
 // CRT/Scanline filter
 struct CRTSettings {
     bool enabled = false;
@@ -166,13 +150,6 @@ public:
     void SetColorPreset(ColorPreset preset);
     ColorPreset GetColorPreset() const { return m_ColorPreset; }
 
-    // PS1 effects
-    void SetAffineSettings(const AffineSettings& settings) { m_Affine = settings; }
-    AffineSettings& GetAffineSettings() { return m_Affine; }
-
-    void SetVertexJitter(const VertexJitterSettings& settings) { m_VertexJitter = settings; }
-    VertexJitterSettings& GetVertexJitter() { return m_VertexJitter; }
-
     // CRT
     void SetCRTSettings(const CRTSettings& settings) { m_CRT = settings; }
     CRTSettings& GetCRTSettings() { return m_CRT; }
@@ -180,10 +157,6 @@ public:
     // VHS
     void SetVHSSettings(const VHSSettings& settings) { m_VHS = settings; }
     VHSSettings& GetVHSSettings() { return m_VHS; }
-
-    // Global retro flags
-    bool GetGouraudOnly() const { return m_GouraudOnly; }
-    void SetGouraudOnly(bool enabled) { m_GouraudOnly = enabled; }
 
     // Fog
     void SetFogSettings(const RetroFogSettings& settings) { m_Fog = settings; }
@@ -212,12 +185,9 @@ private:
     DitherPattern m_DitherPattern = DitherPattern::None;
     ColorMode m_ColorMode = ColorMode::TrueColor;
     ColorPreset m_ColorPreset = ColorPreset::None;
-    AffineSettings m_Affine;
-    VertexJitterSettings m_VertexJitter;
     CRTSettings m_CRT;
     VHSSettings m_VHS;
     RetroFogSettings m_Fog;
-    bool m_GouraudOnly = false;
 
     TransitionSettings m_Transition;
     f32 m_TransitionProgress = 1.0f;
