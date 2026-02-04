@@ -419,7 +419,7 @@ private:
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
     // Project Hub (shown after splash)
-    enum class ProjectHubTab : u8 { Recent = 0, New, Open };
+    enum class ProjectHubTab : u8 { Recent = 0, New, Open, Demos };
     bool m_ShowProjectHub = true;
     ProjectHubTab m_HubTab = ProjectHubTab::Recent;
 
@@ -436,6 +436,15 @@ private:
     static constexpr u32 TMPL_3D    = 1 << 1;
     static constexpr u32 TMPL_MULTI = 1 << 2;
 
+    // Template hover preview state
+    i32 m_HoverTemplateIdx = -1;
+    f32 m_HoverTimer = 0.0f;
+    i32 m_HoverFrameIdx = 0;
+
+    // Demos tab state
+    std::vector<bool> m_DemoAvailability;
+    bool m_DemosCacheValid = false;
+
     // Custom templates
     std::vector<std::string> m_CustomTemplateNames;
     std::vector<std::string> m_CustomTemplatePaths;
@@ -445,6 +454,8 @@ private:
     void DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
     void DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
     void DrawHubOpenTab(ImDrawList* dl, const ImVec2& area);
+    void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
+    void DrawTemplateHoverPreview(ImDrawList* dl, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd);
     void ApplyTemplate(const std::string& templateId);
     void SaveCustomTemplate(const std::string& name);
     void LoadCustomTemplates();
