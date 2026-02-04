@@ -751,6 +751,7 @@ struct SMTransition {
 struct SMState {
     std::string name;
     std::vector<SMTransition> transitions;
+    Math::Vector2 editorPosition = Math::Vector2(0, 0);  // Node position in graph editor
 };
 
 // State machine component with defined states, transitions, and conditions

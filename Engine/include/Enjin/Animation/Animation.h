@@ -354,6 +354,7 @@ struct AnimationState {
     std::string animationName;
     f32 speed = 1.0f;
     PlayMode playMode = PlayMode::Loop;
+    Math::Vector2 editorPosition = Math::Vector2(0, 0);  // Node position in graph editor
 };
 
 // Animation state machine
@@ -389,6 +390,17 @@ public:
 
     // Get current state
     const std::string& GetCurrentState() const { return m_CurrentState; }
+
+    // Public accessors for graph editor
+    const std::unordered_map<std::string, AnimationState>& GetStates() const { return m_States; }
+    std::unordered_map<std::string, AnimationState>& GetStatesMut() { return m_States; }
+    const std::vector<AnimationTransition>& GetTransitions() const { return m_Transitions; }
+    std::vector<AnimationTransition>& GetTransitionsMut() { return m_Transitions; }
+    const std::string& GetDefaultState() const { return m_DefaultState; }
+    const std::unordered_map<std::string, bool>& GetBoolParams() const { return m_BoolParams; }
+    const std::unordered_map<std::string, f32>& GetFloatParams() const { return m_FloatParams; }
+    const std::unordered_map<std::string, i32>& GetIntParams() const { return m_IntParams; }
+    const std::unordered_map<std::string, bool>& GetTriggers() const { return m_Triggers; }
 
 private:
     bool CheckTransitionConditions(const AnimationTransition& transition) const;

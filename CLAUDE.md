@@ -472,6 +472,8 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Drag-and-drop file import (GLFW drop callback, imports FBX/OBJ/glTF/GLB/DAE/3DS models and opens .enjin scene files)
 - Per-entity collision filtering (categoryBits/collisionMask bitmask system, bilateral filter rule, 32 named groups in project manifest, inspector checkbox UI, Project Settings group editor, backward-compat migration from old layer field, SimplePhysics + PhysicsWorld filtering, masked script bindings)
 - Entity visibility toggle (TransformComponent::visible bool, RenderSystem skip in all passes incl. shadows/sprites/tilemaps/grass/shrubs/trees/particles, inspector checkbox, hierarchy eye icon, scene serialization, script bindings Entity_SetVisible/Entity_IsVisible)
+- Node graph editor framework (generic NodeGraphEditor widget with typed pins, Bezier links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization)
+- Animation graph panel (visual state machine editor for StateMachineComponent, Entry pseudo-node, state/transition inspector, parameter editor, play mode highlighting, auto layout, editorPosition serialization)
 
 ## AngelScript API Reference
 
@@ -655,10 +657,9 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 
 - **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
 - **Particle Editor** — ~~DONE (Phase 2)~~ CPU particle simulation + GPU instanced renderer + editor panel with 12 presets (7 standard + 5 liquid), velocity stretch render mode, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
-- **Node/Graph Editor** — generic node graph framework powering three systems:
+- **Node/Graph Editor** — ~~PARTIAL (Phase 1)~~ Generic node graph framework (`NodeGraphEditor` widget) with typed pin system (9 types, Wong colorblind-safe colors), Bezier curve links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization. First consumer: Animation Graph panel (`View > Animation Graph`) — visual state machine editor for `StateMachineComponent` with Entry pseudo-node, state/transition inspector sidebar, parameter editor, play mode highlighting, auto layout. "Open in Graph Editor" button in SM inspector. `editorPosition` serialized per SM state. Future consumers:
   - Visual scripting (blueprint-style alternative to AngelScript)
   - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
-  - Animation state machine (visual state/transition editor replacing manual AnimatorComponent setup)
 - **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
 - **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
 - **Undo/Redo Across All Operations** — extend existing UndoRedoManager to cover every inspector edit, hierarchy change, component add/remove, tilemap paint, terrain sculpt, etc.

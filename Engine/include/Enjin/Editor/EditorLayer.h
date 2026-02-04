@@ -31,6 +31,7 @@
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Build/BuildReport.h"
 #include "Enjin/GUI/DialogueTree.h"
+#include "Enjin/Editor/AnimationGraphEditor.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -71,6 +72,7 @@ enum class EditorPanel : u32 {
     Profiler = 1 << 11,
     ProjectSettings = 1 << 12,
     ParticleEditor = 1 << 13,
+    AnimGraph = 1 << 14,
     All = 0xFFFFFFFF
 };
 
@@ -192,6 +194,7 @@ private:
     void DrawSkyboxPanel();
     void DrawProjectSettingsPanel();
     void DrawParticleEditorPanel();
+    void DrawAnimGraphPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -313,6 +316,9 @@ private:
     void DrawDialogueOverlay();
     ECS::Entity m_ActiveDialogueEntity = ECS::INVALID_ENTITY;
     GUI::DialogueTreeEditor m_DialogueTreeEditor;
+
+    // Animation/State Machine graph editor
+    AnimationGraphEditor m_AnimGraphEditor;
 
     // Scene management
     void SaveScene(const std::string& path);

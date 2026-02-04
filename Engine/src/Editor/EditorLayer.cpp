@@ -1507,6 +1507,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(380, 600), layoutCond);
         DrawParticleEditorPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::AnimGraph)) {
+        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700, 500), layoutCond);
+        DrawAnimGraphPanel();
+    }
 
     // Dialogue tree editor (owns its own window)
     m_DialogueTreeEditor.Render();
@@ -2073,6 +2078,10 @@ void EditorLayer::DrawMenuBar() {
             bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
             if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
                 SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
+            }
+            bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
+            if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
+                SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
@@ -15501,6 +15510,13 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        // Open in Graph Editor button
+        ImGui::Separator();
+        if (ImGui::Button("Open in Graph Editor")) {
+            SetPanelVisibility(EditorPanel::AnimGraph, true);
+            m_AnimGraphEditor.SetTarget(m_World, entity);
+        }
+
         // Play mode: send trigger
         if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
             ImGui::Separator();
@@ -20880,6 +20896,33 @@ void EditorLayer::DrawParticleEditorPanel() {
             ImGui::DragFloat("Stretch Scale##pe", &emitter->velocityStretchScale, 0.01f, 0.0f, 5.0f);
         }
     }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawAnimGraphPanel() {
+    if (!ImGui::Begin("Animation Graph")) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World) {
+        ImGui::TextDisabled("No world loaded");
+        ImGui::End();
+        return;
+    }
+
+    // Auto-target selected entity if it has a StateMachineComponent
+    ECS::Entity target = m_AnimGraphEditor.GetTargetEntity();
+    if (m_PrimarySelected != ECS::INVALID_ENTITY && m_PrimarySelected != target) {
+        auto* sm = m_World->GetComponent<ECS::StateMachineComponent>(m_PrimarySelected);
+        if (sm) {
+            m_AnimGraphEditor.SetTarget(m_World, m_PrimarySelected);
+        }
+    }
+
+    bool isPlaying = m_PlayMode.IsPlaying() || m_PlayMode.IsPaused();
+    m_AnimGraphEditor.Render(m_EditorSettings, isPlaying);
 
     ImGui::End();
 }
