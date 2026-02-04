@@ -7450,7 +7450,16 @@ void EditorLayer::DrawProjectHub() {
 void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 contentY) {
     ImGuiIO& io = ImGui::GetIO();
 
-    if (m_EditorSettings.recentProjects.empty()) {
+    // Filter to only show .enjinproject files (not .enjin scene files)
+    std::vector<int> projectIndices;
+    for (int i = 0; i < static_cast<int>(m_EditorSettings.recentProjects.size()); ++i) {
+        std::filesystem::path p(m_EditorSettings.recentProjects[i]);
+        if (p.extension() == ".enjinproject") {
+            projectIndices.push_back(i);
+        }
+    }
+
+    if (projectIndices.empty()) {
         // Empty state
         const char* emptyMsg = "No recent projects";
         ImVec2 msgSize = ImGui::CalcTextSize(emptyMsg);
@@ -7484,10 +7493,10 @@ void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 conte
     f32 listX = (area.x - listW) * 0.5f;
     f32 y = contentY + 15.0f;
 
-    int count = static_cast<int>(m_EditorSettings.recentProjects.size());
-    int maxShow = (std::min)(count, 8);
+    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 8);
 
-    for (int i = 0; i < maxShow; ++i) {
+    for (int pi = 0; pi < maxShow; ++pi) {
+        int i = projectIndices[pi];
         ImVec2 rPos(listX, y);
         ImVec2 rEnd(listX + listW, y + rowH);
 
@@ -7533,10 +7542,17 @@ void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 conte
         dl->AddText(ImVec2(rEnd.x - statusSize.x - 16.0f, rPos.y + 28.0f),
             statusCol, statusText);
 
-        // Click to open
+        // Click to open — load project manifest then open first scene
         if (hovered && exists && ImGui::IsMouseClicked(0)) {
+            if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
+                auto& scenes = m_SceneManager.GetScenes();
+                if (!scenes.empty()) {
+                    auto projDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path();
+                    std::string scenePath = (projDir / scenes[0].path).string();
+                    OpenScene(scenePath);
+                }
+            }
             m_ShowProjectHub = false;
-            OpenScene(m_EditorSettings.recentProjects[i]);
         }
 
         y += rowH + rowPad;
