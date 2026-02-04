@@ -4,10 +4,11 @@
 class asIScriptEngine;
 
 namespace Enjin {
-namespace ECS { class World; class DialogueSystem; }
+namespace ECS { class World; class DialogueSystem; class RenderSystem; }
 namespace Physics { class SimplePhysics; }
 namespace Audio { class SimpleAudio; }
 namespace Scene { class SceneManager; }
+namespace Renderer { class PostProcessing; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -32,6 +33,7 @@ void RegisterEventBindings(asIScriptEngine* engine);
 void RegisterTweenBindings(asIScriptEngine* engine);
 void RegisterStateMachineBindings(asIScriptEngine* engine);
 void RegisterDialogueBindings(asIScriptEngine* engine);
+void RegisterRenderBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -42,6 +44,8 @@ void SetBindingsCoroutineScheduler(CoroutineScheduler* scheduler);
 void SetBindingsEventBus(ScriptEventBus* bus);
 void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
+void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);
+void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
 
 } // namespace Scripting
 } // namespace Enjin

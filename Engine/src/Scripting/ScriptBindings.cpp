@@ -963,6 +963,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterTweenBindings(engine);
     RegisterStateMachineBindings(engine);
     RegisterDialogueBindings(engine);
+    RegisterRenderBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

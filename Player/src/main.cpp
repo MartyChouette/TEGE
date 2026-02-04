@@ -421,6 +421,7 @@ private:
         if (m_ScriptEngine.GetASEngine()) {
             m_ScriptSystem.SetEnabled(true);
             Enjin::Scripting::SetBindingsWorld(m_World.get());
+            Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
             m_ScriptSystem.InitializeAllScripts();
         }
 

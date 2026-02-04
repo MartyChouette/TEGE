@@ -23,6 +23,8 @@
 #include <string>
 
 namespace Enjin {
+namespace ECS { class RenderSystem; }
+namespace Renderer { class PostProcessing; }
 namespace Editor {
 
 // Play mode state
@@ -82,6 +84,9 @@ public:
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
 
+    void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
+    void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
+
 private:
     void SaveEditorState();
     void RestoreEditorState();
@@ -125,6 +130,10 @@ private:
 
     // Dialogue system
     ECS::DialogueSystem m_DialogueSystem;
+
+    // Render system pointers (owned externally)
+    ECS::RenderSystem* m_RenderSystem = nullptr;
+    Renderer::PostProcessing* m_PostProcessing = nullptr;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

@@ -72,6 +72,8 @@ void PlayMode::Play() {
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
+    Scripting::SetBindingsRenderSystem(m_RenderSystem);
+    Scripting::SetBindingsPostProcessing(m_PostProcessing);
     m_ScriptSystem.InitializeAllScripts();
 
     // Disable editor camera controller

@@ -453,6 +453,8 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
 void EditorLayer::InitializePlayMode() {
     if (m_World && m_Camera && m_CameraController) {
         m_PlayMode.Initialize(m_World, m_Camera, m_CameraController);
+        m_PlayMode.SetRenderSystem(m_RenderSystem);
+        m_PlayMode.SetPostProcessing(m_PostProcessing.get());
 
         // Wire accessibility input map and motion settings
         auto* ctrlSys = m_PlayMode.GetControllerSystem();
