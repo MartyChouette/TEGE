@@ -110,6 +110,20 @@ enjin/
   - `SkeletonComponent` - Shared skeleton data for skinned meshes
   - `AnimatorComponent` - Skeletal animation playback (SkeletalAnimator + AnimationStateMachine)
   - `CharacterController` - Various movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
+  - `BoxColliderComponent` / `SphereColliderComponent` / `CapsuleColliderComponent` - Colliders with `categoryBits` (u32 bitmask, default `1` = "Default" group) and `collisionMask` (u32, default `0xFFFFFFFF` = collide with all). Old `layer` field was renamed to `categoryBits`.
+
+### Collision Filtering
+
+- **Bitmask system:** Each collider has `categoryBits` (which groups it belongs to) and `collisionMask` (which groups it collides with). Up to 32 groups, one per bit.
+- **Bilateral rule:** `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)` — both entities must agree to collide
+- **Defaults:** `categoryBits = 1` (bit 0, "Default"), `collisionMask = 0xFFFFFFFF` (all). New entities collide with everything.
+- **Named groups:** Stored in `SceneManager::m_CollisionGroupNames` (32-entry vector, index 0 = "Default"). Serialized in `.enjinproject` as `"collisionGroups"` array.
+- **PhysicsWorld integration:** `RigidBody` carries `categoryBits`/`collisionMask`, copied from ECS colliders in `SyncFromECS()`. `DetectCollisions()` applies bilateral filter before shape tests.
+- **SimplePhysics integration:** `Raycast`, `RaycastAll`, `CheckGround`, `MoveAndSlide`, `GetCollidersInRadius` accept optional `u32 layerMask` param (default `0xFFFFFFFF`). Ground check loop uses bilateral filter.
+- **Inspector UI:** `DrawCollisionFilteringUI(categoryBits, collisionMask)` shows named checkbox lists for "Category (belongs to)" and "Collides with", plus hex display. Called from all 3 collider inspectors.
+- **Project Settings:** "Collision Groups" section with editable group name text fields (group 0 "Default" is read-only).
+- **Serialization:** Saved as `"categoryBits"` in scene JSON. Deserializer migrates old `"layer"` field: `layer 0 → categoryBits 1`, `layer N → categoryBits (1 << N)`.
+- **Script bindings:** Masked overloads `Physics_Raycast(..., uint)`, `Physics_RaycastHit(..., uint, ...)`, `Physics_CheckSphere(..., uint)`, `Physics_CheckBox(..., uint)`. AngelScript resolves by param count.
 
 ### Renderer
 
@@ -229,7 +243,7 @@ struct PushConstants {
   - Break flow: entity hidden offscreen (scale=0, y=-100) on mouse release — NOT destroyed (keeps GPU buffers valid)
   - Evaluate: computes final score from stem counters, locks display via `stem->evaluated` flag
   - Inspector: `DrawFlowerStemComponent` with Healthy Bonus, Withered Penalty, Liquid Intensity slider + Off button. TetherComponent shows Connected entity, spring params on SpringJointComponent
-  - Template: Flower Garden (stem + crown + 10 petals + 5 leaves + game camera + score display + sun light). Crown created before petals so petals can reference it as connectedEntity
+  - Template: Flower Garden (stem + crown + 10 petals + 5 leaves + game camera + score display + sun light). Crown created before petals so petals can reference it as connectedEntity. Collision groups: "Petals" (bit 1) and "Leaves" (bit 2) prevent same-type collisions
 
 ### Effects Systems
 
@@ -454,6 +468,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Particle velocity stretch render mode (VelocityStretch elongates particles along velocity vector, configurable scale, serialized per-emitter)
 - Particle liquid presets (Water Splash, Blood/Sap, Lava, Fountain, Drip with tuned velocity stretch, gravity, drag)
 - Drag-and-drop file import (GLFW drop callback, imports FBX/OBJ/glTF/GLB/DAE/3DS models and opens .enjin scene files)
+- Per-entity collision filtering (categoryBits/collisionMask bitmask system, bilateral filter rule, 32 named groups in project manifest, inspector checkbox UI, Project Settings group editor, backward-compat migration from old layer field, SimplePhysics + PhysicsWorld filtering, masked script bindings)
 
 ## AngelScript API Reference
 
@@ -516,6 +531,7 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 
 - `Physics_Raycast(origin, dir, maxDist)`, `Physics_RaycastHit(origin, dir, maxDist, &hit)` — RaycastHit: `point`, `normal`, `distance`, `entity`
 - `Physics_CheckSphere(center, radius)`, `Physics_CheckBox(center, halfExtents)`
+- Masked overloads (filter by collision group): `Physics_Raycast(origin, dir, maxDist, layerMask)`, `Physics_RaycastHit(origin, dir, maxDist, layerMask, &hit)`, `Physics_CheckSphere(center, radius, layerMask)`, `Physics_CheckBox(center, halfExtents, layerMask)`
 - `Physics_AddForce/AddImpulse(uint64, Vector3)`, `Physics_SetVelocity/GetVelocity(uint64)`, `Physics_SetGravityScale(uint64, float)`
 
 ### Audio
