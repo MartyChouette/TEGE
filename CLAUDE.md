@@ -420,6 +420,8 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Script coroutines (StartCoroutine, YieldSeconds, YieldFrames, YieldEndOfFrame)
 - Script event system (Events_Listen, Events_Send, Events_Broadcast with EventData)
 - Scene management from scripts (Scene_LoadScene, Scene_GetCurrentScene)
+- Script bindings: rendering (Render_Set/Get for shadows, ambient, fog, snow, rain, curvature, wireframe — 28 functions)
+- Script bindings: post-processing (PostProcess_Set/Get for tone mapping, exposure, bloom, vignette, chromatic aberration, color grading, film grain, FXAA — 36 functions)
 - Physics constraint solver (sequential impulse, 8 iterations, warm starting, Baumgarte stabilization)
 - 6 physics joint types (Distance, Hinge, BallSocket, Spring, Fixed, Slider) with breakable mode
 - Ragdoll component (bone-to-joint mapping, animation-to-ragdoll blend, auto-settle)
@@ -560,6 +562,25 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 - **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
 - `Events_Listen(string, EventCallback@)` — returns listener ID
 - `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
+
+### Rendering
+
+- **Shadows**: `Render_SetShadowsEnabled(bool)` / `Render_IsShadowsEnabled()`, `Render_SetShadowDistance/GetShadowDistance(float)`, `Render_SetShadowStrength/GetShadowStrength(float)`
+- **Ambient**: `Render_SetAmbientIntensity/GetAmbientIntensity(float)`, `Render_SetAmbientColor/GetAmbientColor(Vector3)`
+- **Fog**: `Render_SetFogDensity/GetFogDensity(float)`, `Render_SetFogColor/GetFogColor(Vector3)`, `Render_SetFogStart/GetFogStart(float)`, `Render_SetFogEnd/GetFogEnd(float)`, `Render_SetFogHeightFalloff/GetFogHeightFalloff(float)`
+- **Weather**: `Render_SetSnowIntensity/GetSnowIntensity(float)`, `Render_SetRainActive/IsRainActive(bool)`
+- **Effects**: `Render_SetWorldCurvature/GetWorldCurvature(float)`, `Render_SetWireframeEnabled/IsWireframeEnabled(bool)`
+
+### Post-Processing
+
+- **Tone Mapping**: `PostProcess_SetToneMapping/GetToneMapping(int)`, `PostProcess_SetExposure/GetExposure(float)`, `PostProcess_SetGamma/GetGamma(float)`
+- **Bloom**: `PostProcess_SetBloomEnabled/IsBloomEnabled(bool)`, `PostProcess_SetBloomThreshold/GetBloomThreshold(float)`, `PostProcess_SetBloomIntensity/GetBloomIntensity(float)`
+- **Vignette**: `PostProcess_SetVignetteEnabled/IsVignetteEnabled(bool)`, `PostProcess_SetVignetteIntensity/GetVignetteIntensity(float)`, `PostProcess_SetVignetteSmoothness/GetVignetteSmoothness(float)`
+- **Chromatic Aberration**: `PostProcess_SetChromaticAberrationEnabled/IsChromaticAberrationEnabled(bool)`, `PostProcess_SetChromaticAberrationIntensity/GetChromaticAberrationIntensity(float)`
+- **Color Grading**: `PostProcess_SetColorFilter/GetColorFilter(Vector3)`, `PostProcess_SetSaturation/GetSaturation(float)`, `PostProcess_SetContrast/GetContrast(float)`, `PostProcess_SetBrightness/GetBrightness(float)`
+- **Film Grain**: `PostProcess_SetFilmGrainEnabled/IsFilmGrainEnabled(bool)`, `PostProcess_SetFilmGrainIntensity/GetFilmGrainIntensity(float)`
+- **FXAA**: `PostProcess_SetFXAAEnabled/IsFXAAEnabled(bool)`
+- Note: PostProcess_ functions return sensible defaults if PostProcessing is unavailable (e.g. in Player app)
 
 ## Common Tasks
 
@@ -727,7 +748,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 
 ### Scripting & Extensibility
 
-- **Script Rendering Bindings** — Expose RenderSystem and PostProcessSettings to AngelScript so scripts can automate camera movement and rendering changes at runtime. Bindings like `Render_SetFogDensity(float)`, `Render_SetFogColor(Vector3)`, `Render_SetAmbientIntensity(float)`, `Render_SetShadowsEnabled(bool)`, `PostProcess_SetExposure(float)`, `PostProcess_SetBloomEnabled(bool)`, `PostProcess_SetVignetteIntensity(float)`, `PostProcess_SetToneMapping(int)`, etc. Enables cinematic sequences that change lighting/fog/post-processing over time, day/night transitions driven by scripts, and gameplay-reactive visual effects. Combined with existing `CinematicCameraComponent` spline waypoints and coroutines (`YieldSeconds`), this gives full cutscene authoring capability from scripts.
+- **Script Rendering Bindings** — ~~DONE~~ 64 AngelScript wrapper functions exposing RenderSystem (shadows, ambient, fog, snow, rain, curvature, wireframe — 28 functions) and PostProcessSettings (tone mapping, exposure, bloom, vignette, chromatic aberration, color grading, film grain, FXAA — 36 functions). Null-safe: PostProcess_ functions return defaults in Player app. Wired through PlayMode (editor) and directly in Player app. Future work: additional bindings for retro effects (CRT, dithering, VHS), skybox control from scripts.
 - **Component/Plugin DLL Repositories** — load gameplay components from external DLLs/shared libraries. Package format for distributing reusable components. Local repository system (marketplace comes later).
 - **Documentation Generator** — auto-generate docs from component definitions, script API, project structure. HTML or markdown output for game teams.
 - **ScriptableObject / DataAsset System** — Unity-like reusable data containers that are NOT entities. Serialized JSON assets for game configuration: weapon stats, enemy tables, dialogue databases, item definitions, skill trees. Create/edit in inspector, reference from components. Extends the current component-only model with standalone data assets.
