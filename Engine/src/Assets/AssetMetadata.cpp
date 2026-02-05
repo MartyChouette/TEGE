@@ -73,6 +73,7 @@ bool AssetMetadata::Save(const std::string& assetPath) const {
     opts["importLights"] = importOptions.importLights;
     opts["importAnimations"] = importOptions.importAnimations;
     opts["generateColliders"] = importOptions.generateColliders;
+    opts["generateLODs"] = importOptions.generateLODs;
     j["importOptions"] = opts;
 
     // Stats
@@ -126,6 +127,7 @@ bool AssetMetadata::Load(const std::string& assetPath) {
             if (opts.contains("importLights")) importOptions.importLights = opts["importLights"].get<bool>();
             if (opts.contains("importAnimations")) importOptions.importAnimations = opts["importAnimations"].get<bool>();
             if (opts.contains("generateColliders")) importOptions.generateColliders = opts["generateColliders"].get<bool>();
+            if (opts.contains("generateLODs")) importOptions.generateLODs = opts["generateLODs"].get<bool>();
         }
 
         // Stats

@@ -18,6 +18,7 @@ struct ImportOptions {
     bool importLights = true;
     bool importAnimations = true;
     bool generateColliders = true;
+    bool generateLODs = false;  // Off by default — LOD generation is expensive for large meshes
 };
 
 // Result of a scene import operation

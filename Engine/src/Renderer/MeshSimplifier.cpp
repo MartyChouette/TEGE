@@ -54,6 +54,14 @@ ECS::MeshComponent MeshSimplifier::Simplify(const ECS::MeshComponent& source, f3
     u32 vertCount = static_cast<u32>(source.vertices.size());
     u32 triCount = static_cast<u32>(source.indices.size() / 3);
 
+    // Validate indices — skip simplification if any index is out of range
+    for (u32 i = 0; i < source.indices.size(); ++i) {
+        if (source.indices[i] >= vertCount) {
+            ENJIN_LOG_WARN(Asset, "MeshSimplifier: index %u out of range (vertCount=%u), skipping", source.indices[i], vertCount);
+            return source;
+        }
+    }
+
     // Working copies
     std::vector<ECS::MeshComponent::Vertex> vertices = source.vertices;
     std::vector<u32> indices = source.indices;
@@ -191,6 +199,19 @@ void MeshSimplifier::GenerateLODs(const ECS::MeshComponent& sourceMesh, ECS::LOD
 
     u32 sourceVerts = static_cast<u32>(sourceMesh.vertices.size());
     u32 sourceTris = static_cast<u32>(sourceMesh.indices.size() / 3);
+
+    // Skip LOD generation for very large meshes to avoid long hangs
+    if (sourceVerts > 100000) {
+        ENJIN_LOG_WARN(Asset, "Skipping LOD generation for mesh with %u vertices (too large)", sourceVerts);
+        lod.levelCount = 1;
+        lod.levels[0].mesh = sourceMesh;
+        lod.levels[0].vertexCount = sourceVerts;
+        lod.levels[0].triangleCount = sourceTris;
+        lod.levels[0].reductionRatio = 1.0f;
+        lod.levels[0].maxDistance = lod.baseDistance;
+        lod.activeLOD = 0;
+        return;
+    }
 
     lod.levelCount = 0;
 

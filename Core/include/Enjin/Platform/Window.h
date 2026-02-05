@@ -33,7 +33,8 @@ public:
     virtual u32 GetHeight() const = 0;
     virtual Math::Vector2 GetSize() const = 0;
 
-    virtual void* GetNativeHandle() const = 0; // Returns platform-specific window handle
+    virtual void* GetNativeHandle() const = 0; // Returns platform-specific window handle (GLFWwindow*)
+    virtual void* GetPlatformWindowHandle() const = 0; // Returns OS-level handle (HWND on Windows)
 
     virtual void SetEventCallback(const EventCallback& callback) = 0;
     virtual void SetResizeCallback(const ResizeCallback& callback) = 0;

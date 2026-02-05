@@ -49,12 +49,6 @@
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
-#define GLFW_INCLUDE_NONE
-#include <GLFW/glfw3.h>
-#ifdef _WIN32
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-#endif
 #include <sstream>
 #include <fstream>
 #include <filesystem>
@@ -620,14 +614,12 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     m_Renderer = renderer;
 
     // Set file dialog owner so native dialogs appear on top of the editor window
-#ifdef _WIN32
     if (m_Window) {
-        GLFWwindow* glfw = static_cast<GLFWwindow*>(m_Window->GetNativeHandle());
-        if (glfw) {
-            FileDialog::SetOwnerWindow(glfwGetWin32Window(glfw));
+        void* platformHandle = m_Window->GetPlatformWindowHandle();
+        if (platformHandle) {
+            FileDialog::SetOwnerWindow(platformHandle);
         }
     }
-#endif
 
     m_ImGuiLayer = std::make_unique<GUI::ImGuiLayer>();
     if (!m_ImGuiLayer->Initialize(window, renderer)) {
@@ -1191,31 +1183,38 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_GameViewHeight = static_cast<u32>(io.DisplaySize.y);
     }
 
-    // Resize render targets if game view panel dimensions changed
-    if (m_GameViewRenderTarget->GetWidth() != m_GameViewWidth ||
-        m_GameViewRenderTarget->GetHeight() != m_GameViewHeight) {
-        if (m_GameViewWidth > 0 && m_GameViewHeight > 0) {
-            if (m_SceneRenderTarget) {
-                m_SceneRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
-            }
-            m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+    // Resize render targets if game view panel dimensions changed significantly.
+    // Use a threshold to avoid constant resize/pipeline recreation during window
+    // animations (fade-in, panel drag) where size changes by 1-2 pixels per frame.
+    constexpr u32 RESIZE_THRESHOLD = 8;
+    u32 currentW = m_GameViewRenderTarget->GetWidth();
+    u32 currentH = m_GameViewRenderTarget->GetHeight();
+    i32 diffW = static_cast<i32>(m_GameViewWidth) - static_cast<i32>(currentW);
+    i32 diffH = static_cast<i32>(m_GameViewHeight) - static_cast<i32>(currentH);
+    bool needsResize = (diffW < 0 ? -diffW : diffW) > RESIZE_THRESHOLD ||
+                       (diffH < 0 ? -diffH : diffH) > RESIZE_THRESHOLD;
 
-            // Determine which render pass to use for effect pipelines
-            VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
-                ? m_SceneRenderTarget->GetRenderPass()
-                : m_GameViewRenderTarget->GetRenderPass();
+    if (needsResize && m_GameViewWidth > 0 && m_GameViewHeight > 0) {
+        if (m_SceneRenderTarget) {
+            m_SceneRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
+        }
+        m_GameViewRenderTarget->Resize(m_GameViewWidth, m_GameViewHeight);
 
-            if (m_RenderSystem) {
-                m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
-            }
+        // Determine which render pass to use for effect pipelines
+        VkRenderPass effectRenderPass = (m_SceneRenderTarget && m_SceneRenderTarget->IsValid())
+            ? m_SceneRenderTarget->GetRenderPass()
+            : m_GameViewRenderTarget->GetRenderPass();
 
-            // Update post-processing: rebind source image and resize
-            if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
-                m_PostProcessing->OnResize(m_GameViewWidth, m_GameViewHeight);
-                m_PostProcessing->UpdateSourceImage(
-                    m_SceneRenderTarget->GetColorImageView(),
-                    m_SceneRenderTarget->GetSampler());
-            }
+        if (m_RenderSystem) {
+            m_RenderSystem->RecreateEffectPipelinesForRenderPass(effectRenderPass);
+        }
+
+        // Update post-processing: rebind source image and resize
+        if (m_PostProcessing && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+            m_PostProcessing->OnResize(m_GameViewWidth, m_GameViewHeight);
+            m_PostProcessing->UpdateSourceImage(
+                m_SceneRenderTarget->GetColorImageView(),
+                m_SceneRenderTarget->GetSampler());
         }
     }
 
@@ -14920,6 +14919,18 @@ void EditorLayer::ImportModel(const std::string& path) {
 
     m_ImportDialogPath = path;
     m_ShowImportDialog = true;
+
+    // Cache file info once on dialog open (avoid per-frame filesystem calls)
+    std::filesystem::path filePath(path);
+    m_ImportDialogFilename = filePath.filename().string();
+    m_ImportDialogExtension = filePath.extension().string();
+    m_ImportDialogFileSize = 0;
+    try {
+        if (std::filesystem::exists(filePath)) {
+            m_ImportDialogFileSize = std::filesystem::file_size(filePath);
+        }
+    } catch (...) {}
+    m_ImportDialogIsReimport = Assets::AssetMetadata::Exists(path);
 }
 
 void EditorLayer::DrawImportDialog() {
@@ -14927,30 +14938,22 @@ void EditorLayer::DrawImportDialog() {
 
     ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Always);
     if (ImGui::BeginPopupModal("Import Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-        // File info
-        std::filesystem::path filePath(m_ImportDialogPath);
-        std::string filename = filePath.filename().string();
-        std::string ext = filePath.extension().string();
+        // File info (cached values — no filesystem calls per frame)
+        ImGui::Text("File: %s", m_ImportDialogFilename.c_str());
+        ImGui::Text("Format: %s", m_ImportDialogExtension.c_str());
 
-        ImGui::Text("File: %s", filename.c_str());
-        ImGui::Text("Format: %s", ext.c_str());
-
-        // File size
-        try {
-            if (std::filesystem::exists(filePath)) {
-                auto size = std::filesystem::file_size(filePath);
-                if (size < 1024) {
-                    ImGui::Text("Size: %llu bytes", (unsigned long long)size);
-                } else if (size < 1024 * 1024) {
-                    ImGui::Text("Size: %.1f KB", size / 1024.0f);
-                } else {
-                    ImGui::Text("Size: %.1f MB", size / (1024.0f * 1024.0f));
-                }
+        if (m_ImportDialogFileSize > 0) {
+            if (m_ImportDialogFileSize < 1024) {
+                ImGui::Text("Size: %llu bytes", (unsigned long long)m_ImportDialogFileSize);
+            } else if (m_ImportDialogFileSize < 1024 * 1024) {
+                ImGui::Text("Size: %.1f KB", m_ImportDialogFileSize / 1024.0f);
+            } else {
+                ImGui::Text("Size: %.1f MB", m_ImportDialogFileSize / (1024.0f * 1024.0f));
             }
-        } catch (...) {}
+        }
 
         // Re-import indicator
-        if (Assets::AssetMetadata::Exists(m_ImportDialogPath)) {
+        if (m_ImportDialogIsReimport) {
             ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "(Re-import)");
         }
 
@@ -14963,6 +14966,10 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
         ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
         ImGui::Checkbox("Generate Colliders", &m_ImportDialogOptions.generateColliders);
+        ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");
+        }
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -15052,6 +15059,42 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
         ENJIN_LOG_INFO(Editor, "Imported %zu entities (%u meshes, %u materials, %u anims, %u verts, %u indices) from %s",
             result.entities.size(), result.meshCount, result.materialCount, result.animationCount,
             result.totalVertexCount, result.totalIndexCount, path.c_str());
+
+        // If the scene has no lights, add a directional light so imported models are visible
+        {
+            auto lightEntities = m_World->GetEntitiesWithComponent<ECS::LightComponent>();
+            if (lightEntities.empty()) {
+                ECS::Entity light = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(light, "Directional Light");
+                auto& xform = m_World->AddComponent<ECS::TransformComponent>(light);
+                xform.rotation = Math::Quaternion::FromEuler(Math::Vector3(-45.0f, -45.0f, 0.0f));
+                auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+                lc.type = ECS::LightType::Directional;
+                lc.color = Math::Vector3(1.0f, 1.0f, 1.0f);
+                lc.intensity = 1.5f;
+                m_ConsoleLog.push_back("[Info] Added directional light (scene had no lights)");
+
+                // Raise ambient so model is visible from all angles
+                if (m_RenderSystem) {
+                    m_RenderSystem->SetAmbientIntensity(1.0f);
+                    m_RenderSystem->SetAmbientColor(Math::Vector3(0.3f, 0.3f, 0.35f));
+                }
+            }
+        }
+
+        // Log diagnostic info about the imported model
+        for (ECS::Entity e : result.entities) {
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(e);
+            auto* xf = m_World->GetComponent<ECS::TransformComponent>(e);
+            if (mesh && xf) {
+                std::stringstream ds;
+                ds << "[Info]   Entity mesh: " << mesh->vertices.size() << " verts, "
+                   << mesh->indices.size() << " indices, valid=" << (mesh->IsValid() ? "yes" : "NO")
+                   << ", pos=(" << xf->position.x << "," << xf->position.y << "," << xf->position.z << ")"
+                   << ", scale=(" << xf->scale.x << "," << xf->scale.y << "," << xf->scale.z << ")";
+                m_ConsoleLog.push_back(ds.str());
+            }
+        }
 
         // Select the root entity and focus camera on it
         if (result.rootEntity != ECS::INVALID_ENTITY) {
@@ -15604,19 +15647,53 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
             targetPos = transform->position + center * maxScale;
         }
     } else {
-        // Container node: scan children for mesh bounds
+        // Container node: scan children for mesh bounds (colliders first, then meshes)
+        Math::Vector3 globalMin(FLT_MAX, FLT_MAX, FLT_MAX);
+        Math::Vector3 globalMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+        bool foundChild = false;
+
         for (ECS::Entity child : m_World->GetAllEntities()) {
+            if (child == entity) continue;
             auto* childTransform = m_World->GetComponent<ECS::TransformComponent>(child);
+            if (!childTransform) continue;
+
+            // Try box collider first
             auto* childCollider = m_World->GetComponent<ECS::BoxColliderComponent>(child);
-            if (childTransform && childCollider && child != entity) {
-                f32 childSize = Math::Max(childCollider->size.x, Math::Max(childCollider->size.y, childCollider->size.z));
-                childSize *= Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
-                if (childSize > boundingSize) {
-                    boundingSize = childSize;
-                    f32 childMaxScale = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
-                    targetPos = childTransform->position + childCollider->center * childMaxScale;
-                }
+            if (childCollider) {
+                f32 ms = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
+                Math::Vector3 ctr = childTransform->position + childCollider->center * ms;
+                Math::Vector3 half = childCollider->size * 0.5f * ms;
+                globalMin.x = Math::Min(globalMin.x, ctr.x - half.x);
+                globalMin.y = Math::Min(globalMin.y, ctr.y - half.y);
+                globalMin.z = Math::Min(globalMin.z, ctr.z - half.z);
+                globalMax.x = Math::Max(globalMax.x, ctr.x + half.x);
+                globalMax.y = Math::Max(globalMax.y, ctr.y + half.y);
+                globalMax.z = Math::Max(globalMax.z, ctr.z + half.z);
+                foundChild = true;
+                continue;
             }
+
+            // Fall back to mesh bounds
+            auto* childMesh = m_World->GetComponent<ECS::MeshComponent>(child);
+            if (childMesh && childMesh->IsValid()) {
+                f32 ms = Math::Max(childTransform->scale.x, Math::Max(childTransform->scale.y, childTransform->scale.z));
+                for (const auto& v : childMesh->vertices) {
+                    Math::Vector3 wp = childTransform->position + v.position * ms;
+                    globalMin.x = Math::Min(globalMin.x, wp.x);
+                    globalMin.y = Math::Min(globalMin.y, wp.y);
+                    globalMin.z = Math::Min(globalMin.z, wp.z);
+                    globalMax.x = Math::Max(globalMax.x, wp.x);
+                    globalMax.y = Math::Max(globalMax.y, wp.y);
+                    globalMax.z = Math::Max(globalMax.z, wp.z);
+                }
+                foundChild = true;
+            }
+        }
+
+        if (foundChild) {
+            Math::Vector3 size = globalMax - globalMin;
+            boundingSize = Math::Max(size.x, Math::Max(size.y, size.z));
+            targetPos = (globalMin + globalMax) * 0.5f;
         }
     }
 

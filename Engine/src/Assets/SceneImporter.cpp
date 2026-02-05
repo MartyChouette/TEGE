@@ -225,10 +225,12 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             }
 
             // Auto-generate LODs for imported meshes with enough geometry
-            auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
-            if (importedMesh && importedMesh->vertices.size() > 64) {
-                auto& lod = world->AddComponent<ECS::LODComponent>(entity);
-                Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+            if (options.generateLODs) {
+                auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
+                if (importedMesh && importedMesh->vertices.size() > 64) {
+                    auto& lod = world->AddComponent<ECS::LODComponent>(entity);
+                    Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+                }
             }
         }
     }
@@ -613,10 +615,12 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             }
 
             // Auto-generate LODs for imported meshes with enough geometry
-            auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
-            if (importedMesh && importedMesh->vertices.size() > 64) {
-                auto& lod = world->AddComponent<ECS::LODComponent>(entity);
-                Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+            if (options.generateLODs) {
+                auto* importedMesh = world->GetComponent<ECS::MeshComponent>(entity);
+                if (importedMesh && importedMesh->vertices.size() > 64) {
+                    auto& lod = world->AddComponent<ECS::LODComponent>(entity);
+                    Renderer::MeshSimplifier::GenerateLODs(*importedMesh, lod);
+                }
             }
         }
     }

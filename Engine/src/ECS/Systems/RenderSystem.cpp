@@ -497,10 +497,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
     ClassifySceneComposition();
 
-    // Shadow pass first (if enabled) - only run when 3D meshes are present (Scene3D mode)
-    // Pure 2D and 2.5D scenes skip the shadow pass entirely since sprites never cast shadows.
+    // Shadow pass first (if enabled) - only run when 3D meshes AND shadow-casting lights exist.
+    // Pure 2D scenes skip entirely since sprites never cast shadows.
+    // Scenes with no shadow-casting lights also skip to avoid rendering 4 cascades for nothing.
     if (m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline &&
-        m_SceneComposition.mode == SceneRenderMode::Scene3D) {
+        m_SceneComposition.mode == SceneRenderMode::Scene3D &&
+        m_SceneComposition.hasShadowCastingLights) {
         RenderShadowPass();
     }
 

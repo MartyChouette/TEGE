@@ -3,6 +3,12 @@
 #include <iostream>
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+// windows.h defines CreateWindow as a macro — undefine it so our function compiles
+#undef CreateWindow
+#endif
 #include "stb_image.h"
 
 namespace Enjin {
@@ -91,6 +97,14 @@ public:
 
     void* GetNativeHandle() const override {
         return m_Window;
+    }
+
+    void* GetPlatformWindowHandle() const override {
+#ifdef _WIN32
+        return m_Window ? glfwGetWin32Window(m_Window) : nullptr;
+#else
+        return nullptr;
+#endif
     }
 
     void SetEventCallback(const EventCallback& callback) override {

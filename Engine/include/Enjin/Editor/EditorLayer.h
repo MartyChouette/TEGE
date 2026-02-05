@@ -604,6 +604,10 @@ private:
     std::string m_ImportDialogPath;
     Assets::ImportOptions m_ImportDialogOptions;
     std::string m_LastImportedModelPath;
+    std::string m_ImportDialogFilename;   // Cached on dialog open
+    std::string m_ImportDialogExtension;  // Cached on dialog open
+    u64 m_ImportDialogFileSize = 0;       // Cached on dialog open
+    bool m_ImportDialogIsReimport = false; // Cached on dialog open
 
     // Deferred import (renders one "Loading..." frame before the blocking import)
     bool m_ImportPending = false;

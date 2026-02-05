@@ -100,14 +100,29 @@ VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<Vk
 }
 
 VkPresentModeKHR VulkanSwapchain::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-    // Prefer mailbox (triple buffering) for low latency
+    // Log all available present modes for diagnostics
+    for (const auto& mode : availablePresentModes) {
+        const char* name = "UNKNOWN";
+        switch (mode) {
+            case VK_PRESENT_MODE_IMMEDIATE_KHR:    name = "IMMEDIATE"; break;
+            case VK_PRESENT_MODE_MAILBOX_KHR:      name = "MAILBOX"; break;
+            case VK_PRESENT_MODE_FIFO_KHR:         name = "FIFO"; break;
+            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: name = "FIFO_RELAXED"; break;
+            default: break;
+        }
+        ENJIN_LOG_INFO(Renderer, "  Available present mode: %s", name);
+    }
+
+    // Prefer mailbox (triple buffering) for low latency without tearing
     for (const auto& mode : availablePresentModes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
+            ENJIN_LOG_INFO(Renderer, "Selected present mode: MAILBOX (no VSync)");
             return mode;
         }
     }
 
-    // Fallback to FIFO (guaranteed to be available)
+    // Fallback to FIFO (guaranteed to be available, but VSync-capped)
+    ENJIN_LOG_WARN(Renderer, "Selected present mode: FIFO (VSync ON — MAILBOX not available, FPS will be capped to refresh rate)");
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
