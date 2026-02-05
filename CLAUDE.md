@@ -492,10 +492,11 @@ Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangVali
 - Component search bar (searchable Add Component popup with case-insensitive substring filter, 14 categories with collapsible headers, 5-item recently-used pinning with disk persistence, keyboard navigation with arrow keys + Enter)
 - Shader hot-reload (editor-only live GLSL editing: FileWatcher polls Engine/shaders/ every 30 frames, compile-then-swap via glslangValidator/glslc, covers main pipeline + shadow + skybox + 6 sub-renderers, graceful error handling keeps old shader on compilation failure)
 - State machine script callbacks (SMState onEnter/onUpdate/onExit function names, StateMachineSystem dispatches via ScriptEngine on state transitions and per-frame update, inspector UI + Animation Graph sidebar callback fields, SM_SetOnEnter/OnUpdate/OnExit + getter AngelScript bindings, scene serialization)
+- Noise library (header-only in Core/Math: ValueNoise, PerlinNoise, SimplexNoise, WorleyNoise 2D+3D, FBM, RidgedMultifractal, BillowNoise, DomainWarp fractal functions with configurable octaves/lacunarity/persistence/frequency/seed, 18 AngelScript Noise_ bindings)
 
 ## AngelScript API Reference
 
-All functions below are callable from AngelScript via `TegeBehavior` scripts. ~150 functions across all categories.
+All functions below are callable from AngelScript via `TegeBehavior` scripts. ~170 functions across all categories.
 
 ### Math Types
 
@@ -584,6 +585,15 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 - **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
 - `Events_Listen(string, EventCallback@)` — returns listener ID
 - `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
+
+### Noise
+
+- **Base 2D**: `Noise_Value2D(float, float, uint)`, `Noise_Perlin2D(float, float, uint)`, `Noise_Simplex2D(float, float, uint)`, `Noise_Worley2D(float, float, uint)`
+- **Base 3D**: `Noise_Value3D(float, float, float, uint)`, `Noise_Perlin3D(float, float, float, uint)`, `Noise_Simplex3D(float, float, float, uint)`, `Noise_Worley3D(float, float, float, uint)`
+- **Fractal 2D**: `Noise_FBM2D(x, y, octaves, lacunarity, persistence, frequency, seed)`, `Noise_Ridged2D(...)`, `Noise_Billow2D(...)`
+- **Fractal 3D**: `Noise_FBM3D(x, y, z, octaves, lacunarity, persistence, frequency, seed)`, `Noise_Ridged3D(...)`, `Noise_Billow3D(...)`
+- **Domain Warp**: `Noise_DomainWarp2D(x, y, warpStrength, frequency, seed)`, `Noise_DomainWarp3D(x, y, z, warpStrength, frequency, seed)`
+- Value/Perlin/Simplex return [-1, 1], Worley returns [0, 1], FBM/Billow return [-1, 1], Ridged returns [0, ~2]
 
 ### Rendering
 
@@ -733,16 +743,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 
 ### Procedural Generation
 
-- **Noise Library** — Implement a variety of useful noise types for procgen and terrain:
-  - Perlin noise (2D/3D)
-  - Simplex noise (2D/3D)
-  - Worley/cellular noise (F1, F2, F1-F2 variants)
-  - Value noise
-  - Fractal Brownian motion (fBm) — octaved layering of any base noise
-  - Ridged multifractal noise
-  - Domain warping (noise fed into noise coordinates)
-  - Billow noise
-  - All noise types should support configurable frequency, amplitude, octaves, lacunarity, persistence. Expose as both C++ API and AngelScript bindings.
+- **Noise Library** — ~~DONE~~ Header-only library (`Core/include/Enjin/Math/Noise.h`) with 4 base noise types (Value, Perlin, Simplex, Worley/cellular F1) in 2D+3D, plus 4 fractal functions (FBM, Ridged Multifractal, Billow, Domain Warp) with configurable octaves, lacunarity, persistence, frequency, seed. 18 AngelScript `Noise_` bindings. Future work: F2/F1-F2 Worley variants, GPU compute noise.
 
 - **Procedural Generation Algorithms** — Expand LevelGenerator with modular algorithm support. Each algorithm should work as a pluggable generator that produces 2D grid data or 3D room/corridor layouts. Include bag/piece-pull options (weighted randomized selection from pools) where applicable:
   - **Cellular Automata** — cave generation, organic shapes (configurable birth/death thresholds, iteration count, bag of initial fill patterns)

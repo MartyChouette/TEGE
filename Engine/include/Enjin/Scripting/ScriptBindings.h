@@ -34,6 +34,7 @@ void RegisterTweenBindings(asIScriptEngine* engine);
 void RegisterStateMachineBindings(asIScriptEngine* engine);
 void RegisterDialogueBindings(asIScriptEngine* engine);
 void RegisterRenderBindings(asIScriptEngine* engine);
+void RegisterNoiseBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
