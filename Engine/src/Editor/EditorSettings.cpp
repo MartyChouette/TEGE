@@ -93,6 +93,10 @@ bool EditorSettings::Save(const std::string& path) const {
         j["subtitleSpeakerNames"] = subtitleSpeakerNames;
         j["simplifiedEditor"] = simplifiedEditor;
 
+        // Play Mode
+        j["autoFocusMode"] = autoFocusMode;
+        j["lockCursorOnPlay"] = lockCursorOnPlay;
+
         // Input
         j["sprintMode"] = sprintMode;
         j["crouchMode"] = crouchMode;
@@ -174,6 +178,10 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("subtitleBgOpacity")) subtitleBgOpacity = j["subtitleBgOpacity"].get<f32>();
         if (j.contains("subtitleSpeakerNames")) subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
         if (j.contains("simplifiedEditor")) simplifiedEditor = j["simplifiedEditor"].get<bool>();
+
+        // Play Mode
+        if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
+        if (j.contains("lockCursorOnPlay")) lockCursorOnPlay = j["lockCursorOnPlay"].get<bool>();
 
         // Input
         if (j.contains("sprintMode")) sprintMode = j["sprintMode"].get<u32>();

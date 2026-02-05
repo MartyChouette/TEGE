@@ -41,6 +41,10 @@ struct EditorSettings {
     bool subtitleSpeakerNames = true;
     bool simplifiedEditor = false;
 
+    // Play Mode
+    bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play
+    bool lockCursorOnPlay = true; // Lock/capture cursor when entering play mode
+
     // Accessibility: Input
     u32 sprintMode = 0;      // 0=Hold, 1=Toggle
     u32 crouchMode = 0;      // 0=Hold, 1=Toggle

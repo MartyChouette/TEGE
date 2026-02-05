@@ -49,6 +49,12 @@
 #include <ImGuizmo.h>
 #include <backends/imgui_impl_vulkan.h>
 #include <vulkan/vulkan.h>
+#define GLFW_INCLUDE_NONE
+#include <GLFW/glfw3.h>
+#ifdef _WIN32
+#define GLFW_EXPOSE_NATIVE_WIN32
+#include <GLFW/glfw3native.h>
+#endif
 #include <sstream>
 #include <fstream>
 #include <filesystem>
@@ -613,6 +619,16 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     m_Window = window;
     m_Renderer = renderer;
 
+    // Set file dialog owner so native dialogs appear on top of the editor window
+#ifdef _WIN32
+    if (m_Window) {
+        GLFWwindow* glfw = static_cast<GLFWwindow*>(m_Window->GetNativeHandle());
+        if (glfw) {
+            FileDialog::SetOwnerWindow(glfwGetWin32Window(glfw));
+        }
+    }
+#endif
+
     m_ImGuiLayer = std::make_unique<GUI::ImGuiLayer>();
     if (!m_ImGuiLayer->Initialize(window, renderer)) {
         ENJIN_LOG_ERROR(Editor, "Failed to initialize ImGui layer");
@@ -681,9 +697,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
             m_GameMenu.ShowScreen(GUI::MenuScreen::HowToPlay);
         } else if (action == "quit_to_menu") {
             m_GameMenu.HideAll();
-            m_PlayMode.Stop();
-            m_PrePlayRenderSettings.ApplyToRuntime(
-                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_PendingPlayStop = true;
         } else if (action == "quit") {
             if (m_Window) m_Window->Close();
         }
@@ -767,6 +781,29 @@ void EditorLayer::Shutdown() {
 void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
+
+    // Handle deferred model import (requested during previous frame's Render).
+    // The one-frame delay ensures the "Importing..." overlay is visible on screen
+    // before the blocking import call runs.
+    if (m_ImportPending) {
+        m_ImportPending = false;
+        ExecuteImport(m_ImportPendingPath, m_ImportPendingOptions);
+        m_ImportPendingPath.clear();
+    }
+
+    // Handle deferred play mode stop (requested during previous frame's Render)
+    if (m_PendingPlayStop) {
+        m_PendingPlayStop = false;
+        if (!m_PlayMode.IsStopped()) {
+            m_PlayMode.Stop();
+            m_PrePlayRenderSettings.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            if (m_FocusMode) {
+                m_FocusMode = false;
+                Input::SetMouseCaptured(false);
+            }
+        }
+    }
 
     // Update input action map each frame
     m_InputMap.Update(deltaTime);
@@ -1951,6 +1988,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawImportDialog();
     }
 
+    // Deferred import: show loading overlay for one frame, then execute on next frame
+    if (m_ImportPending) {
+        DrawImportLoadingOverlay();
+    }
+
     // Build dialog
     if (m_ShowBuildDialog) {
         DrawBuildDialog();
@@ -2874,6 +2916,13 @@ void EditorLayer::DrawMenuBar() {
                 m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                     m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
                 m_PlayMode.Play();
+                if (m_EditorSettings.autoFocusMode) {
+                    m_FocusMode = true;
+                    Input::SetMouseCaptured(true);
+                } else if (m_EditorSettings.lockCursorOnPlay) {
+                    m_GameViewMouseCaptured = true;
+                    Input::SetMouseCaptured(true);
+                }
             }
         } else if (m_PlayMode.IsPlaying()) {
             if (ImGui::Button(" || Pause ")) {
@@ -2891,11 +2940,7 @@ void EditorLayer::DrawMenuBar() {
             ImGui::SameLine();
             ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.2f, 0.2f, 1.0f));
             if (ImGui::Button(" [] Stop ")) {
-                m_PlayMode.Stop();
-                // Restore render settings after play mode
-                m_PrePlayRenderSettings.ApplyToRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                m_FocusMode = false;  // Return to editor on stop
+                m_PendingPlayStop = true;
             }
             ImGui::PopStyleColor();
         }
@@ -2965,7 +3010,7 @@ void EditorLayer::DrawMenuBar() {
 
 void EditorLayer::DrawHierarchyPanel() {
     ImGuiWindowFlags flags = 0;
-    if (m_FocusMode) {
+    if (m_FocusMode || !m_PlayMode.IsStopped()) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     ImGui::Begin("Hierarchy", nullptr, flags);
@@ -3201,7 +3246,7 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
 
 void EditorLayer::DrawInspectorPanel() {
     ImGuiWindowFlags flags = 0;
-    if (m_FocusMode) {
+    if (m_FocusMode || !m_PlayMode.IsStopped()) {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     ImGui::Begin("Inspector", nullptr, flags);
@@ -5835,6 +5880,25 @@ void EditorLayer::DrawSettingsPanel() {
             ImGui::TreePop();
         }
 
+        // -- Play Mode --
+        if (ImGui::TreeNode("Play Mode")) {
+            if (ImGui::Checkbox("Auto Focus Mode", &m_EditorSettings.autoFocusMode)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Automatically enter fullscreen focus mode when pressing Play");
+            }
+
+            if (ImGui::Checkbox("Lock Cursor on Play", &m_EditorSettings.lockCursorOnPlay)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Capture and hide the mouse cursor when entering play mode");
+            }
+
+            ImGui::TreePop();
+        }
+
         // -- Input Accessibility --
         if (ImGui::TreeNode("Input")) {
             const char* holdToggle[] = { "Hold", "Toggle" };
@@ -6861,9 +6925,10 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "PLAYING");
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
-            m_PlayMode.Stop();
-            m_PrePlayRenderSettings.ApplyToRuntime(
-                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            // Defer stop to next Update — calling Stop mid-Render destroys
+            // the world and invalidates all entity/component pointers held
+            // by this frame's local variables and already-recorded GPU commands.
+            m_PendingPlayStop = true;
         }
     } else if (m_PlayMode.IsPaused()) {
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
@@ -6873,9 +6938,7 @@ void EditorLayer::DrawGameViewPanel() {
         }
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
-            m_PlayMode.Stop();
-            m_PrePlayRenderSettings.ApplyToRuntime(
-                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_PendingPlayStop = true;
         }
     } else {
         ImGui::TextColored(ImVec4(0.7f, 0.7f, 0.7f, 1.0f), "STOPPED");
@@ -6884,6 +6947,13 @@ void EditorLayer::DrawGameViewPanel() {
             m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_PlayMode.Play();
+            if (m_EditorSettings.autoFocusMode) {
+                m_FocusMode = true;
+                Input::SetMouseCaptured(true);
+            } else if (m_EditorSettings.lockCursorOnPlay) {
+                m_GameViewMouseCaptured = true;
+                Input::SetMouseCaptured(true);
+            }
         }
     }
     ImGui::SameLine();
@@ -6894,6 +6964,7 @@ void EditorLayer::DrawGameViewPanel() {
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_PlayMode.Play();
         }
+        Input::SetMouseCaptured(true);
     }
 
     // (Evaluate Flower button moved to game view overlay — see DrawFlowerEvaluateOverlay)
@@ -14899,7 +14970,10 @@ void EditorLayer::DrawImportDialog() {
 
         // Buttons
         if (ImGui::Button("Import", ImVec2(120, 0))) {
-            ExecuteImport(m_ImportDialogPath, m_ImportDialogOptions);
+            // Defer import to next frame so a loading overlay can render first
+            m_ImportPending = true;
+            m_ImportPendingPath = m_ImportDialogPath;
+            m_ImportPendingOptions = m_ImportDialogOptions;
             m_ShowImportDialog = false;
             ImGui::CloseCurrentPopup();
         }
@@ -14911,6 +14985,28 @@ void EditorLayer::DrawImportDialog() {
 
         ImGui::EndPopup();
     }
+}
+
+void EditorLayer::DrawImportLoadingOverlay() {
+    // Draw a full-viewport overlay so the user sees feedback while the import blocks
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->Pos);
+    ImGui::SetNextWindowSize(viewport->Size);
+    ImGui::SetNextWindowBgAlpha(0.7f);
+    ImGui::Begin("##ImportLoading", nullptr,
+        ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
+        ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus);
+
+    ImVec2 center(viewport->Pos.x + viewport->Size.x * 0.5f,
+                  viewport->Pos.y + viewport->Size.y * 0.5f);
+    std::string filename = std::filesystem::path(m_ImportPendingPath).filename().string();
+    std::string text = "Importing " + filename + "...";
+    ImVec2 textSize = ImGui::CalcTextSize(text.c_str());
+    ImGui::SetCursorScreenPos(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f));
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 1.0f), "%s", text.c_str());
+
+    ImGui::End();
 }
 
 void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOptions& options) {

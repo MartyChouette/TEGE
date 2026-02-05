@@ -15,6 +15,11 @@ struct FileFilter {
 // Native file dialog utilities
 class ENJIN_API FileDialog {
 public:
+    // Set the owner window handle for all subsequent dialogs.
+    // On Windows this is an HWND — ensures the dialog appears on top of the
+    // application window and prevents the OS from marking it "Not Responding".
+    static void SetOwnerWindow(void* handle);
+
     // Open a file dialog and return the selected path (empty if cancelled)
     static std::string OpenFile(
         const std::string& title = "Open File",
@@ -35,6 +40,9 @@ public:
         const std::string& title = "Select Folder",
         const std::string& defaultPath = ""
     );
+
+private:
+    static void* s_OwnerWindow;
 };
 
 } // namespace Enjin

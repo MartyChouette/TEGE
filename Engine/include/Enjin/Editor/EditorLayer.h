@@ -420,6 +420,10 @@ private:
     // Focus mode (fullscreen game view, hides all editor panels)
     bool m_FocusMode = false;
 
+    // Deferred play mode stop (set during Render, executed at start of next Update
+    // to avoid dangling pointers from mid-frame World::Clear)
+    bool m_PendingPlayStop = false;
+
     // Camera zone override (driven by CameraTriggerComponent)
     ECS::Entity m_CameraZoneOverride = ECS::INVALID_ENTITY;
 
@@ -601,7 +605,13 @@ private:
     Assets::ImportOptions m_ImportDialogOptions;
     std::string m_LastImportedModelPath;
 
+    // Deferred import (renders one "Loading..." frame before the blocking import)
+    bool m_ImportPending = false;
+    std::string m_ImportPendingPath;
+    Assets::ImportOptions m_ImportPendingOptions;
+
     void DrawImportDialog();
+    void DrawImportLoadingOverlay();
     void ExecuteImport(const std::string& path, const Assets::ImportOptions& options);
 
     // Build dialog state

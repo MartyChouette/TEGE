@@ -11,6 +11,12 @@
 
 namespace Enjin {
 
+void* FileDialog::s_OwnerWindow = nullptr;
+
+void FileDialog::SetOwnerWindow(void* handle) {
+    s_OwnerWindow = handle;
+}
+
 #ifdef _WIN32
 
 std::string FileDialog::OpenFile(
@@ -36,7 +42,7 @@ std::string FileDialog::OpenFile(
 
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr;
+    ofn.hwndOwner = static_cast<HWND>(s_OwnerWindow);
     ofn.lpstrFilter = filterStr.c_str();
     ofn.lpstrFile = filename;
     ofn.nMaxFile = MAX_PATH;
@@ -93,7 +99,7 @@ std::string FileDialog::SaveFile(
 
     OPENFILENAMEA ofn = {};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = nullptr;
+    ofn.hwndOwner = static_cast<HWND>(s_OwnerWindow);
     ofn.lpstrFilter = filterStr.c_str();
     ofn.lpstrFile = filename;
     ofn.nMaxFile = MAX_PATH;
@@ -148,7 +154,7 @@ std::string FileDialog::OpenFolder(
             }
         }
 
-        hr = pDialog->Show(nullptr);
+        hr = pDialog->Show(static_cast<HWND>(s_OwnerWindow));
         if (SUCCEEDED(hr)) {
             IShellItem* pItem = nullptr;
             if (SUCCEEDED(pDialog->GetResult(&pItem))) {
