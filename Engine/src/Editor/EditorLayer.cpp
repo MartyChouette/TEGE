@@ -60,6 +60,21 @@
 namespace Enjin {
 namespace Editor {
 
+// --- Undo-aware component removal helper ---
+
+template<typename T>
+void EditorLayer::RemoveComponentWithUndo(ECS::Entity entity, const std::string& componentKey,
+                                           const std::string& componentName) {
+    auto cmd = std::make_unique<RemoveComponentCommand>(
+        m_World, entity, componentKey, componentName,
+        [this, entity]() {
+            if (m_World->HasComponent<T>(entity))
+                m_World->RemoveComponent<T>(entity);
+        }
+    );
+    m_UndoRedo.Execute(std::move(cmd));
+}
+
 // --- Component search bar data ---
 
 struct ComponentEntry {
@@ -68,6 +83,8 @@ struct ComponentEntry {
     const char* controllerType; // non-null for controllers needing camera setup
     std::function<bool(ECS::World*, ECS::Entity)> hasComponent;
     std::function<void(ECS::World*, ECS::Entity)> addComponent;
+    std::function<void(ECS::World*, ECS::Entity)> removeComponent; // for undo of add
+    const char* componentKey; // JSON key for serialization (for undo of remove)
 };
 
 static const std::vector<ComponentEntry>& GetComponentEntries() {
@@ -75,7 +92,9 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
         // -- Rendering --
         {"Mesh", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MeshComponent>(e); },
+            "mesh"},
         {"LOD (Auto-Generate)", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LODComponent>(e) || !w->HasComponent<ECS::MeshComponent>(e); },
             [](ECS::World* w, ECS::Entity e) {
@@ -84,250 +103,398 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
                     auto& lod = w->AddComponent<ECS::LODComponent>(e);
                     Renderer::MeshSimplifier::GenerateLODs(*mesh, lod);
                 }
-            }},
+            },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LODComponent>(e); },
+            "lod"},
         {"Material", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MaterialComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MaterialComponent>(e); },
+            "material"},
         {"Light", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LightComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LightComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LightComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LightComponent>(e); },
+            "light"},
         {"Camera", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CameraComponent>(e); },
+            "camera"},
         {"Text", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TextComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TextComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TextComponent>(e); },
+            "text"},
 
         // -- Character Controller --
         {"2D Platformer", "Character Controller", "Platformer2D",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Platformer2DController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Platformer2DController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Platformer2DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Platformer2DController>(e); },
+            "platformer2D"},
         {"2D Top-Down", "Character Controller", "TopDown2D",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown2DController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown2DController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown2DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TopDown2DController>(e); },
+            "topDown2D"},
         {"3D Top-Down (Isometric)", "Character Controller", "TopDown3D",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown3DController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown3DController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown3DController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TopDown3DController>(e); },
+            "topDown3D"},
         {"3D Third Person", "Character Controller", "ThirdPerson",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ThirdPersonController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ThirdPersonController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ThirdPersonController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ThirdPersonController>(e); },
+            "thirdPerson"},
         {"3D First Person", "Character Controller", "FirstPerson",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FirstPersonController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FirstPersonController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FirstPersonController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FirstPersonController>(e); },
+            "firstPerson"},
         {"Vehicle", "Character Controller", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VehicleController>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VehicleController>(e); },
+            "vehicle"},
 
         // -- Physics --
         {"Rigidbody", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RigidbodyComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RigidbodyComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RigidbodyComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RigidbodyComponent>(e); },
+            "rigidbody"},
         {"Box Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BoxColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoxColliderComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BoxColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BoxColliderComponent>(e); },
+            "boxCollider"},
         {"Sphere Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SphereColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SphereColliderComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SphereColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SphereColliderComponent>(e); },
+            "sphereCollider"},
         {"Capsule Collider", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CapsuleColliderComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CapsuleColliderComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CapsuleColliderComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CapsuleColliderComponent>(e); },
+            "capsuleCollider"},
         {"Trigger Zone", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TriggerZoneComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TriggerZoneComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TriggerZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TriggerZoneComponent>(e); },
+            "triggerZone"},
 
         // -- Gameplay --
         {"Health", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HealthComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HealthComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HealthComponent>(e); },
+            "health"},
         {"Damage", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DamageComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DamageComponent>(e); },
+            "damage"},
         {"Interactable", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::InteractableComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractableComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractableComponent>(e); },
+            "interactable"},
         {"Pickup", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PickupComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PickupComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PickupComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PickupComponent>(e); },
+            "pickup"},
         {"Inventory", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::InventoryComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InventoryComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InventoryComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InventoryComponent>(e); },
+            "inventory"},
         {"Timer", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TimerComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TimerComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TimerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TimerComponent>(e); },
+            "timer"},
         {"Possessable", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PossessableComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PossessableComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PossessableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PossessableComponent>(e); },
+            "possessable"},
         {"Damage Resistance", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DamageResistanceComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageResistanceComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DamageResistanceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DamageResistanceComponent>(e); },
+            "damageResistance"},
         {"Resource/Stamina", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ResourceComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ResourceComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ResourceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ResourceComponent>(e); },
+            "resource"},
         {"Footstep", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FootstepComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FootstepComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FootstepComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FootstepComponent>(e); },
+            "footstep"},
         {"Poolable", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PoolableComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoolableComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PoolableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PoolableComponent>(e); },
+            "poolable"},
         {"Quest State", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::QuestStateComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::QuestStateComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::QuestStateComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::QuestStateComponent>(e); },
+            "questState"},
         {"HUD Widget", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HUDWidgetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HUDWidgetComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HUDWidgetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HUDWidgetComponent>(e); },
+            "hudWidget"},
         {"UI Canvas", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<GUI::UICanvasComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<GUI::UICanvasComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<GUI::UICanvasComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<GUI::UICanvasComponent>(e); },
+            "uiCanvas"},
         {"Cinematic Camera", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CinematicCameraComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CinematicCameraComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CinematicCameraComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CinematicCameraComponent>(e); },
+            "cinematicCamera"},
         {"Tween", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TweenComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TweenComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TweenComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TweenComponent>(e); },
+            "tween"},
         {"State Machine", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::StateMachineComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::StateMachineComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::StateMachineComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::StateMachineComponent>(e); },
+            "stateMachine"},
         {"Dialogue", "Gameplay", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DialogueComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueComponent>(e); },
+            "dialogue"},
 
         // -- Joints --
         {"Distance Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DistanceJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DistanceJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DistanceJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DistanceJointComponent>(e); },
+            "distanceJoint"},
         {"Hinge Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::HingeJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HingeJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::HingeJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::HingeJointComponent>(e); },
+            "hingeJoint"},
         {"Ball-Socket Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BallSocketJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BallSocketJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BallSocketJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BallSocketJointComponent>(e); },
+            "ballSocketJoint"},
         {"Spring Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SpringJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpringJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpringJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SpringJointComponent>(e); },
+            "springJoint"},
         {"Fixed Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FixedJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FixedJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FixedJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FixedJointComponent>(e); },
+            "fixedJoint"},
         {"Slider Joint", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SliderJointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SliderJointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SliderJointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SliderJointComponent>(e); },
+            "sliderJoint"},
         {"Ragdoll", "Joints", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RagdollComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RagdollComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RagdollComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RagdollComponent>(e); },
+            "ragdoll"},
 
         // -- AI --
         {"AI Controller", "AI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AIControllerComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AIControllerComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AIControllerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AIControllerComponent>(e); },
+            "aiController"},
         {"Follow Target", "AI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FollowTargetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FollowTargetComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FollowTargetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FollowTargetComponent>(e); },
+            "followTarget"},
         {"Look At Target", "AI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LookAtTargetComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LookAtTargetComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LookAtTargetComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LookAtTargetComponent>(e); },
+            "lookAtTarget"},
         {"Waypoint", "AI", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaypointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaypointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaypointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaypointComponent>(e); },
+            "waypoint"},
 
         // -- Audio --
         {"Audio Source", "Audio", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioSourceComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioSourceComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioSourceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioSourceComponent>(e); },
+            "audioSource"},
         {"Audio Listener", "Audio", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AudioListenerComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioListenerComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AudioListenerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AudioListenerComponent>(e); },
+            "audioListener"},
 
         // -- Visual --
         {"Billboard", "Visual", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::BillboardComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BillboardComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::BillboardComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::BillboardComponent>(e); },
+            "billboard"},
         {"Particle Emitter", "Visual", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ParticleEmitterComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParticleEmitterComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ParticleEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ParticleEmitterComponent>(e); },
+            "particleEmitter"},
 
         // -- Effects --
         {"Weather Zone", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WeatherZoneComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WeatherZoneComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WeatherZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WeatherZoneComponent>(e); },
+            "weatherZone"},
         {"Water Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaterVolumeComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVolumeComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaterVolumeComponent>(e); },
+            "waterVolume"},
         {"Grass Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GrassVolumeComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrassVolumeComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrassVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GrassVolumeComponent>(e); },
+            "grassVolume"},
         {"Shrub Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ShrubVolumeComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ShrubVolumeComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ShrubVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ShrubVolumeComponent>(e); },
+            "shrubVolume"},
         {"Tree Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TreeVolumeComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TreeVolumeComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TreeVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TreeVolumeComponent>(e); },
+            "treeVolume"},
         {"Vegetation", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VegetationComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VegetationComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VegetationComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VegetationComponent>(e); },
+            "vegetation"},
         {"Camera Trigger", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraTriggerComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraTriggerComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraTriggerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CameraTriggerComponent>(e); },
+            "cameraTrigger"},
         {"Temperature Zone", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TemperatureZoneComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TemperatureZoneComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TemperatureZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TemperatureZoneComponent>(e); },
+            "temperatureZone"},
         {"Gravity Zone", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GravityZoneComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GravityZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GravityZoneComponent>(e); },
+            "gravityZone"},
 
         // -- 2D Graphics --
         {"Sprite", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Sprite2DComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Sprite2DComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Sprite2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Sprite2DComponent>(e); },
+            "sprite2D"},
         {"Animated Sprite", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimatedSprite2DComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatedSprite2DComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatedSprite2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimatedSprite2DComponent>(e); },
+            "animatedSprite2D"},
         {"Tilemap", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TilemapComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TilemapComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TilemapComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TilemapComponent>(e); },
+            "tilemap"},
         {"2D Camera Bounds", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Camera2DBoundsComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Camera2DBoundsComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Camera2DBoundsComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Camera2DBoundsComponent>(e); },
+            "camera2DBounds"},
 
         // -- Scripting --
         {"Script", "Scripting", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ScriptComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ScriptComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ScriptComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ScriptComponent>(e); },
+            "scriptComponent"},
         {"Notes", "Scripting", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NotesComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NotesComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NotesComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NotesComponent>(e); },
+            "notes"},
 
         // -- Puzzle --
         {"Lock", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LockComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LockComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LockComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LockComponent>(e); },
+            "lock"},
         {"Pushable", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PushableComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PushableComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PushableComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PushableComponent>(e); },
+            "pushable"},
         {"Switch", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SwitchComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwitchComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SwitchComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SwitchComponent>(e); },
+            "switch"},
         {"Goal Zone", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GoalZoneComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GoalZoneComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GoalZoneComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GoalZoneComponent>(e); },
+            "goalZone"},
         {"Conveyor", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ConveyorComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ConveyorComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ConveyorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ConveyorComponent>(e); },
+            "conveyor"},
         {"Teleporter", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TeleporterComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TeleporterComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TeleporterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TeleporterComponent>(e); },
+            "teleporter"},
         {"Destructible", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DestructibleComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DestructibleComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DestructibleComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DestructibleComponent>(e); },
+            "destructible"},
         {"Moving Platform", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MovingPlatformComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MovingPlatformComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MovingPlatformComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MovingPlatformComponent>(e); },
+            "movingPlatform"},
 
         // -- Other --
         {"Tags", "Other", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TagComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TagComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TagComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TagComponent>(e); },
+            "tag"},
         {"Spawn Point", "Other", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SpawnPointComponent>(e); },
-            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpawnPointComponent>(e); }},
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpawnPointComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SpawnPointComponent>(e); },
+            "spawnPoint"},
     };
     return entries;
 }
@@ -2014,8 +2181,24 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_ClipboardEntityJson.empty())) {
                 Scene::SceneSerializer serializer(m_World);
                 auto result = serializer.LoadFromString(m_ClipboardEntityJson, false);
-                if (result.success && result.rootEntity != ECS::INVALID_ENTITY) {
-                    SelectEntity(result.rootEntity);
+                if (result.success && !result.entities.empty()) {
+                    // Wrap all pasted entities in undo commands
+                    if (result.entities.size() == 1) {
+                        auto cmd = std::make_unique<FullCreateEntityCommand>(
+                            m_World, result.entities[0],
+                            [this](ECS::Entity restored) { SelectEntity(restored); });
+                        m_UndoRedo.Execute(std::move(cmd));
+                    } else {
+                        m_UndoRedo.BeginCompound("Paste Entities");
+                        for (ECS::Entity e : result.entities) {
+                            auto cmd = std::make_unique<FullCreateEntityCommand>(m_World, e);
+                            m_UndoRedo.Execute(std::move(cmd));
+                        }
+                        m_UndoRedo.EndCompound();
+                    }
+                    if (result.rootEntity != ECS::INVALID_ENTITY) {
+                        SelectEntity(result.rootEntity);
+                    }
                 }
                 if (m_ClipboardIsCut) {
                     m_ClipboardEntityJson.clear();
@@ -2686,7 +2869,9 @@ void EditorLayer::DrawHierarchyPanel() {
         if (ImGui::BeginDragDropTarget()) {
             if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
                 ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
-                ECS::SetParent(m_World, droppedEntity, ECS::INVALID_ENTITY);
+                ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
+                auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, ECS::INVALID_ENTITY);
+                m_UndoRedo.Execute(std::move(cmd));
             }
             ImGui::EndDragDropTarget();
         }
@@ -2809,7 +2994,9 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
                     check = ECS::GetParent(m_World, check);
                 }
                 if (!isDescendant) {
-                    ECS::SetParent(m_World, droppedEntity, entity);
+                    ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
+                    auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, entity);
+                    m_UndoRedo.Execute(std::move(cmd));
                 }
             }
         }
@@ -2819,8 +3006,11 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     // Context menu
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("Delete", "Del")) {
-            m_World->DestroyEntity(entity);
             DeselectEntity(entity);
+            auto cmd = std::make_unique<FullDeleteEntityCommand>(
+                m_World, entity,
+                [this](ECS::Entity restored) { SelectEntity(restored); });
+            m_UndoRedo.Execute(std::move(cmd));
         }
         if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
             DuplicateEntity(entity);
@@ -2831,7 +3021,9 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         // Unparent option if entity has a parent
         if (ECS::HasParent(m_World, entity)) {
             if (ImGui::MenuItem("Unparent")) {
-                ECS::SetParent(m_World, entity, ECS::INVALID_ENTITY);
+                ECS::Entity oldParent = ECS::GetParent(m_World, entity);
+                auto cmd = std::make_unique<ReparentEntityCommand>(m_World, entity, oldParent, ECS::INVALID_ENTITY);
+                m_UndoRedo.Execute(std::move(cmd));
             }
         }
         ImGui::Separator();
@@ -3362,9 +3554,18 @@ void EditorLayer::DrawInspectorPanel() {
                                     anyRecent = true;
                                 }
                                 if (ImGui::Selectable(e.displayName)) {
-                                    e.addComponent(m_World, m_PrimarySelected);
+                                    ECS::Entity target = m_PrimarySelected;
+                                    auto addFn = e.addComponent;
+                                    auto removeFn = e.removeComponent;
+                                    addFn(m_World, target);
+                                    auto cmd = std::make_unique<AddComponentCommand>(
+                                        e.displayName,
+                                        [this, addFn, target]() { addFn(m_World, target); },
+                                        [this, removeFn, target]() { removeFn(m_World, target); }
+                                    );
+                                    m_UndoRedo.Execute(std::move(cmd));
                                     if (e.controllerType) {
-                                        SetupCameraForController(m_PrimarySelected, e.controllerType);
+                                        SetupCameraForController(target, e.controllerType);
                                     }
                                     m_EditorSettings.AddRecentComponent(e.displayName);
                                     m_EditorSettings.Save();
@@ -3435,9 +3636,18 @@ void EditorLayer::DrawInspectorPanel() {
             // Handle activation (click or Enter)
             if (activatedIndex >= 0 && activatedIndex < static_cast<int>(visible.size())) {
                 const auto& ve = visible[activatedIndex];
-                ve.entry->addComponent(m_World, m_PrimarySelected);
+                ECS::Entity target = m_PrimarySelected;
+                auto addFn = ve.entry->addComponent;
+                auto removeFn = ve.entry->removeComponent;
+                addFn(m_World, target);
+                auto cmd = std::make_unique<AddComponentCommand>(
+                    ve.entry->displayName,
+                    [this, addFn, target]() { addFn(m_World, target); },
+                    [this, removeFn, target]() { removeFn(m_World, target); }
+                );
+                m_UndoRedo.Execute(std::move(cmd));
                 if (ve.entry->controllerType) {
-                    SetupCameraForController(m_PrimarySelected, ve.entry->controllerType);
+                    SetupCameraForController(target, ve.entry->controllerType);
                 }
                 m_EditorSettings.AddRecentComponent(ve.entry->displayName);
                 m_EditorSettings.Save();
@@ -3490,7 +3700,7 @@ void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
     bool meshOpen = ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MeshCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::MeshComponent>(entity);
+            RemoveComponentWithUndo<ECS::MeshComponent>(entity, "mesh", "Mesh");
             ImGui::EndPopup();
             return;
         }
@@ -3509,7 +3719,7 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
     bool lodOpen = ImGui::CollapsingHeader("LOD", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LODCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::LODComponent>(entity);
+            RemoveComponentWithUndo<ECS::LODComponent>(entity, "lod", "LOD");
             ImGui::EndPopup();
             return;
         }
@@ -3576,7 +3786,7 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
     bool matOpen = ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MaterialCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::MaterialComponent>(entity);
+            RemoveComponentWithUndo<ECS::MaterialComponent>(entity, "material", "Material");
             ImGui::EndPopup();
             return;
         }
@@ -3720,7 +3930,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
     bool lightOpen = ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LightCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::LightComponent>(entity);
+            RemoveComponentWithUndo<ECS::LightComponent>(entity, "light", "Light");
             ImGui::EndPopup();
             return;
         }
@@ -3789,7 +3999,7 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
     bool camOpen = ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CameraCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::CameraComponent>(entity);
+            RemoveComponentWithUndo<ECS::CameraComponent>(entity, "camera", "Camera");
             ImGui::EndPopup();
             return;
         }
@@ -3859,7 +4069,7 @@ void EditorLayer::DrawNotesComponent(ECS::Entity entity) {
     bool notesOpen = ImGui::CollapsingHeader("Notes", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("NotesCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::NotesComponent>(entity);
+            RemoveComponentWithUndo<ECS::NotesComponent>(entity, "notes", "Notes");
             ImGui::EndPopup();
             return;
         }
@@ -3886,7 +4096,7 @@ void EditorLayer::DrawTextComponent(ECS::Entity entity) {
     bool textOpen = ImGui::CollapsingHeader("Text", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TextCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TextComponent>(entity);
+            RemoveComponentWithUndo<ECS::TextComponent>(entity, "text", "Text");
             ImGui::EndPopup();
             return;
         }
@@ -3990,7 +4200,7 @@ void EditorLayer::DrawWeatherZoneComponent(ECS::Entity entity) {
     bool wzOpen = ImGui::CollapsingHeader("Weather Zone", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("WeatherZoneCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::WeatherZoneComponent>(entity);
+            RemoveComponentWithUndo<ECS::WeatherZoneComponent>(entity, "weatherZone", "Weather Zone");
             ImGui::EndPopup();
             return;
         }
@@ -4061,7 +4271,7 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
     bool wvOpen = ImGui::CollapsingHeader("Water Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("WaterVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::WaterVolumeComponent>(entity);
+            RemoveComponentWithUndo<ECS::WaterVolumeComponent>(entity, "waterVolume", "Water Volume");
             ImGui::EndPopup();
             return;
         }
@@ -4140,8 +4350,8 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
                           oldWaterType != volume->waterType);
         if (needsRegen) {
             volume->meshCreated = false;
-            m_World->RemoveComponent<ECS::MeshComponent>(entity);
-            m_World->RemoveComponent<ECS::MaterialComponent>(entity);
+            RemoveComponentWithUndo<ECS::MeshComponent>(entity, "mesh", "Mesh");
+            RemoveComponentWithUndo<ECS::MaterialComponent>(entity, "material", "Material");
             if (m_RenderSystem) {
                 m_RenderSystem->OnEntityRemoved(entity);
             }
@@ -4158,7 +4368,7 @@ void EditorLayer::DrawGrassVolumeComponent(ECS::Entity entity) {
     bool gvOpen = ImGui::CollapsingHeader("Grass Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("GrassVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::GrassVolumeComponent>(entity);
+            RemoveComponentWithUndo<ECS::GrassVolumeComponent>(entity, "grassVolume", "Grass Volume");
             ImGui::EndPopup();
             return;
         }
@@ -4209,7 +4419,7 @@ void EditorLayer::DrawShrubVolumeComponent(ECS::Entity entity) {
     bool svOpen = ImGui::CollapsingHeader("Shrub Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ShrubVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::ShrubVolumeComponent>(entity);
+            RemoveComponentWithUndo<ECS::ShrubVolumeComponent>(entity, "shrubVolume", "Shrub Volume");
             ImGui::EndPopup();
             return;
         }
@@ -4258,7 +4468,7 @@ void EditorLayer::DrawTreeVolumeComponent(ECS::Entity entity) {
     bool tvOpen = ImGui::CollapsingHeader("Tree Volume", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TreeVolumeCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TreeVolumeComponent>(entity);
+            RemoveComponentWithUndo<ECS::TreeVolumeComponent>(entity, "treeVolume", "Tree Volume");
             ImGui::EndPopup();
             return;
         }
@@ -4375,7 +4585,7 @@ void EditorLayer::DrawTerrainComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("3D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TerrainCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TerrainComponent>(entity);
+            RemoveComponentWithUndo<ECS::TerrainComponent>(entity, "terrain", "Terrain");
             ImGui::EndPopup();
             return;
         }
@@ -4466,7 +4676,7 @@ void EditorLayer::DrawTerrain2DComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("2D Terrain", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Terrain2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::Terrain2DComponent>(entity);
+            RemoveComponentWithUndo<ECS::Terrain2DComponent>(entity, "terrain2d", "Terrain 2D");
             ImGui::EndPopup();
             return;
         }
@@ -4521,7 +4731,7 @@ void EditorLayer::DrawVegetationComponent(ECS::Entity entity) {
     bool vegOpen = ImGui::CollapsingHeader("Vegetation", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("VegetationCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::VegetationComponent>(entity);
+            RemoveComponentWithUndo<ECS::VegetationComponent>(entity, "vegetation", "Vegetation");
             ImGui::EndPopup();
             return;
         }
@@ -4604,7 +4814,7 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
 
         // Remove component button
         if (ImGui::Button("Remove##CameraTrigger")) {
-            m_World->RemoveComponent<ECS::CameraTriggerComponent>(entity);
+            RemoveComponentWithUndo<ECS::CameraTriggerComponent>(entity, "cameraTrigger", "Camera Trigger");
         }
     }
 }
@@ -4640,7 +4850,7 @@ void EditorLayer::DrawTemperatureZoneComponent(ECS::Entity entity) {
 
         // Remove component
         if (ImGui::Button("Remove##TemperatureZone")) {
-            m_World->RemoveComponent<ECS::TemperatureZoneComponent>(entity);
+            RemoveComponentWithUndo<ECS::TemperatureZoneComponent>(entity, "temperatureZone", "Temperature Zone");
         }
     }
 }
@@ -4733,7 +4943,7 @@ void EditorLayer::DrawGravityZoneComponent(ECS::Entity entity) {
 
         // Remove component
         if (ImGui::Button("Remove##GravityZone")) {
-            m_World->RemoveComponent<ECS::GravityZoneComponent>(entity);
+            RemoveComponentWithUndo<ECS::GravityZoneComponent>(entity, "gravityZone", "Gravity Zone");
         }
     }
 }
@@ -14160,7 +14370,7 @@ void EditorLayer::DrawPlatformer2DController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("2D Platformer Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Platformer2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::Platformer2DController>(entity);
+            RemoveComponentWithUndo<ECS::Platformer2DController>(entity, "platformer2D", "2D Platformer");
             ImGui::EndPopup();
             return;
         }
@@ -14246,7 +14456,7 @@ void EditorLayer::DrawTopDown2DController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("2D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TopDown2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TopDown2DController>(entity);
+            RemoveComponentWithUndo<ECS::TopDown2DController>(entity, "topDown2D", "2D Top-Down");
             ImGui::EndPopup();
             return;
         }
@@ -14316,7 +14526,7 @@ void EditorLayer::DrawTopDown3DController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("3D Top-Down Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TopDown3DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TopDown3DController>(entity);
+            RemoveComponentWithUndo<ECS::TopDown3DController>(entity, "topDown3D", "3D Top-Down");
             ImGui::EndPopup();
             return;
         }
@@ -14393,7 +14603,7 @@ void EditorLayer::DrawThirdPersonController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("3D Third Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ThirdPersonCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::ThirdPersonController>(entity);
+            RemoveComponentWithUndo<ECS::ThirdPersonController>(entity, "thirdPerson", "3D Third Person");
             ImGui::EndPopup();
             return;
         }
@@ -14485,7 +14695,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("3D First Person Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FirstPersonCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::FirstPersonController>(entity);
+            RemoveComponentWithUndo<ECS::FirstPersonController>(entity, "firstPerson", "3D First Person");
             ImGui::EndPopup();
             return;
         }
@@ -14590,7 +14800,7 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
     bool healthOpen = ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HealthCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::HealthComponent>(entity);
+            RemoveComponentWithUndo<ECS::HealthComponent>(entity, "health", "Health");
             ImGui::EndPopup();
             return;
         }
@@ -14638,7 +14848,7 @@ void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
     bool rbOpen = ImGui::CollapsingHeader("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("RigidbodyCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::RigidbodyComponent>(entity);
+            RemoveComponentWithUndo<ECS::RigidbodyComponent>(entity, "rigidbody", "Rigidbody");
             ImGui::EndPopup();
             return;
         }
@@ -14689,7 +14899,7 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
     bool boxOpen = ImGui::CollapsingHeader("Box Collider", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("BoxColliderCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::BoxColliderComponent>(entity);
+            RemoveComponentWithUndo<ECS::BoxColliderComponent>(entity, "boxCollider", "Box Collider");
             ImGui::EndPopup();
             return;
         }
@@ -14725,7 +14935,7 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
     bool audioOpen = ImGui::CollapsingHeader("Audio Source", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AudioSourceCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::AudioSourceComponent>(entity);
+            RemoveComponentWithUndo<ECS::AudioSourceComponent>(entity, "audioSource", "Audio Source");
             ImGui::EndPopup();
             return;
         }
@@ -14776,7 +14986,7 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
     bool spriteOpen = ImGui::CollapsingHeader("Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Sprite2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::Sprite2DComponent>(entity);
+            RemoveComponentWithUndo<ECS::Sprite2DComponent>(entity, "sprite2D", "Sprite");
             ImGui::EndPopup();
             return;
         }
@@ -14959,7 +15169,7 @@ void EditorLayer::DrawAnimatedSprite2DComponent(ECS::Entity entity) {
     bool animOpen = ImGui::CollapsingHeader("Animated Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AnimSprite2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::AnimatedSprite2DComponent>(entity);
+            RemoveComponentWithUndo<ECS::AnimatedSprite2DComponent>(entity, "animatedSprite2D", "Animated Sprite");
             ImGui::EndPopup();
             return;
         }
@@ -15073,7 +15283,7 @@ void EditorLayer::DrawTilemapComponent(ECS::Entity entity) {
     bool tilemapOpen = ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TilemapCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TilemapComponent>(entity);
+            RemoveComponentWithUndo<ECS::TilemapComponent>(entity, "tilemap", "Tilemap");
             ImGui::EndPopup();
             return;
         }
@@ -15275,7 +15485,7 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
     bool smOpen = ImGui::CollapsingHeader("State Machine", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("StateMachineCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::StateMachineComponent>(entity);
+            RemoveComponentWithUndo<ECS::StateMachineComponent>(entity, "stateMachine", "State Machine");
             ImGui::EndPopup();
             return;
         }
@@ -15535,7 +15745,7 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
     bool dlgOpen = ImGui::CollapsingHeader("Dialogue", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DialogueCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::DialogueComponent>(entity);
+            RemoveComponentWithUndo<ECS::DialogueComponent>(entity, "dialogue", "Dialogue");
             ImGui::EndPopup();
             return;
         }
@@ -15720,7 +15930,7 @@ void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("SphereColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::SphereColliderComponent>(entity);
+                RemoveComponentWithUndo<ECS::SphereColliderComponent>(entity, "sphereCollider", "Sphere Collider");
             }
             ImGui::EndPopup();
         }
@@ -15758,7 +15968,7 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("CapsuleColliderContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::CapsuleColliderComponent>(entity);
+                RemoveComponentWithUndo<ECS::CapsuleColliderComponent>(entity, "capsuleCollider", "Capsule Collider");
             }
             ImGui::EndPopup();
         }
@@ -15844,7 +16054,7 @@ void EditorLayer::DrawTriggerZoneComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("TriggerZoneContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::TriggerZoneComponent>(entity);
+                RemoveComponentWithUndo<ECS::TriggerZoneComponent>(entity, "triggerZone", "Trigger Zone");
             }
             ImGui::EndPopup();
         }
@@ -15874,7 +16084,7 @@ void EditorLayer::DrawDamageComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("DamageContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::DamageComponent>(entity);
+                RemoveComponentWithUndo<ECS::DamageComponent>(entity, "damage", "Damage");
             }
             ImGui::EndPopup();
         }
@@ -15916,7 +16126,7 @@ void EditorLayer::DrawInteractableComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("InteractableContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::InteractableComponent>(entity);
+                RemoveComponentWithUndo<ECS::InteractableComponent>(entity, "interactable", "Interactable");
             }
             ImGui::EndPopup();
         }
@@ -15977,7 +16187,7 @@ void EditorLayer::DrawPickupComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("PickupContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::PickupComponent>(entity);
+                RemoveComponentWithUndo<ECS::PickupComponent>(entity, "pickup", "Pickup");
             }
             ImGui::EndPopup();
         }
@@ -16033,7 +16243,7 @@ void EditorLayer::DrawInventoryComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("InventoryContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::InventoryComponent>(entity);
+                RemoveComponentWithUndo<ECS::InventoryComponent>(entity, "inventory", "Inventory");
             }
             ImGui::EndPopup();
         }
@@ -16061,7 +16271,7 @@ void EditorLayer::DrawTimerComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("TimerContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::TimerComponent>(entity);
+                RemoveComponentWithUndo<ECS::TimerComponent>(entity, "timer", "Timer");
             }
             ImGui::EndPopup();
         }
@@ -16078,7 +16288,7 @@ void EditorLayer::DrawAudioListenerComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("AudioListenerContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::AudioListenerComponent>(entity);
+                RemoveComponentWithUndo<ECS::AudioListenerComponent>(entity, "audioListener", "Audio Listener");
             }
             ImGui::EndPopup();
         }
@@ -16146,7 +16356,7 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("AIControllerContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::AIControllerComponent>(entity);
+                RemoveComponentWithUndo<ECS::AIControllerComponent>(entity, "aiController", "AI Controller");
             }
             ImGui::EndPopup();
         }
@@ -16178,7 +16388,7 @@ void EditorLayer::DrawFollowTargetComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("FollowTargetContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::FollowTargetComponent>(entity);
+                RemoveComponentWithUndo<ECS::FollowTargetComponent>(entity, "followTarget", "Follow Target");
             }
             ImGui::EndPopup();
         }
@@ -16220,7 +16430,7 @@ void EditorLayer::DrawLookAtTargetComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("LookAtTargetContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::LookAtTargetComponent>(entity);
+                RemoveComponentWithUndo<ECS::LookAtTargetComponent>(entity, "lookAtTarget", "Look At Target");
             }
             ImGui::EndPopup();
         }
@@ -16246,7 +16456,7 @@ void EditorLayer::DrawWaypointComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("WaypointContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::WaypointComponent>(entity);
+                RemoveComponentWithUndo<ECS::WaypointComponent>(entity, "waypoint", "Waypoint");
             }
             ImGui::EndPopup();
         }
@@ -16264,7 +16474,7 @@ void EditorLayer::DrawBillboardComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("BillboardContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::BillboardComponent>(entity);
+                RemoveComponentWithUndo<ECS::BillboardComponent>(entity, "billboard", "Billboard");
             }
             ImGui::EndPopup();
         }
@@ -16349,7 +16559,7 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("ParticleEmitterContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::ParticleEmitterComponent>(entity);
+                RemoveComponentWithUndo<ECS::ParticleEmitterComponent>(entity, "particleEmitter", "Particle Emitter");
             }
             ImGui::EndPopup();
         }
@@ -16391,7 +16601,7 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("Camera2DBoundsContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::Camera2DBoundsComponent>(entity);
+                RemoveComponentWithUndo<ECS::Camera2DBoundsComponent>(entity, "camera2DBounds", "2D Camera Bounds");
             }
             ImGui::EndPopup();
         }
@@ -16426,7 +16636,7 @@ void EditorLayer::DrawTagComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("TagContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::TagComponent>(entity);
+                RemoveComponentWithUndo<ECS::TagComponent>(entity, "tag", "Tags");
             }
             ImGui::EndPopup();
         }
@@ -16470,7 +16680,7 @@ void EditorLayer::DrawSpawnPointComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("SpawnPointContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::SpawnPointComponent>(entity);
+                RemoveComponentWithUndo<ECS::SpawnPointComponent>(entity, "spawnPoint", "Spawn Point");
             }
             ImGui::EndPopup();
         }
@@ -16494,7 +16704,7 @@ void EditorLayer::DrawJellyMeshComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("JellyMeshContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::JellyMeshComponent>(entity);
+                RemoveComponentWithUndo<ECS::JellyMeshComponent>(entity, "jellyMesh", "Jelly Mesh");
             }
             ImGui::EndPopup();
         }
@@ -16547,7 +16757,7 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("TetherContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::TetherComponent>(entity);
+                RemoveComponentWithUndo<ECS::TetherComponent>(entity, "tether", "Tether");
             }
             ImGui::EndPopup();
         }
@@ -16571,7 +16781,7 @@ void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("GrabbableContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::GrabbableComponent>(entity);
+                RemoveComponentWithUndo<ECS::GrabbableComponent>(entity, "grabbable", "Grabbable");
             }
             ImGui::EndPopup();
         }
@@ -16603,7 +16813,7 @@ void EditorLayer::DrawFlowerStemComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("FlowerStemContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::FlowerStemComponent>(entity);
+                RemoveComponentWithUndo<ECS::FlowerStemComponent>(entity, "flowerStem", "Flower Stem");
             }
             ImGui::EndPopup();
         }
@@ -16653,7 +16863,7 @@ void EditorLayer::DrawFlowerParticleConfigComponent(ECS::Entity entity) {
 
         if (ImGui::BeginPopupContextItem("FlowerParticleConfigContext")) {
             if (ImGui::MenuItem("Remove Component")) {
-                m_World->RemoveComponent<ECS::FlowerParticleConfigComponent>(entity);
+                RemoveComponentWithUndo<ECS::FlowerParticleConfigComponent>(entity, "flowerParticleConfig", "Flower Particle Config");
             }
             ImGui::EndPopup();
         }
@@ -16746,7 +16956,7 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
     bool scriptOpen = ImGui::CollapsingHeader("Scripts", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ScriptComponentCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::ScriptComponent>(entity);
+            RemoveComponentWithUndo<ECS::ScriptComponent>(entity, "scriptComponent", "Script");
             ImGui::EndPopup();
             return;
         }
@@ -17070,7 +17280,7 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
     bool ctrlOpen = ImGui::CollapsingHeader("Vehicle Controller", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("VehicleControllerCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::VehicleController>(entity);
+            RemoveComponentWithUndo<ECS::VehicleController>(entity, "vehicle", "Vehicle");
             ImGui::EndPopup();
             return;
         }
@@ -17151,7 +17361,7 @@ void EditorLayer::DrawPossessableComponent(ECS::Entity entity) {
     bool possOpen = ImGui::CollapsingHeader("Possessable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PossessableCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::PossessableComponent>(entity);
+            RemoveComponentWithUndo<ECS::PossessableComponent>(entity, "possessable", "Possessable");
             ImGui::EndPopup();
             return;
         }
@@ -17191,7 +17401,7 @@ void EditorLayer::DrawLockComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Lock", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LockCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::LockComponent>(entity);
+            RemoveComponentWithUndo<ECS::LockComponent>(entity, "lock", "Lock");
             ImGui::EndPopup();
             return;
         }
@@ -17262,7 +17472,7 @@ void EditorLayer::DrawPushableComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Pushable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PushableCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::PushableComponent>(entity);
+            RemoveComponentWithUndo<ECS::PushableComponent>(entity, "pushable", "Pushable");
             ImGui::EndPopup();
             return;
         }
@@ -17295,7 +17505,7 @@ void EditorLayer::DrawSwitchComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Switch", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SwitchCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::SwitchComponent>(entity);
+            RemoveComponentWithUndo<ECS::SwitchComponent>(entity, "switch", "Switch");
             ImGui::EndPopup();
             return;
         }
@@ -17357,7 +17567,7 @@ void EditorLayer::DrawGoalZoneComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Goal Zone", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("GoalZoneCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::GoalZoneComponent>(entity);
+            RemoveComponentWithUndo<ECS::GoalZoneComponent>(entity, "goalZone", "Goal Zone");
             ImGui::EndPopup();
             return;
         }
@@ -17415,7 +17625,7 @@ void EditorLayer::DrawConveyorComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Conveyor", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ConveyorCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::ConveyorComponent>(entity);
+            RemoveComponentWithUndo<ECS::ConveyorComponent>(entity, "conveyor", "Conveyor");
             ImGui::EndPopup();
             return;
         }
@@ -17441,7 +17651,7 @@ void EditorLayer::DrawTeleporterComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Teleporter", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TeleporterCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TeleporterComponent>(entity);
+            RemoveComponentWithUndo<ECS::TeleporterComponent>(entity, "teleporter", "Teleporter");
             ImGui::EndPopup();
             return;
         }
@@ -17476,7 +17686,7 @@ void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Destructible", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DestructibleCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::DestructibleComponent>(entity);
+            RemoveComponentWithUndo<ECS::DestructibleComponent>(entity, "destructible", "Destructible");
             ImGui::EndPopup();
             return;
         }
@@ -17513,7 +17723,7 @@ void EditorLayer::DrawMovingPlatformComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Moving Platform", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MovingPlatformCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::MovingPlatformComponent>(entity);
+            RemoveComponentWithUndo<ECS::MovingPlatformComponent>(entity, "movingPlatform", "Moving Platform");
             ImGui::EndPopup();
             return;
         }
@@ -17562,7 +17772,7 @@ void EditorLayer::DrawDamageResistanceComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Damage Resistance", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DamResCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::DamageResistanceComponent>(entity);
+            RemoveComponentWithUndo<ECS::DamageResistanceComponent>(entity, "damageResistance", "Damage Resistance");
             ImGui::EndPopup();
             return;
         }
@@ -17585,7 +17795,7 @@ void EditorLayer::DrawResourceComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Resource", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("ResCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::ResourceComponent>(entity);
+            RemoveComponentWithUndo<ECS::ResourceComponent>(entity, "resource", "Resource");
             ImGui::EndPopup();
             return;
         }
@@ -17633,7 +17843,7 @@ void EditorLayer::DrawFootstepComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Footsteps", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FootCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::FootstepComponent>(entity);
+            RemoveComponentWithUndo<ECS::FootstepComponent>(entity, "footstep", "Footstep");
             ImGui::EndPopup();
             return;
         }
@@ -17686,7 +17896,7 @@ void EditorLayer::DrawPoolableComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Poolable", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("PoolCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::PoolableComponent>(entity);
+            RemoveComponentWithUndo<ECS::PoolableComponent>(entity, "poolable", "Poolable");
             ImGui::EndPopup();
             return;
         }
@@ -17709,7 +17919,7 @@ void EditorLayer::DrawQuestStateComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Quest State", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("QuestCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::QuestStateComponent>(entity);
+            RemoveComponentWithUndo<ECS::QuestStateComponent>(entity, "questState", "Quest State");
             ImGui::EndPopup();
             return;
         }
@@ -17761,7 +17971,7 @@ void EditorLayer::DrawHUDWidgetComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("HUD Widget", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HUDCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::HUDWidgetComponent>(entity);
+            RemoveComponentWithUndo<ECS::HUDWidgetComponent>(entity, "hudWidget", "HUD Widget");
             ImGui::EndPopup();
             return;
         }
@@ -17819,7 +18029,7 @@ void EditorLayer::DrawCinematicCameraComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Cinematic Camera", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CineCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::CinematicCameraComponent>(entity);
+            RemoveComponentWithUndo<ECS::CinematicCameraComponent>(entity, "cinematicCamera", "Cinematic Camera");
             ImGui::EndPopup();
             return;
         }
@@ -17894,7 +18104,7 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Tween", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("TweenCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::TweenComponent>(entity);
+            RemoveComponentWithUndo<ECS::TweenComponent>(entity, "tween", "Tween");
             ImGui::EndPopup();
             return;
         }
@@ -18000,7 +18210,7 @@ void EditorLayer::DrawDistanceJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Distance Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("DistanceJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::DistanceJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::DistanceJointComponent>(entity, "distanceJoint", "Distance Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18039,7 +18249,7 @@ void EditorLayer::DrawHingeJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Hinge Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HingeJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::HingeJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::HingeJointComponent>(entity, "hingeJoint", "Hinge Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18088,7 +18298,7 @@ void EditorLayer::DrawBallSocketJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Ball-Socket Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("BallSocketJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::BallSocketJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::BallSocketJointComponent>(entity, "ballSocketJoint", "Ball-Socket Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18134,7 +18344,7 @@ void EditorLayer::DrawSpringJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Spring Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SpringJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::SpringJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::SpringJointComponent>(entity, "springJoint", "Spring Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18175,7 +18385,7 @@ void EditorLayer::DrawFixedJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Fixed Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("FixedJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::FixedJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::FixedJointComponent>(entity, "fixedJoint", "Fixed Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18215,7 +18425,7 @@ void EditorLayer::DrawSliderJointComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Slider Joint", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("SliderJointCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::SliderJointComponent>(entity);
+            RemoveComponentWithUndo<ECS::SliderJointComponent>(entity, "sliderJoint", "Slider Joint");
             ImGui::EndPopup();
             return;
         }
@@ -18264,7 +18474,7 @@ void EditorLayer::DrawRagdollComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("Ragdoll", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("RagdollCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<ECS::RagdollComponent>(entity);
+            RemoveComponentWithUndo<ECS::RagdollComponent>(entity, "ragdoll", "Ragdoll");
             ImGui::EndPopup();
             return;
         }
@@ -18483,94 +18693,31 @@ void EditorLayer::DrawDialogueOverlay() {
 void EditorLayer::DuplicateEntity(ECS::Entity entity) {
     if (!m_World || entity == ECS::INVALID_ENTITY) return;
 
-    // Create new entity
-    ECS::Entity newEntity = m_World->CreateEntity();
+    // Full-fidelity duplicate via serialize/deserialize (copies all 60+ components)
+    std::string snapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, entity);
+    if (snapshot.empty()) return;
 
-    // Copy name component (with "(Copy)" suffix)
-    if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-        m_World->AddComponent<ECS::NameComponent>(newEntity, name->name + " (Copy)");
+    ECS::Entity newEntity = Scene::SceneSerializer::DeserializeEntityFromString(m_World, snapshot);
+    if (newEntity == ECS::INVALID_ENTITY) return;
+
+    // Append "(Copy)" to name
+    if (m_World->HasComponent<ECS::NameComponent>(newEntity)) {
+        auto* nameComp = m_World->GetComponent<ECS::NameComponent>(newEntity);
+        nameComp->name += " (Copy)";
     }
 
-    // Copy transform component (offset slightly so it's visible)
-    if (m_World->HasComponent<ECS::TransformComponent>(entity)) {
-        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-        auto& newTransform = m_World->AddComponent<ECS::TransformComponent>(newEntity);
-        newTransform.position = transform->position + Math::Vector3(0.5f, 0.0f, 0.5f);
-        newTransform.rotation = transform->rotation;
-        newTransform.scale = transform->scale;
+    // Offset position slightly so the duplicate is visible
+    if (m_World->HasComponent<ECS::TransformComponent>(newEntity)) {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(newEntity);
+        transform->position = transform->position + Math::Vector3(0.5f, 0.0f, 0.5f);
     }
 
-    // Copy mesh component
-    if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
-        auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-        auto& newMesh = m_World->AddComponent<ECS::MeshComponent>(newEntity);
-        newMesh.vertices = mesh->vertices;
-        newMesh.indices = mesh->indices;
-    }
+    // Track via undo system
+    auto cmd = std::make_unique<FullCreateEntityCommand>(
+        m_World, newEntity,
+        [this](ECS::Entity restored) { SelectEntity(restored); });
+    m_UndoRedo.Execute(std::move(cmd));
 
-    // Copy material component
-    if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
-        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(entity);
-        auto& newMat = m_World->AddComponent<ECS::MaterialComponent>(newEntity);
-        newMat.baseColor = mat->baseColor;
-        newMat.metallic = mat->metallic;
-        newMat.roughness = mat->roughness;
-        newMat.emissiveColor = mat->emissiveColor;
-        newMat.emissiveStrength = mat->emissiveStrength;
-        newMat.opacity = mat->opacity;
-        newMat.alphaCutoff = mat->alphaCutoff;
-        newMat.doubleSided = mat->doubleSided;
-    }
-
-    // Copy light component
-    if (m_World->HasComponent<ECS::LightComponent>(entity)) {
-        auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-        auto& newLight = m_World->AddComponent<ECS::LightComponent>(newEntity);
-        newLight.type = light->type;
-        newLight.color = light->color;
-        newLight.intensity = light->intensity;
-        newLight.range = light->range;
-        newLight.castShadows = light->castShadows;
-    }
-
-    // Copy camera component
-    if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-        auto* cam = m_World->GetComponent<ECS::CameraComponent>(entity);
-        m_World->AddComponent<ECS::CameraComponent>(newEntity, *cam);
-    }
-
-    // Copy weather zone component
-    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-        m_World->AddComponent<ECS::WeatherZoneComponent>(newEntity, *zone);
-    }
-
-    // Copy water volume component
-    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-        m_World->AddComponent<ECS::WaterVolumeComponent>(newEntity, *volume);
-    }
-
-    // Copy camera trigger component
-    if (m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) {
-        auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
-        m_World->AddComponent<ECS::CameraTriggerComponent>(newEntity, *trigger);
-    }
-
-    // Copy temperature zone component
-    if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
-        auto* tempZone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
-        m_World->AddComponent<ECS::TemperatureZoneComponent>(newEntity, *tempZone);
-    }
-
-    // Copy notes component
-    if (m_World->HasComponent<ECS::NotesComponent>(entity)) {
-        auto* notes = m_World->GetComponent<ECS::NotesComponent>(entity);
-        m_World->AddComponent<ECS::NotesComponent>(newEntity, *notes);
-    }
-
-    // Select the new entity
     SelectEntity(newEntity);
     ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
 }
@@ -18578,11 +18725,21 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
 void EditorLayer::DeleteSelectedEntities() {
     if (!m_World || m_SelectedEntities.empty()) return;
 
-    // Copy set since we modify it
     auto toDelete = m_SelectedEntities;
     ClearSelection();
-    for (ECS::Entity e : toDelete) {
-        m_World->DestroyEntity(e);
+
+    if (toDelete.size() == 1) {
+        auto cmd = std::make_unique<FullDeleteEntityCommand>(
+            m_World, *toDelete.begin(),
+            [this](ECS::Entity restored) { SelectEntity(restored); });
+        m_UndoRedo.Execute(std::move(cmd));
+    } else {
+        m_UndoRedo.BeginCompound("Delete Entities");
+        for (ECS::Entity e : toDelete) {
+            auto cmd = std::make_unique<FullDeleteEntityCommand>(m_World, e);
+            m_UndoRedo.Execute(std::move(cmd));
+        }
+        m_UndoRedo.EndCompound();
     }
     ENJIN_LOG_INFO(Editor, "Deleted %zu entities", toDelete.size());
 }
@@ -19665,7 +19822,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     bool open = ImGui::CollapsingHeader("UI Canvas", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("UICanvasCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
-            m_World->RemoveComponent<GUI::UICanvasComponent>(entity);
+            RemoveComponentWithUndo<GUI::UICanvasComponent>(entity, "uiCanvas", "UI Canvas");
             ImGui::EndPopup();
             return;
         }

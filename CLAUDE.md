@@ -474,6 +474,7 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 - Entity visibility toggle (TransformComponent::visible bool, RenderSystem skip in all passes incl. shadows/sprites/tilemaps/grass/shrubs/trees/particles, inspector checkbox, hierarchy eye icon, scene serialization, script bindings Entity_SetVisible/Entity_IsVisible)
 - Node graph editor framework (generic NodeGraphEditor widget with typed pins, Bezier links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization)
 - Animation graph panel (visual state machine editor for StateMachineComponent, Entry pseudo-node, state/transition inspector, parameter editor, play mode highlighting, auto layout, editorPosition serialization)
+- Undo/redo for entity operations (delete/duplicate/cut/paste with full JSON snapshot of all 60+ components, hierarchy reparent/unparent, component add/remove with per-component snapshot, compound undo for multi-entity operations, selection callback on entity ID change)
 
 ## AngelScript API Reference
 
@@ -662,7 +663,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
   - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
 - **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
 - **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
-- **Undo/Redo Across All Operations** — extend existing UndoRedoManager to cover every inspector edit, hierarchy change, component add/remove, tilemap paint, terrain sculpt, etc.
+- **Undo/Redo Across All Operations** — ~~PARTIAL (Phase 1)~~ Entity delete/duplicate/cut/paste use full JSON snapshot undo (all 60+ components preserved). Hierarchy reparent/unparent undoable. Component add/remove undoable with per-component JSON snapshot. DuplicateEntity refactored from manual 8-component copy to full serialize/deserialize. Future work: inspector property edits, tilemap paint, terrain sculpt, UI editor edits (require per-widget tracking across 60+ component types).
 - **Drag and Drop** — ~~PARTIAL~~ File drop from OS (Explorer/Finder) imports models (FBX/OBJ/glTF/GLB/DAE/3DS) and opens scenes (.enjin) via GLFW drop callback. Future work: drag assets from asset browser into viewport/inspector fields, drag entities in hierarchy for reparenting.
 - **Hot-Swap Shaders** — edit shaders at runtime and see changes live without restarting. File watcher on .vert/.frag files, recompile GLSL to SPIR-V, recreate pipeline.
 - **Improved Asset Import Pipeline** — on model/texture import, auto-process like Unity does: generate thumbnails, extract materials, set up serialization metadata, configure import settings (scale, axis, compression). Clean .enjinasset metadata files.

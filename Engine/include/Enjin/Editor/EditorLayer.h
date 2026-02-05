@@ -330,6 +330,11 @@ private:
     void DuplicateSelectedEntities();
     void FocusOnSelection();
 
+    // Undo-aware component removal helper
+    template<typename T>
+    void RemoveComponentWithUndo(ECS::Entity entity, const std::string& componentKey,
+                                  const std::string& componentName);
+
     Window* m_Window = nullptr;
     Renderer::VulkanRenderer* m_Renderer = nullptr;
     ECS::World* m_World = nullptr;

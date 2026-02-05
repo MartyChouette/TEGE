@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -199,6 +200,123 @@ private:
     ECS::Entity m_Entity;
     std::string m_OldName;
     std::string m_NewName;
+};
+
+// ============================================================================
+// Full-fidelity Entity Commands (JSON snapshot-based)
+// ============================================================================
+
+/// Callback to update editor selection after entity ID changes on undo/redo
+using SelectionCallback = std::function<void(ECS::Entity)>;
+
+/**
+ * @brief Delete entity with full JSON snapshot of all components.
+ * Replaces the old DeleteEntityCommand which only saved Name+Transform.
+ */
+class ENJIN_API FullDeleteEntityCommand : public ICommand {
+public:
+    FullDeleteEntityCommand(ECS::World* world, ECS::Entity entity,
+                            SelectionCallback onRestore = nullptr);
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "Delete Entity"; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::string m_Snapshot; // Full JSON of all components
+    SelectionCallback m_OnRestore;
+};
+
+/**
+ * @brief Tracks a created entity (duplicate/paste) for undo.
+ * First Execute() is a no-op (entity already exists). Undo destroys it.
+ * Subsequent Execute() (redo) recreates from snapshot.
+ */
+class ENJIN_API FullCreateEntityCommand : public ICommand {
+public:
+    FullCreateEntityCommand(ECS::World* world, ECS::Entity entity,
+                            SelectionCallback onRestore = nullptr);
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "Create Entity"; }
+
+    ECS::Entity GetEntity() const { return m_Entity; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::string m_Snapshot;
+    bool m_FirstExecute = true;
+    SelectionCallback m_OnRestore;
+};
+
+/**
+ * @brief Command to reparent an entity (drag-drop or unparent).
+ */
+class ENJIN_API ReparentEntityCommand : public ICommand {
+public:
+    ReparentEntityCommand(ECS::World* world, ECS::Entity child,
+                          ECS::Entity oldParent, ECS::Entity newParent);
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "Reparent Entity"; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Child;
+    ECS::Entity m_OldParent;
+    ECS::Entity m_NewParent;
+};
+
+/**
+ * @brief Command to add a component (undo removes it).
+ */
+class ENJIN_API AddComponentCommand : public ICommand {
+public:
+    using AddFunc = std::function<void()>;
+    using RemoveFunc = std::function<void()>;
+
+    AddComponentCommand(const std::string& componentName,
+                        AddFunc addFunc, RemoveFunc removeFunc);
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return m_Description.c_str(); }
+
+private:
+    std::string m_Description;
+    AddFunc m_AddFunc;
+    RemoveFunc m_RemoveFunc;
+    bool m_FirstExecute = true;
+};
+
+/**
+ * @brief Command to remove a component (undo restores it from JSON snapshot).
+ */
+class ENJIN_API RemoveComponentCommand : public ICommand {
+public:
+    using RemoveFunc = std::function<void()>;
+
+    RemoveComponentCommand(ECS::World* world, ECS::Entity entity,
+                           const std::string& componentKey,
+                           const std::string& componentName,
+                           RemoveFunc removeFunc);
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return m_Description.c_str(); }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::string m_ComponentKey;
+    std::string m_Description;
+    std::string m_Snapshot; // JSON of the component data
+    RemoveFunc m_RemoveFunc;
 };
 
 // ============================================================================

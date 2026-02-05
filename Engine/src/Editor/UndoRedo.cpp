@@ -1,5 +1,6 @@
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
 
 namespace Enjin {
@@ -267,6 +268,142 @@ void RenameEntityCommand::Undo() {
     if (m_World->HasComponent<ECS::NameComponent>(m_Entity)) {
         auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_Entity);
         nameComp->name = m_OldName;
+    }
+}
+
+// ============================================================================
+// FullDeleteEntityCommand
+// ============================================================================
+
+FullDeleteEntityCommand::FullDeleteEntityCommand(ECS::World* world, ECS::Entity entity,
+                                                  SelectionCallback onRestore)
+    : m_World(world)
+    , m_Entity(entity)
+    , m_OnRestore(onRestore) {
+    // Snapshot all components before deletion
+    m_Snapshot = Scene::SceneSerializer::SerializeEntityToString(world, entity);
+}
+
+void FullDeleteEntityCommand::Execute() {
+    if (m_World->IsValid(m_Entity)) {
+        m_World->DestroyEntity(m_Entity);
+    }
+}
+
+void FullDeleteEntityCommand::Undo() {
+    ECS::Entity restored = Scene::SceneSerializer::DeserializeEntityFromString(m_World, m_Snapshot);
+    if (restored != ECS::INVALID_ENTITY) {
+        m_Entity = restored;
+        if (m_OnRestore) m_OnRestore(restored);
+    }
+}
+
+// ============================================================================
+// FullCreateEntityCommand
+// ============================================================================
+
+FullCreateEntityCommand::FullCreateEntityCommand(ECS::World* world, ECS::Entity entity,
+                                                  SelectionCallback onRestore)
+    : m_World(world)
+    , m_Entity(entity)
+    , m_OnRestore(onRestore) {
+    // Snapshot the newly created entity so we can redo
+    m_Snapshot = Scene::SceneSerializer::SerializeEntityToString(world, entity);
+}
+
+void FullCreateEntityCommand::Execute() {
+    if (m_FirstExecute) {
+        // Entity already exists on first execute — just capture snapshot
+        m_FirstExecute = false;
+        return;
+    }
+    // Redo: recreate from snapshot
+    ECS::Entity restored = Scene::SceneSerializer::DeserializeEntityFromString(m_World, m_Snapshot);
+    if (restored != ECS::INVALID_ENTITY) {
+        m_Entity = restored;
+        if (m_OnRestore) m_OnRestore(restored);
+    }
+}
+
+void FullCreateEntityCommand::Undo() {
+    // Re-snapshot in case entity was modified since creation
+    m_Snapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, m_Entity);
+    if (m_World->IsValid(m_Entity)) {
+        m_World->DestroyEntity(m_Entity);
+    }
+}
+
+// ============================================================================
+// ReparentEntityCommand
+// ============================================================================
+
+ReparentEntityCommand::ReparentEntityCommand(ECS::World* world, ECS::Entity child,
+                                              ECS::Entity oldParent, ECS::Entity newParent)
+    : m_World(world)
+    , m_Child(child)
+    , m_OldParent(oldParent)
+    , m_NewParent(newParent) {
+}
+
+void ReparentEntityCommand::Execute() {
+    if (m_World->IsValid(m_Child)) {
+        ECS::SetParent(m_World, m_Child, m_NewParent);
+    }
+}
+
+void ReparentEntityCommand::Undo() {
+    if (m_World->IsValid(m_Child)) {
+        ECS::SetParent(m_World, m_Child, m_OldParent);
+    }
+}
+
+// ============================================================================
+// AddComponentCommand
+// ============================================================================
+
+AddComponentCommand::AddComponentCommand(const std::string& componentName,
+                                          AddFunc addFunc, RemoveFunc removeFunc)
+    : m_Description("Add " + componentName)
+    , m_AddFunc(addFunc)
+    , m_RemoveFunc(removeFunc) {
+}
+
+void AddComponentCommand::Execute() {
+    if (m_FirstExecute) {
+        m_FirstExecute = false;
+        return; // Component was already added by the caller
+    }
+    if (m_AddFunc) m_AddFunc();
+}
+
+void AddComponentCommand::Undo() {
+    if (m_RemoveFunc) m_RemoveFunc();
+}
+
+// ============================================================================
+// RemoveComponentCommand
+// ============================================================================
+
+RemoveComponentCommand::RemoveComponentCommand(ECS::World* world, ECS::Entity entity,
+                                                const std::string& componentKey,
+                                                const std::string& componentName,
+                                                RemoveFunc removeFunc)
+    : m_World(world)
+    , m_Entity(entity)
+    , m_ComponentKey(componentKey)
+    , m_Description("Remove " + componentName)
+    , m_RemoveFunc(removeFunc) {
+    // Snapshot the component data before removal
+    m_Snapshot = Scene::SceneSerializer::SerializeOneComponent(world, entity, componentKey);
+}
+
+void RemoveComponentCommand::Execute() {
+    if (m_RemoveFunc) m_RemoveFunc();
+}
+
+void RemoveComponentCommand::Undo() {
+    if (!m_Snapshot.empty()) {
+        Scene::SceneSerializer::DeserializeOneComponent(m_World, m_Entity, m_ComponentKey, m_Snapshot);
     }
 }
 

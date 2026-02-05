@@ -62,6 +62,19 @@ public:
     void SetWorld(ECS::World* world) { m_World = world; }
     ECS::World* GetWorld() const { return m_World; }
 
+    // Per-entity serialization (for undo/redo, clipboard, duplicate)
+    // Serializes all components of a single entity to a JSON string
+    static std::string SerializeEntityToString(ECS::World* world, ECS::Entity entity);
+    // Recreates an entity from a JSON string, returns the new entity ID
+    static ECS::Entity DeserializeEntityFromString(ECS::World* world, const std::string& json);
+
+    // Per-component serialization (for component remove undo)
+    // Serializes a single component identified by its JSON key
+    static std::string SerializeOneComponent(ECS::World* world, ECS::Entity entity, const std::string& key);
+    // Deserializes and adds a single component from JSON
+    static bool DeserializeOneComponent(ECS::World* world, ECS::Entity entity,
+                                         const std::string& key, const std::string& json);
+
     // Scene-level accessibility content flags
     void SetContentFlags(const Accessibility::SceneContentFlags& flags) { m_ContentFlags = flags; }
     const Accessibility::SceneContentFlags& GetContentFlags() const { return m_ContentFlags; }
