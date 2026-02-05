@@ -1790,6 +1790,9 @@ json SerializeTweenEntry(const ECS::TweenEntry& te) {
     j["duration"] = te.duration;
     j["delay"] = te.delay;
     j["useCurrentAsStart"] = te.useCurrentAsStart;
+    if (!te.onCompleteCallback.empty()) {
+        j["onCompleteCallback"] = te.onCompleteCallback;
+    }
     return j;
 }
 
@@ -1803,6 +1806,7 @@ ECS::TweenEntry DeserializeTweenEntry(const json& j) {
     if (j.contains("duration")) te.duration = j["duration"].get<f32>();
     if (j.contains("delay")) te.delay = j["delay"].get<f32>();
     if (j.contains("useCurrentAsStart")) te.useCurrentAsStart = j["useCurrentAsStart"].get<bool>();
+    if (j.contains("onCompleteCallback")) te.onCompleteCallback = j["onCompleteCallback"].get<std::string>();
     return te;
 }
 

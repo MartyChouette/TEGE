@@ -40,6 +40,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_CoroutineScheduler.SetEngine(m_ScriptEngine.GetASEngine());
         m_EventBus.SetScriptEngine(&m_ScriptEngine);
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
+        m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
 
         ENJIN_LOG_INFO(Editor, "Script engine initialized");
     } else {

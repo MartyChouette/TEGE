@@ -1,6 +1,7 @@
 #pragma once
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include <string>
 #include <vector>
 
 namespace Enjin {
@@ -28,6 +29,7 @@ enum class TweenProperty : u8 {
     BaseColor,      // MaterialComponent.baseColor
     EmissiveColor,  // MaterialComponent.emissiveColor
     Opacity,        // MaterialComponent.opacity
+    Float,          // Generic float interpolation (no component write, value in currentValue.x)
     COUNT
 };
 
@@ -56,6 +58,9 @@ struct TweenEntry {
     bool isComplete = false;
     bool useCurrentAsStart = true; // grab current value at play start
     i32 direction = 1;             // 1=forward, -1=reverse (ping-pong)
+
+    std::string onCompleteCallback; // AngelScript function name called on completion (Once mode)
+    Math::Vector3 currentValue = Math::Vector3(0.0f); // Interpolated value each frame (runtime only, not serialized)
 };
 
 // Component holding one or more active tweens on an entity

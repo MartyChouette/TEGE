@@ -499,24 +499,102 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
     return entries;
 }
 
-static bool ComponentMatchesFilter(const ComponentEntry& entry, const char* filter) {
-    if (!filter || filter[0] == '\0') return true;
-
-    // Case-insensitive substring match on displayName and category
-    std::string lowerFilter(filter);
-    std::transform(lowerFilter.begin(), lowerFilter.end(), lowerFilter.begin(),
+static std::string ToLowerStr(const char* s) {
+    std::string out(s);
+    std::transform(out.begin(), out.end(), out.begin(),
         [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+}
 
-    std::string lowerName(entry.displayName);
-    std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+static int LevenshteinDistance(const std::string& a, const std::string& b) {
+    const int m = static_cast<int>(a.size());
+    const int n = static_cast<int>(b.size());
+    if (m == 0) return n;
+    if (n == 0) return m;
 
-    std::string lowerCat(entry.category);
-    std::transform(lowerCat.begin(), lowerCat.end(), lowerCat.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    // Single-row DP
+    std::vector<int> row(n + 1);
+    for (int j = 0; j <= n; j++) row[j] = j;
 
-    return lowerName.find(lowerFilter) != std::string::npos ||
-           lowerCat.find(lowerFilter) != std::string::npos;
+    for (int i = 1; i <= m; i++) {
+        int prev = row[0];
+        row[0] = i;
+        for (int j = 1; j <= n; j++) {
+            int temp = row[j];
+            if (a[i - 1] == b[j - 1]) {
+                row[j] = prev;
+            } else {
+                row[j] = 1 + std::min({prev, row[j], row[j - 1]});
+            }
+            prev = temp;
+        }
+    }
+    return row[n];
+}
+
+static bool MatchesWordBoundaries(const std::string& lowerText, const std::string& lowerQuery) {
+    // Extract word-initial characters (start of string + chars after spaces)
+    std::string initials;
+    if (!lowerText.empty()) initials += lowerText[0];
+    for (size_t i = 1; i < lowerText.size(); i++) {
+        if (lowerText[i - 1] == ' ' && i < lowerText.size()) {
+            initials += lowerText[i];
+        }
+    }
+    // Check if query is a subsequence of initials
+    if (lowerQuery.size() > initials.size()) return false;
+    size_t qi = 0;
+    for (size_t ii = 0; ii < initials.size() && qi < lowerQuery.size(); ii++) {
+        if (initials[ii] == lowerQuery[qi]) qi++;
+    }
+    return qi == lowerQuery.size();
+}
+
+// Returns 0 for no match, higher scores for better matches
+static int ScoreComponentMatch(const ComponentEntry& entry, const char* filter) {
+    if (!filter || filter[0] == '\0') return 100;
+
+    std::string lowerFilter = ToLowerStr(filter);
+    std::string lowerName = ToLowerStr(entry.displayName);
+    std::string lowerCat = ToLowerStr(entry.category);
+
+    // Exact match
+    if (lowerName == lowerFilter) return 100;
+
+    // Prefix match
+    if (lowerName.find(lowerFilter) == 0) return 90;
+
+    // Name substring
+    if (lowerName.find(lowerFilter) != std::string::npos) return 70;
+
+    // Category substring
+    if (lowerCat.find(lowerFilter) != std::string::npos) return 60;
+
+    // Word boundary / initials match (e.g. "bc" -> "box collider")
+    if (MatchesWordBoundaries(lowerName, lowerFilter)) return 50;
+
+    // Fuzzy matching via Levenshtein distance
+    int maxDist = (static_cast<int>(lowerFilter.size()) <= 4) ? 2 : static_cast<int>(lowerFilter.size()) / 2;
+
+    // Check against full name
+    int dist = LevenshteinDistance(lowerFilter, lowerName);
+    if (dist <= maxDist) {
+        return 35 - (dist * 10); // dist=1 -> 25, dist=2 -> 15
+    }
+
+    // Check against individual words in the name (e.g. "colider" matching "Collider" in "Box Collider")
+    std::istringstream iss(lowerName);
+    std::string word;
+    int bestWordDist = maxDist + 1;
+    while (iss >> word) {
+        int wDist = LevenshteinDistance(lowerFilter, word);
+        if (wDist < bestWordDist) bestWordDist = wDist;
+    }
+    if (bestWordDist <= maxDist) {
+        return 35 - (bestWordDist * 10);
+    }
+
+    return 0; // No match
 }
 
 EditorLayer::EditorLayer() {
@@ -3509,13 +3587,21 @@ void EditorLayer::DrawInspectorPanel() {
             struct VisibleEntry {
                 int originalIndex;
                 const ComponentEntry* entry;
+                int score;
             };
             std::vector<VisibleEntry> visible;
             for (int i = 0; i < static_cast<int>(allEntries.size()); i++) {
                 const auto& e = allEntries[i];
                 if (e.hasComponent(m_World, m_PrimarySelected)) continue;
-                if (!ComponentMatchesFilter(e, m_ComponentSearchBuf)) continue;
-                visible.push_back({i, &e});
+                int score = ScoreComponentMatch(e, m_ComponentSearchBuf);
+                if (score <= 0) continue;
+                visible.push_back({i, &e, score});
+            }
+
+            // Sort by score descending when filter is active (preserves category order for ties)
+            if (hasFilter) {
+                std::stable_sort(visible.begin(), visible.end(),
+                    [](const VisibleEntry& a, const VisibleEntry& b) { return a.score > b.score; });
             }
 
             // Clamp selection index
@@ -19043,7 +19129,7 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
 
         ImGui::Checkbox("Auto-Play", &tc->autoPlay);
 
-        static const char* propertyNames[] = { "Position", "Rotation", "Scale", "Base Color", "Emissive Color", "Opacity" };
+        static const char* propertyNames[] = { "Position", "Rotation", "Scale", "Base Color", "Emissive Color", "Opacity", "Float" };
         static const char* easingNames[] = {
             "Linear",
             "Ease In Quad", "Ease Out Quad", "Ease In-Out Quad",
@@ -19087,6 +19173,8 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
                 }
                 if (tw.property == ECS::TweenProperty::Opacity) {
                     ImGui::DragFloat("Start Value", &tw.startValue.x, 0.01f, 0.0f, 1.0f);
+                } else if (tw.property == ECS::TweenProperty::Float) {
+                    ImGui::DragFloat("Start Value", &tw.startValue.x, 0.1f);
                 } else {
                     ImGui::DragFloat3("Start Value", &tw.startValue.x, 0.1f);
                 }
@@ -19096,6 +19184,8 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
 
                 if (tw.property == ECS::TweenProperty::Opacity) {
                     ImGui::DragFloat("End Value", &tw.endValue.x, 0.01f, 0.0f, 1.0f);
+                } else if (tw.property == ECS::TweenProperty::Float) {
+                    ImGui::DragFloat("End Value", &tw.endValue.x, 0.1f);
                 } else {
                     ImGui::DragFloat3("End Value", &tw.endValue.x, 0.1f);
                 }
@@ -19103,10 +19193,23 @@ void EditorLayer::DrawTweenComponent(ECS::Entity entity) {
                 ImGui::DragFloat("Duration (s)", &tw.duration, 0.05f, 0.01f, 60.0f);
                 ImGui::DragFloat("Delay (s)", &tw.delay, 0.05f, 0.0f, 30.0f);
 
+                // On Complete callback (most useful for Once mode)
+                if (tw.mode == ECS::TweenMode::Once) {
+                    char callbackBuf[128] = {};
+                    std::strncpy(callbackBuf, tw.onCompleteCallback.c_str(), sizeof(callbackBuf) - 1);
+                    if (ImGui::InputText("On Complete", callbackBuf, sizeof(callbackBuf))) {
+                        tw.onCompleteCallback = callbackBuf;
+                    }
+                }
+
                 // Progress bar during play mode
                 if (tw.isPlaying && tw.duration > 0.0f) {
                     f32 progress = std::clamp((tw.elapsed - tw.delay) / tw.duration, 0.0f, 1.0f);
                     ImGui::ProgressBar(progress);
+                    // Show current value for Float property
+                    if (tw.property == ECS::TweenProperty::Float) {
+                        ImGui::Text("Current Value: %.3f", tw.currentValue.x);
+                    }
                 } else if (tw.isComplete) {
                     ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Complete");
                 }

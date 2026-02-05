@@ -1,6 +1,8 @@
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Script.h"
+#include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Math/Quaternion.h"
 #include <cmath>
 #include <algorithm>
@@ -173,6 +175,9 @@ void TweenSystem::CaptureStartValue(World* world, Entity entity, TweenEntry& twe
         if (mat) tween.startValue.x = mat->opacity;
         break;
     }
+    case TweenProperty::Float:
+        // No component to capture from — start value is set by the binding or user
+        break;
     default:
         break;
     }
@@ -185,6 +190,9 @@ void TweenSystem::ApplyTween(World* world, Entity entity, TweenEntry& tween, f32
     value.x = tween.startValue.x + (tween.endValue.x - tween.startValue.x) * easedT;
     value.y = tween.startValue.y + (tween.endValue.y - tween.startValue.y) * easedT;
     value.z = tween.startValue.z + (tween.endValue.z - tween.startValue.z) * easedT;
+
+    // Store interpolated value every frame (for Tween_GetValue and inspector readout)
+    tween.currentValue = value;
 
     switch (tween.property) {
     case TweenProperty::Position: {
@@ -217,6 +225,9 @@ void TweenSystem::ApplyTween(World* world, Entity entity, TweenEntry& tween, f32
         if (mat) mat->opacity = std::clamp(value.x, 0.0f, 1.0f);
         break;
     }
+    case TweenProperty::Float:
+        // No component write — value is stored in currentValue above
+        break;
     default:
         break;
     }
@@ -242,7 +253,36 @@ void TweenSystem::PlayAll(World* world) {
     }
 }
 
+void TweenSystem::InvokeCallback(World* world, Entity entity, const std::string& methodName) {
+    if (!m_ScriptEngine || methodName.empty()) return;
+
+    auto* scriptComp = world->GetComponent<ScriptComponent>(entity);
+    if (!scriptComp) return;
+
+    for (auto& attachment : scriptComp->scripts) {
+        if (!attachment.enabled || !attachment.instance) continue;
+
+        auto* obj = static_cast<asIScriptObject*>(attachment.instance);
+        auto* func = m_ScriptEngine->FindMethod(obj, "void " + methodName + "()");
+        if (!func) continue;
+
+        auto* ctx = m_ScriptEngine->AcquireContext();
+        if (ctx) {
+            m_ScriptEngine->ExecuteMethod(ctx, obj, func);
+            m_ScriptEngine->ReturnContext(ctx);
+        }
+    }
+}
+
 void TweenSystem::Update(World* world, f32 deltaTime) {
+    // Collect callbacks to dispatch after iteration (prevents iterator invalidation
+    // if a callback creates or removes tweens)
+    struct PendingCallback {
+        Entity entity;
+        std::string methodName;
+    };
+    std::vector<PendingCallback> pendingCallbacks;
+
     auto entities = world->GetEntitiesWithComponent<TweenComponent>();
     for (auto entity : entities) {
         auto* tc = world->GetComponent<TweenComponent>(entity);
@@ -270,6 +310,10 @@ void TweenSystem::Update(World* world, f32 deltaTime) {
                     tween.isPlaying = false;
                     // Snap to final value
                     ApplyTween(world, entity, tween, 1.0f);
+                    // Queue callback for deferred dispatch
+                    if (!tween.onCompleteCallback.empty()) {
+                        pendingCallbacks.push_back({entity, tween.onCompleteCallback});
+                    }
                     break;
 
                 case TweenMode::Loop:
@@ -288,6 +332,11 @@ void TweenSystem::Update(World* world, f32 deltaTime) {
                 }
             }
         }
+    }
+
+    // Dispatch deferred callbacks
+    for (const auto& cb : pendingCallbacks) {
+        InvokeCallback(world, cb.entity, cb.methodName);
     }
 }
 
