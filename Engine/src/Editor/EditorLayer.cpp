@@ -1,5 +1,6 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Core/Version.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -7723,7 +7724,7 @@ void EditorLayer::DrawSplashScreen() {
         drawList->AddText(nullptr, splashFontSize, titlePos, titleColor, title);
 
         // Version info (default font size, centered)
-        const char* version = "v0.1.0 Alpha";
+        const char* version = "v" ENJIN_VERSION_STRING;
         ImVec2 versionSize = ImGui::CalcTextSize(version);
         drawList->AddText(
             ImVec2(center.x - versionSize.x * 0.5f, io.DisplaySize.y - 50),

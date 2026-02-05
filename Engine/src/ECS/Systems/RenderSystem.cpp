@@ -2184,6 +2184,11 @@ u32 RenderSystem::GetShadowResolution() const {
 
 void RenderSystem::SetShadowResolution(u32 r) {
     if (!m_ShadowMap) return;
+    // Skip pipeline recreation if resolution hasn't actually changed
+    u32 current = m_ShadowMap->GetResolution();
+    if (r < 512) r = 512;
+    if (r > 4096) r = 4096;
+    if (r == current) return;
     m_ShadowMap->SetResolution(r);
     // Recreate descriptor sets to pick up new image views
     RecreatePipelines();
