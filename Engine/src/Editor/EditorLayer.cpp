@@ -3052,6 +3052,85 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     bool nodeClicked = ImGui::IsItemClicked();
     bool nodeHovered = ImGui::IsItemHovered();
 
+    // Drag source — start dragging this entity for reparenting
+    // (Must be before eye icon, which overwrites ImGui's "last item")
+    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
+        ImGui::SetDragDropPayload("ENTITY_REPARENT", &entity, sizeof(ECS::Entity));
+        ImGui::Text("%s", name.c_str());
+        ImGui::EndDragDropSource();
+    }
+
+    // Drop target — drop an entity onto this one to make it a child
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
+            ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
+            // Prevent parenting to self or to own descendant
+            if (droppedEntity != entity) {
+                bool isDescendant = false;
+                ECS::Entity check = entity;
+                while (check != ECS::INVALID_ENTITY) {
+                    if (check == droppedEntity) { isDescendant = true; break; }
+                    check = ECS::GetParent(m_World, check);
+                }
+                if (!isDescendant) {
+                    ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
+                    auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, entity);
+                    m_UndoRedo.Execute(std::move(cmd));
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
+    }
+
+    // Context menu (must be before eye icon overwrites "last item")
+    if (ImGui::BeginPopupContextItem()) {
+        if (ImGui::MenuItem("Delete", "Del")) {
+            DeselectEntity(entity);
+            auto cmd = std::make_unique<FullDeleteEntityCommand>(
+                m_World, entity,
+                [this](ECS::Entity restored) { SelectEntity(restored); });
+            m_UndoRedo.Execute(std::move(cmd));
+        }
+        if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
+            DuplicateEntity(entity);
+        }
+        if (ImGui::MenuItem("Focus", "F")) {
+            FocusOnEntity(entity);
+        }
+        // Unparent option if entity has a parent
+        if (ECS::HasParent(m_World, entity)) {
+            if (ImGui::MenuItem("Unparent")) {
+                ECS::Entity oldParent = ECS::GetParent(m_World, entity);
+                auto cmd = std::make_unique<ReparentEntityCommand>(m_World, entity, oldParent, ECS::INVALID_ENTITY);
+                m_UndoRedo.Execute(std::move(cmd));
+            }
+        }
+        ImGui::Separator();
+        if (ImGui::MenuItem("Save as Prefab...")) {
+            std::string defaultName = "prefab.enjprefab";
+            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
+                defaultName = m_World->GetComponent<ECS::NameComponent>(entity)->name + ".enjprefab";
+            }
+            std::vector<FileFilter> filters = {{ "Prefab Files", "*.enjprefab" }};
+            std::string path = FileDialog::SaveFile("Save as Prefab", filters, "", defaultName);
+            if (!path.empty()) {
+                std::string prefabName = defaultName.substr(0, defaultName.find_last_of('.'));
+                auto prefab = Assets::PrefabManager::Get().CreateFromEntity(
+                    m_World, entity, prefabName);
+                if (prefab) {
+                    Assets::PrefabManager::Get().SavePrefab(*prefab, path);
+                }
+            }
+        }
+        bool isPrefabInstance = Assets::PrefabUtils::IsPrefabInstance(m_World, entity);
+        if (isPrefabInstance) {
+            if (ImGui::MenuItem("Unpack Prefab")) {
+                Assets::PrefabManager::Get().UnpackInstance(m_World, entity);
+            }
+        }
+        ImGui::EndPopup();
+    }
+
     // Eye icon for visibility toggle (right-aligned on same line)
     {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -3100,84 +3179,6 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     // Double-click to focus camera on entity
     if (nodeHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         FocusOnEntity(entity);
-    }
-
-    // Drag source — start dragging this entity for reparenting
-    if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID)) {
-        ImGui::SetDragDropPayload("ENTITY_REPARENT", &entity, sizeof(ECS::Entity));
-        ImGui::Text("%s", name.c_str());
-        ImGui::EndDragDropSource();
-    }
-
-    // Drop target — drop an entity onto this one to make it a child
-    if (ImGui::BeginDragDropTarget()) {
-        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("ENTITY_REPARENT")) {
-            ECS::Entity droppedEntity = *(const ECS::Entity*)payload->Data;
-            // Prevent parenting to self or to own descendant
-            if (droppedEntity != entity) {
-                bool isDescendant = false;
-                ECS::Entity check = entity;
-                while (check != ECS::INVALID_ENTITY) {
-                    if (check == droppedEntity) { isDescendant = true; break; }
-                    check = ECS::GetParent(m_World, check);
-                }
-                if (!isDescendant) {
-                    ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);
-                    auto cmd = std::make_unique<ReparentEntityCommand>(m_World, droppedEntity, oldParent, entity);
-                    m_UndoRedo.Execute(std::move(cmd));
-                }
-            }
-        }
-        ImGui::EndDragDropTarget();
-    }
-
-    // Context menu
-    if (ImGui::BeginPopupContextItem()) {
-        if (ImGui::MenuItem("Delete", "Del")) {
-            DeselectEntity(entity);
-            auto cmd = std::make_unique<FullDeleteEntityCommand>(
-                m_World, entity,
-                [this](ECS::Entity restored) { SelectEntity(restored); });
-            m_UndoRedo.Execute(std::move(cmd));
-        }
-        if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
-            DuplicateEntity(entity);
-        }
-        if (ImGui::MenuItem("Focus", "F")) {
-            FocusOnEntity(entity);
-        }
-        // Unparent option if entity has a parent
-        if (ECS::HasParent(m_World, entity)) {
-            if (ImGui::MenuItem("Unparent")) {
-                ECS::Entity oldParent = ECS::GetParent(m_World, entity);
-                auto cmd = std::make_unique<ReparentEntityCommand>(m_World, entity, oldParent, ECS::INVALID_ENTITY);
-                m_UndoRedo.Execute(std::move(cmd));
-            }
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Save as Prefab...")) {
-            std::string defaultName = "prefab.enjprefab";
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                defaultName = m_World->GetComponent<ECS::NameComponent>(entity)->name + ".enjprefab";
-            }
-            std::vector<FileFilter> filters = {{ "Prefab Files", "*.enjprefab" }};
-            std::string path = FileDialog::SaveFile("Save as Prefab", filters, "", defaultName);
-            if (!path.empty()) {
-                std::string prefabName = defaultName.substr(0, defaultName.find_last_of('.'));
-                auto prefab = Assets::PrefabManager::Get().CreateFromEntity(
-                    m_World, entity, prefabName);
-                if (prefab) {
-                    Assets::PrefabManager::Get().SavePrefab(*prefab, path);
-                }
-            }
-        }
-        bool isPrefabInstance = Assets::PrefabUtils::IsPrefabInstance(m_World, entity);
-        if (isPrefabInstance) {
-            if (ImGui::MenuItem("Unpack Prefab")) {
-                Assets::PrefabManager::Get().UnpackInstance(m_World, entity);
-            }
-        }
-        ImGui::EndPopup();
     }
 
     // Recursively draw children if node is open
@@ -9041,6 +9042,20 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     m_VisiblePanels = m_Layout.panels;
     m_ForceLayout = true;
+
+    // Configure editor camera for 2D templates (orthographic, looking at XY plane)
+    if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
+        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike") {
+        if (m_CameraController) {
+            m_CameraController->SetOrthographic(true);
+            m_CameraController->SetOrthoSize(10.0f);
+            // Position looking at XY plane from +Z
+            if (m_Camera) {
+                m_Camera->SetPosition(Math::Vector3(0.0f, 0.0f, 15.0f));
+                m_CameraController->SyncFromCamera();
+            }
+        }
+    }
 
     // Handle custom templates
     if (templateId.substr(0, 7) == "custom:") {
@@ -15198,7 +15213,7 @@ void EditorLayer::DrawGizmos() {
     }
 
     // Set ImGuizmo to use the full screen as the viewport
-    ImGuizmo::SetOrthographic(false);
+    ImGuizmo::SetOrthographic(m_CameraController && m_CameraController->IsOrthographic());
     ImGuizmo::SetDrawlist(ImGui::GetBackgroundDrawList());
     ImGuizmo::SetRect(0, 0, static_cast<f32>(extent.width), static_cast<f32>(extent.height));
 
