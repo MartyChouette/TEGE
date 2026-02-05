@@ -24,6 +24,7 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_ProjectRoot.clear();
     m_CurrentSceneName.clear();
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+    m_ProjectMode = ProjectMode::Mode3D;
     m_CollisionGroupNames.clear();
     m_CollisionGroupNames.resize(32);
     m_CollisionGroupNames[0] = "Default";
@@ -68,6 +69,12 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Load project mode
+        if (root.contains("projectMode")) {
+            int mode = root["projectMode"].get<int>();
+            if (mode >= 0 && mode <= 2) m_ProjectMode = static_cast<ProjectMode>(mode);
+        }
+
         // Load project-level render defaults
         if (root.contains("defaultRenderSettings")) {
             m_DefaultRenderSettings = Renderer::DeserializeRenderSettings(root["defaultRenderSettings"]);
@@ -108,6 +115,9 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
             groupsArray.push_back(name);
         }
         root["collisionGroups"] = groupsArray;
+
+        // Save project mode
+        root["projectMode"] = static_cast<int>(m_ProjectMode);
 
         // Save project-level render defaults
         root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);

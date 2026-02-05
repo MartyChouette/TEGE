@@ -411,6 +411,7 @@ private:
     u32 m_GridAxisZStart = 0;    // First vertex of Z axis line
     f32 m_BuiltGridSize = 0.0f;
     i32 m_BuiltGridLines = 0;
+    bool m_BuiltGridIs2D = false;
     void BuildGridMesh();
 
     // Play mode
@@ -649,6 +650,7 @@ private:
     // Component search popup state
     char m_ComponentSearchBuf[256] = {};
     int m_ComponentSearchSelectedIndex = -1;
+    bool m_ShowAllComponents = false;
 
     void DrawUIEditorOverlay();
     void HandleUIEditorInput();

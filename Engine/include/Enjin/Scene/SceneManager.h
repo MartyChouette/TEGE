@@ -35,6 +35,13 @@ enum class TransitionState : u8 {
     FadingIn
 };
 
+// Project mode controls 2D/3D component filtering
+enum class ProjectMode : u8 {
+    Mode2D = 0,
+    Mode3D = 1,
+    Mixed = 2    // 2.5D / intentional mixing
+};
+
 // Scene Manager - handles multi-scene projects and runtime scene switching
 class ENJIN_API SceneManager {
 public:
@@ -121,6 +128,10 @@ public:
     const std::vector<std::string>& GetCollisionGroupNames() const { return m_CollisionGroupNames; }
     std::vector<std::string>& GetCollisionGroupNames() { return m_CollisionGroupNames; }
 
+    // --- Project mode (2D/3D/Mixed) ---
+    void SetProjectMode(ProjectMode mode) { m_ProjectMode = mode; }
+    ProjectMode GetProjectMode() const { return m_ProjectMode; }
+
     // --- Project-level render defaults ---
     void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
@@ -143,6 +154,9 @@ private:
 
     // Collision group names (index = bit number, up to 32)
     std::vector<std::string> m_CollisionGroupNames;
+
+    // Project mode (2D/3D/Mixed)
+    ProjectMode m_ProjectMode = ProjectMode::Mode3D;
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;

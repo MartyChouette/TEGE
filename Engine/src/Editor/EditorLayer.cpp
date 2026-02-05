@@ -78,6 +78,8 @@ void EditorLayer::RemoveComponentWithUndo(ECS::Entity entity, const std::string&
 
 // --- Component search bar data ---
 
+enum class DimensionTag : u8 { Any = 0, Only2D = 1, Only3D = 2 };
+
 struct ComponentEntry {
     const char* displayName;
     const char* category;
@@ -86,6 +88,7 @@ struct ComponentEntry {
     std::function<void(ECS::World*, ECS::Entity)> addComponent;
     std::function<void(ECS::World*, ECS::Entity)> removeComponent; // for undo of add
     const char* componentKey; // JSON key for serialization (for undo of remove)
+    DimensionTag dimension = DimensionTag::Any; // 2D/3D filtering
 };
 
 static const std::vector<ComponentEntry>& GetComponentEntries() {
@@ -95,7 +98,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MeshComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MeshComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MeshComponent>(e); },
-            "mesh"},
+            "mesh", DimensionTag::Only3D},
         {"LOD (Auto-Generate)", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LODComponent>(e) || !w->HasComponent<ECS::MeshComponent>(e); },
             [](ECS::World* w, ECS::Entity e) {
@@ -106,7 +109,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
                 }
             },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LODComponent>(e); },
-            "lod"},
+            "lod", DimensionTag::Only3D},
         {"Material", "Rendering", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MaterialComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MaterialComponent>(e); },
@@ -133,32 +136,32 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Platformer2DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Platformer2DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Platformer2DController>(e); },
-            "platformer2D"},
+            "platformer2D", DimensionTag::Only2D},
         {"2D Top-Down", "Character Controller", "TopDown2D",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown2DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown2DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TopDown2DController>(e); },
-            "topDown2D"},
+            "topDown2D", DimensionTag::Only2D},
         {"3D Top-Down (Isometric)", "Character Controller", "TopDown3D",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TopDown3DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TopDown3DController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TopDown3DController>(e); },
-            "topDown3D"},
+            "topDown3D", DimensionTag::Only3D},
         {"3D Third Person", "Character Controller", "ThirdPerson",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ThirdPersonController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ThirdPersonController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ThirdPersonController>(e); },
-            "thirdPerson"},
+            "thirdPerson", DimensionTag::Only3D},
         {"3D First Person", "Character Controller", "FirstPerson",
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FirstPersonController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FirstPersonController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FirstPersonController>(e); },
-            "firstPerson"},
+            "firstPerson", DimensionTag::Only3D},
         {"Vehicle", "Character Controller", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VehicleController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VehicleController>(e); },
-            "vehicle"},
+            "vehicle", DimensionTag::Only3D},
 
         // -- Physics --
         {"Rigidbody", "Physics", nullptr,
@@ -314,7 +317,7 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::RagdollComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::RagdollComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::RagdollComponent>(e); },
-            "ragdoll"},
+            "ragdoll", DimensionTag::Only3D},
 
         // -- AI --
         {"AI Controller", "AI", nullptr,
@@ -367,37 +370,37 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WeatherZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WeatherZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WeatherZoneComponent>(e); },
-            "weatherZone"},
+            "weatherZone", DimensionTag::Only3D},
         {"Water Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::WaterVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaterVolumeComponent>(e); },
-            "waterVolume"},
+            "waterVolume", DimensionTag::Only3D},
         {"Grass Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GrassVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrassVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::GrassVolumeComponent>(e); },
-            "grassVolume"},
+            "grassVolume", DimensionTag::Only3D},
         {"Shrub Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ShrubVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ShrubVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ShrubVolumeComponent>(e); },
-            "shrubVolume"},
+            "shrubVolume", DimensionTag::Only3D},
         {"Tree Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TreeVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TreeVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TreeVolumeComponent>(e); },
-            "treeVolume"},
+            "treeVolume", DimensionTag::Only3D},
         {"Vegetation", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VegetationComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VegetationComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VegetationComponent>(e); },
-            "vegetation"},
+            "vegetation", DimensionTag::Only3D},
         {"Camera Trigger", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CameraTriggerComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CameraTriggerComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CameraTriggerComponent>(e); },
-            "cameraTrigger"},
+            "cameraTrigger", DimensionTag::Only3D},
         {"Temperature Zone", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TemperatureZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TemperatureZoneComponent>(e); },
@@ -414,22 +417,22 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Sprite2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Sprite2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Sprite2DComponent>(e); },
-            "sprite2D"},
+            "sprite2D", DimensionTag::Only2D},
         {"Animated Sprite", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimatedSprite2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatedSprite2DComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimatedSprite2DComponent>(e); },
-            "animatedSprite2D"},
+            "animatedSprite2D", DimensionTag::Only2D},
         {"Tilemap", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TilemapComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TilemapComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TilemapComponent>(e); },
-            "tilemap"},
+            "tilemap", DimensionTag::Only2D},
         {"2D Camera Bounds", "2D Graphics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Camera2DBoundsComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Camera2DBoundsComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Camera2DBoundsComponent>(e); },
-            "camera2DBounds"},
+            "camera2DBounds", DimensionTag::Only2D},
 
         // -- Scripting --
         {"Script", "Scripting", nullptr,
@@ -3598,8 +3601,21 @@ void EditorLayer::DrawInspectorPanel() {
             char prevFilter[256];
             std::memcpy(prevFilter, m_ComponentSearchBuf, sizeof(prevFilter));
 
-            ImGui::SetNextItemWidth(-1);
+            auto projectMode = m_SceneManager.GetProjectMode();
+            bool showDimToggle = projectMode != Scene::ProjectMode::Mixed;
+
+            ImGui::SetNextItemWidth(showDimToggle ? -50.0f : -1.0f);
             ImGui::InputTextWithHint("##ComponentSearch", "Search components...", m_ComponentSearchBuf, sizeof(m_ComponentSearchBuf));
+
+            // "All" toggle to bypass dimension filtering
+            if (showDimToggle) {
+                ImGui::SameLine();
+                ImGui::Checkbox("All", &m_ShowAllComponents);
+                if (ImGui::IsItemHovered()) {
+                    const char* modeName = projectMode == Scene::ProjectMode::Mode2D ? "2D" : "3D";
+                    ImGui::SetTooltip("Show components from all dimensions\n(project is set to %s mode)", modeName);
+                }
+            }
 
             // Reset selection index when filter changes
             if (std::strcmp(prevFilter, m_ComponentSearchBuf) != 0) {
@@ -3618,6 +3634,11 @@ void EditorLayer::DrawInspectorPanel() {
             for (int i = 0; i < static_cast<int>(allEntries.size()); i++) {
                 const auto& e = allEntries[i];
                 if (e.hasComponent(m_World, m_PrimarySelected)) continue;
+                // Dimension filtering
+                if (!m_ShowAllComponents && projectMode != Scene::ProjectMode::Mixed) {
+                    if (projectMode == Scene::ProjectMode::Mode2D && e.dimension == DimensionTag::Only3D) continue;
+                    if (projectMode == Scene::ProjectMode::Mode3D && e.dimension == DimensionTag::Only2D) continue;
+                }
                 int score = ScoreComponentMatch(e, m_ComponentSearchBuf);
                 if (score <= 0) continue;
                 visible.push_back({i, &e, score});
@@ -3660,6 +3681,11 @@ void EditorLayer::DrawInspectorPanel() {
                         // Find matching entry that isn't already on the entity
                         for (const auto& e : allEntries) {
                             if (std::strcmp(e.displayName, rcName.c_str()) == 0 && !e.hasComponent(m_World, m_PrimarySelected)) {
+                                // Dimension filtering for recently-used
+                                if (!m_ShowAllComponents && projectMode != Scene::ProjectMode::Mixed) {
+                                    if (projectMode == Scene::ProjectMode::Mode2D && e.dimension == DimensionTag::Only3D) break;
+                                    if (projectMode == Scene::ProjectMode::Mode3D && e.dimension == DimensionTag::Only2D) break;
+                                }
                                 if (!anyRecent) {
                                     ImGui::TextDisabled("Recently Used");
                                     anyRecent = true;
@@ -5949,6 +5975,30 @@ void EditorLayer::DrawSettingsPanel() {
 
 void EditorLayer::DrawProjectSettingsPanel() {
     ImGui::Begin("Project Settings");
+
+    if (ImGui::CollapsingHeader("Project", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* modeNames[] = { "2D", "3D", "Mixed (2.5D)" };
+        int currentMode = static_cast<int>(m_SceneManager.GetProjectMode());
+        if (ImGui::Combo("Project Mode", &currentMode, modeNames, 3)) {
+            m_SceneManager.SetProjectMode(static_cast<Scene::ProjectMode>(currentMode));
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                m_SceneManager.SaveProject();
+            }
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip(
+                "2D: Hides 3D-only components (Mesh, 3D controllers, vegetation)\n"
+                "3D: Hides 2D-only components (Sprite, Tilemap, 2D controllers)\n"
+                "Mixed: Shows all components for 2.5D workflows");
+        }
+
+        const char* desc[] = {
+            "2D mode: 3D components hidden in Add Component",
+            "3D mode: 2D components hidden in Add Component",
+            "Mixed mode: All components visible"
+        };
+        ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "%s", desc[currentMode]);
+    }
 
     if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Per-scene override toggle
@@ -8715,6 +8765,16 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     std::string relativeScenePath = "scenes/" + std::string(sceneName) + ".enjin";
     m_SceneManager.AddScene(sceneName, relativeScenePath);
     m_SceneManager.SetStartScene(0);
+
+    // Auto-set project mode from template category
+    if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
+        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike") {
+        m_SceneManager.SetProjectMode(Scene::ProjectMode::Mode2D);
+    } else if (templateId == "blank" || templateId == "visualnovel" || templateId == "gamemanager") {
+        m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
+    } else {
+        m_SceneManager.SetProjectMode(Scene::ProjectMode::Mode3D);
+    }
 
     // Save manifest
     fs::path manifestPath = projRoot / (projectName + ".enjinproject");
@@ -15237,12 +15297,13 @@ void EditorLayer::DrawGizmos() {
 void EditorLayer::BuildGridMesh() {
     if (!m_Renderer) return;
 
+    bool is2D = m_SceneManager.GetProjectMode() == Scene::ProjectMode::Mode2D;
     f32 halfExtent = m_GridSize * 0.5f;
     f32 step = m_GridSize / static_cast<f32>(m_GridLines);
     i32 halfLines = m_GridLines / 2;
 
     // Count lines: (gridLines+1) per axis, minus 1 axis line each = regular lines
-    // Layout: [regular lines] [X axis] [Z axis]
+    // Layout: [regular lines] [X axis] [Y/Z axis]
     u32 regularPerAxis = static_cast<u32>(m_GridLines); // lines excluding i=0
     u32 regularLines = regularPerAxis * 2;
     u32 totalVertices = (regularLines + 2) * 2; // +2 for axis lines, *2 verts per line
@@ -15272,29 +15333,55 @@ void EditorLayer::BuildGridMesh() {
         v++;
     };
 
-    // Regular lines (skip i=0 which is the axis)
-    // X-parallel lines
-    for (i32 i = -halfLines; i <= halfLines; ++i) {
-        if (i == 0) continue;
-        f32 z = static_cast<f32>(i) * step;
-        addVert(-halfExtent, 0.0f, z);
-        addVert( halfExtent, 0.0f, z);
-    }
-    // Z-parallel lines
-    for (i32 i = -halfLines; i <= halfLines; ++i) {
-        if (i == 0) continue;
-        f32 x = static_cast<f32>(i) * step;
-        addVert(x, 0.0f, -halfExtent);
-        addVert(x, 0.0f,  halfExtent);
-    }
+    if (is2D) {
+        // 2D mode: grid in XY plane (Z=0)
+        // X-parallel lines (horizontal)
+        for (i32 i = -halfLines; i <= halfLines; ++i) {
+            if (i == 0) continue;
+            f32 y = static_cast<f32>(i) * step;
+            addVert(-halfExtent, y, 0.0f);
+            addVert( halfExtent, y, 0.0f);
+        }
+        // Y-parallel lines (vertical)
+        for (i32 i = -halfLines; i <= halfLines; ++i) {
+            if (i == 0) continue;
+            f32 x = static_cast<f32>(i) * step;
+            addVert(x, -halfExtent, 0.0f);
+            addVert(x,  halfExtent, 0.0f);
+        }
 
-    // X axis line (at z=0, runs along X)
-    addVert(-halfExtent, 0.0f, 0.0f);
-    addVert( halfExtent, 0.0f, 0.0f);
+        // X axis line (horizontal, at y=0)
+        addVert(-halfExtent, 0.0f, 0.0f);
+        addVert( halfExtent, 0.0f, 0.0f);
 
-    // Z axis line (at x=0, runs along Z)
-    addVert(0.0f, 0.0f, -halfExtent);
-    addVert(0.0f, 0.0f,  halfExtent);
+        // Y axis line (vertical, at x=0)
+        addVert(0.0f, -halfExtent, 0.0f);
+        addVert(0.0f,  halfExtent, 0.0f);
+    } else {
+        // 3D/Mixed mode: grid in XZ plane (Y=0)
+        // X-parallel lines
+        for (i32 i = -halfLines; i <= halfLines; ++i) {
+            if (i == 0) continue;
+            f32 z = static_cast<f32>(i) * step;
+            addVert(-halfExtent, 0.0f, z);
+            addVert( halfExtent, 0.0f, z);
+        }
+        // Z-parallel lines
+        for (i32 i = -halfLines; i <= halfLines; ++i) {
+            if (i == 0) continue;
+            f32 x = static_cast<f32>(i) * step;
+            addVert(x, 0.0f, -halfExtent);
+            addVert(x, 0.0f,  halfExtent);
+        }
+
+        // X axis line (at z=0, runs along X)
+        addVert(-halfExtent, 0.0f, 0.0f);
+        addVert( halfExtent, 0.0f, 0.0f);
+
+        // Z axis line (at x=0, runs along Z)
+        addVert(0.0f, 0.0f, -halfExtent);
+        addVert(0.0f, 0.0f,  halfExtent);
+    }
 
     usize bufferSize = verts.size() * sizeof(f32);
     m_GridVertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
@@ -15303,6 +15390,7 @@ void EditorLayer::BuildGridMesh() {
 
     m_BuiltGridSize = m_GridSize;
     m_BuiltGridLines = m_GridLines;
+    m_BuiltGridIs2D = is2D;
 }
 
 void EditorLayer::DrawGrid() {
@@ -15310,8 +15398,11 @@ void EditorLayer::DrawGrid() {
         return;
     }
 
-    // Rebuild mesh when grid settings change
-    if (!m_GridVertexBuffer || m_GridSize != m_BuiltGridSize || m_GridLines != m_BuiltGridLines) {
+    bool is2D = m_SceneManager.GetProjectMode() == Scene::ProjectMode::Mode2D;
+
+    // Rebuild mesh when grid settings or orientation change
+    if (!m_GridVertexBuffer || m_GridSize != m_BuiltGridSize ||
+        m_GridLines != m_BuiltGridLines || is2D != m_BuiltGridIs2D) {
         BuildGridMesh();
     }
 
@@ -15321,13 +15412,18 @@ void EditorLayer::DrawGrid() {
     m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), m_GridRegularCount,
         0, Math::Vector3(0.22f, 0.22f, 0.22f), 0.47f);
 
-    // X axis (red)
+    // X axis (red) — same in both modes
     m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
         m_GridAxisXStart, Math::Vector3(0.7f, 0.24f, 0.24f), 0.8f);
 
-    // Z axis (blue)
-    m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
-        m_GridAxisZStart, Math::Vector3(0.24f, 0.24f, 0.7f), 0.8f);
+    // Second axis: Y (green) in 2D mode, Z (blue) in 3D mode
+    if (is2D) {
+        m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+            m_GridAxisZStart, Math::Vector3(0.24f, 0.7f, 0.24f), 0.8f);
+    } else {
+        m_RenderSystem->RenderGridLines(m_GridVertexBuffer.get(), 2,
+            m_GridAxisZStart, Math::Vector3(0.24f, 0.24f, 0.7f), 0.8f);
+    }
 }
 
 void EditorLayer::FocusOnEntity(ECS::Entity entity) {
