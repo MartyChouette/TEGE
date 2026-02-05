@@ -301,7 +301,8 @@ private:
 
     // Interaction
     void HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSize,
-                                 NodeGraphData& data, NodeGraphCallbacks& callbacks);
+                                 NodeGraphData& data, NodeGraphCallbacks& callbacks,
+                                 f32 uiScale);
     void HandleKeyboard(NodeGraphData& data, NodeGraphCallbacks& callbacks);
 
     // Coordinate transforms

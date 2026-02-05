@@ -444,7 +444,7 @@ void NodeGraphEditor::Render(NodeGraphData& data, NodeGraphCallbacks& callbacks,
 
     // Handle interactions after rendering
     if (canvasHovered) {
-        HandleCanvasInteraction(canvasPos, canvasSize, data, callbacks);
+        HandleCanvasInteraction(canvasPos, canvasSize, data, callbacks, uiScale);
     }
 
     // Context menu (rendered outside clip rect)
@@ -725,11 +725,12 @@ void NodeGraphEditor::DrawContextMenu(NodeGraphData& data, NodeGraphCallbacks& c
 
 void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSize,
                                                 NodeGraphData& data,
-                                                NodeGraphCallbacks& callbacks) {
+                                                NodeGraphCallbacks& callbacks,
+                                                f32 uiScale) {
     ImGuiIO& io = ImGui::GetIO();
     ImVec2 mousePos = io.MousePos;
 
-    f32 s = m_Zoom;
+    f32 s = m_Zoom * uiScale;
 
     // --- Zoom (scroll wheel) ---
     if (io.MouseWheel != 0.0f) {
@@ -759,7 +760,7 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
         for (auto& node : data.GetNodes()) {
             auto checkPins = [&](const std::vector<Pin>& pins) {
                 for (auto& pin : pins) {
-                    ImVec2 pinPos = GetPinScreenPos(node, pin, canvasPos, 1.0f);
+                    ImVec2 pinPos = GetPinScreenPos(node, pin, canvasPos, uiScale);
                     f32 r = PIN_RADIUS * s + 4.0f;
                     f32 dx = mousePos.x - pinPos.x;
                     f32 dy = mousePos.y - pinPos.y;
@@ -794,7 +795,7 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
                             if (pin.kind == startPin->kind) continue;  // Same kind can't connect
                             if (pin.nodeId == startPin->nodeId) continue;  // Same node
 
-                            ImVec2 pinPos = GetPinScreenPos(node, pin, canvasPos, 1.0f);
+                            ImVec2 pinPos = GetPinScreenPos(node, pin, canvasPos, uiScale);
                             f32 r = PIN_RADIUS * s + 6.0f;
                             f32 dx = mousePos.x - pinPos.x;
                             f32 dy = mousePos.y - pinPos.y;
@@ -848,7 +849,7 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
         auto& nodes = data.GetNodes();
         for (auto it = nodes.rbegin(); it != nodes.rend(); ++it) {
             ImVec2 nodePos = CanvasToScreen(it->position, canvasPos);
-            ImVec2 nodeSize = GetNodeSize(*it, 1.0f);
+            ImVec2 nodeSize = GetNodeSize(*it, uiScale);
             if (mousePos.x >= nodePos.x && mousePos.x <= nodePos.x + nodeSize.x &&
                 mousePos.y >= nodePos.y && mousePos.y <= nodePos.y + nodeSize.y) {
                 m_SelectedNodeId = it->id;
@@ -872,8 +873,8 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
                 auto* en = data.FindNode(ep->nodeId);
                 if (!sn || !en) continue;
 
-                ImVec2 p1 = GetPinScreenPos(*sn, *sp, canvasPos, 1.0f);
-                ImVec2 p2 = GetPinScreenPos(*en, *ep, canvasPos, 1.0f);
+                ImVec2 p1 = GetPinScreenPos(*sn, *sp, canvasPos, uiScale);
+                ImVec2 p2 = GetPinScreenPos(*en, *ep, canvasPos, uiScale);
 
                 // Simple proximity test to bezier curve midpoint
                 ImVec2 mid((p1.x + p2.x) * 0.5f, (p1.y + p2.y) * 0.5f);
@@ -925,7 +926,7 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
                     std::max(m_BoxSelectStart.y, mousePos.y));
         for (auto& node : data.GetNodes()) {
             ImVec2 np = CanvasToScreen(node.position, canvasPos);
-            ImVec2 ns = GetNodeSize(node, 1.0f);
+            ImVec2 ns = GetNodeSize(node, uiScale);
             if (np.x >= bMin.x && np.y >= bMin.y &&
                 np.x + ns.x <= bMax.x && np.y + ns.y <= bMax.y) {
                 m_SelectedNodeId = node.id;
