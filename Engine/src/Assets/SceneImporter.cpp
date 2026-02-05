@@ -18,6 +18,18 @@
 namespace Enjin {
 namespace Assets {
 
+// Helper: copy accumulated stats into ImportResult
+static void CopyStatsToResult(ImportResult& result, const SceneImporter::ImportStats& stats) {
+    result.meshCount = stats.meshCount;
+    result.materialCount = stats.materialCount;
+    result.totalVertexCount = stats.totalVertexCount;
+    result.totalIndexCount = stats.totalIndexCount;
+    result.entityNames = stats.entityNames;
+    result.texturePathsResolved = stats.texturePathsResolved;
+    result.texturePathsMissing = stats.texturePathsMissing;
+    result.warnings = stats.warnings;
+}
+
 ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* world,
                                         const ImportOptions& options) {
     ImportResult result;
@@ -34,14 +46,24 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         return result;
     }
 
+    ImportStats stats;
+
+    // Count scene-level totals
+    stats.meshCount = static_cast<u32>(scene.meshes.size());
+    stats.materialCount = static_cast<u32>(scene.materials.size());
+
+    // Count animations
+    result.animationCount = static_cast<u32>(scene.animations.size());
+
     // Create entities from root nodes
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromNode(scene, rootIndex, world, options, result.entities);
+        ECS::Entity entity = CreateEntityFromNode(scene, rootIndex, world, options, result.entities, stats);
         if (result.rootEntity == ECS::INVALID_ENTITY) {
             result.rootEntity = entity;
         }
     }
 
+    CopyStatsToResult(result, stats);
     result.success = true;
     ENJIN_LOG_INFO(Asset, "Imported %zu entities from %s", result.entities.size(), filepath.c_str());
     return result;
@@ -49,7 +71,8 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
 
 ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 nodeIndex,
                                                   ECS::World* world, const ImportOptions& options,
-                                                  std::vector<ECS::Entity>& outEntities) {
+                                                  std::vector<ECS::Entity>& outEntities,
+                                                  ImportStats& stats) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
     }
@@ -63,6 +86,7 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
     // Add name component
     std::string name = node.name.empty() ? "Node_" + std::to_string(nodeIndex) : node.name;
     world->AddComponent<ECS::NameComponent>(entity, name);
+    stats.entityNames.push_back(name);
 
     // Add transform component
     auto& transform = world->AddComponent<ECS::TransformComponent>(entity);
@@ -104,6 +128,10 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         }
 
         if (!meshComp.vertices.empty()) {
+            // Accumulate vertex/index stats
+            stats.totalVertexCount += static_cast<u32>(meshComp.vertices.size());
+            stats.totalIndexCount += static_cast<u32>(meshComp.indices.size());
+
             // Compute AABB from vertex positions for auto-generated box collider
             Math::Vector3 minBounds(FLT_MAX, FLT_MAX, FLT_MAX);
             Math::Vector3 maxBounds(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -125,53 +153,75 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Add box collider from mesh AABB
-            auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
-            collider.center = (minBounds + maxBounds) * 0.5f;
-            collider.size = maxBounds - minBounds;
+            if (options.generateColliders) {
+                auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
+                collider.center = (minBounds + maxBounds) * 0.5f;
+                collider.size = maxBounds - minBounds;
+            }
 
             // Extract material from the first primitive that has one
-            i32 matIdx = -1;
-            for (const auto& primitive : gltfMesh.primitives) {
-                if (primitive.materialIndex >= 0) {
-                    matIdx = primitive.materialIndex;
-                    break;
+            if (options.importMaterials) {
+                i32 matIdx = -1;
+                for (const auto& primitive : gltfMesh.primitives) {
+                    if (primitive.materialIndex >= 0) {
+                        matIdx = primitive.materialIndex;
+                        break;
+                    }
                 }
-            }
-            if (matIdx >= 0 && matIdx < static_cast<i32>(scene.materials.size())) {
-                const GLTFMaterial& gmat = scene.materials[matIdx];
-                auto& mat = world->AddComponent<ECS::MaterialComponent>(entity);
-                mat.baseColor = Math::Vector3(gmat.baseColorFactor.x,
-                                              gmat.baseColorFactor.y,
-                                              gmat.baseColorFactor.z);
-                mat.opacity = gmat.baseColorFactor.w;
-                mat.metallic = gmat.metallicFactor;
-                mat.roughness = gmat.roughnessFactor;
-                mat.emissiveColor = gmat.emissiveFactor;
-                mat.emissiveStrength = (gmat.emissiveFactor.x + gmat.emissiveFactor.y + gmat.emissiveFactor.z > 0.01f) ? 1.0f : 0.0f;
-                mat.doubleSided = gmat.doubleSided;
-                mat.alphaCutoff = gmat.alphaCutoff;
-                if (gmat.alphaMode == GLTFMaterial::AlphaMode::Mask) {
-                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Mask;
-                } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
-                    mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
-                }
+                if (matIdx >= 0 && matIdx < static_cast<i32>(scene.materials.size())) {
+                    const GLTFMaterial& gmat = scene.materials[matIdx];
+                    auto& mat = world->AddComponent<ECS::MaterialComponent>(entity);
+                    mat.baseColor = Math::Vector3(gmat.baseColorFactor.x,
+                                                  gmat.baseColorFactor.y,
+                                                  gmat.baseColorFactor.z);
+                    mat.opacity = gmat.baseColorFactor.w;
+                    mat.metallic = gmat.metallicFactor;
+                    mat.roughness = gmat.roughnessFactor;
+                    mat.emissiveColor = gmat.emissiveFactor;
+                    mat.emissiveStrength = (gmat.emissiveFactor.x + gmat.emissiveFactor.y + gmat.emissiveFactor.z > 0.01f) ? 1.0f : 0.0f;
+                    mat.doubleSided = gmat.doubleSided;
+                    mat.alphaCutoff = gmat.alphaCutoff;
+                    if (gmat.alphaMode == GLTFMaterial::AlphaMode::Mask) {
+                        mat.alphaMode = ECS::MaterialComponent::AlphaMode::Mask;
+                    } else if (gmat.alphaMode == GLTFMaterial::AlphaMode::Blend) {
+                        mat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                    }
 
-                // Resolve texture paths from glTF image URIs
-                auto resolveGltfTex = [&](i32 texIdx) -> std::string {
-                    if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
-                    const std::string& uri = scene.images[texIdx].uri;
-                    if (uri.empty()) return "";
-                    std::filesystem::path resolved = std::filesystem::path(scene.basePath) / uri;
-                    if (std::filesystem::exists(resolved)) return resolved.string();
-                    return uri;
-                };
-                mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
-                if (!mat.baseColorTexturePath.empty()) {
-                    mat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    // Resolve texture paths from glTF image URIs with fallback directories
+                    auto resolveGltfTex = [&](i32 texIdx) -> std::string {
+                        if (texIdx < 0 || texIdx >= static_cast<i32>(scene.images.size())) return "";
+                        const std::string& uri = scene.images[texIdx].uri;
+                        if (uri.empty()) return "";
+                        namespace fs = std::filesystem;
+                        // Try direct path relative to model base
+                        fs::path resolved = fs::path(scene.basePath) / uri;
+                        if (fs::exists(resolved)) {
+                            stats.texturePathsResolved.push_back(resolved.string());
+                            return resolved.string();
+                        }
+                        // Try textures/ subdirectory
+                        resolved = fs::path(scene.basePath) / "textures" / fs::path(uri).filename();
+                        if (fs::exists(resolved)) {
+                            stats.texturePathsResolved.push_back(resolved.string());
+                            return resolved.string();
+                        }
+                        // Try Textures/ subdirectory (capital T)
+                        resolved = fs::path(scene.basePath) / "Textures" / fs::path(uri).filename();
+                        if (fs::exists(resolved)) {
+                            stats.texturePathsResolved.push_back(resolved.string());
+                            return resolved.string();
+                        }
+                        stats.texturePathsMissing.push_back(uri);
+                        return uri;
+                    };
+                    mat.baseColorTexturePath = resolveGltfTex(gmat.baseColorTextureIndex);
+                    if (!mat.baseColorTexturePath.empty()) {
+                        mat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    }
+                    mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
+                    mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
+                    mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
                 }
-                mat.normalTexturePath = resolveGltfTex(gmat.normalTextureIndex);
-                mat.metallicRoughnessTexturePath = resolveGltfTex(gmat.metallicRoughnessTextureIndex);
-                mat.emissiveTexturePath = resolveGltfTex(gmat.emissiveTextureIndex);
             }
 
             // Auto-generate LODs for imported meshes with enough geometry
@@ -183,8 +233,8 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         }
     }
 
-    // Set up skeleton and animator if this node has a skin
-    if (node.skinIndex >= 0 && node.skinIndex < static_cast<i32>(scene.skins.size())) {
+    // Set up skeleton and animator if this node has a skin (and animations are enabled)
+    if (options.importAnimations && node.skinIndex >= 0 && node.skinIndex < static_cast<i32>(scene.skins.size())) {
         const GLTFSkin& skin = scene.skins[node.skinIndex];
 
         // Build skeleton from skin data
@@ -332,7 +382,7 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
 
     // Recursively create child entities with parent-child hierarchy
     for (i32 childIndex : node.children) {
-        ECS::Entity childEntity = CreateEntityFromNode(scene, childIndex, world, options, outEntities);
+        ECS::Entity childEntity = CreateEntityFromNode(scene, childIndex, world, options, outEntities, stats);
         if (childEntity != ECS::INVALID_ENTITY) {
             ECS::SetParent(world, childEntity, entity);
         }
@@ -357,14 +407,21 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         return result;
     }
 
+    ImportStats stats;
+
+    // Count scene-level totals
+    stats.meshCount = static_cast<u32>(scene.meshes.size());
+    stats.materialCount = static_cast<u32>(scene.materials.size());
+
     // Create entities from root nodes
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, options, result.entities);
+        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, options, result.entities, stats);
         if (result.rootEntity == ECS::INVALID_ENTITY) {
             result.rootEntity = entity;
         }
     }
 
+    CopyStatsToResult(result, stats);
     result.success = true;
     ENJIN_LOG_INFO(Asset, "Imported %zu entities from %s (via Assimp)", result.entities.size(), filepath.c_str());
     return result;
@@ -393,7 +450,8 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
 
 ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, i32 nodeIndex,
                                                        ECS::World* world, const ImportOptions& options,
-                                                       std::vector<ECS::Entity>& outEntities) {
+                                                       std::vector<ECS::Entity>& outEntities,
+                                                       ImportStats& stats) {
     if (nodeIndex < 0 || nodeIndex >= static_cast<i32>(scene.nodes.size())) {
         return ECS::INVALID_ENTITY;
     }
@@ -407,6 +465,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     // Add name component
     std::string name = node.name.empty() ? "Node_" + std::to_string(nodeIndex) : node.name;
     world->AddComponent<ECS::NameComponent>(entity, name);
+    stats.entityNames.push_back(name);
 
     // Add transform component
     auto& transform = world->AddComponent<ECS::TransformComponent>(entity);
@@ -455,6 +514,10 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
         }
 
         if (!meshComp.vertices.empty()) {
+            // Accumulate vertex/index stats
+            stats.totalVertexCount += static_cast<u32>(meshComp.vertices.size());
+            stats.totalIndexCount += static_cast<u32>(meshComp.indices.size());
+
             // Compute AABB from vertex positions for auto-generated box collider
             Math::Vector3 minBounds(FLT_MAX, FLT_MAX, FLT_MAX);
             Math::Vector3 maxBounds(-FLT_MAX, -FLT_MAX, -FLT_MAX);
@@ -476,9 +539,11 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
             world->AddComponent<ECS::MeshComponent>(entity, std::move(meshComp));
 
             // Add box collider from mesh AABB
-            auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
-            collider.center = (minBounds + maxBounds) * 0.5f;
-            collider.size = maxBounds - minBounds;
+            if (options.generateColliders) {
+                auto& collider = world->AddComponent<ECS::BoxColliderComponent>(entity);
+                collider.center = (minBounds + maxBounds) * 0.5f;
+                collider.size = maxBounds - minBounds;
+            }
 
             // Add material component if available and options allow
             if (options.importMaterials && materialIndex >= 0 &&
@@ -497,17 +562,40 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                 matComp.emissiveColor = assimpMat.emissiveFactor;
                 matComp.doubleSided = assimpMat.doubleSided;
 
-                // Resolve texture paths relative to model directory
+                // Resolve texture paths relative to model directory with fallback directories
                 auto resolveTexPath = [&](const std::string& texPath) -> std::string {
                     if (texPath.empty()) return "";
-                    std::filesystem::path p(texPath);
-                    if (p.is_absolute() && std::filesystem::exists(p)) return p.string();
+                    namespace fs = std::filesystem;
+                    fs::path p(texPath);
+                    if (p.is_absolute() && fs::exists(p)) {
+                        stats.texturePathsResolved.push_back(p.string());
+                        return p.string();
+                    }
                     // Try relative to model's base directory
-                    std::filesystem::path resolved = std::filesystem::path(scene.basePath) / p;
-                    if (std::filesystem::exists(resolved)) return resolved.string();
+                    fs::path resolved = fs::path(scene.basePath) / p;
+                    if (fs::exists(resolved)) {
+                        stats.texturePathsResolved.push_back(resolved.string());
+                        return resolved.string();
+                    }
                     // Try just the filename in the base directory
-                    resolved = std::filesystem::path(scene.basePath) / p.filename();
-                    if (std::filesystem::exists(resolved)) return resolved.string();
+                    resolved = fs::path(scene.basePath) / p.filename();
+                    if (fs::exists(resolved)) {
+                        stats.texturePathsResolved.push_back(resolved.string());
+                        return resolved.string();
+                    }
+                    // Try textures/ subdirectory
+                    resolved = fs::path(scene.basePath) / "textures" / p.filename();
+                    if (fs::exists(resolved)) {
+                        stats.texturePathsResolved.push_back(resolved.string());
+                        return resolved.string();
+                    }
+                    // Try Textures/ subdirectory (capital T)
+                    resolved = fs::path(scene.basePath) / "Textures" / p.filename();
+                    if (fs::exists(resolved)) {
+                        stats.texturePathsResolved.push_back(resolved.string());
+                        return resolved.string();
+                    }
+                    stats.texturePathsMissing.push_back(texPath);
                     return texPath; // Return as-is, RenderSystem will attempt to load
                 };
 
@@ -535,7 +623,7 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
 
     // Recursively create child entities with parent-child hierarchy
     for (i32 childIndex : node.children) {
-        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options, outEntities);
+        ECS::Entity childEntity = CreateEntityFromAssimpNode(scene, childIndex, world, options, outEntities, stats);
         if (childEntity != ECS::INVALID_ENTITY) {
             ECS::SetParent(world, childEntity, entity);
         }

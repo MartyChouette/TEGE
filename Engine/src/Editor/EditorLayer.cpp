@@ -32,6 +32,7 @@
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Assets/SceneImporter.h"
+#include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Renderer/PostProcessing.h"
@@ -1935,6 +1936,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::ShowDemoWindow(&m_ShowDemoWindow);
     }
 
+    // Import dialog
+    if (m_ShowImportDialog) {
+        DrawImportDialog();
+    }
+
     // Build dialog
     if (m_ShowBuildDialog) {
         DrawBuildDialog();
@@ -2212,6 +2218,7 @@ void EditorLayer::DrawMenuBar() {
             ImGui::Separator();
             if (ImGui::MenuItem("Import Model...", "Ctrl+I")) {
                 std::vector<FileFilter> filters = {
+                    { "3D Models", "*.gltf;*.glb;*.fbx;*.obj;*.dae;*.3ds" },
                     { "glTF Files", "*.gltf;*.glb" },
                     { "All Files", "*.*" }
                 };
@@ -2219,6 +2226,9 @@ void EditorLayer::DrawMenuBar() {
                 if (!path.empty()) {
                     ImportModel(path);
                 }
+            }
+            if (ImGui::MenuItem("Re-import Last Model...", nullptr, false, !m_LastImportedModelPath.empty())) {
+                ImportModel(m_LastImportedModelPath);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Build Game...", "Ctrl+B")) {
@@ -5110,7 +5120,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
     // Import buttons
     if (ImGui::Button("Import Model...")) {
         std::vector<FileFilter> filters = {
-            { "3D Models", "*.gltf;*.glb;*.fbx;*.obj" },
+            { "3D Models", "*.gltf;*.glb;*.fbx;*.obj;*.dae;*.3ds" },
             { "All Files", "*.*" }
         };
         std::string path = FileDialog::OpenFile("Import Model", filters);
@@ -14729,22 +14739,139 @@ void EditorLayer::ImportModel(const std::string& path) {
         return;
     }
 
-    Assets::ImportOptions options;
-    options.scale = 1.0f;
+    // Pre-fill from .enjinasset if re-importing
+    if (Assets::AssetMetadata::Exists(path)) {
+        Assets::AssetMetadata meta;
+        if (meta.Load(path)) {
+            m_ImportDialogOptions = meta.importOptions;
+        }
+    } else {
+        m_ImportDialogOptions = Assets::ImportOptions{};
+    }
+
+    m_ImportDialogPath = path;
+    m_ShowImportDialog = true;
+}
+
+void EditorLayer::DrawImportDialog() {
+    ImGui::OpenPopup("Import Settings");
+
+    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Always);
+    if (ImGui::BeginPopupModal("Import Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        // File info
+        std::filesystem::path filePath(m_ImportDialogPath);
+        std::string filename = filePath.filename().string();
+        std::string ext = filePath.extension().string();
+
+        ImGui::Text("File: %s", filename.c_str());
+        ImGui::Text("Format: %s", ext.c_str());
+
+        // File size
+        try {
+            if (std::filesystem::exists(filePath)) {
+                auto size = std::filesystem::file_size(filePath);
+                if (size < 1024) {
+                    ImGui::Text("Size: %llu bytes", (unsigned long long)size);
+                } else if (size < 1024 * 1024) {
+                    ImGui::Text("Size: %.1f KB", size / 1024.0f);
+                } else {
+                    ImGui::Text("Size: %.1f MB", size / (1024.0f * 1024.0f));
+                }
+            }
+        } catch (...) {}
+
+        // Re-import indicator
+        if (Assets::AssetMetadata::Exists(m_ImportDialogPath)) {
+            ImGui::TextColored(ImVec4(0.4f, 0.8f, 1.0f, 1.0f), "(Re-import)");
+        }
+
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Import options
+        ImGui::Text("Import Options");
+        ImGui::DragFloat("Scale", &m_ImportDialogOptions.scale, 0.01f, 0.001f, 100.0f, "%.3f");
+        ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
+        ImGui::Checkbox("Import Animations", &m_ImportDialogOptions.importAnimations);
+        ImGui::Checkbox("Generate Colliders", &m_ImportDialogOptions.generateColliders);
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Buttons
+        if (ImGui::Button("Import", ImVec2(120, 0))) {
+            ExecuteImport(m_ImportDialogPath, m_ImportDialogOptions);
+            m_ShowImportDialog = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+            m_ShowImportDialog = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOptions& options) {
+    if (!m_World) return;
 
     Assets::ImportResult result = Assets::SceneImporter::Import(path, m_World, options);
 
     if (result.success) {
+        // Detailed summary log
         std::stringstream ss;
-        ss << "[Info] Imported " << result.entities.size() << " entities from " << path;
+        ss << "[Info] Imported " << result.entities.size() << " entities from "
+           << std::filesystem::path(path).filename().string();
         m_ConsoleLog.push_back(ss.str());
-        ENJIN_LOG_INFO(Editor, "Imported %zu entities from %s", result.entities.size(), path.c_str());
+
+        ss.str("");
+        ss << "[Info]   Meshes: " << result.meshCount
+           << ", Materials: " << result.materialCount
+           << ", Animations: " << result.animationCount;
+        m_ConsoleLog.push_back(ss.str());
+
+        ss.str("");
+        ss << "[Info]   Vertices: " << result.totalVertexCount
+           << ", Indices: " << result.totalIndexCount;
+        m_ConsoleLog.push_back(ss.str());
+
+        if (!result.texturePathsResolved.empty()) {
+            ss.str("");
+            ss << "[Info]   Textures resolved: " << result.texturePathsResolved.size();
+            m_ConsoleLog.push_back(ss.str());
+        }
+        if (!result.texturePathsMissing.empty()) {
+            ss.str("");
+            ss << "[Warn]   Textures missing: " << result.texturePathsMissing.size();
+            m_ConsoleLog.push_back(ss.str());
+            for (const auto& missing : result.texturePathsMissing) {
+                m_ConsoleLog.push_back("  [Warn]     " + missing);
+            }
+        }
+        for (const auto& warning : result.warnings) {
+            m_ConsoleLog.push_back("[Warn]   " + warning);
+        }
+
+        ENJIN_LOG_INFO(Editor, "Imported %zu entities (%u meshes, %u materials, %u anims, %u verts, %u indices) from %s",
+            result.entities.size(), result.meshCount, result.materialCount, result.animationCount,
+            result.totalVertexCount, result.totalIndexCount, path.c_str());
 
         // Select the root entity and focus camera on it
         if (result.rootEntity != ECS::INVALID_ENTITY) {
             SelectEntity(result.rootEntity);
             FocusOnEntity(result.rootEntity);
         }
+
+        // Save .enjinasset metadata
+        Assets::AssetMetadata meta;
+        meta.PopulateFromResult(result, path, options);
+        meta.Save(path);
+
+        // Track for re-import
+        m_LastImportedModelPath = path;
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to import: " << result.errorMessage;

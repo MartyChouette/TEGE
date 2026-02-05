@@ -30,6 +30,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Build/BuildReport.h"
+#include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Editor/AnimationGraphEditor.h"
 #include <string>
@@ -592,6 +593,15 @@ private:
 
     // Runtime UI system
     GUI::UISystem m_UISystem;
+
+    // Import dialog state
+    bool m_ShowImportDialog = false;
+    std::string m_ImportDialogPath;
+    Assets::ImportOptions m_ImportDialogOptions;
+    std::string m_LastImportedModelPath;
+
+    void DrawImportDialog();
+    void ExecuteImport(const std::string& path, const Assets::ImportOptions& options);
 
     // Build dialog state
     bool m_ShowBuildDialog = false;

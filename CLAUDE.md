@@ -284,7 +284,8 @@ struct PushConstants {
 
 - **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
 - **`AssimpLoader`** - Loads FBX, OBJ, DAE, 3DS files via Assimp v5.4.3 into AssimpScene
-- **`SceneImporter`** - Converts GLTFScene or AssimpScene to ECS entities, auto-generates BoxColliders, sets up skeleton/animation for skinned meshes. `Import()` auto-detects format from extension.
+- **`SceneImporter`** - Converts GLTFScene or AssimpScene to ECS entities. `Import()` auto-detects format from extension. `ImportOptions` controls scale, importMaterials, importAnimations, generateColliders. `ImportResult` includes stats (meshCount, materialCount, animationCount, totalVertexCount, totalIndexCount, entityNames, texturePathsResolved/Missing, warnings). Texture resolution has fallback directories (`textures/`, `Textures/`).
+- **`AssetMetadata`** (`Engine/include/Enjin/Assets/AssetMetadata.h`) - `.enjinasset` JSON sidecar files storing import settings and statistics for re-import. `Save(assetPath)`, `Load(assetPath)`, `Exists(assetPath)`, `GetMetadataPath(assetPath)`, `PopulateFromResult(result, filePath, options)`. Created automatically on import.
 - **`PrefabManager`** (singleton) - Create prefabs from entities (`CreateFromEntity`), instantiate with overrides, save/load `.enjprefab` files, apply changes to all instances, unpack instances
 - **`PrefabInstanceComponent`** - Marks an entity as a prefab instance with `prefabId`, `prefabPath`, and per-instance property overrides
 
@@ -497,6 +498,7 @@ Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangVali
 - Shader hot-reload (editor-only live GLSL editing: FileWatcher polls Engine/shaders/ every 30 frames, compile-then-swap via glslangValidator/glslc, covers main pipeline + shadow + skybox + 6 sub-renderers, graceful error handling keeps old shader on compilation failure)
 - State machine script callbacks (SMState onEnter/onUpdate/onExit function names, StateMachineSystem dispatches via ScriptEngine on state transitions and per-frame update, inspector UI + Animation Graph sidebar callback fields, SM_SetOnEnter/OnUpdate/OnExit + getter AngelScript bindings, scene serialization)
 - Noise library (header-only in Core/Math: ValueNoise, PerlinNoise, SimplexNoise, WorleyNoise 2D+3D, FBM, RidgedMultifractal, BillowNoise, DomainWarp fractal functions with configurable octaves/lacunarity/persistence/frequency/seed, 18 AngelScript Noise_ bindings)
+- Asset import pipeline (import settings dialog with scale/materials/animations/colliders options, .enjinasset JSON metadata sidecar files for re-import, import statistics tracking with vertex/index/mesh/material/animation counts, enhanced texture path resolution with textures/ and Textures/ fallback directories, re-import menu item, drag-and-drop shows dialog)
 
 ## AngelScript API Reference
 
@@ -651,10 +653,14 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 // In EditorLayer or game code:
 SceneImporter::ImportOptions options;
 options.scale = 1.0f;
-auto result = SceneImporter::ImportGLTF("path/to/model.gltf", m_World, options);
+options.importMaterials = true;
+options.importAnimations = true;
+options.generateColliders = true;
+auto result = SceneImporter::Import("path/to/model.gltf", m_World, options);
 if (result.success) {
     // result.entities contains all created entities
     // result.rootEntity is the root of the hierarchy
+    // result.meshCount, result.totalVertexCount, etc. for stats
 }
 ```
 
@@ -709,7 +715,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **Undo/Redo Across All Operations** — ~~PARTIAL (Phase 1)~~ Entity delete/duplicate/cut/paste use full JSON snapshot undo (all 60+ components preserved). Hierarchy reparent/unparent undoable. Component add/remove undoable with per-component JSON snapshot. DuplicateEntity refactored from manual 8-component copy to full serialize/deserialize. Future work: inspector property edits, tilemap paint, terrain sculpt, UI editor edits (require per-widget tracking across 60+ component types).
 - **Drag and Drop** — ~~PARTIAL~~ File drop from OS (Explorer/Finder) imports models (FBX/OBJ/glTF/GLB/DAE/3DS) and opens scenes (.enjin) via GLFW drop callback. Future work: drag assets from asset browser into viewport/inspector fields, drag entities in hierarchy for reparenting.
 - **Hot-Swap Shaders** — ~~DONE~~ Edit shaders at runtime and see changes live without restarting. FileWatcher on all .vert/.frag files in Engine/shaders/, compile-then-swap pattern (temp shader compiled first, only swapped if successful), editor-only (Player uses embedded SPIR-V). Covers main pipeline (triangle.vert/frag), shadow, skybox, and all 6 sub-renderers (grass, shrub, tree, particle, weather, sprite). Future work: postprocess.frag/fullscreen.vert hot-reload (requires PostProcessing refactor).
-- **Improved Asset Import Pipeline** — on model/texture import, auto-process like Unity does: generate thumbnails, extract materials, set up serialization metadata, configure import settings (scale, axis, compression). Clean .enjinasset metadata files.
+- **Improved Asset Import Pipeline** — ~~PARTIAL~~ Import settings dialog (scale, materials, animations, colliders toggles), `.enjinasset` JSON metadata sidecar files for re-import with saved settings, import statistics (mesh/material/animation/vertex/index counts, resolved/missing textures), enhanced texture path resolution with `textures/`/`Textures/` fallback directories, re-import menu item. Future work: generate thumbnails, axis conversion options, texture compression settings, drag-from-asset-browser import.
 - **Extended Model Format Support** — add PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders. PLY is useful for photogrammetry/scan data; VOX enables voxel art workflows. Also verify Assimp's existing FBX/OBJ/DAE import paths are robust (fix any crash-on-malformed-input issues).
 - **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
 - **Editor Settings vs Scene Settings** — ~~DONE~~ Separated into Settings (editor prefs) and Project Settings (rendering, physics) panels.
