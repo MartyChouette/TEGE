@@ -3048,6 +3048,10 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
 
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", name.c_str());
 
+    // Capture tree node interaction state before the eye icon overwrites "last item"
+    bool nodeClicked = ImGui::IsItemClicked();
+    bool nodeHovered = ImGui::IsItemHovered();
+
     // Eye icon for visibility toggle (right-aligned on same line)
     {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -3075,8 +3079,8 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         }
     }
 
-    // Click handling
-    if (ImGui::IsItemClicked() && !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+    // Click handling (use saved tree node state)
+    if (nodeClicked && !ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         bool ctrlHeld = Input::IsKeyDown(KeyCode::LeftControl) || Input::IsKeyDown(KeyCode::RightControl);
         bool shiftHeld = Input::IsKeyDown(KeyCode::LeftShift) || Input::IsKeyDown(KeyCode::RightShift);
 
@@ -3094,7 +3098,7 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     }
 
     // Double-click to focus camera on entity
-    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+    if (nodeHovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
         FocusOnEntity(entity);
     }
 
