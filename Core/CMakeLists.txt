@@ -7,10 +7,16 @@ file(GLOB_RECURSE CORE_SOURCES
     "include/*.hpp"
 )
 
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/Enjin/Core/Version.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/include/Enjin/Core/Version.h
+)
+
 add_library(EnjinCore STATIC ${CORE_SOURCES})
 
 target_include_directories(EnjinCore PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:include>
 )
 

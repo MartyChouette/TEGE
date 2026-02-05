@@ -1,4 +1,5 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/Core/Version.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Platform/Paths.h"
@@ -71,7 +72,7 @@ void Application::InitializeEngine() {
     WindowDesc windowDesc;
     windowDesc.width = 1600;
     windowDesc.height = 900;
-    windowDesc.title = "TEGE";
+    windowDesc.title = "TEGE v" ENJIN_VERSION_STRING;
     windowDesc.iconPath = "icon.png";
     windowDesc.fullscreen = false;
     // Parentheses prevent potential macro substitution as well.
