@@ -8630,6 +8630,9 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     return true;
 }
 
+// Forward declaration for particle presets (defined later in this file)
+static void ApplyParticlePreset(ECS::ParticleEmitterComponent& e, const std::string& preset);
+
 void EditorLayer::ApplyTemplate(const std::string& templateId) {
     if (!m_World) return;
 
@@ -8865,6 +8868,28 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& lightComp = m_World->AddComponent<ECS::LightComponent>(light);
         lightComp.type = ECS::LightType::Directional;
         lightComp.intensity = 1.0f;
+
+        // Skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
         return;
     }
 
@@ -8949,6 +8974,53 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.jumpForce = 10.0f;
         SetupCameraForController(player, "Platformer2D");
 
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(false);
+        m_RenderSystem->SetAmbientIntensity(0.2f);
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        // Torch with sparks
+        {
+            ECS::Entity torch = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(torch, "Torch");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(torch);
+            tt.position = Math::Vector3(5.0f, 0.5f, 0.0f);
+            tt.scale = Math::Vector3(0.2f, 0.8f, 0.2f);
+            auto& tmat = m_World->AddComponent<ECS::MaterialComponent>(torch);
+            tmat.baseColor = Math::Vector3(0.4f, 0.25f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(torch, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(torch);
+            ApplyParticlePreset(pe, "Sparks");
+        }
+
+        // Bobbing coin
+        {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+            ct.position = Math::Vector3(3.0f, 1.5f, 0.0f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            cmat.baseColor = Math::Vector3(1.0f, 0.84f, 0.0f);
+            cmat.metallic = 0.9f;
+            cmat.roughness = 0.3f;
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.3f));
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(3.0f, 1.5f, 0.0f);
+            bob.endValue = Math::Vector3(3.0f, 2.0f, 0.0f);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
+        }
+
     } else if (templateId == "topdown2d") {
         // 2D ground: large flat quad in XY plane
         {
@@ -8969,6 +9041,15 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.moveSpeed = 5.0f;
         SetupCameraForController(player, "TopDown2D");
 
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(false);
+        m_RenderSystem->SetAmbientIntensity(0.25f);
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
     } else if (templateId == "isometric") {
         createGround();
         ECS::Entity player = createPlayer3D("Player");
@@ -8977,6 +9058,27 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraAngle = 45.0f;
         ctrl.cameraDistance = 15.0f;
         SetupCameraForController(player, "TopDown3D");
+
+        // Skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
 
     } else if (templateId == "thirdperson") {
         createGround();
@@ -8987,6 +9089,56 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraHeight = 2.0f;
         SetupCameraForController(player, "ThirdPerson");
 
+        // Skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.12f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.9f;
+            pp.bloomIntensity = 0.3f;
+        }
+
+        // Bobbing coin collectible
+        {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
+            auto& coinT = m_World->AddComponent<ECS::TransformComponent>(coin);
+            coinT.position = Math::Vector3(3.0f, 1.5f, 0.0f);
+            coinT.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.3f));
+            auto& coinMat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            coinMat.baseColor = Math::Vector3(1.0f, 0.84f, 0.0f);
+            coinMat.metallic = 0.9f;
+            coinMat.roughness = 0.3f;
+
+            auto& tween = m_World->AddComponent<ECS::TweenComponent>(coin);
+            tween.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(3.0f, 1.5f, 0.0f);
+            bob.endValue = Math::Vector3(3.0f, 2.0f, 0.0f);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tween.tweens.push_back(bob);
+        }
+
     } else if (templateId == "firstperson") {
         createGround();
         ECS::Entity player = createPlayer3D("Player");
@@ -8996,6 +9148,28 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.moveSpeed = 5.0f;
         ctrl.mouseSensitivity = 0.15f;
         SetupCameraForController(player, "FirstPerson");
+
+        // Skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.2f;
+        }
 
     } else if (templateId == "visualnovel") {
         // Camera: orthographic, 16:9, looking at -Z
@@ -9081,6 +9255,35 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         vnLC.type = ECS::LightType::Directional;
         vnLC.intensity = 1.2f;
         vnLC.color = Math::Vector3(1.0f, 1.0f, 1.0f);
+
+        // Skybox: solid black
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::SolidColor;
+            skyConfig.solidColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings: shadows off for 2D VN
+        m_RenderSystem->SetShadowsEnabled(false);
+
+        // Post-processing: bloom + vignette
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.8f;
+            pp.bloomIntensity = 0.3f;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.15f;
+        }
+
+        // Main Menu UI canvas
+        {
+            ECS::Entity uiEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Main Menu");
+            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+            m_World->AddComponent<GUI::UICanvasComponent>(uiEntity, GUI::UITemplates::CreateMainMenu("Visual Novel"));
+        }
     }
 
     else if (templateId == "rpg_village") {
@@ -9177,6 +9380,34 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
             dmg.damage = 10.0f;
         }
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: shadows, FXAA, bloom
+        m_RenderSystem->SetShadowsEnabled(true);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 1.0f;
+            pp.bloomIntensity = 0.2f;
+        }
+        // Magic particles
+        {
+            ECS::Entity particles = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(particles, "Magic Aura");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(particles);
+            pt.position = Math::Vector3(4.0f, 1.0f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(particles);
+            ApplyParticlePreset(pe, "Magic");
+        }
     } else if (templateId == "survival") {
         // Ground
         {
@@ -9271,6 +9502,45 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pc.type = ECS::PickupComponent::PickupType::Ammo;
             pc.value = 10.0f;
         }
+        // Skybox: Overcast
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.4f, 0.5f, 0.6f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.6f, 0.7f);
+            skyConfig.bottomColor = Math::Vector3(0.6f, 0.65f, 0.7f);
+            skyConfig.sunDirection = Math::Vector3(0.1f, 0.5f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: shadows, fog
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetFogParams(0.03f, 10.0f, 80.0f, 0.5f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.5f, 0.55f, 0.55f));
+        // Post-processing: vignette, film grain, FXAA
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.25f;
+            pp.filmGrainEnabled = 1;
+            pp.filmGrainIntensity = 0.08f;
+            pp.fxaaEnabled = 1;
+        }
+        // Campfire with fire particles
+        {
+            ECS::Entity campfire = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(campfire, "Campfire");
+            auto& cft = m_World->AddComponent<ECS::TransformComponent>(campfire);
+            cft.position = Math::Vector3(3.0f, 0.0f, 3.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(campfire);
+            ApplyParticlePreset(pe, "Fire");
+        }
+        // Collision groups
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Players";
+            groups[2] = "Enemies";
+            groups[3] = "Resources";
+        }
     }
 
     // ===== Game Manager Template =====
@@ -9301,6 +9571,103 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
             auto& sm = m_World->AddComponent<ECS::StateMachineComponent>(gm);
             sm.currentState = "MainMenu";
+
+            // Define game states with transitions
+            ECS::SMState mainMenuState;
+            mainMenuState.name = "MainMenu";
+            mainMenuState.onEnter = "OnMainMenuEnter";
+            mainMenuState.onUpdate = "OnMainMenuUpdate";
+            mainMenuState.onExit = "OnMainMenuExit";
+            mainMenuState.editorPosition = Math::Vector2(100, 100);
+            {
+                ECS::SMTransition toPlaying;
+                toPlaying.toState = "Playing";
+                ECS::SMTransitionCondition startCond;
+                startCond.paramName = "StartGame";
+                startCond.type = ECS::SMConditionType::Trigger;
+                toPlaying.conditions.push_back(startCond);
+                mainMenuState.transitions.push_back(toPlaying);
+            }
+            sm.states.push_back(mainMenuState);
+
+            ECS::SMState playingState;
+            playingState.name = "Playing";
+            playingState.onEnter = "OnPlayingEnter";
+            playingState.onUpdate = "OnPlayingUpdate";
+            playingState.onExit = "OnPlayingExit";
+            playingState.editorPosition = Math::Vector2(350, 100);
+            {
+                ECS::SMTransition toPaused;
+                toPaused.toState = "Paused";
+                ECS::SMTransitionCondition pauseCond;
+                pauseCond.paramName = "Pause";
+                pauseCond.type = ECS::SMConditionType::Trigger;
+                toPaused.conditions.push_back(pauseCond);
+                playingState.transitions.push_back(toPaused);
+
+                ECS::SMTransition toGameOver;
+                toGameOver.toState = "GameOver";
+                ECS::SMTransitionCondition healthCond;
+                healthCond.paramName = "PlayerHealth";
+                healthCond.type = ECS::SMConditionType::FloatLess;
+                healthCond.threshold = 0.01f;
+                toGameOver.conditions.push_back(healthCond);
+                playingState.transitions.push_back(toGameOver);
+            }
+            sm.states.push_back(playingState);
+
+            ECS::SMState pausedState;
+            pausedState.name = "Paused";
+            pausedState.onEnter = "OnPausedEnter";
+            pausedState.onUpdate = "OnPausedUpdate";
+            pausedState.onExit = "OnPausedExit";
+            pausedState.editorPosition = Math::Vector2(350, 300);
+            {
+                ECS::SMTransition toResume;
+                toResume.toState = "Playing";
+                ECS::SMTransitionCondition resumeCond;
+                resumeCond.paramName = "Resume";
+                resumeCond.type = ECS::SMConditionType::Trigger;
+                toResume.conditions.push_back(resumeCond);
+                pausedState.transitions.push_back(toResume);
+
+                ECS::SMTransition toMainMenu;
+                toMainMenu.toState = "MainMenu";
+                ECS::SMTransitionCondition quitCond;
+                quitCond.paramName = "QuitToMenu";
+                quitCond.type = ECS::SMConditionType::Trigger;
+                toMainMenu.conditions.push_back(quitCond);
+                pausedState.transitions.push_back(toMainMenu);
+            }
+            sm.states.push_back(pausedState);
+
+            ECS::SMState gameOverState;
+            gameOverState.name = "GameOver";
+            gameOverState.onEnter = "OnGameOverEnter";
+            gameOverState.onUpdate = "OnGameOverUpdate";
+            gameOverState.editorPosition = Math::Vector2(600, 200);
+            {
+                ECS::SMTransition toRestart;
+                toRestart.toState = "Playing";
+                ECS::SMTransitionCondition restartCond;
+                restartCond.paramName = "Restart";
+                restartCond.type = ECS::SMConditionType::Trigger;
+                toRestart.conditions.push_back(restartCond);
+                gameOverState.transitions.push_back(toRestart);
+
+                ECS::SMTransition toMenu;
+                toMenu.toState = "MainMenu";
+                ECS::SMTransitionCondition menuCond;
+                menuCond.paramName = "QuitToMenu";
+                menuCond.type = ECS::SMConditionType::Trigger;
+                toMenu.conditions.push_back(menuCond);
+                gameOverState.transitions.push_back(toMenu);
+            }
+            sm.states.push_back(gameOverState);
+
+            // Initialize parameters
+            sm.floatParams["PlayerHealth"] = 100.0f;
+            sm.boolParams["IsGameActive"] = false;
 
             auto& timer = m_World->AddComponent<ECS::TimerComponent>(gm);
             timer.duration = 0.0f;  // Counts up
@@ -9366,6 +9733,35 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pc = m_World->AddComponent<ECS::PickupComponent>(coin);
             pc.type = ECS::PickupComponent::PickupType::Coin;
             pc.value = 100.0f;
+        }
+
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings: shadows on, moderate ambient
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.12f);
+
+        // Post-processing: FXAA
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        // Main Menu UI canvas
+        {
+            ECS::Entity uiEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Main Menu");
+            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+            m_World->AddComponent<GUI::UICanvasComponent>(uiEntity, GUI::UITemplates::CreateMainMenu("My Game"));
         }
     }
 
@@ -9490,6 +9886,38 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             notes.notes = "Quest trigger: picking this up should transition\n"
                 "Elder Mara's state to QuestComplete\n"
                 "and Guard Renn's state to GaveItem.";
+        }
+
+        // Skybox: Dawn
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.15f, 0.15f, 0.5f);
+            skyConfig.horizonColor = Math::Vector3(0.8f, 0.5f, 0.3f);
+            skyConfig.bottomColor = Math::Vector3(0.6f, 0.4f, 0.3f);
+            skyConfig.sunDirection = Math::Vector3(-0.8f, 0.15f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings: shadows on
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing: warm tint, bloom, FXAA
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 1.0f;
+            pp.bloomIntensity = 0.2f;
+            pp.colorFilter = Math::Vector3(1.0f, 0.95f, 0.9f); // warm tint
+        }
+
+        // Pause Menu UI canvas
+        {
+            ECS::Entity uiEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Pause Menu");
+            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+            m_World->AddComponent<GUI::UICanvasComponent>(uiEntity, GUI::UITemplates::CreatePauseMenu());
         }
     }
 
@@ -9655,6 +10083,33 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  4. TriggerZone at Start/Finish detects lap completion\n"
                 "\n"
                 "To add track barriers, create Box entities with colliders.\n";
+        }
+
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        m_RenderSystem->SetShadowsEnabled(true);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 1.0f;
+            pp.bloomIntensity = 0.2f;
+        }
+
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Vehicles";
+            groups[2] = "Track";
+            groups[3] = "Barriers";
         }
     }
 
@@ -9823,6 +10278,33 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             trigger.boxSize = Math::Vector3(50.0f, 2.0f, 20.0f);
             auto& dmg = m_World->AddComponent<ECS::DamageComponent>(killZone);
             dmg.damage = 9999.0f;
+        }
+        // Skybox: Sunset
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.1f, 0.4f);
+            skyConfig.horizonColor = Math::Vector3(0.9f, 0.4f, 0.1f);
+            skyConfig.bottomColor = Math::Vector3(0.95f, 0.6f, 0.2f);
+            skyConfig.sunDirection = Math::Vector3(0.8f, 0.1f, 0.3f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: shadows
+        m_RenderSystem->SetShadowsEnabled(true);
+        // Post-processing: FXAA, bloom
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 1.0f;
+            pp.bloomIntensity = 0.3f;
+        }
+        // Collision groups
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Fighters";
+            groups[2] = "Projectiles";
+            groups[3] = "Arena";
         }
     }
 
@@ -10107,6 +10589,31 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  4. Run turn-based loop\n"
                 "  5. Fade back, restore overworld positions\n";
         }
+
+        // Skybox: Midday (warm variant)
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.6f, 0.7f, 0.9f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.8f, 0.85f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing: retro PS1 effects
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.ditherEnabled = 1;
+            pp.colorQuantEnabled = 1;
+            pp.colorBitDepth = 5;         // PS1-style 5 bits per channel
+            pp.resDownscaleEnabled = 1;
+            pp.internalWidth = 320;       // PS1 resolution
+            pp.internalHeight = 240;
+        }
     }
 
     // ===== City Builder Template =====
@@ -10293,6 +10800,24 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  Roads: connects zones, required for buildings\n"
                 "  Services: fire, police, hospital (radius-based coverage)\n";
         }
+
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetShadowDistance(200.0f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
     }
 
     // ===== FPS Arena Template =====
@@ -10472,6 +10997,39 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& dmg = m_World->AddComponent<ECS::DamageComponent>(bot);
             dmg.damage = 15.0f;
         }
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: shadows
+        m_RenderSystem->SetShadowsEnabled(true);
+        // Post-processing: FXAA, vignette
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.15f;
+        }
+        // Pause Menu UI canvas
+        {
+            ECS::Entity uiEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Pause Menu");
+            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+            m_World->AddComponent<GUI::UICanvasComponent>(uiEntity, GUI::UITemplates::CreatePauseMenu());
+        }
+        // Collision groups
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Players";
+            groups[2] = "Projectiles";
+            groups[3] = "Environment";
+        }
     }
 
     // ===== 3D Team Sports Template =====
@@ -10628,6 +11186,32 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
             col.size = Math::Vector3(40.0f, 2.0f, 0.2f);
         }
+
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "TeamA";
+            groups[2] = "TeamB";
+            groups[3] = "Ball";
+            groups[4] = "Goals";
+        }
     }
 
     // ===== Tower Defense Template =====
@@ -10782,6 +11366,40 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "  - Gold earned per kill, spend on turrets\n"
                 "  - Turret types: arrow (single), cannon (AOE), frost (slow)\n";
         }
+
+        // Skybox: Overcast
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.4f, 0.5f, 0.6f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.6f, 0.7f);
+            skyConfig.bottomColor = Math::Vector3(0.6f, 0.65f, 0.7f);
+            skyConfig.sunDirection = Math::Vector3(0.1f, 0.5f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        m_RenderSystem->SetShadowsEnabled(true);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        // Spawn portal fire particles
+        {
+            ECS::Entity portalFx = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(portalFx, "Spawn Portal FX");
+            auto& pft = m_World->AddComponent<ECS::TransformComponent>(portalFx);
+            pft.position = Math::Vector3(-12.0f, 1.0f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(portalFx);
+            ApplyParticlePreset(pe, "Fire");
+        }
+
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Towers";
+            groups[2] = "Enemies";
+            groups[3] = "Projectiles";
+        }
     }
 
     // ===== Puzzle Platformer Template =====
@@ -10933,6 +11551,18 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             trigger.sphereRadius = 0.8f;
             auto& tag = m_World->AddComponent<ECS::TagComponent>(goal);
             tag.tags.push_back("level_exit");
+            // Emissive pulse tween
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(goal);
+            tw.autoPlay = true;
+            ECS::TweenEntry pulse;
+            pulse.property = ECS::TweenProperty::EmissiveColor;
+            pulse.easing = ECS::EasingType::EaseInOutSine;
+            pulse.mode = ECS::TweenMode::PingPong;
+            pulse.startValue = Math::Vector3(0.0f, 0.0f, 0.0f);
+            pulse.endValue = Math::Vector3(0.1f, 0.5f, 0.2f);
+            pulse.duration = 1.2f;
+            pulse.useCurrentAsStart = false;
+            tw.tweens.push_back(pulse);
         }
 
         // Platforms
@@ -10967,6 +11597,27 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             km.emissiveStrength = 0.5f;
             auto& pc = m_World->AddComponent<ECS::PickupComponent>(key);
             pc.type = ECS::PickupComponent::PickupType::Key;
+            // Bobbing tween
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(key);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(-2.0f, 4.8f, 0.0f);
+            bob.endValue = Math::Vector3(-2.0f, 5.3f, 0.0f);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(false);
+        m_RenderSystem->SetAmbientIntensity(0.2f);
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
         }
     }
 
@@ -11142,6 +11793,40 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             audio.minDistance = 1.0f;
             audio.maxDistance = 15.0f;
         }
+        // Skybox: Night/dark
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.01f, 0.01f, 0.05f);
+            skyConfig.horizonColor = Math::Vector3(0.05f, 0.05f, 0.15f);
+            skyConfig.bottomColor = Math::Vector3(0.02f, 0.02f, 0.08f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, -1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: very low ambient, fog
+        m_RenderSystem->SetAmbientIntensity(0.04f);
+        m_RenderSystem->SetFogParams(0.04f, 2.0f, 40.0f, 0.5f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.05f, 0.05f, 0.08f));
+        // Post-processing: FXAA, vignette, film grain, chromatic aberration
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.4f;
+            pp.filmGrainEnabled = 1;
+            pp.filmGrainIntensity = 0.1f;
+            pp.chromaticAberrationEnabled = 1;
+            pp.chromaticAberrationIntensity = 0.004f;
+        }
+        // Dust particles
+        {
+            ECS::Entity dust = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(dust, "Dust");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(dust);
+            dt.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(dust);
+            ApplyParticlePreset(pe, "Smoke");
+        }
     }
 
     // ===== Endless Runner Template =====
@@ -11264,7 +11949,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(coin, name);
             auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
             int lane = (i % 3) - 1;
-            ct.position = Math::Vector3(lane * 2.0f, 1.0f, 10.0f + i * 8.0f);
+            f32 coinX = lane * 2.0f;
+            f32 coinY = 1.0f;
+            f32 coinZ = 10.0f + i * 8.0f;
+            ct.position = Math::Vector3(coinX, coinY, coinZ);
             ct.scale = Math::Vector3(0.3f);
             m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.5f));
             auto& cm = m_World->AddComponent<ECS::MaterialComponent>(coin);
@@ -11275,6 +11963,19 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pc.type = ECS::PickupComponent::PickupType::Coin;
             pc.magnetToPlayer = true;
             pc.magnetRange = 2.0f;
+
+            // Bobbing tween
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(coinX, coinY, coinZ);
+            bob.endValue = Math::Vector3(coinX, coinY + 0.5f, coinZ);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
         }
 
         // Score display
@@ -11287,6 +11988,29 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             text.text = "Distance: 0m  Coins: 0";
             text.fontSize = 36.0f;
             text.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        }
+
+        // Skybox: Midday
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 1.0f;
+            pp.bloomIntensity = 0.2f;
         }
     }
     else if (templateId == "flower") {
@@ -11512,6 +12236,29 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& scoreTag = m_World->AddComponent<ECS::TagComponent>(scoreText);
             scoreTag.tags.push_back("score_display");
         }
+
+        // Skybox: Dawn
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.15f, 0.15f, 0.5f);
+            skyConfig.horizonColor = Math::Vector3(0.8f, 0.5f, 0.3f);
+            skyConfig.bottomColor = Math::Vector3(0.6f, 0.4f, 0.3f);
+            skyConfig.sunDirection = Math::Vector3(-0.8f, 0.15f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.8f;
+            pp.bloomIntensity = 0.25f;
+        }
     }
 
     else if (templateId == "fixedcam") {
@@ -11713,6 +12460,29 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             htext.text = "HP: 100/100 | Items: 0";
             htext.fontSize = 20.0f;
             htext.textColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+        }
+
+        // Skybox: Overcast
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.4f, 0.5f, 0.6f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.6f, 0.7f);
+            skyConfig.bottomColor = Math::Vector3(0.6f, 0.65f, 0.7f);
+            skyConfig.sunDirection = Math::Vector3(0.1f, 0.5f, 0.2f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.1f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.2f;
         }
     }
 
@@ -12062,6 +12832,29 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             skyConfig.horizonColor = Math::Vector3(0.05f, 0.04f, 0.08f);
             skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.02f);
             m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetAmbientIntensity(0.06f);
+        m_RenderSystem->SetFogParams(0.03f, 3.0f, 50.0f, 0.4f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.08f, 0.04f, 0.1f));
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.3f;
+        }
+
+        // Torch fire particles
+        {
+            ECS::Entity torchFx = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(torchFx, "Torch Fire");
+            auto& tft = m_World->AddComponent<ECS::TransformComponent>(torchFx);
+            tft.position = Math::Vector3(2.0f, 2.5f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(torchFx);
+            ApplyParticlePreset(pe, "Fire");
         }
     }
 
@@ -12540,6 +13333,17 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.03f);
             m_RenderSystem->SetSkybox(skyConfig);
         }
+
+        // Render settings
+        m_RenderSystem->SetAmbientIntensity(0.08f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.3f;
+        }
     }
 
     // ===== Vampire Survivors-style Top-Down Survivor =====
@@ -12655,6 +13459,19 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pc.magnetSpeed = 8.0f;
             auto& gtag = m_World->AddComponent<ECS::TagComponent>(gem);
             gtag.tags.push_back("xp_gem");
+
+            // Bobbing tween
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(gem);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(gx, 0.3f, gz);
+            bob.endValue = Math::Vector3(gx, 0.8f, gz);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
         }
 
         // --- Health pickup orbs ---
@@ -12777,6 +13594,25 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             skyConfig.bottomColor = Math::Vector3(0.35f, 0.55f, 0.3f);
             skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.2f);
             m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        // Player magic aura
+        {
+            ECS::Entity aura = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(aura, "Player Aura");
+            auto& at = m_World->AddComponent<ECS::TransformComponent>(aura);
+            at.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(aura);
+            ApplyParticlePreset(pe, "Magic");
         }
     }
 
@@ -13001,6 +13837,21 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             kpc.bobHeight = 0.1f;
             auto& ktag = m_World->AddComponent<ECS::TagComponent>(key);
             ktag.tags.push_back("dungeon_key");
+
+            // Bobbing tween
+            f32 keyX = 1.0f * CELL + CELL * 0.5f;
+            f32 keyY = 5.0f * CELL + CELL * 0.5f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(key);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(keyX, keyY, 0.0f);
+            bob.endValue = Math::Vector3(keyX, keyY + 0.3f, 0.0f);
+            bob.duration = 1.5f;
+            bob.useCurrentAsStart = false;
+            tw.tweens.push_back(bob);
         }
 
         // --- Health potion (placed on floor cell 5,1 area) ---
@@ -13064,6 +13915,26 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             lc.type = ECS::LightType::Directional;
             lc.color = Math::Vector3(0.7f, 0.65f, 0.55f);
             lc.intensity = 0.6f;
+        }
+
+        // Skybox: dark underground
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.02f, 0.02f, 0.05f);
+            skyConfig.horizonColor = Math::Vector3(0.06f, 0.05f, 0.08f);
+            skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.03f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, -1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetAmbientIntensity(0.08f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
         }
     }
 
@@ -13330,6 +14201,30 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             skyConfig.bottomColor = Math::Vector3(0.02f, 0.02f, 0.02f);
             skyConfig.sunDirection = Math::Vector3(0.3f, 0.2f, -0.5f);
             m_RenderSystem->SetSkybox(skyConfig);
+        }
+        // Render settings: low ambient, fog
+        m_RenderSystem->SetAmbientIntensity(0.06f);
+        m_RenderSystem->SetFogParams(0.02f, 5.0f, 60.0f, 0.3f);
+        m_RenderSystem->SetFogColor(Math::Vector3(0.08f, 0.06f, 0.1f));
+        // Post-processing: FXAA, vignette, film grain, chromatic aberration
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.35f;
+            pp.filmGrainEnabled = 1;
+            pp.filmGrainIntensity = 0.06f;
+            pp.chromaticAberrationEnabled = 1;
+            pp.chromaticAberrationIntensity = 0.003f;
+        }
+        // Bonfire fire particles
+        {
+            ECS::Entity fireParticle = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fireParticle, "Bonfire Fire");
+            auto& fpt = m_World->AddComponent<ECS::TransformComponent>(fireParticle);
+            fpt.position = Math::Vector3(0.0f, 0.5f, -8.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fireParticle);
+            ApplyParticlePreset(pe, "Fire");
         }
     }
 
@@ -13641,6 +14536,23 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "\n"
                 "Each player has their own camera with FollowTarget + LookAtTarget.\n"
                 "Viewport subdivision: P1 left 50%, P2 right 50%.\n";
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.12f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+        // Collision groups
+        {
+            auto& groups = m_SceneManager.GetCollisionGroupNames();
+            groups[1] = "Players";
+            groups[2] = "Enemies";
         }
     }
 
