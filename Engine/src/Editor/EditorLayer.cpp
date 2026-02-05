@@ -1689,21 +1689,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Calculate layout dimensions from config
     f32 screenW = io.DisplaySize.x;
     f32 screenH = io.DisplaySize.y;
-    f32 menuBarH = 22.0f;
+    f32 menuBarH = 28.0f;
+    f32 panelGap = 4.0f;
     f32 leftW = screenW * m_Layout.leftWidth;
     f32 rightW = screenW * m_Layout.rightWidth;
     f32 bottomH = screenH * m_Layout.bottomHeight;
-    f32 centerW = screenW - leftW - rightW;
-    f32 centerH = screenH - menuBarH - bottomH;
+    f32 centerW = screenW - leftW - rightW - panelGap * 2.0f;
+    f32 centerH = screenH - menuBarH - bottomH - panelGap;
 
     // When force layout is set (after template change), override positions once
     ImGuiCond layoutCond = m_ForceLayout ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
 
     // Game View position/size (auto-compute if -1)
-    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + 20.0f);
+    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + panelGap + 20.0f);
     f32 gvY = m_Layout.gameViewY >= 0 ? m_Layout.gameViewY : (menuBarH + 20.0f);
     f32 gvW = m_Layout.gameViewW;
     f32 gvH = m_Layout.gameViewH;
+
+    // Panel edge positions with gaps
+    f32 centerX = leftW + panelGap;
+    f32 rightX = screenW - rightW;
+    f32 bottomY = menuBarH + centerH + panelGap;
 
     // Panels with layout-driven positions
     if (HasPanel(m_VisiblePanels, EditorPanel::Hierarchy)) {
@@ -1712,37 +1718,37 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawHierarchyPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Inspector)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(rightX, menuBarH), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * m_Layout.inspectorSplit), layoutCond);
         DrawInspectorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(rightX, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * (1.0f - m_Layout.inspectorSplit)), layoutCond);
         DrawSettingsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 310, menuBarH + 50), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(rightX - 310, menuBarH + 50), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(300, 500), layoutCond);
         DrawProjectSettingsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX, bottomY), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawConsolePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AssetBrowser)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + centerW * 0.5f, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + centerW * 0.5f, bottomY), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawAssetBrowserPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PostProcessing)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 50), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(rightX - 300, menuBarH + 50), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(280, 400), layoutCond);
         DrawPostProcessingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Effects)) {
-        ImGui::SetNextWindowPos(ImVec2(screenW - rightW - 300, menuBarH + 100), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(rightX - 300, menuBarH + 100), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(280, 450), layoutCond);
         DrawEffectsPanel();
     }
@@ -1752,27 +1758,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawGameViewPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SceneList)) {
-        ImGui::SetNextWindowPos(ImVec2(0, screenH - bottomH), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(0, bottomY), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), layoutCond);
         DrawSceneListPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Skybox)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 440), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 440), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(300, 400), layoutCond);
         DrawSkyboxPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(520, 450), layoutCond);
         Debug::Profiler::Instance().DrawProfilerPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 340, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 340, menuBarH + 20), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(380, 600), layoutCond);
         DrawParticleEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AnimGraph)) {
-        ImGui::SetNextWindowPos(ImVec2(leftW + 20, menuBarH + 20), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(700, 500), layoutCond);
         DrawAnimGraphPanel();
     }
@@ -2315,62 +2321,74 @@ void EditorLayer::DrawMenuBar() {
         }
 
         if (ImGui::BeginMenu("View")) {
-            bool hierarchy = IsPanelVisible(EditorPanel::Hierarchy);
-            bool inspector = IsPanelVisible(EditorPanel::Inspector);
-            bool console = IsPanelVisible(EditorPanel::Console);
-            bool assets = IsPanelVisible(EditorPanel::AssetBrowser);
-            bool settings = IsPanelVisible(EditorPanel::Settings);
-            bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
-            bool effects = IsPanelVisible(EditorPanel::Effects);
+            if (ImGui::BeginMenu("Panels")) {
+                bool hierarchy = IsPanelVisible(EditorPanel::Hierarchy);
+                bool inspector = IsPanelVisible(EditorPanel::Inspector);
+                bool console = IsPanelVisible(EditorPanel::Console);
+                bool assets = IsPanelVisible(EditorPanel::AssetBrowser);
+                if (ImGui::MenuItem("Hierarchy", nullptr, &hierarchy)) {
+                    SetPanelVisibility(EditorPanel::Hierarchy, hierarchy);
+                }
+                if (ImGui::MenuItem("Inspector", nullptr, &inspector)) {
+                    SetPanelVisibility(EditorPanel::Inspector, inspector);
+                }
+                if (ImGui::MenuItem("Console", nullptr, &console)) {
+                    SetPanelVisibility(EditorPanel::Console, console);
+                }
+                if (ImGui::MenuItem("Asset Browser", nullptr, &assets)) {
+                    SetPanelVisibility(EditorPanel::AssetBrowser, assets);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Settings")) {
+                bool settings = IsPanelVisible(EditorPanel::Settings);
+                bool projectSettings = IsPanelVisible(EditorPanel::ProjectSettings);
+                if (ImGui::MenuItem("Settings", nullptr, &settings)) {
+                    SetPanelVisibility(EditorPanel::Settings, settings);
+                }
+                if (ImGui::MenuItem("Project Settings", nullptr, &projectSettings)) {
+                    SetPanelVisibility(EditorPanel::ProjectSettings, projectSettings);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Effects")) {
+                bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
+                bool effects = IsPanelVisible(EditorPanel::Effects);
+                bool skybox = IsPanelVisible(EditorPanel::Skybox);
+                if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
+                    SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
+                }
+                if (ImGui::MenuItem("Effects (Retro)", nullptr, &effects)) {
+                    SetPanelVisibility(EditorPanel::Effects, effects);
+                }
+                if (ImGui::MenuItem("Skybox", nullptr, &skybox)) {
+                    SetPanelVisibility(EditorPanel::Skybox, skybox);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Tools")) {
+                bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
+                bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
+                bool profiler = IsPanelVisible(EditorPanel::Profiler);
+                if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
+                    SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
+                }
+                if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
+                    SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
+                }
+                if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
+                    SetPanelVisibility(EditorPanel::Profiler, profiler);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             bool gameView = IsPanelVisible(EditorPanel::GameView);
-
-            if (ImGui::MenuItem("Hierarchy", nullptr, &hierarchy)) {
-                SetPanelVisibility(EditorPanel::Hierarchy, hierarchy);
-            }
-            if (ImGui::MenuItem("Inspector", nullptr, &inspector)) {
-                SetPanelVisibility(EditorPanel::Inspector, inspector);
-            }
-            if (ImGui::MenuItem("Console", nullptr, &console)) {
-                SetPanelVisibility(EditorPanel::Console, console);
-            }
-            if (ImGui::MenuItem("Asset Browser", nullptr, &assets)) {
-                SetPanelVisibility(EditorPanel::AssetBrowser, assets);
-            }
-            if (ImGui::MenuItem("Settings", nullptr, &settings)) {
-                SetPanelVisibility(EditorPanel::Settings, settings);
-            }
-            bool projectSettings = IsPanelVisible(EditorPanel::ProjectSettings);
-            if (ImGui::MenuItem("Project Settings", nullptr, &projectSettings)) {
-                SetPanelVisibility(EditorPanel::ProjectSettings, projectSettings);
-            }
-            if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
-                SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
-            }
-            if (ImGui::MenuItem("Effects (Retro)", nullptr, &effects)) {
-                SetPanelVisibility(EditorPanel::Effects, effects);
-            }
             if (ImGui::MenuItem("Game View", nullptr, &gameView)) {
                 SetPanelVisibility(EditorPanel::GameView, gameView);
             }
             bool sceneList = IsPanelVisible(EditorPanel::SceneList);
             if (ImGui::MenuItem("Scene List", nullptr, &sceneList)) {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
-            }
-            bool skybox = IsPanelVisible(EditorPanel::Skybox);
-            if (ImGui::MenuItem("Skybox", nullptr, &skybox)) {
-                SetPanelVisibility(EditorPanel::Skybox, skybox);
-            }
-            bool profiler = IsPanelVisible(EditorPanel::Profiler);
-            if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
-                SetPanelVisibility(EditorPanel::Profiler, profiler);
-            }
-            bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
-            if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
-                SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
-            }
-            bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
-            if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
-                SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
             }
             ImGui::Separator();
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);

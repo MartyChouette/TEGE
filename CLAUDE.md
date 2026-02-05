@@ -172,6 +172,8 @@ struct PushConstants {
 ### Editor
 
 - **`EditorLayer`** - Main editor class with ImGui panels
+- **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
+- **View menu organization:** Sub-menus for Panels (Hierarchy, Inspector, Console, Asset Browser), Settings (Settings, Project Settings), Effects (Post Processing, Effects/Retro, Skybox), Tools (Particle Editor, Animation Graph, Profiler). Game View and Scene List are top-level items.
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select, rect-pick for marquee)
 - **`PlayMode`** - Play/Pause/Stop game preview controls
 - **Multi-select system:**
