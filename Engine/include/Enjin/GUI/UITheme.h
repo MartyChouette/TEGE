@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/GUI/UIElement.h"
 
 #include <string>
 
@@ -64,6 +65,10 @@ struct UITheme {
 
     // Background alpha
     f32 bgAlpha = 0.92f;
+
+    // Nine-slice defaults per widget type (empty = flat color)
+    NineSliceConfig panelNineSlice;
+    NineSliceConfig buttonNineSlice;
 
     // Factory presets
     static UITheme Dark();

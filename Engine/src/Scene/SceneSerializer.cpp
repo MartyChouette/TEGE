@@ -2538,6 +2538,15 @@ json SerializeUIElement(const GUI::UIElement& e) {
     style["borderRadius"] = e.style.borderRadius;
     style["borderWidth"] = e.style.borderWidth;
     style["fontSize"] = e.style.fontSize;
+    if (e.style.nineSlice.IsActive()) {
+        json ns;
+        ns["texturePath"] = e.style.nineSlice.texturePath;
+        ns["borderLeft"] = e.style.nineSlice.borderLeft;
+        ns["borderRight"] = e.style.nineSlice.borderRight;
+        ns["borderTop"] = e.style.nineSlice.borderTop;
+        ns["borderBottom"] = e.style.nineSlice.borderBottom;
+        style["nineSlice"] = ns;
+    }
     j["style"] = style;
 
     // Widget data
@@ -2600,6 +2609,14 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (s.contains("borderRadius")) e.style.borderRadius = s["borderRadius"].get<f32>();
         if (s.contains("borderWidth")) e.style.borderWidth = s["borderWidth"].get<f32>();
         if (s.contains("fontSize")) e.style.fontSize = s["fontSize"].get<f32>();
+        if (s.contains("nineSlice")) {
+            const auto& ns = s["nineSlice"];
+            if (ns.contains("texturePath")) e.style.nineSlice.texturePath = ns["texturePath"].get<std::string>();
+            if (ns.contains("borderLeft")) e.style.nineSlice.borderLeft = ns["borderLeft"].get<f32>();
+            if (ns.contains("borderRight")) e.style.nineSlice.borderRight = ns["borderRight"].get<f32>();
+            if (ns.contains("borderTop")) e.style.nineSlice.borderTop = ns["borderTop"].get<f32>();
+            if (ns.contains("borderBottom")) e.style.nineSlice.borderBottom = ns["borderBottom"].get<f32>();
+        }
     }
 
     if (j.contains("data")) {
@@ -2664,6 +2681,24 @@ json SerializeUITheme(const GUI::UITheme& t) {
     j["fontSizeSmall"] = t.fontSizeSmall;
     j["spacing"] = t.spacing;
     j["bgAlpha"] = t.bgAlpha;
+    if (t.panelNineSlice.IsActive()) {
+        json ns;
+        ns["texturePath"] = t.panelNineSlice.texturePath;
+        ns["borderLeft"] = t.panelNineSlice.borderLeft;
+        ns["borderRight"] = t.panelNineSlice.borderRight;
+        ns["borderTop"] = t.panelNineSlice.borderTop;
+        ns["borderBottom"] = t.panelNineSlice.borderBottom;
+        j["panelNineSlice"] = ns;
+    }
+    if (t.buttonNineSlice.IsActive()) {
+        json ns;
+        ns["texturePath"] = t.buttonNineSlice.texturePath;
+        ns["borderLeft"] = t.buttonNineSlice.borderLeft;
+        ns["borderRight"] = t.buttonNineSlice.borderRight;
+        ns["borderTop"] = t.buttonNineSlice.borderTop;
+        ns["borderBottom"] = t.buttonNineSlice.borderBottom;
+        j["buttonNineSlice"] = ns;
+    }
     return j;
 }
 
@@ -2700,6 +2735,15 @@ GUI::UITheme DeserializeUITheme(const json& j) {
     if (j.contains("fontSizeSmall")) t.fontSizeSmall = j["fontSizeSmall"].get<f32>();
     if (j.contains("spacing")) t.spacing = j["spacing"].get<f32>();
     if (j.contains("bgAlpha")) t.bgAlpha = j["bgAlpha"].get<f32>();
+    auto deserializeNS = [](const json& ns, GUI::NineSliceConfig& cfg) {
+        if (ns.contains("texturePath")) cfg.texturePath = ns["texturePath"].get<std::string>();
+        if (ns.contains("borderLeft")) cfg.borderLeft = ns["borderLeft"].get<f32>();
+        if (ns.contains("borderRight")) cfg.borderRight = ns["borderRight"].get<f32>();
+        if (ns.contains("borderTop")) cfg.borderTop = ns["borderTop"].get<f32>();
+        if (ns.contains("borderBottom")) cfg.borderBottom = ns["borderBottom"].get<f32>();
+    };
+    if (j.contains("panelNineSlice")) deserializeNS(j["panelNineSlice"], t.panelNineSlice);
+    if (j.contains("buttonNineSlice")) deserializeNS(j["buttonNineSlice"], t.buttonNineSlice);
     return t;
 }
 

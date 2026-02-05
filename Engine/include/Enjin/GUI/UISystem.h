@@ -6,6 +6,10 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/UIEvents.h"
 
+#include <functional>
+
+struct ImDrawList;
+
 namespace Enjin::GUI {
 
 class ENJIN_API UISystem {
@@ -21,8 +25,13 @@ public:
     void ComputeLayoutForCanvas(UICanvasComponent& canvas, f32 vpW, f32 vpH);
     void RenderCanvasPreview(const UICanvasComponent& canvas);
 
+    // Texture resolver: path -> (ImTextureID as void*, width, height). Set by EditorLayer or Player.
+    using TextureResolver = std::function<void*(const std::string& path, u32& outW, u32& outH)>;
+    void SetTextureResolver(TextureResolver resolver) { m_TextureResolver = std::move(resolver); }
+
 private:
     UIEventBus m_EventBus;
+    TextureResolver m_TextureResolver;
 
     // Layout pass: compute rects for all elements in a canvas
     void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH);
@@ -42,6 +51,13 @@ private:
     void RenderCheckbox(const UIElement& element, const UITheme& theme);
     void RenderToggle(const UIElement& element, const UITheme& theme);
     void RenderPlaceholder(const UIElement& element, const UITheme& theme);
+
+    // Nine-slice rendering helper
+    void DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,
+                       u32 texW, u32 texH, const NineSliceConfig& config, u32 tint);
+
+    // Resolve nine-slice config: element override -> theme default
+    const NineSliceConfig& ResolveNineSlice(const UIElement& element, const UITheme& theme) const;
 
     // Input pass: hit test and process interactions
     void ProcessInput(UICanvasComponent& canvas, f32 vpW, f32 vpH);

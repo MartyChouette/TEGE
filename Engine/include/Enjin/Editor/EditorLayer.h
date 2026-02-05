@@ -148,7 +148,7 @@ public:
     bool IsFocusMode() const { return m_FocusMode; }
 
     // Set render system for offscreen game camera rendering
-    void SetRenderSystem(ECS::RenderSystem* renderSystem) { m_RenderSystem = renderSystem; }
+    void SetRenderSystem(ECS::RenderSystem* renderSystem);
 
     // Access post-processing (owned by editor, created during Initialize)
     Renderer::PostProcessing* GetPostProcessing() { return m_PostProcessing.get(); }

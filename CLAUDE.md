@@ -214,10 +214,13 @@ struct PushConstants {
 - **`UIElement`** (`Engine/include/Enjin/GUI/UIElement.h`) — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`, `computedRect`
 - **`UIWidgetType`** enum: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle (+ Phase 2 placeholders)
 - **`UIAnchor`** — Unity RectTransform-style: anchorMin/Max (0-1), pivot, offsetLeft/Right/Top/Bottom (pixels)
+- **`NineSliceConfig`** (`Engine/include/Enjin/GUI/UIElement.h`) — 9-slice (9-patch) sprite configuration: `texturePath`, `borderLeft/Right/Top/Bottom` (texels). `IsActive()` returns true when path non-empty and at least one border > 0. Per-element via `UIStyleOverride::nineSlice`, per-theme via `UITheme::panelNineSlice`/`buttonNineSlice`
 - **`UISystem`** (`Engine/include/Enjin/GUI/UISystem.h`) — Layout + render + input processing
   - `Update(world, vpW, vpH, deltaTime)` — processes all canvases in the world
   - `ComputeLayoutForCanvas(canvas, vpW, vpH)` — editor API: compute layout for a single canvas
   - `RenderCanvasPreview(canvas)` — editor API: render a single canvas via ImGui foreground draw list
+  - `SetTextureResolver(resolver)` — set callback for resolving texture paths to ImTextureID + dimensions (wired by EditorLayer)
+  - `DrawNineSlice(dl, rect, texId, texW, texH, config, tint)` — renders 9 `AddImage` quads with proper UV slicing
 - **`UIEventBus`** (`Engine/include/Enjin/GUI/UIEvents.h`) — String-named callbacks, `Listen(name, callback)`, `Dispatch(eventData)`
 - **`UITheme`** (`Engine/include/Enjin/GUI/UITheme.h`) — Presets: Dark, Light, RetroGreen, Fantasy. Per-element style overrides
 - **`UITemplates`** (`Engine/include/Enjin/GUI/UITemplates.h`) — Factory functions: `CreateMainMenu`, `CreatePauseMenu`, `CreateOptionsMenu`
@@ -469,6 +472,7 @@ Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangVali
 - UI templates (CreateMainMenu, CreatePauseMenu, CreateOptionsMenu factory functions)
 - UI canvas inspector (element tree, theme editor, widget-specific fields, template insertion)
 - UI Editor (viewport WYSIWYG: click-select, drag-move, resize handles, right-click add, inspector sync)
+- 9-slice rendering for UI (NineSliceConfig on Panel/Button elements and UITheme, TextureResolver callback, inspector with texture preview and border guides, scene serialization)
 - Script component workflow (class name prompt, TegeBehavior boilerplate generation, auto-fill attachment, open in IDE)
 - External IDE configuration (VS Code, Visual Studio, Rider, Custom with persistent settings)
 - Editor Settings vs Project Settings separation (dedicated Project Settings panel for rendering/physics)
@@ -721,7 +725,8 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 ### Runtime Systems
 
 - **UI Runtime** — ~~DONE (Phase 1)~~ Anchored layout, 8 widget types, event bus, theme system implemented. Future work: flex/grid layout, text input widget, scrollable panels, runtime texture loading for Image widgets.
-- **9-Slice / Text Box System** — Scalable UI backgrounds from sprite sheets using 9-slice (9-patch) rendering. A `NineSliceConfig` struct (texture path + 4 border insets in pixels) defines how a sprite is split into 9 regions: corners stay fixed-size, edges stretch in one axis, center stretches in both. The renderer generates a 9-quad mesh per element. This replaces flat-color Panel backgrounds with customizable, artist-friendly frames (dialogue boxes, buttons, tooltips, health bars). Should be simple to configure: drop in a sprite, set 4 inset values, done. Per-theme 9-slice defaults so all Panels/Buttons in a theme share the same frame style. Alternative considered: SDF rounded rectangles (resolution-independent but less artist-customizable). 9-slice is the better fit for a game engine UI.
+- **9-Slice / Text Box System** — ~~DONE~~ `NineSliceConfig` struct (texture path + 4 border insets) on `UIStyleOverride` and `UITheme` (panelNineSlice, buttonNineSlice). Renderer splits texture into 9 regions via `DrawNineSlice()` using 9x `ImDrawList::AddImage` calls: corners fixed-size, edges stretch one axis, center stretches both. Falls back to flat-color when no texture set. `TextureResolver` callback wired from EditorLayer for Vulkan texture loading. Inspector: collapsible Nine-Slice section for Panel/Button with texture path, 4 border inset sliders, texture preview with yellow guide lines. Serialized in scene files. Future work: per-theme preset 9-slice textures, 9-slice for other widget types.
+- **SVG Support** — Parse and render SVG assets in the UI system and game world. Use a lightweight SVG parser (e.g., nanosvg) to load `.svg` files, rasterize to textures at desired resolution via nanosvgrast, cache rasterized results at multiple scales for resolution-independent UI. Integration points: `UIElement` Image widget (SVG path instead of PNG), 9-slice source textures from SVG, HUD overlays, in-world billboards. Rasterize on load (not per-frame) for performance. Consider SDF-based vector rendering as a future advanced path for truly resolution-independent curves. Editor: SVG preview in inspector, scale slider for rasterization resolution.
 - **2D Camera System** — follow targets, camera bounds/clamping, smooth follow, look-ahead, screen shake, zoom, dead zones, multi-target framing.
 - **Particle System Runtime** — ~~DONE (Phase 1)~~ CPU simulation with 5 emitter shapes, piecewise-linear size/speed curves, color/alpha interpolation, gravity, drag, rotation. GPU instanced billboard rendering. Future work: GPU compute particle simulation, sub-emitters, particle collision, attractors, force fields.
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.

@@ -695,6 +695,21 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     return true;
 }
 
+void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
+    m_RenderSystem = renderSystem;
+
+    // Wire nine-slice texture resolver for UI system
+    m_UISystem.SetTextureResolver([this](const std::string& path, u32& outW, u32& outH) -> void* {
+        if (path.empty() || !m_RenderSystem) return nullptr;
+        auto tex = m_RenderSystem->LoadTexture(path);
+        if (!tex || !tex->IsValid()) return nullptr;
+        outW = tex->GetWidth();
+        outH = tex->GetHeight();
+        VkDescriptorSet ds = GetImGuiTexture(path);
+        return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ds));
+    });
+}
+
 void EditorLayer::InitializePlayMode() {
     if (m_World && m_Camera && m_CameraController) {
         m_PlayMode.Initialize(m_World, m_Camera, m_CameraController);
@@ -21040,6 +21055,60 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
                 ImGui::DragFloat("Border Width Override", &sel->style.borderWidth, 0.25f, -1.0f, 5.0f);
                 ImGui::DragFloat("Font Size Override", &sel->style.fontSize, 0.5f, -1.0f, 72.0f);
                 ImGui::TextDisabled("Set to -1 to use theme default");
+
+                // Nine-slice config (for Panel and Button widgets)
+                if (sel->type == GUI::UIWidgetType::Panel || sel->type == GUI::UIWidgetType::Button) {
+                    if (ImGui::TreeNode("Nine-Slice")) {
+                        char pathBuf[256];
+                        strncpy(pathBuf, sel->style.nineSlice.texturePath.c_str(), sizeof(pathBuf) - 1);
+                        pathBuf[sizeof(pathBuf) - 1] = '\0';
+                        if (ImGui::InputText("Texture Path", pathBuf, sizeof(pathBuf)))
+                            sel->style.nineSlice.texturePath = pathBuf;
+
+                        ImGui::DragFloat("Border Left", &sel->style.nineSlice.borderLeft, 0.5f, 0.0f, 128.0f);
+                        ImGui::DragFloat("Border Right", &sel->style.nineSlice.borderRight, 0.5f, 0.0f, 128.0f);
+                        ImGui::DragFloat("Border Top", &sel->style.nineSlice.borderTop, 0.5f, 0.0f, 128.0f);
+                        ImGui::DragFloat("Border Bottom", &sel->style.nineSlice.borderBottom, 0.5f, 0.0f, 128.0f);
+
+                        // Texture preview with border guide lines
+                        if (!sel->style.nineSlice.texturePath.empty()) {
+                            VkDescriptorSet texDS = GetImGuiTexture(sel->style.nineSlice.texturePath);
+                            if (texDS != VK_NULL_HANDLE) {
+                                f32 previewSize = 128.0f;
+                                ImVec2 pos = ImGui::GetCursorScreenPos();
+                                ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texDS)), ImVec2(previewSize, previewSize));
+
+                                // Draw yellow guide lines showing border insets
+                                ImDrawList* dl = ImGui::GetWindowDrawList();
+                                ImU32 guideColor = IM_COL32(255, 255, 0, 200);
+
+                                // We need texture dimensions for accurate guides
+                                // Use border values as pixel proportions relative to preview
+                                auto tex = m_RenderSystem->LoadTexture(sel->style.nineSlice.texturePath);
+                                if (tex && tex->IsValid()) {
+                                    f32 tw = static_cast<f32>(tex->GetWidth());
+                                    f32 th = static_cast<f32>(tex->GetHeight());
+                                    f32 scaleX = previewSize / tw;
+                                    f32 scaleY = previewSize / th;
+
+                                    f32 left = pos.x + sel->style.nineSlice.borderLeft * scaleX;
+                                    f32 right = pos.x + previewSize - sel->style.nineSlice.borderRight * scaleX;
+                                    f32 top = pos.y + sel->style.nineSlice.borderTop * scaleY;
+                                    f32 bottom = pos.y + previewSize - sel->style.nineSlice.borderBottom * scaleY;
+
+                                    dl->AddLine(ImVec2(left, pos.y), ImVec2(left, pos.y + previewSize), guideColor, 1.0f);
+                                    dl->AddLine(ImVec2(right, pos.y), ImVec2(right, pos.y + previewSize), guideColor, 1.0f);
+                                    dl->AddLine(ImVec2(pos.x, top), ImVec2(pos.x + previewSize, top), guideColor, 1.0f);
+                                    dl->AddLine(ImVec2(pos.x, bottom), ImVec2(pos.x + previewSize, bottom), guideColor, 1.0f);
+                                }
+                            }
+                        }
+
+                        ImGui::TextDisabled("Leave texture empty for flat color");
+                        ImGui::TreePop();
+                    }
+                }
+
                 ImGui::TreePop();
             }
 

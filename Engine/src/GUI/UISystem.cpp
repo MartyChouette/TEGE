@@ -231,6 +231,67 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
 }
 
 // ============================================================================
+// NINE-SLICE
+// ============================================================================
+
+const NineSliceConfig& UISystem::ResolveNineSlice(const UIElement& element, const UITheme& theme) const {
+    if (element.style.nineSlice.IsActive()) return element.style.nineSlice;
+    if (element.type == UIWidgetType::Panel) return theme.panelNineSlice;
+    if (element.type == UIWidgetType::Button) return theme.buttonNineSlice;
+    static NineSliceConfig empty;
+    return empty;
+}
+
+void UISystem::DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,
+                              u32 texW, u32 texH, const NineSliceConfig& config, u32 tint) {
+    if (!texId || texW == 0 || texH == 0) return;
+
+    const f32 tw = static_cast<f32>(texW);
+    const f32 th = static_cast<f32>(texH);
+
+    // UV coordinates (normalized)
+    const f32 u0 = 0.0f;
+    const f32 u1 = config.borderLeft / tw;
+    const f32 u2 = 1.0f - config.borderRight / tw;
+    const f32 u3 = 1.0f;
+    const f32 v0 = 0.0f;
+    const f32 v1 = config.borderTop / th;
+    const f32 v2 = 1.0f - config.borderBottom / th;
+    const f32 v3 = 1.0f;
+
+    // Screen positions
+    const f32 x0 = rect.x;
+    const f32 x1 = rect.x + config.borderLeft;
+    const f32 x2 = rect.x + rect.w - config.borderRight;
+    const f32 x3 = rect.x + rect.w;
+    const f32 y0 = rect.y;
+    const f32 y1 = rect.y + config.borderTop;
+    const f32 y2 = rect.y + rect.h - config.borderBottom;
+    const f32 y3 = rect.y + rect.h;
+
+    auto texID = static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(texId));
+
+    // Top-left corner
+    dl->AddImage(texID, ImVec2(x0, y0), ImVec2(x1, y1), ImVec2(u0, v0), ImVec2(u1, v1), tint);
+    // Top edge
+    dl->AddImage(texID, ImVec2(x1, y0), ImVec2(x2, y1), ImVec2(u1, v0), ImVec2(u2, v1), tint);
+    // Top-right corner
+    dl->AddImage(texID, ImVec2(x2, y0), ImVec2(x3, y1), ImVec2(u2, v0), ImVec2(u3, v1), tint);
+    // Left edge
+    dl->AddImage(texID, ImVec2(x0, y1), ImVec2(x1, y2), ImVec2(u0, v1), ImVec2(u1, v2), tint);
+    // Center
+    dl->AddImage(texID, ImVec2(x1, y1), ImVec2(x2, y2), ImVec2(u1, v1), ImVec2(u2, v2), tint);
+    // Right edge
+    dl->AddImage(texID, ImVec2(x2, y1), ImVec2(x3, y2), ImVec2(u2, v1), ImVec2(u3, v2), tint);
+    // Bottom-left corner
+    dl->AddImage(texID, ImVec2(x0, y2), ImVec2(x1, y3), ImVec2(u0, v2), ImVec2(u1, v3), tint);
+    // Bottom edge
+    dl->AddImage(texID, ImVec2(x1, y2), ImVec2(x2, y3), ImVec2(u1, v2), ImVec2(u2, v3), tint);
+    // Bottom-right corner
+    dl->AddImage(texID, ImVec2(x2, y2), ImVec2(x3, y3), ImVec2(u2, v2), ImVec2(u3, v3), tint);
+}
+
+// ============================================================================
 // RENDERING
 // ============================================================================
 
@@ -276,8 +337,29 @@ void UISystem::RenderPanel(const UIElement& element, const UITheme& theme) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
     f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
-    ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.surface, alpha);
 
+    // Try nine-slice rendering first
+    const auto& ns = ResolveNineSlice(element, theme);
+    if (ns.IsActive() && m_TextureResolver) {
+        u32 texW = 0, texH = 0;
+        void* texId = m_TextureResolver(ns.texturePath, texW, texH);
+        if (texId) {
+            u8 a8 = static_cast<u8>(alpha * 255.0f);
+            ImU32 tint = IM_COL32(255, 255, 255, a8);
+            DrawNineSlice(dl, element.computedRect, texId, texW, texH, ns, tint);
+
+            // Border still applies on top of nine-slice
+            f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+            if (borderW > 0.0f) {
+                ImVec4 borderColor = ResolveColor(element.style.borderColor, theme.inputBorder, alpha);
+                DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+            }
+            return;
+        }
+    }
+
+    // Flat-color fallback
+    ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.surface, alpha);
     DrawRoundedRect(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
 
     f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
@@ -291,20 +373,44 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
-    Math::Vector3 bgDefault = theme.buttonDefault;
-    if (element.style.HasBgColor()) bgDefault = element.style.bgColor;
-
-    Math::Vector3 bgColor = bgDefault;
-    if (!element.enabled) {
-        bgColor = theme.buttonDisabled;
-    } else if (element.interaction.pressed) {
-        bgColor = theme.buttonPressed;
-    } else if (element.interaction.hovered) {
-        bgColor = theme.buttonHovered;
+    // Try nine-slice rendering first
+    const auto& ns = ResolveNineSlice(element, theme);
+    bool usedNineSlice = false;
+    if (ns.IsActive() && m_TextureResolver) {
+        u32 texW = 0, texH = 0;
+        void* texId = m_TextureResolver(ns.texturePath, texW, texH);
+        if (texId) {
+            // Tint based on interaction state
+            ImU32 tint = IM_COL32(255, 255, 255, 255);
+            if (!element.enabled) {
+                tint = IM_COL32(128, 128, 128, 255);
+            } else if (element.interaction.pressed) {
+                tint = IM_COL32(180, 180, 180, 255);
+            } else if (element.interaction.hovered) {
+                tint = IM_COL32(230, 230, 230, 255);
+            }
+            DrawNineSlice(dl, element.computedRect, texId, texW, texH, ns, tint);
+            usedNineSlice = true;
+        }
     }
 
-    DrawRoundedRect(dl, element.computedRect,
-        ImGui::ColorConvertFloat4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, 1.0f)), radius);
+    if (!usedNineSlice) {
+        // Flat-color fallback
+        Math::Vector3 bgDefault = theme.buttonDefault;
+        if (element.style.HasBgColor()) bgDefault = element.style.bgColor;
+
+        Math::Vector3 bgColor = bgDefault;
+        if (!element.enabled) {
+            bgColor = theme.buttonDisabled;
+        } else if (element.interaction.pressed) {
+            bgColor = theme.buttonPressed;
+        } else if (element.interaction.hovered) {
+            bgColor = theme.buttonHovered;
+        }
+
+        DrawRoundedRect(dl, element.computedRect,
+            ImGui::ColorConvertFloat4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, 1.0f)), radius);
+    }
 
     f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
     if (borderW > 0.0f) {
