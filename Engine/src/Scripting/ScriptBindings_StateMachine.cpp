@@ -121,6 +121,47 @@ static bool SM_HasState(u64 entityId, const std::string& name) {
     return sm ? sm->HasState(name) : false;
 }
 
+// Helper to find a mutable SMState by name
+static SMState* FindSMState(u64 entityId, const std::string& stateName) {
+    if (!s_BindingsWorld) return nullptr;
+    auto* sm = s_BindingsWorld->GetComponent<StateMachineComponent>(static_cast<Entity>(entityId));
+    if (!sm) return nullptr;
+    for (auto& s : sm->states) {
+        if (s.name == stateName) return &s;
+    }
+    return nullptr;
+}
+
+static void SM_SetOnEnter(u64 entityId, const std::string& stateName, const std::string& funcName) {
+    auto* state = FindSMState(entityId, stateName);
+    if (state) state->onEnter = funcName;
+}
+
+static void SM_SetOnUpdate(u64 entityId, const std::string& stateName, const std::string& funcName) {
+    auto* state = FindSMState(entityId, stateName);
+    if (state) state->onUpdate = funcName;
+}
+
+static void SM_SetOnExit(u64 entityId, const std::string& stateName, const std::string& funcName) {
+    auto* state = FindSMState(entityId, stateName);
+    if (state) state->onExit = funcName;
+}
+
+static std::string SM_GetOnEnter(u64 entityId, const std::string& stateName) {
+    auto* state = FindSMState(entityId, stateName);
+    return state ? state->onEnter : std::string("");
+}
+
+static std::string SM_GetOnUpdate(u64 entityId, const std::string& stateName) {
+    auto* state = FindSMState(entityId, stateName);
+    return state ? state->onUpdate : std::string("");
+}
+
+static std::string SM_GetOnExit(u64 entityId, const std::string& stateName) {
+    auto* state = FindSMState(entityId, stateName);
+    return state ? state->onExit : std::string("");
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -184,6 +225,31 @@ void RegisterStateMachineBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool SM_HasState(uint64, const string&in)",
         asFUNCTION(SM_HasState), asCALL_CDECL));
+
+    // State callback setters/getters
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void SM_SetOnEnter(uint64, const string&in, const string&in)",
+        asFUNCTION(SM_SetOnEnter), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void SM_SetOnUpdate(uint64, const string&in, const string&in)",
+        asFUNCTION(SM_SetOnUpdate), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void SM_SetOnExit(uint64, const string&in, const string&in)",
+        asFUNCTION(SM_SetOnExit), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string SM_GetOnEnter(uint64, const string&in)",
+        asFUNCTION(SM_GetOnEnter), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string SM_GetOnUpdate(uint64, const string&in)",
+        asFUNCTION(SM_GetOnUpdate), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string SM_GetOnExit(uint64, const string&in)",
+        asFUNCTION(SM_GetOnExit), asCALL_CDECL));
 }
 
 } // namespace Scripting

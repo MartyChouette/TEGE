@@ -752,6 +752,11 @@ struct SMState {
     std::string name;
     std::vector<SMTransition> transitions;
     Math::Vector2 editorPosition = Math::Vector2(0, 0);  // Node position in graph editor
+
+    // Script callback function names (called on entity's TegeBehavior scripts)
+    std::string onEnter;   // Called once when entering this state
+    std::string onUpdate;  // Called each frame while in this state
+    std::string onExit;    // Called once when leaving this state
 };
 
 // State machine component with defined states, transitions, and conditions

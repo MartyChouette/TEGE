@@ -1617,6 +1617,9 @@ json SerializeSMState(const ECS::SMState& state) {
     }
     j["transitions"] = transitions;
     j["editorPosition"] = { state.editorPosition.x, state.editorPosition.y };
+    if (!state.onEnter.empty()) j["onEnter"] = state.onEnter;
+    if (!state.onUpdate.empty()) j["onUpdate"] = state.onUpdate;
+    if (!state.onExit.empty()) j["onExit"] = state.onExit;
     return j;
 }
 
@@ -1632,6 +1635,9 @@ ECS::SMState DeserializeSMState(const json& j) {
         state.editorPosition.x = j["editorPosition"][0].get<f32>();
         state.editorPosition.y = j["editorPosition"][1].get<f32>();
     }
+    if (j.contains("onEnter")) state.onEnter = j["onEnter"].get<std::string>();
+    if (j.contains("onUpdate")) state.onUpdate = j["onUpdate"].get<std::string>();
+    if (j.contains("onExit")) state.onExit = j["onExit"].get<std::string>();
     return state;
 }
 

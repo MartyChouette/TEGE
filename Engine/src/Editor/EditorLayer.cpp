@@ -15615,6 +15615,21 @@ void EditorLayer::DrawStateMachineComponent(ECS::Entity entity) {
                         state.name = nameBuf;
                     }
 
+                    // Script callbacks
+                    char enterBuf[128], updateBuf[128], exitBuf[128];
+                    strncpy(enterBuf, state.onEnter.c_str(), sizeof(enterBuf) - 1);
+                    enterBuf[sizeof(enterBuf) - 1] = '\0';
+                    strncpy(updateBuf, state.onUpdate.c_str(), sizeof(updateBuf) - 1);
+                    updateBuf[sizeof(updateBuf) - 1] = '\0';
+                    strncpy(exitBuf, state.onExit.c_str(), sizeof(exitBuf) - 1);
+                    exitBuf[sizeof(exitBuf) - 1] = '\0';
+                    if (ImGui::InputText("On Enter", enterBuf, sizeof(enterBuf)))
+                        state.onEnter = enterBuf;
+                    if (ImGui::InputText("On Update", updateBuf, sizeof(updateBuf)))
+                        state.onUpdate = updateBuf;
+                    if (ImGui::InputText("On Exit", exitBuf, sizeof(exitBuf)))
+                        state.onExit = exitBuf;
+
                     // Transitions
                     i32 transToRemove = -1;
                     for (i32 ti = 0; ti < static_cast<i32>(state.transitions.size()); ti++) {

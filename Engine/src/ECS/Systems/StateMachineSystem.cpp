@@ -1,8 +1,31 @@
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
+#include "Enjin/ECS/Components/Script.h"
+#include "Enjin/Scripting/ScriptEngine.h"
 #include <algorithm>
 
 namespace Enjin {
 namespace ECS {
+
+void StateMachineSystem::InvokeCallback(World* world, Entity entity, const std::string& methodName) {
+    if (!m_ScriptEngine || methodName.empty()) return;
+
+    auto* scriptComp = world->GetComponent<ScriptComponent>(entity);
+    if (!scriptComp) return;
+
+    for (auto& attachment : scriptComp->scripts) {
+        if (!attachment.enabled || !attachment.instance) continue;
+
+        auto* obj = static_cast<asIScriptObject*>(attachment.instance);
+        auto* func = m_ScriptEngine->FindMethod(obj, "void " + methodName + "()");
+        if (!func) continue;
+
+        auto* ctx = m_ScriptEngine->AcquireContext();
+        if (ctx) {
+            m_ScriptEngine->ExecuteMethod(ctx, obj, func);
+            m_ScriptEngine->ReturnContext(ctx);
+        }
+    }
+}
 
 void StateMachineSystem::Update(World* world, f32 deltaTime) {
     if (!world) return;
@@ -16,6 +39,11 @@ void StateMachineSystem::Update(World* world, f32 deltaTime) {
         if (sm->currentState.empty() && !sm->states.empty()) {
             sm->currentState = sm->states[0].name;
             sm->stateTime = 0.0f;
+
+            // Fire onEnter for the initial state
+            if (!sm->states[0].onEnter.empty()) {
+                InvokeCallback(world, entity, sm->states[0].onEnter);
+            }
         }
 
         // Find current state definition
@@ -92,17 +120,38 @@ void StateMachineSystem::Update(World* world, f32 deltaTime) {
                     }
                 }
 
+                // Fire onExit for the old state
+                if (!current->onExit.empty()) {
+                    InvokeCallback(world, entity, current->onExit);
+                }
+
                 // Transition
                 sm->previousState = sm->currentState;
                 sm->currentState = transition.toState;
                 sm->stateTime = 0.0f;
                 transitioned = true;
+
+                // Fire onEnter for the new state
+                for (const auto& s : sm->states) {
+                    if (s.name == sm->currentState) {
+                        if (!s.onEnter.empty()) {
+                            InvokeCallback(world, entity, s.onEnter);
+                        }
+                        break;
+                    }
+                }
+
                 break;
             }
         }
 
         if (!transitioned) {
             sm->stateTime += deltaTime;
+
+            // Fire onUpdate for the current state each frame
+            if (!current->onUpdate.empty()) {
+                InvokeCallback(world, entity, current->onUpdate);
+            }
         }
     }
 }

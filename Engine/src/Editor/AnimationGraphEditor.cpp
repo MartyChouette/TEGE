@@ -503,6 +503,23 @@ void AnimationGraphEditor::DrawInspector(bool isPlaying) {
                     }
                 }
 
+                // Script callbacks
+                ImGui::Separator();
+                ImGui::Text("Callbacks");
+                char enterBuf[128], updateBuf[128], exitBuf[128];
+                std::strncpy(enterBuf, smState->onEnter.c_str(), sizeof(enterBuf) - 1);
+                enterBuf[sizeof(enterBuf) - 1] = '\0';
+                std::strncpy(updateBuf, smState->onUpdate.c_str(), sizeof(updateBuf) - 1);
+                updateBuf[sizeof(updateBuf) - 1] = '\0';
+                std::strncpy(exitBuf, smState->onExit.c_str(), sizeof(exitBuf) - 1);
+                exitBuf[sizeof(exitBuf) - 1] = '\0';
+                if (ImGui::InputText("On Enter", enterBuf, sizeof(enterBuf)))
+                    smState->onEnter = enterBuf;
+                if (ImGui::InputText("On Update", updateBuf, sizeof(updateBuf)))
+                    smState->onUpdate = updateBuf;
+                if (ImGui::InputText("On Exit", exitBuf, sizeof(exitBuf)))
+                    smState->onExit = exitBuf;
+
                 // Transitions list
                 ImGui::Separator();
                 ImGui::Text("Transitions (%zu)", smState->transitions.size());
