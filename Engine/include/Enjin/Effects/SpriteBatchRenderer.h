@@ -56,6 +56,9 @@ public:
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
     void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
+    // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
+    bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
+
     // Gather all visible Sprite2DComponent entities, sort by texture and layer,
     // batch by texture, and render with instanced draw calls.
     // textureBindCallback: called by the renderer to bind the correct texture

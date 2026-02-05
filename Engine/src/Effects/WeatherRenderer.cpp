@@ -4,6 +4,8 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <array>
+#include <filesystem>
+#include <fstream>
 
 namespace Enjin {
 namespace Effects {
@@ -294,6 +296,36 @@ void WeatherRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Draw instanced: 6 indices per quad, liveCount instances
     vkCmdDrawIndexed(commandBuffer, 6, liveCount, 0, 0, 0);
+}
+
+bool WeatherRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return false;
+    namespace fs = std::filesystem;
+
+    std::string vertPath = (fs::path(shaderDir) / "particle.vert").string();
+    std::string fragPath = (fs::path(shaderDir) / "particle.frag").string();
+
+    std::string vertSrc, fragSrc;
+    { std::ifstream f(vertPath); if (!f.is_open()) return false; vertSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+    { std::ifstream f(fragPath); if (!f.is_open()) return false; fragSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempVert->CompileFromGLSL(vertSrc, VK_SHADER_STAGE_VERTEX_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: particle.vert compilation failed");
+        return false;
+    }
+    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempFrag->CompileFromGLSL(fragSrc, VK_SHADER_STAGE_FRAGMENT_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "WeatherRenderer: particle.frag compilation failed");
+        return false;
+    }
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+    m_VertexShader = std::move(tempVert);
+    m_FragmentShader = std::move(tempFrag);
+    CreatePipeline(sharedLayout);
+    return m_Pipeline != nullptr;
 }
 
 } // namespace Effects

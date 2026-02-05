@@ -31,6 +31,9 @@ public:
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
     void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
+    // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
+    bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
+
     // Gather all emitter pools into instance cache and render with a single instanced draw call.
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     void Render(VkCommandBuffer commandBuffer,

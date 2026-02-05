@@ -27,6 +27,9 @@ public:
 
     void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
+    // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
+    bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
+
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,

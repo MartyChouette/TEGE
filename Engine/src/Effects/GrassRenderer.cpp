@@ -4,6 +4,8 @@
 #include "Enjin/Logging/Log.h"
 #include <array>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 
 namespace Enjin {
 namespace Effects {
@@ -327,6 +329,36 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
         // Draw instanced: blade mesh * density instances
         vkCmdDrawIndexed(commandBuffer, m_BladeIndexCount, grass->density, 0, 0, 0);
     }
+}
+
+bool GrassRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return false;
+    namespace fs = std::filesystem;
+
+    std::string vertPath = (fs::path(shaderDir) / "grass.vert").string();
+    std::string fragPath = (fs::path(shaderDir) / "grass.frag").string();
+
+    std::string vertSrc, fragSrc;
+    { std::ifstream f(vertPath); if (!f.is_open()) return false; vertSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+    { std::ifstream f(fragPath); if (!f.is_open()) return false; fragSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempVert->CompileFromGLSL(vertSrc, VK_SHADER_STAGE_VERTEX_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: grass.vert compilation failed");
+        return false;
+    }
+    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempFrag->CompileFromGLSL(fragSrc, VK_SHADER_STAGE_FRAGMENT_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "GrassRenderer: grass.frag compilation failed");
+        return false;
+    }
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+    m_VertexShader = std::move(tempVert);
+    m_FragmentShader = std::move(tempFrag);
+    CreatePipeline(sharedLayout);
+    return m_Pipeline != nullptr;
 }
 
 } // namespace Effects

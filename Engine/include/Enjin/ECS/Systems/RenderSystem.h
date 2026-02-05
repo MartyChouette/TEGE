@@ -387,6 +387,16 @@ private:
     Assets::FileWatcher m_TextureWatcher;
     u32 m_WatcherPollCounter = 0;
 
+    // Shader hot-reload (editor-only)
+    Assets::FileWatcher m_ShaderWatcher;
+    std::string m_ShaderDir;       // Path to Engine/shaders/ (empty = not found, hot-reload disabled)
+    bool m_ShaderHotReloadEnabled = true;
+    void FindShaderDirectory();
+    void SetupShaderWatchers();
+    void ReloadMainShaders(const std::string& changedFile);
+    void ReloadSkyboxShaders();
+    void ReloadShadowShaders();
+
     bool m_Initialized = false;
 };
 

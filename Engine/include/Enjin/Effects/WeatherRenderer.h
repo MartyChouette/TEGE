@@ -39,6 +39,9 @@ public:
     // Recreate pipeline for a different render pass (e.g. render target vs swapchain)
     void RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout);
 
+    // Hot-reload shaders from disk (compile GLSL → SPIR-V, recreate pipeline)
+    bool ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout);
+
     // Upload particle data and render instanced billboards
     // Call within an active render pass, after scene geometry (for depth testing)
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)

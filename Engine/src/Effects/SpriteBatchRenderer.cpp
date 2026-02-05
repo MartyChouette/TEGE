@@ -6,6 +6,8 @@
 #include <cstring>
 #include <array>
 #include <algorithm>
+#include <filesystem>
+#include <fstream>
 
 namespace Enjin {
 namespace Effects {
@@ -510,6 +512,55 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Flush remaining sprites
     flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+}
+
+bool SpriteBatchRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetLayout sharedLayout) {
+    if (!m_Initialized || !m_Renderer) return false;
+    namespace fs = std::filesystem;
+
+    // Compile unlit shaders
+    std::string vertPath = (fs::path(shaderDir) / "sprite.vert").string();
+    std::string fragPath = (fs::path(shaderDir) / "sprite.frag").string();
+    std::string litVertPath = (fs::path(shaderDir) / "sprite_lit.vert").string();
+    std::string litFragPath = (fs::path(shaderDir) / "sprite_lit.frag").string();
+
+    std::string vertSrc, fragSrc, litVertSrc, litFragSrc;
+    { std::ifstream f(vertPath); if (!f.is_open()) return false; vertSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+    { std::ifstream f(fragPath); if (!f.is_open()) return false; fragSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+    { std::ifstream f(litVertPath); if (!f.is_open()) return false; litVertSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+    { std::ifstream f(litFragPath); if (!f.is_open()) return false; litFragSrc.assign(std::istreambuf_iterator<char>(f), {}); }
+
+    auto tempVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempVert->CompileFromGLSL(vertSrc, VK_SHADER_STAGE_VERTEX_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: sprite.vert compilation failed");
+        return false;
+    }
+    auto tempFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempFrag->CompileFromGLSL(fragSrc, VK_SHADER_STAGE_FRAGMENT_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: sprite.frag compilation failed");
+        return false;
+    }
+    auto tempLitVert = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempLitVert->CompileFromGLSL(litVertSrc, VK_SHADER_STAGE_VERTEX_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: sprite_lit.vert compilation failed");
+        return false;
+    }
+    auto tempLitFrag = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!tempLitFrag->CompileFromGLSL(litFragSrc, VK_SHADER_STAGE_FRAGMENT_BIT)) {
+        ENJIN_LOG_ERROR(Renderer, "SpriteBatchRenderer: sprite_lit.frag compilation failed");
+        return false;
+    }
+
+    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Pipeline.reset();
+    m_LitPipeline.reset();
+    m_VertexShader = std::move(tempVert);
+    m_FragmentShader = std::move(tempFrag);
+    m_LitVertexShader = std::move(tempLitVert);
+    m_LitFragmentShader = std::move(tempLitFrag);
+    CreatePipeline(sharedLayout);
+    CreateLitPipeline(sharedLayout);
+    return m_Pipeline != nullptr && m_LitPipeline != nullptr;
 }
 
 } // namespace Effects
