@@ -338,6 +338,15 @@ private:
     void UpdateMetallicRoughnessDescriptor(Renderer::Texture* texture);
     void UpdateEmissiveDescriptor(Renderer::Texture* texture);
 
+    // Batched texture descriptor update — calls vkUpdateDescriptorSets once for all textures
+    // Pass nullptr for any texture slot that should use the default white texture
+    void UpdateEntityTextureDescriptors(
+        Renderer::Texture* baseColor,
+        Renderer::Texture* height,
+        Renderer::Texture* normal,
+        Renderer::Texture* metallicRoughness,
+        Renderer::Texture* emissive);
+
     // Split uniform updates: frame-level (once) vs per-entity (material only)
     void UpdateFrameUniforms();
     void UpdateMaterialBuffer(Entity entity);

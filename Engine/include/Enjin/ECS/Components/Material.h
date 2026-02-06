@@ -5,6 +5,10 @@
 #include <string>
 
 namespace Enjin {
+
+// Forward declaration for texture caching
+namespace Renderer { class Texture; }
+
 namespace ECS {
 
 // Material component for surface properties
@@ -55,6 +59,25 @@ struct MaterialComponent {
     bool uvQuantize = false;
     bool gouraudOnly = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
+
+    // Cached texture pointers (mutable - cache only, not part of component state)
+    // Avoids per-frame string hash lookups in GetOrLoadTexture
+    mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
+    mutable Renderer::Texture* cachedHeightTexture = nullptr;
+    mutable Renderer::Texture* cachedNormalTexture = nullptr;
+    mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
+    mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
+    mutable bool textureCacheDirty = true;
+
+    // Call when texture paths change to force re-lookup
+    void InvalidateTextureCache() const {
+        textureCacheDirty = true;
+        cachedBaseColorTexture = nullptr;
+        cachedHeightTexture = nullptr;
+        cachedNormalTexture = nullptr;
+        cachedMetallicRoughnessTexture = nullptr;
+        cachedEmissiveTexture = nullptr;
+    }
 };
 
 // GPU-aligned material data for shader upload

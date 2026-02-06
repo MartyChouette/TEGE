@@ -2603,6 +2603,12 @@ void RenderSystem::RenderEntity(Entity entity) {
     MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
     Renderer::Texture* boundTexture = nullptr;
 
+    // Cached texture pointers for batched descriptor update
+    Renderer::Texture* texHeight = nullptr;
+    Renderer::Texture* texNormal = nullptr;
+    Renderer::Texture* texMR = nullptr;
+    Renderer::Texture* texEmissive = nullptr;
+
     if (material) {
         pushConstants.baseColor = material->baseColor;
         pushConstants.metallic = material->metallic;
@@ -2612,14 +2618,53 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.opacity = material->opacity;
         pushConstants.alphaCutoff = material->alphaCutoff;
 
-        // Try to load base color texture if path is set
-        if (!material->baseColorTexturePath.empty()) {
-            auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-            if (tex && tex->IsValid()) {
-                boundTexture = tex.get();
-                material->baseColorTexture = 1; // Mark as having texture
+        // Resolve textures using cache (avoids per-frame string hash lookups)
+        if (material->textureCacheDirty) {
+            // Cache miss - load all textures and cache pointers
+            if (!material->baseColorTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedBaseColorTexture = tex.get();
+                    material->baseColorTexture = 1;
+                }
             }
+            if (!material->heightTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->heightTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedHeightTexture = tex.get();
+                    material->heightTexture = 1;
+                }
+            }
+            if (!material->normalTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->normalTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedNormalTexture = tex.get();
+                    material->normalTexture = 1;
+                }
+            }
+            if (!material->metallicRoughnessTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedMetallicRoughnessTexture = tex.get();
+                    material->metallicRoughnessTexture = 1;
+                }
+            }
+            if (!material->emissiveTexturePath.empty()) {
+                auto tex = GetOrLoadTexture(material->emissiveTexturePath);
+                if (tex && tex->IsValid()) {
+                    material->cachedEmissiveTexture = tex.get();
+                    material->emissiveTexture = 1;
+                }
+            }
+            material->textureCacheDirty = false;
         }
+
+        // Use cached texture pointers
+        boundTexture = material->cachedBaseColorTexture;
+        texHeight = material->cachedHeightTexture;
+        texNormal = material->cachedNormalTexture;
+        texMR = material->cachedMetallicRoughnessTexture;
+        texEmissive = material->cachedEmissiveTexture;
 
         // Compute flags same as MaterialGPU::FromComponent
         pushConstants.flags = 0;
@@ -2742,34 +2787,8 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
 
     // Update texture descriptor if entity has a texture
-    if (boundTexture) {
-        UpdateTextureDescriptor(boundTexture);
-    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-        // Reset to default white texture
-        UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
-    }
-
-    // Bind metallic-roughness texture if available
-    if (material && !material->metallicRoughnessTexturePath.empty()) {
-        auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-        if (mrTex && mrTex->IsValid()) {
-            material->metallicRoughnessTexture = 1;
-            UpdateMetallicRoughnessDescriptor(mrTex.get());
-        }
-    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-        UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
-    }
-
-    // Bind emissive texture if available
-    if (material && !material->emissiveTexturePath.empty()) {
-        auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
-        if (emissiveTex && emissiveTex->IsValid()) {
-            material->emissiveTexture = 1;
-            UpdateEmissiveDescriptor(emissiveTex.get());
-        }
-    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-        UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
-    }
+    // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
+    UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
 
     // Upload bone matrices for skinned meshes
     AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
@@ -3137,6 +3156,83 @@ void RenderSystem::UpdateEmissiveDescriptor(Renderer::Texture* texture) {
     descriptorWrite.pImageInfo = &imageInfo;
 
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &descriptorWrite, 0, nullptr);
+}
+
+void RenderSystem::UpdateEntityTextureDescriptors(
+    Renderer::Texture* baseColor,
+    Renderer::Texture* height,
+    Renderer::Texture* normal,
+    Renderer::Texture* metallicRoughness,
+    Renderer::Texture* emissive)
+{
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    VkDescriptorSet dstSet = (*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)];
+    VkDevice device = m_Renderer->GetContext()->GetDevice();
+
+    // Use default white texture for any nullptr slots
+    Renderer::Texture* defaultTex = m_DefaultWhiteTexture.get();
+    Renderer::Texture* texBase = (baseColor && baseColor->IsValid()) ? baseColor : defaultTex;
+    Renderer::Texture* texHeight = (height && height->IsValid()) ? height : defaultTex;
+    Renderer::Texture* texNormal = (normal && normal->IsValid()) ? normal : defaultTex;
+    Renderer::Texture* texMR = (metallicRoughness && metallicRoughness->IsValid()) ? metallicRoughness : defaultTex;
+    Renderer::Texture* texEmissive = (emissive && emissive->IsValid()) ? emissive : defaultTex;
+
+    // Early out if no valid textures at all
+    if (!texBase || !texBase->IsValid()) return;
+
+    // Collect image infos (must persist until vkUpdateDescriptorSets returns)
+    VkDescriptorImageInfo imageInfos[5];
+    imageInfos[0] = texBase->GetDescriptorInfo();
+    imageInfos[1] = texHeight->GetDescriptorInfo();
+    imageInfos[2] = texNormal->GetDescriptorInfo();
+    imageInfos[3] = texMR->GetDescriptorInfo();
+    imageInfos[4] = texEmissive->GetDescriptorInfo();
+
+    // Bindings: 3=baseColor, 5=height, 6=normal, 8=metallicRoughness, 9=emissive
+    VkWriteDescriptorSet writes[5] = {};
+
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = dstSet;
+    writes[0].dstBinding = 3;
+    writes[0].dstArrayElement = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &imageInfos[0];
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = dstSet;
+    writes[1].dstBinding = 5;
+    writes[1].dstArrayElement = 0;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &imageInfos[1];
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = dstSet;
+    writes[2].dstBinding = 6;
+    writes[2].dstArrayElement = 0;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &imageInfos[2];
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = dstSet;
+    writes[3].dstBinding = 8;
+    writes[3].dstArrayElement = 0;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorCount = 1;
+    writes[3].pImageInfo = &imageInfos[3];
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = dstSet;
+    writes[4].dstBinding = 9;
+    writes[4].dstArrayElement = 0;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[4].descriptorCount = 1;
+    writes[4].pImageInfo = &imageInfos[4];
+
+    // Single batched call instead of 5 individual calls
+    vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
 }
 
 void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
