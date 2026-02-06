@@ -471,6 +471,9 @@ Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangVali
 - 2D tilemap rendering (tile mesh generation, tileset texture binding)
 - 2D sprite animation advancement (frame timer, looping, playback speed)
 - 2D camera follow and bounds clamping in ControllerSystem
+- Advanced 2D camera system (dead zones, look-ahead, screen shake, zoom smoothing, multi-target framing)
+- FPS cap and VSync settings (Editor: frame rate limit, unfocused/idle reduction; Project: target FPS, VSync, background behavior)
+- Orthographic projection fix for Vulkan (Y-flip and depth range [0,1])
 - Sprite texture preview in inspector (thumbnail with source rect overlay)
 - Sprite sheet frame picker (clickable grid, auto-sets source rectangle)
 - Animation preview widget (live current-frame display with progress bar)
@@ -590,6 +593,7 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 - **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
 - **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`
 - **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
+- **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
 - **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`
 - **State Machine**: `SM_AddState(uint64, string)`, `SM_AddTransition(uint64, from, to)`, `SM_SetState/GetCurrentState/GetPreviousState(uint64)`, `SM_GetStateTime(uint64)`, `SM_SendTrigger(uint64, string)`, `SM_SetBool/GetBool(uint64, string, bool)`, `SM_SetFloat/GetFloat(uint64, string, float)`, `SM_SetInt/GetInt(uint64, string, int)`, `SM_HasState(uint64, string)`, `SM_SetOnEnter/SetOnUpdate/SetOnExit(uint64, stateName, funcName)`, `SM_GetOnEnter/GetOnUpdate/GetOnExit(uint64, stateName)`
 
@@ -710,6 +714,73 @@ When modifying or extending the engine, keep these security notes in mind:
 - Sanitize file paths loaded from scene/project files — prevent `..` traversal.
 - Cap allocation sizes from untrusted input (pack files, scene files, model files).
 
+## Known Performance Issues & Technical Debt
+
+This section documents identified performance bottlenecks and technical debt from codebase audits. See `docs/ROADMAP.md` for detailed implementation plans.
+
+### Critical Rendering Issues
+
+| Issue | Location | Impact | Fix Priority |
+|-------|----------|--------|--------------|
+| `vkDeviceWaitIdle()` blocks GPU | RenderSystem.cpp:2204,2380,2416,2470 | Full GPU stall on shader hot-reload | P0 |
+| `GetAllEntities()` + filter pattern | RenderSystem.cpp:593,662,2890 | O(n) instead of O(k) iteration | P0 |
+| Shadow pass iterates x4 cascades | RenderSystem.cpp:2890 | 20K iterations for 100 shadow-casters | P0 |
+| Per-entity `GetOrLoadTexture()` | RenderSystem.cpp:2558-2706 | 2000-5000 string hashes/frame | P1 |
+| Per-entity `vkUpdateDescriptorSets()` | RenderSystem.cpp:3008 | Hundreds of CPU-side writes/frame | P1 |
+
+### Quick Win Fixes
+
+```cpp
+// Replace this (O(n) with filter):
+for (Entity e : m_World->GetAllEntities()) {
+    if (!m_World->HasComponent<MeshComponent>(e)) continue;
+    // ...
+}
+
+// With this (O(k) where k = entities with component):
+for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+    // ...
+}
+```
+
+**Texture caching:** Cache texture pointers directly on `MaterialComponent` instead of path-based lookup in render loop.
+
+**GPU sync:** Replace `vkDeviceWaitIdle()` with per-frame fence waits; defer pipeline recreation to next frame.
+
+### Data Structure Recommendations
+
+| Current | Recommended | Location |
+|---------|-------------|----------|
+| `std::map<string, string>` | `unordered_map` | DialogueTree.h:106, Gameplay.h:883 |
+| String-keyed texture cache | Pointer cache on MaterialComponent | RenderSystem.h:287 |
+| Multiple `GetComponent()` per entity | Cache component pointers | RenderSystem.cpp:2505-2700 |
+| `push_back()` without reserve | `reserve(MAX_PARTICLES)` | FlowerSystem.cpp:773+ |
+
+### Node Graph Expansion Opportunities
+
+The `NodeGraphEditor` framework (currently Animation Graph only) should power additional systems:
+
+| System | Priority | Effort | Impact |
+|--------|----------|--------|--------|
+| Dialogue Tree Editor | P1 | 2-3 weeks | Very High (RPGs, VNs) |
+| Visual Scripting (Blueprints) | P1 | 4-6 weeks | Very High (non-programmers) |
+| AI Behavior Tree Editor | P2 | 2-3 weeks | High (game AI) |
+| Quest Flow Editor | P2 | 2 weeks | High (narrative games) |
+| Shader Graph | P3 | 6-8 weeks | Medium (advanced users) |
+
+### GUI Modernization Plan
+
+**Brand Colors (TEGE palette):**
+- Primary: `#C7DAC4` (sage green) — replaces blue accent
+- Secondary: `#5B7FA1` (soft blue) — links, info
+- Success: `#6DB876`, Warning: `#D4A855`, Error: `#D6726B`
+
+**Typography:** 5-level system (H1 23px Bold, H2 18px SemiBold, Body 17px, Small 14px, Mono 16px cyan)
+
+**Spacing:** 8px grid (XS=4, S=8, M=12, L=16, XL=24, XXL=32)
+
+**Micro-interactions:** Spring easing `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for button press
+
 ## Roadmap (Planned Features)
 
 This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. Items are grouped by category. Each session should pick one item to plan and implement — do NOT try to plan the whole list at once.
@@ -744,7 +815,7 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 - **UI Runtime** — ~~DONE (Phase 1)~~ Anchored layout, 8 widget types, event bus, theme system implemented. Future work: flex/grid layout, text input widget, scrollable panels, runtime texture loading for Image widgets.
 - **9-Slice / Text Box System** — ~~DONE~~ `NineSliceConfig` struct (texture path + 4 border insets) on `UIStyleOverride` and `UITheme` (panelNineSlice, buttonNineSlice). Renderer splits texture into 9 regions via `DrawNineSlice()` using 9x `ImDrawList::AddImage` calls: corners fixed-size, edges stretch one axis, center stretches both. Falls back to flat-color when no texture set. `TextureResolver` callback wired from EditorLayer for Vulkan texture loading. Inspector: collapsible Nine-Slice section for Panel/Button with texture path, 4 border inset sliders, texture preview with yellow guide lines. Serialized in scene files. Future work: per-theme preset 9-slice textures, 9-slice for other widget types.
 - **SVG Support** — Parse and render SVG assets in the UI system and game world. Use a lightweight SVG parser (e.g., nanosvg) to load `.svg` files, rasterize to textures at desired resolution via nanosvgrast, cache rasterized results at multiple scales for resolution-independent UI. Integration points: `UIElement` Image widget (SVG path instead of PNG), 9-slice source textures from SVG, HUD overlays, in-world billboards. Rasterize on load (not per-frame) for performance. Consider SDF-based vector rendering as a future advanced path for truly resolution-independent curves. Editor: SVG preview in inspector, scale slider for rasterization resolution.
-- **2D Camera System** — follow targets, camera bounds/clamping, smooth follow, look-ahead, screen shake, zoom, dead zones, multi-target framing.
+- **2D Camera System** — ~~DONE~~ `Camera2DBoundsComponent` with follow targets, camera bounds/clamping, smooth follow (exponential lerp), look-ahead (velocity-based), screen shake (sin/cos oscillation with decay), zoom smoothing, dead zones, multi-target framing with auto-zoom. 10 AngelScript bindings (Camera2D_Shake, Get/SetZoom, Add/Remove/ClearTargets, SetDeadZone, SetLookAhead, Set/GetFollowTarget). Full serialization.
 - **Particle System Runtime** — ~~DONE (Phase 1)~~ CPU simulation with 5 emitter shapes, piecewise-linear size/speed curves, color/alpha interpolation, gravity, drag, rotation. GPU instanced billboard rendering. Future work: GPU compute particle simulation, sub-emitters, particle collision, attractors, force fields.
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
 - **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
