@@ -169,11 +169,11 @@ struct ENJIN_API Matrix4 {
     static constexpr Matrix4 Orthographic(f32 left, f32 right, f32 bottom, f32 top, f32 nearPlane, f32 farPlane) {
         Matrix4 result = Identity();
         result.m[0] = 2.0f / (right - left);
-        result.m[5] = 2.0f / (top - bottom);
-        result.m[10] = -2.0f / (farPlane - nearPlane);
+        result.m[5] = -2.0f / (top - bottom);  // Negated for Vulkan (clip Y points down)
+        result.m[10] = -1.0f / (farPlane - nearPlane);  // Vulkan depth [0,1]
         result.m[12] = -(right + left) / (right - left);
         result.m[13] = -(top + bottom) / (top - bottom);
-        result.m[14] = -(farPlane + nearPlane) / (farPlane - nearPlane);
+        result.m[14] = -nearPlane / (farPlane - nearPlane);  // Vulkan depth [0,1]
         return result;
     }
 
