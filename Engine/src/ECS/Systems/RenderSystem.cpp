@@ -181,6 +181,16 @@ void RenderSystem::Initialize() {
         SetupShaderWatchers();
     }
 
+    // Initialize GPU frustum culling system
+    m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_Renderer->GetContext());
+    if (!m_GPUCulling->Initialize()) {
+        ENJIN_LOG_WARN(Renderer, "GPUCullingSystem initialization failed, using CPU culling");
+        m_GPUCulling.reset();
+        m_GPUCullingEnabled = false;
+    } else {
+        ENJIN_LOG_INFO(Renderer, "GPU frustum culling enabled");
+    }
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -223,6 +233,14 @@ void RenderSystem::Shutdown() {
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
     m_SpriteBatchRenderer.reset();
+
+    // Clean up GPU culling system
+    if (m_GPUCulling) {
+        m_GPUCulling->Shutdown();
+        m_GPUCulling.reset();
+    }
+    m_CullableObjects.clear();
+    m_EntityToCullIndex.clear();
 
     // Clean up skybox resources
     m_SkyboxVertexBuffer.reset();
@@ -497,6 +515,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // Classify scene composition (2D / 2.5D / 3D) before rendering decisions
     ClassifySceneComposition();
 
+    // Build list of cullable objects for GPU frustum culling
+    // Only done when we have 3D meshes and GPU culling is enabled
+    if (m_GPUCullingEnabled && m_SceneComposition.mesh3DCount > 0) {
+        BuildCullableObjectList();
+    }
+
     // Shadow pass first (if enabled) - only run when 3D meshes AND shadow-casting lights exist.
     // Pure 2D scenes skip entirely since sprites never cast shadows.
     // Scenes with no shadow-casting lights also skip to avoid rendering 4 cascades for nothing.
@@ -504,6 +528,12 @@ void RenderSystem::Update(f32 deltaTime) {
         m_SceneComposition.mode == SceneRenderMode::Scene3D &&
         m_SceneComposition.hasShadowCastingLights) {
         RenderShadowPass();
+    }
+
+    // GPU frustum culling (compute shader dispatch before main render pass)
+    // This runs the compute shader to determine which objects are visible
+    if (m_GPUCullingEnabled && !m_CullableObjects.empty()) {
+        PerformGPUCulling();
     }
 
     // Periodic diagnostic warnings (every 300 frames)
@@ -596,6 +626,16 @@ void RenderSystem::Update(f32 deltaTime) {
                     m_World->HasComponent<MeshComponent>(entity)) {
                     auto* xform = m_World->GetComponent<TransformComponent>(entity);
                     if (xform && !xform->visible) continue;
+                    // Skip GPU-culled entities (frustum culling)
+                    if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+                        usize entityIdx = static_cast<usize>(entity);
+                        if (entityIdx < m_EntityToCullIndex.size()) {
+                            u32 cullIdx = m_EntityToCullIndex[entityIdx];
+                            if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
+                                continue;
+                            }
+                        }
+                    }
                     // Skip 2D sprites — rendered in sorted pass after 3D geometry
                     if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
                     RenderEntity(entity);
@@ -670,6 +710,17 @@ void RenderSystem::Update(f32 deltaTime) {
             {
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
                 if (xform && !xform->visible) continue;
+            }
+
+            // Skip GPU-culled entities (frustum culling)
+            if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+                usize entityIdx = static_cast<usize>(entity);
+                if (entityIdx < m_EntityToCullIndex.size()) {
+                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
+                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
+                        continue;
+                    }
+                }
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
@@ -777,6 +828,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Skip invisible entities
             auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
             if (xformRT && !xformRT->visible) continue;
+
+            // Skip GPU-culled entities (frustum culling)
+            if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+                usize entityIdx = static_cast<usize>(entity);
+                if (entityIdx < m_EntityToCullIndex.size()) {
+                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
+                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
+                        continue;
+                    }
+                }
+            }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
@@ -1498,6 +1560,92 @@ void RenderSystem::RebuildShadowCasterCache() {
     }
 
     m_ShadowCastersDirty = false;
+}
+
+void RenderSystem::BuildCullableObjectList() {
+    m_CullableObjects.clear();
+    m_EntityToCullIndex.clear();
+
+    if (!m_World || !m_GPUCulling) return;
+
+    // Reserve capacity
+    usize meshCount = m_SceneComposition.mesh3DCount;
+    if (meshCount == 0) return;
+
+    m_CullableObjects.reserve(meshCount);
+    m_EntityToCullIndex.resize(m_World->GetEntityCount(), UINT32_MAX);
+
+    u32 cullIndex = 0;
+
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+
+        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        if (!xform || !xform->visible) continue;
+
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!mesh || !mesh->IsValid()) continue;
+
+        // Compute AABB from mesh vertices
+        Renderer::BoundingBox bounds;
+        for (const auto& vertex : mesh->vertices) {
+            bounds.min.x = Math::Min(bounds.min.x, vertex.position.x);
+            bounds.min.y = Math::Min(bounds.min.y, vertex.position.y);
+            bounds.min.z = Math::Min(bounds.min.z, vertex.position.z);
+            bounds.max.x = Math::Max(bounds.max.x, vertex.position.x);
+            bounds.max.y = Math::Max(bounds.max.y, vertex.position.y);
+            bounds.max.z = Math::Max(bounds.max.z, vertex.position.z);
+        }
+
+        // Handle empty mesh
+        if (bounds.min.x > bounds.max.x) {
+            bounds.min = Math::Vector3(-0.5f);
+            bounds.max = Math::Vector3(0.5f);
+        }
+
+        Renderer::CullableObject obj;
+        obj.SetBounds(bounds);
+        obj.transform = xform->ToMatrix();
+        obj.meshIndex = static_cast<u32>(entity); // Use entity ID as mesh index for now
+        obj.indexCount = static_cast<u32>(mesh->indices.size());
+        obj.indexOffset = 0;
+        obj.vertexOffset = 0;
+
+        // Map entity to cull index
+        if (static_cast<usize>(entity) < m_EntityToCullIndex.size()) {
+            m_EntityToCullIndex[static_cast<usize>(entity)] = cullIndex;
+        }
+
+        m_CullableObjects.push_back(obj);
+        cullIndex++;
+    }
+}
+
+void RenderSystem::PerformGPUCulling() {
+    if (!m_GPUCulling || !m_GPUCullingEnabled || !m_Camera) return;
+    if (m_CullableObjects.empty()) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Submit objects for culling
+    m_GPUCulling->SubmitObjects(m_CullableObjects);
+
+    // Execute GPU culling
+    VkBuffer indirectBuffer;
+    u32 drawCount;
+    if (m_GPUCulling->ExecuteCulling(
+            m_Camera->GetViewMatrix(),
+            m_Camera->GetProjectionMatrix(),
+            commandBuffer,
+            indirectBuffer,
+            drawCount)) {
+        // Culling stats are available via m_GPUCulling->GetStats()
+        auto stats = m_GPUCulling->GetStats();
+        (void)stats; // Stats available for profiler display
+    }
 }
 
 void RenderSystem::CreatePipeline() {

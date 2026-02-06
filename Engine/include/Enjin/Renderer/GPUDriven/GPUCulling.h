@@ -85,6 +85,13 @@ public:
     };
     CullingStats GetStats() const { return m_Stats; }
 
+    // Check if object at given index is visible (after ExecuteCulling)
+    // Returns true if index is out of range or culling hasn't run yet
+    bool IsVisible(u32 objectIndex) const {
+        if (objectIndex >= m_CachedVisibility.size()) return true;
+        return m_CachedVisibility[objectIndex] != 0;
+    }
+
 private:
     bool CreateComputePipeline();
     bool CreateBuffers();
@@ -110,6 +117,7 @@ private:
     
     CullingStats m_Stats;
     u32 m_MaxObjects = 100000; // Support up to 100k objects
+    std::vector<u32> m_CachedVisibility; // Per-object visibility from last ExecuteCulling
 };
 
 } // namespace Renderer

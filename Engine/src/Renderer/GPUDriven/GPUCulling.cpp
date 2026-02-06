@@ -103,6 +103,19 @@ bool GPUCullingSystem::ExecuteCulling(
         return true;
     }
 
+    // CPU fallback when compute pipeline isn't available
+    if (m_CullPipeline == VK_NULL_HANDLE) {
+        // Mark all objects as visible (no culling)
+        m_CachedVisibility.resize(m_ObjectCount);
+        std::fill(m_CachedVisibility.begin(), m_CachedVisibility.end(), 1u);
+        outDrawCount = m_ObjectCount;
+        m_Stats.totalObjects = m_ObjectCount;
+        m_Stats.visibleObjects = m_ObjectCount;
+        m_Stats.culledObjects = 0;
+        outIndirectDrawBuffer = m_IndirectDrawBuffer ? m_IndirectDrawBuffer->GetBuffer() : VK_NULL_HANDLE;
+        return true;
+    }
+
     // Update frustum planes
     Math::Matrix4 viewProj = projectionMatrix * viewMatrix;
     
@@ -200,15 +213,17 @@ bool GPUCullingSystem::ExecuteCulling(
 
     outIndirectDrawBuffer = m_IndirectDrawBuffer->GetBuffer();
 
-    // Read back visibility buffer to count visible objects
+    // Read back visibility buffer to count visible objects and cache results
     // Note: This requires a GPU->CPU sync which can stall. In production,
     // use an atomic counter in the compute shader or query the count from
     // the previous frame to avoid the stall.
     u32 visibleCount = 0;
+    m_CachedVisibility.resize(m_ObjectCount);
     void* mapped = m_VisibilityBuffer->Map();
     if (mapped) {
         const u32* visibility = static_cast<const u32*>(mapped);
         for (u32 i = 0; i < m_ObjectCount; ++i) {
+            m_CachedVisibility[i] = visibility[i];
             if (visibility[i] != 0) {
                 visibleCount++;
             }
@@ -217,6 +232,7 @@ bool GPUCullingSystem::ExecuteCulling(
     } else {
         // Fallback: assume all visible if readback fails
         visibleCount = m_ObjectCount;
+        std::fill(m_CachedVisibility.begin(), m_CachedVisibility.end(), 1u);
     }
 
     outDrawCount = m_ObjectCount; // Use full count for indirect draw (culled entries have instanceCount=0)
@@ -355,11 +371,13 @@ bool GPUCullingSystem::CreateComputePipeline() {
 
     // Load compute shader - try multiple paths
     VulkanShader computeShader(m_Context);
-    
+
     const char* shaderPaths[] = {
         "shaders/cull.comp.spv",
         "Engine/shaders/cull.comp.spv",
         "../Engine/shaders/cull.comp.spv",
+        "../../Engine/shaders/cull.comp.spv",
+        "../../../Engine/shaders/cull.comp.spv",
         "bin/shaders/cull.comp.spv"
     };
     

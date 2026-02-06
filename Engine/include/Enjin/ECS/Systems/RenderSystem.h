@@ -24,6 +24,7 @@
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Renderer/Skybox.h"
+#include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Assets/FileWatcher.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
@@ -312,6 +313,14 @@ private:
     std::vector<Entity> m_ShadowCasters;
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
+
+    // GPU frustum culling system
+    std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
+    std::vector<Renderer::CullableObject> m_CullableObjects;
+    std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
+    bool m_GPUCullingEnabled = true;
+    void BuildCullableObjectList();
+    void PerformGPUCulling();
 
     // Skybox
     Renderer::Skybox m_Skybox;
