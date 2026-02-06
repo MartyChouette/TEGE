@@ -42,6 +42,30 @@ enum class ProjectMode : u8 {
     Mixed = 2    // 2.5D / intentional mixing
 };
 
+// Frame rate limit options (mirrors Editor::FrameRateLimit for consistency)
+enum class FrameRateLimit : u32 {
+    Uncapped = 0,
+    FPS30 = 30,
+    FPS60 = 60,
+    FPS120 = 120,
+    FPS144 = 144,
+    FPS240 = 240
+};
+
+// What to do when the game window loses focus
+enum class BackgroundBehavior : u32 {
+    RunNormally = 0,
+    ReduceTo30 = 1,
+    Pause = 2
+};
+
+// Game/Project frame rate settings (applied during play mode and exported builds)
+struct GameFrameSettings {
+    FrameRateLimit targetFrameRate = FrameRateLimit::FPS60;
+    bool vSync = true;
+    BackgroundBehavior backgroundBehavior = BackgroundBehavior::ReduceTo30;
+};
+
 // Scene Manager - handles multi-scene projects and runtime scene switching
 class ENJIN_API SceneManager {
 public:
@@ -136,6 +160,10 @@ public:
     void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
 
+    // --- Game frame rate settings ---
+    void SetGameFrameSettings(const GameFrameSettings& s) { m_GameFrameSettings = s; }
+    const GameFrameSettings& GetGameFrameSettings() const { return m_GameFrameSettings; }
+
     // --- Callbacks ---
     using SceneLoadedCallback = std::function<void(const std::string& sceneName)>;
     using SceneUnloadedCallback = std::function<void(const std::string& sceneName)>;
@@ -160,6 +188,9 @@ private:
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;
+
+    // Game frame rate settings
+    GameFrameSettings m_GameFrameSettings;
 
     // Runtime state
     std::string m_CurrentSceneName;

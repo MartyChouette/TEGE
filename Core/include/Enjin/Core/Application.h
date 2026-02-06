@@ -2,6 +2,8 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include <chrono>
+#include <functional>
 
 /**
  * @file Application.h
@@ -62,16 +64,48 @@ protected:
      */
     Window* GetWindow() const { return m_Window; }
 
+    /**
+     * @brief Check if window is focused
+     */
+    bool IsFocused() const { return m_Focused; }
+
+    /**
+     * @brief Check if application is idle (no input for a while)
+     */
+    bool IsIdle() const { return m_IsIdle; }
+
+    /**
+     * @brief Get the idle timer value in seconds
+     */
+    f32 GetIdleTime() const { return m_IdleTimer; }
+
+    /**
+     * @brief Reset the idle timer (called when input is detected)
+     */
+    void ResetIdleTimer() { m_IdleTimer = 0.0f; m_IsIdle = false; }
+
+    // Frame rate limiting callbacks - set by EditorLayer
+    using FrameSettingsCallback = std::function<f32()>;
+    void SetTargetFPSCallback(FrameSettingsCallback cb) { m_TargetFPSCallback = std::move(cb); }
+
 private:
     void InitializeEngine();
     void ShutdownEngine();
     void MainLoop();
+    void LimitFrameRate(f32 targetFPS);
+    void UpdateIdleState(f32 deltaTime);
 
     Window* m_Window = nullptr;
     bool m_Running = true;
     bool m_Minimized = false;
     bool m_Focused = true;
     f32 m_LastFrameTime = 0.0f;
+
+    // Frame rate limiting
+    std::chrono::high_resolution_clock::time_point m_FrameStart;
+    f32 m_IdleTimer = 0.0f;
+    bool m_IsIdle = false;
+    FrameSettingsCallback m_TargetFPSCallback;
 };
 
 // User must implement this function

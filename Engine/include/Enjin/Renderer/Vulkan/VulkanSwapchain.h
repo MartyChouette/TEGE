@@ -44,6 +44,11 @@ public:
     void SetRenderPass(VkRenderPass renderPass) { m_RenderPass = renderPass; }
     void RecreateFramebuffers();
 
+    // VSync control
+    void SetVSyncEnabled(bool enabled);
+    bool IsVSyncEnabled() const { return m_VSyncEnabled; }
+    VkPresentModeKHR GetCurrentPresentMode() const { return m_CurrentPresentMode; }
+
 private:
     SwapchainSupportDetails QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface);
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
@@ -72,6 +77,10 @@ private:
     VkDeviceMemory m_DepthImageMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;
     VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
+
+    // VSync state
+    bool m_VSyncEnabled = false;
+    VkPresentModeKHR m_CurrentPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
 };
 
 } // namespace Renderer

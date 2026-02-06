@@ -69,6 +69,54 @@ public:
         // Initialize audio system
         Enjin::Audio::AudioManager::Get().Initialize();
 
+        // Set up frame rate limiting callback
+        // This callback is called each frame to determine the target FPS
+        SetTargetFPSCallback([this]() -> Enjin::f32 {
+            if (!m_EditorLayer) return 0.0f;
+
+            auto& settings = m_EditorLayer->GetEditorSettings();
+            auto& playMode = m_EditorLayer->GetPlayMode();
+            auto& sceneManager = m_EditorLayer->GetSceneManager();
+
+            // Check if in play mode - use game frame settings
+            if (playMode.IsPlaying()) {
+                auto& gameSettings = sceneManager.GetGameFrameSettings();
+
+                // Handle background behavior when unfocused during play mode
+                if (!IsFocused()) {
+                    switch (gameSettings.backgroundBehavior) {
+                        case Enjin::Scene::BackgroundBehavior::Pause:
+                            // Return a very low FPS when paused
+                            return 5.0f;
+                        case Enjin::Scene::BackgroundBehavior::ReduceTo30:
+                            return 30.0f;
+                        case Enjin::Scene::BackgroundBehavior::RunNormally:
+                        default:
+                            break;
+                    }
+                }
+
+                // Return game target FPS (0 = uncapped)
+                Enjin::u32 targetVal = static_cast<Enjin::u32>(gameSettings.targetFrameRate);
+                return targetVal > 0 ? static_cast<Enjin::f32>(targetVal) : 0.0f;
+            }
+
+            // Editor mode - use editor frame settings
+            // Check unfocused reduction
+            if (!IsFocused() && settings.reduceFrameRateWhenUnfocused) {
+                return static_cast<Enjin::f32>(settings.unfocusedFrameRate);
+            }
+
+            // Check idle reduction
+            if (settings.reduceFrameRateWhenIdle && GetIdleTime() > settings.idleTimeoutSeconds) {
+                return static_cast<Enjin::f32>(settings.idleFrameRate);
+            }
+
+            // Return editor frame rate limit (0 = uncapped)
+            Enjin::u32 limitVal = static_cast<Enjin::u32>(settings.editorFrameRateLimit);
+            return limitVal > 0 ? static_cast<Enjin::f32>(limitVal) : 0.0f;
+        });
+
         ENJIN_LOG_INFO(Editor, "Editor initialized - Use RMB + WASD to fly, scroll to adjust speed");
     }
 

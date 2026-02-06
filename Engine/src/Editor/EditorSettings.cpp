@@ -97,6 +97,15 @@ bool EditorSettings::Save(const std::string& path) const {
         j["autoFocusMode"] = autoFocusMode;
         j["lockCursorOnPlay"] = lockCursorOnPlay;
 
+        // Performance / Frame Rate
+        j["editorFrameRateLimit"] = static_cast<u32>(editorFrameRateLimit);
+        j["editorVSync"] = editorVSync;
+        j["reduceFrameRateWhenUnfocused"] = reduceFrameRateWhenUnfocused;
+        j["unfocusedFrameRate"] = unfocusedFrameRate;
+        j["reduceFrameRateWhenIdle"] = reduceFrameRateWhenIdle;
+        j["idleTimeoutSeconds"] = idleTimeoutSeconds;
+        j["idleFrameRate"] = idleFrameRate;
+
         // Input
         j["sprintMode"] = sprintMode;
         j["crouchMode"] = crouchMode;
@@ -182,6 +191,21 @@ bool EditorSettings::Load(const std::string& path) {
         // Play Mode
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
         if (j.contains("lockCursorOnPlay")) lockCursorOnPlay = j["lockCursorOnPlay"].get<bool>();
+
+        // Performance / Frame Rate
+        if (j.contains("editorFrameRateLimit")) {
+            u32 val = j["editorFrameRateLimit"].get<u32>();
+            // Validate the enum value
+            if (val == 0 || val == 30 || val == 60 || val == 120 || val == 144 || val == 240) {
+                editorFrameRateLimit = static_cast<FrameRateLimit>(val);
+            }
+        }
+        if (j.contains("editorVSync")) editorVSync = j["editorVSync"].get<bool>();
+        if (j.contains("reduceFrameRateWhenUnfocused")) reduceFrameRateWhenUnfocused = j["reduceFrameRateWhenUnfocused"].get<bool>();
+        if (j.contains("unfocusedFrameRate")) unfocusedFrameRate = j["unfocusedFrameRate"].get<u32>();
+        if (j.contains("reduceFrameRateWhenIdle")) reduceFrameRateWhenIdle = j["reduceFrameRateWhenIdle"].get<bool>();
+        if (j.contains("idleTimeoutSeconds")) idleTimeoutSeconds = j["idleTimeoutSeconds"].get<f32>();
+        if (j.contains("idleFrameRate")) idleFrameRate = j["idleFrameRate"].get<u32>();
 
         // Input
         if (j.contains("sprintMode")) sprintMode = j["sprintMode"].get<u32>();

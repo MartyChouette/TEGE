@@ -721,6 +721,17 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
     });
 }
 
+void EditorLayer::StartPlayMode() {
+    // Apply game VSync settings when entering play mode
+    if (m_Renderer && m_Renderer->GetSwapchain()) {
+        auto& gameSettings = m_SceneManager.GetGameFrameSettings();
+        // Only apply VSync if not uncapped
+        bool gameVSync = (gameSettings.targetFrameRate != Scene::FrameRateLimit::Uncapped) && gameSettings.vSync;
+        m_Renderer->GetSwapchain()->SetVSyncEnabled(gameVSync);
+    }
+    m_PlayMode.Play();
+}
+
 void EditorLayer::InitializePlayMode() {
     if (m_World && m_Camera && m_CameraController) {
         m_PlayMode.Initialize(m_World, m_Camera, m_CameraController);
@@ -793,6 +804,10 @@ void EditorLayer::Update(f32 deltaTime) {
             if (m_FocusMode) {
                 m_FocusMode = false;
                 Input::SetMouseCaptured(false);
+            }
+            // Restore editor VSync setting
+            if (m_Renderer && m_Renderer->GetSwapchain()) {
+                m_Renderer->GetSwapchain()->SetVSyncEnabled(m_EditorSettings.editorVSync);
             }
         }
     }
@@ -945,7 +960,7 @@ void EditorLayer::Update(f32 deltaTime) {
             if (m_PlayMode.IsStopped()) {
                 m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                     m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                m_PlayMode.Play();  // Auto-play when entering focus mode
+                StartPlayMode();  // Auto-play when entering focus mode
             }
             // Capture mouse for immersive gameplay (hides cursor, enables free look)
             Input::SetMouseCaptured(true);
@@ -2914,7 +2929,7 @@ void EditorLayer::DrawMenuBar() {
                 // Save render settings before play mode
                 m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                     m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-                m_PlayMode.Play();
+                StartPlayMode();
                 if (m_EditorSettings.autoFocusMode) {
                     m_FocusMode = true;
                     Input::SetMouseCaptured(true);
@@ -5514,6 +5529,95 @@ void EditorLayer::DrawSettingsPanel() {
         }
     }
 
+    if (ImGui::CollapsingHeader("Performance")) {
+        bool settingsChanged = false;
+
+        // Frame Rate Limit
+        const char* fpsOptions[] = { "Uncapped", "30", "60", "120", "144", "240" };
+        int fpsValues[] = { 0, 30, 60, 120, 144, 240 };
+        int currentIdx = 0;
+        u32 currentVal = static_cast<u32>(m_EditorSettings.editorFrameRateLimit);
+        for (int i = 0; i < 6; ++i) {
+            if (static_cast<u32>(fpsValues[i]) == currentVal) { currentIdx = i; break; }
+        }
+        if (ImGui::Combo("Frame Rate Limit", &currentIdx, fpsOptions, 6)) {
+            m_EditorSettings.editorFrameRateLimit = static_cast<FrameRateLimit>(fpsValues[currentIdx]);
+            settingsChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Limit the editor's frame rate to reduce GPU usage");
+        }
+
+        // VSync (disabled when Uncapped)
+        bool isUncapped = m_EditorSettings.editorFrameRateLimit == FrameRateLimit::Uncapped;
+        if (isUncapped) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Checkbox("VSync", &m_EditorSettings.editorVSync)) {
+            settingsChanged = true;
+            // Apply VSync change to swapchain
+            if (m_Renderer && m_Renderer->GetSwapchain()) {
+                m_Renderer->GetSwapchain()->SetVSyncEnabled(m_EditorSettings.editorVSync);
+            }
+        }
+        if (isUncapped) {
+            ImGui::EndDisabled();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            if (isUncapped) {
+                ImGui::SetTooltip("VSync is not available when frame rate is Uncapped");
+            } else {
+                ImGui::SetTooltip("Synchronize frame rate to monitor refresh rate");
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Power Saving:");
+
+        // Reduce When Unfocused
+        if (ImGui::Checkbox("Reduce When Unfocused", &m_EditorSettings.reduceFrameRateWhenUnfocused)) {
+            settingsChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lower frame rate when the editor window is not focused");
+        }
+
+        if (m_EditorSettings.reduceFrameRateWhenUnfocused) {
+            ImGui::Indent();
+            int unfocusedFPS = static_cast<int>(m_EditorSettings.unfocusedFrameRate);
+            if (ImGui::SliderInt("Unfocused FPS", &unfocusedFPS, 5, 60)) {
+                m_EditorSettings.unfocusedFrameRate = static_cast<u32>(unfocusedFPS);
+                settingsChanged = true;
+            }
+            ImGui::Unindent();
+        }
+
+        // Reduce When Idle
+        if (ImGui::Checkbox("Reduce When Idle", &m_EditorSettings.reduceFrameRateWhenIdle)) {
+            settingsChanged = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lower frame rate after no input for a period of time");
+        }
+
+        if (m_EditorSettings.reduceFrameRateWhenIdle) {
+            ImGui::Indent();
+            if (ImGui::SliderFloat("Idle Timeout (sec)", &m_EditorSettings.idleTimeoutSeconds, 5.0f, 120.0f, "%.0f")) {
+                settingsChanged = true;
+            }
+            int idleFPS = static_cast<int>(m_EditorSettings.idleFrameRate);
+            if (ImGui::SliderInt("Idle FPS", &idleFPS, 5, 60)) {
+                m_EditorSettings.idleFrameRate = static_cast<u32>(idleFPS);
+                settingsChanged = true;
+            }
+            ImGui::Unindent();
+        }
+
+        if (settingsChanged) {
+            m_EditorSettings.Save();
+        }
+    }
+
     if (ImGui::CollapsingHeader("Gizmos", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Gizmo operation
         const char* operations[] = { "Translate (1)", "Rotate (2)", "Scale (3)" };
@@ -6296,6 +6400,83 @@ void EditorLayer::DrawProjectSettingsPanel() {
         ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
     }
 
+    if (ImGui::CollapsingHeader("Frame Rate")) {
+        Scene::GameFrameSettings frameSettings = m_SceneManager.GetGameFrameSettings();
+        bool changed = false;
+
+        // Target Frame Rate
+        const char* fpsOptions[] = { "Uncapped", "30", "60", "120", "144", "240" };
+        int fpsValues[] = { 0, 30, 60, 120, 144, 240 };
+        int currentIdx = 0;
+        u32 currentVal = static_cast<u32>(frameSettings.targetFrameRate);
+        for (int i = 0; i < 6; ++i) {
+            if (static_cast<u32>(fpsValues[i]) == currentVal) { currentIdx = i; break; }
+        }
+        if (ImGui::Combo("Target Frame Rate", &currentIdx, fpsOptions, 6)) {
+            frameSettings.targetFrameRate = static_cast<Scene::FrameRateLimit>(fpsValues[currentIdx]);
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Target frame rate for play mode and exported builds");
+        }
+
+        // VSync (disabled when Uncapped)
+        bool isUncapped = frameSettings.targetFrameRate == Scene::FrameRateLimit::Uncapped;
+        if (isUncapped) {
+            ImGui::BeginDisabled();
+        }
+        if (ImGui::Checkbox("VSync##Game", &frameSettings.vSync)) {
+            changed = true;
+        }
+        if (isUncapped) {
+            ImGui::EndDisabled();
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            if (isUncapped) {
+                ImGui::SetTooltip("VSync is not available when frame rate is Uncapped");
+            } else {
+                ImGui::SetTooltip("Synchronize frame rate to monitor refresh rate");
+            }
+        }
+
+        ImGui::Separator();
+        ImGui::Text("When Game Loses Focus:");
+
+        // Background behavior radio buttons
+        int bgBehavior = static_cast<int>(frameSettings.backgroundBehavior);
+        if (ImGui::RadioButton("Run Normally", bgBehavior == 0)) {
+            frameSettings.backgroundBehavior = Scene::BackgroundBehavior::RunNormally;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Continue running at full speed when window is not focused");
+        }
+        if (ImGui::RadioButton("Reduce to 30 FPS", bgBehavior == 1)) {
+            frameSettings.backgroundBehavior = Scene::BackgroundBehavior::ReduceTo30;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Lower frame rate to 30 FPS when window is not focused");
+        }
+        if (ImGui::RadioButton("Pause", bgBehavior == 2)) {
+            frameSettings.backgroundBehavior = Scene::BackgroundBehavior::Pause;
+            changed = true;
+        }
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Pause the game when window is not focused");
+        }
+
+        if (changed) {
+            m_SceneManager.SetGameFrameSettings(frameSettings);
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                m_SceneManager.SaveProject();
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1.0f), "These settings apply to Play Mode and exported builds");
+    }
+
     ImGui::End();
 }
 
@@ -6933,7 +7114,7 @@ void EditorLayer::DrawGameViewPanel() {
         ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.3f, 1.0f), "PAUSED");
         ImGui::SameLine();
         if (ImGui::Button("Resume")) {
-            m_PlayMode.Play();
+            StartPlayMode();
         }
         ImGui::SameLine();
         if (ImGui::Button("Stop")) {
@@ -6945,7 +7126,7 @@ void EditorLayer::DrawGameViewPanel() {
         if (ImGui::Button("Play")) {
             m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            m_PlayMode.Play();
+            StartPlayMode();
             if (m_EditorSettings.autoFocusMode) {
                 m_FocusMode = true;
                 Input::SetMouseCaptured(true);
@@ -6961,7 +7142,7 @@ void EditorLayer::DrawGameViewPanel() {
         if (m_PlayMode.IsStopped()) {
             m_PrePlayRenderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            m_PlayMode.Play();
+            StartPlayMode();
         }
         Input::SetMouseCaptured(true);
     }
@@ -9118,13 +9299,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
         templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike") {
         if (m_CameraController) {
-            m_CameraController->SetOrthographic(true);
+            // Set orbit distance for the preset, then use Front view preset
+            // which properly sets yaw=-90, pitch=0, position, rotation, and orthographic
+            m_CameraController->SetOrbitDistance(15.0f);
+            m_CameraController->SetViewPreset(Renderer::ViewPreset::Front);
             m_CameraController->SetOrthoSize(10.0f);
-            // Position looking at XY plane from +Z
-            if (m_Camera) {
-                m_Camera->SetPosition(Math::Vector3(0.0f, 0.0f, 15.0f));
-                m_CameraController->SyncFromCamera();
-            }
         }
     }
 

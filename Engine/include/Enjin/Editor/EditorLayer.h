@@ -145,6 +145,12 @@ public:
     bool IsPaused() const { return m_PlayMode.IsPaused(); }
     PlayMode& GetPlayMode() { return m_PlayMode; }
 
+    // Settings access (for frame rate limiting)
+    const EditorSettings& GetEditorSettings() const { return m_EditorSettings; }
+    EditorSettings& GetEditorSettings() { return m_EditorSettings; }
+    Scene::SceneManager& GetSceneManager() { return m_SceneManager; }
+    const Scene::SceneManager& GetSceneManager() const { return m_SceneManager; }
+
     // Focus mode (fullscreen game view with captured mouse)
     bool IsFocusMode() const { return m_FocusMode; }
 
@@ -181,6 +187,7 @@ public:
 
 private:
     void InitializePlayMode();
+    void StartPlayMode();  // Starts play mode and applies game VSync settings
     void DrawMenuBar();
     void DrawHierarchyPanel();
     void DrawInspectorPanel();

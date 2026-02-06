@@ -100,29 +100,51 @@ VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapSurfaceFormat(const std::vector<Vk
 }
 
 VkPresentModeKHR VulkanSwapchain::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
-    // Log all available present modes for diagnostics
-    for (const auto& mode : availablePresentModes) {
-        const char* name = "UNKNOWN";
-        switch (mode) {
-            case VK_PRESENT_MODE_IMMEDIATE_KHR:    name = "IMMEDIATE"; break;
-            case VK_PRESENT_MODE_MAILBOX_KHR:      name = "MAILBOX"; break;
-            case VK_PRESENT_MODE_FIFO_KHR:         name = "FIFO"; break;
-            case VK_PRESENT_MODE_FIFO_RELAXED_KHR: name = "FIFO_RELAXED"; break;
-            default: break;
+    // Log all available present modes for diagnostics (only on first call)
+    static bool loggedModes = false;
+    if (!loggedModes) {
+        for (const auto& mode : availablePresentModes) {
+            const char* name = "UNKNOWN";
+            switch (mode) {
+                case VK_PRESENT_MODE_IMMEDIATE_KHR:    name = "IMMEDIATE"; break;
+                case VK_PRESENT_MODE_MAILBOX_KHR:      name = "MAILBOX"; break;
+                case VK_PRESENT_MODE_FIFO_KHR:         name = "FIFO"; break;
+                case VK_PRESENT_MODE_FIFO_RELAXED_KHR: name = "FIFO_RELAXED"; break;
+                default: break;
+            }
+            ENJIN_LOG_INFO(Renderer, "  Available present mode: %s", name);
         }
-        ENJIN_LOG_INFO(Renderer, "  Available present mode: %s", name);
+        loggedModes = true;
     }
 
-    // Prefer mailbox (triple buffering) for low latency without tearing
+    // If VSync is enabled, use FIFO (guaranteed VSync)
+    if (m_VSyncEnabled) {
+        ENJIN_LOG_INFO(Renderer, "Selected present mode: FIFO (VSync ON)");
+        m_CurrentPresentMode = VK_PRESENT_MODE_FIFO_KHR;
+        return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    // VSync disabled: prefer mailbox (triple buffering) for low latency without tearing
     for (const auto& mode : availablePresentModes) {
         if (mode == VK_PRESENT_MODE_MAILBOX_KHR) {
-            ENJIN_LOG_INFO(Renderer, "Selected present mode: MAILBOX (no VSync)");
+            ENJIN_LOG_INFO(Renderer, "Selected present mode: MAILBOX (VSync OFF)");
+            m_CurrentPresentMode = VK_PRESENT_MODE_MAILBOX_KHR;
             return mode;
         }
     }
 
-    // Fallback to FIFO (guaranteed to be available, but VSync-capped)
-    ENJIN_LOG_WARN(Renderer, "Selected present mode: FIFO (VSync ON — MAILBOX not available, FPS will be capped to refresh rate)");
+    // Fallback to IMMEDIATE if MAILBOX not available
+    for (const auto& mode : availablePresentModes) {
+        if (mode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            ENJIN_LOG_INFO(Renderer, "Selected present mode: IMMEDIATE (VSync OFF, MAILBOX unavailable)");
+            m_CurrentPresentMode = VK_PRESENT_MODE_IMMEDIATE_KHR;
+            return mode;
+        }
+    }
+
+    // Last resort: FIFO (guaranteed to be available)
+    ENJIN_LOG_WARN(Renderer, "Selected present mode: FIFO (VSync fallback — no other modes available)");
+    m_CurrentPresentMode = VK_PRESENT_MODE_FIFO_KHR;
     return VK_PRESENT_MODE_FIFO_KHR;
 }
 
@@ -393,6 +415,16 @@ void VulkanSwapchain::DestroyDepthResources() {
         vkFreeMemory(m_Context->GetDevice(), m_DepthImageMemory, nullptr);
         m_DepthImageMemory = VK_NULL_HANDLE;
     }
+}
+
+void VulkanSwapchain::SetVSyncEnabled(bool enabled) {
+    if (m_VSyncEnabled == enabled) return;
+
+    m_VSyncEnabled = enabled;
+    ENJIN_LOG_INFO(Renderer, "VSync %s, recreating swapchain...", enabled ? "enabled" : "disabled");
+
+    // Recreate swapchain with new present mode
+    Recreate(m_Extent.width, m_Extent.height);
 }
 
 } // namespace Renderer

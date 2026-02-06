@@ -16,6 +16,21 @@ enum class EditorTheme : u32 {
     HighContrastLight
 };
 
+// Frame rate limit options (shared between editor and game settings)
+enum class FrameRateLimit : u32 {
+    Uncapped = 0,
+    FPS30 = 30,
+    FPS60 = 60,
+    FPS120 = 120,
+    FPS144 = 144,
+    FPS240 = 240
+};
+
+// Helper to get target FPS value from enum
+inline f32 GetTargetFPS(FrameRateLimit limit) {
+    return limit == FrameRateLimit::Uncapped ? 0.0f : static_cast<f32>(static_cast<u32>(limit));
+}
+
 // Persistent editor settings (saved to disk as JSON)
 struct EditorSettings {
     // Visual
@@ -44,6 +59,15 @@ struct EditorSettings {
     // Play Mode
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play
     bool lockCursorOnPlay = true; // Lock/capture cursor when entering play mode
+
+    // Performance / Frame Rate
+    FrameRateLimit editorFrameRateLimit = FrameRateLimit::Uncapped;
+    bool editorVSync = false;
+    bool reduceFrameRateWhenUnfocused = true;
+    u32 unfocusedFrameRate = 15;
+    bool reduceFrameRateWhenIdle = false;
+    f32 idleTimeoutSeconds = 30.0f;
+    u32 idleFrameRate = 30;
 
     // Accessibility: Input
     u32 sprintMode = 0;      // 0=Hold, 1=Toggle

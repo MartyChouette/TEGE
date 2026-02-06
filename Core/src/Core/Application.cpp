@@ -5,6 +5,7 @@
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Platform/Input.h"
 #include <chrono>
+#include <thread>
 #include <iostream>
 #undef CreateWindow
 
@@ -128,11 +129,14 @@ void Application::MainLoop() {
     auto lastTime = std::chrono::high_resolution_clock::now();
 
     while (m_Running) {
+        m_FrameStart = std::chrono::high_resolution_clock::now();
+
         // When minimized, wait for events instead of busy-spinning
         if (m_Minimized && m_Window) {
             m_Window->WaitEvents();
             // Reset lastTime so we don't get a huge delta spike on restore
             lastTime = std::chrono::high_resolution_clock::now();
+            m_FrameStart = lastTime;
             if (m_Window->ShouldClose()) {
                 m_Running = false;
                 break;
@@ -162,10 +166,98 @@ void Application::MainLoop() {
         // Update input system (must be after PollEvents)
         Input::Update();
 
+        // Update idle state based on input activity
+        UpdateIdleState(deltaTime);
+
         // Escape is handled by the editor layer (focus mode exit, play mode stop, etc.)
 
         Update(deltaTime);
         Render();
+
+        // Frame rate limiting
+        if (m_TargetFPSCallback) {
+            f32 targetFPS = m_TargetFPSCallback();
+            if (targetFPS > 0.0f) {
+                LimitFrameRate(targetFPS);
+            }
+        }
+    }
+}
+
+void Application::LimitFrameRate(f32 targetFPS) {
+    f32 targetFrameTime = 1.0f / targetFPS;
+
+    auto now = std::chrono::high_resolution_clock::now();
+    f32 elapsed = std::chrono::duration<f32>(now - m_FrameStart).count();
+
+    if (elapsed < targetFrameTime) {
+        f32 remaining = targetFrameTime - elapsed;
+
+        // Sleep for most of the remaining time (saves CPU), leave ~1ms for precision spin
+        if (remaining > 0.002f) {
+            auto sleepDuration = std::chrono::microseconds(static_cast<i64>((remaining - 0.001f) * 1'000'000));
+            std::this_thread::sleep_for(sleepDuration);
+        }
+
+        // Busy-wait for final precision to hit the exact target
+        while (std::chrono::duration<f32>(
+                   std::chrono::high_resolution_clock::now() - m_FrameStart).count()
+               < targetFrameTime) {
+            std::this_thread::yield();
+        }
+    }
+}
+
+void Application::UpdateIdleState(f32 deltaTime) {
+    // Check if there's any input activity
+    bool hasInput = false;
+
+    // Check keyboard
+    // We can't easily check "any key" so we check common keys
+    if (Input::IsKeyDown(KeyCode::W) || Input::IsKeyDown(KeyCode::A) ||
+        Input::IsKeyDown(KeyCode::S) || Input::IsKeyDown(KeyCode::D) ||
+        Input::IsKeyDown(KeyCode::Space) || Input::IsKeyDown(KeyCode::LeftShift) ||
+        Input::IsKeyDown(KeyCode::Escape) || Input::IsKeyDown(KeyCode::Tab)) {
+        hasInput = true;
+    }
+
+    // Check mouse buttons
+    if (Input::IsMouseButtonDown(MouseButton::Left) ||
+        Input::IsMouseButtonDown(MouseButton::Right) ||
+        Input::IsMouseButtonDown(MouseButton::Middle)) {
+        hasInput = true;
+    }
+
+    // Check mouse movement (with a small threshold to ignore noise)
+    Math::Vector2 mouseDelta = Input::GetMouseDelta();
+    if (std::abs(mouseDelta.x) > 0.5f || std::abs(mouseDelta.y) > 0.5f) {
+        hasInput = true;
+    }
+
+    // Check scroll
+    Math::Vector2 scroll = Input::GetScrollDelta();
+    if (std::abs(scroll.y) > 0.01f || std::abs(scroll.x) > 0.01f) {
+        hasInput = true;
+    }
+
+    // Check gamepad
+    for (i32 gp = 0; gp < 4; ++gp) {
+        if (Input::IsGamepadConnected(gp)) {
+            Math::Vector2 leftStick = Input::GetGamepadLeftStick(gp);
+            Math::Vector2 rightStick = Input::GetGamepadRightStick(gp);
+            if (leftStick.Length() > 0.1f || rightStick.Length() > 0.1f) {
+                hasInput = true;
+                break;
+            }
+        }
+    }
+
+    if (hasInput) {
+        m_IdleTimer = 0.0f;
+        m_IsIdle = false;
+    } else {
+        m_IdleTimer += deltaTime;
+        // m_IsIdle is set by the callback logic in EditorLayer based on timeout
     }
 }
 

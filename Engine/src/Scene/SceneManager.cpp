@@ -24,6 +24,7 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_ProjectRoot.clear();
     m_CurrentSceneName.clear();
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
+    m_GameFrameSettings = GameFrameSettings{};
     m_ProjectMode = ProjectMode::Mode3D;
     m_CollisionGroupNames.clear();
     m_CollisionGroupNames.resize(32);
@@ -82,6 +83,23 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
         }
 
+        // Load game frame settings
+        m_GameFrameSettings = GameFrameSettings{};
+        if (root.contains("frameSettings") && root["frameSettings"].is_object()) {
+            const auto& fs = root["frameSettings"];
+            if (fs.contains("targetFrameRate")) {
+                u32 val = fs["targetFrameRate"].get<u32>();
+                if (val == 0 || val == 30 || val == 60 || val == 120 || val == 144 || val == 240) {
+                    m_GameFrameSettings.targetFrameRate = static_cast<FrameRateLimit>(val);
+                }
+            }
+            if (fs.contains("vSync")) m_GameFrameSettings.vSync = fs["vSync"].get<bool>();
+            if (fs.contains("backgroundBehavior")) {
+                u32 val = fs["backgroundBehavior"].get<u32>();
+                if (val <= 2) m_GameFrameSettings.backgroundBehavior = static_cast<BackgroundBehavior>(val);
+            }
+        }
+
         ENJIN_LOG_INFO(Asset, "Loaded project '%s' with %zu scenes from %s",
             m_ProjectName.c_str(), m_Scenes.size(), manifestPath.c_str());
         return true;
@@ -121,6 +139,13 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
 
         // Save project-level render defaults
         root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);
+
+        // Save game frame settings
+        nlohmann::json frameSettingsJson;
+        frameSettingsJson["targetFrameRate"] = static_cast<u32>(m_GameFrameSettings.targetFrameRate);
+        frameSettingsJson["vSync"] = m_GameFrameSettings.vSync;
+        frameSettingsJson["backgroundBehavior"] = static_cast<u32>(m_GameFrameSettings.backgroundBehavior);
+        root["frameSettings"] = frameSettingsJson;
 
         std::ofstream file(manifestPath);
         if (!file.is_open()) {

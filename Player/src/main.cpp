@@ -75,7 +75,18 @@ public:
             m_Fullscreen = manifest.value("fullscreen", false);
             m_StartScene = manifest.value("startScene", "");
 
-            ENJIN_LOG_INFO(Player, "Game: %s (%ux%u)", m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight);
+            // Read frame rate settings
+            if (manifest.contains("frameSettings")) {
+                auto& fs = manifest["frameSettings"];
+                m_TargetFPS = fs.value("targetFrameRate", 60u);
+                m_VSync = fs.value("vSync", true);
+                m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
+            }
+
+            ENJIN_LOG_INFO(Player, "Game: %s (%ux%u, %s FPS, VSync: %s)",
+                m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight,
+                m_TargetFPS == 0 ? "Uncapped" : std::to_string(m_TargetFPS).c_str(),
+                m_VSync ? "ON" : "OFF");
         } catch (const std::exception& e) {
             ENJIN_LOG_ERROR(Player, "Error parsing build manifest: %s", e.what());
             return;
@@ -96,6 +107,32 @@ public:
             if (m_Renderer) {
                 m_Renderer->SetFramebufferResized(true);
             }
+        });
+
+        // Apply VSync setting
+        if (m_Renderer->GetSwapchain()) {
+            // Only apply VSync if not uncapped
+            bool useVSync = (m_TargetFPS != 0) && m_VSync;
+            m_Renderer->GetSwapchain()->SetVSyncEnabled(useVSync);
+        }
+
+        // Set up frame rate limiting callback
+        SetTargetFPSCallback([this]() -> Enjin::f32 {
+            // Handle background behavior when unfocused
+            if (!IsFocused()) {
+                switch (m_BackgroundBehavior) {
+                    case 2: // Pause
+                        return 5.0f; // Very low FPS when paused
+                    case 1: // ReduceTo30
+                        return 30.0f;
+                    case 0: // RunNormally
+                    default:
+                        break;
+                }
+            }
+
+            // Return target FPS (0 = uncapped)
+            return m_TargetFPS > 0 ? static_cast<Enjin::f32>(m_TargetFPS) : 0.0f;
         });
 
         // Setup camera
@@ -473,6 +510,11 @@ private:
     Enjin::u32 m_WindowHeight = 720;
     bool m_Fullscreen = false;
     std::string m_StartScene;
+
+    // Frame rate settings
+    Enjin::u32 m_TargetFPS = 60;
+    bool m_VSync = true;
+    Enjin::u32 m_BackgroundBehavior = 1; // 0=RunNormally, 1=ReduceTo30, 2=Pause
 
     // Core systems
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;

@@ -56,6 +56,11 @@ private:
     std::set<std::string> m_TexturePaths;   // absolute paths on disk
     std::set<std::string> m_ModelPaths;
 
+    // Game frame settings (read from project, written to manifest)
+    u32 m_TargetFrameRate = 60;      // 0 = uncapped
+    bool m_VSync = true;
+    u32 m_BackgroundBehavior = 1;    // 0 = run normally, 1 = reduce to 30, 2 = pause
+
     ProgressCallback m_ProgressCallback;
 };
 

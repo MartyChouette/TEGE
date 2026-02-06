@@ -140,6 +140,19 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_Scenes[0].isStartScene = true;
         }
 
+        // Read frame settings from project
+        if (root.contains("frameSettings") && root["frameSettings"].is_object()) {
+            const auto& fs = root["frameSettings"];
+            m_TargetFrameRate = fs.value("targetFrameRate", 60u);
+            m_VSync = fs.value("vSync", true);
+            m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
+        } else {
+            // Defaults
+            m_TargetFrameRate = 60;
+            m_VSync = true;
+            m_BackgroundBehavior = 1;
+        }
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -377,6 +390,13 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
             break;
         }
     }
+
+    // Frame settings
+    nlohmann::json frameSettings;
+    frameSettings["targetFrameRate"] = m_TargetFrameRate;
+    frameSettings["vSync"] = m_VSync;
+    frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
+    manifest["frameSettings"] = frameSettings;
 
     std::string jsonStr = manifest.dump(2);
     if (!packer.AddData("_build/manifest.json",
