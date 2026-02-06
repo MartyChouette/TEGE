@@ -1363,6 +1363,9 @@ void RenderSystem::OnEntityAdded(Entity entity) {
     // Invalidate scene composition cache (new entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
 
+    // Invalidate shadow caster cache (new entity may be a shadow caster)
+    m_ShadowCastersDirty = true;
+
     // Cache player entity (first entity with any CharacterController)
     if (m_CachedPlayerEntity == INVALID_ENTITY && m_World) {
         bool hasController = m_World->HasComponent<ThirdPersonController>(entity) ||
@@ -1382,6 +1385,9 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
+
+    // Invalidate shadow caster cache (removed entity may have been a shadow caster)
+    m_ShadowCastersDirty = true;
 
     // Invalidate cached player entity and search for a replacement
     if (entity == m_CachedPlayerEntity) {
@@ -1449,6 +1455,59 @@ void RenderSystem::ClassifySceneComposition() {
     }
 
     m_SceneComposition.dirty = false;
+
+    // Diagnostic warnings (every 300 frames to avoid log spam)
+    if (++m_DiagnosticFrameCounter >= 300) {
+        m_DiagnosticFrameCounter = 0;
+
+        // Warn if many unbatched sprites
+        if (m_SceneComposition.spriteCount > 100 && !m_SpriteBatchRenderer) {
+            ENJIN_LOG_WARN(Renderer, "%u sprites without batching - consider enabling SpriteBatchRenderer",
+                m_SceneComposition.spriteCount);
+        }
+
+        // Log mixed 2D/3D scene info for debugging
+        if (m_SceneComposition.spriteCount > 0 && m_SceneComposition.mesh3DCount > 0) {
+            ENJIN_LOG_INFO(Renderer, "Mixed 2D/3D scene: %u sprites, %u meshes, %u shadow casters",
+                m_SceneComposition.spriteCount, m_SceneComposition.mesh3DCount,
+                static_cast<u32>(m_ShadowCasters.size()));
+        }
+    }
+}
+
+void RenderSystem::RebuildShadowCasterCache() {
+    m_ShadowCasters.clear();
+    if (!m_World) {
+        m_ShadowCastersDirty = false;
+        return;
+    }
+
+    // Reserve approximate capacity based on mesh count
+    m_ShadowCasters.reserve(m_SceneComposition.mesh3DCount > 0 ? m_SceneComposition.mesh3DCount : 64);
+
+    // Iterate only entities with MeshComponent
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        // Skip entities without transform
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+
+        // Skip 2D sprites — they never cast shadows
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+
+        // Skip tilemaps
+        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+
+        // Skip invisible entities
+        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        if (xform && !xform->visible) continue;
+
+        // Check if material casts shadows (default: yes)
+        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        if (material && !material->castShadows) continue;
+
+        m_ShadowCasters.push_back(entity);
+    }
+
+    m_ShadowCastersDirty = false;
 }
 
 void RenderSystem::CreatePipeline() {
@@ -2890,23 +2949,18 @@ void RenderSystem::RenderShadowPass() {
             0, nullptr
         );
 
-        // Render all shadow-casting entities (skip 2D sprites — they never cast shadows)
-        for (Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<TransformComponent>(entity) &&
-                m_World->HasComponent<MeshComponent>(entity)) {
-                // Skip invisible entities
-                auto* xformShadow = m_World->GetComponent<TransformComponent>(entity);
-                if (xformShadow && !xformShadow->visible) continue;
+        // Render cached shadow-casting entities (rebuilt when dirty)
+        // This avoids O(n) iteration per cascade — instead we iterate O(k) shadow casters
+        if (m_ShadowCastersDirty) {
+            RebuildShadowCasterCache();
+        }
 
-                // Skip 2D sprites from shadow pass
-                if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        for (Entity entity : m_ShadowCasters) {
+            // Quick visibility check (may have changed since cache was built)
+            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            if (xform && !xform->visible) continue;
 
-                // Check if material casts shadows (default: yes)
-                MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
-                if (material && !material->castShadows) continue;
-
-                RenderEntityShadow(entity, commandBuffer);
-            }
+            RenderEntityShadow(entity, commandBuffer);
         }
 
         m_ShadowMap->EndCascadePass(commandBuffer);

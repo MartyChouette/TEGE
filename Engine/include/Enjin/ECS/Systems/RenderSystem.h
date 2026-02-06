@@ -307,6 +307,11 @@ private:
     SceneComposition m_SceneComposition;
     u32 m_DiagnosticFrameCounter = 0;
 
+    // Shadow caster cache — rebuilt when dirty, avoids per-cascade entity iteration
+    std::vector<Entity> m_ShadowCasters;
+    bool m_ShadowCastersDirty = true;
+    void RebuildShadowCasterCache();
+
     // Skybox
     Renderer::Skybox m_Skybox;
     VkPipeline m_SkyboxPipelineHandle = VK_NULL_HANDLE;
