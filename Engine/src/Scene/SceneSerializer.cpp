@@ -1539,6 +1539,21 @@ json SerializeCamera2DBoundsComponent(const ECS::Camera2DBoundsComponent& cb) {
     j["minZoom"] = cb.minZoom;
     j["maxZoom"] = cb.maxZoom;
     j["currentZoom"] = cb.currentZoom;
+    j["targetZoom"] = cb.targetZoom;
+    j["zoomSmoothing"] = cb.zoomSmoothing;
+    j["deadZoneSize"] = SerializeVector2(cb.deadZoneSize);
+    j["lookAheadDistance"] = cb.lookAheadDistance;
+    j["lookAheadSmoothing"] = cb.lookAheadSmoothing;
+    j["shakeFrequency"] = cb.shakeFrequency;
+    j["multiTargetPadding"] = cb.multiTargetPadding;
+    j["autoZoomToFitTargets"] = cb.autoZoomToFitTargets;
+    if (!cb.additionalTargets.empty()) {
+        json targets = json::array();
+        for (ECS::Entity e : cb.additionalTargets) {
+            targets.push_back(static_cast<u64>(e));
+        }
+        j["additionalTargets"] = targets;
+    }
     return j;
 }
 
@@ -1553,6 +1568,19 @@ ECS::Camera2DBoundsComponent DeserializeCamera2DBoundsComponent(const json& j) {
     if (j.contains("minZoom")) cb.minZoom = j["minZoom"].get<f32>();
     if (j.contains("maxZoom")) cb.maxZoom = j["maxZoom"].get<f32>();
     if (j.contains("currentZoom")) cb.currentZoom = j["currentZoom"].get<f32>();
+    if (j.contains("targetZoom")) cb.targetZoom = j["targetZoom"].get<f32>();
+    if (j.contains("zoomSmoothing")) cb.zoomSmoothing = j["zoomSmoothing"].get<f32>();
+    if (j.contains("deadZoneSize")) cb.deadZoneSize = DeserializeVector2(j["deadZoneSize"]);
+    if (j.contains("lookAheadDistance")) cb.lookAheadDistance = j["lookAheadDistance"].get<f32>();
+    if (j.contains("lookAheadSmoothing")) cb.lookAheadSmoothing = j["lookAheadSmoothing"].get<f32>();
+    if (j.contains("shakeFrequency")) cb.shakeFrequency = j["shakeFrequency"].get<f32>();
+    if (j.contains("multiTargetPadding")) cb.multiTargetPadding = j["multiTargetPadding"].get<f32>();
+    if (j.contains("autoZoomToFitTargets")) cb.autoZoomToFitTargets = j["autoZoomToFitTargets"].get<bool>();
+    if (j.contains("additionalTargets")) {
+        for (const auto& t : j["additionalTargets"]) {
+            cb.additionalTargets.push_back(static_cast<ECS::Entity>(t.get<u64>()));
+        }
+    }
     return cb;
 }
 

@@ -1,9 +1,11 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Math.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -248,32 +250,159 @@ void ControllerSystem::Update(f32 deltaTime) {
         }
     }
 
-    // Camera2D bounds follow
+    // Camera2D bounds follow with advanced features
     for (Entity entity : m_World->GetEntitiesWithComponent<Camera2DBoundsComponent>()) {
         auto* cam2d = m_World->GetComponent<Camera2DBoundsComponent>(entity);
         auto* camTransform = m_World->GetComponent<TransformComponent>(entity);
-        if (!cam2d || !camTransform || cam2d->followTarget == 0) continue;
+        if (!cam2d || !camTransform) continue;
 
+        // Skip if no primary target
+        if (cam2d->followTarget == 0) continue;
         auto* targetTransform = m_World->GetComponent<TransformComponent>(cam2d->followTarget);
         if (!targetTransform) continue;
 
-        // Smooth follow
-        Math::Vector3 followTarget = targetTransform->position +
-            Math::Vector3(cam2d->followOffset.x, cam2d->followOffset.y, 0);
-        f32 t = 1.0f - std::exp(-cam2d->followSmoothing * deltaTime);
-        camTransform->position.x += (followTarget.x - camTransform->position.x) * t;
-        camTransform->position.y += (followTarget.y - camTransform->position.y) * t;
+        // 1. Gather all targets (primary + additional)
+        Math::Vector2 targetPos(targetTransform->position.x, targetTransform->position.y);
+        Math::Vector2 minPos = targetPos;
+        Math::Vector2 maxPos = targetPos;
 
-        // Clamp to bounds
+        // Include additional targets for multi-target framing
+        for (Entity additionalTarget : cam2d->additionalTargets) {
+            if (additionalTarget == 0) continue;
+            auto* addTransform = m_World->GetComponent<TransformComponent>(additionalTarget);
+            if (!addTransform) continue;
+            minPos.x = std::min(minPos.x, addTransform->position.x);
+            minPos.y = std::min(minPos.y, addTransform->position.y);
+            maxPos.x = std::max(maxPos.x, addTransform->position.x);
+            maxPos.y = std::max(maxPos.y, addTransform->position.y);
+        }
+
+        // 2. Compute target center (single target or multi-target bounding box center)
+        Math::Vector2 targetCenter;
+        if (cam2d->additionalTargets.empty()) {
+            targetCenter = targetPos;
+        } else {
+            targetCenter.x = (minPos.x + maxPos.x) * 0.5f;
+            targetCenter.y = (minPos.y + maxPos.y) * 0.5f;
+        }
+
+        // 3. Auto-zoom to fit all targets
+        if (cam2d->autoZoomToFitTargets && !cam2d->additionalTargets.empty()) {
+            f32 width = maxPos.x - minPos.x + cam2d->multiTargetPadding * 2.0f;
+            f32 height = maxPos.y - minPos.y + cam2d->multiTargetPadding * 2.0f;
+            // Get camera component for aspect ratio
+            auto* camComp = m_World->GetComponent<CameraComponent>(entity);
+            if (camComp && camComp->orthoSize > 0.01f) {
+                f32 aspect = 16.0f / 9.0f;  // Default aspect ratio
+                f32 requiredHalfHeight = std::max(height * 0.5f, width * 0.5f / aspect);
+                f32 requiredZoom = camComp->orthoSize / std::max(requiredHalfHeight, 0.1f);
+                cam2d->targetZoom = std::clamp(requiredZoom, cam2d->minZoom, cam2d->maxZoom);
+            }
+        }
+
+        // 4. Apply look-ahead based on target velocity
+        if (cam2d->lookAheadDistance > 0.0f) {
+            Math::Vector2 velocity(0.0f, 0.0f);
+            // Try to get velocity from rigidbody or controller
+            if (auto* rb = m_World->GetComponent<RigidbodyComponent>(cam2d->followTarget)) {
+                velocity.x = rb->velocity.x;
+                velocity.y = rb->velocity.y;
+            } else if (auto* p2d = m_World->GetComponent<Platformer2DController>(cam2d->followTarget)) {
+                velocity.x = p2d->velocity.x;
+                velocity.y = p2d->velocity.y;
+            } else if (auto* td2d = m_World->GetComponent<TopDown2DController>(cam2d->followTarget)) {
+                velocity.x = td2d->velocity.x;
+                velocity.y = td2d->velocity.y;
+            }
+            f32 velLen = std::sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
+            if (velLen > 0.1f) {
+                Math::Vector2 targetLookAhead(
+                    velocity.x / velLen * cam2d->lookAheadDistance,
+                    velocity.y / velLen * cam2d->lookAheadDistance
+                );
+                f32 lat = 1.0f - std::exp(-cam2d->lookAheadSmoothing * deltaTime);
+                cam2d->currentLookAhead.x += (targetLookAhead.x - cam2d->currentLookAhead.x) * lat;
+                cam2d->currentLookAhead.y += (targetLookAhead.y - cam2d->currentLookAhead.y) * lat;
+            } else {
+                // Decay look-ahead when not moving
+                f32 lat = 1.0f - std::exp(-cam2d->lookAheadSmoothing * deltaTime);
+                cam2d->currentLookAhead.x *= (1.0f - lat);
+                cam2d->currentLookAhead.y *= (1.0f - lat);
+            }
+            targetCenter.x += cam2d->currentLookAhead.x;
+            targetCenter.y += cam2d->currentLookAhead.y;
+        }
+
+        // Add follow offset
+        targetCenter.x += cam2d->followOffset.x;
+        targetCenter.y += cam2d->followOffset.y;
+
+        // 5. Apply dead zone - only move camera if target exits dead zone
+        Math::Vector2 adjustedTarget(camTransform->position.x, camTransform->position.y);
+        Math::Vector2 halfDeadZone(cam2d->deadZoneSize.x * 0.5f, cam2d->deadZoneSize.y * 0.5f);
+        Math::Vector2 relativePos(
+            targetCenter.x - camTransform->position.x,
+            targetCenter.y - camTransform->position.y
+        );
+
+        if (halfDeadZone.x > 0.0f || halfDeadZone.y > 0.0f) {
+            if (relativePos.x > halfDeadZone.x) {
+                adjustedTarget.x = targetCenter.x - halfDeadZone.x;
+            } else if (relativePos.x < -halfDeadZone.x) {
+                adjustedTarget.x = targetCenter.x + halfDeadZone.x;
+            }
+            if (relativePos.y > halfDeadZone.y) {
+                adjustedTarget.y = targetCenter.y - halfDeadZone.y;
+            } else if (relativePos.y < -halfDeadZone.y) {
+                adjustedTarget.y = targetCenter.y + halfDeadZone.y;
+            }
+        } else {
+            adjustedTarget = targetCenter;
+        }
+
+        // 6. Smooth follow interpolation
+        f32 t = 1.0f - std::exp(-cam2d->followSmoothing * deltaTime);
+        camTransform->position.x += (adjustedTarget.x - camTransform->position.x) * t;
+        camTransform->position.y += (adjustedTarget.y - camTransform->position.y) * t;
+
+        // 7. Apply bounds clamping
         if (cam2d->useBounds) {
             f32 minX = cam2d->minBounds.x + cam2d->boundsPadding;
             f32 maxX = cam2d->maxBounds.x - cam2d->boundsPadding;
             f32 minY = cam2d->minBounds.y + cam2d->boundsPadding;
             f32 maxY = cam2d->maxBounds.y - cam2d->boundsPadding;
-            if (camTransform->position.x < minX) camTransform->position.x = minX;
-            if (camTransform->position.x > maxX) camTransform->position.x = maxX;
-            if (camTransform->position.y < minY) camTransform->position.y = minY;
-            if (camTransform->position.y > maxY) camTransform->position.y = maxY;
+            camTransform->position.x = std::clamp(camTransform->position.x, minX, maxX);
+            camTransform->position.y = std::clamp(camTransform->position.y, minY, maxY);
+        }
+
+        // 8. Apply screen shake
+        if (cam2d->shakeDuration > 0.0f) {
+            cam2d->shakeTimer += deltaTime;
+            cam2d->shakeDuration -= deltaTime;
+            f32 decay = std::max(0.0f, cam2d->shakeDuration / (cam2d->shakeDuration + deltaTime));
+            f32 shakeX = std::sin(cam2d->shakeTimer * cam2d->shakeFrequency * 6.28f) * cam2d->shakeIntensity * decay;
+            f32 shakeY = std::cos(cam2d->shakeTimer * cam2d->shakeFrequency * 4.17f) * cam2d->shakeIntensity * decay;
+            camTransform->position.x += shakeX;
+            camTransform->position.y += shakeY;
+        }
+
+        // 9. Smooth zoom interpolation and apply to CameraComponent
+        if (cam2d->zoomSmoothing > 0.0f) {
+            f32 zt = 1.0f - std::exp(-cam2d->zoomSmoothing * deltaTime);
+            cam2d->currentZoom += (cam2d->targetZoom - cam2d->currentZoom) * zt;
+        } else {
+            cam2d->currentZoom = cam2d->targetZoom;
+        }
+        cam2d->currentZoom = std::clamp(cam2d->currentZoom, cam2d->minZoom, cam2d->maxZoom);
+
+        // Apply zoom to camera ortho size (only if zoom != 1.0)
+        auto* camComp = m_World->GetComponent<CameraComponent>(entity);
+        if (camComp && camComp->projectionType == ProjectionType::Orthographic) {
+            // Store base ortho size on first frame if needed
+            static f32 baseOrthoSize = camComp->orthoSize;
+            if (cam2d->currentZoom > 0.01f) {
+                camComp->orthoSize = baseOrthoSize / cam2d->currentZoom;
+            }
         }
     }
 }

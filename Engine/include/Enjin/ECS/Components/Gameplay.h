@@ -714,10 +714,38 @@ struct Camera2DBoundsComponent {
     f32 followSmoothing = 5.0f;  // Higher = faster
     Math::Vector2 followOffset;
 
-    // Zoom limits
+    // Zoom limits and smoothing
     f32 minZoom = 0.5f;
     f32 maxZoom = 3.0f;
     f32 currentZoom = 1.0f;
+    f32 targetZoom = 1.0f;
+    f32 zoomSmoothing = 5.0f;
+
+    // Dead zone - camera doesn't move until target exits this region
+    Math::Vector2 deadZoneSize;  // Width/height in world units
+
+    // Look-ahead - camera leads in movement direction
+    f32 lookAheadDistance = 0.0f;
+    f32 lookAheadSmoothing = 3.0f;
+    Math::Vector2 currentLookAhead;  // State: current look-ahead offset
+
+    // Screen shake
+    f32 shakeIntensity = 0.0f;   // Current shake strength (0 = none)
+    f32 shakeFrequency = 15.0f;  // Oscillation speed
+    f32 shakeDuration = 0.0f;    // Remaining shake time
+    f32 shakeTimer = 0.0f;       // Internal timer
+
+    // Multi-target framing
+    std::vector<Entity> additionalTargets;
+    f32 multiTargetPadding = 2.0f;
+    bool autoZoomToFitTargets = false;
+
+    // Helper to trigger screen shake
+    void TriggerShake(f32 intensity, f32 duration) {
+        shakeIntensity = intensity;
+        shakeDuration = duration;
+        shakeTimer = 0.0f;
+    }
 };
 
 // ============================================================================

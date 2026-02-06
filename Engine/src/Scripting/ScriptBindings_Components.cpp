@@ -257,6 +257,87 @@ static bool HasComponent_Animator(u64 id) {
 // ============================================================================
 
 namespace Enjin {
+// ============================================================================
+// Camera2D component access
+// ============================================================================
+
+static void Camera2D_Shake(u64 id, f32 intensity, f32 duration) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    if (cam) cam->TriggerShake(intensity, duration);
+}
+
+static f32 Camera2D_GetZoom(u64 id) {
+    if (!s_BindingsWorld) return 1.0f;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    return cam ? cam->currentZoom : 1.0f;
+}
+
+static void Camera2D_SetZoom(u64 id, f32 zoom) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    if (cam) cam->targetZoom = zoom;
+}
+
+static void Camera2D_AddTarget(u64 cameraId, u64 targetId) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(cameraId));
+    if (cam) {
+        Entity target = static_cast<Entity>(targetId);
+        if (std::find(cam->additionalTargets.begin(), cam->additionalTargets.end(), target) == cam->additionalTargets.end()) {
+            cam->additionalTargets.push_back(target);
+        }
+    }
+}
+
+static void Camera2D_RemoveTarget(u64 cameraId, u64 targetId) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(cameraId));
+    if (cam) {
+        Entity target = static_cast<Entity>(targetId);
+        auto it = std::find(cam->additionalTargets.begin(), cam->additionalTargets.end(), target);
+        if (it != cam->additionalTargets.end()) {
+            cam->additionalTargets.erase(it);
+        }
+    }
+}
+
+static void Camera2D_ClearTargets(u64 id) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    if (cam) cam->additionalTargets.clear();
+}
+
+static void Camera2D_SetDeadZone(u64 id, f32 width, f32 height) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    if (cam) {
+        cam->deadZoneSize.x = width;
+        cam->deadZoneSize.y = height;
+    }
+}
+
+static void Camera2D_SetLookAhead(u64 id, f32 distance, f32 smoothing) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    if (cam) {
+        cam->lookAheadDistance = distance;
+        cam->lookAheadSmoothing = smoothing;
+    }
+}
+
+static void Camera2D_SetFollowTarget(u64 cameraId, u64 targetId) {
+    if (!s_BindingsWorld) return;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(cameraId));
+    if (cam) cam->followTarget = static_cast<Entity>(targetId);
+}
+
+static u64 Camera2D_GetFollowTarget(u64 id) {
+    if (!s_BindingsWorld) return 0;
+    auto* cam = s_BindingsWorld->GetComponent<Camera2DBoundsComponent>(static_cast<Entity>(id));
+    return cam ? static_cast<u64>(cam->followTarget) : 0;
+}
+
 namespace Scripting {
 
 void RegisterComponentBindings(asIScriptEngine* engine) {
@@ -303,6 +384,18 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Rigidbody(uint64)", asFUNCTION(HasComponent_Rigidbody), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_BoxCollider(uint64)", asFUNCTION(HasComponent_BoxCollider), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool HasComponent_Animator(uint64)", asFUNCTION(HasComponent_Animator), asCALL_CDECL));
+
+    // Camera2D
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_Shake(uint64, float, float)", asFUNCTION(Camera2D_Shake), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Camera2D_GetZoom(uint64)", asFUNCTION(Camera2D_GetZoom), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetZoom(uint64, float)", asFUNCTION(Camera2D_SetZoom), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_AddTarget(uint64, uint64)", asFUNCTION(Camera2D_AddTarget), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_RemoveTarget(uint64, uint64)", asFUNCTION(Camera2D_RemoveTarget), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_ClearTargets(uint64)", asFUNCTION(Camera2D_ClearTargets), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetDeadZone(uint64, float, float)", asFUNCTION(Camera2D_SetDeadZone), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetLookAhead(uint64, float, float)", asFUNCTION(Camera2D_SetLookAhead), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera2D_SetFollowTarget(uint64, uint64)", asFUNCTION(Camera2D_SetFollowTarget), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("uint64 Camera2D_GetFollowTarget(uint64)", asFUNCTION(Camera2D_GetFollowTarget), asCALL_CDECL));
 }
 
 } // namespace Scripting

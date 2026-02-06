@@ -18033,31 +18033,120 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
         auto* bounds = m_World->GetComponent<ECS::Camera2DBoundsComponent>(entity);
         if (!bounds) return;
 
-        ImGui::Checkbox("Use Bounds", &bounds->useBounds);
-        if (bounds->useBounds) {
-            f32 minB[2] = { bounds->minBounds.x, bounds->minBounds.y };
-            if (ImGui::DragFloat2("Min Bounds", minB, 0.5f)) {
-                bounds->minBounds = Math::Vector2(minB[0], minB[1]);
+        // Bounds section
+        if (ImGui::TreeNode("Bounds")) {
+            ImGui::Checkbox("Use Bounds", &bounds->useBounds);
+            if (bounds->useBounds) {
+                f32 minB[2] = { bounds->minBounds.x, bounds->minBounds.y };
+                if (ImGui::DragFloat2("Min Bounds", minB, 0.5f)) {
+                    bounds->minBounds = Math::Vector2(minB[0], minB[1]);
+                }
+                f32 maxB[2] = { bounds->maxBounds.x, bounds->maxBounds.y };
+                if (ImGui::DragFloat2("Max Bounds", maxB, 0.5f)) {
+                    bounds->maxBounds = Math::Vector2(maxB[0], maxB[1]);
+                }
+                ImGui::DragFloat("Padding", &bounds->boundsPadding, 0.1f, 0.0f, 100.0f);
             }
-            f32 maxB[2] = { bounds->maxBounds.x, bounds->maxBounds.y };
-            if (ImGui::DragFloat2("Max Bounds", maxB, 0.5f)) {
-                bounds->maxBounds = Math::Vector2(maxB[0], maxB[1]);
-            }
-            ImGui::DragFloat("Padding", &bounds->boundsPadding, 0.1f, 0.0f, 100.0f);
+            ImGui::TreePop();
         }
 
-        ImGui::Text("Follow Target: %llu", (unsigned long long)bounds->followTarget);
-        ImGui::DragFloat("Follow Smoothing", &bounds->followSmoothing, 0.1f, 0.1f, 50.0f);
-
-        f32 offset[2] = { bounds->followOffset.x, bounds->followOffset.y };
-        if (ImGui::DragFloat2("Follow Offset", offset, 0.1f)) {
-            bounds->followOffset = Math::Vector2(offset[0], offset[1]);
+        // Follow section
+        if (ImGui::TreeNode("Follow")) {
+            ImGui::Text("Target: %llu", (unsigned long long)bounds->followTarget);
+            // Entity picker for follow target
+            if (ImGui::BeginCombo("##FollowTarget", bounds->followTarget ? "Selected" : "None")) {
+                if (ImGui::Selectable("None", bounds->followTarget == 0)) {
+                    bounds->followTarget = 0;
+                }
+                for (ECS::Entity e : m_World->GetAllEntities()) {
+                    if (e == entity) continue;
+                    auto* name = m_World->GetComponent<ECS::NameComponent>(e);
+                    std::string label = name ? name->name : ("Entity " + std::to_string(e));
+                    if (ImGui::Selectable(label.c_str(), bounds->followTarget == e)) {
+                        bounds->followTarget = e;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            ImGui::DragFloat("Smoothing", &bounds->followSmoothing, 0.1f, 0.1f, 50.0f);
+            f32 offset[2] = { bounds->followOffset.x, bounds->followOffset.y };
+            if (ImGui::DragFloat2("Offset", offset, 0.1f)) {
+                bounds->followOffset = Math::Vector2(offset[0], offset[1]);
+            }
+            ImGui::TreePop();
         }
 
+        // Dead Zone section
+        if (ImGui::TreeNode("Dead Zone")) {
+            f32 dz[2] = { bounds->deadZoneSize.x, bounds->deadZoneSize.y };
+            if (ImGui::DragFloat2("Size", dz, 0.1f, 0.0f, 20.0f)) {
+                bounds->deadZoneSize = Math::Vector2(dz[0], dz[1]);
+            }
+            ImGui::TextDisabled("Camera won't move until target exits this region");
+            ImGui::TreePop();
+        }
+
+        // Look Ahead section
+        if (ImGui::TreeNode("Look Ahead")) {
+            ImGui::DragFloat("Distance", &bounds->lookAheadDistance, 0.1f, 0.0f, 20.0f);
+            ImGui::DragFloat("Smoothing", &bounds->lookAheadSmoothing, 0.1f, 0.1f, 20.0f);
+            ImGui::TextDisabled("Camera leads in movement direction");
+            ImGui::TreePop();
+        }
+
+        // Screen Shake section
+        if (ImGui::TreeNode("Screen Shake")) {
+            ImGui::DragFloat("Frequency", &bounds->shakeFrequency, 0.5f, 1.0f, 50.0f);
+            if (ImGui::Button("Test Shake")) {
+                bounds->TriggerShake(0.5f, 0.3f);
+            }
+            ImGui::TextDisabled("Call Camera2D_Shake() from script");
+            ImGui::TreePop();
+        }
+
+        // Zoom section
         if (ImGui::TreeNode("Zoom")) {
-            ImGui::DragFloat("Min Zoom", &bounds->minZoom, 0.05f, 0.1f, bounds->maxZoom);
-            ImGui::DragFloat("Max Zoom", &bounds->maxZoom, 0.05f, bounds->minZoom, 10.0f);
-            ImGui::DragFloat("Current Zoom", &bounds->currentZoom, 0.05f, bounds->minZoom, bounds->maxZoom);
+            ImGui::DragFloat("Current", &bounds->currentZoom, 0.05f, bounds->minZoom, bounds->maxZoom);
+            ImGui::DragFloat("Target", &bounds->targetZoom, 0.05f, bounds->minZoom, bounds->maxZoom);
+            ImGui::DragFloat("Min", &bounds->minZoom, 0.05f, 0.1f, bounds->maxZoom);
+            ImGui::DragFloat("Max", &bounds->maxZoom, 0.05f, bounds->minZoom, 10.0f);
+            ImGui::DragFloat("Smoothing", &bounds->zoomSmoothing, 0.1f, 0.0f, 20.0f);
+            ImGui::TreePop();
+        }
+
+        // Multi-Target section
+        if (ImGui::TreeNode("Multi-Target")) {
+            ImGui::Checkbox("Auto Zoom to Fit", &bounds->autoZoomToFitTargets);
+            ImGui::DragFloat("Padding", &bounds->multiTargetPadding, 0.1f, 0.0f, 20.0f);
+
+            ImGui::Text("Additional Targets (%zu):", bounds->additionalTargets.size());
+            for (usize i = 0; i < bounds->additionalTargets.size(); ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ECS::Entity t = bounds->additionalTargets[i];
+                auto* name = m_World->GetComponent<ECS::NameComponent>(t);
+                std::string label = name ? name->name : ("Entity " + std::to_string(t));
+                ImGui::Text("  - %s", label.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("X")) {
+                    bounds->additionalTargets.erase(bounds->additionalTargets.begin() + i);
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+
+            if (ImGui::BeginCombo("Add Target", "Select...")) {
+                for (ECS::Entity e : m_World->GetAllEntities()) {
+                    if (e == entity || e == bounds->followTarget) continue;
+                    if (std::find(bounds->additionalTargets.begin(), bounds->additionalTargets.end(), e) != bounds->additionalTargets.end()) continue;
+                    auto* name = m_World->GetComponent<ECS::NameComponent>(e);
+                    std::string label = name ? name->name : ("Entity " + std::to_string(e));
+                    if (ImGui::Selectable(label.c_str())) {
+                        bounds->additionalTargets.push_back(e);
+                    }
+                }
+                ImGui::EndCombo();
+            }
             ImGui::TreePop();
         }
 
