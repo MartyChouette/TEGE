@@ -462,6 +462,12 @@ private:
     static constexpr u32 TMPL_3D    = 1 << 1;
     static constexpr u32 TMPL_MULTI = 1 << 2;
 
+    // Template search
+    char m_TemplateSearchBuffer[64] = "";
+
+    // Git init option for new projects
+    bool m_GitInitOnCreate = true;
+
     // Template hover preview state
     i32 m_HoverTemplateIdx = -1;
     f32 m_HoverTimer = 0.0f;
@@ -511,6 +517,11 @@ private:
     std::unique_ptr<Renderer::RenderTarget> m_SceneRenderTarget;     // Scene pre-post-processing
     u32 m_GameViewWidth = 640;
     u32 m_GameViewHeight = 360;
+
+    // Game View frame rate limiting (doesn't affect editor, only game view render)
+    i32 m_GameViewFPSIndex = 0;  // 0=Unlimited, 1=24, 2=30, 3=60, 4=120, 5=144, 6=240
+    bool m_GameViewVSync = false;  // Simulated VSync for game view (caps to ~60fps)
+    f64 m_GameViewLastRenderTime = 0.0;  // For frame rate limiting
 
     // Post-processing (owned by editor, applied to Game View)
     std::unique_ptr<Renderer::PostProcessing> m_PostProcessing;

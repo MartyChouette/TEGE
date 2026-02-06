@@ -1,6 +1,7 @@
 #include "Enjin/Editor/EditorLayer.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include <GLFW/glfw3.h>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -722,13 +723,8 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
 }
 
 void EditorLayer::StartPlayMode() {
-    // Apply game VSync settings when entering play mode
-    if (m_Renderer && m_Renderer->GetSwapchain()) {
-        auto& gameSettings = m_SceneManager.GetGameFrameSettings();
-        // Only apply VSync if not uncapped
-        bool gameVSync = (gameSettings.targetFrameRate != Scene::FrameRateLimit::Uncapped) && gameSettings.vSync;
-        m_Renderer->GetSwapchain()->SetVSyncEnabled(gameVSync);
-    }
+    // NOTE: VSync switching disabled for now - causes swapchain sync issues
+    // TODO: Properly sync renderer state after swapchain recreation
     m_PlayMode.Play();
 }
 
@@ -805,10 +801,8 @@ void EditorLayer::Update(f32 deltaTime) {
                 m_FocusMode = false;
                 Input::SetMouseCaptured(false);
             }
-            // Restore editor VSync setting
-            if (m_Renderer && m_Renderer->GetSwapchain()) {
-                m_Renderer->GetSwapchain()->SetVSyncEnabled(m_EditorSettings.editorVSync);
-            }
+            // NOTE: VSync restore disabled for now - causes swapchain sync issues
+            // TODO: Properly sync renderer state after swapchain recreation
         }
     }
 
@@ -1189,6 +1183,33 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     if (!m_GameViewRenderTarget || !m_GameViewRenderTarget->IsValid()) {
         return;
+    }
+
+    // Game View frame rate limiting (doesn't affect editor, only game view updates)
+    {
+        f64 currentTime = glfwGetTime();
+        f64 targetInterval = 0.0;  // 0 = unlimited
+
+        // VSync takes priority (simulates ~60fps)
+        if (m_GameViewVSync) {
+            targetInterval = 1.0 / 60.0;
+        } else {
+            // FPS options: 0=Max, 1=24, 2=30, 3=60, 4=120, 5=144, 6=240
+            const i32 fpsValues[] = { 0, 24, 30, 60, 120, 144, 240 };
+            i32 targetFPS = fpsValues[m_GameViewFPSIndex];
+            if (targetFPS > 0) {
+                targetInterval = 1.0 / static_cast<f64>(targetFPS);
+            }
+        }
+
+        // Skip render if not enough time has passed
+        if (targetInterval > 0.0) {
+            f64 elapsed = currentTime - m_GameViewLastRenderTime;
+            if (elapsed < targetInterval) {
+                return;  // Skip this frame, keep previous render target content
+            }
+        }
+        m_GameViewLastRenderTime = currentTime;
     }
 
     // In focus mode, render at full display resolution
@@ -5553,12 +5574,13 @@ void EditorLayer::DrawSettingsPanel() {
         if (isUncapped) {
             ImGui::BeginDisabled();
         }
-        if (ImGui::Checkbox("VSync", &m_EditorSettings.editorVSync)) {
-            settingsChanged = true;
-            // Apply VSync change to swapchain
-            if (m_Renderer && m_Renderer->GetSwapchain()) {
-                m_Renderer->GetSwapchain()->SetVSyncEnabled(m_EditorSettings.editorVSync);
-            }
+        // VSync checkbox - disabled for now due to swapchain sync issues
+        // TODO: Fix VSync toggle by properly syncing renderer state
+        ImGui::BeginDisabled();
+        ImGui::Checkbox("VSync (Disabled)", &m_EditorSettings.editorVSync);
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+            ImGui::SetTooltip("VSync toggling temporarily disabled - restart editor to change");
         }
         if (isUncapped) {
             ImGui::EndDisabled();
@@ -7147,6 +7169,22 @@ void EditorLayer::DrawGameViewPanel() {
         Input::SetMouseCaptured(true);
     }
 
+    // Game View frame rate controls (right side)
+    ImGui::SameLine(ImGui::GetWindowWidth() - 220);
+    ImGui::SetNextItemWidth(80);
+    const char* fpsOptions[] = { "Max", "24", "30", "60", "120", "144", "240" };
+    ImGui::Combo("##GameFPS", &m_GameViewFPSIndex, fpsOptions, 7);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Game View frame rate limit");
+    }
+    ImGui::SameLine();
+    if (ImGui::Checkbox("VSync##GameView", &m_GameViewVSync)) {
+        // VSync overrides FPS to ~60
+    }
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Simulate VSync (caps game view to ~60 FPS)");
+    }
+
     // (Evaluate Flower button moved to game view overlay — see DrawFlowerEvaluateOverlay)
 
     // Camera selector dropdown (when multiple cameras exist)
@@ -8350,8 +8388,32 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     ImGui::SetCursorPosX(formX);
     ImGui::TextColored(ImVec4(0.40f, 0.45f, 0.55f, 1.0f), "Project folder: %s", previewPath.c_str());
 
+    // Git init checkbox
+    ImGui::SetCursorPosX(formX);
+    ImGui::Spacing();
+    ImGui::SetCursorPosX(formX);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.14f, 0.15f, 0.19f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_CheckMark, ImVec4(0.4f, 0.75f, 0.4f, 1.0f));
+    ImGui::Checkbox("Initialize Git repository", &m_GitInitOnCreate);
+    ImGui::PopStyleColor(2);
+    if (ImGui::IsItemHovered()) {
+        ImGui::SetTooltip("Creates a .git folder and .gitignore file");
+    }
+
     ImGui::PopItemWidth();
     ImGui::PopStyleColor(3); // FrameBg, Text, TextDisabled
+
+    // === Template search bar ===
+    f32 searchY = ImGui::GetCursorPosY() + 8.0f;
+    ImGui::SetCursorPos(ImVec2(formX, searchY));
+    ImGui::TextColored(ImVec4(0.55f, 0.58f, 0.68f, 1.0f), "Search Templates");
+    ImGui::SetCursorPosX(formX);
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.14f, 0.15f, 0.19f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.87f, 0.92f, 1.0f));
+    ImGui::PushItemWidth(formW - 110.0f);
+    ImGui::InputTextWithHint("##TemplateSearch", "Type to filter...", m_TemplateSearchBuffer, sizeof(m_TemplateSearchBuffer));
+    ImGui::PopItemWidth();
+    ImGui::PopStyleColor(2);
 
     // === Category filter bar ===
     f32 filterY = ImGui::GetCursorPosY() + 8.0f;
@@ -8411,20 +8473,57 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
 
-    // Build filtered index list
+    // Build filtered index list (category filter)
     std::vector<int> filteredIndices;
     for (int i = 0; i < builtinCount; ++i) {
         if (m_TemplateFilter == TMPL_ALL || (builtinTemplates[i].categoryFlags & m_TemplateFilter)) {
             filteredIndices.push_back(i);
         }
     }
+
+    // Apply search filter (case-insensitive substring match)
+    if (m_TemplateSearchBuffer[0] != '\0') {
+        std::string searchLower = m_TemplateSearchBuffer;
+        std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        std::vector<int> searchFiltered;
+        for (int idx : filteredIndices) {
+            std::string nameLower = builtinTemplates[idx].name;
+            std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            if (nameLower.find(searchLower) != std::string::npos) {
+                searchFiltered.push_back(idx);
+            }
+        }
+        filteredIndices = std::move(searchFiltered);
+    }
+
     // Add custom templates (always shown, or filtered as "All")
     int customStart = static_cast<int>(filteredIndices.size());
 
-    int totalVisible = static_cast<int>(filteredIndices.size());
+    // Build filtered custom template indices
+    std::vector<int> filteredCustomIndices;
     if (m_TemplateFilter == TMPL_ALL) {
-        totalVisible += static_cast<int>(m_CustomTemplateNames.size());
+        for (int ci = 0; ci < static_cast<int>(m_CustomTemplateNames.size()); ++ci) {
+            // Apply search filter to custom templates too
+            if (m_TemplateSearchBuffer[0] != '\0') {
+                std::string searchLower = m_TemplateSearchBuffer;
+                std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                std::string nameLower = m_CustomTemplateNames[ci];
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (nameLower.find(searchLower) != std::string::npos) {
+                    filteredCustomIndices.push_back(ci);
+                }
+            } else {
+                filteredCustomIndices.push_back(ci);
+            }
+        }
     }
+
+    int totalVisible = static_cast<int>(filteredIndices.size()) + static_cast<int>(filteredCustomIndices.size());
 
     bool templateChosen = false;
     std::string chosenTemplate;
@@ -8510,59 +8609,58 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         }
     }
 
-    // Draw custom templates (when showing All)
-    if (m_TemplateFilter == TMPL_ALL) {
-        for (int ci = 0; ci < static_cast<int>(m_CustomTemplateNames.size()); ++ci) {
-            int vi = customStart + ci;
-            int row = vi / cardsPerRow;
-            int col = vi % cardsPerRow;
-            int itemsInRow = totalVisible - row * cardsPerRow;
-            if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
+    // Draw custom templates (when showing All, filtered by search)
+    for (int fci = 0; fci < static_cast<int>(filteredCustomIndices.size()); ++fci) {
+        int ci = filteredCustomIndices[fci];
+        int vi = customStart + fci;
+        int row = vi / cardsPerRow;
+        int col = vi % cardsPerRow;
+        int itemsInRow = totalVisible - row * cardsPerRow;
+        if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
 
-            f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
-            f32 rowStartX = (area.x - rowWidth) * 0.5f;
+        f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
+        f32 rowStartX = (area.x - rowWidth) * 0.5f;
 
-            ImVec2 cardPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
-            ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
+        ImVec2 cardPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
+        ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
 
-            bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
-                           io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
-            // Custom templates use negative indices: -(ci+1)
-            bool selected = (m_SelectedTemplate == -(ci + 1));
+        bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
+                       io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
+        // Custom templates use negative indices: -(ci+1)
+        bool selected = (m_SelectedTemplate == -(ci + 1));
 
-            ImU32 bgCol = selected ? IM_COL32(35, 50, 60, 255) :
-                          (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-            dl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        ImU32 bgCol = selected ? IM_COL32(35, 50, 60, 255) :
+                      (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
+        dl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
 
-            ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
-            dl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
+        dl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
-            ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
-                             (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
-            dl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+        ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
+                         (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
+        dl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
 
-            if (selected) {
-                const char* check = "✓";
-                ImVec2 checkSize = ImGui::CalcTextSize(check);
-                dl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
-                    IM_COL32(140, 200, 140, 255), check);
-            }
+        if (selected) {
+            const char* check = "✓";
+            ImVec2 checkSize = ImGui::CalcTextSize(check);
+            dl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
+                IM_COL32(140, 200, 140, 255), check);
+        }
 
-            ImVec2 nameSize = ImGui::CalcTextSize(m_CustomTemplateNames[ci].c_str());
-            dl->AddText(
-                ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 16.0f),
-                IM_COL32(220, 225, 245, 255), m_CustomTemplateNames[ci].c_str());
+        ImVec2 nameSize = ImGui::CalcTextSize(m_CustomTemplateNames[ci].c_str());
+        dl->AddText(
+            ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 16.0f),
+            IM_COL32(220, 225, 245, 255), m_CustomTemplateNames[ci].c_str());
 
-            const char* customLabel = "Custom Template";
-            ImVec2 labelSize = ImGui::CalcTextSize(customLabel);
-            dl->AddText(
-                ImVec2(cardPos.x + (cardW - labelSize.x) * 0.5f, cardPos.y + 45.0f),
-                IM_COL32(0, 180, 160, 200), customLabel);
+        const char* customLabel = "Custom Template";
+        ImVec2 labelSize = ImGui::CalcTextSize(customLabel);
+        dl->AddText(
+            ImVec2(cardPos.x + (cardW - labelSize.x) * 0.5f, cardPos.y + 45.0f),
+            IM_COL32(0, 180, 160, 200), customLabel);
 
-            if (hovered && ImGui::IsMouseClicked(0)) {
-                int newSel = -(ci + 1);
-                m_SelectedTemplate = (m_SelectedTemplate == newSel) ? -1 : newSel;
-            }
+        if (hovered && ImGui::IsMouseClicked(0)) {
+            int newSel = -(ci + 1);
+            m_SelectedTemplate = (m_SelectedTemplate == newSel) ? -1 : newSel;
         }
     }
 
@@ -8625,6 +8723,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
             std::strncpy(m_NewSceneName, "Main", sizeof(m_NewSceneName));
             m_SelectedTemplate = -1;
             m_TemplateFilter = TMPL_ALL;
+            m_TemplateSearchBuffer[0] = '\0';  // Clear search
         }
     }
 
@@ -9034,6 +9133,41 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     }
     fs::create_directories(projRoot / "scripts", ec);
     fs::create_directories(projRoot / "assets", ec);
+    fs::create_directories(projRoot / "templates", ec);
+
+    // Initialize git repository if requested
+    if (m_GitInitOnCreate) {
+        // Run git init
+        std::string gitInitCmd = "cd \"" + projRoot.string() + "\" && git init";
+#ifdef _WIN32
+        // On Windows, use system() which works with cmd
+        std::system(gitInitCmd.c_str());
+#else
+        std::system(gitInitCmd.c_str());
+#endif
+
+        // Write .gitignore
+        fs::path gitignorePath = projRoot / ".gitignore";
+        std::ofstream gitignore(gitignorePath);
+        if (gitignore.is_open()) {
+            gitignore << "# Build output\n";
+            gitignore << "build/\n";
+            gitignore << "*.enjpak\n";
+            gitignore << "\n";
+            gitignore << "# IDE/Editor\n";
+            gitignore << ".vscode/\n";
+            gitignore << ".vs/\n";
+            gitignore << ".idea/\n";
+            gitignore << "*.user\n";
+            gitignore << "\n";
+            gitignore << "# Logs and temp\n";
+            gitignore << "*.log\n";
+            gitignore << "__pycache__/\n";
+            gitignore << "*.tmp\n";
+            gitignore.close();
+            ENJIN_LOG_INFO(Editor, "Initialized git repository with .gitignore");
+        }
+    }
 
     // Initialize project manifest via SceneManager
     m_SceneManager.NewProject(projectName);
