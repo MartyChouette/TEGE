@@ -229,7 +229,8 @@ private:
     void CreateDefaultMesh();
     void CreatePipeline();
     void CreateShadowPipeline();
-    void RecreatePipelines();
+    // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
+    void RecreatePipelines(bool gpuAlreadyIdle = false);
     void CreateUniformBuffers();
     void CreateDescriptorSets();
     void UpdateUniformBuffer(Entity entity);

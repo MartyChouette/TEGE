@@ -807,6 +807,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
+            Renderer::Texture* texHeight = nullptr;
+            Renderer::Texture* texNormal = nullptr;
+            Renderer::Texture* texMR = nullptr;
+            Renderer::Texture* texEmissive = nullptr;
 
             if (material) {
                 pushConstants.baseColor = material->baseColor;
@@ -817,19 +821,52 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.opacity = material->opacity;
                 pushConstants.alphaCutoff = material->alphaCutoff;
 
-                if (!material->baseColorTexturePath.empty()) {
-                    auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-                    if (tex && tex->IsValid()) {
-                        boundTexture = tex.get();
-                        if (material->baseColorTexture != 1) {
-                            ENJIN_LOG_INFO(Renderer, "Texture bound entity %llu: %s (%dx%d) baseColor=(%.2f,%.2f,%.2f)",
-                                (unsigned long long)entity, material->baseColorTexturePath.c_str(),
-                                tex->GetWidth(), tex->GetHeight(),
-                                material->baseColor.x, material->baseColor.y, material->baseColor.z);
+                // Resolve textures using cache (avoids per-frame string hash lookups)
+                if (material->textureCacheDirty) {
+                    if (!material->baseColorTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedBaseColorTexture = tex.get();
+                            material->baseColorTexture = 1;
                         }
-                        material->baseColorTexture = 1;
                     }
+                    if (!material->heightTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->heightTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedHeightTexture = tex.get();
+                            material->heightTexture = 1;
+                        }
+                    }
+                    if (!material->normalTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->normalTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedNormalTexture = tex.get();
+                            material->normalTexture = 1;
+                        }
+                    }
+                    if (!material->metallicRoughnessTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMetallicRoughnessTexture = tex.get();
+                            material->metallicRoughnessTexture = 1;
+                        }
+                    }
+                    if (!material->emissiveTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->emissiveTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedEmissiveTexture = tex.get();
+                            material->emissiveTexture = 1;
+                        }
+                    }
+                    material->textureCacheDirty = false;
                 }
+
+                // Use cached texture pointers
+                boundTexture = material->cachedBaseColorTexture;
+                texHeight = material->cachedHeightTexture;
+                texNormal = material->cachedNormalTexture;
+                texMR = material->cachedMetallicRoughnessTexture;
+                texEmissive = material->cachedEmissiveTexture;
 
                 pushConstants.flags = 0;
                 if (material->doubleSided) pushConstants.flags |= 1;
@@ -928,55 +965,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags |= (1 << 16); // HAS_BASE_COLOR_TEXTURE
             }
 
-            if (boundTexture) {
-                UpdateTextureDescriptor(boundTexture);
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            // Bind height map texture if available
-            if (material && !material->heightTexturePath.empty()) {
-                auto heightTex = GetOrLoadTexture(material->heightTexturePath);
-                if (heightTex && heightTex->IsValid()) {
-                    material->heightTexture = 1;
-                    UpdateHeightTextureDescriptor(heightTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateHeightTextureDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            // Bind normal map texture if available
-            if (material && !material->normalTexturePath.empty()) {
-                auto normalTex = GetOrLoadTexture(material->normalTexturePath);
-                if (normalTex && normalTex->IsValid()) {
-                    material->normalTexture = 1;
-                    UpdateNormalMapDescriptor(normalTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            // Bind metallic-roughness texture if available
-            if (material && !material->metallicRoughnessTexturePath.empty()) {
-                auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-                if (mrTex && mrTex->IsValid()) {
-                    material->metallicRoughnessTexture = 1;
-                    UpdateMetallicRoughnessDescriptor(mrTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            // Bind emissive texture if available
-            if (material && !material->emissiveTexturePath.empty()) {
-                auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
-                if (emissiveTex && emissiveTex->IsValid()) {
-                    material->emissiveTexture = 1;
-                    UpdateEmissiveDescriptor(emissiveTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
-            }
+            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
+            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
 
             // Upload bone matrices for skinned meshes
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
@@ -1156,6 +1146,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
+            Renderer::Texture* texHeight = nullptr;
+            Renderer::Texture* texNormal = nullptr;
+            Renderer::Texture* texMR = nullptr;
+            Renderer::Texture* texEmissive = nullptr;
 
             if (material) {
                 pushConstants.baseColor = material->baseColor;
@@ -1166,13 +1160,52 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.opacity = material->opacity;
                 pushConstants.alphaCutoff = material->alphaCutoff;
 
-                if (!material->baseColorTexturePath.empty()) {
-                    auto tex = GetOrLoadTexture(material->baseColorTexturePath);
-                    if (tex && tex->IsValid()) {
-                        boundTexture = tex.get();
-                        material->baseColorTexture = 1;
+                // Resolve textures using cache (avoids per-frame string hash lookups)
+                if (material->textureCacheDirty) {
+                    if (!material->baseColorTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->baseColorTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedBaseColorTexture = tex.get();
+                            material->baseColorTexture = 1;
+                        }
                     }
+                    if (!material->heightTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->heightTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedHeightTexture = tex.get();
+                            material->heightTexture = 1;
+                        }
+                    }
+                    if (!material->normalTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->normalTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedNormalTexture = tex.get();
+                            material->normalTexture = 1;
+                        }
+                    }
+                    if (!material->metallicRoughnessTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedMetallicRoughnessTexture = tex.get();
+                            material->metallicRoughnessTexture = 1;
+                        }
+                    }
+                    if (!material->emissiveTexturePath.empty()) {
+                        auto tex = GetOrLoadTexture(material->emissiveTexturePath);
+                        if (tex && tex->IsValid()) {
+                            material->cachedEmissiveTexture = tex.get();
+                            material->emissiveTexture = 1;
+                        }
+                    }
+                    material->textureCacheDirty = false;
                 }
+
+                // Use cached texture pointers
+                boundTexture = material->cachedBaseColorTexture;
+                texHeight = material->cachedHeightTexture;
+                texNormal = material->cachedNormalTexture;
+                texMR = material->cachedMetallicRoughnessTexture;
+                texEmissive = material->cachedEmissiveTexture;
 
                 pushConstants.flags = 0;
                 if (material->doubleSided) pushConstants.flags |= 1;
@@ -1263,51 +1296,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags |= (1 << 16);
             }
 
-            if (boundTexture) {
-                UpdateTextureDescriptor(boundTexture);
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateTextureDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            if (material && !material->heightTexturePath.empty()) {
-                auto heightTex = GetOrLoadTexture(material->heightTexturePath);
-                if (heightTex && heightTex->IsValid()) {
-                    material->heightTexture = 1;
-                    UpdateHeightTextureDescriptor(heightTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateHeightTextureDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            if (material && !material->normalTexturePath.empty()) {
-                auto normalTex = GetOrLoadTexture(material->normalTexturePath);
-                if (normalTex && normalTex->IsValid()) {
-                    material->normalTexture = 1;
-                    UpdateNormalMapDescriptor(normalTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            if (material && !material->metallicRoughnessTexturePath.empty()) {
-                auto mrTex = GetOrLoadTexture(material->metallicRoughnessTexturePath);
-                if (mrTex && mrTex->IsValid()) {
-                    material->metallicRoughnessTexture = 1;
-                    UpdateMetallicRoughnessDescriptor(mrTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateMetallicRoughnessDescriptor(m_DefaultWhiteTexture.get());
-            }
-
-            if (material && !material->emissiveTexturePath.empty()) {
-                auto emissiveTex = GetOrLoadTexture(material->emissiveTexturePath);
-                if (emissiveTex && emissiveTex->IsValid()) {
-                    material->emissiveTexture = 1;
-                    UpdateEmissiveDescriptor(emissiveTex.get());
-                }
-            } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateEmissiveDescriptor(m_DefaultWhiteTexture.get());
-            }
+            // Batched texture descriptor update (1 vkUpdateDescriptorSets call instead of 5)
+            UpdateEntityTextureDescriptors(boundTexture, texHeight, texNormal, texMR, texEmissive);
 
             // Upload bone matrices for skinned meshes
             AnimatorComponent* animComp = m_World->GetComponent<AnimatorComponent>(entity);
@@ -2255,11 +2245,12 @@ void RenderSystem::SetShadowResolution(u32 r) {
     RecreatePipelines();
 }
 
-void RenderSystem::RecreatePipelines() {
+void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     if (!m_Pipeline || !m_Initialized) return;
 
     // Wait for GPU to finish all in-flight work before destroying pipelines
-    if (m_Renderer && m_Renderer->GetContext()) {
+    // Skip if caller guarantees GPU is already idle (e.g., shader hot-reload already did the wait)
+    if (!gpuAlreadyIdle && m_Renderer && m_Renderer->GetContext()) {
         vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
     }
 
@@ -2436,10 +2427,11 @@ void RenderSystem::ReloadMainShaders(const std::string& changedFile) {
     }
 
     // Both compiled — swap in and recreate pipelines
+    // Wait for GPU before destroying old shader modules, then skip wait in RecreatePipelines
     vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);
-    RecreatePipelines();
+    RecreatePipelines(true); // GPU already idle
 
     ENJIN_LOG_INFO(Renderer, "Shader hot-reload: main shaders reloaded successfully");
 }
@@ -2526,9 +2518,10 @@ void RenderSystem::ReloadShadowShaders() {
     // Shadow pipeline actually reuses m_VertexShader from the main pipeline,
     // so a shadow.vert change means we should update the main vertex shader
     // and recreate all pipelines that depend on it.
+    // Wait for GPU before destroying old shader module, then skip wait in RecreatePipelines
     vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
     m_VertexShader = std::move(tempVert);
-    RecreatePipelines();
+    RecreatePipelines(true); // GPU already idle
 
     ENJIN_LOG_INFO(Renderer, "Shader hot-reload: shadow vertex shader reloaded successfully");
 }
