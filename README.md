@@ -46,6 +46,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Project Settings** - Dedicated panel for rendering/physics defaults separated from editor preferences
 - **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
+- **Animation Graph** - Visual state machine editor for AnimatorComponent with Entry pseudo-node, transitions, parameters
+- **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
+- **Visual Script Editor** - Blueprint-style visual scripting with 50+ nodes, breakpoint debugging, execution profiler
 
 ### Entity-Component System
 - **60+ Component Types** - Full inspector UI for all components
@@ -111,12 +114,23 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~150 API bindings, hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~170 API bindings, hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface, DLL/SO loading, manifest JSON, editor panel
 - **C++ Hot-Reload** - File watching, DLL reload with state save/restore
 - **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes
+
+### Visual Scripting
+- **Blueprint-Style Editor** - Node graph visual programming without code
+- **50+ Built-in Nodes** - Events, flow control, math, logic, transform, components, audio, debug
+- **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
+- **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
+- **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through
+- **Execution Profiler** - Color-coded timeline of node execution with duration tooltips
+- **Multi-Select Editing** - Box selection, Ctrl+click, multi-node drag, copy/paste with preserved links
+- **Undo/Redo** - Full undo support for nodes, links, properties, and variables
+- **Collision Callbacks** - OnCollisionEnter/Exit, OnTriggerEnter/Exit events
 
 ## Project Structure
 
@@ -236,6 +250,8 @@ enjin/
 - [x] Asset Pack Build Pipeline (.enjpak)
 - [x] Splitscreen Rendering
 - [x] Scripting Language (AngelScript with hot-reload, coroutines, event bus)
+- [x] Visual Scripting System (Blueprint-style nodes, debugging, profiler)
+- [x] Dialogue Tree Editor (7 node types, EntityEventBus, SubtitleSystem)
 - [ ] Networking (client-server, peer-to-peer)
 
 ### Phase 12: Advanced Gameplay
@@ -272,6 +288,18 @@ enjin/
 | Marquee Select | Viewport drag |
 | Undo | `Ctrl+Z` |
 | Redo | `Ctrl+Y` |
+
+**Visual Script Editor:**
+| Action | Control |
+|--------|---------|
+| Toggle Breakpoint | `F9` |
+| Continue Execution | `F5` |
+| Step Over | `F10` |
+| Copy Nodes | `Ctrl+C` |
+| Cut Nodes | `Ctrl+X` |
+| Paste Nodes | `Ctrl+V` |
+| Duplicate Nodes | `Ctrl+D` |
+| Delete Nodes | `Delete` |
 
 ## Skybox
 

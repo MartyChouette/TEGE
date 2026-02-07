@@ -171,19 +171,37 @@ The existing `NodeGraphEditor` framework is production-ready and currently power
 - VisualScriptEditor panel (View > Tools) with entity sidebar, node graph canvas, variable editor, node inspector
 - Full scene serialization
 
-**Remaining work (Phase 2+):**
-- All flow control nodes (ForLoop, While, Delay, Gate)
-- All math/logic nodes (30+ nodes)
-- Physics nodes (Raycast, AddForce)
-- Collision callbacks (OnCollisionEnter/Exit, OnTriggerEnter/Exit)
-- Node palette with search
-- Pin value debugging and execution visualization
-- Audio/animation nodes
-- Component access nodes
-- Copy/paste, undo/redo
-- Breakpoint debugging
-- Subgraph/function nodes
-- AngelScript interop
+**Phase 2 (Complete):**
+- Extended flow control nodes (ForLoop, While, Delay, Sequence, Gate)
+- Math/logic nodes (Add, Subtract, Multiply, Divide, Greater, Less, Equal, And, Or, Not, Negate, Clamp, Lerp, Normalize, DotProduct, CrossProduct, Distance, RandomFloat, RandomInt)
+- Transform nodes (GetPosition, SetPosition, GetRotation, SetRotation, GetScale, SetScale, Translate, Rotate, LookAt)
+- Component access nodes (GetHealth, SetHealth, Damage, PlayAudio, StopAudio, PlayAnimation)
+- Node palette with fuzzy search and recently-used tracking
+- Pin value display on nodes
+- Undo/redo for node/link creation and deletion
+
+**Phase 3 (Complete):**
+- Collision callbacks (OnCollisionEnter, OnCollisionExit, OnTriggerEnter, OnTriggerExit)
+- Latent Delay node with execution resume
+- Execution visualization (highlighted currently-executing node)
+
+**Phase 4 (Complete):**
+- Breakpoints and step-through debugging (F5 continue, F10 step, F9 toggle)
+- Execution timeline profiler with color-coded node bars
+- WaitForAudioComplete latent node
+- WaitForAnimationComplete latent node
+- Multi-select copy/paste with preserved internal links
+- Box/marquee selection and Ctrl+click multi-select
+- Multi-node drag
+- Undo/redo for node property edits and variable value edits
+
+**Remaining work (Phase 5+):**
+- Physics nodes (Raycast, AddForce, AddImpulse)
+- Subgraph/function nodes (reusable node groups)
+- AngelScript interop (call script functions from visual script)
+- Conditional breakpoints
+- Watch window for variable inspection
+- Call stack view
 
 #### Phase 3: AI Behavior Tree Editor (2-3 weeks)
 
@@ -326,7 +344,10 @@ Ideas for "simple creation of complex games":
 | Replace vkDeviceWaitIdle() with fences | Critical | Medium | P0 | Pending |
 | Dialogue Tree Editor | Very High | Medium | P1 | ✅ Complete |
 | Visual Scripting System (Phase 1) | Very High | High | P1 | ✅ Complete |
-| Visual Scripting System (Phase 2+) | Very High | High | P1 | Pending |
+| Visual Scripting System (Phase 2) | Very High | High | P1 | ✅ Complete |
+| Visual Scripting System (Phase 3) | Very High | Medium | P1 | ✅ Complete |
+| Visual Scripting System (Phase 4) | Very High | Medium | P1 | ✅ Complete |
+| Visual Scripting System (Phase 5+) | High | Medium | P1 | Pending |
 | GUI color palette update | Medium | Low | P2 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
 | Quest Flow Editor | High | Low | P2 | Pending |
@@ -365,6 +386,33 @@ Ideas for "simple creation of complex games":
 ---
 
 ## Recent Completions
+
+### Visual Scripting System Phase 4 (2026-02-06)
+
+Implemented debugging and advanced editing features:
+
+**Breakpoints and Debugging:**
+- Breakpoint toggle on nodes (F9 key, red dot indicator)
+- Step-through debugging (F5 continue, F10 step over)
+- Pause at breakpoint with visual node highlighting
+- Execution timeline profiler with color-coded bars
+
+**Latent Nodes:**
+- WaitForAudioComplete - waits for AudioSourceComponent to finish playing
+- WaitForAnimationComplete - waits for AnimatorComponent to finish
+
+**Multi-Select Editing:**
+- Box/marquee selection for multiple nodes
+- Ctrl+click to add/remove from selection
+- Multi-node drag moves all selected together
+- Copy/paste preserves internal links between selected nodes
+
+**Undo/Redo:**
+- EditNodePropertyCommand for node property changes
+- EditVariableCommand for variable value changes
+- Command merging for consecutive edits on same property/variable
+
+---
 
 ### Visual Scripting System Phase 1 (2026-02-06)
 
