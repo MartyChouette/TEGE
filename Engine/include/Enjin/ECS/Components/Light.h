@@ -34,7 +34,6 @@ struct ENJIN_API LightComponent {
 
     // Shadow casting
     bool castShadows = true;
-    u32 shadowMapResolution = 1024;
 
     // Helper to calculate attenuation at a distance
     f32 CalculateAttenuation(f32 distance) const {

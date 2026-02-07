@@ -109,6 +109,10 @@ public:
         m_MainPassViewports = viewports;
     }
 
+    // Run the shadow pass for an offscreen camera (call BEFORE the render target's Begin()).
+    // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
+    void RenderShadowPassForCamera(Renderer::Camera* camera);
+
     // Runtime rendering settings
     bool IsShadowsEnabled() const { return m_ShadowsEnabled; }
     void SetShadowsEnabled(bool enabled) { m_ShadowsEnabled = enabled; }
@@ -271,6 +275,7 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
     bool m_ShadowsEnabled = true;
     f32 m_ShadowDistance = 100.0f;
+    u32 m_PendingShadowResolution = 0; // 0 = no change pending
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;

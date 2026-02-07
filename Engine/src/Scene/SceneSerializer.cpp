@@ -180,7 +180,6 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     j["innerConeAngle"] = light.innerConeAngle;
     j["outerConeAngle"] = light.outerConeAngle;
     j["castShadows"] = light.castShadows;
-    j["shadowMapResolution"] = light.shadowMapResolution;
     return j;
 }
 
@@ -334,7 +333,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.innerConeAngle = j.value("innerConeAngle", 12.5f);
     light.outerConeAngle = j.value("outerConeAngle", 17.5f);
     light.castShadows = j.value("castShadows", false);
-    light.shadowMapResolution = j.value("shadowMapResolution", 1024u);
+    // Note: old scenes may contain "shadowMapResolution" — silently ignored
     return light;
 }
 

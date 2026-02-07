@@ -346,6 +346,13 @@ void RenderSystem::ProcessPendingRecreation() {
 void RenderSystem::FlushPendingChanges() {
     if (!m_Renderer || !m_Initialized) return;
 
+    // Apply deferred shadow resolution change before pipeline recreation
+    // (ProcessPendingRecreation will wait for the GPU via WaitForAllFrames)
+    if (m_PendingShadowResolution != 0 && m_ShadowMap) {
+        m_ShadowMap->SetResolution(m_PendingShadowResolution);
+        m_PendingShadowResolution = 0;
+    }
+
     ProcessPendingRecreation();
 
     // Apply deferred skybox config — must happen before any rendering commands
@@ -2452,13 +2459,12 @@ u32 RenderSystem::GetShadowResolution() const {
 
 void RenderSystem::SetShadowResolution(u32 r) {
     if (!m_ShadowMap) return;
-    // Skip pipeline recreation if resolution hasn't actually changed
-    u32 current = m_ShadowMap->GetResolution();
     if (r < 512) r = 512;
     if (r > 4096) r = 4096;
-    if (r == current) return;
-    m_ShadowMap->SetResolution(r);
-    // Recreate descriptor sets to pick up new image views
+    // Skip if resolution hasn't actually changed
+    if (r == m_ShadowMap->GetResolution()) return;
+    // Defer the actual resize to FlushPendingChanges() where the GPU is already idle
+    m_PendingShadowResolution = r;
     m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
@@ -3156,6 +3162,22 @@ void RenderSystem::RenderShadowPass() {
     }
 }
 
+void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
+    if (!camera) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no camera"); return; }
+    if (!m_ShadowsEnabled) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: shadows disabled"); return; }
+    if (!m_ShadowMap) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow map"); return; }
+    if (!m_ShadowPipeline) { ENJIN_LOG_WARN(Renderer, "ShadowPassForCamera: no shadow pipeline"); return; }
+
+    ClassifySceneComposition();
+    if (m_SceneComposition.mode != SceneRenderMode::Scene3D) return;
+    if (!m_SceneComposition.hasShadowCastingLights) return;
+
+    Renderer::Camera* prevCamera = m_Camera;
+    m_Camera = camera;
+    RenderShadowPass();
+    m_Camera = prevCamera;
+}
+
 void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer) {
     TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
@@ -3163,7 +3185,10 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     if (!transform || !mesh || !mesh->IsValid()) return;
 
     auto it = m_EntityRenderData.find(entity);
-    if (it == m_EntityRenderData.end()) return;
+    if (it == m_EntityRenderData.end()) {
+        it = SetupEntityBuffers(entity);
+        if (it == m_EntityRenderData.end()) return;
+    }
 
     EntityRenderData& renderData = it->second;
 

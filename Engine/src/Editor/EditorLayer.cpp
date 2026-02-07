@@ -1670,6 +1670,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
     }
 
+    // Run shadow pass before starting the render target (shadow pass uses its own framebuffer)
+    m_RenderSystem->RenderShadowPassForCamera(&gameCamera);
+
     // Render scene + effects into the chosen target
     sceneTarget->Begin(commandBuffer);
     if (useSplitscreen && !splitViewports.empty()) {
@@ -4266,23 +4269,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
         }
 
         // Shadows
-        if (ImGui::TreeNode("Shadows")) {
-            ImGui::Checkbox("Cast Shadows", &light->castShadows);
-            if (light->castShadows) {
-                const char* resolutions[] = { "512", "1024", "2048", "4096" };
-                int currentRes = 0;
-                if (light->shadowMapResolution == 512) currentRes = 0;
-                else if (light->shadowMapResolution == 1024) currentRes = 1;
-                else if (light->shadowMapResolution == 2048) currentRes = 2;
-                else if (light->shadowMapResolution == 4096) currentRes = 3;
-
-                if (ImGui::Combo("Shadow Resolution", &currentRes, resolutions, 4)) {
-                    u32 resValues[] = { 512, 1024, 2048, 4096 };
-                    light->shadowMapResolution = resValues[currentRes];
-                }
-            }
-            ImGui::TreePop();
-        }
+        ImGui::Checkbox("Cast Shadows", &light->castShadows);
     }
 }
 
