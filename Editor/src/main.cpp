@@ -78,7 +78,10 @@ public:
             auto& playMode = m_EditorLayer->GetPlayMode();
             auto& sceneManager = m_EditorLayer->GetSceneManager();
 
-            // Check if in play mode - use game frame settings
+            // Check if in play mode
+            // NOTE: During play mode, the main loop runs uncapped.
+            // Game View frame rate is controlled separately via RenderOffscreen().
+            // The GameFrameSettings.targetFrameRate is only used for exported builds.
             if (playMode.IsPlaying()) {
                 auto& gameSettings = sceneManager.GetGameFrameSettings();
 
@@ -96,9 +99,9 @@ public:
                     }
                 }
 
-                // Return game target FPS (0 = uncapped)
-                Enjin::u32 targetVal = static_cast<Enjin::u32>(gameSettings.targetFrameRate);
-                return targetVal > 0 ? static_cast<Enjin::f32>(targetVal) : 0.0f;
+                // Run uncapped during play mode - Game View FPS is controlled
+                // by the dropdown in the Game View panel via RenderOffscreen()
+                return 0.0f;
             }
 
             // Editor mode - use editor frame settings

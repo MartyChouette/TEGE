@@ -123,20 +123,56 @@ bool VulkanContext::SelectPhysicalDevice() {
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_Instance, &deviceCount, devices.data());
 
+    // Log all available devices
+    ENJIN_LOG_INFO(Renderer, "Found %u Vulkan device(s):", deviceCount);
     for (const auto& device : devices) {
-        if (IsDeviceSuitable(device)) {
-            m_PhysicalDevice = device;
-            
-            VkPhysicalDeviceProperties properties;
-            vkGetPhysicalDeviceProperties(device, &properties);
-            ENJIN_LOG_INFO(Renderer, "Selected physical device: %s", properties.deviceName);
-            
-            return true;
+        VkPhysicalDeviceProperties props;
+        vkGetPhysicalDeviceProperties(device, &props);
+        const char* typeStr = "Unknown";
+        switch (props.deviceType) {
+            case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU:   typeStr = "Discrete GPU"; break;
+            case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: typeStr = "Integrated GPU"; break;
+            case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU:    typeStr = "Virtual GPU"; break;
+            case VK_PHYSICAL_DEVICE_TYPE_CPU:            typeStr = "CPU"; break;
+            default: break;
+        }
+        ENJIN_LOG_INFO(Renderer, "  - %s (%s)", props.deviceName, typeStr);
+    }
+
+    // Score devices: prefer discrete GPUs over integrated
+    VkPhysicalDevice bestDevice = VK_NULL_HANDLE;
+    int bestScore = -1;
+
+    for (const auto& device : devices) {
+        if (!IsDeviceSuitable(device)) continue;
+
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(device, &properties);
+
+        int score = 0;
+        if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+            score += 10000;
+        } else if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+            score += 100;
+        }
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestDevice = device;
         }
     }
 
-    ENJIN_LOG_ERROR(Renderer, "No suitable Vulkan device found");
-    return false;
+    if (bestDevice == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "No suitable Vulkan device found");
+        return false;
+    }
+
+    m_PhysicalDevice = bestDevice;
+    VkPhysicalDeviceProperties properties;
+    vkGetPhysicalDeviceProperties(bestDevice, &properties);
+    ENJIN_LOG_INFO(Renderer, "Selected physical device: %s", properties.deviceName);
+
+    return true;
 }
 
 bool VulkanContext::CreateLogicalDevice() {

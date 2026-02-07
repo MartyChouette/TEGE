@@ -55,28 +55,38 @@ void PlayMode::Play() {
         return;
     }
 
+    ENJIN_LOG_INFO(Editor, "PlayMode::Play() starting...");
+
     // Save current editor state
     SaveEditorState();
+    ENJIN_LOG_INFO(Editor, "PlayMode: SaveEditorState done");
 
     // Find the active game camera entity so controllers drive it instead of the editor camera
     ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
     m_ControllerSystem.SetGameCameraEntity(gameCam);
+    ENJIN_LOG_INFO(Editor, "PlayMode: Camera setup done (cam=%llu)", (unsigned long long)gameCam);
 
     // Enable controller system, flower system, scripting, and gameplay systems
     m_ControllerSystem.SetEnabled(true);
+    ENJIN_LOG_INFO(Editor, "PlayMode: ControllerSystem enabled");
     m_FlowerSystem.Reset();
     m_FlowerSystem.SetEnabled(true);
+    ENJIN_LOG_INFO(Editor, "PlayMode: FlowerSystem enabled");
     m_ScriptSystem.SetEnabled(true);
+    ENJIN_LOG_INFO(Editor, "PlayMode: ScriptSystem enabled");
     m_HUDSystem.SetEnabled(true);
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
+    ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
     Scripting::SetBindingsRenderSystem(m_RenderSystem);
     Scripting::SetBindingsPostProcessing(m_PostProcessing);
+    ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
     m_ScriptSystem.InitializeAllScripts();
+    ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
 
     // Disable editor camera controller
     if (m_CameraController) {

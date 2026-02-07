@@ -59,10 +59,12 @@ enum class BackgroundBehavior : u32 {
     Pause = 2
 };
 
-// Game/Project frame rate settings (applied during play mode and exported builds)
+// Game/Project frame rate settings (applied to exported builds)
+// NOTE: During play mode in the editor, Game View FPS is controlled via the
+// Game View panel dropdown. These settings only affect exported game builds.
 struct GameFrameSettings {
-    FrameRateLimit targetFrameRate = FrameRateLimit::FPS60;
-    bool vSync = true;
+    FrameRateLimit targetFrameRate = FrameRateLimit::Uncapped;
+    bool vSync = false;
     BackgroundBehavior backgroundBehavior = BackgroundBehavior::ReduceTo30;
 };
 
