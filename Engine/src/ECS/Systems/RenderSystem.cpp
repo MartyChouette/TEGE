@@ -817,6 +817,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     scissor.extent = { target->GetWidth(), target->GetHeight() };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+    // Render skybox in game view
+    RenderSkybox(commandBuffer);
+
     // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         if (m_World->HasComponent<TransformComponent>(entity)) {
@@ -1874,7 +1877,7 @@ void RenderSystem::CreateDescriptorSets() {
         if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
             imageInfo = m_DefaultWhiteTexture->GetDescriptorInfo();
         } else {
-            // Fallback - shouldn't happen but be safe
+            ENJIN_LOG_ERROR(Renderer, "Default white texture unavailable - descriptor sets will be invalid");
             imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             imageInfo.imageView = VK_NULL_HANDLE;
             imageInfo.sampler = VK_NULL_HANDLE;
@@ -3185,6 +3188,20 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
             auto newTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
             if (newTex->LoadFromFile(changedPath)) {
                 it->second = newTex;
+                // Invalidate cached raw pointers on all materials referencing this texture
+                if (m_World) {
+                    for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
+                        auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
+                        if (!mat) continue;
+                        if (mat->baseColorTexturePath == changedPath ||
+                            mat->normalTexturePath == changedPath ||
+                            mat->heightTexturePath == changedPath ||
+                            mat->metallicRoughnessTexturePath == changedPath ||
+                            mat->emissiveTexturePath == changedPath) {
+                            mat->textureCacheDirty = true;
+                        }
+                    }
+                }
             }
         }
     });

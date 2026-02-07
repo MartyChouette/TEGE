@@ -27,6 +27,7 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/Assets/Prefab.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Accessibility/ContentWarning.h"
@@ -149,6 +150,15 @@ json SerializeMeshComponent(const ECS::MeshComponent& mesh, bool includeVertexDa
             if (v.color.x != 1.0f || v.color.y != 1.0f || v.color.z != 1.0f || v.color.w != 1.0f) {
                 vertex["color"] = SerializeVector4(v.color);
             }
+            // Tangent (for normal mapping)
+            if (v.tangent.x != 0.0f || v.tangent.y != 0.0f || v.tangent.z != 0.0f) {
+                vertex["tangent"] = SerializeVector4(v.tangent);
+            }
+            // Bone data (for skeletal animation)
+            if (v.boneWeights.x != 0.0f || v.boneWeights.y != 0.0f || v.boneWeights.z != 0.0f || v.boneWeights.w != 0.0f) {
+                vertex["boneWeights"] = SerializeVector4(v.boneWeights);
+                vertex["boneIndices"] = json::array({v.boneIndices[0], v.boneIndices[1], v.boneIndices[2], v.boneIndices[3]});
+            }
             vertices.push_back(vertex);
         }
         j["vertices"] = vertices;
@@ -235,16 +245,16 @@ ECS::TransformComponent DeserializeTransformComponent(const json& j) {
 
 ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     ECS::MaterialComponent material;
-    material.baseColor = DeserializeVector3(j["baseColor"]);
-    material.opacity = j["opacity"].get<f32>();
-    material.metallic = j["metallic"].get<f32>();
-    material.roughness = j["roughness"].get<f32>();
-    material.emissiveColor = DeserializeVector3(j["emissiveColor"]);
-    material.emissiveStrength = j["emissiveStrength"].get<f32>();
-    material.baseColorTexture = j["baseColorTexture"].get<i32>();
-    material.normalTexture = j["normalTexture"].get<i32>();
-    material.metallicRoughnessTexture = j["metallicRoughnessTexture"].get<i32>();
-    material.emissiveTexture = j["emissiveTexture"].get<i32>();
+    if (j.contains("baseColor")) material.baseColor = DeserializeVector3(j["baseColor"]);
+    material.opacity = j.value("opacity", 1.0f);
+    material.metallic = j.value("metallic", 0.0f);
+    material.roughness = j.value("roughness", 0.5f);
+    if (j.contains("emissiveColor")) material.emissiveColor = DeserializeVector3(j["emissiveColor"]);
+    material.emissiveStrength = j.value("emissiveStrength", 0.0f);
+    material.baseColorTexture = j.value("baseColorTexture", -1);
+    material.normalTexture = j.value("normalTexture", -1);
+    material.metallicRoughnessTexture = j.value("metallicRoughnessTexture", -1);
+    material.emissiveTexture = j.value("emissiveTexture", -1);
     // Texture paths (optional, added in later versions)
     if (j.contains("baseColorTexturePath")) {
         material.baseColorTexturePath = j["baseColorTexturePath"].get<std::string>();
@@ -258,11 +268,11 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("emissiveTexturePath")) {
         material.emissiveTexturePath = j["emissiveTexturePath"].get<std::string>();
     }
-    material.doubleSided = j["doubleSided"].get<bool>();
-    material.castShadows = j["castShadows"].get<bool>();
-    material.receiveShadows = j["receiveShadows"].get<bool>();
-    material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(j["alphaMode"].get<i32>());
-    material.alphaCutoff = j["alphaCutoff"].get<f32>();
+    material.doubleSided = j.value("doubleSided", false);
+    material.castShadows = j.value("castShadows", true);
+    material.receiveShadows = j.value("receiveShadows", true);
+    if (j.contains("alphaMode")) material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(j["alphaMode"].get<i32>());
+    material.alphaCutoff = j.value("alphaCutoff", 0.5f);
     // Height/parallax mapping (optional, added in later versions)
     if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
     if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
@@ -289,6 +299,18 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
             if (v.contains("color")) {
                 vertex.color = DeserializeVector4(v["color"]);
             }
+            if (v.contains("tangent")) {
+                vertex.tangent = DeserializeVector4(v["tangent"]);
+            }
+            if (v.contains("boneWeights")) {
+                vertex.boneWeights = DeserializeVector4(v["boneWeights"]);
+            }
+            if (v.contains("boneIndices") && v["boneIndices"].is_array() && v["boneIndices"].size() >= 4) {
+                vertex.boneIndices[0] = v["boneIndices"][0].get<u32>();
+                vertex.boneIndices[1] = v["boneIndices"][1].get<u32>();
+                vertex.boneIndices[2] = v["boneIndices"][2].get<u32>();
+                vertex.boneIndices[3] = v["boneIndices"][3].get<u32>();
+            }
             mesh.vertices.push_back(vertex);
         }
     }
@@ -302,17 +324,17 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
 
 ECS::LightComponent DeserializeLightComponent(const json& j) {
     ECS::LightComponent light;
-    light.type = static_cast<ECS::LightType>(j["type"].get<i32>());
-    light.color = DeserializeVector3(j["color"]);
-    light.intensity = j["intensity"].get<f32>();
-    light.range = j["range"].get<f32>();
-    light.constantAttenuation = j["constantAttenuation"].get<f32>();
-    light.linearAttenuation = j["linearAttenuation"].get<f32>();
-    light.quadraticAttenuation = j["quadraticAttenuation"].get<f32>();
-    light.innerConeAngle = j["innerConeAngle"].get<f32>();
-    light.outerConeAngle = j["outerConeAngle"].get<f32>();
-    light.castShadows = j["castShadows"].get<bool>();
-    light.shadowMapResolution = j["shadowMapResolution"].get<u32>();
+    if (j.contains("type")) light.type = static_cast<ECS::LightType>(j["type"].get<i32>());
+    if (j.contains("color")) light.color = DeserializeVector3(j["color"]);
+    light.intensity = j.value("intensity", 1.0f);
+    light.range = j.value("range", 10.0f);
+    light.constantAttenuation = j.value("constantAttenuation", 1.0f);
+    light.linearAttenuation = j.value("linearAttenuation", 0.09f);
+    light.quadraticAttenuation = j.value("quadraticAttenuation", 0.032f);
+    light.innerConeAngle = j.value("innerConeAngle", 12.5f);
+    light.outerConeAngle = j.value("outerConeAngle", 17.5f);
+    light.castShadows = j.value("castShadows", false);
+    light.shadowMapResolution = j.value("shadowMapResolution", 1024u);
     return light;
 }
 
@@ -344,21 +366,21 @@ ECS::TextComponent DeserializeTextComponent(const json& j) {
 
 ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     ECS::CameraComponent camera;
-    camera.projectionType = static_cast<ECS::ProjectionType>(j["projectionType"].get<i32>());
-    camera.fieldOfView = j["fieldOfView"].get<f32>();
-    camera.nearPlane = j["nearPlane"].get<f32>();
-    camera.farPlane = j["farPlane"].get<f32>();
-    camera.orthoSize = j["orthoSize"].get<f32>();
-    camera.priority = j["priority"].get<i32>();
-    camera.isActive = j["isActive"].get<bool>();
-    camera.clearDepth = j["clearDepth"].get<bool>();
-    camera.clearColor = j["clearColor"].get<bool>();
-    camera.backgroundColor = DeserializeVector3(j["backgroundColor"]);
-    camera.viewportX = j["viewportX"].get<f32>();
-    camera.viewportY = j["viewportY"].get<f32>();
-    camera.viewportWidth = j["viewportWidth"].get<f32>();
-    camera.viewportHeight = j["viewportHeight"].get<f32>();
-    camera.cullingMask = j["cullingMask"].get<u32>();
+    if (j.contains("projectionType")) camera.projectionType = static_cast<ECS::ProjectionType>(j["projectionType"].get<i32>());
+    camera.fieldOfView = j.value("fieldOfView", 60.0f);
+    camera.nearPlane = j.value("nearPlane", 0.1f);
+    camera.farPlane = j.value("farPlane", 1000.0f);
+    camera.orthoSize = j.value("orthoSize", 10.0f);
+    camera.priority = j.value("priority", 0);
+    camera.isActive = j.value("isActive", true);
+    camera.clearDepth = j.value("clearDepth", true);
+    camera.clearColor = j.value("clearColor", true);
+    if (j.contains("backgroundColor")) camera.backgroundColor = DeserializeVector3(j["backgroundColor"]);
+    camera.viewportX = j.value("viewportX", 0.0f);
+    camera.viewportY = j.value("viewportY", 0.0f);
+    camera.viewportWidth = j.value("viewportWidth", 1.0f);
+    camera.viewportHeight = j.value("viewportHeight", 1.0f);
+    camera.cullingMask = j.value("cullingMask", 0xFFFFFFFFu);
     return camera;
 }
 
@@ -3826,6 +3848,15 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
             }
 
+            // Prefab instance link
+            if (m_World->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
+                auto* pi = m_World->GetComponent<Assets::PrefabInstanceComponent>(entity);
+                json piJson;
+                piJson["prefabId"] = pi->prefabId;
+                piJson["prefabPath"] = pi->prefabPath;
+                entityJson["prefabInstance"] = piJson;
+            }
+
             // IK Components
             if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
                 auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
@@ -4197,9 +4228,18 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             return result;
         }
 
+        // Map old entity IDs -> new entity IDs for remapping references
+        std::unordered_map<u64, ECS::Entity> oldToNew;
+
         for (const auto& entityJson : sceneJson["entities"]) {
             ECS::Entity entity = m_World->CreateEntity();
             result.entities.push_back(entity);
+
+            // Track old-to-new ID mapping for hierarchy/reference remapping
+            if (entityJson.contains("id")) {
+                u64 oldId = entityJson["id"].get<u64>();
+                oldToNew[oldId] = entity;
+            }
 
             // Set root entity to first entity
             if (result.rootEntity == ECS::INVALID_ENTITY) {
@@ -4348,6 +4388,14 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("parent")) {
                 auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
                 pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            }
+
+            // Prefab instance link
+            if (entityJson.contains("prefabInstance")) {
+                auto& pi = m_World->AddComponent<Assets::PrefabInstanceComponent>(entity);
+                const auto& piJson = entityJson["prefabInstance"];
+                pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
+                pi.prefabPath = piJson.value("prefabPath", std::string(""));
             }
 
             // IK Components
@@ -4573,6 +4621,26 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
         }
 
+        // Remap entity references (parent, IK target) from old IDs to new IDs
+        for (ECS::Entity entity : result.entities) {
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+                auto it = oldToNew.find(static_cast<u64>(pc->parent));
+                if (it != oldToNew.end()) {
+                    pc->parent = it->second;
+                } else {
+                    pc->parent = ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+        }
+
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
 
@@ -4743,6 +4811,15 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             // Hierarchy
             if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
                 entityJson["parent"] = static_cast<u64>(m_World->GetComponent<ECS::ParentComponent>(entity)->parent);
+            }
+
+            // Prefab instance link
+            if (m_World->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
+                auto* pi = m_World->GetComponent<Assets::PrefabInstanceComponent>(entity);
+                json piJson;
+                piJson["prefabId"] = pi->prefabId;
+                piJson["prefabPath"] = pi->prefabPath;
+                entityJson["prefabInstance"] = piJson;
             }
 
             // IK Components
@@ -5072,9 +5149,18 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             return result;
         }
 
+        // Map old entity IDs -> new entity IDs for remapping references
+        std::unordered_map<u64, ECS::Entity> oldToNew;
+
         for (const auto& entityJson : sceneJson["entities"]) {
             ECS::Entity entity = m_World->CreateEntity();
             result.entities.push_back(entity);
+
+            // Track old-to-new ID mapping for hierarchy/reference remapping
+            if (entityJson.contains("id")) {
+                u64 oldId = entityJson["id"].get<u64>();
+                oldToNew[oldId] = entity;
+            }
 
             if (result.rootEntity == ECS::INVALID_ENTITY) {
                 result.rootEntity = entity;
@@ -5222,6 +5308,14 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("parent")) {
                 auto& pc = m_World->AddComponent<ECS::ParentComponent>(entity);
                 pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            }
+
+            // Prefab instance link
+            if (entityJson.contains("prefabInstance")) {
+                auto& pi = m_World->AddComponent<Assets::PrefabInstanceComponent>(entity);
+                const auto& piJson = entityJson["prefabInstance"];
+                pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
+                pi.prefabPath = piJson.value("prefabPath", std::string(""));
             }
 
             // IK Components
@@ -5447,6 +5541,26 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
         }
 
+        // Remap entity references (parent, IK target) from old IDs to new IDs
+        for (ECS::Entity entity : result.entities) {
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                auto* pc = m_World->GetComponent<ECS::ParentComponent>(entity);
+                auto it = oldToNew.find(static_cast<u64>(pc->parent));
+                if (it != oldToNew.end()) {
+                    pc->parent = it->second;
+                } else {
+                    pc->parent = ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::LookAtIKComponent>(entity)) {
+                auto* ik = m_World->GetComponent<ECS::LookAtIKComponent>(entity);
+                if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
+                    ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+        }
+
         result.success = true;
         ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());
 
@@ -5541,6 +5655,14 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         // Hierarchy
         if (world->HasComponent<ECS::ParentComponent>(entity))
             entityJson["parent"] = static_cast<u64>(world->GetComponent<ECS::ParentComponent>(entity)->parent);
+        // Prefab instance link
+        if (world->HasComponent<Assets::PrefabInstanceComponent>(entity)) {
+            auto* pi = world->GetComponent<Assets::PrefabInstanceComponent>(entity);
+            json piJson;
+            piJson["prefabId"] = pi->prefabId;
+            piJson["prefabPath"] = pi->prefabPath;
+            entityJson["prefabInstance"] = piJson;
+        }
         // IK
         if (world->HasComponent<ECS::LookAtIKComponent>(entity)) {
             auto* ik = world->GetComponent<ECS::LookAtIKComponent>(entity);
@@ -5792,6 +5914,13 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);
             pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+        }
+        // Prefab instance link
+        if (entityJson.contains("prefabInstance")) {
+            auto& pi = world->AddComponent<Assets::PrefabInstanceComponent>(entity);
+            const auto& piJson = entityJson["prefabInstance"];
+            pi.prefabId = piJson.value("prefabId", static_cast<u64>(0));
+            pi.prefabPath = piJson.value("prefabPath", std::string(""));
         }
         // IK
         if (entityJson.contains("lookAtIK")) {

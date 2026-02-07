@@ -2232,7 +2232,10 @@ bool PostProcessing::CreateDescriptorSets() {
     lutSamplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     lutSamplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
     lutSamplerInfo.maxLod = 0.0f;
-    vkCreateSampler(device, &lutSamplerInfo, nullptr, &m_LUTSampler);
+    if (vkCreateSampler(device, &lutSamplerInfo, nullptr, &m_LUTSampler) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create LUT sampler");
+        return false;
+    }
 
     // Write descriptor set
     VkDescriptorImageInfo imageInfo{};

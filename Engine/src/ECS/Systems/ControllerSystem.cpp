@@ -87,7 +87,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         // Skip unpossessed entities
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<Platformer2DController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -101,7 +101,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<TopDown2DController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -115,7 +115,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<TopDown3DController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -129,7 +129,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<ThirdPersonController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -143,7 +143,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<FirstPersonController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -157,7 +157,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         if (!m_World->HasComponent<TransformComponent>(entity)) continue;
         if (m_World->HasComponent<PossessableComponent>(entity)) {
             auto* possess = m_World->GetComponent<PossessableComponent>(entity);
-            if (!possess->isPossessed) continue;
+            if (!possess || !possess->isPossessed) continue;
         }
         auto* controller = m_World->GetComponent<VehicleController>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);

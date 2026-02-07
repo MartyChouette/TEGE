@@ -167,8 +167,13 @@ bool VulkanImage::CreateFromData(
     
     vkBindBufferMemory(m_Context->GetDevice(), stagingBuffer, stagingBufferMemory, 0);
     
-    void* mapped;
-    vkMapMemory(m_Context->GetDevice(), stagingBufferMemory, 0, imageSize, 0, &mapped);
+    void* mapped = nullptr;
+    if (vkMapMemory(m_Context->GetDevice(), stagingBufferMemory, 0, imageSize, 0, &mapped) != VK_SUCCESS || !mapped) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map staging buffer memory");
+        vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        return false;
+    }
     std::memcpy(mapped, data, static_cast<size_t>(imageSize));
     vkUnmapMemory(m_Context->GetDevice(), stagingBufferMemory);
     

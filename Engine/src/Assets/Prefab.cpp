@@ -131,6 +131,16 @@ void PrefabManager::RegisterBuiltInComponents() {
                 data.floatProperties["emissiveStrength"] = m->emissiveStrength;
                 data.floatProperties["opacity"] = m->opacity;
                 data.floatProperties["alphaCutoff"] = m->alphaCutoff;
+                if (!m->baseColorTexturePath.empty())
+                    data.stringProperties["baseColorTexturePath"] = m->baseColorTexturePath;
+                if (!m->normalTexturePath.empty())
+                    data.stringProperties["normalTexturePath"] = m->normalTexturePath;
+                if (!m->metallicRoughnessTexturePath.empty())
+                    data.stringProperties["metallicRoughnessTexturePath"] = m->metallicRoughnessTexturePath;
+                if (!m->emissiveTexturePath.empty())
+                    data.stringProperties["emissiveTexturePath"] = m->emissiveTexturePath;
+                if (!m->heightTexturePath.empty())
+                    data.stringProperties["heightTexturePath"] = m->heightTexturePath;
             }
             return data;
         },
@@ -162,6 +172,18 @@ void PrefabManager::RegisterBuiltInComponents() {
 
             fIt = data.floatProperties.find("alphaCutoff");
             if (fIt != data.floatProperties.end()) m->alphaCutoff = fIt->second;
+
+            auto sIt = data.stringProperties.find("baseColorTexturePath");
+            if (sIt != data.stringProperties.end()) m->baseColorTexturePath = sIt->second;
+            sIt = data.stringProperties.find("normalTexturePath");
+            if (sIt != data.stringProperties.end()) m->normalTexturePath = sIt->second;
+            sIt = data.stringProperties.find("metallicRoughnessTexturePath");
+            if (sIt != data.stringProperties.end()) m->metallicRoughnessTexturePath = sIt->second;
+            sIt = data.stringProperties.find("emissiveTexturePath");
+            if (sIt != data.stringProperties.end()) m->emissiveTexturePath = sIt->second;
+            sIt = data.stringProperties.find("heightTexturePath");
+            if (sIt != data.stringProperties.end()) m->heightTexturePath = sIt->second;
+            m->textureCacheDirty = true;
         }
     );
 
@@ -400,9 +422,17 @@ void PrefabManager::SerializeEntityRecursive(ECS::World* world, ECS::Entity enti
     i32 currentIndex = static_cast<i32>(prefab.GetEntities().size());
     prefab.AddEntity(entityData);
 
-    // Recursively serialize children
-    // Note: This requires parent-child relationship tracking in ECS
-    // For now, flat hierarchy is supported
+    // Recursively serialize children via ChildrenComponent
+    if (world->HasComponent<ECS::ChildrenComponent>(entity)) {
+        auto* children = world->GetComponent<ECS::ChildrenComponent>(entity);
+        if (children) {
+            for (ECS::Entity child : children->children) {
+                if (world->IsValid(child)) {
+                    SerializeEntityRecursive(world, child, prefab, currentIndex);
+                }
+            }
+        }
+    }
 }
 
 ECS::Entity PrefabManager::Instantiate(ECS::World* world, const Prefab& prefab,
@@ -648,12 +678,29 @@ void PrefabManager::ClearCache() {
 
 void PrefabManager::ApplyPrefabToInstances(ECS::World* world, u64 prefabId) {
     auto prefab = GetPrefabById(prefabId);
-    if (!prefab) return;
+    if (!prefab || !world) return;
 
-    // Find all instances and update them
-    // This would require iterating over all entities with PrefabInstanceComponent
-    // Implementation depends on ECS query capabilities
-    ENJIN_LOG_INFO(Assets, "Applying prefab changes to instances (not fully implemented)");
+    u32 updateCount = 0;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<PrefabInstanceComponent>()) {
+        auto* pi = world->GetComponent<PrefabInstanceComponent>(entity);
+        if (!pi || pi->prefabId != prefabId) continue;
+
+        // Re-apply all registered component types from prefab data
+        const auto& prefabEntities = prefab->GetEntities();
+        if (prefabEntities.empty()) continue;
+
+        // Apply root entity's components (index 0) to this instance
+        const auto& rootData = prefabEntities[0];
+        for (const auto& compData : rootData.components) {
+            auto cbIt = m_ComponentCallbacks.find(compData.typeName);
+            if (cbIt != m_ComponentCallbacks.end()) {
+                cbIt->second.deserializer(world, entity, compData);
+            }
+        }
+        pi->overridesApplied = true;
+        updateCount++;
+    }
+    ENJIN_LOG_INFO(Assets, "Applied prefab %llu to %u instances", prefabId, updateCount);
 }
 
 void PrefabManager::UnpackInstance(ECS::World* world, ECS::Entity entity) {
@@ -674,9 +721,17 @@ bool IsPrefabInstance(ECS::World* world, ECS::Entity entity) {
 }
 
 bool IsPartOfPrefabInstance(ECS::World* world, ECS::Entity entity) {
-    // Check self and ancestors
-    // For now, just check self
-    return IsPrefabInstance(world, entity);
+    // Check self and ancestors up the hierarchy
+    ECS::Entity current = entity;
+    while (current != ECS::INVALID_ENTITY && world->IsValid(current)) {
+        if (IsPrefabInstance(world, current)) return true;
+        if (world->HasComponent<ECS::ParentComponent>(current)) {
+            current = world->GetComponent<ECS::ParentComponent>(current)->parent;
+        } else {
+            break;
+        }
+    }
+    return false;
 }
 
 ECS::Entity GetPrefabInstanceRoot(ECS::World* world, ECS::Entity entity) {

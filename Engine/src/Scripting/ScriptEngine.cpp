@@ -407,7 +407,14 @@ asIScriptContext* ScriptEngine::AcquireContext()
     // Allocate per-context instruction counter and install timeout callback
     u32* counter = new u32(0);
     ctx->SetUserData(counter, 0);
-    ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), counter, asCALL_CDECL);
+    int cbResult = ctx->SetLineCallback(asFUNCTION(ScriptEngine::LineCallback), counter, asCALL_CDECL);
+    if (cbResult < 0) {
+        ENJIN_LOG_WARN(Script, "Failed to set line callback on context (err=%d)", cbResult);
+        delete counter;
+        ctx->SetUserData(nullptr, 0);
+        m_ContextPool.push_back(ctx);
+        return nullptr;
+    }
 
     return ctx;
 }

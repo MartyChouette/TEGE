@@ -339,9 +339,10 @@ Ideas for "simple creation of complex games":
 
 | Task | Impact | Effort | Priority | Status |
 |------|--------|--------|----------|--------|
-| Replace GetAllEntities() loops | High | Low | P0 | Pending |
+| Replace GetAllEntities() loops | High | Low | P0 | ✅ Complete |
 | Cache texture pointers on materials | High | Medium | P0 | Pending |
 | Replace vkDeviceWaitIdle() with fences | Critical | Medium | P0 | Pending |
+| Skeleton/Animator serialization | High | High | P1 | Pending |
 | Dialogue Tree Editor | Very High | Medium | P1 | ✅ Complete |
 | Visual Scripting System (Phase 1) | Very High | High | P1 | ✅ Complete |
 | Visual Scripting System (Phase 2) | Very High | High | P1 | ✅ Complete |
@@ -402,6 +403,7 @@ Ideas for "simple creation of complex games":
 
 ## Runtime Systems (Planned)
 
+- **Skeleton/Animator Serialization** — `SkeletonComponent` and `AnimatorComponent` are not serialized to scene files. They hold complex runtime objects (`shared_ptr<Animation::Skeleton>`, `SkeletalAnimator`, `AnimationStateMachine`) that require serializing bone hierarchies, inverse bind matrices, and animation clips. Mesh bone data (weights/indices) IS preserved. Fix should tie into re-import from glTF/FBX source files rather than serializing runtime state. Store source asset path + animation clip references, reconstruct skeleton on load.
 - **Improved Physics** — 2D physics (Box2D-style), 2D joints, CCD, more shape types, physics materials (friction, bounce), script trigger callbacks
 - **Basic Networking** — Client-server architecture, state sync, entity ownership, lobbies, RPCs, lag compensation (LAN first, then relay)
 - **Destructible Environments** — Prefab-level destructibility, fracture/shatter mesh splitting, debris physics, chain destruction
