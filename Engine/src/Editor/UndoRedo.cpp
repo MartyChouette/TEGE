@@ -346,13 +346,15 @@ ReparentEntityCommand::ReparentEntityCommand(ECS::World* world, ECS::Entity chil
 }
 
 void ReparentEntityCommand::Execute() {
-    if (m_World->IsValid(m_Child)) {
+    if (m_World->IsValid(m_Child) &&
+        (m_NewParent == ECS::INVALID_ENTITY || m_World->IsValid(m_NewParent))) {
         ECS::SetParent(m_World, m_Child, m_NewParent);
     }
 }
 
 void ReparentEntityCommand::Undo() {
-    if (m_World->IsValid(m_Child)) {
+    if (m_World->IsValid(m_Child) &&
+        (m_OldParent == ECS::INVALID_ENTITY || m_World->IsValid(m_OldParent))) {
         ECS::SetParent(m_World, m_Child, m_OldParent);
     }
 }

@@ -181,14 +181,16 @@ void RenderSystem::Initialize() {
         SetupShaderWatchers();
     }
 
-    // Initialize GPU frustum culling system
-    m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_Renderer->GetContext());
-    if (!m_GPUCulling->Initialize()) {
-        ENJIN_LOG_WARN(Renderer, "GPUCullingSystem initialization failed, using CPU culling");
-        m_GPUCulling.reset();
-        m_GPUCullingEnabled = false;
-    } else {
-        ENJIN_LOG_INFO(Renderer, "GPU frustum culling enabled");
+    // Initialize GPU frustum culling system (disabled by default due to compute readback sync issues)
+    if (m_GPUCullingEnabled) {
+        m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_Renderer->GetContext());
+        if (!m_GPUCulling->Initialize()) {
+            ENJIN_LOG_WARN(Renderer, "GPUCullingSystem initialization failed, using CPU culling");
+            m_GPUCulling.reset();
+            m_GPUCullingEnabled = false;
+        } else {
+            ENJIN_LOG_INFO(Renderer, "GPU frustum culling enabled");
+        }
     }
 
     m_Initialized = true;

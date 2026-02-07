@@ -1,4 +1,5 @@
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Logging/Log.h"
 
 /**
@@ -26,6 +27,27 @@ Entity World::CreateEntity() {
 void World::DestroyEntity(Entity entity) {
     if (!m_EntityManager.IsValid(entity)) {
         return;
+    }
+
+    // Clean up hierarchy: reparent children to root
+    if (HasComponent<ChildrenComponent>(entity)) {
+        auto children = GetComponent<ChildrenComponent>(entity)->children; // copy
+        for (Entity child : children) {
+            if (m_EntityManager.IsValid(child) && HasComponent<ParentComponent>(child)) {
+                GetComponent<ParentComponent>(child)->parent = INVALID_ENTITY;
+                RemoveComponent<ParentComponent>(child);
+            }
+        }
+    }
+
+    // Remove from parent's children list
+    if (HasComponent<ParentComponent>(entity)) {
+        Entity parent = GetComponent<ParentComponent>(entity)->parent;
+        if (parent != INVALID_ENTITY && m_EntityManager.IsValid(parent) &&
+            HasComponent<ChildrenComponent>(parent)) {
+            auto& siblings = GetComponent<ChildrenComponent>(parent)->children;
+            siblings.erase(std::remove(siblings.begin(), siblings.end(), entity), siblings.end());
+        }
     }
 
     m_SystemManager->OnEntityRemoved(entity);

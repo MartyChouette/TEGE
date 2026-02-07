@@ -332,7 +332,7 @@ private:
     std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
-    bool m_GPUCullingEnabled = true;
+    bool m_GPUCullingEnabled = false;  // Disabled: compute readback has sync issues
     void BuildCullableObjectList();
     void PerformGPUCulling();
 

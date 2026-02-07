@@ -3196,9 +3196,12 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
             if (droppedEntity != entity) {
                 bool isDescendant = false;
                 ECS::Entity check = entity;
-                while (check != ECS::INVALID_ENTITY) {
+                u32 depth = 0;
+                while (check != ECS::INVALID_ENTITY && depth < 1000) {
+                    if (!m_World->IsValid(check)) break;  // Stale entity — stop traversal
                     if (check == droppedEntity) { isDescendant = true; break; }
                     check = ECS::GetParent(m_World, check);
+                    ++depth;
                 }
                 if (!isDescendant) {
                     ECS::Entity oldParent = ECS::GetParent(m_World, droppedEntity);

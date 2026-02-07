@@ -21,6 +21,21 @@ struct ChildrenComponent {
 inline void SetParent(World* world, Entity child, Entity parent) {
     if (!world || child == INVALID_ENTITY || child == parent) return;
 
+    // Validate parent exists (prevent stale entity references)
+    if (parent != INVALID_ENTITY && !world->IsValid(parent)) return;
+
+    // Prevent circular parent chains: walk up from parent to see if child is an ancestor
+    if (parent != INVALID_ENTITY) {
+        Entity check = parent;
+        u32 depth = 0;
+        while (check != INVALID_ENTITY && depth < 1000) {
+            if (check == child) return;  // Would create cycle
+            if (!world->HasComponent<ParentComponent>(check)) break;
+            check = world->GetComponent<ParentComponent>(check)->parent;
+            ++depth;
+        }
+    }
+
     // Remove from old parent
     if (world->HasComponent<ParentComponent>(child)) {
         Entity oldParent = world->GetComponent<ParentComponent>(child)->parent;
