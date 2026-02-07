@@ -2132,6 +2132,7 @@ ECS::AIControllerComponent DeserializeAIControllerComponent(const json& j) {
 
 json SerializeFollowTargetComponent(const ECS::FollowTargetComponent& ft) {
     json j;
+    j["target"] = static_cast<u64>(ft.target);
     j["followDistance"] = ft.followDistance;
     j["minDistance"] = ft.minDistance;
     j["maxDistance"] = ft.maxDistance;
@@ -2146,6 +2147,7 @@ json SerializeFollowTargetComponent(const ECS::FollowTargetComponent& ft) {
 
 ECS::FollowTargetComponent DeserializeFollowTargetComponent(const json& j) {
     ECS::FollowTargetComponent ft;
+    if (j.contains("target")) ft.target = static_cast<ECS::Entity>(j["target"].get<u64>());
     if (j.contains("followDistance")) ft.followDistance = j["followDistance"].get<f32>();
     if (j.contains("minDistance")) ft.minDistance = j["minDistance"].get<f32>();
     if (j.contains("maxDistance")) ft.maxDistance = j["maxDistance"].get<f32>();
@@ -2160,6 +2162,7 @@ ECS::FollowTargetComponent DeserializeFollowTargetComponent(const json& j) {
 
 json SerializeLookAtTargetComponent(const ECS::LookAtTargetComponent& la) {
     json j;
+    j["target"] = static_cast<u64>(la.target);
     j["worldTarget"] = SerializeVector3(la.worldTarget);
     j["useWorldTarget"] = la.useWorldTarget;
     j["rotationSpeed"] = la.rotationSpeed;
@@ -2176,6 +2179,7 @@ json SerializeLookAtTargetComponent(const ECS::LookAtTargetComponent& la) {
 
 ECS::LookAtTargetComponent DeserializeLookAtTargetComponent(const json& j) {
     ECS::LookAtTargetComponent la;
+    if (j.contains("target")) la.target = static_cast<ECS::Entity>(j["target"].get<u64>());
     if (j.contains("worldTarget")) la.worldTarget = DeserializeVector3(j["worldTarget"]);
     if (j.contains("useWorldTarget")) la.useWorldTarget = j["useWorldTarget"].get<bool>();
     if (j.contains("rotationSpeed")) la.rotationSpeed = j["rotationSpeed"].get<f32>();
@@ -4639,6 +4643,31 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                     ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
+            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
+                auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
+                if (tc->stemEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
+                    tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+                if (tc->connectedEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
+                    tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
+                auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
+                if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ft->target));
+                    ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
+                auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
+                if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(la->target));
+                    la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
         }
 
         result.success = true;
@@ -5557,6 +5586,31 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (ik->useEntityTarget && ik->targetEntity != ECS::INVALID_ENTITY) {
                     auto it = oldToNew.find(static_cast<u64>(ik->targetEntity));
                     ik->targetEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::TetherComponent>(entity)) {
+                auto* tc = m_World->GetComponent<ECS::TetherComponent>(entity);
+                if (tc->stemEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(tc->stemEntity));
+                    tc->stemEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+                if (tc->connectedEntity != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(tc->connectedEntity));
+                    tc->connectedEntity = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
+                auto* ft = m_World->GetComponent<ECS::FollowTargetComponent>(entity);
+                if (ft->target != 0 && ft->target != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(ft->target));
+                    ft->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
+                }
+            }
+            if (m_World->HasComponent<ECS::LookAtTargetComponent>(entity)) {
+                auto* la = m_World->GetComponent<ECS::LookAtTargetComponent>(entity);
+                if (la->target != 0 && la->target != ECS::INVALID_ENTITY) {
+                    auto it = oldToNew.find(static_cast<u64>(la->target));
+                    la->target = (it != oldToNew.end()) ? it->second : ECS::INVALID_ENTITY;
                 }
             }
         }

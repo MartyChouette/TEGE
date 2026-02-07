@@ -444,6 +444,26 @@ ECS::Entity PrefabManager::Instantiate(ECS::World* world, const Prefab& prefab,
         return ECS::INVALID_ENTITY;
     }
 
+    // Guard against circular prefab references and excessive nesting
+    static thread_local u32 s_InstantiateDepth = 0;
+    static thread_local std::vector<u64> s_InstantiateStack;
+    constexpr u32 MAX_PREFAB_DEPTH = 10;
+
+    if (s_InstantiateDepth >= MAX_PREFAB_DEPTH) {
+        ENJIN_LOG_ERROR(Assets, "Prefab nesting depth exceeded (%u): '%s'", MAX_PREFAB_DEPTH, prefab.GetName().c_str());
+        return ECS::INVALID_ENTITY;
+    }
+    for (u64 id : s_InstantiateStack) {
+        if (id == prefab.GetId()) {
+            ENJIN_LOG_ERROR(Assets, "Circular prefab reference detected: '%s' (ID: %llu)", prefab.GetName().c_str(), prefab.GetId());
+            return ECS::INVALID_ENTITY;
+        }
+    }
+
+    s_InstantiateDepth++;
+    s_InstantiateStack.push_back(prefab.GetId());
+    struct DepthGuard { ~DepthGuard() { s_InstantiateDepth--; s_InstantiateStack.pop_back(); } } guard;
+
     std::vector<ECS::Entity> createdEntities;
     createdEntities.reserve(prefab.GetEntities().size());
 

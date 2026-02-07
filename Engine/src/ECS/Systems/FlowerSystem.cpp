@@ -322,7 +322,7 @@ void FlowerSystem::ProcessGrabForces(f32 dt) {
         }
 
         // Apply force as velocity change (F/m * dt)
-        if (force.Length() > 1e-6f) {
+        if (force.Length() > 1e-6f && rb->mass > 0.0f) {
             Math::Vector3 dv = force * (dt / rb->mass);
             rb->velocity = rb->velocity + dv;
 
@@ -507,6 +507,10 @@ void FlowerSystem::UpdateJointTracking() {
         // Determine connected entity
         Entity connected = tether->connectedEntity;
         if (connected == INVALID_ENTITY) connected = tether->stemEntity;
+        if (connected == INVALID_ENTITY || !m_World->IsValid(connected)) {
+            tether->isBroken = true;
+            continue;
+        }
 
         auto* connectedTransform = m_World->GetComponent<TransformComponent>(connected);
 

@@ -889,7 +889,7 @@ void EditorLayer::Update(f32 deltaTime) {
         m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && !inPlayMode);
 
         // Set orbit target to selected entity position for MMB orbit
-        if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World) {
+        if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World && m_World->IsValid(m_PrimarySelected)) {
             auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
             if (transform) {
                 m_CameraController->SetOrbitTarget(transform->position);
@@ -1345,6 +1345,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         }
     }
 
+    if (!m_World->IsValid(gameCameraEntity)) return;
     auto* cameraComp = m_World->GetComponent<ECS::CameraComponent>(gameCameraEntity);
     auto* cameraTransform = m_World->GetComponent<ECS::TransformComponent>(gameCameraEntity);
     if (!cameraComp || !cameraTransform) {
@@ -15960,6 +15961,7 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
     if (!m_Camera || !m_CameraController || !m_World) {
         return;
     }
+    if (!m_World->IsValid(entity)) return;
 
     // Get entity transform
     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -20649,23 +20651,31 @@ void EditorLayer::DuplicateEntity(ECS::Entity entity) {
 void EditorLayer::DeleteSelectedEntities() {
     if (!m_World || m_SelectedEntities.empty()) return;
 
-    auto toDelete = m_SelectedEntities;
+    // Pre-validate: only delete entities that still exist
+    std::vector<ECS::Entity> validEntities;
+    for (ECS::Entity e : m_SelectedEntities) {
+        if (m_World->IsValid(e)) {
+            validEntities.push_back(e);
+        }
+    }
+    if (validEntities.empty()) return;
+
     ClearSelection();
 
-    if (toDelete.size() == 1) {
+    if (validEntities.size() == 1) {
         auto cmd = std::make_unique<FullDeleteEntityCommand>(
-            m_World, *toDelete.begin(),
+            m_World, validEntities[0],
             [this](ECS::Entity restored) { SelectEntity(restored); });
         m_UndoRedo.Execute(std::move(cmd));
     } else {
         m_UndoRedo.BeginCompound("Delete Entities");
-        for (ECS::Entity e : toDelete) {
+        for (ECS::Entity e : validEntities) {
             auto cmd = std::make_unique<FullDeleteEntityCommand>(m_World, e);
             m_UndoRedo.Execute(std::move(cmd));
         }
         m_UndoRedo.EndCompound();
     }
-    ENJIN_LOG_INFO(Editor, "Deleted %zu entities", toDelete.size());
+    ENJIN_LOG_INFO(Editor, "Deleted %zu entities", validEntities.size());
 }
 
 void EditorLayer::DuplicateSelectedEntities() {
@@ -20693,6 +20703,7 @@ void EditorLayer::FocusOnSelection() {
     Math::Vector3 centroid(0.0f, 0.0f, 0.0f);
     u32 count = 0;
     for (ECS::Entity e : m_SelectedEntities) {
+        if (!m_World->IsValid(e)) continue;
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
         if (transform) {
             centroid = centroid + transform->position;

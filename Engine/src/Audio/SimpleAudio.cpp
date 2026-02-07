@@ -80,6 +80,13 @@ bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
 
         if (!file.good()) break;
 
+        // Cap chunk size to 100MB to prevent OOM on malformed files
+        constexpr u32 MAX_CHUNK_SIZE = 100 * 1024 * 1024;
+        if (chunkSize > MAX_CHUNK_SIZE) {
+            ENJIN_LOG_ERROR(Audio, "WAV chunk size too large (%u bytes): %s", chunkSize, filepath.c_str());
+            return false;
+        }
+
         if (std::memcmp(chunkId, "fmt ", 4) == 0) {
             u16 audioFormat;
             file.read(reinterpret_cast<char*>(&audioFormat), 2);

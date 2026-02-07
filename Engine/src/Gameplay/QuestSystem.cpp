@@ -49,7 +49,7 @@ void QuestSystem::CompleteObjective(ECS::World* world, const std::string& questI
         if (quest && quest->questId == questId && quest->status == ECS::QuestStateComponent::Status::Active) {
             if (objectiveIndex >= 0 && objectiveIndex < static_cast<i32>(quest->objectiveFlags.size())) {
                 quest->objectiveFlags[objectiveIndex].second = true;
-                quest->currentObjective = objectiveIndex + 1;
+                quest->currentObjective = std::min(objectiveIndex + 1, static_cast<i32>(quest->objectiveFlags.size()));
             }
         }
     }

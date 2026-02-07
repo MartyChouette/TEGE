@@ -403,7 +403,9 @@ std::vector<ECS::Entity> SimplePhysics::GetCollidersInRadius(const Math::Vector3
 }
 
 AABB SimplePhysics::GetEntityAABB(ECS::Entity entity) {
-    AABB aabb;
+    AABB aabb{};
+    aabb.min = Math::Vector3(0, 0, 0);
+    aabb.max = Math::Vector3(0, 0, 0);
 
     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (!transform) return aabb;

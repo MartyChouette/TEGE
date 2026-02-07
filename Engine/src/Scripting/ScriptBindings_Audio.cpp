@@ -40,7 +40,11 @@ static void Audio_Play(u64 entityId) {
 
     // Load clip if not already loaded
     Audio::AudioClipHandle clip = s_BindingsAudio->LoadClip(asc->clipPath);
-    if (clip == Audio::INVALID_AUDIO_CLIP) return;
+    if (clip == Audio::INVALID_AUDIO_CLIP) {
+        asc->isPlaying = false;
+        asc->soundHandle = 0;
+        return;
+    }
 
     if (asc->is3D) {
         auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(entity);

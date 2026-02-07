@@ -1261,11 +1261,11 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 canJump = resource->TryConsume(resource->jumpCost);
             }
         }
-        if (!canJump) {} // Skip jump
-        else
-        ctrl.velocity.y = ctrl.jumpForce;
-        ctrl.isJumping = true;
-        ctrl.isGrounded = false;
+        if (canJump) {
+            ctrl.velocity.y = ctrl.jumpForce;
+            ctrl.isJumping = true;
+            ctrl.isGrounded = false;
+        }
     }
 
     // Gravity

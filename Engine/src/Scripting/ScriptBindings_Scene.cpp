@@ -232,6 +232,7 @@ static void Scene_AddTag(u64 id, const std::string& tag) {
 static void Scene_RemoveTag(u64 id, const std::string& tag) {
     if (!s_BindingsWorld) return;
     Entity entity = static_cast<Entity>(id);
+    if (!s_BindingsWorld->IsValid(entity)) return;
     auto* tc = s_BindingsWorld->GetComponent<TagComponent>(entity);
     if (tc) tc->RemoveTag(tag);
 }

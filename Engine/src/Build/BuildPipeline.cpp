@@ -221,6 +221,17 @@ bool BuildPipeline::ValidateAssets() {
                                         // Try relative to scene file
                                         absPath = (fs::path(scene.absolutePath).parent_path() / texPath).string();
                                     }
+                                    // Security: validate path stays within project directory
+                                    fs::path normalized = fs::path(absPath).lexically_normal();
+                                    fs::path projectNorm = fs::path(m_ProjectDir).lexically_normal();
+                                    auto relPath = normalized.lexically_relative(projectNorm);
+                                    if (relPath.string().find("..") == 0) {
+                                        AddMessage(MessageSeverity::Error,
+                                                   "Path traversal blocked: " + texPath +
+                                                   " resolves outside project directory (in " + scene.name + ")", texPath);
+                                        allValid = false;
+                                        return;
+                                    }
                                     if (fs::exists(absPath)) {
                                         m_TexturePaths.insert(absPath);
                                     } else {
