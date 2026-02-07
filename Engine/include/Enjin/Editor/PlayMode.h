@@ -9,6 +9,7 @@
 #include "Enjin/ECS/Systems/TweenSystem.h"
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -84,6 +85,7 @@ public:
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
+    ECS::VisualScriptSystem* GetVisualScriptSystem() { return &m_VisualScriptSystem; }
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
@@ -132,6 +134,9 @@ private:
 
     // Dialogue system
     ECS::DialogueSystem m_DialogueSystem;
+
+    // Visual script system
+    ECS::VisualScriptSystem m_VisualScriptSystem;
 
     // Render system pointers (owned externally)
     ECS::RenderSystem* m_RenderSystem = nullptr;

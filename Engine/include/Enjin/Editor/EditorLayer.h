@@ -34,6 +34,7 @@
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Editor/AnimationGraphEditor.h"
+#include "Enjin/Editor/VisualScriptEditor.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -76,6 +77,7 @@ enum class EditorPanel : u32 {
     ParticleEditor = 1 << 13,
     AnimGraph = 1 << 14,
     Dialogue = 1 << 15,
+    VisualScript = 1 << 16,
     All = 0xFFFFFFFF
 };
 
@@ -206,6 +208,7 @@ private:
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();
     void DrawDialoguePanel();
+    void DrawVisualScriptPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -333,6 +336,9 @@ private:
 
     // Animation/State Machine graph editor
     AnimationGraphEditor m_AnimGraphEditor;
+
+    // Visual Script graph editor
+    VisualScriptEditor m_VisualScriptEditor;
 
     // Scene management
     void SaveScene(const std::string& path);

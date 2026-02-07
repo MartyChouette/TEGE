@@ -12,6 +12,7 @@
 #include "Enjin/ECS/Components/Notes.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -283,6 +284,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueComponent>(e); },
             "dialogue"},
+        {"Visual Script", "Scripting", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VisualScriptComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VisualScriptComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VisualScriptComponent>(e); },
+            "visualScript"},
 
         // -- Joints --
         {"Distance Joint", "Joints", nullptr,
@@ -1879,6 +1885,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(750, 550), layoutCond);
         DrawDialoguePanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::VisualScript)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX + 60, menuBarH + 60), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800, 600), layoutCond);
+        DrawVisualScriptPanel();
+    }
 
     // Dialogue tree editor (owns its own window) - legacy, now use DrawDialoguePanel()
     // m_DialogueTreeEditor.Render();
@@ -2479,6 +2490,7 @@ void EditorLayer::DrawMenuBar() {
                 bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
                 bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
                 bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
+                bool visualScript = IsPanelVisible(EditorPanel::VisualScript);
                 bool profiler = IsPanelVisible(EditorPanel::Profiler);
                 if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
                     SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
@@ -2488,6 +2500,9 @@ void EditorLayer::DrawMenuBar() {
                 }
                 if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
                     SetPanelVisibility(EditorPanel::Dialogue, dialogue);
+                }
+                if (ImGui::MenuItem("Visual Script", nullptr, &visualScript)) {
+                    SetPanelVisibility(EditorPanel::VisualScript, visualScript);
                 }
                 if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
                     SetPanelVisibility(EditorPanel::Profiler, profiler);
@@ -23180,6 +23195,26 @@ void EditorLayer::DrawDialoguePanel() {
     }
 
     ImGui::EndChild();
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawVisualScriptPanel() {
+    if (!ImGui::Begin("Visual Script Editor")) {
+        ImGui::End();
+        return;
+    }
+
+    bool isPlaying = IsPlaying();
+
+    // Update target when selection changes
+    if (m_PrimarySelected != ECS::INVALID_ENTITY &&
+        m_World && m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
+        m_VisualScriptEditor.SetTarget(m_World, m_PrimarySelected);
+    }
+
+    // Render the visual script editor
+    m_VisualScriptEditor.Render(m_EditorSettings, isPlaying);
 
     ImGui::End();
 }

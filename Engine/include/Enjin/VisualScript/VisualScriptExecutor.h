@@ -1,0 +1,84 @@
+#pragma once
+
+#include "Enjin/Platform/Platform.h"
+#include "Enjin/VisualScript/NodeDefinition.h"
+#include "Enjin/VisualScript/NodeRegistry.h"
+#include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/ECS/World.h"
+#include <stack>
+
+namespace Enjin {
+namespace VisualScript {
+
+// ============================================================================
+// VISUAL SCRIPT EXECUTOR
+// ============================================================================
+
+// Executes visual script graphs
+class ENJIN_API VisualScriptExecutor {
+public:
+    VisualScriptExecutor() = default;
+
+    // Execute an event on a script
+    void ExecuteEvent(ECS::World* world, ECS::Entity entity,
+                      ECS::VisualScriptComponent* script,
+                      ECS::VisualScriptEvent event,
+                      f32 deltaTime);
+
+    // Execute a custom event by name
+    void ExecuteCustomEvent(ECS::World* world, ECS::Entity entity,
+                            ECS::VisualScriptComponent* script,
+                            const std::string& eventName,
+                            f32 deltaTime);
+
+    // Execute starting from a specific node (for manual triggering)
+    void ExecuteFromNode(ECS::World* world, ECS::Entity entity,
+                         ECS::VisualScriptComponent* script,
+                         Editor::NodeId startNode,
+                         f32 deltaTime);
+
+    // Get execution statistics (for debugging)
+    struct ExecutionStats {
+        u32 nodesExecuted = 0;
+        u32 pureNodesEvaluated = 0;
+        f32 executionTimeMs = 0.0f;
+    };
+    const ExecutionStats& GetLastStats() const { return m_LastStats; }
+
+    // Configuration
+    void SetMaxIterations(u32 max) { m_MaxIterations = max; }
+    u32 GetMaxIterations() const { return m_MaxIterations; }
+
+private:
+    // Execute flow from a node, following flow links
+    void ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nodeId);
+
+    // Evaluate a pure node (recursive, cached)
+    ECS::VariableValue EvaluatePureNode(const ExecutionContext& ctx,
+                                         const ECS::VisualScriptComponent* script,
+                                         Editor::NodeId nodeId);
+
+    // Get the value for an input pin (resolve connections or use default)
+    ECS::VariableValue GetInputPinValue(const ExecutionContext& ctx,
+                                         const ECS::VisualScriptComponent* script,
+                                         Editor::PinId pinId);
+
+    // Get all input values for a node's data pins (excluding flow pins)
+    std::vector<ECS::VariableValue> GatherInputValues(const ExecutionContext& ctx,
+                                                       const ECS::VisualScriptComponent* script,
+                                                       const Editor::GraphNode* node,
+                                                       const NodeDefinition* def);
+
+    // Find the next node to execute via flow link
+    Editor::NodeId FollowFlowLink(const ECS::VisualScriptComponent* script,
+                                   Editor::PinId outputPinId);
+
+    // Get flow output pin by index from a node
+    Editor::PinId GetFlowOutputPin(const Editor::GraphNode* node, i32 index);
+
+    ExecutionStats m_LastStats;
+    u32 m_MaxIterations = 10000;  // Safety limit to prevent infinite loops
+};
+
+} // namespace VisualScript
+} // namespace Enjin

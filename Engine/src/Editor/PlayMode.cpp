@@ -42,6 +42,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
 
+        // Initialize visual script system
+        m_VisualScriptSystem.SetWorld(world);
+
         ENJIN_LOG_INFO(Editor, "Script engine initialized");
     } else {
         ENJIN_LOG_WARN(Editor, "Failed to initialize script engine");
@@ -92,6 +95,10 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: DialogueSystem integrations wired");
     m_ScriptSystem.InitializeAllScripts();
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
+
+    // Initialize visual script system
+    m_VisualScriptSystem.Initialize();
+    ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
 
     // Disable editor camera controller
     if (m_CameraController) {
@@ -146,7 +153,8 @@ void PlayMode::Stop() {
         return;
     }
 
-    // Shutdown scripts first (before scene restore destroys entities)
+    // Shutdown visual scripts and scripts first (before scene restore destroys entities)
+    m_VisualScriptSystem.Shutdown();
     m_ScriptSystem.ShutdownAllScripts();
     m_ScriptSystem.SetEnabled(false);
     m_CoroutineScheduler.Clear();
@@ -205,6 +213,7 @@ void PlayMode::Update(f32 deltaTime) {
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);
         m_StateMachineSystem.Update(m_World, deltaTime);
+        m_VisualScriptSystem.Update(deltaTime);
         m_DialogueSystem.Update(m_World, deltaTime);
         m_CinematicSystem.Update(m_World, m_Camera, deltaTime);
         m_QuestSystem.Update(m_World, deltaTime);

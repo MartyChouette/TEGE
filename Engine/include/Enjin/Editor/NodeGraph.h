@@ -25,7 +25,10 @@ enum class PinType : u8 {
     Float,      // Bluish-green  — floating point
     Int,        // Sky-blue      — integer
     String,     // Reddish-purple — text
+    Vector2,    // Light yellow  — 2D vector
     Vector3,    // Yellow        — 3D vector
+    Vector4,    // Gold          — 4D vector
+    Quaternion, // Teal          — rotation quaternion
     Color,      // Orange        — color value
     Entity,     // Blue          — entity reference
     Any,        // Grey          — accepts anything
@@ -177,15 +180,18 @@ struct NodeGraphColors {
 
     // Pin type colors (Wong colorblind-safe)
     u32 pinColors[static_cast<usize>(PinType::COUNT)] = {
-        0xFFFFFFFF,  // Flow      — white
-        0xFF3333E0,  // Bool      — vermillion (BGR: 0xE03333)
-        0xFF99CC00,  // Float     — bluish-green (BGR: 0x00CC99)
-        0xFFEBCE56,  // Int       — sky-blue (BGR: 0x56CEEB)
-        0xFFCC66CC,  // String    — reddish-purple
-        0xFF00E6F0,  // Vector3   — yellow (BGR: 0xF0E600)
-        0xFF0099E6,  // Color     — orange (BGR: 0xE69900)
-        0xFFE07030,  // Entity    — blue (BGR: 0x3070E0)
-        0xFF909090,  // Any       — grey
+        0xFFFFFFFF,  // Flow       — white
+        0xFF3333E0,  // Bool       — vermillion (BGR: 0xE03333)
+        0xFF99CC00,  // Float      — bluish-green (BGR: 0x00CC99)
+        0xFFEBCE56,  // Int        — sky-blue (BGR: 0x56CEEB)
+        0xFFCC66CC,  // String     — reddish-purple
+        0xFF80F0E0,  // Vector2    — light cyan-yellow
+        0xFF00E6F0,  // Vector3    — yellow (BGR: 0xF0E600)
+        0xFF00B0FF,  // Vector4    — gold-orange (BGR: 0xFFB000)
+        0xFFCCCC00,  // Quaternion — teal (BGR: 0x00CCCC)
+        0xFF0099E6,  // Color      — orange (BGR: 0xE69900)
+        0xFFE07030,  // Entity     — blue (BGR: 0x3070E0)
+        0xFF909090,  // Any        — grey
     };
 
     // Derive colors from editor theme

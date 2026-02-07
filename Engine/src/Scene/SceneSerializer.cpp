@@ -24,6 +24,7 @@
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Tween.h"
+#include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/Renderer/Skybox.h"
@@ -1802,6 +1803,191 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
         }
     }
     return d;
+}
+
+// ============================================================================
+// Visual Script
+// ============================================================================
+
+json SerializeVisualScriptVariable(const ECS::VisualScriptVariable& var) {
+    json j;
+    j["name"] = var.name;
+    j["type"] = static_cast<i32>(var.type);
+    j["exposed"] = var.exposed;
+
+    // Serialize value based on type
+    std::visit([&j](auto&& arg) {
+        using T = std::decay_t<decltype(arg)>;
+        if constexpr (std::is_same_v<T, bool>) {
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, i32>) {
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, f32>) {
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, std::string>) {
+            j["value"] = arg;
+        } else if constexpr (std::is_same_v<T, Math::Vector2>) {
+            j["value"] = json::array({arg.x, arg.y});
+        } else if constexpr (std::is_same_v<T, Math::Vector3>) {
+            j["value"] = json::array({arg.x, arg.y, arg.z});
+        } else if constexpr (std::is_same_v<T, Math::Vector4>) {
+            j["value"] = json::array({arg.x, arg.y, arg.z, arg.w});
+        } else if constexpr (std::is_same_v<T, ECS::Entity>) {
+            j["value"] = static_cast<u64>(arg);
+        }
+    }, var.value);
+
+    return j;
+}
+
+ECS::VisualScriptVariable DeserializeVisualScriptVariable(const json& j) {
+    ECS::VisualScriptVariable var;
+    if (j.contains("name")) var.name = j["name"].get<std::string>();
+    if (j.contains("type")) var.type = static_cast<Editor::PinType>(j["type"].get<i32>());
+    if (j.contains("exposed")) var.exposed = j["exposed"].get<bool>();
+
+    if (j.contains("value")) {
+        switch (var.type) {
+            case Editor::PinType::Bool:
+                var.value = j["value"].get<bool>();
+                break;
+            case Editor::PinType::Int:
+                var.value = j["value"].get<i32>();
+                break;
+            case Editor::PinType::Float:
+                var.value = j["value"].get<f32>();
+                break;
+            case Editor::PinType::String:
+                var.value = j["value"].get<std::string>();
+                break;
+            case Editor::PinType::Vector2:
+                if (j["value"].is_array() && j["value"].size() >= 2)
+                    var.value = Math::Vector2(j["value"][0].get<f32>(), j["value"][1].get<f32>());
+                break;
+            case Editor::PinType::Vector3:
+                if (j["value"].is_array() && j["value"].size() >= 3)
+                    var.value = Math::Vector3(j["value"][0].get<f32>(), j["value"][1].get<f32>(), j["value"][2].get<f32>());
+                break;
+            case Editor::PinType::Vector4:
+                if (j["value"].is_array() && j["value"].size() >= 4)
+                    var.value = Math::Vector4(j["value"][0].get<f32>(), j["value"][1].get<f32>(), j["value"][2].get<f32>(), j["value"][3].get<f32>());
+                break;
+            case Editor::PinType::Entity:
+                var.value = static_cast<ECS::Entity>(j["value"].get<u64>());
+                break;
+            default:
+                break;
+        }
+    }
+    return var;
+}
+
+json SerializeVisualScriptNodeMeta(const ECS::VisualScriptNodeMeta& meta) {
+    json j;
+    j["nodeType"] = meta.nodeType;
+    if (!meta.customEventName.empty()) j["customEventName"] = meta.customEventName;
+    if (!meta.properties.empty()) {
+        json props = json::object();
+        for (const auto& [k, v] : meta.properties) props[k] = v;
+        j["properties"] = props;
+    }
+    return j;
+}
+
+ECS::VisualScriptNodeMeta DeserializeVisualScriptNodeMeta(const json& j) {
+    ECS::VisualScriptNodeMeta meta;
+    if (j.contains("nodeType")) meta.nodeType = j["nodeType"].get<std::string>();
+    if (j.contains("customEventName")) meta.customEventName = j["customEventName"].get<std::string>();
+    if (j.contains("properties") && j["properties"].is_object()) {
+        for (auto& [k, v] : j["properties"].items()) {
+            meta.properties[k] = v.get<std::string>();
+        }
+    }
+    return meta;
+}
+
+json SerializeVisualScriptComponent(const ECS::VisualScriptComponent& vs) {
+    json j;
+
+    // Serialize graph data
+    j["graph"] = vs.graph.ToJson();
+
+    // Serialize variables
+    json varsArr = json::array();
+    for (const auto& var : vs.variables) {
+        varsArr.push_back(SerializeVisualScriptVariable(var));
+    }
+    j["variables"] = varsArr;
+
+    // Serialize event nodes
+    json eventNodes = json::object();
+    for (const auto& [eventType, nodeId] : vs.eventNodes) {
+        eventNodes[std::to_string(eventType)] = nodeId;
+    }
+    j["eventNodes"] = eventNodes;
+
+    // Serialize custom event nodes
+    if (!vs.customEventNodes.empty()) {
+        json customEvents = json::object();
+        for (const auto& [name, nodeId] : vs.customEventNodes) {
+            customEvents[name] = nodeId;
+        }
+        j["customEventNodes"] = customEvents;
+    }
+
+    // Serialize node metadata
+    json nodeMeta = json::object();
+    for (const auto& [nodeId, meta] : vs.nodeMeta) {
+        nodeMeta[std::to_string(nodeId)] = SerializeVisualScriptNodeMeta(meta);
+    }
+    j["nodeMeta"] = nodeMeta;
+
+    j["enabled"] = vs.enabled;
+
+    return j;
+}
+
+ECS::VisualScriptComponent DeserializeVisualScriptComponent(const json& j) {
+    ECS::VisualScriptComponent vs;
+
+    // Deserialize graph data
+    if (j.contains("graph") && j["graph"].is_object()) {
+        vs.graph.FromJson(j["graph"]);
+    }
+
+    // Deserialize variables
+    if (j.contains("variables") && j["variables"].is_array()) {
+        for (const auto& v : j["variables"]) {
+            vs.variables.push_back(DeserializeVisualScriptVariable(v));
+        }
+    }
+
+    // Deserialize event nodes
+    if (j.contains("eventNodes") && j["eventNodes"].is_object()) {
+        for (auto& [key, val] : j["eventNodes"].items()) {
+            u8 eventType = static_cast<u8>(std::stoi(key));
+            vs.eventNodes[eventType] = val.get<Editor::NodeId>();
+        }
+    }
+
+    // Deserialize custom event nodes
+    if (j.contains("customEventNodes") && j["customEventNodes"].is_object()) {
+        for (auto& [key, val] : j["customEventNodes"].items()) {
+            vs.customEventNodes[key] = val.get<Editor::NodeId>();
+        }
+    }
+
+    // Deserialize node metadata
+    if (j.contains("nodeMeta") && j["nodeMeta"].is_object()) {
+        for (auto& [key, val] : j["nodeMeta"].items()) {
+            Editor::NodeId nodeId = static_cast<Editor::NodeId>(std::stoul(key));
+            vs.nodeMeta[nodeId] = DeserializeVisualScriptNodeMeta(val);
+        }
+    }
+
+    if (j.contains("enabled")) vs.enabled = j["enabled"].get<bool>();
+
+    return vs;
 }
 
 // ============================================================================
@@ -3755,6 +3941,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
                 entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::VisualScriptComponent>(entity)) {
+                entityJson["visualScript"] = SerializeVisualScriptComponent(*m_World->GetComponent<ECS::VisualScriptComponent>(entity));
+            }
 
             // AI & Navigation
             if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
@@ -4275,6 +4464,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("tween")) {
                 m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
             }
+            if (entityJson.contains("visualScript")) {
+                m_World->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
+            }
 
             // AI & Navigation
             if (entityJson.contains("aiController")) {
@@ -4667,6 +4859,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
                 entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::VisualScriptComponent>(entity)) {
+                entityJson["visualScript"] = SerializeVisualScriptComponent(*m_World->GetComponent<ECS::VisualScriptComponent>(entity));
             }
 
             // AI & Navigation
@@ -5143,6 +5338,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("tween")) {
                 m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
             }
+            if (entityJson.contains("visualScript")) {
+                m_World->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
+            }
 
             // AI & Navigation
             if (entityJson.contains("aiController")) {
@@ -5420,6 +5618,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["dialogue"] = SerializeDialogueComponent(*world->GetComponent<ECS::DialogueComponent>(entity));
         if (world->HasComponent<ECS::TweenComponent>(entity))
             entityJson["tween"] = SerializeTweenComponent(*world->GetComponent<ECS::TweenComponent>(entity));
+        if (world->HasComponent<ECS::VisualScriptComponent>(entity))
+            entityJson["visualScript"] = SerializeVisualScriptComponent(*world->GetComponent<ECS::VisualScriptComponent>(entity));
         // AI
         if (world->HasComponent<ECS::AIControllerComponent>(entity))
             entityJson["aiController"] = SerializeAIControllerComponent(*world->GetComponent<ECS::AIControllerComponent>(entity));
@@ -5668,6 +5868,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
         if (entityJson.contains("tween"))
             world->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
+        if (entityJson.contains("visualScript"))
+            world->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(entityJson["visualScript"]));
         // AI
         if (entityJson.contains("aiController"))
             world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
@@ -5862,6 +6064,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeDialogueComponent(*world->GetComponent<ECS::DialogueComponent>(entity));
         else if (key == "tween" && world->HasComponent<ECS::TweenComponent>(entity))
             j = SerializeTweenComponent(*world->GetComponent<ECS::TweenComponent>(entity));
+        else if (key == "visualScript" && world->HasComponent<ECS::VisualScriptComponent>(entity))
+            j = SerializeVisualScriptComponent(*world->GetComponent<ECS::VisualScriptComponent>(entity));
         else if (key == "aiController" && world->HasComponent<ECS::AIControllerComponent>(entity))
             j = SerializeAIControllerComponent(*world->GetComponent<ECS::AIControllerComponent>(entity));
         else if (key == "followTarget" && world->HasComponent<ECS::FollowTargetComponent>(entity))
@@ -5996,6 +6200,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "stateMachine") { world->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(j)); return true; }
         if (key == "dialogue") { world->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(j)); return true; }
         if (key == "tween") { world->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(j)); return true; }
+        if (key == "visualScript") { world->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(j)); return true; }
         if (key == "aiController") { world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(j)); return true; }
         if (key == "followTarget") { world->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(j)); return true; }
         if (key == "lookAtTarget") { world->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(j)); return true; }

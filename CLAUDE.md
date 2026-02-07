@@ -514,6 +514,7 @@ Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangVali
 - Asset import pipeline (import settings dialog with scale/materials/animations/colliders options, .enjinasset JSON metadata sidecar files for re-import, import statistics tracking with vertex/index/mesh/material/animation counts, enhanced texture path resolution with textures/ and Textures/ fallback directories, re-import menu item, drag-and-drop shows dialog)
 - 2D/3D project mode separation (ProjectMode enum in SceneManager: Mode2D/Mode3D/Mixed, serialized in .enjinproject, Add Component popup dimension filtering with DimensionTag per component, "All" toggle for power users, recently-used filtering, Project Settings combo, 2D grid in XY plane with green Y axis, template auto-assignment)
 - Dialogue system Phase 1 (DialogueTreeData with 7 node types, DialoguePlayer state machine, DialogueComponent tree+legacy modes, Dialogue Editor panel in View > Tools with entity sidebar and node graph, EntityEventBus integration broadcasts Dialogue_<eventName>, SubtitleSystem accessibility integration, 10 Dialogue_* AngelScript bindings, typewriter effect, choice navigation, full serialization)
+- Visual scripting system Phase 1 (VisualScriptComponent with graph data/variables/event mappings, NodeDefinition system with ExecutionContext, NodeRegistry singleton with 15 built-in nodes covering events/flow/variables/math/actions, VisualScriptExecutor with flow execution and pure node caching, VisualScriptSystem ECS integration, Visual Script Editor panel in View > Tools with entity sidebar/node graph/variable editor/inspector, extended NodeGraph pin types to 12 including Vector2/Vector4/Quaternion, full scene serialization)
 
 ## AngelScript API Reference
 
@@ -764,7 +765,8 @@ The `NodeGraphEditor` framework (currently Animation Graph only) should power ad
 | System | Priority | Effort | Impact |
 |--------|----------|--------|--------|
 | ~~Dialogue Tree Editor~~ | ~~P1~~ | ~~DONE~~ | Very High (RPGs, VNs) |
-| Visual Scripting (Blueprints) | P1 | 4-6 weeks | Very High (non-programmers) |
+| ~~Visual Scripting Phase 1~~ | ~~P1~~ | ~~DONE~~ | Very High (non-programmers) |
+| Visual Scripting Phase 2+ | P1 | 3-4 weeks | Very High (complete node set) |
 | AI Behavior Tree Editor | P2 | 2-3 weeks | High (game AI) |
 | Quest Flow Editor | P2 | 2 weeks | High (narrative games) |
 | Shader Graph | P3 | 6-8 weeks | Medium (advanced users) |
@@ -790,9 +792,10 @@ This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. It
 
 - **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
 - **Particle Editor** — ~~DONE (Phase 2)~~ CPU particle simulation + GPU instanced renderer + editor panel with 12 presets (7 standard + 5 liquid), velocity stretch render mode, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
-- **Node/Graph Editor** — ~~PARTIAL (Phase 1)~~ Generic node graph framework (`NodeGraphEditor` widget) with typed pin system (9 types, Wong colorblind-safe colors), Bezier curve links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization. First consumer: Animation Graph panel (`View > Animation Graph`) — visual state machine editor for `StateMachineComponent` with Entry pseudo-node, state/transition inspector sidebar, parameter editor, play mode highlighting, auto layout. "Open in Graph Editor" button in SM inspector. `editorPosition` serialized per SM state. Future consumers:
-  - Visual scripting (blueprint-style alternative to AngelScript)
-  - Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
+- **Node/Graph Editor** — ~~PARTIAL (Phase 2)~~ Generic node graph framework (`NodeGraphEditor` widget) with typed pin system (12 types: Flow, Bool, Float, Int, String, Vector2, Vector3, Vector4, Quaternion, Color, Entity, Any — Wong colorblind-safe colors), Bezier curve links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization. Consumers:
+  - Animation Graph panel (`View > Animation Graph`) — visual state machine editor for `StateMachineComponent` with Entry pseudo-node, state/transition inspector sidebar, parameter editor, play mode highlighting, auto layout
+  - Visual Script Editor panel (`View > Tools > Visual Script Editor`) — ~~Phase 1 DONE~~ Blueprint-style scripting with 15 built-in nodes (OnStart, OnUpdate, Branch, Sequence, Get/Set Variable, math, position, print), VisualScriptComponent, VisualScriptSystem, VisualScriptExecutor with flow execution and pure node caching, variable editor, full serialization
+  - Future: Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
 - **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
 - **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
 - **Undo/Redo Across All Operations** — ~~PARTIAL (Phase 1)~~ Entity delete/duplicate/cut/paste use full JSON snapshot undo (all 60+ components preserved). Hierarchy reparent/unparent undoable. Component add/remove undoable with per-component JSON snapshot. DuplicateEntity refactored from manual 8-component copy to full serialize/deserialize. Future work: inspector property edits, tilemap paint, terrain sculpt, UI editor edits (require per-widget tracking across 60+ component types).
