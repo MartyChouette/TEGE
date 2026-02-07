@@ -154,6 +154,9 @@ void SimplePhysics::Update(f32 deltaTime) {
     if (m_ConstraintSolver) {
         m_ConstraintSolver->SolveConstraints(deltaTime);
     }
+
+    // Detect collision enter/exit events for visual scripting
+    DetectCollisionEvents();
 }
 
 bool SimplePhysics::CheckAABBCollision(const AABB& a, const AABB& b, CollisionResult& result) {
@@ -457,6 +460,134 @@ u32 SimplePhysics::GetEntityCategoryBits(ECS::Entity entity) {
     if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entity))
         return m_World->GetComponent<ECS::CapsuleColliderComponent>(entity)->categoryBits;
     return 1;  // Default group
+}
+
+void SimplePhysics::DetectCollisionEvents() {
+    if (!m_World) return;
+
+    // Clear current frame pairs
+    m_CurrentCollisionPairs.clear();
+
+    // Get all entities with colliders
+    std::vector<ECS::Entity> colliderEntities;
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<ECS::BoxColliderComponent>(entity) ||
+            m_World->HasComponent<ECS::SphereColliderComponent>(entity) ||
+            m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
+            colliderEntities.push_back(entity);
+        }
+    }
+
+    // Check all pairs for collisions this frame
+    for (usize i = 0; i < colliderEntities.size(); ++i) {
+        for (usize j = i + 1; j < colliderEntities.size(); ++j) {
+            ECS::Entity entityA = colliderEntities[i];
+            ECS::Entity entityB = colliderEntities[j];
+
+            // Get collision filtering
+            u32 catA = GetEntityCategoryBits(entityA);
+            u32 catB = GetEntityCategoryBits(entityB);
+            u32 maskA = 0xFFFFFFFF, maskB = 0xFFFFFFFF;
+            bool isTriggerA = false, isTriggerB = false;
+
+            if (m_World->HasComponent<ECS::BoxColliderComponent>(entityA)) {
+                auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entityA);
+                maskA = box->collisionMask;
+                isTriggerA = box->isTrigger;
+            } else if (m_World->HasComponent<ECS::SphereColliderComponent>(entityA)) {
+                auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entityA);
+                maskA = sphere->collisionMask;
+                isTriggerA = sphere->isTrigger;
+            } else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entityA)) {
+                auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entityA);
+                maskA = capsule->collisionMask;
+                isTriggerA = capsule->isTrigger;
+            }
+
+            if (m_World->HasComponent<ECS::BoxColliderComponent>(entityB)) {
+                auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entityB);
+                maskB = box->collisionMask;
+                isTriggerB = box->isTrigger;
+            } else if (m_World->HasComponent<ECS::SphereColliderComponent>(entityB)) {
+                auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entityB);
+                maskB = sphere->collisionMask;
+                isTriggerB = sphere->isTrigger;
+            } else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entityB)) {
+                auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entityB);
+                maskB = capsule->collisionMask;
+                isTriggerB = capsule->isTrigger;
+            }
+
+            // Bilateral collision filter
+            if (!(catA & maskB) || !(catB & maskA)) continue;
+
+            // Check for collision
+            AABB aabbA = GetEntityAABB(entityA);
+            AABB aabbB = GetEntityAABB(entityB);
+
+            CollisionResult result;
+            if (CheckAABBCollision(aabbA, aabbB, result)) {
+                u64 pairKey = MakeCollisionPairKey(entityA, entityB);
+                m_CurrentCollisionPairs.insert(pairKey);
+
+                // If this pair wasn't colliding last frame, it's a new collision (Enter)
+                if (m_PreviousCollisionPairs.find(pairKey) == m_PreviousCollisionPairs.end()) {
+                    bool isTrigger = isTriggerA || isTriggerB;
+
+                    CollisionEvent evt;
+                    evt.entityA = entityA;
+                    evt.entityB = entityB;
+                    evt.contactPoint = result.point;
+                    evt.normal = result.normal;
+                    evt.type = CollisionEvent::Type::Enter;
+                    evt.isTrigger = isTrigger;
+                    m_PendingCollisionEvents.push_back(evt);
+                }
+            }
+        }
+    }
+
+    // Check for collision exits (pairs that were colliding last frame but not this frame)
+    for (u64 prevPair : m_PreviousCollisionPairs) {
+        if (m_CurrentCollisionPairs.find(prevPair) == m_CurrentCollisionPairs.end()) {
+            // Extract entities from the pair key
+            ECS::Entity entityA = static_cast<ECS::Entity>(prevPair >> 32);
+            ECS::Entity entityB = static_cast<ECS::Entity>(prevPair & 0xFFFFFFFF);
+
+            // Check if either entity still exists
+            bool entityAValid = m_World->IsValid(entityA);
+            bool entityBValid = m_World->IsValid(entityB);
+
+            // Determine if it was a trigger (check current collider state if entities exist)
+            bool isTrigger = false;
+            if (entityAValid) {
+                if (m_World->HasComponent<ECS::BoxColliderComponent>(entityA))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::BoxColliderComponent>(entityA)->isTrigger;
+                else if (m_World->HasComponent<ECS::SphereColliderComponent>(entityA))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::SphereColliderComponent>(entityA)->isTrigger;
+                else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entityA))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::CapsuleColliderComponent>(entityA)->isTrigger;
+            }
+            if (entityBValid) {
+                if (m_World->HasComponent<ECS::BoxColliderComponent>(entityB))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::BoxColliderComponent>(entityB)->isTrigger;
+                else if (m_World->HasComponent<ECS::SphereColliderComponent>(entityB))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::SphereColliderComponent>(entityB)->isTrigger;
+                else if (m_World->HasComponent<ECS::CapsuleColliderComponent>(entityB))
+                    isTrigger = isTrigger || m_World->GetComponent<ECS::CapsuleColliderComponent>(entityB)->isTrigger;
+            }
+
+            CollisionEvent evt;
+            evt.entityA = entityA;
+            evt.entityB = entityB;
+            evt.type = CollisionEvent::Type::Exit;
+            evt.isTrigger = isTrigger;
+            m_PendingCollisionEvents.push_back(evt);
+        }
+    }
+
+    // Swap current to previous for next frame
+    std::swap(m_PreviousCollisionPairs, m_CurrentCollisionPairs);
 }
 
 } // namespace Physics

@@ -109,9 +109,8 @@ void VisualScriptSystem::OnCollisionEnter(Entity entity, Entity other, f32 delta
 
     auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
     if (script && script->enabled) {
-        // Note: The executor context can be extended to include 'other' entity
         m_Executor.ExecuteEvent(m_World, entity, script,
-                                VisualScriptEvent::OnCollisionEnter, deltaTime);
+                                VisualScriptEvent::OnCollisionEnter, deltaTime, other);
     }
 }
 
@@ -121,7 +120,7 @@ void VisualScriptSystem::OnCollisionExit(Entity entity, Entity other, f32 deltaT
     auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
     if (script && script->enabled) {
         m_Executor.ExecuteEvent(m_World, entity, script,
-                                VisualScriptEvent::OnCollisionExit, deltaTime);
+                                VisualScriptEvent::OnCollisionExit, deltaTime, other);
     }
 }
 
@@ -131,7 +130,7 @@ void VisualScriptSystem::OnTriggerEnter(Entity entity, Entity other, f32 deltaTi
     auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
     if (script && script->enabled) {
         m_Executor.ExecuteEvent(m_World, entity, script,
-                                VisualScriptEvent::OnTriggerEnter, deltaTime);
+                                VisualScriptEvent::OnTriggerEnter, deltaTime, other);
     }
 }
 
@@ -141,7 +140,7 @@ void VisualScriptSystem::OnTriggerExit(Entity entity, Entity other, f32 deltaTim
     auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
     if (script && script->enabled) {
         m_Executor.ExecuteEvent(m_World, entity, script,
-                                VisualScriptEvent::OnTriggerExit, deltaTime);
+                                VisualScriptEvent::OnTriggerExit, deltaTime, other);
     }
 }
 

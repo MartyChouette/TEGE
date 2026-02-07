@@ -155,25 +155,16 @@ void VisualScriptEditor::SetupCallbacks() {
 }
 
 void VisualScriptEditor::PopulateContextMenu() {
+    // Clear the categories - we'll use custom search popup instead
     m_Callbacks.contextMenuCategories.clear();
 
-    const auto& registry = VisualScript::NodeRegistry::Instance();
-
-    for (auto category : registry.GetActiveCategories()) {
-        ContextMenuCategory cat;
-        cat.name = VisualScript::NodeCategoryToString(category);
-
-        auto nodes = registry.GetNodesByCategory(category);
-        for (const auto* def : nodes) {
-            cat.items.push_back({def->displayName, [this, def](Math::Vector2 pos) {
-                AddNodeFromDefinition(def, pos);
-            }});
-        }
-
-        if (!cat.items.empty()) {
-            m_Callbacks.contextMenuCategories.push_back(cat);
-        }
-    }
+    // Set up the custom context menu callback to open our search popup
+    m_Callbacks.OnContextMenu = [this](Math::Vector2 pos) {
+        m_ContextMenuPos = pos;
+        m_NodeSearchBuf[0] = '\0';
+        m_NodeSearchSelectedIndex = 0;
+        ImGui::OpenPopup("NodeSearchPopup");
+    };
 }
 
 // ============================================================================
@@ -232,6 +223,9 @@ NodeId VisualScriptEditor::AddNodeFromDefinition(const VisualScript::NodeDefinit
 // ============================================================================
 
 void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) {
+    // Store settings reference for recently-used tracking
+    m_EditorSettings = const_cast<EditorSettings*>(&settings);
+
     // Apply theme colors
     m_Colors = NodeGraphColors::FromTheme(settings);
 
@@ -285,6 +279,9 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
     ImGui::BeginChild("##vs_inspector", ImVec2(inspectorWidth, 0), true);
     DrawInspector(isPlaying);
     ImGui::EndChild();
+
+    // Draw the node search popup (must be at window scope, not inside children)
+    DrawNodeSearchPopup();
 }
 
 // ============================================================================
@@ -520,6 +517,248 @@ void VisualScriptEditor::DrawVariableEditor() {
         }
 
         ImGui::PopID();
+    }
+}
+
+// ============================================================================
+// NODE SEARCH POPUP
+// ============================================================================
+
+// Scoring function for fuzzy matching (similar to EditorLayer's component search)
+static int ScoreNodeMatch(const VisualScript::NodeDefinition* def, const char* filter) {
+    if (!def || !filter || filter[0] == '\0') return 100; // No filter = show all
+
+    std::string filterLower = filter;
+    std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(), ::tolower);
+
+    std::string nameLower = def->displayName;
+    std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+
+    std::string typeIdLower = def->typeId;
+    std::transform(typeIdLower.begin(), typeIdLower.end(), typeIdLower.begin(), ::tolower);
+
+    // Exact match
+    if (nameLower == filterLower) return 100;
+
+    // Prefix match
+    if (nameLower.find(filterLower) == 0) return 90;
+
+    // Substring match
+    if (nameLower.find(filterLower) != std::string::npos) return 70;
+
+    // Type ID contains filter
+    if (typeIdLower.find(filterLower) != std::string::npos) return 60;
+
+    // Category match
+    const char* catName = "";
+    switch (def->category) {
+        case VisualScript::NodeCategory::Events: catName = "events"; break;
+        case VisualScript::NodeCategory::FlowControl: catName = "flow"; break;
+        case VisualScript::NodeCategory::Variables: catName = "variables"; break;
+        case VisualScript::NodeCategory::Math: catName = "math"; break;
+        case VisualScript::NodeCategory::Logic: catName = "logic"; break;
+        case VisualScript::NodeCategory::Vector: catName = "vector"; break;
+        case VisualScript::NodeCategory::Transform: catName = "transform"; break;
+        case VisualScript::NodeCategory::Entity: catName = "entity"; break;
+        case VisualScript::NodeCategory::Physics: catName = "physics"; break;
+        case VisualScript::NodeCategory::Components: catName = "components"; break;
+        case VisualScript::NodeCategory::Debug: catName = "debug"; break;
+        default: break;
+    }
+    if (std::string(catName).find(filterLower) != std::string::npos) return 55;
+
+    // Word boundary match (e.g., "gp" matches "Get Position")
+    bool allMatch = true;
+    usize filterIdx = 0;
+    for (usize i = 0; i < nameLower.size() && filterIdx < filterLower.size(); i++) {
+        // Check at word boundaries (start or after space/uppercase)
+        bool isWordStart = (i == 0) ||
+                           (def->displayName[i-1] == ' ') ||
+                           (i > 0 && std::islower(def->displayName[i-1]) && std::isupper(def->displayName[i]));
+
+        if (isWordStart && nameLower[i] == filterLower[filterIdx]) {
+            filterIdx++;
+        }
+    }
+    if (filterIdx == filterLower.size()) return 50;
+
+    // No match
+    return 0;
+}
+
+static const char* GetCategoryName(VisualScript::NodeCategory cat) {
+    switch (cat) {
+        case VisualScript::NodeCategory::Events: return "Events";
+        case VisualScript::NodeCategory::FlowControl: return "Flow Control";
+        case VisualScript::NodeCategory::Variables: return "Variables";
+        case VisualScript::NodeCategory::Math: return "Math";
+        case VisualScript::NodeCategory::Logic: return "Logic";
+        case VisualScript::NodeCategory::Vector: return "Vector";
+        case VisualScript::NodeCategory::Transform: return "Transform";
+        case VisualScript::NodeCategory::Entity: return "Entity";
+        case VisualScript::NodeCategory::Physics: return "Physics";
+        case VisualScript::NodeCategory::Components: return "Components";
+        case VisualScript::NodeCategory::Audio: return "Audio";
+        case VisualScript::NodeCategory::Debug: return "Debug";
+        case VisualScript::NodeCategory::Utility: return "Utility";
+        case VisualScript::NodeCategory::Custom: return "Custom";
+        default: return "Other";
+    }
+}
+
+void VisualScriptEditor::DrawNodeSearchPopup() {
+    ImVec2 popupSize(350, 400);
+    ImGui::SetNextWindowSize(popupSize, ImGuiCond_Always);
+
+    if (ImGui::BeginPopup("NodeSearchPopup")) {
+        // Search input
+        ImGui::SetNextItemWidth(-1);
+        bool focusSearch = ImGui::IsWindowAppearing();
+        if (focusSearch) {
+            ImGui::SetKeyboardFocusHere();
+        }
+
+        bool searchChanged = ImGui::InputTextWithHint("##NodeSearch", "Search nodes...",
+                                                       m_NodeSearchBuf, sizeof(m_NodeSearchBuf));
+        if (searchChanged) {
+            m_NodeSearchSelectedIndex = 0;
+        }
+
+        ImGui::Separator();
+
+        // Get all nodes and score them
+        struct ScoredNode {
+            const VisualScript::NodeDefinition* def;
+            int score;
+        };
+        std::vector<ScoredNode> scoredNodes;
+
+        auto allNodes = VisualScript::NodeRegistry::Instance().GetAllNodes();
+        for (auto* def : allNodes) {
+            int score = ScoreNodeMatch(def, m_NodeSearchBuf);
+            if (score > 0) {
+                scoredNodes.push_back({def, score});
+            }
+        }
+
+        // Sort by score descending, then by name
+        std::sort(scoredNodes.begin(), scoredNodes.end(), [](const ScoredNode& a, const ScoredNode& b) {
+            if (a.score != b.score) return a.score > b.score;
+            return a.def->displayName < b.def->displayName;
+        });
+
+        // Clamp selection index
+        if (m_NodeSearchSelectedIndex >= static_cast<int>(scoredNodes.size())) {
+            m_NodeSearchSelectedIndex = static_cast<int>(scoredNodes.size()) - 1;
+        }
+        if (m_NodeSearchSelectedIndex < 0) {
+            m_NodeSearchSelectedIndex = 0;
+        }
+
+        // Recently used section (when no filter)
+        bool showRecent = (m_NodeSearchBuf[0] == '\0');
+        if (showRecent && m_EditorSettings) {
+            const auto& recentNodes = m_EditorSettings->recentVisualScriptNodes;
+            if (!recentNodes.empty()) {
+                ImGui::TextDisabled("Recently Used");
+                for (const auto& typeId : recentNodes) {
+                    auto* def = VisualScript::NodeRegistry::Instance().FindNode(typeId);
+                    if (def) {
+                        if (ImGui::Selectable(def->displayName.c_str())) {
+                            NodeId newId = AddNodeFromDefinition(def, m_ContextMenuPos);
+                            if (newId != 0 && m_EditorSettings) {
+                                m_EditorSettings->AddRecentVisualScriptNode(def->typeId);
+                            }
+                            ImGui::CloseCurrentPopup();
+                        }
+                    }
+                }
+                ImGui::Separator();
+            }
+        }
+
+        // Scrollable node list
+        ImGui::BeginChild("##NodeList", ImVec2(0, 0), false);
+
+        int displayIndex = 0;
+        VisualScript::NodeCategory lastCategory = VisualScript::NodeCategory::Custom;
+        bool firstCategory = true;
+
+        for (const auto& scored : scoredNodes) {
+            auto* def = scored.def;
+
+            // Category header (when not filtering)
+            if (showRecent && def->category != lastCategory) {
+                if (!firstCategory) {
+                    ImGui::Spacing();
+                }
+                ImGui::TextDisabled("%s", GetCategoryName(def->category));
+                lastCategory = def->category;
+                firstCategory = false;
+            }
+
+            // Node entry
+            bool isSelected = (displayIndex == m_NodeSearchSelectedIndex);
+            ImGui::PushID(displayIndex);
+
+            // Highlight selected item
+            if (isSelected) {
+                ImGui::PushStyleColor(ImGuiCol_Header, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+            }
+
+            if (ImGui::Selectable(def->displayName.c_str(), isSelected)) {
+                NodeId newId = AddNodeFromDefinition(def, m_ContextMenuPos);
+                if (newId != 0 && m_EditorSettings) {
+                    m_EditorSettings->AddRecentVisualScriptNode(def->typeId);
+                }
+                ImGui::CloseCurrentPopup();
+            }
+
+            if (isSelected) {
+                ImGui::PopStyleColor();
+                // Scroll to selected
+                if (ImGui::IsWindowAppearing() || searchChanged) {
+                    ImGui::SetScrollHereY();
+                }
+            }
+
+            // Tooltip with category info
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("%s\nCategory: %s", def->typeId.c_str(), GetCategoryName(def->category));
+            }
+
+            ImGui::PopID();
+            displayIndex++;
+        }
+
+        ImGui::EndChild();
+
+        // Keyboard navigation
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) {
+            m_NodeSearchSelectedIndex++;
+            if (m_NodeSearchSelectedIndex >= static_cast<int>(scoredNodes.size())) {
+                m_NodeSearchSelectedIndex = 0;
+            }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) {
+            m_NodeSearchSelectedIndex--;
+            if (m_NodeSearchSelectedIndex < 0) {
+                m_NodeSearchSelectedIndex = static_cast<int>(scoredNodes.size()) - 1;
+            }
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter) && !scoredNodes.empty()) {
+            auto* def = scoredNodes[m_NodeSearchSelectedIndex].def;
+            NodeId newId = AddNodeFromDefinition(def, m_ContextMenuPos);
+            if (newId != 0 && m_EditorSettings) {
+                m_EditorSettings->AddRecentVisualScriptNode(def->typeId);
+            }
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
     }
 }
 

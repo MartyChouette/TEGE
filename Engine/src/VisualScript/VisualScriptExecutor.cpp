@@ -12,13 +12,14 @@ namespace VisualScript {
 void VisualScriptExecutor::ExecuteEvent(ECS::World* world, ECS::Entity entity,
                                           ECS::VisualScriptComponent* script,
                                           ECS::VisualScriptEvent event,
-                                          f32 deltaTime) {
+                                          f32 deltaTime,
+                                          ECS::Entity otherEntity) {
     if (!script || !script->enabled) return;
 
     Editor::NodeId entryNode = script->GetEventNode(event);
     if (entryNode == 0) return;  // No handler for this event
 
-    ExecuteFromNode(world, entity, script, entryNode, deltaTime);
+    ExecuteFromNode(world, entity, script, entryNode, deltaTime, otherEntity);
 }
 
 void VisualScriptExecutor::ExecuteCustomEvent(ECS::World* world, ECS::Entity entity,
@@ -36,7 +37,8 @@ void VisualScriptExecutor::ExecuteCustomEvent(ECS::World* world, ECS::Entity ent
 void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity,
                                             ECS::VisualScriptComponent* script,
                                             Editor::NodeId startNode,
-                                            f32 deltaTime) {
+                                            f32 deltaTime,
+                                            ECS::Entity otherEntity) {
     if (!script || !world) return;
 
     auto startTime = std::chrono::high_resolution_clock::now();
@@ -51,6 +53,7 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
     ctx.entity = entity;
     ctx.script = script;
     ctx.deltaTime = deltaTime;
+    ctx.otherEntity = otherEntity;
     ctx.nextFlowIndex = 0;
 
     // Execute flow starting from the entry node

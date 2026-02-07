@@ -93,6 +93,12 @@ struct EditorSettings {
 
     void AddRecentComponent(const std::string& name);
 
+    // Recently-used visual script nodes (most recent first, max 5)
+    std::vector<std::string> recentVisualScriptNodes;
+    static constexpr int MAX_RECENT_VS_NODES = 5;
+
+    void AddRecentVisualScriptNode(const std::string& nodeTypeId);
+
     // Save/Load
     bool Save(const std::string& path = "") const;
     bool Load(const std::string& path = "");

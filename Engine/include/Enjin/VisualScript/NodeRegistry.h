@@ -51,15 +51,23 @@ private:
 namespace NodeTypes {
 
 // Events
-constexpr const char* OnStart       = "Event_OnStart";
-constexpr const char* OnUpdate      = "Event_OnUpdate";
-constexpr const char* OnCollision   = "Event_OnCollision";
-constexpr const char* CustomEvent   = "Event_Custom";
+constexpr const char* OnStart           = "Event_OnStart";
+constexpr const char* OnUpdate          = "Event_OnUpdate";
+constexpr const char* OnCollision       = "Event_OnCollision";
+constexpr const char* CustomEvent       = "Event_Custom";
+constexpr const char* OnCollisionEnter  = "Event_OnCollisionEnter";
+constexpr const char* OnCollisionExit   = "Event_OnCollisionExit";
+constexpr const char* OnTriggerEnter    = "Event_OnTriggerEnter";
+constexpr const char* OnTriggerExit     = "Event_OnTriggerExit";
 
 // Flow Control
 constexpr const char* Branch        = "Flow_Branch";
 constexpr const char* Sequence      = "Flow_Sequence";
 constexpr const char* ForLoop       = "Flow_ForLoop";
+constexpr const char* WhileLoop     = "Flow_WhileLoop";
+constexpr const char* DoOnce        = "Flow_DoOnce";
+constexpr const char* Gate          = "Flow_Gate";
+constexpr const char* FlipFlop      = "Flow_FlipFlop";
 
 // Variables
 constexpr const char* GetVariable   = "Var_Get";
@@ -71,23 +79,81 @@ constexpr const char* Add           = "Math_Add";
 constexpr const char* Subtract      = "Math_Subtract";
 constexpr const char* Multiply      = "Math_Multiply";
 constexpr const char* Divide        = "Math_Divide";
+constexpr const char* Modulo        = "Math_Modulo";
+constexpr const char* Power         = "Math_Power";
+constexpr const char* Sqrt          = "Math_Sqrt";
 constexpr const char* Negate        = "Math_Negate";
 constexpr const char* Abs           = "Math_Abs";
+constexpr const char* Min           = "Math_Min";
+constexpr const char* Max           = "Math_Max";
+constexpr const char* Clamp         = "Math_Clamp";
+constexpr const char* Lerp          = "Math_Lerp";
+constexpr const char* Floor         = "Math_Floor";
+constexpr const char* Ceil          = "Math_Ceil";
+constexpr const char* Round         = "Math_Round";
+constexpr const char* Sin           = "Math_Sin";
+constexpr const char* Cos           = "Math_Cos";
+constexpr const char* Tan           = "Math_Tan";
+constexpr const char* Atan2         = "Math_Atan2";
+constexpr const char* RandomFloat   = "Math_RandomFloat";
+constexpr const char* RandomInt     = "Math_RandomInt";
 
 // Logic (Pure)
 constexpr const char* And           = "Logic_And";
 constexpr const char* Or            = "Logic_Or";
 constexpr const char* Not           = "Logic_Not";
+constexpr const char* Nand          = "Logic_Nand";
+constexpr const char* Xor           = "Logic_Xor";
 constexpr const char* Equal         = "Logic_Equal";
 constexpr const char* NotEqual      = "Logic_NotEqual";
 constexpr const char* Greater       = "Logic_Greater";
+constexpr const char* GreaterEqual  = "Logic_GreaterEqual";
 constexpr const char* Less          = "Logic_Less";
+constexpr const char* LessEqual     = "Logic_LessEqual";
+
+// Vector (Pure)
+constexpr const char* MakeVector3     = "Vector_Make3";
+constexpr const char* BreakVector3    = "Vector_Break3";
+constexpr const char* VectorLength    = "Vector_Length";
+constexpr const char* Normalize       = "Vector_Normalize";
+constexpr const char* DotProduct      = "Vector_Dot";
+constexpr const char* CrossProduct    = "Vector_Cross";
+constexpr const char* Distance        = "Vector_Distance";
+constexpr const char* LerpVector      = "Vector_Lerp";
 
 // Transform
 constexpr const char* GetPosition   = "Transform_GetPosition";
 constexpr const char* SetPosition   = "Transform_SetPosition";
 constexpr const char* GetRotation   = "Transform_GetRotation";
 constexpr const char* SetRotation   = "Transform_SetRotation";
+constexpr const char* GetScale      = "Transform_GetScale";
+constexpr const char* SetScale      = "Transform_SetScale";
+constexpr const char* Translate     = "Transform_Translate";
+constexpr const char* Rotate        = "Transform_Rotate";
+constexpr const char* LookAt        = "Transform_LookAt";
+
+// Entity
+constexpr const char* FindEntity    = "Entity_Find";
+constexpr const char* DestroyEntity = "Entity_Destroy";
+constexpr const char* SpawnEntity   = "Entity_Spawn";
+constexpr const char* IsValid       = "Entity_IsValid";
+constexpr const char* GetName       = "Entity_GetName";
+
+// Physics
+constexpr const char* Raycast       = "Physics_Raycast";
+constexpr const char* SphereCheck   = "Physics_SphereCheck";
+constexpr const char* BoxCheck      = "Physics_BoxCheck";
+constexpr const char* AddForce      = "Physics_AddForce";
+constexpr const char* AddImpulse    = "Physics_AddImpulse";
+constexpr const char* SetVelocity   = "Physics_SetVelocity";
+constexpr const char* GetVelocity   = "Physics_GetVelocity";
+constexpr const char* SetGravityScale = "Physics_SetGravityScale";
+
+// Component Access
+constexpr const char* GetHealth     = "Component_GetHealth";
+constexpr const char* SetHealth     = "Component_SetHealth";
+constexpr const char* Damage        = "Component_Damage";
+constexpr const char* HasComponent  = "Component_Has";
 
 // Debug
 constexpr const char* Print         = "Debug_Print";

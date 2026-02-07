@@ -697,8 +697,16 @@ void NodeGraphEditor::DrawMinimap(ImDrawList* dl, ImVec2 canvasPos, ImVec2 canva
 void NodeGraphEditor::DrawContextMenu(NodeGraphData& data, NodeGraphCallbacks& callbacks,
                                         ImVec2 canvasPos, f32 uiScale) {
     if (m_ShowContextMenu) {
-        ImGui::OpenPopup("##NodeGraphCtx");
         m_ShowContextMenu = false;
+
+        // If custom context menu handler is set, use that instead
+        if (callbacks.OnContextMenu) {
+            Math::Vector2 spawnPos = ScreenToCanvas(m_ContextMenuPos, canvasPos);
+            callbacks.OnContextMenu(spawnPos);
+            return;
+        }
+
+        ImGui::OpenPopup("##NodeGraphCtx");
     }
 
     if (ImGui::BeginPopup("##NodeGraphCtx")) {

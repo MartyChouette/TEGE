@@ -23,7 +23,8 @@ public:
     void ExecuteEvent(ECS::World* world, ECS::Entity entity,
                       ECS::VisualScriptComponent* script,
                       ECS::VisualScriptEvent event,
-                      f32 deltaTime);
+                      f32 deltaTime,
+                      ECS::Entity otherEntity = ECS::INVALID_ENTITY);
 
     // Execute a custom event by name
     void ExecuteCustomEvent(ECS::World* world, ECS::Entity entity,
@@ -35,7 +36,8 @@ public:
     void ExecuteFromNode(ECS::World* world, ECS::Entity entity,
                          ECS::VisualScriptComponent* script,
                          Editor::NodeId startNode,
-                         f32 deltaTime);
+                         f32 deltaTime,
+                         ECS::Entity otherEntity = ECS::INVALID_ENTITY);
 
     // Get execution statistics (for debugging)
     struct ExecutionStats {

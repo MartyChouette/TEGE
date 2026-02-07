@@ -197,6 +197,32 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("Physics");
             m_Physics.Update(deltaTime);
         }
+
+        // Dispatch collision events to visual scripts
+        {
+            const auto& collisionEvents = m_Physics.GetPendingCollisionEvents();
+            for (const auto& evt : collisionEvents) {
+                if (evt.isTrigger) {
+                    if (evt.type == Physics::CollisionEvent::Type::Enter) {
+                        m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+                    } else {
+                        m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
+                    }
+                } else {
+                    if (evt.type == Physics::CollisionEvent::Type::Enter) {
+                        m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
+                    } else {
+                        m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
+                    }
+                }
+            }
+            m_Physics.ClearPendingCollisionEvents();
+        }
+
         {
             ENJIN_PROFILE_SCOPE("ECS");
             m_ControllerSystem.Update(deltaTime);

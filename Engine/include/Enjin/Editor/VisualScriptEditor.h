@@ -87,10 +87,18 @@ private:
     NodeId m_SelectedNode = 0;
 
     // Node search for context menu
-    char m_NodeSearchBuf[128] = "";
+    char m_NodeSearchBuf[256] = "";
+    int m_NodeSearchSelectedIndex = 0;
+    Math::Vector2 m_ContextMenuPos;
+
+    // Reference to editor settings for recently-used tracking
+    EditorSettings* m_EditorSettings = nullptr;
 
     // Mapping: node ID -> node type ID for execution
     std::unordered_map<NodeId, std::string> m_NodeTypeMap;
+
+    // Draw the searchable node popup
+    void DrawNodeSearchPopup();
 };
 
 } // namespace Editor

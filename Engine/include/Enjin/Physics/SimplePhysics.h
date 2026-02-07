@@ -7,6 +7,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <vector>
 #include <memory>
+#include <unordered_set>
 
 namespace Enjin {
 namespace Physics {
@@ -68,6 +69,16 @@ struct RaycastHit {
     ECS::Entity entity = 0;
 };
 
+// Collision event for enter/exit detection
+struct CollisionEvent {
+    ECS::Entity entityA = 0;
+    ECS::Entity entityB = 0;
+    Math::Vector3 contactPoint;
+    Math::Vector3 normal;
+    enum class Type : u8 { Enter, Exit } type = Type::Enter;
+    bool isTrigger = false;
+};
+
 class ConstraintSolver;
 
 // Simple physics world - handles basic collision detection
@@ -108,7 +119,13 @@ public:
     void SetGravity(const Math::Vector3& gravity) { m_Gravity = gravity; }
     Math::Vector3 GetGravity() const { return m_Gravity; }
 
+    // Collision events (for visual scripting / gameplay callbacks)
+    const std::vector<CollisionEvent>& GetPendingCollisionEvents() const { return m_PendingCollisionEvents; }
+    void ClearPendingCollisionEvents() { m_PendingCollisionEvents.clear(); }
+
 private:
+    // Detect collision enter/exit events
+    void DetectCollisionEvents();
     // Get world-space AABB for an entity
     AABB GetEntityAABB(ECS::Entity entity);
 
@@ -118,6 +135,16 @@ private:
     ECS::World* m_World = nullptr;
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
     std::unique_ptr<ConstraintSolver> m_ConstraintSolver;
+
+    // Collision pair tracking for enter/exit detection
+    // Each pair is encoded as (min(a,b) << 32) | max(a,b) for consistent ordering
+    std::unordered_set<u64> m_PreviousCollisionPairs;
+    std::unordered_set<u64> m_CurrentCollisionPairs;
+    std::vector<CollisionEvent> m_PendingCollisionEvents;
+
+    static u64 MakeCollisionPairKey(ECS::Entity a, ECS::Entity b) {
+        return (static_cast<u64>(std::min(a, b)) << 32) | static_cast<u64>(std::max(a, b));
+    }
 };
 
 } // namespace Physics

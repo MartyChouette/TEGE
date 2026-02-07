@@ -225,7 +225,11 @@ struct NodeGraphCallbacks {
     // Custom node body rendering (called after default header/pins)
     std::function<void(const GraphNode&, ImDrawList*, ImVec2 bodyMin, ImVec2 bodyMax, f32 zoom)> DrawNodeContent;
 
-    // Right-click context menu categories
+    // Right-click context menu (alternative to category-based menu)
+    // If set, called instead of showing the built-in category menu
+    std::function<void(Math::Vector2)> OnContextMenu;
+
+    // Right-click context menu categories (used if OnContextMenu not set)
     std::vector<ContextMenuCategory> contextMenuCategories;
 };
 

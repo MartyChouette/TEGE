@@ -34,6 +34,16 @@ void EditorSettings::AddRecentComponent(const std::string& name) {
     }
 }
 
+void EditorSettings::AddRecentVisualScriptNode(const std::string& nodeTypeId) {
+    recentVisualScriptNodes.erase(
+        std::remove(recentVisualScriptNodes.begin(), recentVisualScriptNodes.end(), nodeTypeId),
+        recentVisualScriptNodes.end());
+    recentVisualScriptNodes.insert(recentVisualScriptNodes.begin(), nodeTypeId);
+    if (static_cast<int>(recentVisualScriptNodes.size()) > MAX_RECENT_VS_NODES) {
+        recentVisualScriptNodes.resize(MAX_RECENT_VS_NODES);
+    }
+}
+
 std::string EditorSettings::GetDefaultPath() {
 #ifdef _WIN32
     const char* appdata = std::getenv("APPDATA");
@@ -128,6 +138,12 @@ bool EditorSettings::Save(const std::string& path) const {
         j["recentComponents"] = json::array();
         for (const auto& rc : recentComponents) {
             j["recentComponents"].push_back(rc);
+        }
+
+        // Recent visual script nodes
+        j["recentVisualScriptNodes"] = json::array();
+        for (const auto& rn : recentVisualScriptNodes) {
+            j["recentVisualScriptNodes"].push_back(rn);
         }
 
         std::ofstream file(savePath);
@@ -235,6 +251,16 @@ bool EditorSettings::Load(const std::string& path) {
             for (const auto& rc : j["recentComponents"]) {
                 if (rc.is_string()) {
                     recentComponents.push_back(rc.get<std::string>());
+                }
+            }
+        }
+
+        // Recent visual script nodes
+        if (j.contains("recentVisualScriptNodes") && j["recentVisualScriptNodes"].is_array()) {
+            recentVisualScriptNodes.clear();
+            for (const auto& rn : j["recentVisualScriptNodes"]) {
+                if (rn.is_string()) {
+                    recentVisualScriptNodes.push_back(rn.get<std::string>());
                 }
             }
         }

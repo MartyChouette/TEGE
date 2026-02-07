@@ -66,11 +66,13 @@ enum class NodeCategory : u8 {
     Variables,     // Get/Set Variable, Get Self
     Math,          // Add, Subtract, Multiply, etc.
     Logic,         // And, Or, Not, Comparison
+    Vector,        // MakeVector3, BreakVector3, Normalize, etc.
     Transform,     // Position, Rotation, Scale operations
+    Entity,        // Spawn, Destroy, FindByName
     Physics,       // Raycast, AddForce, etc.
+    Components,    // GetHealth, SetHealth, Damage, etc.
     Audio,         // Play/Stop sound
     Debug,         // Print, DrawLine, etc.
-    Entity,        // Spawn, Destroy, FindByName
     Utility,       // Delay, Random, etc.
     Custom         // User-defined nodes
 };
@@ -82,11 +84,13 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Variables:   return "Variables";
         case NodeCategory::Math:        return "Math";
         case NodeCategory::Logic:       return "Logic";
+        case NodeCategory::Vector:      return "Vector";
         case NodeCategory::Transform:   return "Transform";
+        case NodeCategory::Entity:      return "Entity";
         case NodeCategory::Physics:     return "Physics";
+        case NodeCategory::Components:  return "Components";
         case NodeCategory::Audio:       return "Audio";
         case NodeCategory::Debug:       return "Debug";
-        case NodeCategory::Entity:      return "Entity";
         case NodeCategory::Utility:     return "Utility";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
