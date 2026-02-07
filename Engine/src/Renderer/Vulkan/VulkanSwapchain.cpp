@@ -36,8 +36,10 @@ void VulkanSwapchain::Shutdown() {
     }
 }
 
-void VulkanSwapchain::Recreate(u32 width, u32 height) {
-    vkDeviceWaitIdle(m_Context->GetDevice());
+void VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
+    if (!gpuAlreadyIdle) {
+        vkDeviceWaitIdle(m_Context->GetDevice());
+    }
 
     DestroyFramebuffers();
     DestroyDepthResources();

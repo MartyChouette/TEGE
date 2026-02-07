@@ -458,6 +458,15 @@ VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
     return m_CommandBuffers[m_CurrentFrame];
 }
 
+void VulkanRenderer::WaitForAllFrames() {
+    if (!m_Context || m_Context->GetDevice() == VK_NULL_HANDLE) return;
+    if (m_InFlightFences.empty()) return;
+    vkWaitForFences(m_Context->GetDevice(),
+                    static_cast<u32>(m_InFlightFences.size()),
+                    m_InFlightFences.data(),
+                    VK_TRUE, UINT64_MAX);
+}
+
 void VulkanRenderer::OnWindowResize(u32 width, u32 height) {
     if (width == 0 || height == 0) {
         // Window is minimized; mark for resize when restored
@@ -465,14 +474,14 @@ void VulkanRenderer::OnWindowResize(u32 width, u32 height) {
         return;
     }
 
-    vkDeviceWaitIdle(m_Context->GetDevice());
+    WaitForAllFrames();
 
     // Reset frame state - any in-progress frame is now invalid
     m_IsFrameStarted = false;
     m_IsMainRenderPassActive = false;
 
     // Recreate swapchain (Recreate() handles framebuffers internally)
-    m_Swapchain->Recreate(width, height);
+    m_Swapchain->Recreate(width, height, true);
 
     // Resize images-in-flight tracking to match new swapchain image count
     m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);

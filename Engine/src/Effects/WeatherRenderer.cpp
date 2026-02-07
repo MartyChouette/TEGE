@@ -92,7 +92,7 @@ void WeatherRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescripto
     if (!m_Initialized || !m_Renderer) return;
 
     // Wait for GPU to finish using the old pipeline
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
 
     CreatePipelineWithPass(renderPass, sharedLayout);
@@ -320,7 +320,7 @@ bool WeatherRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSe
         return false;
     }
 
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);

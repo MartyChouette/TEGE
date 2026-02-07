@@ -289,10 +289,64 @@ void RenderSystem::Shutdown() {
     m_Initialized = false;
 }
 
+void RenderSystem::ProcessPendingRecreation() {
+    if (m_PendingRecreation == PendingRecreationType::None) return;
+
+    // Wait for all in-flight frames to finish (2 fences, fast)
+    m_Renderer->WaitForAllFrames();
+
+    switch (m_PendingRecreation) {
+        case PendingRecreationType::PipelineOnly:
+            RecreatePipelines(true);
+            break;
+        case PendingRecreationType::MainShader:
+            m_VertexShader = std::move(m_PendingVertexShader);
+            m_FragmentShader = std::move(m_PendingFragmentShader);
+            RecreatePipelines(true);
+            ENJIN_LOG_INFO(Renderer, "Shader hot-reload: main shaders reloaded successfully");
+            break;
+        case PendingRecreationType::SkyboxShader: {
+            VkDevice device = m_Renderer->GetContext()->GetDevice();
+            if (m_SkyboxPipelineHandle != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
+                m_SkyboxPipelineHandle = VK_NULL_HANDLE;
+            }
+            if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
+                vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
+                m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
+            }
+            if (m_SkyboxDescriptorSetLayoutHandle != VK_NULL_HANDLE) {
+                vkDestroyDescriptorSetLayout(device, m_SkyboxDescriptorSetLayoutHandle, nullptr);
+                m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
+            }
+            if (m_SkyboxDescriptorPool != VK_NULL_HANDLE) {
+                vkDestroyDescriptorPool(device, m_SkyboxDescriptorPool, nullptr);
+                m_SkyboxDescriptorPool = VK_NULL_HANDLE;
+            }
+            m_SkyboxDescriptorSets.clear();
+            m_SkyboxUniformBuffers.clear();
+            CreateSkyboxPipeline();
+            ENJIN_LOG_INFO(Renderer, "Shader hot-reload: skybox shaders reloaded successfully");
+            break;
+        }
+        case PendingRecreationType::ShadowShader:
+            m_VertexShader = std::move(m_PendingVertexShader);
+            RecreatePipelines(true);
+            ENJIN_LOG_INFO(Renderer, "Shader hot-reload: shadow vertex shader reloaded successfully");
+            break;
+        default: break;
+    }
+    m_PendingRecreation = PendingRecreationType::None;
+    m_PendingVertexShader.reset();
+    m_PendingFragmentShader.reset();
+}
+
 void RenderSystem::Update(f32 deltaTime) {
     if (!m_Renderer || !m_Initialized) {
         return;
     }
+
+    ProcessPendingRecreation();
 
     // Reset per-frame stats
     ResetFrameCounters();
@@ -2350,13 +2404,13 @@ void RenderSystem::UpdateUniformBuffer(Entity entity) {
 void RenderSystem::SetBackfaceCullingEnabled(bool enabled) {
     if (m_BackfaceCulling == enabled) return;
     m_BackfaceCulling = enabled;
-    RecreatePipelines();
+    m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
 void RenderSystem::SetWireframeEnabled(bool enabled) {
     if (m_WireframeMode == enabled) return;
     m_WireframeMode = enabled;
-    RecreatePipelines();
+    m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
 void RenderSystem::SetShadowDistance(f32 d) {
@@ -2385,16 +2439,16 @@ void RenderSystem::SetShadowResolution(u32 r) {
     if (r == current) return;
     m_ShadowMap->SetResolution(r);
     // Recreate descriptor sets to pick up new image views
-    RecreatePipelines();
+    m_PendingRecreation = PendingRecreationType::PipelineOnly;
 }
 
 void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
     if (!m_Pipeline || !m_Initialized) return;
 
     // Wait for GPU to finish all in-flight work before destroying pipelines
-    // Skip if caller guarantees GPU is already idle (e.g., shader hot-reload already did the wait)
-    if (!gpuAlreadyIdle && m_Renderer && m_Renderer->GetContext()) {
-        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    // Skip if caller guarantees GPU is already idle (e.g., deferred recreation already waited)
+    if (!gpuAlreadyIdle && m_Renderer) {
+        m_Renderer->WaitForAllFrames();
     }
 
     // Destroy all pipelines that share the descriptor set layout
@@ -2569,14 +2623,10 @@ void RenderSystem::ReloadMainShaders(const std::string& changedFile) {
         return;
     }
 
-    // Both compiled — swap in and recreate pipelines
-    // Wait for GPU before destroying old shader modules, then skip wait in RecreatePipelines
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
-    m_VertexShader = std::move(tempVert);
-    m_FragmentShader = std::move(tempFrag);
-    RecreatePipelines(true); // GPU already idle
-
-    ENJIN_LOG_INFO(Renderer, "Shader hot-reload: main shaders reloaded successfully");
+    // Both compiled — defer swap and pipeline recreation to next frame start
+    m_PendingVertexShader = std::move(tempVert);
+    m_PendingFragmentShader = std::move(tempFrag);
+    m_PendingRecreation = PendingRecreationType::MainShader;
 }
 
 void RenderSystem::ReloadSkyboxShaders() {
@@ -2605,38 +2655,8 @@ void RenderSystem::ReloadSkyboxShaders() {
         return;
     }
 
-    // Destroy old skybox pipeline and recreate with new shaders
-    VkDevice device = m_Renderer->GetContext()->GetDevice();
-    vkDeviceWaitIdle(device);
-
-    if (m_SkyboxPipelineHandle != VK_NULL_HANDLE) {
-        vkDestroyPipeline(device, m_SkyboxPipelineHandle, nullptr);
-        m_SkyboxPipelineHandle = VK_NULL_HANDLE;
-    }
-    if (m_SkyboxPipelineLayoutHandle != VK_NULL_HANDLE) {
-        vkDestroyPipelineLayout(device, m_SkyboxPipelineLayoutHandle, nullptr);
-        m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
-    }
-    if (m_SkyboxDescriptorSetLayoutHandle != VK_NULL_HANDLE) {
-        vkDestroyDescriptorSetLayout(device, m_SkyboxDescriptorSetLayoutHandle, nullptr);
-        m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
-    }
-    if (m_SkyboxDescriptorPool != VK_NULL_HANDLE) {
-        vkDestroyDescriptorPool(device, m_SkyboxDescriptorPool, nullptr);
-        m_SkyboxDescriptorPool = VK_NULL_HANDLE;
-    }
-    m_SkyboxDescriptorSets.clear();
-    m_SkyboxUniformBuffers.clear();
-
-    // Recreate — CreateSkyboxPipeline loads from embedded SPIR-V, but we need
-    // to use the newly compiled shaders. The simplest approach: recreate the full
-    // skybox pipeline which re-loads from ShaderData. For proper hot-reload we'd
-    // need to refactor CreateSkyboxPipeline to accept shader modules. Instead,
-    // just call it again — the compiled temp shaders will be cleaned up, and the
-    // next file change will retry.
-    CreateSkyboxPipeline();
-
-    ENJIN_LOG_INFO(Renderer, "Shader hot-reload: skybox shaders reloaded successfully");
+    // Shaders validated — defer pipeline recreation to next frame start
+    m_PendingRecreation = PendingRecreationType::SkyboxShader;
 }
 
 void RenderSystem::ReloadShadowShaders() {
@@ -2658,15 +2678,9 @@ void RenderSystem::ReloadShadowShaders() {
         return;
     }
 
-    // Shadow pipeline actually reuses m_VertexShader from the main pipeline,
-    // so a shadow.vert change means we should update the main vertex shader
-    // and recreate all pipelines that depend on it.
-    // Wait for GPU before destroying old shader module, then skip wait in RecreatePipelines
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
-    m_VertexShader = std::move(tempVert);
-    RecreatePipelines(true); // GPU already idle
-
-    ENJIN_LOG_INFO(Renderer, "Shader hot-reload: shadow vertex shader reloaded successfully");
+    // Shadow pipeline reuses m_VertexShader — defer swap and recreation to next frame start
+    m_PendingVertexShader = std::move(tempVert);
+    m_PendingRecreation = PendingRecreationType::ShadowShader;
 }
 
 // ─── End Shader Hot-Reload ───────────────────────────────────────────────────

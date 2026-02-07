@@ -12,6 +12,7 @@ namespace Renderer {
 
 // Forward declarations
 class VulkanContext;
+class VulkanRenderer;
 class VulkanBuffer;
 class VulkanImage;
 
@@ -171,7 +172,8 @@ public:
     ~PostProcessing();
 
     // Initialize/Shutdown
-    bool Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height);
+    bool Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height,
+                     VulkanRenderer* renderer = nullptr);
     void Shutdown();
 
     // Resize handling
@@ -223,6 +225,7 @@ private:
     void UpdateUniformBuffer();
 
     VulkanContext* m_Context = nullptr;
+    VulkanRenderer* m_Renderer = nullptr;
     VkRenderPass m_RenderPass = VK_NULL_HANDLE;  // Final output render pass
     VkRenderPass m_SceneRenderPass = VK_NULL_HANDLE;  // Scene render pass (HDR)
 

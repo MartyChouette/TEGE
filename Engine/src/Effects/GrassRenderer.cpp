@@ -114,7 +114,7 @@ void GrassRenderer::CreateBladeMesh() {
 void GrassRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
     if (!m_Initialized || !m_Renderer) return;
 
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
 
     CreatePipelineWithPass(renderPass, sharedLayout);
@@ -351,7 +351,7 @@ bool GrassRenderer::ReloadShaders(const std::string& shaderDir, VkDescriptorSetL
         return false;
     }
 
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
     m_VertexShader = std::move(tempVert);
     m_FragmentShader = std::move(tempFrag);

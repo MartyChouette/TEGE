@@ -457,8 +457,8 @@ void ImGuiLayer::ReloadFonts(const EditorFontConfig& fontConfig) {
         return;
     }
 
-    // Wait for GPU idle before rebuilding font atlas
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    // Wait for GPU to finish before rebuilding font atlas
+    m_Renderer->WaitForAllFrames();
 
     // Clear existing fonts and reload
     ImGuiIO& io = ImGui::GetIO();

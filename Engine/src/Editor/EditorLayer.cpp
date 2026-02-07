@@ -662,7 +662,7 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         m_PostProcessing = std::make_unique<Renderer::PostProcessing>();
         if (!m_PostProcessing->Initialize(renderer->GetContext(),
                 m_GameViewRenderTarget->GetRenderPass(),
-                m_GameViewWidth, m_GameViewHeight)) {
+                m_GameViewWidth, m_GameViewHeight, renderer)) {
             ENJIN_LOG_WARN(Editor, "Failed to initialize post-processing");
             m_PostProcessing.reset();
         } else {

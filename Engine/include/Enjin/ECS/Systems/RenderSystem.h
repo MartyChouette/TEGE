@@ -141,6 +141,14 @@ public:
     void SetRainActive(bool active) { m_RainActive = active; }
     bool IsRainActive() const { return m_RainActive; }
 
+    // Weather system for main pass rendering (editor viewport)
+    // When set, weather particles are rendered in the main pass
+    void SetMainPassWeather(Effects::WeatherSystem* weather, bool isRain) {
+        m_MainPassWeather = weather;
+        m_MainPassWeatherIsRain = isRain;
+    }
+    void ClearMainPassWeather() { m_MainPassWeather = nullptr; }
+
     // Weather, grass, and tree renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
@@ -299,6 +307,8 @@ private:
 
     // Weather, particle, grass, shrub, tree, and sprite batch renderers
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
+    Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
+    bool m_MainPassWeatherIsRain = false;
     std::unique_ptr<Effects::ParticleRenderer> m_ParticleRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
@@ -420,6 +430,16 @@ private:
     void ReloadMainShaders(const std::string& changedFile);
     void ReloadSkyboxShaders();
     void ReloadShadowShaders();
+
+    // Deferred pipeline recreation — avoids GPU stalls mid-frame by deferring work
+    // to the start of the next Update() call, where WaitForAllFrames() is safe.
+    enum class PendingRecreationType : u8 {
+        None, PipelineOnly, MainShader, SkyboxShader, ShadowShader
+    };
+    PendingRecreationType m_PendingRecreation = PendingRecreationType::None;
+    std::unique_ptr<Renderer::VulkanShader> m_PendingVertexShader;
+    std::unique_ptr<Renderer::VulkanShader> m_PendingFragmentShader;
+    void ProcessPendingRecreation();
 
     bool m_Initialized = false;
 };

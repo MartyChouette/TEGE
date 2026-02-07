@@ -72,6 +72,10 @@ public:
 
     void OnWindowResize(u32 width, u32 height);
 
+    // Wait for all in-flight frames to complete (fence-based, graphics queue only).
+    // Preferred over vkDeviceWaitIdle() for mid-frame synchronization.
+    void WaitForAllFrames();
+
     bool IsDeviceLost() const { return m_DeviceLost; }
 
     // Flag set by window resize callback to trigger swapchain recreation

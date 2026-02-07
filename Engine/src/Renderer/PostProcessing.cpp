@@ -1,5 +1,6 @@
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
+#include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Logging/Log.h"
@@ -1493,12 +1494,14 @@ PostProcessing::~PostProcessing() {
     Shutdown();
 }
 
-bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height) {
+bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass, u32 width, u32 height,
+                                VulkanRenderer* renderer) {
     if (m_Initialized) {
         return true;
     }
 
     m_Context = context;
+    m_Renderer = renderer;
     m_RenderPass = renderPass;
     m_Width = width;
     m_Height = height;
@@ -1597,8 +1600,8 @@ void PostProcessing::OnResize(u32 width, u32 height) {
     m_Settings.screenHeight = height;
 
     // Recreate render target
-    VkDevice device = m_Context->GetDevice();
-    vkDeviceWaitIdle(device);
+    if (m_Renderer) m_Renderer->WaitForAllFrames();
+    else vkDeviceWaitIdle(m_Context->GetDevice());
     DestroySceneRenderTarget();
     CreateSceneRenderTarget(width, height);
 }
@@ -2313,7 +2316,8 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
     }
 
     VkDevice device = m_Context->GetDevice();
-    vkDeviceWaitIdle(device);
+    if (m_Renderer) m_Renderer->WaitForAllFrames();
+    else vkDeviceWaitIdle(device);
 
     // Clean up previous LUT
     DestroyLUTResources();
@@ -2475,7 +2479,8 @@ void PostProcessing::ClearLUT() {
     if (!m_Context || !m_Initialized) return;
 
     VkDevice device = m_Context->GetDevice();
-    vkDeviceWaitIdle(device);
+    if (m_Renderer) m_Renderer->WaitForAllFrames();
+    else vkDeviceWaitIdle(device);
 
     DestroyLUTResources();
 

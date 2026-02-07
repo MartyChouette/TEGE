@@ -340,8 +340,8 @@ Ideas for "simple creation of complex games":
 | Task | Impact | Effort | Priority | Status |
 |------|--------|--------|----------|--------|
 | Replace GetAllEntities() loops | High | Low | P0 | ✅ Complete |
-| Cache texture pointers on materials | High | Medium | P0 | Pending |
-| Replace vkDeviceWaitIdle() with fences | Critical | Medium | P0 | Pending |
+| Cache texture pointers on materials | High | Medium | P0 | ✅ Complete |
+| Replace vkDeviceWaitIdle() with fences | Critical | Medium | P0 | ✅ Complete |
 | Skeleton/Animator serialization | High | High | P1 | Pending |
 | Dialogue Tree Editor | Very High | Medium | P1 | ✅ Complete |
 | Visual Scripting System (Phase 1) | Very High | High | P1 | ✅ Complete |

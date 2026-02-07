@@ -38,7 +38,9 @@ bool RenderTarget::Create(VulkanRenderer* renderer, u32 width, u32 height) {
 }
 
 void RenderTarget::Destroy() {
-    if (m_Context) {
+    if (m_Renderer) {
+        m_Renderer->WaitForAllFrames();
+    } else if (m_Context) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
     UnregisterImGuiTexture();
@@ -53,7 +55,7 @@ bool RenderTarget::Resize(u32 width, u32 height) {
     if (width == m_Width && height == m_Height) return true;
     if (!m_Renderer || width == 0 || height == 0) return false;
 
-    vkDeviceWaitIdle(m_Context->GetDevice());
+    m_Renderer->WaitForAllFrames();
 
     UnregisterImGuiTexture();
     DestroyResources();

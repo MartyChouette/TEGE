@@ -98,7 +98,7 @@ void SpriteBatchRenderer::CreateInstanceBuffer() {
 void SpriteBatchRenderer::RecreateForRenderPass(VkRenderPass renderPass, VkDescriptorSetLayout sharedLayout) {
     if (!m_Initialized || !m_Renderer) return;
 
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
     m_LitPipeline.reset();
 
@@ -551,7 +551,7 @@ bool SpriteBatchRenderer::ReloadShaders(const std::string& shaderDir, VkDescript
         return false;
     }
 
-    vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+    m_Renderer->WaitForAllFrames();
     m_Pipeline.reset();
     m_LitPipeline.reset();
     m_VertexShader = std::move(tempVert);

@@ -25,7 +25,7 @@ public:
     bool Initialize(VkSurfaceKHR surface, u32 width, u32 height);
     void Shutdown();
 
-    void Recreate(u32 width, u32 height);
+    void Recreate(u32 width, u32 height, bool gpuAlreadyIdle = false);
 
     VkSwapchainKHR GetSwapchain() const { return m_Swapchain; }
     VkFormat GetImageFormat() const { return m_ImageFormat; }
