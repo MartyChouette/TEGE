@@ -33,7 +33,7 @@ struct ENJIN_API LightComponent {
     f32 outerConeAngle = 17.5f;  // Degrees
 
     // Shadow casting
-    bool castShadows = false;
+    bool castShadows = true;
     u32 shadowMapResolution = 1024;
 
     // Helper to calculate attenuation at a distance
