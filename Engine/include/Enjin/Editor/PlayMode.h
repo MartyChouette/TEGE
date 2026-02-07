@@ -25,6 +25,7 @@
 namespace Enjin {
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
+namespace Accessibility { class SubtitleSystem; }
 namespace Editor {
 
 // Play mode state
@@ -86,6 +87,7 @@ public:
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
+    void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
 
 private:
     void SaveEditorState();
@@ -134,6 +136,7 @@ private:
     // Render system pointers (owned externally)
     ECS::RenderSystem* m_RenderSystem = nullptr;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
+    Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
 
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;

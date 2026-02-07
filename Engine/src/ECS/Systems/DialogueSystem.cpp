@@ -1,6 +1,8 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
+#include <algorithm>
 
 namespace Enjin {
 namespace ECS {
@@ -54,17 +56,21 @@ void DialogueSystem::StartDialogue(World* world, Entity entity) {
         player.SetVariable(k, v);
     }
 
-    // Wire event callback
-    if (m_EventCallback) {
-        player.SetEventCallback([this, entity](const std::string& eventName) {
+    // Wire event callback (fires both user callback and EntityEventBus)
+    player.SetEventCallback([this, entity](const std::string& eventName) {
+        if (m_EventCallback) {
             m_EventCallback(entity, eventName);
-        });
-    }
+        }
+        BroadcastEvent(entity, eventName);
+    });
 
     player.Start(dlg->dialogueTree);
     dlg->treeActive = true;
 
     SyncNodeToComponent(*dlg, player);
+
+    // Show subtitle for the first text node
+    ShowSubtitle(*dlg);
 
     ENJIN_LOG_INFO(Script, "Dialogue tree started on entity %llu", static_cast<u64>(entity));
 }
@@ -93,6 +99,7 @@ void DialogueSystem::Advance(World* world, Entity entity) {
         if (m_ActiveEntity == entity) m_ActiveEntity = INVALID_ENTITY;
     } else {
         SyncNodeToComponent(*dlg, player);
+        ShowSubtitle(*dlg);
     }
 }
 
@@ -116,6 +123,7 @@ void DialogueSystem::SelectChoice(World* world, Entity entity, u32 choiceIndex) 
         if (m_ActiveEntity == entity) m_ActiveEntity = INVALID_ENTITY;
     } else {
         SyncNodeToComponent(*dlg, player);
+        ShowSubtitle(*dlg);
     }
 }
 
@@ -302,6 +310,35 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
     }
 
     m_ActiveEntity = activeDialogue;
+}
+
+void DialogueSystem::BroadcastEvent(Entity entity, const std::string& eventName) {
+    if (!m_EventBus) return;
+
+    EntityEvent evt;
+    evt.name = "Dialogue_" + eventName;
+    evt.sender = entity;
+    evt.strings["event"] = eventName;
+    m_EventBus->Broadcast(evt);
+
+    ENJIN_LOG_DEBUG(Script, "Dialogue event broadcast: %s from entity %llu",
+                    evt.name.c_str(), static_cast<u64>(entity));
+}
+
+void DialogueSystem::ShowSubtitle(const DialogueComponent& dlg) {
+    if (!m_SubtitleSystem) return;
+    if (!m_SubtitleSystem->GetConfig().enabled) return;
+    if (dlg.currentText.empty()) return;
+
+    // Estimate duration: at least 3 seconds, ~0.05s per character for reading pace
+    f32 duration = std::max(3.0f, static_cast<f32>(dlg.currentText.length()) * 0.05f);
+
+    m_SubtitleSystem->ShowSubtitle(
+        dlg.currentText,
+        dlg.currentSpeaker,
+        dlg.currentSpeakerColor,
+        duration
+    );
 }
 
 } // namespace ECS

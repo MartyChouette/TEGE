@@ -16,6 +16,7 @@
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/UISystem.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -74,6 +75,7 @@ enum class EditorPanel : u32 {
     ProjectSettings = 1 << 12,
     ParticleEditor = 1 << 13,
     AnimGraph = 1 << 14,
+    Dialogue = 1 << 15,
     All = 0xFFFFFFFF
 };
 
@@ -203,6 +205,7 @@ private:
     void DrawProjectSettingsPanel();
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();
+    void DrawDialoguePanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -324,6 +327,9 @@ private:
     void DrawDialogueOverlay();
     ECS::Entity m_ActiveDialogueEntity = ECS::INVALID_ENTITY;
     GUI::DialogueTreeEditor m_DialogueTreeEditor;
+
+    // Dialogue editor panel state
+    ECS::Entity m_DialogueEditorEntity = ECS::INVALID_ENTITY;
 
     // Animation/State Machine graph editor
     AnimationGraphEditor m_AnimGraphEditor;
@@ -616,6 +622,9 @@ private:
 
     // Runtime UI system
     GUI::UISystem m_UISystem;
+
+    // Subtitle system (accessibility)
+    Accessibility::SubtitleSystem m_SubtitleSystem;
 
     // Import dialog state
     bool m_ShowImportDialog = false;

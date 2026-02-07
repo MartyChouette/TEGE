@@ -85,6 +85,11 @@ void PlayMode::Play() {
     Scripting::SetBindingsRenderSystem(m_RenderSystem);
     Scripting::SetBindingsPostProcessing(m_PostProcessing);
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
+
+    // Wire EntityEventBus and SubtitleSystem to DialogueSystem
+    m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+    m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
+    ENJIN_LOG_INFO(Editor, "PlayMode: DialogueSystem integrations wired");
     m_ScriptSystem.InitializeAllScripts();
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
 

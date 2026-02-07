@@ -2,9 +2,14 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include <unordered_map>
 #include <functional>
+
+namespace Enjin::Accessibility {
+    class SubtitleSystem;
+}
 
 namespace Enjin {
 namespace ECS {
@@ -41,13 +46,23 @@ public:
     using EventCallback = std::function<void(Entity, const std::string&)>;
     void SetEventCallback(EventCallback cb) { m_EventCallback = std::move(cb); }
 
+    // EntityEventBus integration (broadcasts Dialogue_<eventName> events)
+    void SetEventBus(EntityEventBus* bus) { m_EventBus = bus; }
+
+    // SubtitleSystem integration (routes text to accessibility subtitles)
+    void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
+
 private:
     std::unordered_map<Entity, GUI::DialoguePlayer> m_Players;
     Entity m_ActiveEntity = INVALID_ENTITY;
     EventCallback m_EventCallback;
+    EntityEventBus* m_EventBus = nullptr;
+    Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
 
     void SyncNodeToComponent(DialogueComponent& dlg, GUI::DialoguePlayer& player);
     void ProcessLegacy(World* world, Entity entity, DialogueComponent& dlg, f32 deltaTime);
+    void BroadcastEvent(Entity entity, const std::string& eventName);
+    void ShowSubtitle(const DialogueComponent& dlg);
 };
 
 } // namespace ECS

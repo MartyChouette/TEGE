@@ -734,6 +734,18 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
 
+        // Wire accessibility systems
+        m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
+
+        // Configure subtitle system from editor settings
+        Accessibility::SubtitleConfig subConfig;
+        subConfig.enabled = m_EditorSettings.subtitlesEnabled;
+        subConfig.captionsEnabled = m_EditorSettings.closedCaptionsEnabled;
+        subConfig.fontSize = m_EditorSettings.subtitleFontSize;
+        subConfig.backgroundOpacity = m_EditorSettings.subtitleBgOpacity;
+        subConfig.showSpeakerNames = m_EditorSettings.subtitleSpeakerNames;
+        m_SubtitleSystem.SetConfig(subConfig);
+
         // Wire accessibility input map and motion settings
         auto* ctrlSys = m_PlayMode.GetControllerSystem();
         if (ctrlSys) {
@@ -1736,6 +1748,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             DrawDialogueOverlay();
         }
 
+        // Render subtitle overlay (accessibility)
+        if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+            m_SubtitleSystem.RenderOverlay(
+                static_cast<u32>(io.DisplaySize.x),
+                static_cast<u32>(io.DisplaySize.y));
+        }
+
         // Render HUD widgets during play mode (fullscreen)
         if (m_PlayMode.IsPlaying()) {
             m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
@@ -1855,9 +1874,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(700, 500), layoutCond);
         DrawAnimGraphPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Dialogue)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX + 40, menuBarH + 40), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(750, 550), layoutCond);
+        DrawDialoguePanel();
+    }
 
-    // Dialogue tree editor (owns its own window)
-    m_DialogueTreeEditor.Render();
+    // Dialogue tree editor (owns its own window) - legacy, now use DrawDialoguePanel()
+    // m_DialogueTreeEditor.Render();
 
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
@@ -2061,6 +2085,13 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Render dialogue overlay on top of editor panels during play
     if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
         DrawDialogueOverlay();
+    }
+
+    // Render subtitle overlay (accessibility) during play mode
+    if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+        m_SubtitleSystem.RenderOverlay(
+            static_cast<u32>(io.DisplaySize.x),
+            static_cast<u32>(io.DisplaySize.y));
     }
 
     // Render HUD widgets during play mode (editor game view)
@@ -2447,12 +2478,16 @@ void EditorLayer::DrawMenuBar() {
             if (ImGui::BeginMenu("Tools")) {
                 bool particleEditor = IsPanelVisible(EditorPanel::ParticleEditor);
                 bool animGraph = IsPanelVisible(EditorPanel::AnimGraph);
+                bool dialogue = IsPanelVisible(EditorPanel::Dialogue);
                 bool profiler = IsPanelVisible(EditorPanel::Profiler);
                 if (ImGui::MenuItem("Particle Editor", nullptr, &particleEditor)) {
                     SetPanelVisibility(EditorPanel::ParticleEditor, particleEditor);
                 }
                 if (ImGui::MenuItem("Animation Graph", nullptr, &animGraph)) {
                     SetPanelVisibility(EditorPanel::AnimGraph, animGraph);
+                }
+                if (ImGui::MenuItem("Dialogue Editor", nullptr, &dialogue)) {
+                    SetPanelVisibility(EditorPanel::Dialogue, dialogue);
                 }
                 if (ImGui::MenuItem("Profiler", nullptr, &profiler)) {
                     SetPanelVisibility(EditorPanel::Profiler, profiler);
@@ -20437,6 +20472,9 @@ void EditorLayer::UpdateDialogue(f32 deltaTime) {
     // DialogueSystem handles all logic (tree + legacy) via PlayMode.
     // Just query active entity for overlay rendering.
     m_ActiveDialogueEntity = m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity();
+
+    // Update subtitle system timers
+    m_SubtitleSystem.Update(deltaTime);
 }
 
 void EditorLayer::DrawDialogueOverlay() {
@@ -23015,6 +23053,133 @@ void EditorLayer::DrawAnimGraphPanel() {
 
     bool isPlaying = m_PlayMode.IsPlaying() || m_PlayMode.IsPaused();
     m_AnimGraphEditor.Render(m_EditorSettings, isPlaying);
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawDialoguePanel() {
+    if (!ImGui::Begin("Dialogue Editor")) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World) {
+        ImGui::TextDisabled("No world loaded");
+        ImGui::End();
+        return;
+    }
+
+    // Left sidebar: list entities with DialogueComponent
+    ImGui::BeginChild("DialogueEntityList", ImVec2(200, 0), true);
+    ImGui::Text("Entities");
+    ImGui::Separator();
+
+    std::vector<ECS::Entity> dialogueEntities;
+    for (ECS::Entity entity : m_World->GetAllEntities()) {
+        if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
+            dialogueEntities.push_back(entity);
+        }
+    }
+
+    if (dialogueEntities.empty()) {
+        ImGui::TextDisabled("No DialogueComponent\nfound in scene");
+    } else {
+        for (ECS::Entity entity : dialogueEntities) {
+            std::string name = "Entity " + std::to_string(entity);
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+            if (nameComp && !nameComp->name.empty()) {
+                name = nameComp->name;
+            }
+
+            bool isSelected = (m_DialogueEditorEntity == entity);
+            if (ImGui::Selectable(name.c_str(), isSelected)) {
+                m_DialogueEditorEntity = entity;
+                auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(entity);
+                if (dlg && dlg->IsTreeMode()) {
+                    m_DialogueTreeEditor.SetTree(&dlg->dialogueTree);
+                    m_DialogueTreeEditor.SetOpen(true);
+                }
+            }
+        }
+    }
+
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Right side: dialogue tree editor for selected entity
+    ImGui::BeginChild("DialogueTreeArea", ImVec2(0, 0), true);
+
+    // Auto-select primary selected entity if it has DialogueComponent
+    if (m_PrimarySelected != ECS::INVALID_ENTITY && m_PrimarySelected != m_DialogueEditorEntity) {
+        auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_PrimarySelected);
+        if (dlg && dlg->IsTreeMode()) {
+            m_DialogueEditorEntity = m_PrimarySelected;
+            m_DialogueTreeEditor.SetTree(&dlg->dialogueTree);
+            m_DialogueTreeEditor.SetOpen(true);
+        }
+    }
+
+    if (m_DialogueEditorEntity == ECS::INVALID_ENTITY) {
+        ImGui::TextDisabled("Select an entity with\nDialogueComponent");
+    } else {
+        auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_DialogueEditorEntity);
+        if (!dlg) {
+            ImGui::TextDisabled("DialogueComponent removed");
+            m_DialogueEditorEntity = ECS::INVALID_ENTITY;
+        } else if (!dlg->IsTreeMode()) {
+            ImGui::TextDisabled("Entity is using legacy\ndialogue mode");
+            ImGui::Separator();
+            if (ImGui::Button("Convert to Tree Mode")) {
+                // Initialize an empty tree
+                dlg->dialogueTree.treeName = "Dialogue";
+                dlg->dialogueTree.nextId = 1;
+                dlg->dialogueTree.nodes.clear();
+
+                // Add a root node
+                u32 rootId = dlg->dialogueTree.AddNode(GUI::DialogueNodeType::Root);
+                dlg->dialogueTree.rootNodeId = rootId;
+                if (auto* rootNode = dlg->dialogueTree.GetNode(rootId)) {
+                    rootNode->editorPosition = Math::Vector2(50, 150);
+                }
+
+                // Add an end node
+                u32 endId = dlg->dialogueTree.AddNode(GUI::DialogueNodeType::End);
+                if (auto* endNode = dlg->dialogueTree.GetNode(endId)) {
+                    endNode->editorPosition = Math::Vector2(400, 150);
+                }
+                if (auto* rootNode = dlg->dialogueTree.GetNode(rootId)) {
+                    rootNode->nextNodeId = endId;
+                }
+
+                m_DialogueTreeEditor.SetTree(&dlg->dialogueTree);
+                m_DialogueTreeEditor.SetOpen(true);
+            }
+        } else {
+            // Show entity name in header
+            std::string headerName = "Editing: Entity " + std::to_string(m_DialogueEditorEntity);
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_DialogueEditorEntity);
+            if (nameComp && !nameComp->name.empty()) {
+                headerName = "Editing: " + nameComp->name;
+            }
+            ImGui::Text("%s", headerName.c_str());
+
+            // Tree name edit
+            char treeBuf[128];
+            strncpy(treeBuf, dlg->dialogueTree.treeName.c_str(), sizeof(treeBuf) - 1);
+            treeBuf[sizeof(treeBuf) - 1] = '\0';
+            if (ImGui::InputText("Tree Name", treeBuf, sizeof(treeBuf))) {
+                dlg->dialogueTree.treeName = treeBuf;
+            }
+
+            ImGui::Separator();
+
+            // Render the dialogue tree editor widget
+            m_DialogueTreeEditor.Render();
+        }
+    }
+
+    ImGui::EndChild();
 
     ImGui::End();
 }
