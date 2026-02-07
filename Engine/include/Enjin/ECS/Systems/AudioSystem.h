@@ -38,10 +38,8 @@ public:
         if (!mgr.IsInitialized()) return;
 
         // --- Update listener from AudioListenerComponent ---
-        const auto& entities = m_World->GetAllEntities();
-        for (Entity entity : entities) {
+        for (Entity entity : m_World->GetEntitiesWithComponent<AudioListenerComponent>()) {
             if (!m_World->IsValid(entity)) continue;
-            if (!m_World->HasComponent<AudioListenerComponent>(entity)) continue;
             if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
             auto* listener = m_World->GetComponent<AudioListenerComponent>(entity);

@@ -28,11 +28,8 @@ void SimplePhysics::Update(f32 deltaTime) {
     if (!m_World) return;
 
     // Update rigidbodies
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::RigidbodyComponent>(entity) ||
-            !m_World->HasComponent<ECS::TransformComponent>(entity)) {
-            continue;
-        }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::RigidbodyComponent>()) {
+        if (!m_World->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -45,8 +42,7 @@ void SimplePhysics::Update(f32 deltaTime) {
         Math::Vector3 effectiveGravity = m_Gravity;
         {
             i32 bestPriority = INT_MIN;
-            for (ECS::Entity zoneEntity : m_World->GetAllEntities()) {
-                if (!m_World->HasComponent<ECS::GravityZoneComponent>(zoneEntity)) continue;
+            for (ECS::Entity zoneEntity : m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>()) {
                 auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
                 auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
                 if (zone && zoneTransform && zone->isActive && zone->priority > bestPriority) {
@@ -468,12 +464,19 @@ void SimplePhysics::DetectCollisionEvents() {
     // Clear current frame pairs
     m_CurrentCollisionPairs.clear();
 
-    // Get all entities with colliders
+    // Get all entities with colliders (union of three collider types)
     std::vector<ECS::Entity> colliderEntities;
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<ECS::BoxColliderComponent>(entity) ||
-            m_World->HasComponent<ECS::SphereColliderComponent>(entity) ||
-            m_World->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+        colliderEntities.push_back(entity);
+    }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>()) {
+        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
+            colliderEntities.push_back(entity);
+        }
+    }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>()) {
+        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity) &&
+            !m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
             colliderEntities.push_back(entity);
         }
     }

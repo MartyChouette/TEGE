@@ -1322,8 +1322,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);
             if (playerTransform) {
                 i32 bestCamPriority = INT_MIN;
-                for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    if (!m_World->HasComponent<ECS::CameraTriggerComponent>(entity)) continue;
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraTriggerComponent>()) {
                     auto* trigger = m_World->GetComponent<ECS::CameraTriggerComponent>(entity);
                     auto* trigTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
                     if (trigger && trigTransform && trigger->priority > bestCamPriority) {
@@ -1379,15 +1378,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ECS::WeatherZoneComponent* activeWeatherZone = nullptr;
     i32 bestWeatherPriority = INT_MIN;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
-                    activeWeatherZone = zone;
-                    bestWeatherPriority = zone->priority;
-                }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                activeWeatherZone = zone;
+                bestWeatherPriority = zone->priority;
             }
         }
     }
@@ -1396,15 +1393,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     ECS::TemperatureZoneComponent* activeTempZone = nullptr;
     i32 bestTempPriority = INT_MIN;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<ECS::TemperatureZoneComponent>(entity)) {
-            auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
-            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-            if (zone && zoneTransform && zone->priority > bestTempPriority) {
-                if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
-                    activeTempZone = zone;
-                    bestTempPriority = zone->priority;
-                }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
+        auto* zone = m_World->GetComponent<ECS::TemperatureZoneComponent>(entity);
+        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (zone && zoneTransform && zone->priority > bestTempPriority) {
+            if (zone->ContainsPoint(zoneTransform->position, cameraTransform->position)) {
+                activeTempZone = zone;
+                bestTempPriority = zone->priority;
             }
         }
     }
@@ -1531,8 +1526,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     }
 
     // Water freeze/thaw driven by temperature zones
-    for (ECS::Entity waterEntity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::WaterVolumeComponent>(waterEntity)) continue;
+    for (ECS::Entity waterEntity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
         auto* waterVol = m_World->GetComponent<ECS::WaterVolumeComponent>(waterEntity);
         auto* waterTransform = m_World->GetComponent<ECS::TransformComponent>(waterEntity);
         if (!waterVol || !waterTransform) continue;
@@ -1540,8 +1534,7 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         // Find highest-priority temperature zone containing this water entity
         ECS::TemperatureZoneComponent* waterTempZone = nullptr;
         i32 bestWaterTempPri = INT_MIN;
-        for (ECS::Entity tzEntity : m_World->GetAllEntities()) {
-            if (!m_World->HasComponent<ECS::TemperatureZoneComponent>(tzEntity)) continue;
+        for (ECS::Entity tzEntity : m_World->GetEntitiesWithComponent<ECS::TemperatureZoneComponent>()) {
             auto* tz = m_World->GetComponent<ECS::TemperatureZoneComponent>(tzEntity);
             auto* tzTransform = m_World->GetComponent<ECS::TransformComponent>(tzEntity);
             if (tz && tzTransform && tz->priority > bestWaterTempPri) {
@@ -1582,26 +1575,24 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
         // Override sun direction on the first directional light
         Math::Vector3 sunDir = m_WorldTime.GetSunDirection();
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::LightComponent>(entity)) {
-                auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
-                auto* lightTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                if (light && light->type == ECS::LightType::Directional && lightTransform) {
-                    // Encode sun direction into rotation
-                    lightTransform->rotation = Math::Quaternion::FromEuler(
-                        Math::Vector3(
-                            std::asin(-sunDir.y) * 57.29578f,
-                            std::atan2(-sunDir.x, -sunDir.z) * 57.29578f,
-                            0.0f
-                        ));
-                    light->intensity = m_WorldTime.GetAmbientIntensity() * 1.5f;
-                    light->color = Math::Vector3(1.0f, 0.95f, 0.9f);
-                    if (timeState.isNight) {
-                        light->color = Math::Vector3(0.3f, 0.35f, 0.5f);
-                        light->intensity = 0.3f;
-                    }
-                    break;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
+            auto* light = m_World->GetComponent<ECS::LightComponent>(entity);
+            auto* lightTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (light && light->type == ECS::LightType::Directional && lightTransform) {
+                // Encode sun direction into rotation
+                lightTransform->rotation = Math::Quaternion::FromEuler(
+                    Math::Vector3(
+                        std::asin(-sunDir.y) * 57.29578f,
+                        std::atan2(-sunDir.x, -sunDir.z) * 57.29578f,
+                        0.0f
+                    ));
+                light->intensity = m_WorldTime.GetAmbientIntensity() * 1.5f;
+                light->color = Math::Vector3(1.0f, 0.95f, 0.9f);
+                if (timeState.isNight) {
+                    light->color = Math::Vector3(0.3f, 0.35f, 0.5f);
+                    light->intensity = 0.3f;
                 }
+                break;
             }
         }
 
@@ -1700,6 +1691,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_GameViewRenderTarget->Begin(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
         m_GameViewRenderTarget->End(commandBuffer);
+    }
+
+    // Set weather for main pass (editor viewport) so it renders weather particles too
+    if (hasWeatherParticles) {
+        m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
+    } else {
+        m_RenderSystem->ClearMainPassWeather();
     }
 }
 
@@ -1918,10 +1916,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
     // Draw camera frustum for all camera entities (or selected camera)
     if (m_World) {
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                DrawCameraFrustum(entity);
-            }
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraComponent>()) {
+            DrawCameraFrustum(entity);
         }
     }
 
@@ -5062,11 +5058,8 @@ void EditorLayer::DrawCameraTriggerComponent(ECS::Entity entity) {
         // Target camera dropdown
         std::vector<ECS::Entity> cameraEntities;
         if (m_World) {
-            for (ECS::Entity e : m_World->GetAllEntities()) {
-                if (m_World->HasComponent<ECS::CameraComponent>(e)) {
-                    cameraEntities.push_back(e);
-                }
-            }
+            const auto& camEnts = m_World->GetEntitiesWithComponent<ECS::CameraComponent>();
+            cameraEntities.assign(camEnts.begin(), camEnts.end());
         }
 
         std::string currentName = "(None)";
@@ -5493,11 +5486,8 @@ void EditorLayer::DrawSettingsPanel() {
         // Gather all cameras for the selector
         std::vector<ECS::Entity> settingsCameraEntities;
         if (m_World) {
-            for (ECS::Entity entity : m_World->GetAllEntities()) {
-                if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                    settingsCameraEntities.push_back(entity);
-                }
-            }
+            const auto& camEnts = m_World->GetEntitiesWithComponent<ECS::CameraComponent>();
+            settingsCameraEntities.assign(camEnts.begin(), camEnts.end());
         }
 
         // Camera selector (shared with game view)

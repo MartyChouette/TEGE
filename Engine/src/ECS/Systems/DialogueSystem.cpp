@@ -232,8 +232,7 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
 
     Entity activeDialogue = INVALID_ENTITY;
 
-    for (Entity entity : world->GetAllEntities()) {
-        if (!world->HasComponent<DialogueComponent>(entity)) continue;
+    for (Entity entity : world->GetEntitiesWithComponent<DialogueComponent>()) {
         auto* dlg = world->GetComponent<DialogueComponent>(entity);
         if (!dlg) continue;
 

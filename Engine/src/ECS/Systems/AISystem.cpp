@@ -59,11 +59,8 @@ void AISystem::Update(f32 deltaTime) {
     }
 
     // Iterate all entities with AIControllerComponent + TransformComponent
-    for (Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<AIControllerComponent>(entity) ||
-            !m_World->HasComponent<TransformComponent>(entity)) {
-            continue;
-        }
+    for (Entity entity : m_World->GetEntitiesWithComponent<AIControllerComponent>()) {
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
         auto* ai = m_World->GetComponent<AIControllerComponent>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);

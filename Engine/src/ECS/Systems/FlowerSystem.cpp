@@ -38,7 +38,7 @@ void FlowerSystem::Update(f32 deltaTime) {
         f32 windMag = windDir.Length();
         if (windMag > 1e-6f) {
             windDir = windDir * (1.0f / windMag);
-            for (Entity entity : m_World->GetAllEntities()) {
+            for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
                 auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
                 if (!stem) continue;
                 auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -114,7 +114,7 @@ void FlowerSystem::ProcessInput() {
             Entity bestEntity = INVALID_ENTITY;
             f32 bestDist = FLT_MAX;
 
-            for (Entity entity : m_World->GetAllEntities()) {
+            for (Entity entity : m_World->GetEntitiesWithComponent<GrabbableComponent>()) {
                 auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
                 if (!grab) continue;
                 auto* entTransform = m_World->GetComponent<TransformComponent>(entity);
@@ -211,7 +211,7 @@ void FlowerSystem::SetupJointsIfNeeded() {
     m_JointsInitialized = true;
 
     // Add Kinematic RigidbodyComponent to stem entities
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
         auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
         if (!stem) continue;
         if (!m_World->HasComponent<RigidbodyComponent>(entity)) {
@@ -223,7 +223,7 @@ void FlowerSystem::SetupJointsIfNeeded() {
     }
 
     // For each tethered entity, add Dynamic RB + SpringJointComponent
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
 
@@ -285,7 +285,7 @@ void FlowerSystem::SetupJointsIfNeeded() {
 void FlowerSystem::ProcessGrabForces(f32 dt) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
 
@@ -345,7 +345,7 @@ void FlowerSystem::ProcessGrabForces(f32 dt) {
 void FlowerSystem::UpdateJellyMeshes(f32 dt) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<JellyMeshComponent>()) {
         auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
         if (!jelly) continue;
 
@@ -497,7 +497,7 @@ void FlowerSystem::UpdateJointTracking() {
     };
     std::vector<BreakEvent> breaks;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
 
@@ -604,7 +604,7 @@ void FlowerSystem::UpdateJointTracking() {
 void FlowerSystem::UpdateBrokenParts(f32 dt) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || !tether->isBroken) continue;
 
@@ -641,7 +641,7 @@ void FlowerSystem::UpdateParticles(f32 dt) {
     // Find particle gravity from first stem's FlowerParticleConfigComponent (if any)
     f32 gravity = 9.81f;
     if (m_World) {
-        for (Entity entity : m_World->GetAllEntities()) {
+        for (Entity entity : m_World->GetEntitiesWithComponent<FlowerParticleConfigComponent>()) {
             auto* cfg = m_World->GetComponent<FlowerParticleConfigComponent>(entity);
             if (cfg) { gravity = cfg->particleGravity; break; }
         }
@@ -681,7 +681,7 @@ void FlowerSystem::CheckGroundImpact() {
     };
     std::vector<ImpactEvent> impacts;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || !tether->isBroken) continue;
 
@@ -886,7 +886,7 @@ void FlowerSystem::UpdateScoreDisplay() {
     i32 totalParts = 0, totalHealthy = 0, totalWithered = 0;
     bool anyEvaluated = false;
     f32 totalScore = 0.0f;
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
         auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
         if (!stem) continue;
         totalParts += stem->partsRemoved;
@@ -899,14 +899,10 @@ void FlowerSystem::UpdateScoreDisplay() {
     }
 
     // Count total pluckable parts (entities with TetherComponent)
-    i32 totalPluckable = 0;
-    for (Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<TetherComponent>(entity))
-            totalPluckable++;
-    }
+    i32 totalPluckable = static_cast<i32>(m_World->GetEntitiesWithComponent<TetherComponent>().size());
 
     // Update score_display text entity
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TagComponent>()) {
         auto* tags = m_World->GetComponent<TagComponent>(entity);
         if (!tags || !tags->HasTag("score_display")) continue;
         auto* text = m_World->GetComponent<TextComponent>(entity);
@@ -934,7 +930,7 @@ void FlowerSystem::UpdateScoreDisplay() {
 void FlowerSystem::Evaluate() {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
         auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
         if (!stem) continue;
 
@@ -947,7 +943,7 @@ void FlowerSystem::Evaluate() {
     }
 
     // Find score display text entity (TagComponent with "score_display")
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<TagComponent>()) {
         auto* tags = m_World->GetComponent<TagComponent>(entity);
         if (!tags || !tags->HasTag("score_display")) continue;
 
@@ -957,7 +953,7 @@ void FlowerSystem::Evaluate() {
         // Build score summary from all FlowerStemComponents
         f32 totalScore = 0.0f;
         i32 totalHealthy = 0, totalWithered = 0, totalParts = 0;
-        for (Entity stemEntity : m_World->GetAllEntities()) {
+        for (Entity stemEntity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
             auto* stem = m_World->GetComponent<FlowerStemComponent>(stemEntity);
             if (!stem) continue;
             totalScore += stem->score;

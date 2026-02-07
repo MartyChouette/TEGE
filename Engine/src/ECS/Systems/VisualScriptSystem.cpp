@@ -15,7 +15,7 @@ void VisualScriptSystem::Initialize() {
     m_FirstUpdate = true;
 
     // Call OnCreate for all visual scripts
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled && !script->initialized) {
             m_Executor.ExecuteEvent(m_World, entity, script,
@@ -31,7 +31,7 @@ void VisualScriptSystem::Shutdown() {
     if (!m_World) return;
 
     // Call OnDestroy and reset runtime state
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled) {
             m_Executor.ExecuteEvent(m_World, entity, script,
@@ -50,7 +50,7 @@ void VisualScriptSystem::Shutdown() {
 void VisualScriptSystem::Update(f32 deltaTime) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (!script || !script->enabled) continue;
 
@@ -86,7 +86,7 @@ void VisualScriptSystem::Update(f32 deltaTime) {
 void VisualScriptSystem::BroadcastEvent(const std::string& eventName, f32 deltaTime) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetAllEntities()) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled) {
             m_Executor.ExecuteCustomEvent(m_World, entity, script, eventName, deltaTime);

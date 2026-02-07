@@ -252,11 +252,9 @@ void GrassRenderer::Render(VkCommandBuffer commandBuffer,
                             u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
-    const auto& entities = world->GetAllEntities();
     bool hasBound = false;
 
-    for (ECS::Entity entity : entities) {
-        if (!world->HasComponent<ECS::GrassVolumeComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::GrassVolumeComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* grass = world->GetComponent<ECS::GrassVolumeComponent>(entity);

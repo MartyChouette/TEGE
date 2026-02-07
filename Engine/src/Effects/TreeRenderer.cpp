@@ -278,11 +278,9 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
                            u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
-    const auto& entities = world->GetAllEntities();
     bool hasBound = false;
 
-    for (ECS::Entity entity : entities) {
-        if (!world->HasComponent<ECS::TreeVolumeComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::TreeVolumeComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* tree = world->GetComponent<ECS::TreeVolumeComponent>(entity);

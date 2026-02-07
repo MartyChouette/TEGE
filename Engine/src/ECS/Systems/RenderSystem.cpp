@@ -620,26 +620,23 @@ void RenderSystem::Update(f32 deltaTime) {
             vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-            const auto& entities = m_World->GetAllEntities();
-            for (Entity entity : entities) {
-                if (m_World->HasComponent<TransformComponent>(entity) &&
-                    m_World->HasComponent<MeshComponent>(entity)) {
-                    auto* xform = m_World->GetComponent<TransformComponent>(entity);
-                    if (xform && !xform->visible) continue;
-                    // Skip GPU-culled entities (frustum culling)
-                    if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
-                        usize entityIdx = static_cast<usize>(entity);
-                        if (entityIdx < m_EntityToCullIndex.size()) {
-                            u32 cullIdx = m_EntityToCullIndex[entityIdx];
-                            if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
-                                continue;
-                            }
+            for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+                if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+                auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                if (xform && !xform->visible) continue;
+                // Skip GPU-culled entities (frustum culling)
+                if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+                    usize entityIdx = static_cast<usize>(entity);
+                    if (entityIdx < m_EntityToCullIndex.size()) {
+                        u32 cullIdx = m_EntityToCullIndex[entityIdx];
+                        if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
+                            continue;
                         }
                     }
-                    // Skip 2D sprites — rendered in sorted pass after 3D geometry
-                    if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-                    RenderEntity(entity);
                 }
+                // Skip 2D sprites — rendered in sorted pass after 3D geometry
+                if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+                RenderEntity(entity);
             }
 
             // Sorted 2D sprite rendering pass (after 3D geometry)
@@ -699,12 +696,8 @@ void RenderSystem::Update(f32 deltaTime) {
         bool doLOD = (m_Camera != nullptr);
         if (doLOD) camPos = m_Camera->GetPosition();
 
-        const auto& entities = m_World->GetAllEntities();
-        for (Entity entity : entities) {
-            if (!m_World->HasComponent<TransformComponent>(entity) ||
-                !m_World->HasComponent<MeshComponent>(entity)) {
-                continue;
-            }
+        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
             // Skip invisible entities
             {
@@ -763,6 +756,11 @@ void RenderSystem::Update(f32 deltaTime) {
     RenderShrubs(0, 0);
     RenderTrees(0, 0);
     RenderParticles(0, 0);
+
+    // Render weather particles in main pass if set (editor viewport)
+    if (m_MainPassWeather) {
+        RenderWeatherParticles(*m_MainPassWeather, m_MainPassWeatherIsRain, 0, 0);
+    }
 }
 
 void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera) {
@@ -820,10 +818,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
-    const auto& entities = m_World->GetAllEntities();
-    for (Entity entity : entities) {
-        if (m_World->HasComponent<TransformComponent>(entity) &&
-            m_World->HasComponent<MeshComponent>(entity)) {
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (m_World->HasComponent<TransformComponent>(entity)) {
 
             // Skip invisible entities
             auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
@@ -1167,12 +1163,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
         // Render all entities (skip sprites — drawn in sorted pass)
-        const auto& entities = m_World->GetAllEntities();
-        for (Entity entity : entities) {
-            if (!m_World->HasComponent<TransformComponent>(entity) ||
-                !m_World->HasComponent<MeshComponent>(entity)) {
-                continue;
-            }
+        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
             // Skip invisible entities
             {
@@ -3589,7 +3581,16 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
 }
 
 void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {
+    const char* typeNames[] = { "None", "Cubemap", "Procedural", "SolidColor" };
+    u32 typeIdx = static_cast<u32>(config.type);
+    ENJIN_LOG_WARN(Renderer, "=== SetSkybox: type=%s ===", typeIdx < 4 ? typeNames[typeIdx] : "Unknown");
+    ENJIN_LOG_WARN(Renderer, "Pipeline=%s, VBO=%s",
+        m_SkyboxPipelineHandle != VK_NULL_HANDLE ? "OK" : "NULL",
+        m_SkyboxVertexBuffer ? "OK" : "NULL");
+
     m_Skybox.SetConfig(config);
+
+    ENJIN_LOG_WARN(Renderer, "Skybox valid=%s", m_Skybox.IsValid() ? "YES" : "NO");
 }
 
 void RenderSystem::CreateSkyboxCubeVBO() {
@@ -3618,7 +3619,12 @@ void RenderSystem::CreateSkyboxCubeVBO() {
 }
 
 void RenderSystem::CreateSkyboxPipeline() {
-    if (!m_Renderer || !m_Renderer->GetContext()) return;
+    ENJIN_LOG_INFO(Renderer, "CreateSkyboxPipeline called");
+
+    if (!m_Renderer || !m_Renderer->GetContext()) {
+        ENJIN_LOG_ERROR(Renderer, "CreateSkyboxPipeline: No renderer or context!");
+        return;
+    }
 
     auto* context = m_Renderer->GetContext();
     VkDevice device = context->GetDevice();
@@ -3814,8 +3820,26 @@ void RenderSystem::CreateSkyboxPipeline() {
 void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
                                 const VkViewport* viewportOverride,
                                 const VkRect2D* scissorOverride) {
+    // Debug: log why skybox might not render
+    static bool loggedOnce = false;
+    static u32 renderCount = 0;
+
     if (!m_Skybox.IsValid() || m_SkyboxPipelineHandle == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
+        if (!loggedOnce) {
+            ENJIN_LOG_WARN(Renderer, "Skybox skip: valid=%d pipeline=%d vbo=%d camera=%d",
+                m_Skybox.IsValid() ? 1 : 0,
+                m_SkyboxPipelineHandle != VK_NULL_HANDLE ? 1 : 0,
+                m_SkyboxVertexBuffer ? 1 : 0,
+                m_Camera ? 1 : 0);
+            loggedOnce = true;
+        }
         return;
+    }
+
+    // Log first few successful renders
+    if (renderCount < 3) {
+        ENJIN_LOG_WARN(Renderer, "RenderSkybox: Drawing skybox (frame %u)", renderCount);
+        renderCount++;
     }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();

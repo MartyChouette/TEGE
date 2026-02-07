@@ -241,11 +241,9 @@ void ShrubRenderer::Render(VkCommandBuffer commandBuffer,
                             u32 viewportHeight) {
     if (!m_Initialized || !m_Pipeline || !world) return;
 
-    const auto& entities = world->GetAllEntities();
     bool hasBound = false;
 
-    for (ECS::Entity entity : entities) {
-        if (!world->HasComponent<ECS::ShrubVolumeComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ShrubVolumeComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* shrub = world->GetComponent<ECS::ShrubVolumeComponent>(entity);

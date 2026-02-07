@@ -240,8 +240,7 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
     m_TotalActiveParticles = 0;
     m_TotalEmitterCount = 0;
 
-    for (ECS::Entity entity : world->GetAllEntities()) {
-        if (!world->HasComponent<ECS::ParticleEmitterComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);

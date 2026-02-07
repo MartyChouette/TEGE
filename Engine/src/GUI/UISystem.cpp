@@ -76,8 +76,7 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 /*deltaTime*/) {
     };
 
     std::vector<CanvasEntry> canvases;
-    for (ECS::Entity entity : world->GetAllEntities()) {
-        if (!world->HasComponent<UICanvasComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<UICanvasComponent>()) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entity);
         if (!canvas || !canvas->visible) continue;
         canvases.push_back({entity, canvas->sortOrder});

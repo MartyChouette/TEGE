@@ -191,8 +191,7 @@ void ParticleRenderer::Render(VkCommandBuffer commandBuffer,
     // Gather all emitter pool particles into instance cache
     m_InstanceDataCache.clear();
 
-    for (ECS::Entity entity : world->GetAllEntities()) {
-        if (!world->HasComponent<ECS::ParticleEmitterComponent>(entity)) continue;
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::ParticleEmitterComponent>()) {
         if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
 
         auto* emitter = world->GetComponent<ECS::ParticleEmitterComponent>(entity);

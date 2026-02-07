@@ -117,16 +117,13 @@ public:
      * @return Vector of entities with the given component
      */
     template<typename T>
-    std::vector<Entity> GetEntitiesWithComponent() const {
-        std::vector<Entity> result;
+    const std::vector<Entity>& GetEntitiesWithComponent() const {
         auto storage = GetStorage<T>();
-        if (!storage) return result;
-        for (auto entity : m_EntityManager.GetAllEntities()) {
-            if (storage->Has(entity)) {
-                result.push_back(entity);
-            }
+        if (!storage) {
+            static const std::vector<Entity> empty;
+            return empty;
         }
-        return result;
+        return storage->GetEntities();
     }
 
     /**

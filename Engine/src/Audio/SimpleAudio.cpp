@@ -353,8 +353,7 @@ void SimpleAudio::Update(f32 deltaTime) {
 void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
     if (!m_World) return;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::AudioSourceComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>()) {
 
         auto* audio = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);

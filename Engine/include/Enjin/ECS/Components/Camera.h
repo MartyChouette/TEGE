@@ -69,13 +69,11 @@ struct CameraManager {
 
         // Iterate through all camera components
         // (requires World to expose camera component iteration)
-        for (auto entity : world->GetAllEntities()) {
-            if (world->template HasComponent<CameraComponent>(entity)) {
-                auto* cam = world->template GetComponent<CameraComponent>(entity);
-                if (cam && cam->isActive && cam->priority > highestPriority) {
-                    highestPriority = cam->priority;
-                    bestCamera = entity;
-                }
+        for (auto entity : world->template GetEntitiesWithComponent<CameraComponent>()) {
+            auto* cam = world->template GetComponent<CameraComponent>(entity);
+            if (cam && cam->isActive && cam->priority > highestPriority) {
+                highestPriority = cam->priority;
+                bestCamera = entity;
             }
         }
 
@@ -87,12 +85,10 @@ struct CameraManager {
     static std::vector<u64> GetAllActiveCameras(WorldType* world) {
         std::vector<std::pair<i32, u64>> cameras;
 
-        for (auto entity : world->GetAllEntities()) {
-            if (world->template HasComponent<CameraComponent>(entity)) {
-                auto* cam = world->template GetComponent<CameraComponent>(entity);
-                if (cam && cam->isActive) {
-                    cameras.push_back({cam->priority, entity});
-                }
+        for (auto entity : world->template GetEntitiesWithComponent<CameraComponent>()) {
+            auto* cam = world->template GetComponent<CameraComponent>(entity);
+            if (cam && cam->isActive) {
+                cameras.push_back({cam->priority, entity});
             }
         }
 

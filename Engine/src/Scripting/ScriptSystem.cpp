@@ -205,8 +205,7 @@ void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script)
 void ScriptSystem::InitializeAllScripts() {
     if (!m_World || !m_ScriptEngine) return;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -223,8 +222,7 @@ void ScriptSystem::InitializeAllScripts() {
 void ScriptSystem::ShutdownAllScripts() {
     if (!m_World) return;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -260,8 +258,7 @@ void ScriptSystem::Update(f32 deltaTime) {
     m_ScriptEngine->PollFileChanges();
     if (m_ScriptEngine->ProcessHotReload()) {
         // Re-initialize scripts whose modules were reloaded
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
             auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
             if (!sc) continue;
 
@@ -283,8 +280,7 @@ void ScriptSystem::Update(f32 deltaTime) {
     }
 
     // 2. Initialize new scripts
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -296,8 +292,7 @@ void ScriptSystem::Update(f32 deltaTime) {
     }
 
     // 3. Call OnStart for scripts not yet started
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -317,8 +312,7 @@ void ScriptSystem::Update(f32 deltaTime) {
     }
 
     // 5. OnUpdate
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -341,8 +335,7 @@ void ScriptSystem::Update(f32 deltaTime) {
 void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
     if (!m_Enabled || !m_World) return;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
@@ -357,8 +350,7 @@ void ScriptSystem::FixedUpdate(f32 fixedDeltaTime) {
 void ScriptSystem::LateUpdate(f32 deltaTime) {
     if (!m_Enabled || !m_World) return;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::ScriptComponent>(entity)) continue;
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ScriptComponent>()) {
         auto* sc = m_World->GetComponent<ECS::ScriptComponent>(entity);
         if (!sc) continue;
 
