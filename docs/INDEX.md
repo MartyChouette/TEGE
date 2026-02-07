@@ -14,7 +14,8 @@
 
 ## API Reference
 
-- **[API_REFERENCE.md](API_REFERENCE.md)** - API documentation
+- **[API_REFERENCE.md](API_REFERENCE.md)** - C++ API documentation
+- **[SCRIPTING_API.md](SCRIPTING_API.md)** - AngelScript scripting API reference (~170 functions)
 
 ## Key Systems
 

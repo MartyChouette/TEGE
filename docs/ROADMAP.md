@@ -380,8 +380,114 @@ Ideas for "simple creation of complex games":
 
 ---
 
-*Last updated: 2026-02-06*
-*Generated from codebase audit and performance analysis*
+## Editor Tools & UX
+
+### Pending
+
+- **Extended Model Format Support** — PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders
+- **Template Rebuild & Demo Scenes** — Update all 15 templates to latest features, add demo scene per template with "Demo" button
+- **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
+- **Project Hub & Creation Wizard** — Replace template selector with Recent Projects / New Project / Demos tabs, folder structure auto-creation, collaboration-ready
+- **Editor Accent Color & Theming** — Replace blue accent with TEGE brand `#c7dac4` (sage green), rounded corners, softer panel borders, distinct visual identity
+- **Curved Grid Snapping** — Snap entity placement to curved/spherical grid surfaces with orientation alignment
+- **Improved Icon/Window Inspector** — Entity icons in hierarchy, component icons in inspector, window icon picker in project settings
+
+### Partially Complete
+
+- **Undo/Redo** — Entity operations done (delete/duplicate/cut/paste/reparent/component add-remove). Remaining: inspector property edits, tilemap paint, terrain sculpt, UI editor edits
+- **Drag and Drop** — OS file drop done. Remaining: asset browser to viewport/inspector, hierarchy reparenting
+- **Asset Import Pipeline** — Import settings dialog and .enjinasset metadata done. Remaining: thumbnails, axis conversion, texture compression, asset browser drag-import
+
+---
+
+## Runtime Systems (Planned)
+
+- **Improved Physics** — 2D physics (Box2D-style), 2D joints, CCD, more shape types, physics materials (friction, bounce), script trigger callbacks
+- **Basic Networking** — Client-server architecture, state sync, entity ownership, lobbies, RPCs, lag compensation (LAN first, then relay)
+- **Destructible Environments** — Prefab-level destructibility, fracture/shatter mesh splitting, debris physics, chain destruction
+- **Simple Fluid Simulation** — Grid-based Eulerian fluid (water, lava, gas). FluidVolumeComponent with preset configs. Target: 64x64 2D / 32x32x32 3D at 60fps
+- **SVG Support** — nanosvg parsing, rasterize-to-texture caching, UIElement Image widget integration, SDF vector rendering (future)
+- **Dialogue System Future Work** — .enjdlg asset files, localization system (string keys + locale tables), UICanvas dialogue box (replace ImGui overlay), dialogue template, Yarn Spinner/Twine import/export
+
+---
+
+## Rendering Pipeline & Performance
+
+In addition to the Critical Rendering Pipeline Issues documented above:
+
+- **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, sprite batching by texture atlas (biggest 2D perf win), warn on ortho/perspective mixing, flat shading fast path for sprites
+- **Pipeline Optimization** — Multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling
+
+---
+
+## Procedural Generation
+
+- **Procedural Generation Algorithms** — Modular pluggable generators for LevelGenerator:
+  - Cellular Automata (cave generation, organic shapes)
+  - Random Walkers (dungeon carving, directional bias)
+  - Wave Function Collapse (tile-based from examples, adjacency constraints, backtracking)
+  - BSP (Binary Space Partitioning room-corridor dungeons)
+  - L-Systems (recursive tree/plant/river generation)
+  - Voronoi Diagrams (region-based world gen, biome placement)
+  - Diamond-Square (heightmap terrain, midpoint displacement)
+  - Grammar-Based (shape grammars for buildings/architecture)
+  - Modular/Prefab Assembly (snap-together rooms with connection points)
+  - Editor UI: Generator panel with algorithm selection, parameter sliders, live preview, seed control
+- **Custom Flora Assets** — Drop-in custom images/models for vegetation systems. "Custom Asset" field on volume components with browse/drag-drop/clear.
+
+---
+
+## Scripting & Extensibility
+
+- **Component/Plugin DLL Repositories** — Load gameplay components from external DLLs/shared libs, package format for distribution
+- **Documentation Generator** — Auto-generate docs from component definitions, script API, project structure (HTML/markdown)
+- **ScriptableObject / DataAsset System** — Unity-like reusable data containers (weapon stats, enemy tables, item definitions), serialized JSON assets, inspector editing
+
+---
+
+## Platform & Export
+
+- **Mobile Support** — Touch input, gyroscope, screen density, mobile render paths. Android (Vulkan) + iOS (MoltenVK)
+- **Console Support** — Platform abstraction for console input, certification requirements, console render backends
+- **VR/XR Support** — OpenXR integration, stereo rendering, hand tracking, spatial input, roomscale
+- **WebAssembly Export** — Target WebGPU (not WebGL), WASM via Emscripten
+
+---
+
+## Accessibility (Engine-Level)
+
+The editor itself must be fully accessible:
+
+- **Screen Reader Support** — OS accessibility APIs (UI Automation, AT-SPI, NSAccessibility)
+- **Keyboard-Only Navigation** — Full editor operation without mouse, tab-order, focus indicators
+- **Alternative Input Devices** — Switch access, eye tracking, sip-and-puff
+- **Motor Accessibility** — Adjustable click/drag thresholds, sticky keys, dwell-click, one-handed presets
+- **Visual Accessibility** — Configurable font sizes, icon scaling, custom accent colors, reduced transparency
+- **Audio Accessibility** — Visual indicators for all audio feedback in editor
+- **Blind-Accessible Workflow** — Screen reader + keyboard investigation, text-based/CLI interface for core operations
+
+---
+
+## Version Control & Collaboration
+
+- **Git Integration** — Built-in git panel (stage, commit, push, pull, branch, merge), visual scene diff (structured JSON), optional `git init` on project creation
+- **Scene & Entity Locking** — Advisory locks for multi-user workflows (`.enjinlock`), entity-level locking with visual indicators
+- **Collaborative Editing** — Real-time or turn-based with session locks. Future: OT/CRDT-based scene sync with entity-level conflict resolution
+- **Clean Git Serialization** — Deterministic scene files (sorted keys, stable ordering, no floating-point drift)
+
+---
+
+## UI/UX Design Philosophy
+
+- Aesthetically accessible, clean, forward-thinking, timeless
+- Own identity (not Unity grey, not Unreal dark, not Apple-style)
+- Information-dense but not cluttered
+- Consistent patterns (context menus, drag behavior, property editing)
+
+---
+
+*Last updated: 2026-02-07*
+*Generated from codebase audit, performance analysis, and feature roadmap*
 
 ---
 

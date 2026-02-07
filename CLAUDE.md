@@ -32,6 +32,8 @@ glslangValidator -V Engine/shaders/triangle.frag -o Engine/shaders/triangle.frag
 ./build/bin/EnjinEditor              # Linux/Mac
 ```
 
+See `docs/BUILD.md` for full build guide with dependencies and troubleshooting.
+
 ## Project Architecture
 
 ```
@@ -40,7 +42,7 @@ enjin/
 │   ├── include/Enjin/
 │   │   ├── Core/           # Application, Window, Input
 │   │   ├── Logging/        # Thread-safe categorized logging
-│   │   ├── Math/           # Vector, Matrix, Quaternion, Spline
+│   │   ├── Math/           # Vector, Matrix, Quaternion, Spline, Noise
 │   │   ├── Memory/         # Custom allocators (Stack, Pool, Linear)
 │   │   └── Platform/       # Platform abstraction, types
 │   └── src/
@@ -59,32 +61,37 @@ enjin/
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Accessibility/  # ColorblindFilter, SubtitleSystem, ContentWarning
 │   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, PerformanceStats
-│   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, SeasonalWeather
+│   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, Particles
 │   │   ├── Input/          # InputAction (remappable input action map)
-│   │   ├── GUI/            # ImGui integration, UICanvas, UISystem, GameMenus, DialogueTree
+│   │   ├── GUI/            # ImGui integration, UICanvas, UISystem, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
-│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
+│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, ObjectPool, CinematicSystem
 │   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
-│   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
 │   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
 │   │   │   └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
-│   │   └── Scripting/      # ScriptEngine, ScriptBindings, TegeBehavior
+│   │   ├── Scripting/      # ScriptEngine, ScriptBindings, TegeBehavior
+│   │   └── VisualScript/   # NodeDefinition, NodeRegistry, VisualScriptExecutor
 │   ├── shaders/            # GLSL shaders (triangle.vert/frag)
 │   └── src/
 │
 ├── Editor/                  # Editor application (main.cpp entry point)
-│
 ├── Player/                  # Standalone game player (no editor/ImGui)
-│
-├── third_party/            # External dependencies
-│   ├── imgui/              # Dear ImGui (UI)
-│   └── imguizmo/           # Transform gizmos
-│
+├── third_party/            # External dependencies (imgui, imguizmo)
 └── build/                  # Build output (bin/, lib/)
 ```
+
+See `docs/ARCHITECTURE.md` for detailed system architecture.
+
+## Code Conventions
+
+- **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
+- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`, `Enjin::Gameplay`
+- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)` — categories include Build, Player
+- **API export:** `ENJIN_API` macro for DLL export
+- **Important:** The `InputSystem` namespace was chosen to avoid collision with the existing `Enjin::Input` class. Always use `InputSystem::` not `Input::` for action-map types.
 
 ## Key Classes and Concepts
 
@@ -99,39 +106,25 @@ enjin/
 
 - **`ECS::World`** - Manages entities and components
 - **`ECS::Entity`** - Just a u64 ID
-- **Components:**
-  - `TransformComponent` - position, rotation (Euler), scale
+- **Key Components:**
+  - `TransformComponent` - position, rotation (Euler), scale, `visible` bool
   - `MeshComponent` - vertices (position, normal, UV, color, tangent, boneWeights, boneIndices), indices
-  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags (flatShading, vertexSnapping, vertexSnapResolution, affineTexturing, stippleTransparency)
+  - `MaterialComponent` - PBR properties, textures (base color, normal, height), retro flags
   - `LightComponent` - Light data (direction, color, intensity)
   - `NameComponent` - Entity name string
-  - `CameraComponent` - In-game cameras with projection, weather/water settings
-  - `NotesComponent` - Text annotations for entities (field: `.notes`, not `.text`)
-  - `SkeletonComponent` - Shared skeleton data for skinned meshes
-  - `AnimatorComponent` - Skeletal animation playback (SkeletalAnimator + AnimationStateMachine)
-  - `CharacterController` - Various movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
-  - `BoxColliderComponent` / `SphereColliderComponent` / `CapsuleColliderComponent` - Colliders with `categoryBits` (u32 bitmask, default `1` = "Default" group) and `collisionMask` (u32, default `0xFFFFFFFF` = collide with all). Old `layer` field was renamed to `categoryBits`.
+  - `CameraComponent` - In-game cameras with projection
+  - `NotesComponent` - Text annotations (field: `.notes`, not `.text`)
+  - `AnimatorComponent` - Skeletal animation playback
+  - `CharacterController` - Movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
+  - `BoxColliderComponent` / `SphereColliderComponent` / `CapsuleColliderComponent` - Colliders with `categoryBits`/`collisionMask` bitmask filtering
 
 ### Collision Filtering
 
-- **Bitmask system:** Each collider has `categoryBits` (which groups it belongs to) and `collisionMask` (which groups it collides with). Up to 32 groups, one per bit.
-- **Bilateral rule:** `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)` — both entities must agree to collide
-- **Defaults:** `categoryBits = 1` (bit 0, "Default"), `collisionMask = 0xFFFFFFFF` (all). New entities collide with everything.
-- **Named groups:** Stored in `SceneManager::m_CollisionGroupNames` (32-entry vector, index 0 = "Default"). Serialized in `.enjinproject` as `"collisionGroups"` array.
-- **PhysicsWorld integration:** `RigidBody` carries `categoryBits`/`collisionMask`, copied from ECS colliders in `SyncFromECS()`. `DetectCollisions()` applies bilateral filter before shape tests.
-- **SimplePhysics integration:** `Raycast`, `RaycastAll`, `CheckGround`, `MoveAndSlide`, `GetCollidersInRadius` accept optional `u32 layerMask` param (default `0xFFFFFFFF`). Ground check loop uses bilateral filter.
-- **Inspector UI:** `DrawCollisionFilteringUI(categoryBits, collisionMask)` shows named checkbox lists for "Category (belongs to)" and "Collides with", plus hex display. Called from all 3 collider inspectors.
-- **Project Settings:** "Collision Groups" section with editable group name text fields (group 0 "Default" is read-only).
-- **Serialization:** Saved as `"categoryBits"` in scene JSON. Deserializer migrates old `"layer"` field: `layer 0 → categoryBits 1`, `layer N → categoryBits (1 << N)`.
-- **Script bindings:** Masked overloads `Physics_Raycast(..., uint)`, `Physics_RaycastHit(..., uint, ...)`, `Physics_CheckSphere(..., uint)`, `Physics_CheckBox(..., uint)`. AngelScript resolves by param count.
+Bitmask system: `categoryBits` (which groups it belongs to) and `collisionMask` (which groups it collides with). Bilateral rule: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)`. Defaults: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF`. Up to 32 named groups stored in `SceneManager::m_CollisionGroupNames`. Old `layer` field migrated to `categoryBits` in deserialization.
 
-### Project Mode (2D/3D Separation)
+### Project Mode (2D/3D)
 
-- **`ProjectMode`** enum (`Scene::ProjectMode`): `Mode2D`, `Mode3D`, `Mixed`. Stored in `SceneManager`, serialized as `"projectMode"` in `.enjinproject`.
-- **`DimensionTag`** enum on `ComponentEntry`: `Any` (53 components), `Only2D` (6: Sprite, Animated Sprite, Tilemap, 2D Camera Bounds, 2D Platformer, 2D Top-Down), `Only3D` (14: Mesh, LOD, 3D controllers, vegetation volumes, Weather Zone, Water Volume, Camera Trigger, Ragdoll).
-- **Add Component filtering:** In Mode2D, Only3D components are hidden. In Mode3D, Only2D components are hidden. Mixed shows all. "All" checkbox bypasses filter.
-- **Grid orientation:** 2D mode draws grid in XY plane (Z=0) with green Y axis. 3D/Mixed mode draws in XZ plane (Y=0) with blue Z axis.
-- **Template auto-assignment:** 2D templates (platformer, topdown2d, runner, metroidvania, vampsurvivor, roguelike) → Mode2D. Universal templates (blank, visualnovel, gamemanager) → Mixed. All others → Mode3D.
+`ProjectMode` enum: `Mode2D`, `Mode3D`, `Mixed`. Stored in `.enjinproject`. Components tagged with `DimensionTag` (Any/Only2D/Only3D) for Add Component filtering. Grid orientation: 2D = XY plane, 3D/Mixed = XZ plane.
 
 ### Renderer
 
@@ -139,7 +132,7 @@ enjin/
 - **`VulkanRenderer`** - Main renderer, swapchain management
 - **`VulkanPipeline`** - Graphics pipeline with descriptor sets
 - **`VulkanBuffer`** - GPU buffers (vertex, index, uniform, storage)
-- **`RenderSystem`** - ECS system that renders all entities with Mesh+Transform, drives skeletal animation
+- **`RenderSystem`** - ECS system that renders all entities with Mesh+Transform
 
 ### Descriptor Bindings
 
@@ -173,152 +166,53 @@ struct PushConstants {
 
 - **`EditorLayer`** - Main editor class with ImGui panels
 - **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
-- **View menu organization:** Sub-menus for Panels (Hierarchy, Inspector, Console, Asset Browser), Settings (Settings, Project Settings), Effects (Post Processing, Effects/Retro, Skybox), Tools (Particle Editor, Animation Graph, Profiler). Game View and Scene List are top-level items.
-- **`ScenePicker`** - Ray casting for entity selection (click-to-select, rect-pick for marquee)
+- **View menu:** Sub-menus for Panels, Settings, Effects, Tools. Game View and Scene List are top-level.
+- **`ScenePicker`** - Ray casting for entity selection (click-to-select, marquee rect-pick)
 - **`PlayMode`** - Play/Pause/Stop game preview controls
-- **Multi-select system:**
-  - `m_SelectedEntities` (`std::unordered_set<ECS::Entity>`) — all currently selected entities
-  - `m_PrimarySelected` — last-clicked entity, used by inspector/gizmo
-  - Helper methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `IsSelected()`, `SelectRange()`, `SelectEntitiesInRect()`
-  - Backward-compatible API: `GetSelectedEntity()` returns primary, `SetSelectedEntity()` clears and selects one
-- **Keyboard shortcuts:**
-  - `1` - Translate gizmo
-  - `2` - Rotate gizmo
-  - `3` - Scale gizmo
-  - `4` - Toggle local/world space
-  - `WASD` - Fly camera movement
-  - `Space`/`E` - Move up, `Q`/`Ctrl` - Move down
-  - `Shift` - Sprint
-  - Hold RMB + Mouse - Look around
-  - Left-click - Select entity, Double-click - Focus on entity
-  - Ctrl+click - Toggle entity in/out of selection (hierarchy + viewport)
-  - Shift+click - Range select in hierarchy (from primary to clicked)
-  - Drag in viewport - Marquee/rubber-band selection (adds enclosed entities)
-  - `Delete` - Delete all selected entities
-  - `Ctrl+D` - Duplicate all selected entities
-  - `F` - Focus camera on selection centroid
-  - Scroll - Adjust move speed
-- **Inspector multi-select:** When multiple entities selected, shows entity list + batch transform editing (position offset, rotation offset, scale multiplier with Apply buttons)
-- **Gizmo multi-select:** Single entity = direct manipulation; multiple = gizmo at centroid, delta applied to all
+- **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo. Methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `SelectRange()`, `SelectEntitiesInRect()`
+- **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+click` toggle select, `Shift+click` range select, viewport drag for marquee
 
 ### Skybox
 
-- **`Skybox`** (`Engine/include/Enjin/Renderer/Skybox.h`) - Cubemap-based skybox rendering
-- **`SkyboxConfig`** - Configuration struct with type, colors, sun direction, cubemap paths, rotation
-- **`SkyboxType`** enum: `None`, `Cubemap`, `Procedural`, `SolidColor`
-- **Editor panel:** Dedicated Skybox panel (`View > Skybox`, `EditorPanel::Skybox = 1 << 10`)
-  - `DrawSkyboxPanel()` in `EditorLayer` — type combo, procedural presets, color pickers, sun direction, cubemap face paths, rotation slider
-  - Procedural presets: Midday, Sunset, Dawn, Night, Overcast (set colors + sun direction)
-- **Config fields:**
-  - `topColor`, `horizonColor`, `bottomColor` — procedural gradient colors
-  - `sunDirection` — `Vector3` for procedural sun position
-  - `solidColor` — flat fill color
-  - `cubemapPaths` — `std::array<std::string, 6>` face paths (Right +X, Left -X, Top +Y, Bottom -Y, Front +Z, Back -Z)
-  - `rotation` — Y-axis rotation in degrees (0-360)
-- **Serialization:** All fields including `sunDirection` are saved/loaded in `SceneSerializer` (both file and string paths)
-- **API:** `RenderSystem::SetSkybox(config)` / `RenderSystem::GetSkyboxConfig()`
+`SkyboxConfig` with type (`None`/`Cubemap`/`Procedural`/`SolidColor`), colors, sun direction, cubemap paths, rotation. API: `RenderSystem::SetSkybox(config)` / `GetSkyboxConfig()`.
 
-### UI System (Runtime + Editor)
+### UI System
 
-- **`UICanvasComponent`** (`Engine/include/Enjin/GUI/UICanvas.h`) — ECS component (namespace `Enjin::GUI`). Holds element tree, design resolution, scale mode, theme
-- **`UIElement`** (`Engine/include/Enjin/GUI/UIElement.h`) — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`, `computedRect`
-- **`UIWidgetType`** enum: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle (+ Phase 2 placeholders)
-- **`UIAnchor`** — Unity RectTransform-style: anchorMin/Max (0-1), pivot, offsetLeft/Right/Top/Bottom (pixels)
-- **`NineSliceConfig`** (`Engine/include/Enjin/GUI/UIElement.h`) — 9-slice (9-patch) sprite configuration: `texturePath`, `borderLeft/Right/Top/Bottom` (texels). `IsActive()` returns true when path non-empty and at least one border > 0. Per-element via `UIStyleOverride::nineSlice`, per-theme via `UITheme::panelNineSlice`/`buttonNineSlice`
-- **`UISystem`** (`Engine/include/Enjin/GUI/UISystem.h`) — Layout + render + input processing
-  - `Update(world, vpW, vpH, deltaTime)` — processes all canvases in the world
-  - `ComputeLayoutForCanvas(canvas, vpW, vpH)` — editor API: compute layout for a single canvas
-  - `RenderCanvasPreview(canvas)` — editor API: render a single canvas via ImGui foreground draw list
-  - `SetTextureResolver(resolver)` — set callback for resolving texture paths to ImTextureID + dimensions (wired by EditorLayer)
-  - `DrawNineSlice(dl, rect, texId, texW, texH, config, tint)` — renders 9 `AddImage` quads with proper UV slicing
-- **`UIEventBus`** (`Engine/include/Enjin/GUI/UIEvents.h`) — String-named callbacks, `Listen(name, callback)`, `Dispatch(eventData)`
-- **`UITheme`** (`Engine/include/Enjin/GUI/UITheme.h`) — Presets: Dark, Light, RetroGreen, Fantasy. Per-element style overrides
-- **`UITemplates`** (`Engine/include/Enjin/GUI/UITemplates.h`) — Factory functions: `CreateMainMenu`, `CreatePauseMenu`, `CreateOptionsMenu`
-- **UI Editor** — Viewport WYSIWYG editing mode in EditorLayer (`m_UIEditMode`):
-  - Click to select elements, drag to move, 8 resize handles (corners + edges)
-  - Right-click context menu to add new elements at click position
-  - Inspector tree synced via `m_UIEditSelectedElementId`
-  - Mutual exclusion with terrain/tilemap edit modes
-
-### Flower System
-
-- **`FlowerSystem`** (`Engine/include/Enjin/ECS/Systems/FlowerSystem.h`) — Play-mode system for interactive flower plucking gameplay
-  - Manages click-drag petal/leaf plucking via `GrabbableComponent` (ray-sphere picking in game view)
-  - `TetherComponent` defines connection graph: `connectedEntity` (physics joint target) + `stemEntity` (for scoring). Petals connect to crown, crown and leaves connect to stem
-  - Physics joints created at play-mode start by `SetupJointsIfNeeded()`: adds RigidbodyComponents (Kinematic for stem, Dynamic for parts) and SpringJointComponents with per-type tuning (Petal: k=120/break=25, Crown: k=200/break=60, Leaf: k=100/break=20)
-  - Connected plucking: pulling a petal tugs the crown via spring force transfer, pulling the crown tugs the stem. Organic tug chain
-  - Break detection via `UpdateJointTracking()`: monitors SpringJointComponent existence — when physics solver destroys a joint (stress exceeds breakForce), spawns particles at cached `junctionWorldPos`
-  - `ProcessGrabForces()` applies cursor pull force and wind sway to rigidbody velocity
-  - `JellyMeshComponent` per-vertex spring deformation for organic feel. Mesh data cleared on break to prevent GPU buffer churn
-  - `FlowerStemComponent` tracks score (partsRemoved, healthyRemoved, witheredRemoved), `liquidIntensity` (0=off, 1=normal, 2=extra gush)
-  - `FlowerParticle` lightweight internal particles (no ECS entities — avoids Vulkan buffer race conditions). Rendered as projected ImGui shapes in game view overlay
-  - Liquid particles: green sap streaks (`isLiquid=true`) rendered as thick lines + head blobs. Squirt direction follows pull vector
-  - Break flow: entity hidden offscreen (scale=0, y=-100) on mouse release — NOT destroyed (keeps GPU buffers valid)
-  - Evaluate: computes final score from stem counters, locks display via `stem->evaluated` flag
-  - Inspector: `DrawFlowerStemComponent` with Healthy Bonus, Withered Penalty, Liquid Intensity slider + Off button. TetherComponent shows Connected entity, spring params on SpringJointComponent
-  - Template: Flower Garden (stem + crown + 10 petals + 5 leaves + game camera + score display + sun light). Crown created before petals so petals can reference it as connectedEntity. Collision groups: "Petals" (bit 1) and "Leaves" (bit 2) prevent same-type collisions
+- **`UICanvasComponent`** — ECS component (namespace `Enjin::GUI`). Holds element tree, design resolution, scale mode, theme
+- **`UIElement`** — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`
+- **`UIWidgetType`**: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle
+- **`NineSliceConfig`** — 9-slice sprite config: `texturePath`, `borderLeft/Right/Top/Bottom` (texels)
+- **`UISystem`** — Layout + render + input. `SetTextureResolver()` for Vulkan texture loading
+- **UI Editor** — Viewport WYSIWYG: click-select, drag-move, resize handles, right-click context menu
 
 ### Effects Systems
 
-- **`WeatherSystem`** - Rain, snow, fog, storm with lightning (global scene effect)
-- **`Water3D`** - 3D water plane with waves (global scene effect)
+- **`WeatherSystem`** - Rain, snow, fog, storm with lightning
+- **`Water3D`** - 3D water plane with Gerstner waves
 - **`RetroEffects`** - CRT, pixelation, dithering post-processing
-- **`WorldTimeSystem`** - Day/night cycle with configurable speed
-- **`SeasonalWeatherSystem`** - Season-based weather transitions
-- **`ParticleSystem`** (`Engine/include/Enjin/Effects/ParticleSystem.h`) - CPU particle simulation for `ParticleEmitterComponent` entities
-  - Spawns from 5 shapes: Point, Sphere, Hemisphere, Cone, Box
-  - Piecewise-linear size and speed curves over lifetime, color/alpha interpolation
-  - Gravity, drag, rotation, burst spawning, accumulator-based continuous emission
-- **`ParticleRenderer`** (`Engine/include/Enjin/Effects/ParticleRenderer.h`) - GPU instanced billboard renderer (same pipeline as WeatherRenderer)
-  - Gathers all emitter pools into single instanced draw call (up to 16384 particles)
-  - Supports two render modes: Billboard (default) and VelocityStretch (elongates particles along velocity)
-- **Particle Editor** (`View > Particle Editor`, `EditorPanel::ParticleEditor = 1 << 13`)
-  - Operates on selected entity's `ParticleEmitterComponent`
-  - 12 presets: Fire, Smoke, Sparks, Snow, Rain, Magic, Explosion + liquid presets (Water Splash, Blood/Sap, Lava, Fountain, Drip)
-  - Color gradient bar with alpha, piecewise-linear size/speed curve visualizations
-  - 2D wireframe shape preview, emission/rotation/forces editors
-  - Rendering section: render mode combo (Billboard/Velocity Stretch), stretch scale slider
-  - Play/Pause/Restart playback controls, active particle stats
-- Effects are configured globally and rendered only in Game View (not editor camera)
+- **`ParticleSystem`** - CPU simulation (5 shapes, size/speed curves, gravity/drag) + GPU instanced billboard renderer (up to 16384 particles, Billboard and VelocityStretch modes)
+- **Particle Editor** - 12 presets (7 standard + 5 liquid), color gradient, curve visualization, playback controls
 
-### Accessibility
+### Assets & Build
 
-- **`EditorSettings`** (`Engine/include/Enjin/Editor/EditorSettings.h`) - Persistent settings (theme, scale, colorblind, motion, input)
-- **`InputActionMap`** (`Engine/include/Enjin/Input/InputAction.h`) - Remappable input system (namespace: `Enjin::InputSystem`)
-- **`SubtitleSystem`** (`Engine/include/Enjin/Accessibility/SubtitleSystem.h`) - Subtitle/caption overlay
-- **`ContentWarningSystem`** (`Engine/include/Enjin/Accessibility/ContentWarning.h`) - Scene content warnings
-- **`RuntimeAccessibilitySettings`** (`Engine/include/Enjin/Accessibility/AccessibilitySettings.h`) - Runtime accessibility config
-- **Important:** The `InputSystem` namespace was chosen to avoid collision with the existing `Enjin::Input` class. Always use `InputSystem::` not `Input::` for action-map types.
+- **`GLTFLoader`** / **`AssimpLoader`** - Loads glTF/GLB natively, FBX/OBJ/DAE/3DS via Assimp v5.4.3
+- **`SceneImporter`** - Converts to ECS entities. `Import()` auto-detects format. `ImportOptions` controls scale, materials, animations, colliders. `ImportResult` includes stats.
+- **`AssetMetadata`** - `.enjinasset` JSON sidecar files for re-import settings
+- **`PrefabManager`** - Create/instantiate/save/load `.enjprefab` files with per-instance overrides
+- **`BuildPipeline`** - Full game export: scan → validate → pack `.enjpak` → copy player → manifest
+- **Pack format:** `.enjpak` with magic `ENJPAK10`, per-file CRC32, XOR obfuscation (key: `enjin_default_pack_key_2025`)
+- **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`
 
-### Assets
+### Scripting
 
-- **`GLTFLoader`** - Loads .gltf/.glb files into GLTFScene (meshes, materials, skins, animations)
-- **`AssimpLoader`** - Loads FBX, OBJ, DAE, 3DS files via Assimp v5.4.3 into AssimpScene
-- **`SceneImporter`** - Converts GLTFScene or AssimpScene to ECS entities. `Import()` auto-detects format from extension. `ImportOptions` controls scale, importMaterials, importAnimations, generateColliders. `ImportResult` includes stats (meshCount, materialCount, animationCount, totalVertexCount, totalIndexCount, entityNames, texturePathsResolved/Missing, warnings). Texture resolution has fallback directories (`textures/`, `Textures/`).
-- **`AssetMetadata`** (`Engine/include/Enjin/Assets/AssetMetadata.h`) - `.enjinasset` JSON sidecar files storing import settings and statistics for re-import. `Save(assetPath)`, `Load(assetPath)`, `Exists(assetPath)`, `GetMetadataPath(assetPath)`, `PopulateFromResult(result, filePath, options)`. Created automatically on import.
-- **`PrefabManager`** (singleton) - Create prefabs from entities (`CreateFromEntity`), instantiate with overrides, save/load `.enjprefab` files, apply changes to all instances, unpack instances
-- **`PrefabInstanceComponent`** - Marks an entity as a prefab instance with `prefabId`, `prefabPath`, and per-instance property overrides
+- **AngelScript** via `TegeBehavior` base class with hot-reload
+- ~170 bound functions across math, entity, scene, input, physics, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue
+- See `docs/SCRIPTING_API.md` for the complete API reference
+- **Visual scripting** (Blueprint-style) with 40+ built-in nodes, debugger with breakpoints/step-through, execution timeline profiler
 
 ### Window Icon
 
-- **`WindowDesc::iconPath`** (`const char* iconPath = nullptr`) - Optional path to a PNG icon file
-- `Application.cpp` sets `windowDesc.iconPath = "icon.png"` at startup
-- The engine loads the PNG via `stb_image` and calls `glfwSetWindowIcon()` to set the window icon
-- Place `icon.png` next to the executable (32x32 or 64x64 recommended)
-- If the file is missing, the OS default icon is used silently
-
-### Build Pipeline & Player
-
-- **`BuildPipeline`** (`Engine/include/Enjin/Build/BuildPipeline.h`) - Orchestrates full game export: scan project → validate assets → pack → copy player → write manifest → verify CRC32s
-- **`AssetPacker`** (`Engine/include/Enjin/Build/AssetPacker.h`) - Writes `.enjpak` archives (compression + XOR obfuscation + CRC32 integrity)
-- **`AssetReader`** (`Engine/include/Enjin/Build/AssetReader.h`) - Reads `.enjpak` archives at runtime (decompress + deobfuscate + verify)
-- **`BuildConfig`** / **`BuildResult`** (`Engine/include/Enjin/Build/BuildReport.h`) - Build configuration (project path, output dir, window settings) and result messages
-- **`VulkanImage::LoadFromMemory()`** - Loads textures from packed in-memory data (PNG/JPG via stb_image)
-- **Editor integration:** `DrawBuildDialog()` in `EditorLayer` with progress tracking
-- **Player app** (`Player/src/main.cpp`) - Standalone executable that loads `game.enjpak`, reads build manifest for window config, runs game loop without editor/ImGui
-- **Pack format:** `.enjpak` with magic header `ENJPAK10`, per-file CRC32, XOR obfuscation with configurable key
-- **Build manifest:** `_build/manifest.json` inside the pack (windowTitle, windowWidth, windowHeight, fullscreen, startScene)
-- **Default pack key:** `enjin_default_pack_key_2025`
+Place `icon.png` (32x32 or 64x64) next to the executable. Loaded via stb_image + `glfwSetWindowIcon()`. Missing file uses OS default silently.
 
 ## Shader Workflow
 
@@ -331,322 +225,11 @@ Shaders are in `Engine/shaders/` as GLSL, compiled to SPIR-V, then embedded in `
 
 ### Shader Hot-Reload (Editor-Only)
 
-In the editor, GLSL shaders are hot-reloaded live — edit a `.vert`/`.frag` file and see changes in the viewport without restarting. RenderSystem watches all shader source files in `Engine/shaders/` via `FileWatcher`, polling every 30 frames.
+RenderSystem watches `Engine/shaders/` via `FileWatcher`, polling every 30 frames. On change: compile to SPIR-V via `glslangValidator`/`glslc`, swap shader module if successful, keep old shader on failure.
 
-On file change:
-1. Read GLSL source from disk
-2. Compile to SPIR-V via `glslangValidator` or `glslc` (temp file round-trip)
-3. If compilation succeeds: swap in new shader module, recreate pipeline
-4. If compilation fails: log error, keep existing shader (no crash)
+Watched shaders: `triangle.vert/frag`, `shadow.vert`, `skybox.vert/frag`, `grass.vert/frag`, `shrub.vert/frag`, `tree.vert/frag`, `particle.vert/frag`, `sprite.vert/frag`, `sprite_lit.vert/frag`.
 
-Watched shaders: `triangle.vert/frag` (main pipeline), `shadow.vert`, `skybox.vert/frag`, `grass.vert/frag`, `shrub.vert/frag`, `tree.vert/frag`, `particle.vert/frag` (particle + weather), `sprite.vert/frag`, `sprite_lit.vert/frag`.
-
-Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires `glslangValidator` or `glslc` in PATH. If `Engine/shaders/` directory is not found relative to the working directory, hot-reload is silently disabled and embedded SPIR-V is used.
-
-## Code Conventions
-
-- **Types:** `u8, u16, u32, u64, i8, i16, i32, i64, f32, f64, usize`
-- **Namespaces:** `Enjin::Core`, `Enjin::Math`, `Enjin::Renderer`, `Enjin::ECS`, `Enjin::Editor`, `Enjin::Effects`, `Enjin::Accessibility`, `Enjin::InputSystem`, `Enjin::Build`, `Enjin::Gameplay`
-- **Logging:** `ENJIN_LOG_INFO/WARN/ERROR/FATAL(Category, format, ...)` — categories include Build, Player
-- **API export:** `ENJIN_API` macro for DLL export
-
-## Current Feature Status
-
-**Completed:**
-- Vulkan renderer with Blinn-Phong lighting
-- ECS architecture
-- glTF/FBX/OBJ/DAE model import (GLTFLoader native + Assimp v5.4.3 for FBX/OBJ/DAE/3DS)
-- ImGui editor (hierarchy, inspector, viewport, effects panels)
-- Transform gizmos (ImGuizmo)
-- Entity selection via ray casting
-- PBR material system
-- Fly camera controller
-- Scene serialization (save/load JSON)
-- Post-processing effects (bloom, vignette, color grading, FXAA, film grain)
-- Weather effects (rain, snow, fog, storm with toggleable lightning)
-- Water effects (3D water plane with Gerstner waves)
-- Camera component for in-game cameras
-- Camera frustum visualization in editor
-- Play mode (play/pause/stop)
-- Native file dialogs (Windows, macOS, Linux)
-- Multiple light sources support (directional, point, spot)
-- Cascaded shadow maps (4-cascade CSM with PCF filtering, texel stabilization, distance fade, per-cascade bias)
-- Render-to-texture for Game View (offscreen rendering)
-- Retro rendering effects (per-material flat shading, affine texturing, vertex snapping, stipple transparency)
-- Retro post-processing (dithering, color quantization, resolution downscaling, CRT scanlines)
-- Vertex colors for baked lighting/shadows
-- Normal mapping (tangent-space, per-material)
-- Parallax occlusion mapping (height map ray marching)
-- Physics collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
-- Render graph with topological sorting
-- Deferred rendering framework
-- GPU-driven frustum culling
-- Material system with file watching and hot-reload
-- Cross-platform file dialogs (Win32, macOS osascript, Linux zenity/kdialog)
-- Render scripting system (command-based DSL)
-- GLSL runtime shader compilation
-- Wireframe rendering (fillModeNonSolid + wideLines support)
-- Physics-integrated ground detection (raycast-based with Y=0 fallback)
-- Auto-generated box colliders on model import (AABB from mesh vertices)
-- Ground plane entity creation (Entity > Ground Plane menu)
-- Editor input locking during play mode (NoInputs on panels, shortcut suppression)
-- Skeletal animation (glTF skin/joint/animation import, GPU skinning via bone SSBO, auto-play)
-- Wind system with instanced grass and vegetation sway
-- Character controllers (Platformer 2D, Top-Down 2D/3D, Third Person, First Person)
-- Camera presets auto-configured per controller type
-- Gravity zones (per-entity gravity override with directional/point/zero-G modes)
-- Temperature zones (heat/cold environmental effects)
-- Camera trigger zones (camera override volumes)
-- In-game text rendering (TextComponent with stb_truetype rasterization to texture)
-- Entity clipboard (Cut/Copy/Paste via JSON serialization)
-- Startup template selector (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third Person, 3D First Person)
-- Custom template save/load from templates/ directory
-- Scene management system (SceneManager with project manifests, scene lists, build indices)
-- Scene transitions (Instant, Fade Black, Fade White, Cross Fade with configurable duration)
-- Project file format (.enjinproject JSON manifest)
-- Full inspector UI for all gameplay components (40+ component types)
-- Procedural level generation with room prefab system (JSON load/save, weighted selection)
-- Accessibility: persistent editor settings (EditorSettings save/load to %APPDATA%/enjin/)
-- Accessibility: 4 editor themes (Dark, Light, High Contrast Dark, High Contrast Light)
-- Accessibility: GPU colorblind correction (8 modes: protanopia, deuteranopia, tritanopia, anomalous variants, achromatopsia) via Daltonization in postprocess.frag
-- Accessibility: remappable input via InputActionMap (semantic GameActions, hold/toggle modes, one-handed presets, JSON persistence)
-- Accessibility: reduced motion support (weather particle reduction, head-bob disable)
-- Accessibility: subtitle/caption overlay system (SubtitleSystem with configurable font size, background, speaker names, direction indicators)
-- Accessibility: content warning system (per-scene warning flags with dismissable overlay)
-- Accessibility: quick presets (Low Vision, Motor Impaired, Photosensitive, Reset All)
-- Scene serialization of content warning flags
-- 15 startup templates: Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third Person, 3D First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, 4P Racing, Arena Fighter, PS1 RPG, City Builder
-- World time and seasonal weather systems
-- Terrain editing with brush tools (viewport sculpting: raise, lower, flatten, smooth, paint with ray-heightmap intersection)
-- 2D terrain control point drag-to-edit in viewport
-- Shrub/Tree vegetation rendering
-- Audio system (miniaudio cross-platform backend, 3D spatialization, multi-channel mixing)
-- Audio scene serialization (AudioSourceComponent, AudioListenerComponent)
-- Game camera offscreen rendering with separate uniform buffers (fixes editor/game camera conflict)
-- Standalone game player (Player/ app, loads .enjpak asset packs)
-- Asset pack build pipeline (.enjpak packaging)
-- Splitscreen rendering (2P/4P viewport subdivision, per-viewport uniform buffers, 4P Racing template)
-- Multi-select system (Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection)
-- Multi-entity gizmo (centroid-based transform, delta applied to all selected)
-- Batch transform inspector (position offset, rotation offset, scale multiplier for multiple entities)
-- Raw mouse input (GLFW_RAW_MOUSE_MOTION, bypasses OS acceleration) + temporal smoothing
-- C++ Entity Event Bus (decoupled entity communication with deferred dispatch)
-- Damage resistance/weakness system (per-type multipliers: physical, fire, ice, electric, poison, magic)
-- Stamina/Resource system (generic ResourceComponent with regen, depletion, action costs integrated into controllers)
-- Footstep system (surface-based audio with walk/run intervals and pitch variance)
-- Object pooling (entity recycling with lifetime-based auto-release)
-- Quest/Objective system (QuestStateComponent with objective flags, QuestSystem with start/complete/fail)
-- HUD overlay system (health bars, resource bars, labels, crosshair during play mode)
-- Game state save/load system (SaveSystem with 10 slots, quick save/load, disk persistence)
-- Cinematic camera system (spline-based waypoint sequences with easing, hold times, loop)
-- Window icon support (PNG via stb_image, glfwSetWindowIcon)
-- AngelScript scripting system (ScriptEngine, TegeBehavior base class, hot-reload)
-- Script bindings: entity transform access (Get/Set Position/Rotation/Scale/Name)
-- Script bindings: physics (Raycast, CheckSphere, CheckBox, AddForce, AddImpulse, SetVelocity, SetGravityScale)
-- Script bindings: audio (Play, Stop, SetVolume, SetPitch, PlayAtPosition, MasterVolume)
-- Script bindings: component access (Health, Material, Light, Camera, AudioSource, Animator, Controller — 40+ functions)
-- Script coroutines (StartCoroutine, YieldSeconds, YieldFrames, YieldEndOfFrame)
-- Script event system (Events_Listen, Events_Send, Events_Broadcast with EventData)
-- Scene management from scripts (Scene_LoadScene, Scene_GetCurrentScene)
-- Script bindings: rendering (Render_Set/Get for shadows, ambient, fog, snow, rain, curvature, wireframe — 28 functions)
-- Script bindings: post-processing (PostProcess_Set/Get for tone mapping, exposure, bloom, vignette, chromatic aberration, color grading, film grain, FXAA — 36 functions)
-- Physics constraint solver (sequential impulse, 8 iterations, warm starting, Baumgarte stabilization)
-- 6 physics joint types (Distance, Hinge, BallSocket, Spring, Fixed, Slider) with breakable mode
-- Ragdoll component (bone-to-joint mapping, animation-to-ragdoll blend, auto-settle)
-- PhysicsWorld-ECS integration bridge (automatic sync between RigidBody objects and ECS components)
-- Joint and ragdoll serialization + inspector UI
-- Cubemap skybox loading (stb_image 6-face loading with fallback)
-- Quest log overlay rendering (ImGui overlay with objective checkmarks)
-- LOD system with distance-based mesh swapping
-- RenderSystem hot path optimizations (single-pass rendering, cached player entity, iterator reuse)
-- Profiler system (ENJIN_PROFILE_SCOPE macro, per-frame breakdown, FPS graph, ImGui panel)
-- Plugin/extension system (IPlugin interface, DLL/SO loading, manifest JSON, editor panel)
-- Animation timeline/sequencer (property/event/animation tracks, easing, loop/ping-pong)
-- C++ gameplay hot-reload (file watching, DLL reload, state save/restore)
-- Mobile/console export foundations (IRenderBackend interface, PlatformInput, BuildTarget enum)
-- Level streaming (chunk-based, distance-based loading, priority queue, async, StreamingVolume/Portal components)
-- AI/Navmesh A* pathfinding with debug visualization
-- AI ping-pong patrol mode (reversing direction at patrol endpoints)
-- 2D sprite rendering (dirty-flag mesh generation, sorted sprite pass, UV normalization)
-- 2D tilemap rendering (tile mesh generation, tileset texture binding)
-- 2D sprite animation advancement (frame timer, looping, playback speed)
-- 2D camera follow and bounds clamping in ControllerSystem
-- Advanced 2D camera system (dead zones, look-ahead, screen shake, zoom smoothing, multi-target framing)
-- FPS cap and VSync settings (Editor: frame rate limit, unfocused/idle reduction; Project: target FPS, VSync, background behavior)
-- Orthographic projection fix for Vulkan (Y-flip and depth range [0,1])
-- Sprite texture preview in inspector (thumbnail with source rect overlay)
-- Sprite sheet frame picker (clickable grid, auto-sets source rectangle)
-- Animation preview widget (live current-frame display with progress bar)
-- Sprite atlas auto-slicer (grid-based frame generation from sprite sheets)
-- Tilemap visual grid editor in inspector (clickable tile grid with palette)
-- Tilemap viewport brush tool (ray-plane intersection painting/erasing)
-- Runtime UI system (UICanvasComponent, UIElement hierarchy, anchor-based layout, 8 widget renderers)
-- UI event bus (string-named callbacks, C++ std::function listeners)
-- UI theme system (4 presets: Dark, Light, RetroGreen, Fantasy, per-element style overrides)
-- UI templates (CreateMainMenu, CreatePauseMenu, CreateOptionsMenu factory functions)
-- UI canvas inspector (element tree, theme editor, widget-specific fields, template insertion)
-- UI Editor (viewport WYSIWYG: click-select, drag-move, resize handles, right-click add, inspector sync)
-- 9-slice rendering for UI (NineSliceConfig on Panel/Button elements and UITheme, TextureResolver callback, inspector with texture preview and border guides, scene serialization)
-- Script component workflow (class name prompt, TegeBehavior boilerplate generation, auto-fill attachment, open in IDE)
-- External IDE configuration (VS Code, Visual Studio, Rider, Custom with persistent settings)
-- Editor Settings vs Project Settings separation (dedicated Project Settings panel for rendering/physics)
-- Prefab system (save/load .enjprefab, instantiate, unpack, per-instance property overrides, inspector badge)
-- Security hardening: vector deserialization bounds checks, AssetReader size caps and I/O validation, GLTFLoader attribute count clamping, animation keyframe bounds validation, script execution timeout (1M instruction limit)
-- Particle system runtime (CPU simulation: 5 emitter shapes, size/speed curves, gravity/drag/rotation, burst spawning)
-- GPU instanced particle renderer (billboard quads, alpha-blended, depth-tested, up to 16384 particles)
-- Particle Editor panel (12 presets incl. 5 liquid presets, velocity stretch render mode, color gradient bar, size/speed curve visualization, shape preview, playback controls)
-- Per-scene rendering settings (SceneRenderSettings config struct, project-level defaults in .enjinproject, per-scene overrides in .enjin, play mode save/restore, Project Settings UI)
-- Shadow quality settings (resolution 512-4096, shadow distance 10-500, shadow strength 0-1, serialized per-scene)
-- Flower system (FlowerSystem: SpringJointComponent-based connected plucking — petals connect to crown, crown/leaves connect to stem via physics joints. Click-drag plucking, jelly mesh deformation, joint break detection via physics solver stress, green sap liquid particles with streak rendering, configurable liquidIntensity, evaluate scoring, ImGui game view particle projection and button overlay)
-- Flower Garden startup template (stem + crown + 10 petals + 5 leaves + game camera + score display)
-- Particle velocity stretch render mode (VelocityStretch elongates particles along velocity vector, configurable scale, serialized per-emitter)
-- Particle liquid presets (Water Splash, Blood/Sap, Lava, Fountain, Drip with tuned velocity stretch, gravity, drag)
-- Drag-and-drop file import (GLFW drop callback, imports FBX/OBJ/glTF/GLB/DAE/3DS models and opens .enjin scene files)
-- Per-entity collision filtering (categoryBits/collisionMask bitmask system, bilateral filter rule, 32 named groups in project manifest, inspector checkbox UI, Project Settings group editor, backward-compat migration from old layer field, SimplePhysics + PhysicsWorld filtering, masked script bindings)
-- Entity visibility toggle (TransformComponent::visible bool, RenderSystem skip in all passes incl. shadows/sprites/tilemaps/grass/shrubs/trees/particles, inspector checkbox, hierarchy eye icon, scene serialization, script bindings Entity_SetVisible/Entity_IsVisible)
-- Node graph editor framework (generic NodeGraphEditor widget with typed pins, Bezier links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization)
-- Animation graph panel (visual state machine editor for StateMachineComponent, Entry pseudo-node, state/transition inspector, parameter editor, play mode highlighting, auto layout, editorPosition serialization)
-- Undo/redo for entity operations (delete/duplicate/cut/paste with full JSON snapshot of all 60+ components, hierarchy reparent/unparent, component add/remove with per-component snapshot, compound undo for multi-entity operations, selection callback on entity ID change)
-- Component search bar (searchable Add Component popup with fuzzy matching and relevance scoring — exact/prefix/substring/category/word-boundary/Levenshtein, sorted by score, 14 categories with collapsible headers, 5-item recently-used pinning with disk persistence, keyboard navigation with arrow keys + Enter)
-- Shader hot-reload (editor-only live GLSL editing: FileWatcher polls Engine/shaders/ every 30 frames, compile-then-swap via glslangValidator/glslc, covers main pipeline + shadow + skybox + 6 sub-renderers, graceful error handling keeps old shader on compilation failure)
-- State machine script callbacks (SMState onEnter/onUpdate/onExit function names, StateMachineSystem dispatches via ScriptEngine on state transitions and per-frame update, inspector UI + Animation Graph sidebar callback fields, SM_SetOnEnter/OnUpdate/OnExit + getter AngelScript bindings, scene serialization)
-- Noise library (header-only in Core/Math: ValueNoise, PerlinNoise, SimplexNoise, WorleyNoise 2D+3D, FBM, RidgedMultifractal, BillowNoise, DomainWarp fractal functions with configurable octaves/lacunarity/persistence/frequency/seed, 18 AngelScript Noise_ bindings)
-- Asset import pipeline (import settings dialog with scale/materials/animations/colliders options, .enjinasset JSON metadata sidecar files for re-import, import statistics tracking with vertex/index/mesh/material/animation counts, enhanced texture path resolution with textures/ and Textures/ fallback directories, re-import menu item, drag-and-drop shows dialog)
-- 2D/3D project mode separation (ProjectMode enum in SceneManager: Mode2D/Mode3D/Mixed, serialized in .enjinproject, Add Component popup dimension filtering with DimensionTag per component, "All" toggle for power users, recently-used filtering, Project Settings combo, 2D grid in XY plane with green Y axis, template auto-assignment)
-- Dialogue system Phase 1 (DialogueTreeData with 7 node types, DialoguePlayer state machine, DialogueComponent tree+legacy modes, Dialogue Editor panel in View > Tools with entity sidebar and node graph, EntityEventBus integration broadcasts Dialogue_<eventName>, SubtitleSystem accessibility integration, 10 Dialogue_* AngelScript bindings, typewriter effect, choice navigation, full serialization)
-- Visual scripting system Phase 1 (VisualScriptComponent with graph data/variables/event mappings, NodeDefinition system with ExecutionContext, NodeRegistry singleton with 15 built-in nodes covering events/flow/variables/math/actions, VisualScriptExecutor with flow execution and pure node caching, VisualScriptSystem ECS integration, Visual Script Editor panel in View > Tools with entity sidebar/node graph/variable editor/inspector, extended NodeGraph pin types to 12 including Vector2/Vector4/Quaternion, full scene serialization)
-
-## AngelScript API Reference
-
-All functions below are callable from AngelScript via `TegeBehavior` scripts. ~170 functions across all categories.
-
-### Math Types
-
-- **Vector2**: `x`, `y`, `Length()`, `Normalized()`, `Dot()`, operators `+`, `-`, `*`, `/`, unary `-`
-- **Vector3**: `x`, `y`, `z`, `Length()`, `Normalized()`, `Dot()`, `Cross()`, operators
-- **Vector4**: `x`, `y`, `z`, `w`
-- **Quaternion**: `x`, `y`, `z`, `w`, `Rotate(Vector3)`, `Normalized()`, `Inverse()`, `ToEuler()`, operators. Statics: `Quaternion_Identity()`, `Quaternion_FromEuler(Vector3)`, `Quaternion_Slerp(q1, q2, t)`
-
-### Global Math Functions
-
-`Abs`, `Sin`, `Cos`, `Tan`, `Asin`, `Acos`, `Atan2`, `Sqrt`, `Pow`, `Floor`, `Ceil`, `Round`, `Min`, `Max`, `Clamp`, `Lerp`, `MoveTowards`, `Sign`, `Random()`, `RandomRange(min, max)`, `RandomInt(min, max)`, `Radians`, `Degrees`, `PI()`
-
-### Entity & Transform
-
-- `Entity_GetPosition/SetPosition(uint64, Vector3)`
-- `Entity_GetRotation/SetRotation(uint64, Vector3)` — degrees
-- `Entity_GetScale/SetScale(uint64, Vector3)`
-- `Entity_GetName(uint64)`
-- **EntityHandle** class: `IsValid()`, `GetID()`, `GetPosition/SetPosition()`, `GetRotation/SetRotation()`, `GetScale/SetScale()`, `GetName()`, `HasTag(string)`
-- **TransformProxy**: `position`, `rotation`, `scale`, `forward`, `right`, `up` (read-only)
-
-### Scene Management
-
-- `Scene_FindEntity(string name)`, `Scene_FindEntityByTag(string tag)`
-- `Scene_DestroyEntity(uint64)`, `Scene_Instantiate()`, `Scene_InstantiateNamed(string)`, `Scene_InstantiateAt(Vector3)`
-- `Scene_IsValid(uint64)`, `Scene_GetEntityCount()`
-- `Scene_GetEntityName/SetEntityName(uint64, string)`
-- `Scene_AddTag/RemoveTag/HasTag(uint64, string)`
-- `Scene_LoadScene(string)`, `Scene_GetCurrentScene()`
-
-### Time
-
-`Time_GetDeltaTime()`, `Time_GetFixedDeltaTime()`, `Time_GetTime()`, `Time_GetTimeScale()`, `Time_SetTimeScale(float)`, `Time_GetFrameCount()`
-
-### Debug
-
-`Debug_Log(string)`, `Debug_LogWarning(string)`, `Debug_LogError(string)`
-
-### Input — Keyboard
-
-`Input_GetKey(int)`, `Input_GetKeyDown(int)`, `Input_GetKeyUp(int)` — Key enum: A-Z, Num0-9, F1-F12, Space, Escape, Enter, Tab, Backspace, arrows, Shift, Control, Alt, etc.
-
-### Input — Mouse
-
-`Input_GetMouseButton/Down/Up(int)` — MouseBtn: Left, Right, Middle
-`Input_GetMousePosition()`, `Input_GetMouseDelta()`, `Input_GetScrollDelta()`
-`Input_IsMouseCaptured()`, `Input_SetMouseCaptured(bool)`
-
-### Input — Gamepad
-
-`Input_IsGamepadConnected(int)`, `Input_GetGamepadButton/ButtonDown(int, int)` — GamepadBtn: A, B, X, Y, bumpers, back, start, D-pad
-`Input_GetGamepadAxis(int, int)` — GamepadAx: LeftX/Y, RightX/Y, triggers
-`Input_GetGamepadLeftStick/RightStick(int)`, `Input_GetGamepadLeftTrigger/RightTrigger(int)`
-
-### Physics
-
-- `Physics_Raycast(origin, dir, maxDist)`, `Physics_RaycastHit(origin, dir, maxDist, &hit)` — RaycastHit: `point`, `normal`, `distance`, `entity`
-- `Physics_CheckSphere(center, radius)`, `Physics_CheckBox(center, halfExtents)`
-- Masked overloads (filter by collision group): `Physics_Raycast(origin, dir, maxDist, layerMask)`, `Physics_RaycastHit(origin, dir, maxDist, layerMask, &hit)`, `Physics_CheckSphere(center, radius, layerMask)`, `Physics_CheckBox(center, halfExtents, layerMask)`
-- `Physics_AddForce/AddImpulse(uint64, Vector3)`, `Physics_SetVelocity/GetVelocity(uint64)`, `Physics_SetGravityScale(uint64, float)`
-
-### Audio
-
-`Audio_Play(uint64)`, `Audio_PlayAtPosition(string, Vector3)`, `Audio_Stop(uint64)`, `Audio_StopAll()`
-`Audio_SetVolume/SetPitch(uint64, float)`, `Audio_IsPlaying(uint64)`
-`Audio_SetMasterVolume/GetMasterVolume(float)`
-
-### Component Access
-
-- **Health**: `Health_Get/GetMax/SetCurrent(uint64)`, `Health_Damage(uint64, float)`
-- **Material**: `Material_SetBaseColor/GetBaseColor(uint64, Vector3)`, `Material_SetMetallic/SetRoughness(uint64, float)`
-- **Light**: `Light_SetColor/SetIntensity(uint64, ...)`
-- **Camera**: `Camera_SetFOV/GetFOV(uint64, float)`
-- **AudioSource**: `AudioSource_Play/Stop/SetClip/SetVolume(uint64, ...)`
-- **Animator**: `Animator_Play(uint64, string)`, `Animator_SetSpeed(uint64, float)`
-- **Controller**: `Controller_SetMoveSpeed/GetVelocity(uint64, ...)` — works with all 5 controller types
-- **Camera2D**: `Camera2D_Shake(uint64, float intensity, float duration)`, `Camera2D_GetZoom/SetZoom(uint64, float)`, `Camera2D_AddTarget/RemoveTarget(uint64 camera, uint64 target)`, `Camera2D_ClearTargets(uint64)`, `Camera2D_SetDeadZone(uint64, float w, float h)`, `Camera2D_SetLookAhead(uint64, float distance, float smoothing)`, `Camera2D_SetFollowTarget/GetFollowTarget(uint64, uint64)`
-- **Existence checks**: `HasComponent_Health/Light/Camera/Material/AudioSource/Rigidbody/BoxCollider/Animator(uint64)`
-- **State Machine**: `SM_AddState(uint64, string)`, `SM_AddTransition(uint64, from, to)`, `SM_SetState/GetCurrentState/GetPreviousState(uint64)`, `SM_GetStateTime(uint64)`, `SM_SendTrigger(uint64, string)`, `SM_SetBool/GetBool(uint64, string, bool)`, `SM_SetFloat/GetFloat(uint64, string, float)`, `SM_SetInt/GetInt(uint64, string, int)`, `SM_HasState(uint64, string)`, `SM_SetOnEnter/SetOnUpdate/SetOnExit(uint64, stateName, funcName)`, `SM_GetOnEnter/GetOnUpdate/GetOnExit(uint64, stateName)`
-
-### Coroutines
-
-`StartCoroutine(string)`, `YieldSeconds(float)`, `YieldFrames(uint)`, `YieldEndOfFrame()`
-
-### Event System
-
-- **EventData** class: `SetFloat/GetFloat`, `SetInt/GetInt`, `SetString/GetString`, `SetEntity/GetEntity`
-- `Events_Listen(string, EventCallback@)` — returns listener ID
-- `Events_Send(string, EventData@)`, `Events_Broadcast(EventData@)`
-
-### Tweening
-
-- `uint Tween_Position(uint64, const Vector3&in, float duration, int easing)` — returns tween index
-- `uint Tween_Rotation(uint64, const Vector3&in, float, int)`, `uint Tween_Scale(uint64, const Vector3&in, float, int)`
-- `uint Tween_Color(uint64, const Vector3&in, float, int)`, `uint Tween_Opacity(uint64, float, float, int)`
-- `uint Tween_Float(uint64, float start, float end, float duration, int easing)` — generic float interpolation, no component write
-- `void Tween_SetOnComplete(uint64, uint tweenIndex, const string&in funcName)` — set callback on tween completion
-- `void Tween_SetDelay(uint64, uint tweenIndex, float delay)` — set delay on specific tween
-- `float Tween_GetValue(uint64, uint tweenIndex)` — read current interpolated value (Float property)
-- `void Tween_StopAll(uint64)` — stop and clear all tweens on entity
-
-### Noise
-
-- **Base 2D**: `Noise_Value2D(float, float, uint)`, `Noise_Perlin2D(float, float, uint)`, `Noise_Simplex2D(float, float, uint)`, `Noise_Worley2D(float, float, uint)`
-- **Base 3D**: `Noise_Value3D(float, float, float, uint)`, `Noise_Perlin3D(float, float, float, uint)`, `Noise_Simplex3D(float, float, float, uint)`, `Noise_Worley3D(float, float, float, uint)`
-- **Fractal 2D**: `Noise_FBM2D(x, y, octaves, lacunarity, persistence, frequency, seed)`, `Noise_Ridged2D(...)`, `Noise_Billow2D(...)`
-- **Fractal 3D**: `Noise_FBM3D(x, y, z, octaves, lacunarity, persistence, frequency, seed)`, `Noise_Ridged3D(...)`, `Noise_Billow3D(...)`
-- **Domain Warp**: `Noise_DomainWarp2D(x, y, warpStrength, frequency, seed)`, `Noise_DomainWarp3D(x, y, z, warpStrength, frequency, seed)`
-- Value/Perlin/Simplex return [-1, 1], Worley returns [0, 1], FBM/Billow return [-1, 1], Ridged returns [0, ~2]
-
-### Rendering
-
-- **Shadows**: `Render_SetShadowsEnabled(bool)` / `Render_IsShadowsEnabled()`, `Render_SetShadowDistance/GetShadowDistance(float)`, `Render_SetShadowStrength/GetShadowStrength(float)`
-- **Ambient**: `Render_SetAmbientIntensity/GetAmbientIntensity(float)`, `Render_SetAmbientColor/GetAmbientColor(Vector3)`
-- **Fog**: `Render_SetFogDensity/GetFogDensity(float)`, `Render_SetFogColor/GetFogColor(Vector3)`, `Render_SetFogStart/GetFogStart(float)`, `Render_SetFogEnd/GetFogEnd(float)`, `Render_SetFogHeightFalloff/GetFogHeightFalloff(float)`
-- **Weather**: `Render_SetSnowIntensity/GetSnowIntensity(float)`, `Render_SetRainActive/IsRainActive(bool)`
-- **Effects**: `Render_SetWorldCurvature/GetWorldCurvature(float)`, `Render_SetWireframeEnabled/IsWireframeEnabled(bool)`
-
-### Post-Processing
-
-- **Tone Mapping**: `PostProcess_SetToneMapping/GetToneMapping(int)`, `PostProcess_SetExposure/GetExposure(float)`, `PostProcess_SetGamma/GetGamma(float)`
-- **Bloom**: `PostProcess_SetBloomEnabled/IsBloomEnabled(bool)`, `PostProcess_SetBloomThreshold/GetBloomThreshold(float)`, `PostProcess_SetBloomIntensity/GetBloomIntensity(float)`
-- **Vignette**: `PostProcess_SetVignetteEnabled/IsVignetteEnabled(bool)`, `PostProcess_SetVignetteIntensity/GetVignetteIntensity(float)`, `PostProcess_SetVignetteSmoothness/GetVignetteSmoothness(float)`
-- **Chromatic Aberration**: `PostProcess_SetChromaticAberrationEnabled/IsChromaticAberrationEnabled(bool)`, `PostProcess_SetChromaticAberrationIntensity/GetChromaticAberrationIntensity(float)`
-- **Color Grading**: `PostProcess_SetColorFilter/GetColorFilter(Vector3)`, `PostProcess_SetSaturation/GetSaturation(float)`, `PostProcess_SetContrast/GetContrast(float)`, `PostProcess_SetBrightness/GetBrightness(float)`
-- **Film Grain**: `PostProcess_SetFilmGrainEnabled/IsFilmGrainEnabled(bool)`, `PostProcess_SetFilmGrainIntensity/GetFilmGrainIntensity(float)`
-- **FXAA**: `PostProcess_SetFXAAEnabled/IsFXAAEnabled(bool)`
-- Note: PostProcess_ functions return sensible defaults if PostProcessing is unavailable (e.g. in Player app)
+Controlled by `m_ShaderHotReloadEnabled` (default `true`). Requires compiler in PATH. Silently disabled if `Engine/shaders/` not found.
 
 ## Common Tasks
 
@@ -667,7 +250,6 @@ All functions below are callable from AngelScript via `TegeBehavior` scripts. ~1
 ### Importing a 3D model at runtime
 
 ```cpp
-// In EditorLayer or game code:
 SceneImporter::ImportOptions options;
 options.scale = 1.0f;
 options.importMaterials = true;
@@ -675,9 +257,7 @@ options.importAnimations = true;
 options.generateColliders = true;
 auto result = SceneImporter::Import("path/to/model.gltf", m_World, options);
 if (result.success) {
-    // result.entities contains all created entities
-    // result.rootEntity is the root of the hierarchy
-    // result.meshCount, result.totalVertexCount, etc. for stats
+    // result.entities, result.rootEntity, result.meshCount, etc.
 }
 ```
 
@@ -688,242 +268,63 @@ if (result.success) {
 3. The pipeline copies `EnjinPlayer` executable alongside the pack
 4. Player loads `game.enjpak` from its own directory at startup
 
-### Setting the window icon
-
-Place an `icon.png` file (32x32 or 64x64 PNG recommended) next to the executable. The engine loads it via stb_image and calls `glfwSetWindowIcon()` at startup. If the file is missing, the OS default icon is used.
-
 ## Security Considerations
 
-When modifying or extending the engine, keep these security notes in mind:
-
 ### Input Validation
-- **Scene files (JSON):** All deserialization functions must validate array sizes and check field existence with `.contains()` before accessing JSON keys. Vector deserializers now return safe defaults for malformed arrays.
-- **glTF/GLB import:** Attribute counts may differ across vertex attributes. Always clamp loop bounds to the allocated buffer size. Validate that animation keyframe value arrays have enough elements for the declared keyframe count.
-- **Asset pack (.enjpak):** All sizes and offsets read from pack files must be bounds-checked against file size and capped to reasonable maximums. Check `file.good()` after every seek/read.
+- **Scene files (JSON):** Validate array sizes, check `.contains()` before accessing keys. Vectors return safe defaults for malformed arrays.
+- **glTF/GLB import:** Clamp loop bounds to allocated buffer size. Validate animation keyframe arrays.
+- **Asset pack (.enjpak):** Bounds-check all sizes/offsets against file size, cap to reasonable maximums. Check `file.good()` after every seek/read.
 
 ### Script Execution
-- AngelScript scripts are sandboxed from filesystem and network access (no bindings exposed).
-- A per-context instruction limit (1M instructions) is enforced via `SetLineCallback()` to prevent infinite loop DoS. If a script exceeds this limit, execution is aborted.
-- Script `#include` paths are resolved via `lexically_normal()` but are not yet restricted to the script directory — avoid exposing script compilation to untrusted input.
+- AngelScript sandboxed from filesystem/network (no bindings exposed).
+- 1M instruction limit via `SetLineCallback()` prevents infinite loop DoS.
+- Script `#include` paths resolved via `lexically_normal()` but not yet restricted to script directory.
 
 ### Asset Pack Obfuscation
-- The `.enjpak` XOR obfuscation uses a repeating key and is **not cryptographically secure**. It deters casual inspection but is trivially broken via known-plaintext attack (e.g., JSON files start with `{`).
-- CRC32 is used for **integrity detection**, not authentication. It catches accidental corruption but not intentional tampering.
-- For commercial releases requiring real asset protection, replace XOR with authenticated encryption (e.g., AES-GCM).
+- XOR obfuscation is **not cryptographically secure** — trivially broken via known-plaintext.
+- CRC32 is for **integrity detection**, not authentication.
+- For commercial releases, replace XOR with authenticated encryption (e.g., AES-GCM).
 
 ### General Guidelines
-- Always validate enum casts from deserialized integers against valid ranges.
-- Sanitize file paths loaded from scene/project files — prevent `..` traversal.
-- Cap allocation sizes from untrusted input (pack files, scene files, model files).
+- Validate enum casts from deserialized integers against valid ranges.
+- Sanitize file paths — prevent `..` traversal.
+- Cap allocation sizes from untrusted input.
 
-## Known Performance Issues & Technical Debt
+## Current Feature Status
 
-This section documents identified performance bottlenecks and technical debt from codebase audits. See `docs/ROADMAP.md` for detailed implementation plans.
+The engine has 100+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.
 
-### Critical Rendering Issues
+- **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings
+- **ECS & Editor:** 60+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 15 startup templates, entity visibility toggle
+- **2D:** Sprite rendering, tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
+- **3D:** glTF/FBX/OBJ/DAE import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree), cubemap skybox
+- **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask)
+- **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
+- **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system
+- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types), tweening (25 easing functions), object pooling, damage/stamina systems
+- **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
+- **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P)
+- **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system
+- **Accessibility:** 4 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion
 
-| Issue | Location | Impact | Fix Priority |
-|-------|----------|--------|--------------|
-| `vkDeviceWaitIdle()` blocks GPU | RenderSystem.cpp:2204,2380,2416,2470 | Full GPU stall on shader hot-reload | P0 |
-| `GetAllEntities()` + filter pattern | RenderSystem.cpp:593,662,2890 | O(n) instead of O(k) iteration | P0 |
-| Shadow pass iterates x4 cascades | RenderSystem.cpp:2890 | 20K iterations for 100 shadow-casters | P0 |
-| Per-entity `GetOrLoadTexture()` | RenderSystem.cpp:2558-2706 | 2000-5000 string hashes/frame | P1 |
-| Per-entity `vkUpdateDescriptorSets()` | RenderSystem.cpp:3008 | Hundreds of CPU-side writes/frame | P1 |
+## Known Performance Issues
 
-### Quick Win Fixes
+Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for detailed plans and solutions.
 
-```cpp
-// Replace this (O(n) with filter):
-for (Entity e : m_World->GetAllEntities()) {
-    if (!m_World->HasComponent<MeshComponent>(e)) continue;
-    // ...
-}
+- **P0:** `vkDeviceWaitIdle()` full GPU stalls on shader hot-reload; `GetAllEntities()` + filter pattern (O(n) vs O(k)); shadow pass iterates x4 cascades
+- **P1:** Per-entity `GetOrLoadTexture()` string hashing; per-entity `vkUpdateDescriptorSets()`
+- **Quick wins:** Use `GetEntitiesWithComponent<T>()`, cache texture pointers on MaterialComponent, replace `vkDeviceWaitIdle()` with per-frame fence waits
 
-// With this (O(k) where k = entities with component):
-for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-    // ...
-}
-```
+## Roadmap
 
-**Texture caching:** Cache texture pointers directly on `MaterialComponent` instead of path-based lookup in render loop.
+See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, and progress tracking.
 
-**GPU sync:** Replace `vkDeviceWaitIdle()` with per-frame fence waits; defer pipeline recreation to next frame.
-
-### Data Structure Recommendations
-
-| Current | Recommended | Location |
-|---------|-------------|----------|
-| `std::map<string, string>` | `unordered_map` | DialogueTree.h:106, Gameplay.h:883 |
-| String-keyed texture cache | Pointer cache on MaterialComponent | RenderSystem.h:287 |
-| Multiple `GetComponent()` per entity | Cache component pointers | RenderSystem.cpp:2505-2700 |
-| `push_back()` without reserve | `reserve(MAX_PARTICLES)` | FlowerSystem.cpp:773+ |
-
-### Node Graph Expansion Opportunities
-
-The `NodeGraphEditor` framework (currently Animation Graph only) should power additional systems:
-
-| System | Priority | Effort | Impact |
-|--------|----------|--------|--------|
-| ~~Dialogue Tree Editor~~ | ~~P1~~ | ~~DONE~~ | Very High (RPGs, VNs) |
-| ~~Visual Scripting Phase 1~~ | ~~P1~~ | ~~DONE~~ | Very High (non-programmers) |
-| Visual Scripting Phase 2+ | P1 | 3-4 weeks | Very High (complete node set) |
-| AI Behavior Tree Editor | P2 | 2-3 weeks | High (game AI) |
-| Quest Flow Editor | P2 | 2 weeks | High (narrative games) |
-| Shader Graph | P3 | 6-8 weeks | Medium (advanced users) |
-
-### GUI Modernization Plan
-
-**Brand Colors (TEGE palette):**
-- Primary: `#C7DAC4` (sage green) — replaces blue accent
-- Secondary: `#5B7FA1` (soft blue) — links, info
-- Success: `#6DB876`, Warning: `#D4A855`, Error: `#D6726B`
-
-**Typography:** 5-level system (H1 23px Bold, H2 18px SemiBold, Body 17px, Small 14px, Mono 16px cyan)
-
-**Spacing:** 8px grid (XS=4, S=8, M=12, L=16, XL=24, XXL=32)
-
-**Micro-interactions:** Spring easing `cubic-bezier(0.175, 0.885, 0.32, 1.275)` for button press
-
-## Roadmap (Planned Features)
-
-This is the long-term feature roadmap for Enjin to compete with Unity/Unreal. Items are grouped by category. Each session should pick one item to plan and implement — do NOT try to plan the whole list at once.
-
-### Editor Tools & UX
-
-- **UI Editor** — ~~DONE (Phase 1)~~ Runtime UI system + viewport WYSIWYG editor implemented. Future work: snap-to-grid, alignment guides, undo/redo for UI edits, nested element drag reparenting.
-- **Particle Editor** — ~~DONE (Phase 2)~~ CPU particle simulation + GPU instanced renderer + editor panel with 12 presets (7 standard + 5 liquid), velocity stretch render mode, color gradient, size/speed curves, shape preview, playback controls. Future work: sub-emitter support, curve key editors, texture atlas animation, GPU particle simulation.
-- **Node/Graph Editor** — ~~PARTIAL (Phase 2)~~ Generic node graph framework (`NodeGraphEditor` widget) with typed pin system (12 types: Flow, Bool, Float, Int, String, Vector2, Vector3, Vector4, Quaternion, Color, Entity, Any — Wong colorblind-safe colors), Bezier curve links, drag-to-connect, pan/zoom, minimap, keyboard nav, box select, context menus, theme-aware colors, JSON serialization. Consumers:
-  - Animation Graph panel (`View > Animation Graph`) — visual state machine editor for `StateMachineComponent` with Entry pseudo-node, state/transition inspector sidebar, parameter editor, play mode highlighting, auto layout
-  - Visual Script Editor panel (`View > Tools > Visual Script Editor`) — ~~Phase 1 DONE~~ Blueprint-style scripting with 15 built-in nodes (OnStart, OnUpdate, Branch, Sequence, Get/Set Variable, math, position, print), VisualScriptComponent, VisualScriptSystem, VisualScriptExecutor with flow execution and pure node caching, variable editor, full serialization
-  - Future: Shader graph (node-based shader authoring, generates GLSL/SPIR-V)
-- **Script Component Workflow** — ~~DONE~~ Class name prompt, TegeBehavior boilerplate generation, auto-fill ScriptAttachment, open in configured IDE. Future work: open-file-at-line for script errors.
-- **IDE Integration** — ~~DONE (Phase 1)~~ Editor settings for external IDE selection (Auto/VS Code, Visual Studio, Rider, Custom). Persistent settings, Browse for custom path, Test Open button. Future work: open-file-at-line support for script errors.
-- **Undo/Redo Across All Operations** — ~~PARTIAL (Phase 1)~~ Entity delete/duplicate/cut/paste use full JSON snapshot undo (all 60+ components preserved). Hierarchy reparent/unparent undoable. Component add/remove undoable with per-component JSON snapshot. DuplicateEntity refactored from manual 8-component copy to full serialize/deserialize. Future work: inspector property edits, tilemap paint, terrain sculpt, UI editor edits (require per-widget tracking across 60+ component types).
-- **Drag and Drop** — ~~PARTIAL~~ File drop from OS (Explorer/Finder) imports models (FBX/OBJ/glTF/GLB/DAE/3DS) and opens scenes (.enjin) via GLFW drop callback. Future work: drag assets from asset browser into viewport/inspector fields, drag entities in hierarchy for reparenting.
-- **Hot-Swap Shaders** — ~~DONE~~ Edit shaders at runtime and see changes live without restarting. FileWatcher on all .vert/.frag files in Engine/shaders/, compile-then-swap pattern (temp shader compiled first, only swapped if successful), editor-only (Player uses embedded SPIR-V). Covers main pipeline (triangle.vert/frag), shadow, skybox, and all 6 sub-renderers (grass, shrub, tree, particle, weather, sprite). Future work: postprocess.frag/fullscreen.vert hot-reload (requires PostProcessing refactor).
-- **Improved Asset Import Pipeline** — ~~PARTIAL~~ Import settings dialog (scale, materials, animations, colliders toggles), `.enjinasset` JSON metadata sidecar files for re-import with saved settings, import statistics (mesh/material/animation/vertex/index counts, resolved/missing textures), enhanced texture path resolution with `textures/`/`Textures/` fallback directories, re-import menu item. Future work: generate thumbnails, axis conversion options, texture compression settings, drag-from-asset-browser import.
-- **Extended Model Format Support** — add PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders. PLY is useful for photogrammetry/scan data; VOX enables voxel art workflows. Also verify Assimp's existing FBX/OBJ/DAE import paths are robust (fix any crash-on-malformed-input issues).
-- **Improved Icon/Window Inspector** — better entity icons in hierarchy, component icons in inspector, custom window icon picker in project settings.
-- **Editor Settings vs Scene Settings** — ~~DONE~~ Separated into Settings (editor prefs) and Project Settings (rendering, physics) panels.
-- **Template Rebuild & Demo Scenes** — Update and rebuild all 15 startup templates to use the latest engine features (per-scene render settings, particle system, UI system, etc.). For each template, create a small demo scene that showcases the template's intended gameplay. Add a "Demo" button on each template card in the selector that loads the demo scene instead of the blank template. Template card UI improvements: larger font for template titles, better visual hierarchy.
-- **Planet Gravity 3D Third-Person Platformer Template** — New startup template: spherical/planetoid gravity third-person platformer (Super Mario Galaxy-style). Player walks on the surface of small planetoids with gravity that always points toward the planet center. Requires: a `PlanetGravityZone` component (sphere collider that overrides gravity direction toward its center, configurable radius and strength), integration with the existing gravity zone system (the `GravityZoneComponent` already supports directional/point/zero-G modes — planet gravity is a point-mode specialization with surface-aligned orientation), third-person camera that orbits relative to the planet surface normal rather than world up, and a `SurfaceAlignedController` that rotates the character to match the local gravity vector. Template scene: 3-4 small planetoids at different positions, player spawns on the largest one, can jump between them. Camera auto-adjusts "up" to match the planet the player is standing on.
-- **Component Search Bar** — ~~DONE~~ Searchable Add Component popup with fuzzy matching and relevance scoring across 14 categories. Tiered scoring: exact match (100), prefix (90), name substring (70), category substring (60), word boundary/initials (50, e.g. "bc" → "Box Collider"), Levenshtein fuzzy (5-35, e.g. "colider" → "Collider"). Results sorted by score descending when filtered. Collapsible category headers, 5-item recently-used pinning with disk persistence, keyboard navigation (arrow keys + Enter).
-- **2D/3D Project & Component Separation** — ~~DONE (Phase 1)~~ `ProjectMode` enum (Mode2D, Mode3D, Mixed) stored in `.enjinproject`, with getter/setter on `SceneManager`. Each `ComponentEntry` tagged with `DimensionTag` (Any, Only2D, Only3D). Add Component popup filters by project mode — 2D mode hides 14 3D-only components (Mesh, LOD, 3D controllers, vegetation, weather/water, camera trigger, ragdoll), 3D mode hides 6 2D-only components (Sprite, Animated Sprite, Tilemap, 2D Camera Bounds, 2D controllers). "All" checkbox bypasses filter for power users. Mixed mode shows everything. Recently-used section also filtered. Project Settings panel has Project Mode combo with description. Grid orientation adapts: 2D mode draws XY plane (green Y axis), 3D/Mixed draws XZ plane (blue Z axis). Templates auto-assign mode on project creation (platformer/topdown2d/runner/metroidvania/vampsurvivor/roguelike → 2D; blank/visualnovel/gamemanager → Mixed; all others → 3D). Future work: orthographic camera default for 2D mode, XY plane snap, inspector component filtering.
-- **Curved Grid Snapping** — The curved/spherical grid (used in planet gravity and terrain contexts) should guide placed objects and land them on the surface. When placing or dropping entities near a curved grid, snap their position to the grid surface and align their orientation to the surface normal. This enables intuitive object placement on planetoids, terrain, and other non-flat surfaces without manual transform tweaking.
-- **Entity Visibility Toggle** — ~~DONE~~ `TransformComponent::visible` bool (default true). RenderSystem skips invisible entities in all render passes (main, shadow, render-to-target, splitscreen, sprites, tilemaps, grass, shrubs, trees, particles). Inspector checkbox, hierarchy eye icon toggle, scene serialization (saved when false), script bindings `Entity_SetVisible`/`Entity_IsVisible`.
-- **Project Hub & Creation Wizard** — Replace the current startup template selector with a full project management hub. Three tabs on launch: **Recent Projects** (thumbnails + last-modified, click to open), **New Project** (creation wizard), **Demos** (playable demo scenes showcasing engine features). New Project wizard flow: (1) Enter project name and choose save location (folder picker), (2) Browse templates with search bar and category filters — filter/sort by genre (Action, RPG, Strategy, Sim, Sports, Puzzle, Narrative), dimension (2D, 3D), player count (Single Player, Local Multiplayer, Online), and tags. Template cards show preview image, description, and feature list. (3) Select template, (4) Name the first scene (default: "Main"), (5) Engine auto-creates the project folder structure: `.enjinproject` manifest, `scenes/` dir with the named `.enjin` scene file, `scripts/` dir, `assets/` dir, `templates/` dir. All paths and references are set up correctly so the project is immediately runnable. The project folder is the single source of truth — self-contained, portable, and git-friendly. Collaboration considerations: project structure must support multiple people working simultaneously. Scene files should have a lock/checkout mechanism (advisory locks stored in `.enjinproject` or a `.enjinlock` file) so two people don't edit the same scene. Entity-level locking within a scene for finer-grained collaboration (lock entities you're editing, others see them as read-only). Integration with the planned Git panel — on project creation, optionally `git init` the project folder with a sensible `.gitignore` (excluding build output, `.enjpak` files, editor cache). For live collaboration (future): operational transform or CRDT-based scene sync where multiple editors see each other's changes in real-time, with conflict resolution at the entity/component level rather than file level.
-- **Editor Accent Color & Theming** — Replace the current blue accent color with TEGE brand color `#c7dac4` (soft sage green). Use this as the primary accent throughout the editor (selected items, active tabs, buttons, progress bars, focus indicators). Complement with the existing blue as a secondary accent for links/info. Make the overall editor more aesthetically pleasant, cute, and inviting while maintaining readability. Consider: rounded corners on panels, softer panel borders, warmer background tones, subtle hover animations. The goal is a distinct visual identity — not Unity grey, not Unreal dark, not generic dev-tool blue.
-
-### Runtime Systems
-
-- **UI Runtime** — ~~DONE (Phase 1)~~ Anchored layout, 8 widget types, event bus, theme system implemented. Future work: flex/grid layout, text input widget, scrollable panels, runtime texture loading for Image widgets.
-- **9-Slice / Text Box System** — ~~DONE~~ `NineSliceConfig` struct (texture path + 4 border insets) on `UIStyleOverride` and `UITheme` (panelNineSlice, buttonNineSlice). Renderer splits texture into 9 regions via `DrawNineSlice()` using 9x `ImDrawList::AddImage` calls: corners fixed-size, edges stretch one axis, center stretches both. Falls back to flat-color when no texture set. `TextureResolver` callback wired from EditorLayer for Vulkan texture loading. Inspector: collapsible Nine-Slice section for Panel/Button with texture path, 4 border inset sliders, texture preview with yellow guide lines. Serialized in scene files. Future work: per-theme preset 9-slice textures, 9-slice for other widget types.
-- **SVG Support** — Parse and render SVG assets in the UI system and game world. Use a lightweight SVG parser (e.g., nanosvg) to load `.svg` files, rasterize to textures at desired resolution via nanosvgrast, cache rasterized results at multiple scales for resolution-independent UI. Integration points: `UIElement` Image widget (SVG path instead of PNG), 9-slice source textures from SVG, HUD overlays, in-world billboards. Rasterize on load (not per-frame) for performance. Consider SDF-based vector rendering as a future advanced path for truly resolution-independent curves. Editor: SVG preview in inspector, scale slider for rasterization resolution.
-- **2D Camera System** — ~~DONE~~ `Camera2DBoundsComponent` with follow targets, camera bounds/clamping, smooth follow (exponential lerp), look-ahead (velocity-based), screen shake (sin/cos oscillation with decay), zoom smoothing, dead zones, multi-target framing with auto-zoom. 10 AngelScript bindings (Camera2D_Shake, Get/SetZoom, Add/Remove/ClearTargets, SetDeadZone, SetLookAhead, Set/GetFollowTarget). Full serialization.
-- **Particle System Runtime** — ~~DONE (Phase 1)~~ CPU simulation with 5 emitter shapes, piecewise-linear size/speed curves, color/alpha interpolation, gravity, drag, rotation. GPU instanced billboard rendering. Future work: GPU compute particle simulation, sub-emitters, particle collision, attractors, force fields.
-- **Improved Physics** — 2D physics (Box2D-style), 2D joints, continuous collision detection, more shape types, physics materials (friction, bounce), trigger callbacks from scripts.
-- **Basic Networking** — client-server architecture, state synchronization, entity ownership, lobbies, RPCs, lag compensation. Start with LAN/direct connect, then relay servers later.
-- **Destructible Environments** — extend DestructibleComponent to work as a prefab-level setting. When enabled on a prefab, all instances inherit destructibility. Add fracture/shatter visual effects (mesh splitting into fragments on destroy), debris physics, chain destruction propagation. Editor toggle: "Destructible" checkbox on prefab inspector.
-- **Improved Shadow System** — ~~DONE (Phase 1)~~ 4-cascade CSM with practical split scheme, texel-size stabilization (anti-swimming), per-cascade scaled bias, distance fade, configurable shadow distance/resolution/strength, Project Settings UI, per-scene serialization. Future work: soft shadows with PCSS, transparent shadow receivers, per-light shadow quality settings, point/spot light shadow maps.
-- **Per-Scene Rendering Settings** — ~~DONE~~ `SceneRenderSettings` struct captures all RenderSystem + PostProcessSettings state (~60 fields). Serialized in scene files as `"renderSettings"` JSON section. Project-level defaults stored in `.enjinproject` manifest. Applied on scene load/new scene, saved/restored around play mode. Project Settings panel has "Use Project Defaults" checkbox + "Set Current as Project Default" / "Reset to Project Default" buttons. Old scenes without `renderSettings` gracefully default.
-- **Simple Fluid Simulation** — Lightweight 2D/3D fluid system for water, lava, and gas effects. Grid-based Eulerian approach (not SPH — simpler, more predictable, easier to integrate with existing rendering). Core features: velocity field advection, pressure solve (Jacobi iteration), density transport, boundary conditions from colliders. Rendering via particle injection into existing particle system or a dedicated screen-space fluid surface renderer. Use cases: flowing water in platformers, lava pools, gas/smoke volumes, potion/liquid physics. Editor integration: FluidVolumeComponent (defines simulation bounds, resolution, viscosity, gravity response), real-time preview in viewport, preset configs (Water, Lava, Smoke, Steam). Performance target: 64x64 2D grid or 32x32x32 3D grid at 60fps on mid-range GPU via compute shader. Potential extensions: two-way coupling with rigidbodies, buoyancy forces, heat-driven convection, surface tension.
-- **Tweening System** — ~~DONE~~ TweenComponent with 25 easing functions, 7 tweeneable properties (Position, Rotation, Scale, BaseColor, EmissiveColor, Opacity, Float), Once/Loop/PingPong modes. TweenSystem ticks during play mode, auto-cleans completed tweens. Inspector UI with per-entry editors. All `Tween_` bindings return `uint` tween index for chainable configuration. OnComplete callback support (AngelScript function name, dispatched deferred to prevent iterator invalidation). `Tween_Float` for generic float interpolation (no component write, value read via `Tween_GetValue`). `Tween_SetOnComplete(entity, tweenIndex, funcName)` and `Tween_SetDelay(entity, tweenIndex, delay)` for per-tween configuration. `onCompleteCallback` serialized per tween entry. Scene serialization. Future work: Timeline/Sequencer integration.
-- **State Machine System** — ~~DONE~~ Built-in finite state machine as a first-class ECS component (`StateMachineComponent`). States with `onEnter`/`onUpdate`/`onExit` script callback function names, transitions with conditions (bool, float threshold, int, trigger), parameters, and current state tracking. StateMachineSystem evaluates transitions each frame, fires script callbacks via ScriptEngine on state enter/exit/update (same dispatch pattern as ScriptSystem lifecycle calls — iterates entity's ScriptComponent attachments, calls `FindMethod`/`ExecuteMethod`, silently skips if method not found). Inspector UI with state list, callback name fields, condition builder, trigger testing. Animation Graph Editor (visual node graph) shows callback fields in state inspector sidebar. 21 AngelScript bindings including `SM_SetOnEnter/OnUpdate/OnExit` and getters. Full serialization. Future work: visual scripting integration (node graph callbacks instead of function names).
-- **Dialogue System** — ~~DONE (Phase 1)~~ Runtime dialogue tree system with 7 node types (Text, Choice, Condition, SetVariable, Event, Root, End), DialoguePlayer state machine, DialogueComponent with tree+legacy modes, typewriter effect, choice navigation. Dialogue Editor panel (View > Tools) with entity sidebar and node graph editor. EntityEventBus integration broadcasts `Dialogue_<eventName>` when Event nodes fire. SubtitleSystem integration routes text to accessibility subtitles. 10 AngelScript bindings (`Dialogue_Start`, `Dialogue_Advance`, `Dialogue_Choose`, `Dialogue_SetVariable`, `Dialogue_GetVariable`, etc.). Full serialization. Future work:
-  - **Dialogue Asset Files (.enjdlg)** — Save/load dialogue trees as reusable assets independent of entities, reference by path, share across scenes
-  - **Localization System** — Text nodes reference string keys instead of literal text, actual text pulled from locale tables (JSON per language), language switcher in settings
-  - **UICanvas Dialogue Box** — Replace ImGui overlay with themeable runtime UI using UICanvasComponent, customizable dialogue box prefabs, portrait support
-  - **Dialogue Template** — Startup template demonstrating dialogue system with sample NPC conversation, branching choices, and event callbacks
-  - **External Tool Import** — Import/export for Yarn Spinner JSON and Twine formats
-
-### Rendering Pipeline & Performance
-
-- **3D/2D Pipeline Audit & Safety Rails** — Currently 2D sprites and 3D meshes share the same Vulkan pipeline. Sprites generate per-entity quads via MeshComponent and are sorted/rendered in a separate `RenderSprites()` pass. Audit needed:
-  - **Costs of cross-use:** 2D sprites incur per-entity draw calls like 3D meshes (no batching). Shadow pass runs even in 2D-only scenes. Ortho/perspective projection mixing can produce unexpected depth results.
-  - **Smart safety rails:** Auto-disable shadow pass when no 3D geometry exists. Warn users when mixing ortho and perspective cameras in the same scene. Auto-skip 3D lighting calculations for sprite-only entities (flat shading fast path). Detect and warn when sprite count exceeds batching threshold (100+ individual draw calls).
-  - **Sprite batching:** Group sprites by texture atlas into single instanced draw calls (like particle renderer). This is the biggest 2D performance win — reduces 100 sprite draw calls to 1-5 batched calls.
-  - **Frame slog scenarios to address:** Many unbatched sprites (100+), sprite meshes regenerating every frame without dirty flags (already mitigated), 3D shadow pass on 2D-only scenes, per-entity uniform buffer updates for static sprites.
-  - **What breaks:** Mixing 2D sprites with 3D depth testing causes z-fighting. 2D entities with 3D physics colliders work but waste collision broadphase cycles. Sprite transparency sorting conflicts with 3D depth buffer.
-
-- **Rendering Pipeline Investigation & Optimization** — Frame rate erratically drops (200fps dives). Investigate the rendering pipeline for bottlenecks. Potential optimizations:
-  - Multi-threaded command buffer recording (record per-viewport or per-material-group in parallel)
-  - GPU payload batching (sort by pipeline/material to minimize state changes)
-  - Indirect rendering (VkCmdDrawIndexedIndirect for single draw call with GPU-side culling)
-  - Asynchronous compute for culling, particle simulation, and post-processing passes
-  - Frame graph resource scheduling (avoid unnecessary GPU barriers/transitions)
-  - LOD selection on compute shader, occlusion queries, Hi-Z culling
-  - Profile with GPU timestamps and CPU profiler to identify actual bottleneck (CPU-bound submission vs GPU-bound fragment)
-
-### Procedural Generation
-
-- **Noise Library** — ~~DONE~~ Header-only library (`Core/include/Enjin/Math/Noise.h`) with 4 base noise types (Value, Perlin, Simplex, Worley/cellular F1) in 2D+3D, plus 4 fractal functions (FBM, Ridged Multifractal, Billow, Domain Warp) with configurable octaves, lacunarity, persistence, frequency, seed. 18 AngelScript `Noise_` bindings. Future work: F2/F1-F2 Worley variants, GPU compute noise.
-
-- **Procedural Generation Algorithms** — Expand LevelGenerator with modular algorithm support. Each algorithm should work as a pluggable generator that produces 2D grid data or 3D room/corridor layouts. Include bag/piece-pull options (weighted randomized selection from pools) where applicable:
-  - **Cellular Automata** — cave generation, organic shapes (configurable birth/death thresholds, iteration count, bag of initial fill patterns)
-  - **Random Walkers** — dungeon carving with drunkard's walk, directional bias, tunnel width options (bag of walker behaviors: straight, wobbly, branching)
-  - **Wave Function Collapse (WFC)** — tile-based generation from example patterns, adjacency constraints, backtracking solver (bag of tile sets, weight per tile). Key references to study before implementation:
-    - Maxim Gumin's original WFC repo and algorithm description: https://github.com/mxgmn/WaveFunctionCollapse
-    - Oskar Stalberg (Bad North, Townscaper) — "Wave Function Collapse in Bad North" EPC2018 talk: https://www.youtube.com/watch?v=0bcZb-SsnrA — covers practical WFC tile assembly for procedural island dioramas, marching cubes on irregular grids
-    - Anastasia Opara (Tiny Glade, ex-SEED/Embark) — "Creativity of Rules and Patterns" GDC2018: https://www.ea.com/seed/news/seed-gdc-2018-presentation-slides-creativity-of-rules-and-patterns — procedural systems design philosophy. Also her texture synthesis work (example-based generation closely related to WFC): https://medium.com/embarkstudios/texture-synthesis-and-remixing-from-a-single-example-faf5f4e8a5b8
-    - Isaac Karth & Adam M. Smith — "WaveFunctionCollapse is Constraint Solving in the Wild" (2017 workshop paper formalizing WFC as ASP) and follow-up on backtracking heuristics
-  - **BSP (Binary Space Partitioning)** — room-corridor dungeons, min/max room sizes, corridor placement (bag of room templates, piece-pull for room shapes and decoration)
-  - **L-Systems** — rule-based recursive generation for trees, plants, branching structures, river networks (bag of production rules, stochastic rule selection)
-  - **Voronoi Diagrams** — region-based world generation, biome placement, city districts (bag of region types with weighted pull for biome assignment)
-  - **Diamond-Square Algorithm** — heightmap terrain generation, midpoint displacement (configurable roughness, seed, corner initialization)
-  - **Grammar-Based Generation** — shape grammars for building layouts, procedural architecture, interior room decoration (bag of grammar rules with weighted selection)
-  - **Modular/Prefab Assembly** — snap-together room/corridor pieces from a prefab library with connection points (bag of pieces per socket type, weighted pull, uniqueness constraints)
-  - Editor UI: Generator panel with algorithm selection, parameter sliders, live preview, seed control, "Generate" button. Results stored as TilemapComponent data or TerrainComponent heightmaps.
-
-### Custom Flora Assets
-
-- **Flora Asset Drop-In** — Allow users to drop in custom images or 3D models to replace stock flora in the vegetation/grass/shrub/tree systems:
-  - For 2D flora (grass, shrubs): drop a sprite/image into the vegetation volume inspector to replace the stock billboard texture. The system textures the existing instanced quads with the custom image.
-  - For 3D flora (trees): drop a `.gltf`/`.fbx`/`.obj` model file. The engine auto-creates a prefab if one doesn't exist, and the TreeRenderer uses the prefab mesh instead of the procedural tree. Wind sway, LOD, and seasonal color changes continue to work via vertex shader wind and material tinting.
-  - Inspector UI: "Custom Asset" field on GrassVolumeComponent, ShrubVolumeComponent, TreeVolumeComponent. Browse button + drag-drop from asset browser. Clear button to revert to stock.
-
-### Scripting & Extensibility
-
-- **Script Rendering Bindings** — ~~DONE~~ 64 AngelScript wrapper functions exposing RenderSystem (shadows, ambient, fog, snow, rain, curvature, wireframe — 28 functions) and PostProcessSettings (tone mapping, exposure, bloom, vignette, chromatic aberration, color grading, film grain, FXAA — 36 functions). Null-safe: PostProcess_ functions return defaults in Player app. Wired through PlayMode (editor) and directly in Player app. Future work: additional bindings for retro effects (CRT, dithering, VHS), skybox control from scripts.
-- **Component/Plugin DLL Repositories** — load gameplay components from external DLLs/shared libraries. Package format for distributing reusable components. Local repository system (marketplace comes later).
-- **Documentation Generator** — auto-generate docs from component definitions, script API, project structure. HTML or markdown output for game teams.
-- **ScriptableObject / DataAsset System** — Unity-like reusable data containers that are NOT entities. Serialized JSON assets for game configuration: weapon stats, enemy tables, dialogue databases, item definitions, skill trees. Create/edit in inspector, reference from components. Extends the current component-only model with standalone data assets.
-
-### Platform & Export
-
-- **Mobile Support** — touch input, gyroscope, screen density handling, mobile-optimized render paths. Android (Vulkan) and iOS (MoltenVK) targets.
-- **Console Support** — platform abstraction for console input, certification requirements, console-specific render backends.
-- **VR/XR Support** — OpenXR integration, stereo rendering, hand tracking, spatial input, roomscale. Head-mounted display render paths.
-- **WebAssembly Export** — target WebGPU (NOT WebGL). Vulkan-aligned API, better future-proofing. Compile to WASM with Emscripten or wasm-bindgen. Accept that browser support is limited now but growing.
-
-### Accessibility (Engine-Level)
-
-Accessibility is not just for games made with Enjin — the editor itself must be fully accessible.
-
-- **Screen Reader Support** — expose editor UI hierarchy to OS accessibility APIs (UI Automation on Windows, AT-SPI on Linux, NSAccessibility on macOS). All panels, buttons, fields must have accessible names/roles.
-- **Keyboard-Only Navigation** — full editor operation without a mouse. Tab-order through panels, keyboard shortcuts for every action, focus indicators on all interactive elements.
-- **Alternative Input Devices** — support for switch access, eye tracking, sip-and-puff. Configurable input mapping at the editor level (not just in-game InputActionMap).
-- **Motor Accessibility** — adjustable click/drag thresholds, sticky keys, dwell-click support, one-handed editor presets.
-- **Visual Accessibility** — already have colorblind modes and high-contrast themes. Add: configurable font sizes across all editor panels, icon scaling, custom accent colors, reduced transparency option.
-- **Audio Accessibility** — visual indicators for all audio feedback in the editor (build complete, error notifications, etc.). Captions for any tutorial/onboarding audio.
-- **Blind-Accessible Workflow** — investigate whether a blind developer can create a game using only screen reader + keyboard. Identify and fix gaps. Consider an alternative text-based/CLI interface for core operations (create entity, add component, set properties, build).
-
-### UI/UX Design Philosophy
-
-Enjin's editor design should be:
-- **Aesthetically accessible** — clean, forward-thinking, timeless design
-- **Not a clone** — not Apple-style, not Unity grey, not Unreal dark. Our own identity.
-- **Information-dense but not cluttered** — show what matters, collapse what doesn't
-- **Consistent** — same patterns everywhere (context menus, drag behavior, property editing)
-
-### Version Control & Collaboration
-
-- **Git Integration** — built-in git panel in editor. Stage, commit, push, pull, branch, merge. Visual diff for scenes (structured JSON diff, not raw text). On new project creation (via Project Hub wizard), optionally `git init` with a sensible `.gitignore`. Branch-per-scene workflow support.
-- **Scene & Entity Locking** — advisory lock system for multi-user workflows. Scene-level locks (`.enjinlock` file or manifest entry) prevent two people from editing the same scene. Entity-level locks within a scene for finer-grained collaboration — lock the entities you're editing, others see them as read-only with a visual indicator (lock icon in hierarchy, dimmed in inspector). Lock ownership tracked by user identity (git username or configured display name). Locks are advisory — can be force-released by project admin. Integrates with the Project Hub's collaboration features.
-- **Session Sharing / Collaborative Editing** — real-time or turn-based collaboration with clear session locks showing who is editing which entity/scene. Prevents merge conflicts at the editor level. Long-term: operational transform or CRDT-based scene sync where multiple editors see each other's changes in real-time, with conflict resolution at the entity/component level rather than file level. Presence indicators (colored cursors/selection outlines per user in viewport).
-- **Clean Git Serialization** — scene files must serialize deterministically (sorted keys, stable ordering, no floating-point drift noise). Unity's random YAML reordering and index GUIDs are the anti-pattern. Our JSON scenes should diff cleanly and merge predictably.
-
-### NOT Planned Yet (Future)
-
-- Asset marketplace / template exchange (needs servers, not now)
-- Cloud build pipelines
-- Analytics dashboard
+**Key categories of planned work:**
+- **Editor Tools:** Project hub, accent color theming, template rebuild, extended model formats (PLY/VOX), drag-and-drop improvements
+- **Runtime Systems:** Improved physics (2D, CCD), networking, destructible environments, fluid simulation, SVG support
+- **Rendering & Performance:** Sprite batching, pipeline optimization, soft shadows
+- **Procedural Generation:** Cellular automata, WFC, BSP, L-systems, Voronoi, custom flora assets
+- **Scripting:** Plugin DLL repositories, documentation generator, ScriptableObject/DataAsset system
+- **Platform:** Mobile (Android/iOS), console, VR/XR (OpenXR), WebAssembly (WebGPU)
+- **Accessibility:** Screen reader support, keyboard-only navigation, motor accessibility
+- **Collaboration:** Git integration, scene/entity locking, collaborative editing
