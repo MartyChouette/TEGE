@@ -17,14 +17,12 @@ Skybox::~Skybox() {
 }
 
 bool Skybox::Initialize(VulkanContext* context) {
-    ENJIN_LOG_WARN(Renderer, "Skybox::Initialize called");
     m_Context = context;
     if (!CreateSampler()) {
-        ENJIN_LOG_ERROR(Renderer, "Skybox::Initialize - CreateSampler failed!");
+        ENJIN_LOG_ERROR(Renderer, "Skybox::Initialize - CreateSampler failed");
         return false;
     }
     m_Initialized = true;
-    ENJIN_LOG_WARN(Renderer, "Skybox initialized OK - sampler created");
     return true;
 }
 
@@ -142,14 +140,10 @@ bool Skybox::CreateProcedural(const Math::Vector3& topColor, const Math::Vector3
                                const Math::Vector3& horizonColor) {
     const u32 faceSize = 64;
 
-    ENJIN_LOG_INFO(Renderer, "CreateProcedural: Creating cubemap image (%ux%u)", faceSize, faceSize);
-
     if (!CreateCubemapImage(faceSize)) {
-        ENJIN_LOG_ERROR(Renderer, "CreateProcedural: CreateCubemapImage failed!");
+        ENJIN_LOG_ERROR(Renderer, "Failed to create procedural skybox cubemap image");
         return false;
     }
-
-    ENJIN_LOG_INFO(Renderer, "CreateProcedural: Cubemap image created, generating face data...");
 
     // Generate gradient data for each face
     // Face directions: +X, -X, +Y, -Y, +Z, -Z
@@ -539,20 +533,11 @@ void Skybox::UploadFaces(const std::vector<std::unique_ptr<u8[]>>& faceData, u32
 void Skybox::SetConfig(const SkyboxConfig& config) {
     m_Config = config;
 
-    ENJIN_LOG_INFO(Renderer, "Skybox::SetConfig - type=%d, context=%s, sampler=%s",
-        static_cast<int>(config.type),
-        m_Context ? "valid" : "NULL",
-        m_Sampler != VK_NULL_HANDLE ? "valid" : "NULL");
-
     switch (config.type) {
         case SkyboxType::Cubemap:
             LoadCubemap(config.cubemapPaths);
             break;
         case SkyboxType::Procedural:
-            ENJIN_LOG_INFO(Renderer, "Creating procedural skybox with top=(%.2f,%.2f,%.2f) horizon=(%.2f,%.2f,%.2f) bottom=(%.2f,%.2f,%.2f)",
-                config.topColor.x, config.topColor.y, config.topColor.z,
-                config.horizonColor.x, config.horizonColor.y, config.horizonColor.z,
-                config.bottomColor.x, config.bottomColor.y, config.bottomColor.z);
             CreateProcedural(config.topColor, config.bottomColor, config.horizonColor);
             break;
         case SkyboxType::SolidColor:
@@ -563,9 +548,6 @@ void Skybox::SetConfig(const SkyboxConfig& config) {
             DestroyImage();
             break;
     }
-
-    ENJIN_LOG_INFO(Renderer, "Skybox::SetConfig complete - cubemapView=%s",
-        m_CubemapView != VK_NULL_HANDLE ? "valid" : "NULL");
 }
 
 bool Skybox::CreateSampler() {

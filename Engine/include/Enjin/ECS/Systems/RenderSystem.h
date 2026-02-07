@@ -81,6 +81,10 @@ public:
     void Initialize();
     void Shutdown();
 
+    // Process deferred changes (skybox config, pipeline recreation) — call at frame start,
+    // BEFORE any command buffer recording (RenderOffscreen, Update, etc.)
+    void FlushPendingChanges();
+
     void Update(f32 deltaTime) override;
     void OnEntityAdded(Entity entity) override;
     void OnEntityRemoved(Entity entity) override;
@@ -334,6 +338,8 @@ private:
 
     // Skybox
     Renderer::Skybox m_Skybox;
+    bool m_PendingSkyboxConfig = false;
+    Renderer::SkyboxConfig m_PendingSkybox;
     VkPipeline m_SkyboxPipelineHandle = VK_NULL_HANDLE;
     VkPipelineLayout m_SkyboxPipelineLayoutHandle = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_SkyboxDescriptorSetLayoutHandle = VK_NULL_HANDLE;
@@ -341,7 +347,7 @@ private:
     VkDescriptorPool m_SkyboxDescriptorPool = VK_NULL_HANDLE;
     std::vector<VkDescriptorSet> m_SkyboxDescriptorSets;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_SkyboxUniformBuffers;
-    void CreateSkyboxPipeline();
+    void CreateSkyboxPipeline(VkRenderPass renderPass = VK_NULL_HANDLE);
     void RenderSkybox(VkCommandBuffer commandBuffer,
                       const VkViewport* viewportOverride = nullptr,
                       const VkRect2D* scissorOverride = nullptr);

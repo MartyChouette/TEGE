@@ -210,7 +210,7 @@ struct VisualScriptComponent {
 
     std::vector<ExecutionRecord> executionHistory;   // Recorded execution events
     f32 playStartTime = 0.0f;                        // When play mode started
-    bool recordingEnabled = true;                    // Whether to record execution
+    bool recordingEnabled = false;                   // Whether to record execution (off by default for performance)
     static constexpr usize MAX_HISTORY = 1000;       // Max history entries
 
     // ========== Helper methods ==========

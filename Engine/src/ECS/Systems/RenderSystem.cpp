@@ -341,12 +341,30 @@ void RenderSystem::ProcessPendingRecreation() {
     m_PendingFragmentShader.reset();
 }
 
+void RenderSystem::FlushPendingChanges() {
+    if (!m_Renderer || !m_Initialized) return;
+
+    ProcessPendingRecreation();
+
+    // Apply deferred skybox config — must happen before any rendering commands
+    // reference the old cubemap (including RenderOffscreen for the Game View)
+    if (m_PendingSkyboxConfig) {
+        m_PendingSkyboxConfig = false;
+        if (m_Skybox.IsValid()) {
+            m_Renderer->WaitForAllFrames();
+        }
+        m_Skybox.SetConfig(m_PendingSkybox);
+    }
+}
+
 void RenderSystem::Update(f32 deltaTime) {
     if (!m_Renderer || !m_Initialized) {
         return;
     }
 
-    ProcessPendingRecreation();
+    // Process any pending changes not yet flushed (fallback if FlushPendingChanges
+    // wasn't called earlier this frame, e.g. in standalone Player without editor)
+    FlushPendingChanges();
 
     // Reset per-frame stats
     ResetFrameCounters();
@@ -871,8 +889,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     scissor.extent = { target->GetWidth(), target->GetHeight() };
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
-    // Render skybox in game view
-    RenderSkybox(commandBuffer);
+    // Render skybox in game view (pass viewport/scissor for render target dimensions)
+    RenderSkybox(commandBuffer, &viewport, &scissor);
 
     // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
@@ -3609,19 +3627,20 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     if (m_SpriteBatchRenderer) {
         m_SpriteBatchRenderer->RecreateForRenderPass(renderPass, layout);
     }
+
+    // Note: skybox pipeline is NOT recreated here — it was created for the swapchain
+    // render pass in Initialize() and works in both passes via driver-level render pass
+    // compatibility (SRGB/UNORM same memory layout). Destroying and recreating it here
+    // with the offscreen render pass would break the editor viewport's skybox rendering.
 }
 
 void RenderSystem::SetSkybox(const Renderer::SkyboxConfig& config) {
-    const char* typeNames[] = { "None", "Cubemap", "Procedural", "SolidColor" };
-    u32 typeIdx = static_cast<u32>(config.type);
-    ENJIN_LOG_WARN(Renderer, "=== SetSkybox: type=%s ===", typeIdx < 4 ? typeNames[typeIdx] : "Unknown");
-    ENJIN_LOG_WARN(Renderer, "Pipeline=%s, VBO=%s",
-        m_SkyboxPipelineHandle != VK_NULL_HANDLE ? "OK" : "NULL",
-        m_SkyboxVertexBuffer ? "OK" : "NULL");
-
-    m_Skybox.SetConfig(config);
-
-    ENJIN_LOG_WARN(Renderer, "Skybox valid=%s", m_Skybox.IsValid() ? "YES" : "NO");
+    // Defer skybox config change to the start of the next frame — the old cubemap
+    // may still be referenced by the current frame's command buffer which is being
+    // recorded. Applying the change at the top of Update() is safe because all
+    // in-flight frames have been submitted and can be waited on.
+    m_PendingSkybox = config;
+    m_PendingSkyboxConfig = true;
 }
 
 void RenderSystem::CreateSkyboxCubeVBO() {
@@ -3649,7 +3668,7 @@ void RenderSystem::CreateSkyboxCubeVBO() {
     m_SkyboxVertexBuffer->UploadData(cubeVertices, sizeof(cubeVertices));
 }
 
-void RenderSystem::CreateSkyboxPipeline() {
+void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     ENJIN_LOG_INFO(Renderer, "CreateSkyboxPipeline called");
 
     if (!m_Renderer || !m_Renderer->GetContext()) {
@@ -3747,7 +3766,7 @@ void RenderSystem::CreateSkyboxPipeline() {
     rasterizer.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
     rasterizer.polygonMode = VK_POLYGON_MODE_FILL;
     rasterizer.lineWidth = 1.0f;
-    rasterizer.cullMode = VK_CULL_MODE_FRONT_BIT;
+    rasterizer.cullMode = VK_CULL_MODE_NONE;  // No culling — camera is always inside the skybox cube
     rasterizer.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
 
     VkPipelineMultisampleStateCreateInfo multisampling{};
@@ -3796,7 +3815,7 @@ void RenderSystem::CreateSkyboxPipeline() {
     pipelineInfo.pColorBlendState = &colorBlending;
     pipelineInfo.pDynamicState = &dynamicState;
     pipelineInfo.layout = m_SkyboxPipelineLayoutHandle;
-    pipelineInfo.renderPass = m_Renderer->GetRenderPass();
+    pipelineInfo.renderPass = (renderPass != VK_NULL_HANDLE) ? renderPass : m_Renderer->GetRenderPass();
     pipelineInfo.subpass = 0;
 
     if (vkCreateGraphicsPipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &m_SkyboxPipelineHandle) != VK_SUCCESS) {
@@ -3851,26 +3870,8 @@ void RenderSystem::CreateSkyboxPipeline() {
 void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
                                 const VkViewport* viewportOverride,
                                 const VkRect2D* scissorOverride) {
-    // Debug: log why skybox might not render
-    static bool loggedOnce = false;
-    static u32 renderCount = 0;
-
     if (!m_Skybox.IsValid() || m_SkyboxPipelineHandle == VK_NULL_HANDLE || !m_SkyboxVertexBuffer || !m_Camera) {
-        if (!loggedOnce) {
-            ENJIN_LOG_WARN(Renderer, "Skybox skip: valid=%d pipeline=%d vbo=%d camera=%d",
-                m_Skybox.IsValid() ? 1 : 0,
-                m_SkyboxPipelineHandle != VK_NULL_HANDLE ? 1 : 0,
-                m_SkyboxVertexBuffer ? 1 : 0,
-                m_Camera ? 1 : 0);
-            loggedOnce = true;
-        }
         return;
-    }
-
-    // Log first few successful renders
-    if (renderCount < 3) {
-        ENJIN_LOG_WARN(Renderer, "RenderSkybox: Drawing skybox (frame %u)", renderCount);
-        renderCount++;
     }
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();

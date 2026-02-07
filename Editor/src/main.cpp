@@ -177,6 +177,12 @@ public:
             m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
         }
 
+        // Flush deferred changes (skybox config, pipeline recreation) before
+        // any rendering commands that might reference old GPU resources
+        if (m_RenderSystem) {
+            m_RenderSystem->FlushPendingChanges();
+        }
+
         VkCommandBuffer cmd = m_Renderer->GetCurrentCommandBuffer();
 
         // Render offscreen targets (before main render pass)
