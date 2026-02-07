@@ -21,6 +21,7 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                 ECS::Entity src = widget->sourceEntity != 0 ? widget->sourceEntity : entity;
                 auto* health = world->GetComponent<ECS::HealthComponent>(src);
                 f32 pct = health ? health->GetHealthPercent() : widget->currentValue / std::max(widget->maxValue, 0.001f);
+                pct = std::max(0.0f, std::min(1.0f, pct));
                 DrawHealthBar(widget->anchorX, widget->anchorY, widget->width, widget->height,
                               pct, widget->fillColor, widget->bgColor,
                               viewportX, viewportY, viewportW, viewportH);
@@ -30,6 +31,7 @@ void HUDSystem::Update(ECS::World* world, const Renderer::Camera* gameCamera,
                 ECS::Entity src = widget->sourceEntity != 0 ? widget->sourceEntity : entity;
                 auto* res = world->GetComponent<ECS::ResourceComponent>(src);
                 f32 pct = res ? res->GetPercent() : widget->currentValue / std::max(widget->maxValue, 0.001f);
+                pct = std::max(0.0f, std::min(1.0f, pct));
                 DrawResourceBar(widget->anchorX, widget->anchorY, widget->width, widget->height,
                                 pct, widget->fillColor, widget->bgColor, widget->text,
                                 viewportX, viewportY, viewportW, viewportH);
