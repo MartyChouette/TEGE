@@ -68,6 +68,7 @@ constexpr const char* WhileLoop     = "Flow_WhileLoop";
 constexpr const char* DoOnce        = "Flow_DoOnce";
 constexpr const char* Gate          = "Flow_Gate";
 constexpr const char* FlipFlop      = "Flow_FlipFlop";
+constexpr const char* Delay         = "Flow_Delay";
 
 // Variables
 constexpr const char* GetVariable   = "Var_Get";
@@ -154,6 +155,19 @@ constexpr const char* GetHealth     = "Component_GetHealth";
 constexpr const char* SetHealth     = "Component_SetHealth";
 constexpr const char* Damage        = "Component_Damage";
 constexpr const char* HasComponent  = "Component_Has";
+
+// Audio
+constexpr const char* AudioPlay           = "Audio_Play";
+constexpr const char* AudioStop           = "Audio_Stop";
+constexpr const char* AudioIsPlaying      = "Audio_IsPlaying";
+constexpr const char* AudioSetVolume      = "Audio_SetVolume";
+constexpr const char* WaitForAudioComplete = "Audio_WaitComplete";
+
+// Animation
+constexpr const char* AnimatorPlay             = "Animator_Play";
+constexpr const char* AnimatorSetSpeed         = "Animator_SetSpeed";
+constexpr const char* AnimatorGetSpeed         = "Animator_GetSpeed";
+constexpr const char* WaitForAnimationComplete = "Animator_WaitComplete";
 
 // Debug
 constexpr const char* Print         = "Debug_Print";

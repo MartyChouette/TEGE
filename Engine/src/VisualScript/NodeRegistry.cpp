@@ -3,6 +3,8 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -253,6 +255,31 @@ void NodeRegistry::RegisterBuiltinNodes() {
                          std::vector<ECS::VariableValue>& outputs) {
             // Executor handles multi-output for Sequence specially
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Delay (Latent)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::Delay;
+        def.displayName = "Delay";
+        def.description = "Wait for a specified duration before continuing. Execution pauses at this node.";
+        def.category = NodeCategory::FlowControl;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.2f);
+        def.flags = NodeDefFlags::Latent;
+        def.inputs = {
+            FlowIn(),
+            Float("Duration", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut("Completed")};
+        def.keywords = {"delay", "wait", "pause", "sleep", "time", "timer"};
+        // Note: Delay is handled specially by the executor (latent action)
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Executor handles Delay specially - starts latent action
+            ctx.nextFlowIndex = -1;  // Stop synchronous execution
         };
         RegisterNode(def);
     }
@@ -2422,6 +2449,326 @@ void NodeRegistry::RegisterBuiltinNodes() {
             outputs.resize(1);
             outputs[0] = ctx.otherEntity;
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // AUDIO NODES
+    // ========================================================================
+
+    // Audio Play
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioPlay;
+        def.displayName = "Play Audio";
+        def.description = "Start playing audio on an entity with AudioSourceComponent";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);  // Magenta
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "sound", "play", "music", "sfx"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* audio = ctx.world->GetComponent<ECS::AudioSourceComponent>(target);
+                if (audio && !audio->clipPath.empty()) {
+                    audio->playOnAwake = true;  // Trigger play on next audio system update
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Stop
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioStop;
+        def.displayName = "Stop Audio";
+        def.description = "Stop playing audio on an entity";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "sound", "stop", "mute", "silence"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* audio = ctx.world->GetComponent<ECS::AudioSourceComponent>(target);
+                if (audio) {
+                    audio->playOnAwake = false;  // Stop on next audio system update
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Is Playing (Pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioIsPlaying;
+        def.displayName = "Is Audio Playing";
+        def.description = "Check if audio is playing on an entity";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Playing", PK::Output)};
+        def.keywords = {"audio", "sound", "playing", "active", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* audio = ctx.world->GetComponent<ECS::AudioSourceComponent>(target);
+                if (audio) {
+                    return audio->playOnAwake;  // Simplified check
+                }
+            }
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Set Volume
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioSetVolume;
+        def.displayName = "Set Audio Volume";
+        def.description = "Set the volume of an audio source (0.0 to 1.0)";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Volume", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "sound", "volume", "loudness", "level"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            f32 volume = 1.0f;
+            if (inputs.size() > 1) {
+                if (std::holds_alternative<f32>(inputs[1])) {
+                    volume = std::get<f32>(inputs[1]);
+                } else if (std::holds_alternative<i32>(inputs[1])) {
+                    volume = static_cast<f32>(std::get<i32>(inputs[1]));
+                }
+            }
+            volume = Math::Clamp(volume, 0.0f, 1.0f);
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* audio = ctx.world->GetComponent<ECS::AudioSourceComponent>(target);
+                if (audio) {
+                    audio->volume = volume;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // ANIMATION NODES
+    // ========================================================================
+
+    // Animator Play
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnimatorPlay;
+        def.displayName = "Play Animation";
+        def.description = "Play an animation on an entity with AnimatorComponent";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);  // Blue
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Animation", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"animator", "animation", "play", "skeletal", "anim"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            std::string animName;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                animName = std::get<std::string>(inputs[1]);
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY && !animName.empty()) {
+                auto* animator = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
+                if (animator) {
+                    animator->animator.Play(animName);
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Animator Set Speed
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnimatorSetSpeed;
+        def.displayName = "Set Animation Speed";
+        def.description = "Set the playback speed of an animator (1.0 = normal)";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Speed", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"animator", "animation", "speed", "playback", "rate"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            f32 speed = 1.0f;
+            if (inputs.size() > 1) {
+                if (std::holds_alternative<f32>(inputs[1])) {
+                    speed = std::get<f32>(inputs[1]);
+                } else if (std::holds_alternative<i32>(inputs[1])) {
+                    speed = static_cast<f32>(std::get<i32>(inputs[1]));
+                }
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* animator = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
+                if (animator) {
+                    animator->animator.SetSpeed(speed);
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Animator Get Speed (Pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnimatorGetSpeed;
+        def.displayName = "Get Animation Speed";
+        def.description = "Get the playback speed of an animator";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Float("Speed", PK::Output)};
+        def.keywords = {"animator", "animation", "speed", "playback", "rate"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* animator = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
+                if (animator) {
+                    return animator->animator.GetSpeed();
+                }
+            }
+            return 1.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // LATENT NODES (Wait for completion)
+    // ========================================================================
+
+    // Wait For Audio Complete (Latent)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaitForAudioComplete;
+        def.displayName = "Wait For Audio";
+        def.description = "Wait until audio finishes playing on an entity before continuing";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);  // Magenta
+        def.flags = NodeDefFlags::Latent;
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut("Completed")};
+        def.keywords = {"audio", "wait", "complete", "finish", "sound", "done"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Latent action - handled by executor
+            ctx.nextFlowIndex = -1;
+        };
+        RegisterNode(def);
+    }
+
+    // Wait For Animation Complete (Latent)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaitForAnimationComplete;
+        def.displayName = "Wait For Animation";
+        def.description = "Wait until animation finishes playing on an entity before continuing";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);  // Blue
+        def.flags = NodeDefFlags::Latent;
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Animation", PK::Input, "")
+        };
+        def.outputs = {FlowOut("Completed")};
+        def.keywords = {"animation", "wait", "complete", "finish", "animator", "done"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Latent action - handled by executor
+            ctx.nextFlowIndex = -1;
         };
         RegisterNode(def);
     }

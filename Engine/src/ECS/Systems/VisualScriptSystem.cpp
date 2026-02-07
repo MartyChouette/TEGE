@@ -71,6 +71,9 @@ void VisualScriptSystem::Update(f32 deltaTime) {
         // OnUpdate - called every frame
         m_Executor.ExecuteEvent(m_World, entity, script,
                                 VisualScriptEvent::OnUpdate, deltaTime);
+
+        // Update latent nodes (Delay, etc.)
+        m_Executor.UpdateLatentNodes(m_World, entity, script, deltaTime);
     }
 
     m_FirstUpdate = false;

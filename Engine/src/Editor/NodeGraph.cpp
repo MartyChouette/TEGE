@@ -575,9 +575,14 @@ void NodeGraphEditor::DrawNodes(ImDrawList* dl, ImVec2 canvasPos, NodeGraphData&
         f32 borderThickness = 1.5f * s;
         u32 borderCol = colors.nodeBorder;
 
-        if (m_SelectedNodeId == node.id) {
+        // Multi-select: check if node is in selection set
+        if (m_SelectedNodeIds.count(node.id) > 0) {
             borderCol = colors.nodeSelected;
             borderThickness = 2.5f * s;
+        }
+        // Primary selection gets slightly thicker border
+        if (m_SelectedNodeId == node.id && m_SelectedNodeIds.size() > 1) {
+            borderThickness = 3.0f * s;
         }
         if (HasFlag(node.flags, NodeFlags::Highlighted)) {
             borderCol = colors.nodeHighlighted;
@@ -837,10 +842,25 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
     // --- Node drag ---
     if (m_IsDraggingNode) {
         if (ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-            auto* node = data.FindNode(m_DragNodeId);
-            if (node && !HasFlag(node->flags, NodeFlags::NoMove)) {
-                node->position.x += io.MouseDelta.x / m_Zoom;
-                node->position.y += io.MouseDelta.y / m_Zoom;
+            f32 dx = io.MouseDelta.x / m_Zoom;
+            f32 dy = io.MouseDelta.y / m_Zoom;
+
+            // If multiple nodes are selected, move all of them
+            if (m_SelectedNodeIds.size() > 1 && m_SelectedNodeIds.count(m_DragNodeId) > 0) {
+                for (NodeId nodeId : m_SelectedNodeIds) {
+                    auto* node = data.FindNode(nodeId);
+                    if (node && !HasFlag(node->flags, NodeFlags::NoMove)) {
+                        node->position.x += dx;
+                        node->position.y += dy;
+                    }
+                }
+            } else {
+                // Single node drag
+                auto* node = data.FindNode(m_DragNodeId);
+                if (node && !HasFlag(node->flags, NodeFlags::NoMove)) {
+                    node->position.x += dx;
+                    node->position.y += dy;
+                }
             }
         }
         if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
@@ -860,7 +880,21 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
             ImVec2 nodeSize = GetNodeSize(*it, uiScale);
             if (mousePos.x >= nodePos.x && mousePos.x <= nodePos.x + nodeSize.x &&
                 mousePos.y >= nodePos.y && mousePos.y <= nodePos.y + nodeSize.y) {
-                m_SelectedNodeId = it->id;
+
+                // Handle Ctrl+click for multi-select
+                if (io.KeyCtrl) {
+                    if (m_SelectedNodeIds.count(it->id) > 0) {
+                        // Toggle off if already selected
+                        DeselectNode(it->id);
+                    } else {
+                        // Add to selection
+                        SelectNode(it->id, true);
+                    }
+                } else {
+                    // Normal click: replace selection
+                    SelectNode(it->id, false);
+                }
+
                 m_SelectedLinkId = 0;
                 m_IsDraggingNode = true;
                 m_DragNodeId = it->id;
@@ -927,19 +961,34 @@ void NodeGraphEditor::HandleCanvasInteraction(ImVec2 canvasPos, ImVec2 canvasSiz
     // Box selection release
     if (m_IsBoxSelecting && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
         m_IsBoxSelecting = false;
-        // Select first node fully within box
+        // Select all nodes that intersect with the box (not just fully within)
         ImVec2 bMin(std::min(m_BoxSelectStart.x, mousePos.x),
                     std::min(m_BoxSelectStart.y, mousePos.y));
         ImVec2 bMax(std::max(m_BoxSelectStart.x, mousePos.x),
                     std::max(m_BoxSelectStart.y, mousePos.y));
+
+        // If Ctrl is not held, clear previous selection
+        if (!io.KeyCtrl) {
+            m_SelectedNodeIds.clear();
+            m_SelectedNodeId = 0;
+        }
+
+        bool firstNode = true;
         for (auto& node : data.GetNodes()) {
             ImVec2 np = CanvasToScreen(node.position, canvasPos);
             ImVec2 ns = GetNodeSize(node, uiScale);
-            if (np.x >= bMin.x && np.y >= bMin.y &&
-                np.x + ns.x <= bMax.x && np.y + ns.y <= bMax.y) {
-                m_SelectedNodeId = node.id;
-                if (callbacks.OnNodeSelected) callbacks.OnNodeSelected(node.id);
-                break;
+
+            // Check if node intersects with selection box
+            bool intersects = !(np.x > bMax.x || np.x + ns.x < bMin.x ||
+                                np.y > bMax.y || np.y + ns.y < bMin.y);
+
+            if (intersects) {
+                m_SelectedNodeIds.insert(node.id);
+                if (firstNode) {
+                    m_SelectedNodeId = node.id;
+                    if (callbacks.OnNodeSelected) callbacks.OnNodeSelected(node.id);
+                    firstNode = false;
+                }
             }
         }
     }
@@ -1018,6 +1067,28 @@ void NodeGraphEditor::FitAllNodes(const NodeGraphData& data) {
 void NodeGraphEditor::CenterOnNode(const GraphNode& node) {
     m_ScrollOffset.x = -node.position.x * m_Zoom + 300.0f;
     m_ScrollOffset.y = -node.position.y * m_Zoom + 200.0f;
+}
+
+// ============================================================================
+// Multi-Select Support
+// ============================================================================
+
+void NodeGraphEditor::SelectNode(NodeId id, bool additive) {
+    if (!additive) {
+        m_SelectedNodeIds.clear();
+    }
+    if (id != 0) {
+        m_SelectedNodeIds.insert(id);
+        m_SelectedNodeId = id;  // Keep primary selection for backwards compatibility
+    }
+    m_SelectedLinkId = 0;
+}
+
+void NodeGraphEditor::DeselectNode(NodeId id) {
+    m_SelectedNodeIds.erase(id);
+    if (m_SelectedNodeId == id) {
+        m_SelectedNodeId = m_SelectedNodeIds.empty() ? 0 : *m_SelectedNodeIds.begin();
+    }
 }
 
 } // namespace Editor

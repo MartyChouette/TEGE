@@ -8,6 +8,7 @@
 #include <vector>
 #include <variant>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace Enjin {
 namespace ECS {
@@ -124,6 +125,29 @@ inline const char* VisualScriptEventToString(VisualScriptEvent e) {
 }
 
 // ============================================================================
+// LATENT NODE STATE (for multi-frame execution like Delay)
+// ============================================================================
+
+struct LatentNodeState {
+    f32 timeRemaining = 0.0f;
+    bool isActive = false;
+    Editor::PinId resumeFlowPin = 0;  // Which output pin to resume from
+    Entity targetEntity = INVALID_ENTITY;  // For audio/animation waits
+    std::string targetName;  // Animation name for WaitForAnimation
+};
+
+// ============================================================================
+// EXECUTION RECORD (for profiler/timeline visualization)
+// ============================================================================
+
+struct ExecutionRecord {
+    Editor::NodeId nodeId = 0;
+    f32 timestamp = 0.0f;       // Time since play started
+    f32 duration = 0.0f;        // Execution time in ms
+    std::string nodeType;
+};
+
+// ============================================================================
 // VISUAL SCRIPT NODE METADATA
 // ============================================================================
 
@@ -168,6 +192,26 @@ struct VisualScriptComponent {
 
     // Cached values for pure nodes (cleared each frame)
     mutable std::unordered_map<Editor::NodeId, VariableValue> pureNodeCache;
+
+    // Latent node states (for multi-frame execution like Delay)
+    std::unordered_map<Editor::NodeId, LatentNodeState> latentStates;
+
+    // Currently executing node ID (for visualization, 0 when not executing)
+    Editor::NodeId currentlyExecutingNode = 0;
+
+    // ========== Debug state (for breakpoints and step-through) ==========
+
+    std::unordered_set<Editor::NodeId> breakpoints;  // Nodes with breakpoints set
+    bool isPaused = false;                            // Script paused at breakpoint
+    Editor::NodeId pausedAtNode = 0;                  // Which node we're paused at
+    bool stepRequested = false;                       // User requested single step
+
+    // ========== Profiler state (for execution timeline) ==========
+
+    std::vector<ExecutionRecord> executionHistory;   // Recorded execution events
+    f32 playStartTime = 0.0f;                        // When play mode started
+    bool recordingEnabled = true;                    // Whether to record execution
+    static constexpr usize MAX_HISTORY = 1000;       // Max history entries
 
     // ========== Helper methods ==========
 
@@ -218,6 +262,17 @@ struct VisualScriptComponent {
         initialized = false;
         started = false;
         pureNodeCache.clear();
+        latentStates.clear();
+        currentlyExecutingNode = 0;
+
+        // Reset debug state
+        isPaused = false;
+        pausedAtNode = 0;
+        stepRequested = false;
+
+        // Clear profiler history
+        executionHistory.clear();
+        playStartTime = 0.0f;
     }
 };
 

@@ -39,6 +39,11 @@ public:
                          f32 deltaTime,
                          ECS::Entity otherEntity = ECS::INVALID_ENTITY);
 
+    // Update latent nodes (called each frame for Delay, etc.)
+    void UpdateLatentNodes(ECS::World* world, ECS::Entity entity,
+                           ECS::VisualScriptComponent* script,
+                           f32 deltaTime);
+
     // Get execution statistics (for debugging)
     struct ExecutionStats {
         u32 nodesExecuted = 0;

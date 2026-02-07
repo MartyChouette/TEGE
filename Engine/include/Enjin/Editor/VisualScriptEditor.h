@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Editor/NodeGraph.h"
 #include "Enjin/Editor/EditorSettings.h"
+#include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/VisualScript.h"
@@ -36,6 +37,9 @@ public:
     ECS::Entity GetTargetEntity() const { return m_TargetEntity; }
     bool HasTarget() const { return m_World != nullptr && m_TargetEntity != ECS::INVALID_ENTITY; }
 
+    // Set the undo manager for graph edits
+    void SetUndoManager(UndoRedoManager* manager) { m_UndoManager = manager; }
+
 private:
     // Sync graph from ECS component
     void SyncFromComponent();
@@ -58,14 +62,54 @@ private:
     // Draw toolbar (add event, add variable, fit all)
     void DrawToolbar();
 
+    // Draw debug controls toolbar (breakpoints, step, continue)
+    void DrawDebugControls(bool isPlaying);
+
+    // Draw execution timeline profiler
+    void DrawExecutionTimeline();
+
     // Draw variable editor in inspector
     void DrawVariableEditor();
 
     // Draw node-specific properties in inspector
     void DrawNodeProperties();
 
+    // Toggle breakpoint on a node
+    void ToggleBreakpoint(NodeId nodeId);
+
+    // Debug control actions
+    void ContinueExecution();
+    void StepOver();
+
     // Populate context menu with node categories
     void PopulateContextMenu();
+
+    // Update node highlights for execution visualization (play mode)
+    void UpdatePlayModeHighlight(bool isPlaying);
+
+    // Clipboard operations
+    void CopySelectedNodes();
+    void CutSelectedNodes();
+    void PasteNodes();
+    void DeleteSelectedNodes();
+    void HandleKeyboardShortcuts();
+
+public:
+    // Undo/redo helper methods (called by commands, need public access)
+    void RemoveNodeById(NodeId nodeId);
+    void RestoreNodeFromJson(NodeId nodeId, const std::string& json);
+    void AddLinkById(PinId startPin, PinId endPin, LinkId linkId);
+    void RemoveLinkById(LinkId linkId);
+    std::string SerializeNodeToJson(NodeId nodeId);
+
+    // Property edit helpers for undo (public for command classes)
+    void SetNodePropertyValue(NodeId nodeId, const std::string& propertyName, const std::string& value);
+    void SetVariableValue(const std::string& varName, const std::string& value);
+
+    // Get the target script component
+    ECS::VisualScriptComponent* GetTargetScript();
+
+private:
 
     ECS::World* m_World = nullptr;
     ECS::Entity m_TargetEntity = ECS::INVALID_ENTITY;
@@ -94,11 +138,19 @@ private:
     // Reference to editor settings for recently-used tracking
     EditorSettings* m_EditorSettings = nullptr;
 
+    // Reference to undo manager for graph edits
+    UndoRedoManager* m_UndoManager = nullptr;
+
     // Mapping: node ID -> node type ID for execution
     std::unordered_map<NodeId, std::string> m_NodeTypeMap;
 
     // Draw the searchable node popup
     void DrawNodeSearchPopup();
+
+    // Clipboard state
+    std::string m_ClipboardJson;
+    std::vector<NodeId> m_ClipboardNodeIds;
+    bool m_ClipboardIsCut = false;
 };
 
 } // namespace Editor

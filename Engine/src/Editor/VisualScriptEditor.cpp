@@ -1,9 +1,11 @@
 #include "Enjin/Editor/VisualScriptEditor.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/VisualScript/NodeDefinition.h"
+#include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cstring>
+#include <nlohmann/json.hpp>
 
 namespace Enjin {
 namespace Editor {
@@ -15,6 +17,205 @@ static const Math::Vector3 COLOR_VARIABLE   = Math::Vector3(0.4f, 0.5f, 0.4f);  
 static const Math::Vector3 COLOR_MATH       = Math::Vector3(0.3f, 0.5f, 0.3f);  // Green
 static const Math::Vector3 COLOR_TRANSFORM  = Math::Vector3(0.4f, 0.4f, 0.6f);  // Blue
 static const Math::Vector3 COLOR_DEBUG      = Math::Vector3(0.5f, 0.3f, 0.5f);  // Purple
+
+// Forward declare helper for variable serialization (used by undo commands)
+static std::string SerializeVariableValue(const ECS::VisualScriptVariable& var);
+
+// ============================================================================
+// UNDO COMMANDS FOR VISUAL SCRIPT GRAPH
+// ============================================================================
+
+// Command for adding a node
+class AddVisualScriptNodeCommand : public ICommand {
+public:
+    AddVisualScriptNodeCommand(VisualScriptEditor* editor, NodeId nodeId, const std::string& nodeJson)
+        : m_Editor(editor), m_NodeId(nodeId), m_NodeJson(nodeJson), m_FirstExecute(true) {}
+
+    void Execute() override {
+        if (m_FirstExecute) {
+            m_FirstExecute = false;
+            return;  // Node was already added
+        }
+        // Redo: restore the node from JSON
+        m_Editor->RestoreNodeFromJson(m_NodeId, m_NodeJson);
+    }
+
+    void Undo() override {
+        m_Editor->RemoveNodeById(m_NodeId);
+    }
+
+    const char* GetDescription() const override { return "Add Node"; }
+
+private:
+    VisualScriptEditor* m_Editor;
+    NodeId m_NodeId;
+    std::string m_NodeJson;
+    bool m_FirstExecute;
+};
+
+// Command for deleting a node
+class DeleteVisualScriptNodeCommand : public ICommand {
+public:
+    DeleteVisualScriptNodeCommand(VisualScriptEditor* editor, NodeId nodeId, const std::string& nodeJson)
+        : m_Editor(editor), m_NodeId(nodeId), m_NodeJson(nodeJson), m_FirstExecute(true) {}
+
+    void Execute() override {
+        if (m_FirstExecute) {
+            m_FirstExecute = false;
+            m_Editor->RemoveNodeById(m_NodeId);
+            return;
+        }
+        m_Editor->RemoveNodeById(m_NodeId);
+    }
+
+    void Undo() override {
+        m_Editor->RestoreNodeFromJson(m_NodeId, m_NodeJson);
+    }
+
+    const char* GetDescription() const override { return "Delete Node"; }
+
+private:
+    VisualScriptEditor* m_Editor;
+    NodeId m_NodeId;
+    std::string m_NodeJson;
+    bool m_FirstExecute;
+};
+
+// Command for adding a link
+class AddVisualScriptLinkCommand : public ICommand {
+public:
+    AddVisualScriptLinkCommand(VisualScriptEditor* editor, LinkId linkId, PinId startPin, PinId endPin)
+        : m_Editor(editor), m_LinkId(linkId), m_StartPin(startPin), m_EndPin(endPin), m_FirstExecute(true) {}
+
+    void Execute() override {
+        if (m_FirstExecute) {
+            m_FirstExecute = false;
+            return;  // Link was already added
+        }
+        m_Editor->AddLinkById(m_StartPin, m_EndPin, m_LinkId);
+    }
+
+    void Undo() override {
+        m_Editor->RemoveLinkById(m_LinkId);
+    }
+
+    const char* GetDescription() const override { return "Add Link"; }
+
+private:
+    VisualScriptEditor* m_Editor;
+    LinkId m_LinkId;
+    PinId m_StartPin;
+    PinId m_EndPin;
+    bool m_FirstExecute;
+};
+
+// Command for deleting a link
+class DeleteVisualScriptLinkCommand : public ICommand {
+public:
+    DeleteVisualScriptLinkCommand(VisualScriptEditor* editor, LinkId linkId, PinId startPin, PinId endPin)
+        : m_Editor(editor), m_LinkId(linkId), m_StartPin(startPin), m_EndPin(endPin), m_FirstExecute(true) {}
+
+    void Execute() override {
+        if (m_FirstExecute) {
+            m_FirstExecute = false;
+            m_Editor->RemoveLinkById(m_LinkId);
+            return;
+        }
+        m_Editor->RemoveLinkById(m_LinkId);
+    }
+
+    void Undo() override {
+        m_Editor->AddLinkById(m_StartPin, m_EndPin, m_LinkId);
+    }
+
+    const char* GetDescription() const override { return "Delete Link"; }
+
+private:
+    VisualScriptEditor* m_Editor;
+    LinkId m_LinkId;
+    PinId m_StartPin;
+    PinId m_EndPin;
+    bool m_FirstExecute;
+};
+
+// Command for editing a node property value
+class EditNodePropertyCommand : public ICommand {
+public:
+    EditNodePropertyCommand(VisualScriptEditor* editor, NodeId nodeId,
+                            const std::string& propertyName,
+                            const std::string& oldValue, const std::string& newValue)
+        : m_Editor(editor), m_NodeId(nodeId), m_PropertyName(propertyName),
+          m_OldValue(oldValue), m_NewValue(newValue) {}
+
+    void Execute() override {
+        m_Editor->SetNodePropertyValue(m_NodeId, m_PropertyName, m_NewValue);
+    }
+
+    void Undo() override {
+        m_Editor->SetNodePropertyValue(m_NodeId, m_PropertyName, m_OldValue);
+    }
+
+    const char* GetDescription() const override { return "Edit Node Property"; }
+
+    // Support merging consecutive property edits on the same node/property
+    bool CanMergeWith(const ICommand* other) const override {
+        auto* otherEdit = dynamic_cast<const EditNodePropertyCommand*>(other);
+        if (!otherEdit) return false;
+        return m_NodeId == otherEdit->m_NodeId && m_PropertyName == otherEdit->m_PropertyName;
+    }
+
+    void MergeWith(const ICommand* other) override {
+        auto* otherEdit = dynamic_cast<const EditNodePropertyCommand*>(other);
+        if (otherEdit) {
+            m_NewValue = otherEdit->m_NewValue;
+        }
+    }
+
+private:
+    VisualScriptEditor* m_Editor;
+    NodeId m_NodeId;
+    std::string m_PropertyName;
+    std::string m_OldValue;
+    std::string m_NewValue;
+};
+
+// Command for editing a variable value
+class EditVariableCommand : public ICommand {
+public:
+    EditVariableCommand(VisualScriptEditor* editor, const std::string& varName,
+                        const std::string& oldValue, const std::string& newValue)
+        : m_Editor(editor), m_VarName(varName), m_OldValue(oldValue), m_NewValue(newValue) {}
+
+    void Execute() override {
+        m_Editor->SetVariableValue(m_VarName, m_NewValue);
+    }
+
+    void Undo() override {
+        m_Editor->SetVariableValue(m_VarName, m_OldValue);
+    }
+
+    const char* GetDescription() const override { return "Edit Variable"; }
+
+    // Support merging consecutive variable edits on the same variable
+    bool CanMergeWith(const ICommand* other) const override {
+        auto* otherEdit = dynamic_cast<const EditVariableCommand*>(other);
+        if (!otherEdit) return false;
+        return m_VarName == otherEdit->m_VarName;
+    }
+
+    void MergeWith(const ICommand* other) override {
+        auto* otherEdit = dynamic_cast<const EditVariableCommand*>(other);
+        if (otherEdit) {
+            m_NewValue = otherEdit->m_NewValue;
+        }
+    }
+
+private:
+    VisualScriptEditor* m_Editor;
+    std::string m_VarName;
+    std::string m_OldValue;
+    std::string m_NewValue;
+};
 
 // ============================================================================
 // CONSTRUCTOR
@@ -215,6 +416,13 @@ NodeId VisualScriptEditor::AddNodeFromDefinition(const VisualScript::NodeDefinit
     // Sync back to component
     script->graph = m_GraphData;
 
+    // Add to undo stack
+    if (m_UndoManager) {
+        std::string nodeJson = SerializeNodeToJson(nodeId);
+        m_UndoManager->Execute(std::make_unique<AddVisualScriptNodeCommand>(
+            this, nodeId, nodeJson));
+    }
+
     return nodeId;
 }
 
@@ -252,6 +460,10 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
 
     if (HasTarget()) {
         DrawToolbar();
+        DrawDebugControls(isPlaying);
+
+        // Update node highlights for play mode visualization
+        UpdatePlayModeHighlight(isPlaying);
 
         // Graph canvas
         ImVec2 graphSize = ImGui::GetContentRegionAvail();
@@ -279,6 +491,9 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
     ImGui::BeginChild("##vs_inspector", ImVec2(inspectorWidth, 0), true);
     DrawInspector(isPlaying);
     ImGui::EndChild();
+
+    // Handle keyboard shortcuts (copy/paste/delete)
+    HandleKeyboardShortcuts();
 
     // Draw the node search popup (must be at window scope, not inside children)
     DrawNodeSearchPopup();
@@ -391,6 +606,148 @@ void VisualScriptEditor::DrawToolbar() {
 }
 
 // ============================================================================
+// DEBUG CONTROLS
+// ============================================================================
+
+void VisualScriptEditor::DrawDebugControls(bool isPlaying) {
+    if (!isPlaying || !HasTarget()) return;
+
+    auto* script = GetTargetScript();
+    if (!script) return;
+
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.2f, 1.0f));
+
+    // Continue button (F5)
+    ImGui::BeginDisabled(!script->isPaused);
+    if (ImGui::Button("Continue (F5)") || (script->isPaused && ImGui::IsKeyPressed(ImGuiKey_F5))) {
+        ContinueExecution();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::SameLine();
+
+    // Step Over button (F10)
+    ImGui::BeginDisabled(!script->isPaused);
+    if (ImGui::Button("Step (F10)") || (script->isPaused && ImGui::IsKeyPressed(ImGuiKey_F10))) {
+        StepOver();
+    }
+    ImGui::EndDisabled();
+
+    ImGui::PopStyleColor();
+
+    // Paused indicator
+    if (script->isPaused) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "PAUSED at node %u", script->pausedAtNode);
+    }
+
+    // Recording toggle
+    ImGui::SameLine();
+    ImGui::Checkbox("Record", &script->recordingEnabled);
+
+    ImGui::Separator();
+}
+
+void VisualScriptEditor::ToggleBreakpoint(NodeId nodeId) {
+    auto* script = GetTargetScript();
+    if (!script || nodeId == 0) return;
+
+    if (script->breakpoints.count(nodeId) > 0) {
+        script->breakpoints.erase(nodeId);
+    } else {
+        script->breakpoints.insert(nodeId);
+    }
+}
+
+void VisualScriptEditor::ContinueExecution() {
+    auto* script = GetTargetScript();
+    if (!script) return;
+
+    script->isPaused = false;
+    script->pausedAtNode = 0;
+    script->stepRequested = false;
+}
+
+void VisualScriptEditor::StepOver() {
+    auto* script = GetTargetScript();
+    if (!script) return;
+
+    script->stepRequested = true;
+    // isPaused remains true, will pause again after one step
+}
+
+ECS::VisualScriptComponent* VisualScriptEditor::GetTargetScript() {
+    if (!m_World || m_TargetEntity == ECS::INVALID_ENTITY) return nullptr;
+    return m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity);
+}
+
+// ============================================================================
+// EXECUTION TIMELINE
+// ============================================================================
+
+void VisualScriptEditor::DrawExecutionTimeline() {
+    auto* script = GetTargetScript();
+    if (!script || script->executionHistory.empty()) return;
+
+    if (ImGui::CollapsingHeader("Execution Timeline")) {
+        // Timeline visualization
+        ImVec2 canvasSize = ImVec2(ImGui::GetContentRegionAvail().x, 80);
+        ImVec2 canvasPos = ImGui::GetCursorScreenPos();
+
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(canvasPos,
+            ImVec2(canvasPos.x + canvasSize.x, canvasPos.y + canvasSize.y),
+            IM_COL32(30, 30, 30, 255));
+
+        // Draw execution bars
+        f32 barHeight = 12.0f;
+        usize maxRows = 6;
+        usize startIdx = script->executionHistory.size() > 50 ?
+                         script->executionHistory.size() - 50 : 0;
+
+        for (usize i = startIdx; i < script->executionHistory.size(); i++) {
+            const auto& rec = script->executionHistory[i];
+
+            f32 x = canvasPos.x + ((i - startIdx) * 8.0f);
+            if (x > canvasPos.x + canvasSize.x - 8.0f) break;
+
+            f32 row = static_cast<f32>((i - startIdx) % maxRows);
+            f32 y = canvasPos.y + row * barHeight + 4.0f;
+
+            // Color by node category (simplified)
+            u32 color = IM_COL32(100, 150, 200, 255);  // Default blue
+            if (rec.nodeType.find("Event_") == 0) {
+                color = IM_COL32(80, 180, 80, 255);  // Green for events
+            } else if (rec.nodeType.find("Flow_") == 0) {
+                color = IM_COL32(200, 140, 60, 255);  // Orange for flow
+            } else if (rec.nodeType.find("Debug_") == 0) {
+                color = IM_COL32(160, 100, 160, 255);  // Purple for debug
+            }
+
+            f32 width = std::max(4.0f, std::min(20.0f, rec.duration * 10.0f));
+            dl->AddRectFilled(ImVec2(x, y), ImVec2(x + width, y + barHeight - 2), color);
+
+            // Tooltip on hover
+            if (ImGui::IsMouseHoveringRect(ImVec2(x, y), ImVec2(x + width, y + barHeight))) {
+                ImGui::BeginTooltip();
+                ImGui::Text("Node: %s", rec.nodeType.c_str());
+                ImGui::Text("Duration: %.3f ms", rec.duration);
+                ImGui::EndTooltip();
+            }
+        }
+
+        ImGui::Dummy(canvasSize);
+
+        // Stats
+        ImGui::Text("Recorded: %zu events", script->executionHistory.size());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Clear")) {
+            script->executionHistory.clear();
+        }
+    }
+}
+
+// ============================================================================
 // INSPECTOR
 // ============================================================================
 
@@ -432,6 +789,11 @@ void VisualScriptEditor::DrawInspector(bool isPlaying) {
     if (ImGui::CollapsingHeader("Variables", ImGuiTreeNodeFlags_DefaultOpen)) {
         DrawVariableEditor();
     }
+
+    // Execution Timeline (play mode)
+    if (isPlaying) {
+        DrawExecutionTimeline();
+    }
 }
 
 // ============================================================================
@@ -461,19 +823,36 @@ void VisualScriptEditor::DrawVariableEditor() {
         ImGui::SameLine();
         ImGui::Checkbox("Exposed", &var.exposed);
 
-        // Value editor
+        // Capture before value for undo
+        std::string beforeValue = SerializeVariableValue(var);
+
+        // Value editor with undo support
         switch (var.type) {
             case PinType::Bool: {
                 bool val = std::holds_alternative<bool>(var.value) ? std::get<bool>(var.value) : false;
                 if (ImGui::Checkbox("Value##val", &val)) {
-                    var.value = val;
+                    std::string afterValue = val ? "true" : "false";
+                    if (m_UndoManager && beforeValue != afterValue) {
+                        m_UndoManager->Execute(std::make_unique<EditVariableCommand>(
+                            this, var.name, beforeValue, afterValue));
+                    } else {
+                        var.value = val;
+                    }
                 }
                 break;
             }
             case PinType::Int: {
                 i32 val = std::holds_alternative<i32>(var.value) ? std::get<i32>(var.value) : 0;
                 if (ImGui::InputInt("Value##val", &val)) {
+                    // Continuously update while editing
                     var.value = val;
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    std::string afterValue = std::to_string(val);
+                    if (m_UndoManager && beforeValue != afterValue) {
+                        m_UndoManager->Execute(std::make_unique<EditVariableCommand>(
+                            this, var.name, beforeValue, afterValue));
+                    }
                 }
                 break;
             }
@@ -481,6 +860,13 @@ void VisualScriptEditor::DrawVariableEditor() {
                 f32 val = std::holds_alternative<f32>(var.value) ? std::get<f32>(var.value) : 0.0f;
                 if (ImGui::InputFloat("Value##val", &val)) {
                     var.value = val;
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    std::string afterValue = std::to_string(val);
+                    if (m_UndoManager && beforeValue != afterValue) {
+                        m_UndoManager->Execute(std::make_unique<EditVariableCommand>(
+                            this, var.name, beforeValue, afterValue));
+                    }
                 }
                 break;
             }
@@ -492,6 +878,13 @@ void VisualScriptEditor::DrawVariableEditor() {
                 if (ImGui::InputText("Value##val", buf, sizeof(buf))) {
                     var.value = std::string(buf);
                 }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    std::string afterValue = buf;
+                    if (m_UndoManager && beforeValue != afterValue) {
+                        m_UndoManager->Execute(std::make_unique<EditVariableCommand>(
+                            this, var.name, beforeValue, afterValue));
+                    }
+                }
                 break;
             }
             case PinType::Vector3: {
@@ -500,6 +893,15 @@ void VisualScriptEditor::DrawVariableEditor() {
                 float v[3] = {val.x, val.y, val.z};
                 if (ImGui::InputFloat3("Value##val", v)) {
                     var.value = Math::Vector3(v[0], v[1], v[2]);
+                }
+                if (ImGui::IsItemDeactivatedAfterEdit()) {
+                    char afterBuf[128];
+                    std::snprintf(afterBuf, sizeof(afterBuf), "%f,%f,%f", v[0], v[1], v[2]);
+                    std::string afterValue = afterBuf;
+                    if (m_UndoManager && beforeValue != afterValue) {
+                        m_UndoManager->Execute(std::make_unique<EditVariableCommand>(
+                            this, var.name, beforeValue, afterValue));
+                    }
                 }
                 break;
             }
@@ -785,11 +1187,726 @@ void VisualScriptEditor::DrawNodeProperties() {
             for (const auto& var : script->variables) {
                 bool isSelected = (var.name == currentVar);
                 if (ImGui::Selectable(var.name.c_str(), isSelected)) {
-                    meta.properties["variableName"] = var.name;
+                    std::string oldValue = currentVar;
+                    std::string newValue = var.name;
+
+                    if (m_UndoManager && oldValue != newValue) {
+                        m_UndoManager->Execute(std::make_unique<EditNodePropertyCommand>(
+                            this, m_SelectedNode, "variableName", oldValue, newValue));
+                    } else {
+                        meta.properties["variableName"] = var.name;
+                    }
                 }
             }
             ImGui::EndCombo();
         }
+    }
+
+    // Delay node duration property
+    if (meta.nodeType == VisualScript::NodeTypes::Delay) {
+        f32 duration = 1.0f;
+        auto durationIt = meta.properties.find("duration");
+        if (durationIt != meta.properties.end()) {
+            try { duration = std::stof(durationIt->second); }
+            catch (...) { duration = 1.0f; }
+        }
+
+        std::string beforeValue = std::to_string(duration);
+        if (ImGui::InputFloat("Duration (s)", &duration, 0.1f, 1.0f, "%.2f")) {
+            if (duration < 0.0f) duration = 0.0f;
+            meta.properties["duration"] = std::to_string(duration);
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            std::string afterValue = std::to_string(duration);
+            if (m_UndoManager && beforeValue != afterValue) {
+                m_UndoManager->Execute(std::make_unique<EditNodePropertyCommand>(
+                    this, m_SelectedNode, "duration", beforeValue, afterValue));
+            }
+        }
+    }
+
+    // Print node message property
+    if (meta.nodeType == VisualScript::NodeTypes::Print) {
+        std::string message;
+        auto msgIt = meta.properties.find("message");
+        if (msgIt != meta.properties.end()) {
+            message = msgIt->second;
+        }
+
+        char buf[512];
+        std::strncpy(buf, message.c_str(), sizeof(buf) - 1);
+        buf[sizeof(buf) - 1] = '\0';
+
+        std::string beforeValue = message;
+        if (ImGui::InputText("Message", buf, sizeof(buf))) {
+            meta.properties["message"] = buf;
+        }
+        if (ImGui::IsItemDeactivatedAfterEdit()) {
+            std::string afterValue = buf;
+            if (m_UndoManager && beforeValue != afterValue) {
+                m_UndoManager->Execute(std::make_unique<EditNodePropertyCommand>(
+                    this, m_SelectedNode, "message", beforeValue, afterValue));
+            }
+        }
+    }
+}
+
+// ============================================================================
+// CLIPBOARD OPERATIONS
+// ============================================================================
+
+void VisualScriptEditor::CopySelectedNodes() {
+    const auto& selectedNodes = m_GraphEditor.GetSelectedNodeIds();
+    if (selectedNodes.empty() && m_SelectedNode == 0) return;
+
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    m_ClipboardNodeIds.clear();
+
+    // Determine which nodes to copy (multi-select or single)
+    std::unordered_set<NodeId> nodesToCopy;
+    if (!selectedNodes.empty()) {
+        nodesToCopy = selectedNodes;
+    } else if (m_SelectedNode != 0) {
+        nodesToCopy.insert(m_SelectedNode);
+    }
+
+    if (nodesToCopy.empty()) return;
+
+    nlohmann::json clipboard;
+    clipboard["nodes"] = nlohmann::json::array();
+    clipboard["links"] = nlohmann::json::array();
+
+    // Build a set of all pin IDs belonging to copied nodes
+    std::unordered_set<PinId> copiedPinIds;
+
+    // Serialize all selected nodes
+    for (NodeId nodeId : nodesToCopy) {
+        const auto* srcNode = m_GraphData.FindNode(nodeId);
+        if (!srcNode) continue;
+
+        nlohmann::json nodeJson;
+        nodeJson["id"] = srcNode->id;
+        nodeJson["title"] = srcNode->title;
+        nodeJson["position"] = {srcNode->position.x, srcNode->position.y};
+        nodeJson["headerColor"] = {srcNode->headerColor.x, srcNode->headerColor.y, srcNode->headerColor.z};
+
+        // Serialize pins
+        nlohmann::json inputPins = nlohmann::json::array();
+        for (const auto& pin : srcNode->inputs) {
+            inputPins.push_back({
+                {"id", pin.id},
+                {"name", pin.name},
+                {"type", static_cast<int>(pin.type)},
+                {"kind", static_cast<int>(pin.kind)}
+            });
+            copiedPinIds.insert(pin.id);
+        }
+        nodeJson["inputs"] = inputPins;
+
+        nlohmann::json outputPins = nlohmann::json::array();
+        for (const auto& pin : srcNode->outputs) {
+            outputPins.push_back({
+                {"id", pin.id},
+                {"name", pin.name},
+                {"type", static_cast<int>(pin.type)},
+                {"kind", static_cast<int>(pin.kind)}
+            });
+            copiedPinIds.insert(pin.id);
+        }
+        nodeJson["outputs"] = outputPins;
+
+        // Include node metadata
+        auto metaIt = script->nodeMeta.find(nodeId);
+        if (metaIt != script->nodeMeta.end()) {
+            nodeJson["nodeType"] = metaIt->second.nodeType;
+            nodeJson["customEventName"] = metaIt->second.customEventName;
+            nlohmann::json propsJson;
+            for (const auto& [key, val] : metaIt->second.properties) {
+                propsJson[key] = val;
+            }
+            nodeJson["properties"] = propsJson;
+        }
+
+        clipboard["nodes"].push_back(nodeJson);
+        m_ClipboardNodeIds.push_back(nodeId);
+    }
+
+    // Copy internal links (links where both endpoints are in the selection)
+    for (const auto& link : m_GraphData.GetLinks()) {
+        if (copiedPinIds.count(link.startPinId) > 0 &&
+            copiedPinIds.count(link.endPinId) > 0) {
+            clipboard["links"].push_back({
+                {"id", link.id},
+                {"startPinId", link.startPinId},
+                {"endPinId", link.endPinId}
+            });
+        }
+    }
+
+    m_ClipboardJson = clipboard.dump();
+    m_ClipboardIsCut = false;
+}
+
+void VisualScriptEditor::CutSelectedNodes() {
+    CopySelectedNodes();
+    if (!m_ClipboardJson.empty()) {
+        m_ClipboardIsCut = true;
+        DeleteSelectedNodes();
+    }
+}
+
+void VisualScriptEditor::PasteNodes() {
+    if (m_ClipboardJson.empty()) return;
+
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    try {
+        auto clipboard = nlohmann::json::parse(m_ClipboardJson);
+
+        if (!clipboard.contains("nodes") || !clipboard["nodes"].is_array()) return;
+        if (clipboard["nodes"].empty()) return;
+
+        // Calculate center of copied nodes for relative positioning
+        Math::Vector2 center(0, 0);
+        usize nodeCount = 0;
+        for (const auto& nodeJson : clipboard["nodes"]) {
+            if (nodeJson.contains("position") && nodeJson["position"].is_array()) {
+                center.x += nodeJson["position"][0].get<f32>();
+                center.y += nodeJson["position"][1].get<f32>();
+                nodeCount++;
+            }
+        }
+        if (nodeCount > 0) {
+            center.x /= static_cast<f32>(nodeCount);
+            center.y /= static_cast<f32>(nodeCount);
+        }
+
+        // Offset for paste position
+        Math::Vector2 offset(50.0f, 50.0f);
+
+        // Maps from old IDs to new IDs
+        std::unordered_map<NodeId, NodeId> nodeIdMap;
+        std::unordered_map<PinId, PinId> pinIdMap;
+
+        // Clear selection for new nodes
+        m_GraphEditor.ClearSelection();
+
+        // Paste each node with new IDs and relative positions
+        for (const auto& nodeJson : clipboard["nodes"]) {
+            std::string title = nodeJson.value("title", "Node");
+            Math::Vector2 pos(100, 100);
+            if (nodeJson.contains("position") && nodeJson["position"].is_array()) {
+                pos.x = nodeJson["position"][0].get<f32>() + offset.x;
+                pos.y = nodeJson["position"][1].get<f32>() + offset.y;
+            }
+            Math::Vector3 color(0.3f, 0.3f, 0.6f);
+            if (nodeJson.contains("headerColor") && nodeJson["headerColor"].is_array()) {
+                color.x = nodeJson["headerColor"][0].get<f32>();
+                color.y = nodeJson["headerColor"][1].get<f32>();
+                color.z = nodeJson["headerColor"][2].get<f32>();
+            }
+
+            NodeId oldId = nodeJson.value("id", 0u);
+
+            // Create new node
+            NodeId newId = m_GraphData.AddNode(title, pos, color);
+            auto* newNode = m_GraphData.FindNode(newId);
+            if (!newNode) continue;
+
+            nodeIdMap[oldId] = newId;
+
+            // Recreate pins and build pin ID mapping
+            if (nodeJson.contains("inputs") && nodeJson["inputs"].is_array()) {
+                for (const auto& pinJson : nodeJson["inputs"]) {
+                    std::string name = pinJson.value("name", "");
+                    PinType type = static_cast<PinType>(pinJson.value("type", 0));
+                    PinId oldPinId = pinJson.value("id", 0u);
+                    PinId newPinId = m_GraphData.AddPin(newId, name, type, PinKind::Input);
+                    pinIdMap[oldPinId] = newPinId;
+                }
+            }
+            if (nodeJson.contains("outputs") && nodeJson["outputs"].is_array()) {
+                for (const auto& pinJson : nodeJson["outputs"]) {
+                    std::string name = pinJson.value("name", "");
+                    PinType type = static_cast<PinType>(pinJson.value("type", 0));
+                    PinId oldPinId = pinJson.value("id", 0u);
+                    PinId newPinId = m_GraphData.AddPin(newId, name, type, PinKind::Output);
+                    pinIdMap[oldPinId] = newPinId;
+                }
+            }
+
+            // Recreate metadata
+            ECS::VisualScriptNodeMeta meta;
+            meta.nodeType = nodeJson.value("nodeType", "");
+            meta.customEventName = nodeJson.value("customEventName", "");
+            if (nodeJson.contains("properties") && nodeJson["properties"].is_object()) {
+                for (const auto& [key, val] : nodeJson["properties"].items()) {
+                    meta.properties[key] = val.get<std::string>();
+                }
+            }
+            script->nodeMeta[newId] = meta;
+            m_NodeTypeMap[newId] = meta.nodeType;
+
+            // Add to selection
+            m_GraphEditor.SelectNode(newId, true);
+        }
+
+        // Recreate internal links with remapped pin IDs
+        if (clipboard.contains("links") && clipboard["links"].is_array()) {
+            for (const auto& linkJson : clipboard["links"]) {
+                PinId oldStartPin = linkJson.value("startPinId", 0u);
+                PinId oldEndPin = linkJson.value("endPinId", 0u);
+
+                auto startIt = pinIdMap.find(oldStartPin);
+                auto endIt = pinIdMap.find(oldEndPin);
+
+                if (startIt != pinIdMap.end() && endIt != pinIdMap.end()) {
+                    m_GraphData.AddLink(startIt->second, endIt->second);
+                }
+            }
+        }
+
+        // Set primary selection to first pasted node
+        if (!nodeIdMap.empty()) {
+            m_SelectedNode = nodeIdMap.begin()->second;
+        }
+
+        // Sync back to component
+        SyncToComponent();
+
+    } catch (const std::exception& e) {
+        ENJIN_LOG_WARN(Editor, "Failed to paste nodes: %s", e.what());
+    }
+}
+
+void VisualScriptEditor::DeleteSelectedNodes() {
+    const auto& selectedNodes = m_GraphEditor.GetSelectedNodeIds();
+    if (selectedNodes.empty() && m_SelectedNode == 0) return;
+
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    // Determine which nodes to delete
+    std::vector<NodeId> nodesToDelete;
+    if (!selectedNodes.empty()) {
+        for (NodeId nodeId : selectedNodes) {
+            auto* node = m_GraphData.FindNode(nodeId);
+            if (node && !HasFlag(node->flags, NodeFlags::NoDelete)) {
+                nodesToDelete.push_back(nodeId);
+            }
+        }
+    } else if (m_SelectedNode != 0) {
+        auto* node = m_GraphData.FindNode(m_SelectedNode);
+        if (node && !HasFlag(node->flags, NodeFlags::NoDelete)) {
+            nodesToDelete.push_back(m_SelectedNode);
+        }
+    }
+
+    if (nodesToDelete.empty()) return;
+
+    // Delete all selected nodes
+    for (NodeId nodeToDelete : nodesToDelete) {
+        // Serialize node before deleting for undo
+        std::string nodeJson = SerializeNodeToJson(nodeToDelete);
+
+        // Use undo command if manager is available
+        if (m_UndoManager) {
+            m_UndoManager->Execute(std::make_unique<DeleteVisualScriptNodeCommand>(
+                this, nodeToDelete, nodeJson));
+        } else {
+            RemoveNodeById(nodeToDelete);
+        }
+    }
+
+    m_SelectedNode = 0;
+    m_GraphEditor.ClearSelection();
+}
+
+void VisualScriptEditor::HandleKeyboardShortcuts() {
+    // Only handle shortcuts when the graph area is focused
+    if (!ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) return;
+
+    // Ctrl+C - Copy
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C)) {
+        CopySelectedNodes();
+    }
+
+    // Ctrl+X - Cut
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_X)) {
+        CutSelectedNodes();
+    }
+
+    // Ctrl+V - Paste
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V)) {
+        PasteNodes();
+    }
+
+    // Delete - Delete selected node
+    if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+        DeleteSelectedNodes();
+    }
+
+    // Ctrl+D - Duplicate (copy then paste)
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_D)) {
+        CopySelectedNodes();
+        PasteNodes();
+    }
+
+    // Ctrl+Z - Undo
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Z) && !ImGui::GetIO().KeyShift) {
+        if (m_UndoManager && m_UndoManager->CanUndo()) {
+            m_UndoManager->Undo();
+            m_NeedsSync = true;
+        }
+    }
+
+    // Ctrl+Y or Ctrl+Shift+Z - Redo
+    if ((ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_Y)) ||
+        (ImGui::GetIO().KeyCtrl && ImGui::GetIO().KeyShift && ImGui::IsKeyPressed(ImGuiKey_Z))) {
+        if (m_UndoManager && m_UndoManager->CanRedo()) {
+            m_UndoManager->Redo();
+            m_NeedsSync = true;
+        }
+    }
+
+    // F9 - Toggle breakpoint on selected node
+    if (ImGui::IsKeyPressed(ImGuiKey_F9) && m_SelectedNode != 0) {
+        ToggleBreakpoint(m_SelectedNode);
+    }
+}
+
+// ============================================================================
+// UNDO/REDO HELPER METHODS
+// ============================================================================
+
+std::string VisualScriptEditor::SerializeNodeToJson(NodeId nodeId) {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return "{}";
+
+    const auto* srcNode = m_GraphData.FindNode(nodeId);
+    if (!srcNode) return "{}";
+
+    nlohmann::json nodeJson;
+    nodeJson["id"] = srcNode->id;
+    nodeJson["title"] = srcNode->title;
+    nodeJson["position"] = {srcNode->position.x, srcNode->position.y};
+    nodeJson["headerColor"] = {srcNode->headerColor.x, srcNode->headerColor.y, srcNode->headerColor.z};
+    nodeJson["flags"] = static_cast<u32>(srcNode->flags);
+
+    // Serialize pins
+    nlohmann::json inputPins = nlohmann::json::array();
+    for (const auto& pin : srcNode->inputs) {
+        inputPins.push_back({
+            {"id", pin.id},
+            {"name", pin.name},
+            {"type", static_cast<int>(pin.type)},
+            {"kind", static_cast<int>(pin.kind)}
+        });
+    }
+    nodeJson["inputs"] = inputPins;
+
+    nlohmann::json outputPins = nlohmann::json::array();
+    for (const auto& pin : srcNode->outputs) {
+        outputPins.push_back({
+            {"id", pin.id},
+            {"name", pin.name},
+            {"type", static_cast<int>(pin.type)},
+            {"kind", static_cast<int>(pin.kind)}
+        });
+    }
+    nodeJson["outputs"] = outputPins;
+
+    // Include node metadata
+    auto metaIt = script->nodeMeta.find(nodeId);
+    if (metaIt != script->nodeMeta.end()) {
+        nodeJson["nodeType"] = metaIt->second.nodeType;
+        nodeJson["customEventName"] = metaIt->second.customEventName;
+        nlohmann::json propsJson;
+        for (const auto& [key, val] : metaIt->second.properties) {
+            propsJson[key] = val;
+        }
+        nodeJson["properties"] = propsJson;
+    }
+
+    // Serialize connected links
+    nlohmann::json linksJson = nlohmann::json::array();
+    auto allLinks = m_GraphData.GetLinksForNode(nodeId);
+    for (LinkId linkId : allLinks) {
+        const auto* link = m_GraphData.FindLink(linkId);
+        if (link) {
+            linksJson.push_back({
+                {"id", link->id},
+                {"startPinId", link->startPinId},
+                {"endPinId", link->endPinId}
+            });
+        }
+    }
+    nodeJson["links"] = linksJson;
+
+    return nodeJson.dump();
+}
+
+void VisualScriptEditor::RemoveNodeById(NodeId nodeId) {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    // Remove the node
+    m_GraphData.RemoveNode(nodeId);
+
+    // Clean up metadata
+    script->nodeMeta.erase(nodeId);
+    m_NodeTypeMap.erase(nodeId);
+
+    // Remove from event mappings
+    for (auto it = script->eventNodes.begin(); it != script->eventNodes.end(); ) {
+        if (it->second == nodeId) {
+            it = script->eventNodes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto it = script->customEventNodes.begin(); it != script->customEventNodes.end(); ) {
+        if (it->second == nodeId) {
+            it = script->customEventNodes.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    if (m_SelectedNode == nodeId) m_SelectedNode = 0;
+    SyncToComponent();
+}
+
+void VisualScriptEditor::RestoreNodeFromJson(NodeId nodeId, const std::string& json) {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    try {
+        auto nodeJson = nlohmann::json::parse(json);
+
+        std::string title = nodeJson.value("title", "Node");
+        Math::Vector2 pos(100, 100);
+        if (nodeJson.contains("position") && nodeJson["position"].is_array()) {
+            pos.x = nodeJson["position"][0].get<f32>();
+            pos.y = nodeJson["position"][1].get<f32>();
+        }
+        Math::Vector3 color(0.3f, 0.3f, 0.6f);
+        if (nodeJson.contains("headerColor") && nodeJson["headerColor"].is_array()) {
+            color.x = nodeJson["headerColor"][0].get<f32>();
+            color.y = nodeJson["headerColor"][1].get<f32>();
+            color.z = nodeJson["headerColor"][2].get<f32>();
+        }
+
+        // Create new node with specific ID (if the graph supports it, otherwise use AddNode)
+        NodeId newId = m_GraphData.AddNode(title, pos, color);
+        auto* newNode = m_GraphData.FindNode(newId);
+        if (!newNode) return;
+
+        // Restore flags
+        if (nodeJson.contains("flags")) {
+            newNode->flags = static_cast<NodeFlags>(nodeJson["flags"].get<u32>());
+        }
+
+        // Recreate pins
+        if (nodeJson.contains("inputs") && nodeJson["inputs"].is_array()) {
+            for (const auto& pinJson : nodeJson["inputs"]) {
+                std::string name = pinJson.value("name", "");
+                PinType type = static_cast<PinType>(pinJson.value("type", 0));
+                m_GraphData.AddPin(newId, name, type, PinKind::Input);
+            }
+        }
+        if (nodeJson.contains("outputs") && nodeJson["outputs"].is_array()) {
+            for (const auto& pinJson : nodeJson["outputs"]) {
+                std::string name = pinJson.value("name", "");
+                PinType type = static_cast<PinType>(pinJson.value("type", 0));
+                m_GraphData.AddPin(newId, name, type, PinKind::Output);
+            }
+        }
+
+        // Recreate metadata
+        ECS::VisualScriptNodeMeta meta;
+        meta.nodeType = nodeJson.value("nodeType", "");
+        meta.customEventName = nodeJson.value("customEventName", "");
+        if (nodeJson.contains("properties") && nodeJson["properties"].is_object()) {
+            for (const auto& [key, val] : nodeJson["properties"].items()) {
+                meta.properties[key] = val.get<std::string>();
+            }
+        }
+        script->nodeMeta[newId] = meta;
+        m_NodeTypeMap[newId] = meta.nodeType;
+
+        // Re-register event node if applicable
+        if (meta.nodeType == VisualScript::NodeTypes::OnStart) {
+            script->SetEventNode(ECS::VisualScriptEvent::OnStart, newId);
+        } else if (meta.nodeType == VisualScript::NodeTypes::OnUpdate) {
+            script->SetEventNode(ECS::VisualScriptEvent::OnUpdate, newId);
+        }
+
+        SyncToComponent();
+
+    } catch (const std::exception& e) {
+        ENJIN_LOG_WARN(Editor, "Failed to restore node from JSON: %s", e.what());
+    }
+}
+
+void VisualScriptEditor::AddLinkById(PinId startPin, PinId endPin, LinkId linkId) {
+    (void)linkId; // LinkId is auto-generated by NodeGraphData
+    m_GraphData.AddLink(startPin, endPin, 0);
+    SyncToComponent();
+}
+
+void VisualScriptEditor::RemoveLinkById(LinkId linkId) {
+    m_GraphData.RemoveLink(linkId);
+    SyncToComponent();
+}
+
+// ============================================================================
+// PLAY MODE HIGHLIGHT
+// ============================================================================
+
+void VisualScriptEditor::UpdatePlayModeHighlight(bool isPlaying) {
+    // Clear all highlights first
+    for (auto& node : m_GraphData.GetNodes()) {
+        node.flags = static_cast<NodeFlags>(
+            static_cast<u32>(node.flags) & ~static_cast<u32>(NodeFlags::Highlighted));
+    }
+
+    if (!isPlaying || !HasTarget()) return;
+
+    auto* script = m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity);
+    if (!script) return;
+
+    // Highlight paused node
+    if (script->isPaused && script->pausedAtNode != 0) {
+        auto* pausedNode = m_GraphData.FindNode(script->pausedAtNode);
+        if (pausedNode) {
+            pausedNode->flags = pausedNode->flags | NodeFlags::Highlighted;
+        }
+    }
+    // Highlight currently executing node
+    else if (script->currentlyExecutingNode != 0) {
+        auto* node = m_GraphData.FindNode(script->currentlyExecutingNode);
+        if (node) {
+            node->flags = node->flags | NodeFlags::Highlighted;
+        }
+    }
+
+    // Also highlight any active latent nodes (e.g., Delay waiting)
+    for (const auto& [nodeId, state] : script->latentStates) {
+        if (state.isActive) {
+            auto* latentNode = m_GraphData.FindNode(nodeId);
+            if (latentNode) {
+                latentNode->flags = latentNode->flags | NodeFlags::Highlighted;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// BREAKPOINT VISUALIZATION (called from node rendering callback)
+// ============================================================================
+
+// Helper to get breakpoint color for a node (red dot)
+static void DrawBreakpointIndicators(ImDrawList* dl, const NodeGraphData& graphData,
+                                     const ECS::VisualScriptComponent* script,
+                                     ImVec2 canvasPos, f32 zoom, f32 uiScale,
+                                     const Math::Vector2& scrollOffset) {
+    if (!script) return;
+
+    for (const auto& node : graphData.GetNodes()) {
+        if (script->breakpoints.count(node.id) > 0) {
+            // Calculate node screen position
+            f32 s = zoom * uiScale;
+            f32 nodeX = canvasPos.x + node.position.x * zoom + scrollOffset.x;
+            f32 nodeY = canvasPos.y + node.position.y * zoom + scrollOffset.y;
+
+            // Draw red breakpoint dot at top-left of node
+            ImVec2 dotPos(nodeX - 4.0f, nodeY + 10.0f * s);
+            dl->AddCircleFilled(dotPos, 5.0f * s, IM_COL32(255, 50, 50, 255));
+
+            // White circle outline
+            dl->AddCircle(dotPos, 5.0f * s, IM_COL32(255, 255, 255, 180), 12, 1.0f);
+        }
+    }
+}
+
+// ============================================================================
+// PROPERTY EDIT HELPERS (for undo support)
+// ============================================================================
+
+void VisualScriptEditor::SetNodePropertyValue(NodeId nodeId, const std::string& propertyName,
+                                               const std::string& value) {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    auto metaIt = script->nodeMeta.find(nodeId);
+    if (metaIt == script->nodeMeta.end()) return;
+
+    metaIt->second.properties[propertyName] = value;
+}
+
+void VisualScriptEditor::SetVariableValue(const std::string& varName, const std::string& value) {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    for (auto& var : script->variables) {
+        if (var.name == varName) {
+            // Parse the value based on variable type
+            switch (var.type) {
+                case PinType::Bool:
+                    var.value = (value == "true" || value == "1");
+                    break;
+                case PinType::Int:
+                    try { var.value = std::stoi(value); }
+                    catch (...) { var.value = static_cast<i32>(0); }
+                    break;
+                case PinType::Float:
+                    try { var.value = std::stof(value); }
+                    catch (...) { var.value = 0.0f; }
+                    break;
+                case PinType::String:
+                    var.value = value;
+                    break;
+                case PinType::Vector3: {
+                    // Parse "x,y,z" format
+                    f32 x = 0, y = 0, z = 0;
+                    std::sscanf(value.c_str(), "%f,%f,%f", &x, &y, &z);
+                    var.value = Math::Vector3(x, y, z);
+                    break;
+                }
+                default:
+                    break;
+            }
+            return;
+        }
+    }
+}
+
+// Helper to serialize a variable value to string for undo
+static std::string SerializeVariableValue(const ECS::VisualScriptVariable& var) {
+    switch (var.type) {
+        case PinType::Bool:
+            return std::holds_alternative<bool>(var.value) && std::get<bool>(var.value) ? "true" : "false";
+        case PinType::Int:
+            return std::to_string(std::holds_alternative<i32>(var.value) ? std::get<i32>(var.value) : 0);
+        case PinType::Float:
+            return std::to_string(std::holds_alternative<f32>(var.value) ? std::get<f32>(var.value) : 0.0f);
+        case PinType::String:
+            return std::holds_alternative<std::string>(var.value) ? std::get<std::string>(var.value) : "";
+        case PinType::Vector3: {
+            if (std::holds_alternative<Math::Vector3>(var.value)) {
+                const auto& v = std::get<Math::Vector3>(var.value);
+                char buf[128];
+                std::snprintf(buf, sizeof(buf), "%f,%f,%f", v.x, v.y, v.z);
+                return buf;
+            }
+            return "0,0,0";
+        }
+        default:
+            return "";
     }
 }
 

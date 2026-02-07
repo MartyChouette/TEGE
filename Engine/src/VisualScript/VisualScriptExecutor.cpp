@@ -1,4 +1,7 @@
 #include "Enjin/VisualScript/VisualScriptExecutor.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Logging/Log.h"
 #include <chrono>
 
@@ -94,6 +97,36 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
             break;
         }
 
+        // ===== BREAKPOINT HANDLING =====
+        // Check if paused and not stepping
+        if (ctx.script->isPaused && !ctx.script->stepRequested) {
+            return;  // Stay paused, don't execute
+        }
+
+        // Check for breakpoint at this node
+        if (ctx.script->breakpoints.count(nodeId) > 0) {
+            if (!ctx.script->stepRequested) {
+                // Hit breakpoint, pause execution
+                ctx.script->isPaused = true;
+                ctx.script->pausedAtNode = nodeId;
+                ctx.script->currentlyExecutingNode = nodeId;
+                return;
+            }
+        }
+
+        // Clear step flag after handling (we're about to execute one node)
+        if (ctx.script->stepRequested) {
+            ctx.script->stepRequested = false;
+            ctx.script->pausedAtNode = nodeId;
+            // Will pause again after this node completes
+        }
+
+        // Track currently executing node for visualization
+        ctx.script->currentlyExecutingNode = nodeId;
+
+        // ===== EXECUTION RECORDING =====
+        auto nodeStartTime = std::chrono::high_resolution_clock::now();
+
         // Don't execute pure nodes via flow (they're evaluated on demand)
         if (def->IsPure()) {
             break;
@@ -106,12 +139,107 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
         // Reset flow index
         ctx.nextFlowIndex = -1;
 
+        // Handle Delay node specially (latent action)
+        if (nodeType == NodeTypes::Delay) {
+            f32 duration = 1.0f;
+            if (inputs.size() > 0) {
+                if (std::holds_alternative<f32>(inputs[0])) {
+                    duration = std::get<f32>(inputs[0]);
+                } else if (std::holds_alternative<i32>(inputs[0])) {
+                    duration = static_cast<f32>(std::get<i32>(inputs[0]));
+                }
+            }
+
+            // Get the flow output pin for resumption
+            Editor::PinId flowOutPin = GetFlowOutputPin(graphNode, 0);
+
+            // Start latent action
+            ECS::LatentNodeState state;
+            state.timeRemaining = duration;
+            state.isActive = true;
+            state.resumeFlowPin = flowOutPin;
+            ctx.script->latentStates[nodeId] = state;
+
+            // Stop synchronous execution (will resume when delay completes)
+            ctx.nextFlowIndex = -1;
+            m_LastStats.nodesExecuted++;
+            break;
+        }
+
+        // Handle WaitForAudioComplete (latent audio)
+        if (nodeType == NodeTypes::WaitForAudioComplete) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            Editor::PinId flowOutPin = GetFlowOutputPin(graphNode, 0);
+
+            ECS::LatentNodeState state;
+            state.isActive = true;
+            state.resumeFlowPin = flowOutPin;
+            state.targetEntity = target;
+            ctx.script->latentStates[nodeId] = state;
+
+            ctx.nextFlowIndex = -1;
+            m_LastStats.nodesExecuted++;
+            break;
+        }
+
+        // Handle WaitForAnimationComplete (latent animation)
+        if (nodeType == NodeTypes::WaitForAnimationComplete) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+
+            std::string animName;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                animName = std::get<std::string>(inputs[1]);
+            }
+
+            Editor::PinId flowOutPin = GetFlowOutputPin(graphNode, 0);
+
+            ECS::LatentNodeState state;
+            state.isActive = true;
+            state.resumeFlowPin = flowOutPin;
+            state.targetEntity = target;
+            state.targetName = animName;
+            ctx.script->latentStates[nodeId] = state;
+
+            ctx.nextFlowIndex = -1;
+            m_LastStats.nodesExecuted++;
+            break;
+        }
+
         // Execute the node
         if (def->execute) {
             def->execute(ctx, inputs, outputs);
         }
 
+        // Record execution for profiler
+        if (ctx.script->recordingEnabled) {
+            auto nodeEndTime = std::chrono::high_resolution_clock::now();
+            f32 durationMs = std::chrono::duration<f32, std::milli>(nodeEndTime - nodeStartTime).count();
+
+            if (ctx.script->executionHistory.size() < ECS::VisualScriptComponent::MAX_HISTORY) {
+                ECS::ExecutionRecord record;
+                record.nodeId = nodeId;
+                record.timestamp = ctx.deltaTime;  // Simplified: use delta time as relative timestamp
+                record.duration = durationMs;
+                record.nodeType = nodeType;
+                ctx.script->executionHistory.push_back(record);
+            }
+        }
+
         m_LastStats.nodesExecuted++;
+
+        // If we're stepping, pause after this node
+        if (ctx.script->isPaused) {
+            return;
+        }
 
         // Handle special nodes
         if (nodeType == NodeTypes::Sequence) {
@@ -156,6 +284,108 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
 
     if (iterations >= m_MaxIterations) {
         ENJIN_LOG_WARN(Script, "VisualScript: Execution exceeded max iterations (%u), possible infinite loop", m_MaxIterations);
+    }
+
+    // Clear currently executing node when done
+    ctx.script->currentlyExecutingNode = 0;
+}
+
+// ============================================================================
+// LATENT NODE UPDATES
+// ============================================================================
+
+void VisualScriptExecutor::UpdateLatentNodes(ECS::World* world, ECS::Entity entity,
+                                              ECS::VisualScriptComponent* script,
+                                              f32 deltaTime) {
+    if (!script || !world) return;
+
+    // Collect nodes that completed this frame
+    std::vector<Editor::NodeId> completedNodes;
+
+    for (auto& [nodeId, state] : script->latentStates) {
+        if (!state.isActive) continue;
+
+        // Get node type to determine how to check for completion
+        auto metaIt = script->nodeMeta.find(nodeId);
+        if (metaIt == script->nodeMeta.end()) continue;
+
+        const std::string& nodeType = metaIt->second.nodeType;
+
+        if (nodeType == NodeTypes::Delay) {
+            // Timer-based delay
+            state.timeRemaining -= deltaTime;
+            if (state.timeRemaining <= 0.0f) {
+                state.isActive = false;
+                completedNodes.push_back(nodeId);
+            }
+        }
+        else if (nodeType == NodeTypes::WaitForAudioComplete) {
+            // Check if audio is still playing
+            ECS::Entity target = state.targetEntity;
+            if (target == ECS::INVALID_ENTITY) target = entity;
+
+            auto* audio = world->GetComponent<ECS::AudioSourceComponent>(target);
+            bool stillPlaying = false;
+
+            if (audio) {
+                // Use the isPlaying flag from AudioSourceComponent
+                stillPlaying = audio->isPlaying;
+            }
+
+            if (!stillPlaying) {
+                state.isActive = false;
+                completedNodes.push_back(nodeId);
+            }
+        }
+        else if (nodeType == NodeTypes::WaitForAnimationComplete) {
+            // Check if animation is still playing
+            ECS::Entity target = state.targetEntity;
+            if (target == ECS::INVALID_ENTITY) target = entity;
+
+            auto* animator = world->GetComponent<ECS::AnimatorComponent>(target);
+            bool stillPlaying = false;
+
+            if (animator) {
+                // Check if the specific animation is playing, or any animation if name is empty
+                if (state.targetName.empty()) {
+                    stillPlaying = animator->animator.IsPlaying();
+                } else {
+                    // Check if the current animation matches and is still playing
+                    stillPlaying = animator->animator.IsPlaying();
+                }
+            }
+
+            if (!stillPlaying) {
+                state.isActive = false;
+                completedNodes.push_back(nodeId);
+            }
+        }
+    }
+
+    // Resume execution for completed latent nodes
+    for (Editor::NodeId nodeId : completedNodes) {
+        auto it = script->latentStates.find(nodeId);
+        if (it == script->latentStates.end()) continue;
+
+        Editor::PinId resumePin = it->second.resumeFlowPin;
+
+        // Find next node from the resume pin
+        Editor::NodeId nextNode = FollowFlowLink(script, resumePin);
+        if (nextNode != 0) {
+            // Build execution context
+            ExecutionContext ctx;
+            ctx.world = world;
+            ctx.entity = entity;
+            ctx.script = script;
+            ctx.deltaTime = deltaTime;
+            ctx.nextFlowIndex = 0;
+
+            // Continue execution from next node
+            ExecuteFlow(ctx, nextNode);
+        }
+
+        // Clean up completed latent state
+        script->latentStates.erase(nodeId);
     }
 }
 

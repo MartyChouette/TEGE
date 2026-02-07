@@ -7,6 +7,7 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
+#include <unordered_set>
 #include <nlohmann/json.hpp>
 #include <imgui.h>
 
@@ -245,11 +246,18 @@ public:
     void Render(NodeGraphData& data, NodeGraphCallbacks& callbacks,
                 const NodeGraphColors& colors, f32 uiScale = 1.0f);
 
-    // State queries
+    // State queries - single selection (backwards compatible)
     NodeId GetSelectedNodeId() const { return m_SelectedNodeId; }
     LinkId GetSelectedLinkId() const { return m_SelectedLinkId; }
-    void   SetSelectedNode(NodeId id) { m_SelectedNodeId = id; m_SelectedLinkId = 0; }
-    void   ClearSelection() { m_SelectedNodeId = 0; m_SelectedLinkId = 0; }
+    void   SetSelectedNode(NodeId id) { m_SelectedNodeId = id; m_SelectedLinkId = 0; m_SelectedNodeIds.clear(); if (id != 0) m_SelectedNodeIds.insert(id); }
+    void   ClearSelection() { m_SelectedNodeId = 0; m_SelectedLinkId = 0; m_SelectedNodeIds.clear(); }
+
+    // Multi-select support
+    void   SelectNode(NodeId id, bool additive = false);
+    void   DeselectNode(NodeId id);
+    const std::unordered_set<NodeId>& GetSelectedNodeIds() const { return m_SelectedNodeIds; }
+    bool   IsNodeSelected(NodeId id) const { return m_SelectedNodeIds.count(id) > 0; }
+    usize  GetSelectedNodeCount() const { return m_SelectedNodeIds.size(); }
 
     // View controls
     void   FitAllNodes(const NodeGraphData& data);
@@ -273,6 +281,7 @@ private:
     // Selection
     NodeId m_SelectedNodeId = 0;
     LinkId m_SelectedLinkId = 0;
+    std::unordered_set<NodeId> m_SelectedNodeIds;  // Multi-select support
 
     // Drag-to-connect state
     bool   m_IsDraggingPin = false;

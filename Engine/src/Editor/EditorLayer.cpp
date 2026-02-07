@@ -23207,6 +23207,9 @@ void EditorLayer::DrawVisualScriptPanel() {
 
     bool isPlaying = IsPlaying();
 
+    // Wire undo manager (safe to call repeatedly)
+    m_VisualScriptEditor.SetUndoManager(&m_UndoRedo);
+
     // Update target when selection changes
     if (m_PrimarySelected != ECS::INVALID_ENTITY &&
         m_World && m_World->HasComponent<ECS::VisualScriptComponent>(m_PrimarySelected)) {
