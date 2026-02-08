@@ -19,6 +19,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.shadowResolution     = rs->GetShadowResolution();
         s.shadowDistance       = rs->GetShadowDistance();
         s.shadowStrength       = rs->GetShadowStrength();
+        s.shadowSoftness       = rs->GetShadowSoftness();
         s.backfaceCulling      = rs->IsBackfaceCullingEnabled();
         s.wireframe            = rs->IsWireframeEnabled();
         s.ambientIntensity     = rs->GetAmbientIntensity();
@@ -143,6 +144,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetShadowResolution(shadowResolution);
         rs->SetShadowDistance(shadowDistance);
         rs->SetShadowStrength(shadowStrength);
+        rs->SetShadowSoftness(shadowSoftness);
         rs->SetBackfaceCullingEnabled(backfaceCulling);
         rs->SetWireframeEnabled(wireframe);
         rs->SetAmbientIntensity(ambientIntensity);
@@ -288,6 +290,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["shadowResolution"]  = s.shadowResolution;
     j["shadowDistance"]    = s.shadowDistance;
     j["shadowStrength"]    = s.shadowStrength;
+    j["shadowSoftness"]    = s.shadowSoftness;
     j["backfaceCulling"]   = s.backfaceCulling;
     j["wireframe"]         = s.wireframe;
     j["ambientIntensity"]  = s.ambientIntensity;
@@ -410,6 +413,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("shadowResolution")) s.shadowResolution  = j["shadowResolution"].get<u32>();
     if (j.contains("shadowDistance"))   s.shadowDistance     = j["shadowDistance"].get<f32>();
     if (j.contains("shadowStrength"))   s.shadowStrength     = j["shadowStrength"].get<f32>();
+    if (j.contains("shadowSoftness"))   s.shadowSoftness     = j["shadowSoftness"].get<f32>();
     if (j.contains("backfaceCulling"))   s.backfaceCulling   = j["backfaceCulling"].get<bool>();
     if (j.contains("wireframe"))         s.wireframe         = j["wireframe"].get<bool>();
     if (j.contains("ambientIntensity"))  s.ambientIntensity  = j["ambientIntensity"].get<f32>();

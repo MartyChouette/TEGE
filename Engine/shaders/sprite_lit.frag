@@ -62,7 +62,7 @@ layout(binding = 1) uniform LightingUBO {
     uint _pad1;
     mat4 cascadeViewProj[4];
     vec4 cascadeSplits;
-    float shadowBias;
+    float shadowSoftness;
     int shadowEnabled;
     float shadowStrength;
     float shadowMaxDistance;

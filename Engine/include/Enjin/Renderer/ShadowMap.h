@@ -48,6 +48,10 @@ public:
     void SetShadowStrength(f32 strength) { m_ShadowStrength = strength; }
     f32 GetShadowStrength() const { return m_ShadowStrength; }
 
+    // Shadow softness (0 = hard 3x3 PCF, >0 = soft Poisson disk radius in texels)
+    void SetShadowSoftness(f32 softness) { m_ShadowSoftness = softness; }
+    f32 GetShadowSoftness() const { return m_ShadowSoftness; }
+
     // Per-cascade data access
     const Math::Matrix4& GetCascadeViewProj(u32 index) const;
     f32 GetCascadeSplit(u32 index) const;
@@ -85,6 +89,9 @@ private:
 
     // Shadow strength
     f32 m_ShadowStrength = 1.0f;
+
+    // Shadow softness (0 = hard 3x3 PCF, >0 = Poisson disk radius in texels)
+    f32 m_ShadowSoftness = 0.0f;
 
     bool m_Initialized = false;
 };

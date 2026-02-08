@@ -102,7 +102,7 @@ struct alignas(16) LightingUBO {
     // Cascaded shadow mapping data
     Math::Matrix4 cascadeViewProj[4];  // Per-cascade light view-projection matrices
     Math::Vector4 cascadeSplits;       // View-space far distance of each cascade (x,y,z,w)
-    f32 shadowBias;                    // Depth bias for shadow acne
+    f32 shadowSoftness;                // 0 = hard (3x3 PCF), >0 = soft (Poisson disk radius in texels)
     i32 shadowEnabled;                 // 1 = shadows enabled
     f32 shadowStrength;                // 0..1 shadow strength (0 = no shadow, 1 = full)
     f32 shadowMaxDistance;             // Maximum shadow distance (for fade-out)

@@ -26,6 +26,7 @@ struct SceneRenderSettings {
     u32 shadowResolution = 2048;    // 512/1024/2048/4096
     f32 shadowDistance = 100.0f;    // Max shadow distance
     f32 shadowStrength = 1.0f;     // 0..1
+    f32 shadowSoftness = 0.0f;     // 0 = hard, 1-5 = soft (Poisson disk texel radius)
     bool backfaceCulling = false;
     bool wireframe = false;
     f32 ambientIntensity = 1.0f;

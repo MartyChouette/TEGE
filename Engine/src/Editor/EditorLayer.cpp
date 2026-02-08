@@ -6302,6 +6302,13 @@ void EditorLayer::DrawProjectSettingsPanel() {
                 if (ImGui::SliderFloat("Shadow Strength", &shadowStr, 0.0f, 1.0f)) {
                     m_RenderSystem->SetShadowStrength(shadowStr);
                 }
+
+                // Shadow softness
+                f32 shadowSoft = m_RenderSystem->GetShadowSoftness();
+                if (ImGui::SliderFloat("Shadow Softness", &shadowSoft, 0.0f, 5.0f, "%.1f")) {
+                    m_RenderSystem->SetShadowSoftness(shadowSoft);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = hard edges, 1-5 = soft penumbra radius");
             }
 
             // Backface culling

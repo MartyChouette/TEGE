@@ -2360,7 +2360,7 @@ void RenderSystem::UpdateFrameUniforms() {
             m_ShadowMap->GetCascadeSplit(1),
             m_ShadowMap->GetCascadeSplit(2),
             m_ShadowMap->GetCascadeSplit(3));
-        lighting.shadowBias = m_ShadowMap->GetDepthBias();
+        lighting.shadowSoftness = m_ShadowMap->GetShadowSoftness();
         lighting.shadowEnabled = 1;
         lighting.shadowStrength = m_ShadowMap->GetShadowStrength();
         lighting.shadowMaxDistance = m_ShadowDistance;
@@ -2369,7 +2369,7 @@ void RenderSystem::UpdateFrameUniforms() {
             lighting.cascadeViewProj[i] = Math::Matrix4::Identity();
         }
         lighting.cascadeSplits = Math::Vector4(25.0f, 50.0f, 75.0f, 100.0f);
-        lighting.shadowBias = 0.005f;
+        lighting.shadowSoftness = 0.0f;
         lighting.shadowEnabled = 0;
         lighting.shadowStrength = 1.0f;
         lighting.shadowMaxDistance = 100.0f;
@@ -2462,6 +2462,14 @@ f32 RenderSystem::GetShadowStrength() const {
 
 void RenderSystem::SetShadowStrength(f32 s) {
     if (m_ShadowMap) m_ShadowMap->SetShadowStrength(s);
+}
+
+f32 RenderSystem::GetShadowSoftness() const {
+    return m_ShadowMap ? m_ShadowMap->GetShadowSoftness() : 0.0f;
+}
+
+void RenderSystem::SetShadowSoftness(f32 s) {
+    if (m_ShadowMap) m_ShadowMap->SetShadowSoftness(s);
 }
 
 u32 RenderSystem::GetShadowResolution() const {

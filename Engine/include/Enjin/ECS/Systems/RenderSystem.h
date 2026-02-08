@@ -122,6 +122,8 @@ public:
     void SetShadowDistance(f32 d);
     f32 GetShadowStrength() const;
     void SetShadowStrength(f32 s);
+    f32 GetShadowSoftness() const;
+    void SetShadowSoftness(f32 s);
     u32 GetShadowResolution() const;
     void SetShadowResolution(u32 r);
 
