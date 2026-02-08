@@ -17,6 +17,7 @@
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
@@ -462,6 +463,16 @@ private:
 
     // Per-entity render data
     std::unordered_map<Entity, EntityRenderData> m_EntityRenderData;
+
+    // Descriptor set caching — tracks what was last written to the shared descriptor set.
+    // When the next entity's textures/bones match, vkUpdateDescriptorSets is skipped.
+    struct LastBoundState {
+        MaterialComponent::TextureKey textureKey;
+        Renderer::VulkanBuffer* boneBuffer = nullptr;
+        void Reset() { textureKey = {}; boneBuffer = nullptr; }
+    };
+    LastBoundState m_LastBound;
+    std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
 
     // Draw call / triangle counters
     u32 m_DrawCallCount = 0;

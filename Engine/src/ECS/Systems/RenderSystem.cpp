@@ -759,6 +759,9 @@ void RenderSystem::Update(f32 deltaTime) {
             vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
+            // Reset descriptor cache for each viewport
+            m_LastBound.Reset();
+
             for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
                 if (!m_World->HasComponent<TransformComponent>(entity)) continue;
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
@@ -830,11 +833,15 @@ void RenderSystem::Update(f32 deltaTime) {
     vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
     // Single-pass LOD update + render — iterates renderable entities once
+    // Reset last-bound state so no stale descriptor data carries from a previous pass
+    m_LastBound.Reset();
     {
         Math::Vector3 camPos;
         bool doLOD = (m_Camera != nullptr);
         if (doLOD) camPos = m_Camera->GetPosition();
 
+        // Collect visible, non-sprite entities and sort by material for descriptor caching
+        m_SortedRenderList.clear();
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
             if (!m_World->HasComponent<TransformComponent>(entity)) continue;
 
@@ -858,6 +865,21 @@ void RenderSystem::Update(f32 deltaTime) {
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
+            m_SortedRenderList.push_back(entity);
+        }
+
+        // Sort by cachedTextureKey so entities sharing textures are drawn consecutively,
+        // maximizing descriptor set cache hits (skipping redundant vkUpdateDescriptorSets)
+        std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
+            [this](Entity a, Entity b) {
+                auto* matA = m_World->GetComponent<MaterialComponent>(a);
+                auto* matB = m_World->GetComponent<MaterialComponent>(b);
+                const auto& keyA = matA ? matA->cachedTextureKey : MaterialComponent::TextureKey{};
+                const auto& keyB = matB ? matB->cachedTextureKey : MaterialComponent::TextureKey{};
+                return keyA < keyB;
+            });
+
+        for (Entity entity : m_SortedRenderList) {
             // LOD selection (if camera is available)
             if (doLOD) {
                 auto* lod = m_World->GetComponent<LODComponent>(entity);
@@ -959,6 +981,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Render skybox in game view (pass viewport/scissor for render target dimensions)
     RenderSkybox(commandBuffer, &viewport, &scissor);
 
+    // Reset descriptor cache for this render pass
+    m_LastBound.Reset();
+
     // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         if (m_World->HasComponent<TransformComponent>(entity)) {
@@ -1059,6 +1084,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                         }
                     }
                     material->textureCacheDirty = false;
+                    material->cachedTextureKey = { material->cachedBaseColorTexture,
+                        material->cachedHeightTexture, material->cachedNormalTexture,
+                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
                 }
 
                 // Use cached texture pointers
@@ -1305,6 +1333,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Render skybox for this viewport
         RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
+        // Reset descriptor cache for each viewport
+        m_LastBound.Reset();
+
         // Render all entities (skip sprites — drawn in sorted pass)
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
             if (!m_World->HasComponent<TransformComponent>(entity)) continue;
@@ -1395,6 +1426,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                         }
                     }
                     material->textureCacheDirty = false;
+                    material->cachedTextureKey = { material->cachedBaseColorTexture,
+                        material->cachedHeightTexture, material->cachedNormalTexture,
+                        material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
                 }
 
                 // Use cached texture pointers
@@ -3055,6 +3089,9 @@ void RenderSystem::RenderEntity(Entity entity) {
                 }
             }
             material->textureCacheDirty = false;
+            material->cachedTextureKey = { material->cachedBaseColorTexture,
+                material->cachedHeightTexture, material->cachedNormalTexture,
+                material->cachedMetallicRoughnessTexture, material->cachedEmissiveTexture };
         }
 
         // Use cached texture pointers
@@ -3769,6 +3806,11 @@ void RenderSystem::UpdateEntityTextureDescriptors(
     // Early out if no valid textures at all
     if (!texBase || !texBase->IsValid()) return;
 
+    // Skip vkUpdateDescriptorSets if these textures are already bound
+    MaterialComponent::TextureKey currentKey{ texBase, texHeight, texNormal, texMR, texEmissive };
+    if (currentKey == m_LastBound.textureKey) return;
+    m_LastBound.textureKey = currentKey;
+
     // Collect image infos (must persist until vkUpdateDescriptorSets returns)
     VkDescriptorImageInfo imageInfos[5];
     imageInfos[0] = texBase->GetDescriptorInfo();
@@ -3826,6 +3868,10 @@ void RenderSystem::UpdateEntityTextureDescriptors(
 
 void RenderSystem::UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer) {
     if (!boneBuffer) return;
+
+    // Skip if this bone buffer is already bound
+    if (boneBuffer == m_LastBound.boneBuffer) return;
+    m_LastBound.boneBuffer = boneBuffer;
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 

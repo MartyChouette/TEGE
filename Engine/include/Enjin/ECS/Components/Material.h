@@ -63,6 +63,29 @@ struct MaterialComponent {
     // Shadow dither mode: 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
     u8 shadowDitherMode = 0;
 
+    // Lightweight key for comparing/sorting texture combinations by pointer identity.
+    // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
+    struct TextureKey {
+        Renderer::Texture* baseColor = nullptr;
+        Renderer::Texture* height = nullptr;
+        Renderer::Texture* normal = nullptr;
+        Renderer::Texture* metallicRoughness = nullptr;
+        Renderer::Texture* emissive = nullptr;
+
+        bool operator==(const TextureKey& o) const {
+            return baseColor == o.baseColor && height == o.height && normal == o.normal
+                && metallicRoughness == o.metallicRoughness && emissive == o.emissive;
+        }
+        bool operator!=(const TextureKey& o) const { return !(*this == o); }
+        bool operator<(const TextureKey& o) const {
+            if (baseColor != o.baseColor) return baseColor < o.baseColor;
+            if (height != o.height) return height < o.height;
+            if (normal != o.normal) return normal < o.normal;
+            if (metallicRoughness != o.metallicRoughness) return metallicRoughness < o.metallicRoughness;
+            return emissive < o.emissive;
+        }
+    };
+
     // Cached texture pointers (mutable - cache only, not part of component state)
     // Avoids per-frame string hash lookups in GetOrLoadTexture
     mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
@@ -70,6 +93,7 @@ struct MaterialComponent {
     mutable Renderer::Texture* cachedNormalTexture = nullptr;
     mutable Renderer::Texture* cachedMetallicRoughnessTexture = nullptr;
     mutable Renderer::Texture* cachedEmissiveTexture = nullptr;
+    mutable TextureKey cachedTextureKey;  // Updated when textureCacheDirty clears
     mutable bool textureCacheDirty = true;
 
     // Call when texture paths change to force re-lookup
@@ -80,6 +104,7 @@ struct MaterialComponent {
         cachedNormalTexture = nullptr;
         cachedMetallicRoughnessTexture = nullptr;
         cachedEmissiveTexture = nullptr;
+        cachedTextureKey = {};
     }
 };
 
