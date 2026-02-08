@@ -293,7 +293,7 @@ Ideas for "simple creation of complex games":
 | Skeleton/Animator serialization | High | High | P1 | ✅ Complete |
 | Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
 | Soft shadows (Poisson disk PCF) | Medium | Medium | P1 | ✅ Complete |
-| Sprite batching by texture atlas | High | Medium | P1 | Pending |
+| Sprite batching by texture atlas | High | Medium | P1 | ✅ Complete |
 | Point/spot light shadows | Medium | High | P1 | ✅ Complete |
 | 2D sprite art pipeline | High | High | P1 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
@@ -374,12 +374,13 @@ Ideas for "simple creation of complex games":
 
 ### Recently Completed (cont.)
 
+- **Sprite Texture Atlas** — Runtime shelf-packing of sprite textures (<=512px) into a single 4096x4096 GPU texture. Sprites sharing the atlas batch into one instanced draw call via `"__atlas__"` sentinel key. Per-instance UVs linearly remapped into atlas regions. Lazy rebuild on new textures, invalidation on texture hot-reload. Oversized/failed textures excluded and fall back to individual draw calls
 - **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
 - **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (1024² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
 
 ### Pending
 
-- **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, sprite batching by texture atlas (biggest 2D perf win), warn on ortho/perspective mixing, flat shading fast path for sprites
+- **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, ~~sprite batching by texture atlas~~ (done — `SpriteTextureAtlas` shelf-packs <=512px sprites into 4096² atlas), warn on ortho/perspective mixing, flat shading fast path for sprites
 - **Pipeline Optimization** — Multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling
 
 ---
@@ -523,4 +524,4 @@ The editor itself must be fully accessible:
 
 ---
 
-*Last updated: 2026-02-07*
+*Last updated: 2026-02-08*
