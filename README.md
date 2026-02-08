@@ -6,8 +6,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
-- **Cascaded Shadow Maps** - 4-cascade CSM with PCF filtering, texel stabilization, distance fade, per-cascade bias
-- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping
+- **Cascaded Shadow Maps** - 4-cascade CSM with PCF filtering, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle)
+- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping, receiveShadows toggle
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** - Rain, snow, fog, storms with toggleable lightning
@@ -22,7 +22,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Render-to-Texture** - Offscreen rendering for Game View with separate uniform buffers
 - **Per-Scene Render Settings** - Full rendering config per scene with project-level defaults and editor UI
 - **Particle System** - CPU particle simulation (5 emitter shapes, size/speed curves, gravity/drag) with GPU instanced billboard rendering
-- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, and shadow strength
+- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, shadow strength, per-entity dither modes
+- **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 
 ### Editor
 - **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
@@ -34,7 +35,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 15 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, 4P Racing, Arena Fighter, PS1 RPG, City Builder)
+- **Startup Templates** - 30 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, Racing, Arena Fighter, PS1 RPG, City Builder, Survivor-like, Rogue-like, Shadow Test, and more)
 - **Custom Templates** - Save/load from templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
@@ -181,13 +182,13 @@ enjin/
 - [x] Play Mode (play/pause/stop)
 - [x] Undo/Redo System
 - [x] Entity Clipboard (Cut/Copy/Paste)
-- [x] Startup Template Selector (15 templates)
+- [x] Startup Template Selector (30 templates)
 
 ### Phase 5: Advanced Rendering ✅
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)
 - [x] Alpha cutoff / transparency support
 - [x] Multiple Light Sources (point, spot, directional)
-- [x] Cascaded Shadow Maps (4-cascade CSM with PCF, texel stabilization, distance fade)
+- [x] Cascaded Shadow Maps (4-cascade CSM with PCF, texel stabilization, distance fade, shadow dither)
 - [x] Texture Support (albedo, normal, height, metallic-roughness, emissive)
 - [x] Normal Mapping (tangent-space)
 - [x] Parallax Occlusion Mapping

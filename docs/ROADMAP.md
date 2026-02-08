@@ -10,65 +10,17 @@ This document captures detailed technical plans, performance findings, and strat
 
 These issues cause frame hitches and should be addressed first.
 
-#### 1. GPU Synchronization Blocking (CRITICAL)
+#### 1. ~~GPU Synchronization Blocking~~ ✅ RESOLVED
 
-**Problem:** `vkDeviceWaitIdle()` causes full GPU-CPU stalls on shader hot-reload and pipeline recreation.
+Replaced `vkDeviceWaitIdle()` with per-frame fence waits. Pipeline recreation deferred to next frame start.
 
-| Location | Trigger | Impact |
-|----------|---------|--------|
-| RenderSystem.cpp:2204 | `RecreatePipelines()` | Full GPU stall on wireframe toggle, shadow settings change |
-| RenderSystem.cpp:2380 | Main shader hot-reload | Multi-frame hitch during editing |
-| RenderSystem.cpp:2416 | Skybox shader hot-reload | Multi-frame hitch |
-| RenderSystem.cpp:2470 | Shadow shader hot-reload | Multi-frame hitch |
-| VulkanRenderer.cpp:270 | `vkWaitForFences()` infinite timeout | No frame skip on slow GPU |
+#### 2. ~~Entity Iteration Inefficiency~~ ✅ RESOLVED
 
-**Solution:**
-- Replace `vkDeviceWaitIdle()` with per-frame fence waits
-- Defer pipeline recreation to next frame start (after current frame's fence)
-- Cache pipeline states to avoid recreation when settings unchanged
-- Add timeout-based detection with frame skip logic
+Replaced all `GetAllEntities()` + filter patterns with `GetEntitiesWithComponent<T>()` across render, shadow, and flower systems.
 
-#### 2. Entity Iteration Inefficiency (HIGH)
+#### 3. ~~Per-Entity Texture Lookups~~ ✅ RESOLVED
 
-**Problem:** `GetAllEntities()` iterates ALL entities then filters, wasting O(n) iterations.
-
-| Location | Pattern | Waste |
-|----------|---------|-------|
-| RenderSystem.cpp:593,662 | Main render loop x2 | 5000 iterations for 100 renderables |
-| RenderSystem.cpp:2890 | Shadow pass x4 cascades | 20,000 iterations for 100 shadow-casters |
-| FlowerSystem.cpp:41,117,889 | Multiple update loops | Full iteration for ~20 flower parts |
-
-**Solution:**
-```cpp
-// Before (O(n) with filter):
-for (Entity e : m_World->GetAllEntities()) {
-    if (!m_World->HasComponent<MeshComponent>(e)) continue;
-    auto* mesh = m_World->GetComponent<MeshComponent>(e);
-    // ...
-}
-
-// After (O(k) where k = entities with component):
-for (Entity e : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-    auto* mesh = m_World->GetComponent<MeshComponent>(e);
-    // ...
-}
-```
-
-#### 3. Per-Entity Texture Lookups (HIGH)
-
-**Problem:** `GetOrLoadTexture()` called 2-5 times per entity per frame via string hash lookups.
-
-| Location | Calls per entity | Total per frame (1000 entities) |
-|----------|------------------|--------------------------------|
-| RenderSystem.cpp:2558 | baseColorTexturePath | 1000 |
-| RenderSystem.cpp:2612 | sprite texture | 500 |
-| RenderSystem.cpp:2695 | metallicRoughnessTexture | 500 |
-| RenderSystem.cpp:2706 | emissiveTexture | 300 |
-
-**Solution:**
-- Cache texture pointers directly on `MaterialComponent` (e.g., `cachedBaseColorTexture`)
-- Invalidate cache only when material `texturePath` changes
-- Move texture loading to material assignment time, not render time
+Added `cachedBaseColorTexture`, `cachedHeightTexture`, `cachedNormalTexture`, `cachedMetallicRoughnessTexture`, `cachedEmissiveTexture` on `MaterialComponent`. Cache invalidated via `InvalidateTextureCache()` on path changes.
 
 #### 4. Per-Entity Descriptor Set Updates (HIGH)
 
@@ -342,17 +294,27 @@ Ideas for "simple creation of complex games":
 | Replace GetAllEntities() loops | High | Low | P0 | ✅ Complete |
 | Cache texture pointers on materials | High | Medium | P0 | ✅ Complete |
 | Replace vkDeviceWaitIdle() with fences | Critical | Medium | P0 | ✅ Complete |
-| Skeleton/Animator serialization | High | High | P1 | Pending |
+| GPU frustum culling | High | Medium | P0 | ✅ Complete |
+| Shadow pipeline overhaul (CSM) | High | Medium | P0 | ✅ Complete |
+| Per-entity shadow dither mode | Medium | Low | P1 | ✅ Complete |
+| receiveShadows flag wiring | Low | Low | P1 | ✅ Complete |
 | Dialogue Tree Editor | Very High | Medium | P1 | ✅ Complete |
-| Visual Scripting System (Phase 1) | Very High | High | P1 | ✅ Complete |
-| Visual Scripting System (Phase 2) | Very High | High | P1 | ✅ Complete |
-| Visual Scripting System (Phase 3) | Very High | Medium | P1 | ✅ Complete |
-| Visual Scripting System (Phase 4) | Very High | Medium | P1 | ✅ Complete |
-| Visual Scripting System (Phase 5+) | High | Medium | P1 | Pending |
-| GUI color palette update | Medium | Low | P2 | Pending |
+| Visual Scripting (Phases 1-4) | Very High | High | P1 | ✅ Complete |
+| Project Hub enhancements | Medium | Medium | P1 | ✅ Complete |
+| Skybox rendering fixes | Medium | Low | P1 | ✅ Complete |
+| Skeleton/Animator serialization | High | High | P1 | Pending |
+| Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
+| Soft shadows (PCF improvement/VSM) | Medium | Medium | P1 | Pending |
+| Sprite batching by texture atlas | High | Medium | P1 | Pending |
+| Per-entity descriptor set caching | High | Medium | P1 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
 | Quest Flow Editor | High | Low | P2 | Pending |
+| GUI color palette update | Medium | Low | P2 | Pending |
 | Typography system | Medium | Low | P2 | Pending |
+| Point/spot light shadows | Medium | High | P2 | Pending |
+| Multi-threaded command buffer recording | High | High | P2 | Pending |
+| Undo/redo for inspector property edits | Medium | Medium | P2 | Pending |
+| Asset browser with thumbnails | Medium | Medium | P2 | Pending |
 | Micro-interactions | Medium | Medium | P3 | Pending |
 
 ---
@@ -386,17 +348,18 @@ Ideas for "simple creation of complex games":
 ### Pending
 
 - **Extended Model Format Support** — PLY (point cloud/mesh) and VOX (MagicaVoxel voxel) import via Assimp or custom loaders
-- **Template Rebuild & Demo Scenes** — Update all 15 templates to latest features, add demo scene per template with "Demo" button
+- **Template Rebuild & Demo Scenes** — Update all 30 templates to latest features, add demo scene per template with "Demo" button
 - **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
-- **Project Hub & Creation Wizard** — Replace template selector with Recent Projects / New Project / Demos tabs, folder structure auto-creation, collaboration-ready
 - **Editor Accent Color & Theming** — Replace blue accent with TEGE brand `#c7dac4` (sage green), rounded corners, softer panel borders, distinct visual identity
 - **Curved Grid Snapping** — Snap entity placement to curved/spherical grid surfaces with orientation alignment
 - **Improved Icon/Window Inspector** — Entity icons in hierarchy, component icons in inspector, window icon picker in project settings
+- **Asset Browser Panel** — Thumbnail grid/list view of project assets, drag-to-viewport, texture preview, search/filter
 
 ### Partially Complete
 
-- **Undo/Redo** — Entity operations done (delete/duplicate/cut/paste/reparent/component add-remove). Remaining: inspector property edits, tilemap paint, terrain sculpt, UI editor edits
-- **Drag and Drop** — OS file drop done. Remaining: asset browser to viewport/inspector, hierarchy reparenting
+- **Project Hub & Creation Wizard** — Template search, git init, templates folder done. Remaining: Recent Projects tab, folder structure auto-creation, collaboration-ready layout
+- **Undo/Redo** — Entity operations + visual script node edits done. Remaining: inspector property edits, tilemap paint, terrain sculpt, UI editor edits
+- **Drag and Drop** — OS file drop + hierarchy reparenting done. Remaining: asset browser to viewport/inspector
 - **Asset Import Pipeline** — Import settings dialog and .enjinasset metadata done. Remaining: thumbnails, axis conversion, texture compression, asset browser drag-import
 
 ---
@@ -415,10 +378,21 @@ Ideas for "simple creation of complex games":
 
 ## Rendering Pipeline & Performance
 
-In addition to the Critical Rendering Pipeline Issues documented above:
+### Recently Completed
 
+- **GPU Frustum Culling** — Integrated into render pipeline, skips off-screen entities before draw calls
+- **Shadow Pipeline Overhaul** — Back-face culling in shadow pass with pipeline depth bias (1.5/1.5), removed shader-side bias. Fixes ring-of-light under curved objects. Correct cascade frustum computation with world-space ray interpolation
+- **Per-Entity Shadow Dither** — 3 modes (by darkness, distance, angle) using Bayer 4x4 matrix, packed in flag bits 14-15
+- **receiveShadows Flag** — Now checked in shader; entities can opt out of receiving shadows
+- **Shadow Caster Caching** — Pre-filtered shadow caster list avoids redundant iteration per cascade
+
+### Pending
+
+- **Soft Shadows** — VSM (Variance Shadow Maps) or PCSS (Percentage-Closer Soft Shadows) for realistic penumbra
+- **Point/Spot Light Shadows** — Cubemap shadow maps for point lights, single-face for spot lights
 - **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, sprite batching by texture atlas (biggest 2D perf win), warn on ortho/perspective mixing, flat shading fast path for sprites
 - **Pipeline Optimization** — Multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling
+- **Descriptor Set Caching** — Pre-allocate descriptor sets per unique material/texture combo, batch updates once per frame
 
 ---
 
@@ -489,64 +463,3 @@ The editor itself must be fully accessible:
 ---
 
 *Last updated: 2026-02-07*
-*Generated from codebase audit, performance analysis, and feature roadmap*
-
----
-
-## Recent Completions
-
-### Visual Scripting System Phase 4 (2026-02-06)
-
-Implemented debugging and advanced editing features:
-
-**Breakpoints and Debugging:**
-- Breakpoint toggle on nodes (F9 key, red dot indicator)
-- Step-through debugging (F5 continue, F10 step over)
-- Pause at breakpoint with visual node highlighting
-- Execution timeline profiler with color-coded bars
-
-**Latent Nodes:**
-- WaitForAudioComplete - waits for AudioSourceComponent to finish playing
-- WaitForAnimationComplete - waits for AnimatorComponent to finish
-
-**Multi-Select Editing:**
-- Box/marquee selection for multiple nodes
-- Ctrl+click to add/remove from selection
-- Multi-node drag moves all selected together
-- Copy/paste preserves internal links between selected nodes
-
-**Undo/Redo:**
-- EditNodePropertyCommand for node property changes
-- EditVariableCommand for variable value changes
-- Command merging for consecutive edits on same property/variable
-
----
-
-### Visual Scripting System Phase 1 (2026-02-06)
-
-Implemented Blueprint-style visual scripting foundation:
-
-**Files Created:**
-- `Engine/include/Enjin/ECS/Components/VisualScript.h`
-- `Engine/include/Enjin/VisualScript/NodeDefinition.h`
-- `Engine/include/Enjin/VisualScript/NodeRegistry.h`
-- `Engine/src/VisualScript/NodeRegistry.cpp`
-- `Engine/include/Enjin/VisualScript/VisualScriptExecutor.h`
-- `Engine/src/VisualScript/VisualScriptExecutor.cpp`
-- `Engine/include/Enjin/ECS/Systems/VisualScriptSystem.h`
-- `Engine/src/ECS/Systems/VisualScriptSystem.cpp`
-- `Engine/include/Enjin/Editor/VisualScriptEditor.h`
-- `Engine/src/Editor/VisualScriptEditor.cpp`
-
-**Files Modified:**
-- `Engine/include/Enjin/Editor/NodeGraph.h` (added Vector2, Vector4, Quaternion pin types)
-- `Engine/include/Enjin/Editor/EditorLayer.h/cpp` (panel integration)
-- `Engine/include/Enjin/Editor/PlayMode.h/cpp` (system lifecycle)
-- `Engine/src/Scene/SceneSerializer.cpp` (full serialization)
-
-**Key Features:**
-- 15 built-in nodes covering events, flow control, variables, math, and actions
-- Pure node evaluation with frame-level caching
-- Flow-based execution with max iteration safety
-- Full editor panel with entity sidebar, node graph, variable editor, inspector
-- Complete scene serialization for graphs, variables, event mappings, and node metadata
