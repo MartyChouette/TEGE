@@ -70,7 +70,7 @@ void VulkanPipeline::Bind(VkCommandBuffer commandBuffer) {
 }
 
 bool VulkanPipeline::CreateDescriptorSetLayout() {
-    std::array<VkDescriptorSetLayoutBinding, 10> bindings{};
+    std::array<VkDescriptorSetLayoutBinding, 13> bindings{};
 
     // UBO binding 0: model/view/projection matrices (vertex shader)
     bindings[0].binding = 0;
@@ -141,6 +141,27 @@ bool VulkanPipeline::CreateDescriptorSetLayout() {
     bindings[9].descriptorCount = 1;
     bindings[9].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     bindings[9].pImmutableSamplers = nullptr;
+
+    // Sampler binding 10: point light shadow cubemap array (fragment shader)
+    bindings[10].binding = 10;
+    bindings[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[10].descriptorCount = 1;
+    bindings[10].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[10].pImmutableSamplers = nullptr;
+
+    // Sampler binding 11: spot light shadow 2D array (fragment shader)
+    bindings[11].binding = 11;
+    bindings[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    bindings[11].descriptorCount = 1;
+    bindings[11].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[11].pImmutableSamplers = nullptr;
+
+    // SSBO binding 12: shadow data for point/spot lights (fragment shader)
+    bindings[12].binding = 12;
+    bindings[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[12].descriptorCount = 1;
+    bindings[12].stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    bindings[12].pImmutableSamplers = nullptr;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;

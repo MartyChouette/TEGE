@@ -20,6 +20,8 @@
 #include "Enjin/Math/Math.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
+#include "Enjin/Renderer/PointLightShadowMap.h"
+#include "Enjin/Renderer/SpotLightShadowMap.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include <cstring>
 #include <array>
@@ -107,6 +109,24 @@ void RenderSystem::Initialize() {
         }
     }
 
+    // Create point light shadow map (cubemap array for up to 4 point lights)
+    m_PointShadowMap = std::make_unique<Renderer::PointLightShadowMap>(m_Renderer->GetContext());
+    if (!m_PointShadowMap->Initialize(512)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to initialize point light shadow map");
+        m_PointShadowMap.reset();
+    } else {
+        CreatePointShadowPipeline();
+    }
+
+    // Create spot light shadow map (2D array for up to 4 spot lights)
+    m_SpotShadowMap = std::make_unique<Renderer::SpotLightShadowMap>(m_Renderer->GetContext());
+    if (!m_SpotShadowMap->Initialize(1024)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to initialize spot light shadow map");
+        m_SpotShadowMap.reset();
+    } else {
+        CreateSpotShadowPipeline();
+    }
+
     // Create default white texture (used when no texture is bound)
     m_DefaultWhiteTexture = std::make_unique<Renderer::Texture>(m_Renderer->GetContext());
     if (!m_DefaultWhiteTexture->CreateSolidColor(255, 255, 255, 255)) {
@@ -122,6 +142,13 @@ void RenderSystem::Initialize() {
     } else {
         ENJIN_LOG_WARN(Renderer, "Failed to create default bone buffer");
         m_DefaultBoneBuffer.reset();
+    }
+
+    // Create shadow data SSBO for point/spot light shadow matrices
+    m_ShadowDataBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
+    if (!m_ShadowDataBuffer->Create(sizeof(ShadowDataSSBO), Renderer::BufferUsage::Storage, true)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create shadow data SSBO");
+        m_ShadowDataBuffer.reset();
     }
 
     // Create uniform buffers and descriptor sets
@@ -282,6 +309,11 @@ void RenderSystem::Shutdown() {
     // Clean up shadow resources
     m_ShadowPipeline.reset();
     m_ShadowMap.reset();
+    m_PointShadowPipeline.reset();
+    m_PointShadowMap.reset();
+    m_SpotShadowPipeline.reset();
+    m_SpotShadowMap.reset();
+    m_ShadowDataBuffer.reset();
 
     // Clean up text texture cache and rasterizer
     m_TextTextureCache.clear();
@@ -610,6 +642,14 @@ void RenderSystem::Update(f32 deltaTime) {
         BuildCullableObjectList();
     }
 
+    // Select shadow-casting point/spot lights (before shadow passes)
+    if (m_ShadowsEnabled && m_SceneComposition.mode == SceneRenderMode::Scene3D) {
+        SelectShadowLights();
+    } else {
+        m_ActivePointShadowCount = 0;
+        m_ActiveSpotShadowCount = 0;
+    }
+
     // Shadow pass first (if enabled) - only run when 3D meshes AND shadow-casting lights exist.
     // Pure 2D scenes skip entirely since sprites never cast shadows.
     // Scenes with no shadow-casting lights also skip to avoid rendering 4 cascades for nothing.
@@ -617,6 +657,16 @@ void RenderSystem::Update(f32 deltaTime) {
         m_SceneComposition.mode == SceneRenderMode::Scene3D &&
         m_SceneComposition.hasShadowCastingLights) {
         RenderShadowPass();
+    }
+
+    // Point light shadow pass
+    if (m_ShadowsEnabled && m_PointShadowMap && m_PointShadowPipeline && m_ActivePointShadowCount > 0) {
+        RenderPointShadowPass();
+    }
+
+    // Spot light shadow pass
+    if (m_ShadowsEnabled && m_SpotShadowMap && m_SpotShadowPipeline && m_ActiveSpotShadowCount > 0) {
+        RenderSpotShadowPass();
     }
 
     // GPU frustum culling (compute shader dispatch before main render pass)
@@ -1906,14 +1956,14 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
-    // Create descriptor pool (3 UBOs + 6 combined image samplers + 1 SSBO per set)
+    // Create descriptor pool (3 UBOs + 8 combined image samplers + 2 SSBOs per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 6;  // base color + shadow + height + normal + metallic-roughness + emissive
+    poolSizes[1].descriptorCount = totalSets * 8;  // base color + shadow + height + normal + metallic-roughness + emissive + point shadow + spot shadow
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 1;  // bone matrices SSBO
+    poolSizes[2].descriptorCount = totalSets * 2;  // bone matrices SSBO + shadow data SSBO
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2006,7 +2056,35 @@ void RenderSystem::CreateDescriptorSets() {
         // Emissive texture (binding 9) - default to white
         VkDescriptorImageInfo emissiveImageInfo = imageInfo;
 
-        std::array<VkWriteDescriptorSet, 10> descriptorWrites{};
+        // Point light shadow cubemap array (binding 10) - default to white
+        VkDescriptorImageInfo pointShadowImageInfo{};
+        if (m_PointShadowMap) {
+            pointShadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            pointShadowImageInfo.imageView = m_PointShadowMap->GetCubeArrayView();
+            pointShadowImageInfo.sampler = m_PointShadowMap->GetShadowSampler();
+        } else {
+            pointShadowImageInfo = imageInfo;
+        }
+
+        // Spot light shadow 2D array (binding 11) - default to white
+        VkDescriptorImageInfo spotShadowImageInfo{};
+        if (m_SpotShadowMap) {
+            spotShadowImageInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+            spotShadowImageInfo.imageView = m_SpotShadowMap->GetArrayView();
+            spotShadowImageInfo.sampler = m_SpotShadowMap->GetShadowSampler();
+        } else {
+            spotShadowImageInfo = imageInfo;
+        }
+
+        // Shadow data SSBO (binding 12)
+        VkDescriptorBufferInfo shadowDataBufferInfo{};
+        if (m_ShadowDataBuffer) {
+            shadowDataBufferInfo.buffer = m_ShadowDataBuffer->GetBuffer();
+            shadowDataBufferInfo.offset = 0;
+            shadowDataBufferInfo.range = m_ShadowDataBuffer->GetSize();
+        }
+
+        std::array<VkWriteDescriptorSet, 13> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2098,6 +2176,33 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[9].descriptorCount = 1;
         descriptorWrites[9].pImageInfo = &emissiveImageInfo;
 
+        // Point light shadow cubemap array descriptor
+        descriptorWrites[10].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[10].dstSet = m_DescriptorSets[i];
+        descriptorWrites[10].dstBinding = 10;
+        descriptorWrites[10].dstArrayElement = 0;
+        descriptorWrites[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[10].descriptorCount = 1;
+        descriptorWrites[10].pImageInfo = &pointShadowImageInfo;
+
+        // Spot light shadow 2D array descriptor
+        descriptorWrites[11].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[11].dstSet = m_DescriptorSets[i];
+        descriptorWrites[11].dstBinding = 11;
+        descriptorWrites[11].dstArrayElement = 0;
+        descriptorWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[11].descriptorCount = 1;
+        descriptorWrites[11].pImageInfo = &spotShadowImageInfo;
+
+        // Shadow data SSBO descriptor
+        descriptorWrites[12].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[12].dstSet = m_DescriptorSets[i];
+        descriptorWrites[12].dstBinding = 12;
+        descriptorWrites[12].dstArrayElement = 0;
+        descriptorWrites[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[12].descriptorCount = 1;
+        descriptorWrites[12].pBufferInfo = &shadowDataBufferInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -2164,8 +2269,31 @@ void RenderSystem::CreateDescriptorSets() {
                     offBoneInfo.range = m_DefaultBoneBuffer->GetSize();
                 }
 
-                std::array<VkWriteDescriptorSet, 10> offWrites{};
-                for (u32 w = 0; w < 10; ++w) {
+                VkDescriptorImageInfo offPointShadowInfo{};
+                if (m_PointShadowMap) {
+                    offPointShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    offPointShadowInfo.imageView = m_PointShadowMap->GetCubeArrayView();
+                    offPointShadowInfo.sampler = m_PointShadowMap->GetShadowSampler();
+                } else {
+                    offPointShadowInfo = offImageInfo;
+                }
+                VkDescriptorImageInfo offSpotShadowInfo{};
+                if (m_SpotShadowMap) {
+                    offSpotShadowInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+                    offSpotShadowInfo.imageView = m_SpotShadowMap->GetArrayView();
+                    offSpotShadowInfo.sampler = m_SpotShadowMap->GetShadowSampler();
+                } else {
+                    offSpotShadowInfo = offImageInfo;
+                }
+                VkDescriptorBufferInfo offShadowDataInfo{};
+                if (m_ShadowDataBuffer) {
+                    offShadowDataInfo.buffer = m_ShadowDataBuffer->GetBuffer();
+                    offShadowDataInfo.offset = 0;
+                    offShadowDataInfo.range = m_ShadowDataBuffer->GetSize();
+                }
+
+                std::array<VkWriteDescriptorSet, 13> offWrites{};
+                for (u32 w = 0; w < 13; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -2192,6 +2320,12 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[8].pImageInfo = &offMetRoughInfo;
                 offWrites[9].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                 offWrites[9].pImageInfo = &offEmissiveInfo;
+                offWrites[10].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[10].pImageInfo = &offPointShadowInfo;
+                offWrites[11].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[11].pImageInfo = &offSpotShadowInfo;
+                offWrites[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[12].pBufferInfo = &offShadowDataInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
@@ -2375,6 +2509,49 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.shadowMaxDistance = 100.0f;
     }
 
+    // Sort shadow-casting point/spot lights to front of UBO arrays
+    // so indices 0..N-1 correspond to shadow slots 0..N-1
+    lighting.pointShadowCount = static_cast<i32>(m_ActivePointShadowCount);
+    lighting.spotShadowCount = static_cast<i32>(m_ActiveSpotShadowCount);
+
+    if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
+        // Move shadow-casting lights to front: swap with non-shadow lights
+        for (u32 s = 0; s < m_ActivePointShadowCount && s < lighting.pointLightCount; ++s) {
+            auto& shadowLight = m_ShadowPointLights[s];
+            // Find this light in the UBO array by matching position
+            for (u32 j = s; j < lighting.pointLightCount; ++j) {
+                auto& uboLight = lighting.pointLights[j];
+                f32 dx = uboLight.position.x - shadowLight.position.x;
+                f32 dy = uboLight.position.y - shadowLight.position.y;
+                f32 dz = uboLight.position.z - shadowLight.position.z;
+                if (dx*dx + dy*dy + dz*dz < 0.001f) {
+                    if (j != s) {
+                        std::swap(lighting.pointLights[s], lighting.pointLights[j]);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    if (m_ActiveSpotShadowCount > 0 && lighting.spotLightCount > 1) {
+        for (u32 s = 0; s < m_ActiveSpotShadowCount && s < lighting.spotLightCount; ++s) {
+            auto& shadowLight = m_ShadowSpotLights[s];
+            for (u32 j = s; j < lighting.spotLightCount; ++j) {
+                auto& uboLight = lighting.spotLights[j];
+                f32 dx = uboLight.position.x - shadowLight.position.x;
+                f32 dy = uboLight.position.y - shadowLight.position.y;
+                f32 dz = uboLight.position.z - shadowLight.position.z;
+                if (dx*dx + dy*dy + dz*dz < 0.001f) {
+                    if (j != s) {
+                        std::swap(lighting.spotLights[s], lighting.spotLights[j]);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     if (m_WindSystem) {
         lighting.windData = m_WindSystem->GetWindVector();
     } else {
@@ -2414,6 +2591,30 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+
+    // Upload shadow data SSBO for point/spot light shadows
+    if (m_ShadowDataBuffer && m_ShadowsEnabled) {
+        ShadowDataSSBO shadowData{};
+        shadowData.pointShadowCount = static_cast<i32>(m_ActivePointShadowCount);
+        shadowData.spotShadowCount = static_cast<i32>(m_ActiveSpotShadowCount);
+
+        for (u32 i = 0; i < m_ActivePointShadowCount; ++i) {
+            auto& sl = m_ShadowPointLights[i];
+            shadowData.pointLightParams[i] = Math::Vector4(sl.position.x, sl.position.y, sl.position.z, sl.range);
+            for (u32 f = 0; f < 6; ++f) {
+                shadowData.pointFaceViewProj[i * 6 + f] =
+                    Renderer::PointLightShadowMap::ComputeFaceViewProj(sl.position, sl.range, f);
+            }
+        }
+
+        for (u32 i = 0; i < m_ActiveSpotShadowCount; ++i) {
+            auto& sl = m_ShadowSpotLights[i];
+            shadowData.spotViewProj[i] =
+                Renderer::SpotLightShadowMap::ComputeViewProj(sl.position, sl.direction, sl.outerConeAngle, sl.range);
+        }
+
+        m_ShadowDataBuffer->UploadData(&shadowData, sizeof(shadowData));
+    }
 }
 
 void RenderSystem::UpdateMaterialBuffer(Entity entity) {
@@ -2516,6 +2717,8 @@ void RenderSystem::RecreatePipelines(bool gpuAlreadyIdle) {
         CreateDescriptorSets();
         CreateLinePipeline();
         CreateShadowPipeline();
+        CreatePointShadowPipeline();
+        CreateSpotShadowPipeline();
     }
 }
 
@@ -3229,6 +3432,163 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     // Draw indexed
     vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+}
+
+void RenderSystem::CreatePointShadowPipeline() {
+    if (!m_PointShadowMap || !m_Pipeline || !m_ShadowVertexShader) return;
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_PointShadowMap->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.depthBiasEnable = true;
+    config.depthBiasConstant = 2.0f;
+    config.depthBiasSlope = 2.0f;
+    config.hasColorAttachment = false;
+
+    m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_PointShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
+            m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create point shadow pipeline");
+        m_PointShadowPipeline.reset();
+    }
+}
+
+void RenderSystem::CreateSpotShadowPipeline() {
+    if (!m_SpotShadowMap || !m_Pipeline || !m_ShadowVertexShader) return;
+
+    Renderer::PipelineConfig config;
+    config.renderPass = m_SpotShadowMap->GetRenderPass();
+    config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    config.depthTest = true;
+    config.depthWrite = true;
+    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
+    config.polygonMode = VK_POLYGON_MODE_FILL;
+    config.depthBiasEnable = true;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
+    config.hasColorAttachment = false;
+
+    m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
+    if (!m_SpotShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
+            m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create spot shadow pipeline");
+        m_SpotShadowPipeline.reset();
+    }
+}
+
+void RenderSystem::SelectShadowLights() {
+    m_ShadowPointLights.clear();
+    m_ShadowSpotLights.clear();
+    m_ActivePointShadowCount = 0;
+    m_ActiveSpotShadowCount = 0;
+
+    if (!m_Camera) return;
+    Math::Vector3 camPos = m_Camera->GetPosition();
+
+    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+        LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
+        TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
+        if (!light || !light->castShadows || !lightTransform) continue;
+
+        Math::Vector3 pos = lightTransform->position;
+        Math::Vector3 diff = pos - camPos;
+        f32 distSq = diff.x * diff.x + diff.y * diff.y + diff.z * diff.z;
+        f32 score = light->intensity / std::max(distSq, 1.0f);
+
+        if (light->type == LightType::Point) {
+            m_ShadowPointLights.push_back({lightEntity, pos, light->range, score});
+        } else if (light->type == LightType::Spot) {
+            Math::Vector3 forward(0.0f, 0.0f, -1.0f);
+            Math::Vector3 dir = lightTransform->rotation.Rotate(forward).Normalized();
+            m_ShadowSpotLights.push_back({lightEntity, pos, dir, light->outerConeAngle, light->range, score});
+        }
+    }
+
+    // Sort by score descending, take top N
+    std::sort(m_ShadowPointLights.begin(), m_ShadowPointLights.end(),
+        [](const ShadowPointLight& a, const ShadowPointLight& b) { return a.score > b.score; });
+    std::sort(m_ShadowSpotLights.begin(), m_ShadowSpotLights.end(),
+        [](const ShadowSpotLight& a, const ShadowSpotLight& b) { return a.score > b.score; });
+
+    m_ActivePointShadowCount = static_cast<u32>(std::min(m_ShadowPointLights.size(),
+        static_cast<size_t>(MAX_SHADOW_POINT_LIGHTS)));
+    m_ActiveSpotShadowCount = static_cast<u32>(std::min(m_ShadowSpotLights.size(),
+        static_cast<size_t>(MAX_SHADOW_SPOT_LIGHTS)));
+
+    m_ShadowPointLights.resize(m_ActivePointShadowCount);
+    m_ShadowSpotLights.resize(m_ActiveSpotShadowCount);
+}
+
+void RenderSystem::RenderPointShadowPass() {
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    if (m_ShadowCastersDirty) {
+        RebuildShadowCasterCache();
+    }
+
+    for (u32 lightIdx = 0; lightIdx < m_ActivePointShadowCount; ++lightIdx) {
+        auto& sl = m_ShadowPointLights[lightIdx];
+
+        for (u32 face = 0; face < 6; ++face) {
+            m_CurrentCascadeVP = Renderer::PointLightShadowMap::ComputeFaceViewProj(
+                sl.position, sl.range, face);
+
+            m_PointShadowMap->BeginFacePass(commandBuffer, lightIdx, face);
+            m_PointShadowPipeline->Bind(commandBuffer);
+
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_PointShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+            for (Entity entity : m_ShadowCasters) {
+                auto* xform = m_World->GetComponent<TransformComponent>(entity);
+                if (xform && !xform->visible) continue;
+                RenderEntityShadow(entity, commandBuffer);
+            }
+
+            m_PointShadowMap->EndFacePass(commandBuffer);
+        }
+    }
+}
+
+void RenderSystem::RenderSpotShadowPass() {
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+
+    if (m_ShadowCastersDirty) {
+        RebuildShadowCasterCache();
+    }
+
+    for (u32 spotIdx = 0; spotIdx < m_ActiveSpotShadowCount; ++spotIdx) {
+        auto& sl = m_ShadowSpotLights[spotIdx];
+
+        m_CurrentCascadeVP = Renderer::SpotLightShadowMap::ComputeViewProj(
+            sl.position, sl.direction, sl.outerConeAngle, sl.range);
+
+        m_SpotShadowMap->BeginPass(commandBuffer, spotIdx);
+        m_SpotShadowPipeline->Bind(commandBuffer);
+
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_SpotShadowPipeline->GetLayout(), 0, 1, &m_DescriptorSets[currentFrame], 0, nullptr);
+
+        for (Entity entity : m_ShadowCasters) {
+            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            if (xform && !xform->visible) continue;
+            RenderEntityShadow(entity, commandBuffer);
+        }
+
+        m_SpotShadowMap->EndPass(commandBuffer);
+    }
 }
 
 std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::string& path) {

@@ -304,14 +304,15 @@ Ideas for "simple creation of complex games":
 | Skybox rendering fixes | Medium | Low | P1 | ✅ Complete |
 | Skeleton/Animator serialization | High | High | P1 | Pending |
 | Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
-| Soft shadows (PCF improvement/VSM) | Medium | Medium | P1 | Pending |
+| Soft shadows (Poisson disk PCF) | Medium | Medium | P1 | ✅ Complete |
 | Sprite batching by texture atlas | High | Medium | P1 | Pending |
 | Per-entity descriptor set caching | High | Medium | P1 | Pending |
+| Point/spot light shadows | Medium | High | P1 | ✅ Complete |
+| 2D sprite art pipeline | High | High | P1 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
 | Quest Flow Editor | High | Low | P2 | Pending |
 | GUI color palette update | Medium | Low | P2 | Pending |
 | Typography system | Medium | Low | P2 | Pending |
-| Point/spot light shadows | Medium | High | P2 | Pending |
 | Multi-threaded command buffer recording | High | High | P2 | Pending |
 | Undo/redo for inspector property edits | Medium | Medium | P2 | Pending |
 | Asset browser with thumbnails | Medium | Medium | P2 | Pending |
@@ -386,13 +387,89 @@ Ideas for "simple creation of complex games":
 - **receiveShadows Flag** — Now checked in shader; entities can opt out of receiving shadows
 - **Shadow Caster Caching** — Pre-filtered shadow caster list avoids redundant iteration per cascade
 
+### Recently Completed (cont.)
+
+- **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
+- **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (512² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
+
 ### Pending
 
-- **Soft Shadows** — VSM (Variance Shadow Maps) or PCSS (Percentage-Closer Soft Shadows) for realistic penumbra
-- **Point/Spot Light Shadows** — Cubemap shadow maps for point lights, single-face for spot lights
 - **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, sprite batching by texture atlas (biggest 2D perf win), warn on ortho/perspective mixing, flat shading fast path for sprites
 - **Pipeline Optimization** — Multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling
 - **Descriptor Set Caching** — Pre-allocate descriptor sets per unique material/texture combo, batch updates once per frame
+
+---
+
+## 2D Sprite Art Pipeline
+
+A complete draw-to-game workflow for 2D and 2.5D projects, from pixel art creation through sprite sheets to playable prefabs.
+
+### Built-In Pixel Editor
+
+Minimal but functional sprite editor inside the engine — no external tools needed for prototyping.
+
+- **Canvas sizes:** Freeform + retro resolution presets
+- **Tools:** Pencil, eraser, fill, line, rectangle, ellipse, eyedropper, selection/move
+- **Layers:** Basic layer stack with visibility/opacity
+- **Palette:** Indexed color palettes per preset, custom palette support
+- **Animation:** Onion skinning, frame timeline, playback preview
+- **Export:** Save as `.png` sheet or individual frames, auto-register as engine asset
+
+### Retro Resolution Presets
+
+| Preset | Tile | Sprite | Portrait | System |
+|--------|------|--------|----------|--------|
+| Game Boy | 8×8 | 8×8, 8×16 | — | 160×144 |
+| NES | 8×8 | 8×16 | — | 256×240 |
+| SNES | 8×8, 16×16 | 16×16, 32×32 | — | 256×224 |
+| Genesis | 8×8 | 8×16, 16×16 | — | 320×224 |
+| GBA | 8×8 | 16×16, 32×32, 64×64 | — | 240×160 |
+| PC Engine | 8×8 | 16×16, 32×64 | 256×512 | 256×224 |
+| EarthBound-style | 8×8 | 16×24, 32×48 | 128×128 | 256×224 |
+| DS | 8×8 | 16×16, 32×32 | 128×128 | 256×192 |
+| Custom | User-defined | User-defined | User-defined | User-defined |
+
+### Sprite Sheet / Atlas Workflow
+
+- **Import:** Load existing sprite sheets, define frame rects (grid-based or manual)
+- **Auto-slice:** Grid-based auto-detection with configurable cell size and padding
+- **Atlas packing:** Combine multiple sprites into optimized texture atlases (MaxRects bin packing)
+- **Per-frame data:** Each frame can store pivot point, collision shape, and animation timing
+
+### Auto Collider Generation
+
+- **Alpha-based outline:** Trace non-transparent pixels to generate polygon collider (configurable simplification threshold)
+- **Bounding shapes:** Auto-fit box, circle, or capsule colliders from sprite bounds
+- **Per-frame colliders:** Different collider shapes per animation frame (attack hitboxes, hurt boxes)
+- **Spline colliders:** Generate spline-based colliders from sprite silhouette for smooth curves
+- **Manual editor:** Click-to-place polygon vertices over sprite preview, snap to pixel grid
+
+### Vector Art / SVG Import
+
+- **SVG import:** Parse SVG via nanosvg, rasterize to target resolution for sprite use
+- **Resolution independence:** Store SVG source, re-rasterize at different scales for LOD or resolution changes
+- **UI integration:** SVG elements usable directly in UICanvas Image widgets
+- **Runtime SVG (future):** SDF-based vector rendering for resolution-independent UI at runtime
+
+### Prefab Output Pipeline
+
+Complete flow from art to playable entity:
+
+1. **Draw** sprite in pixel editor (or import PNG/SVG)
+2. **Slice** into frames if sprite sheet
+3. **Define** animation sequences (idle, walk, attack, etc.)
+4. **Generate** colliders (auto or manual, per-frame)
+5. **Configure** material (emission, normal map generation from height)
+6. **Save as prefab** — `.enjprefab` with sprite, animations, colliders, material all bundled
+7. **Drag into scene** — instantiate as ready-to-play entity
+
+### Implementation Phases
+
+1. **Foundation (2-3 weeks):** Pixel editor canvas with basic tools, preset system, PNG export
+2. **Sprite Sheets (2 weeks):** Import, auto-slice, atlas packing, frame data
+3. **Colliders (2 weeks):** Alpha trace, bounding shapes, per-frame colliders, manual editor
+4. **Pipeline Integration (1-2 weeks):** Prefab output, drag-to-scene, animation hookup
+5. **SVG (1-2 weeks):** nanosvg import, rasterize-to-texture, UI widget support
 
 ---
 

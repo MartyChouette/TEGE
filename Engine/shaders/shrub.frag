@@ -58,6 +58,9 @@ layout(binding = 1) uniform LightingUBO {
     int shadowEnabled;
     float shadowStrength;
     float shadowMaxDistance;
+    int pointShadowCount;
+    int spotShadowCount;
+    vec2 _pointSpotPad;
     vec4 windData;
     vec4 fogParams;
     vec4 fogColorSnow;

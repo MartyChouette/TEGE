@@ -67,6 +67,9 @@ layout(binding = 1) uniform LightingUBO {
     int shadowEnabled;
     float shadowStrength;
     float shadowMaxDistance;
+    int pointShadowCount;
+    int spotShadowCount;
+    vec2 _pointSpotPad;
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -142,6 +145,25 @@ layout(binding = 8) uniform sampler2D metallicRoughnessMap;
 
 // Emissive map sampler (binding 9)
 layout(binding = 9) uniform sampler2D emissiveMap;
+
+// Point light shadow cubemap array (binding 10)
+layout(binding = 10) uniform samplerCubeArrayShadow pointShadowMaps;
+
+// Spot light shadow 2D array (binding 11)
+layout(binding = 11) uniform sampler2DArrayShadow spotShadowMaps;
+
+// Shadow data SSBO for point/spot light shadow matrices (binding 12)
+#define MAX_SHADOW_POINT_LIGHTS 4
+#define MAX_SHADOW_SPOT_LIGHTS 4
+
+layout(std430, binding = 12) readonly buffer ShadowDataSSBO {
+    mat4 pointFaceViewProj[MAX_SHADOW_POINT_LIGHTS * 6];
+    vec4 pointLightParams[MAX_SHADOW_POINT_LIGHTS];  // xyz=pos, w=range
+    mat4 spotViewProj[MAX_SHADOW_SPOT_LIGHTS];
+    int pointShadowCountSSBO;
+    int spotShadowCountSSBO;
+    int _ssbo_pad[2];
+} shadowData;
 
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
@@ -222,6 +244,102 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
     shadow = mix(1.0, shadow, lighting.shadowStrength);
 
     return shadow;
+}
+
+// Calculate point light shadow factor using cubemap shadow sampling
+float calcPointShadow(vec3 fragPos, int shadowIdx) {
+    vec3 lightPos = shadowData.pointLightParams[shadowIdx].xyz;
+    float range = shadowData.pointLightParams[shadowIdx].w;
+    vec3 fragToLight = fragPos - lightPos;
+    float dist = length(fragToLight);
+    if (dist > range || dist < 0.001) return 1.0;
+
+    // Non-linear reference depth matching custom Vulkan [0,1] perspective
+    float nearP = 0.1;
+    float d = max(max(abs(fragToLight.x), abs(fragToLight.y)), abs(fragToLight.z));
+    float refDepth = range * (d - nearP) / ((range - nearP) * d);
+
+    float shadow;
+    if (lighting.shadowSoftness <= 0.0) {
+        // Hard shadow: single sample
+        shadow = texture(pointShadowMaps, vec4(fragToLight, float(shadowIdx)), refDepth);
+    } else {
+        // Soft shadow: perturb direction with Poisson disk offsets in 3D
+        float angle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+        float s = sin(angle);
+        float c = cos(angle);
+
+        float radius = lighting.shadowSoftness * 0.02;  // Scale for cubemap texels
+        shadow = 0.0;
+        // Build a tangent frame around fragToLight direction
+        vec3 dir = normalize(fragToLight);
+        vec3 up = abs(dir.y) < 0.99 ? vec3(0,1,0) : vec3(1,0,0);
+        vec3 right = normalize(cross(up, dir));
+        up = cross(dir, right);
+
+        for (int i = 0; i < 16; ++i) {
+            vec2 offset = vec2(
+                c * poissonDisk[i].x - s * poissonDisk[i].y,
+                s * poissonDisk[i].x + c * poissonDisk[i].y
+            ) * radius;
+            vec3 sampleDir = fragToLight + right * offset.x * dist + up * offset.y * dist;
+            shadow += texture(pointShadowMaps, vec4(sampleDir, float(shadowIdx)), refDepth);
+        }
+        shadow /= 16.0;
+    }
+
+    // Distance fade
+    float fadeStart = range * 0.8;
+    shadow = mix(1.0, shadow, 1.0 - smoothstep(fadeStart, range, dist));
+    return mix(1.0, shadow, lighting.shadowStrength);
+}
+
+// Calculate spot light shadow factor using 2D array shadow sampling
+float calcSpotShadow(vec3 fragPos, int shadowIdx) {
+    // Project fragment into spot light space
+    vec4 lightSpacePos = shadowData.spotViewProj[shadowIdx] * vec4(fragPos, 1.0);
+    vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
+    projCoords.xy = projCoords.xy * 0.5 + 0.5;
+
+    // Out-of-bounds check
+    if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
+        projCoords.y < 0.0 || projCoords.y > 1.0 ||
+        projCoords.z < 0.0 || projCoords.z > 1.0) {
+        return 1.0;
+    }
+
+    float currentDepth = projCoords.z;
+    float shadow = 0.0;
+    vec2 texelSize = 1.0 / vec2(textureSize(spotShadowMaps, 0).xy);
+
+    if (lighting.shadowSoftness <= 0.0) {
+        // Hard shadows: 3x3 PCF
+        for (int x = -1; x <= 1; ++x) {
+            for (int y = -1; y <= 1; ++y) {
+                vec2 offset = vec2(float(x), float(y)) * texelSize;
+                shadow += texture(spotShadowMaps, vec4(projCoords.xy + offset,
+                                                        float(shadowIdx), currentDepth));
+            }
+        }
+        shadow /= 9.0;
+    } else {
+        // Soft shadows: 16-sample Poisson disk
+        float angle = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) * 6.2831853;
+        float s = sin(angle);
+        float c = cos(angle);
+        mat2 rotation = mat2(c, s, -s, c);
+
+        float radius = lighting.shadowSoftness;
+        for (int i = 0; i < 16; ++i) {
+            vec2 offset = rotation * poissonDisk[i] * radius * texelSize;
+            shadow += texture(spotShadowMaps, vec4(projCoords.xy + offset,
+                                                    float(shadowIdx), currentDepth));
+        }
+        shadow /= 16.0;
+    }
+
+    // Apply shadow strength
+    return mix(1.0, shadow, lighting.shadowStrength);
 }
 
 // Calculate Blinn-Phong lighting contribution
@@ -516,7 +634,13 @@ void main() {
             lighting.pointLights[i].linearAtten,
             lighting.pointLights[i].quadraticAtten);
 
-        result += calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess);
+        // Point light shadow (indices 0..N-1 have shadow maps)
+        float shadow = 1.0;
+        if (int(i) < lighting.pointShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+            shadow = calcPointShadow(fragWorldPos, int(i));
+        }
+
+        result += shadow * calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess);
     }
 
     // Process spot lights
@@ -548,7 +672,13 @@ void main() {
                 lighting.spotLights[i].linearAtten,
                 lighting.spotLights[i].quadraticAtten);
 
-            result += calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess);
+            // Spot light shadow (indices 0..N-1 have shadow maps)
+            float shadow = 1.0;
+            if (int(i) < lighting.spotShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                shadow = calcSpotShadow(fragWorldPos, int(i));
+            }
+
+            result += shadow * calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess);
         }
     }
 

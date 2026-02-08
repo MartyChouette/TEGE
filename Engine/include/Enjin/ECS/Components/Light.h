@@ -49,6 +49,10 @@ constexpr u32 MAX_DIRECTIONAL_LIGHTS = 4;
 constexpr u32 MAX_POINT_LIGHTS = 64;
 constexpr u32 MAX_SPOT_LIGHTS = 32;
 
+// Maximum shadow-casting point/spot lights (cubemap faces are expensive)
+constexpr u32 MAX_SHADOW_POINT_LIGHTS = 4;
+constexpr u32 MAX_SHADOW_SPOT_LIGHTS = 4;
+
 // GPU-side directional light data (aligned for UBO)
 struct alignas(16) DirectionalLightData {
     Math::Vector3 direction;
@@ -83,6 +87,16 @@ struct alignas(16) SpotLightData {
     f32 quadraticAttenuation;
 };
 
+// GPU shadow data SSBO for point/spot light shadow maps (binding 12)
+struct alignas(16) ShadowDataSSBO {
+    Math::Matrix4 pointFaceViewProj[MAX_SHADOW_POINT_LIGHTS * 6]; // 24 matrices
+    Math::Vector4 pointLightParams[MAX_SHADOW_POINT_LIGHTS];       // xyz=pos, w=range
+    Math::Matrix4 spotViewProj[MAX_SHADOW_SPOT_LIGHTS];             // 4 matrices
+    i32 pointShadowCount;
+    i32 spotShadowCount;
+    i32 _pad[2];
+};
+
 // Lighting uniform buffer object
 struct alignas(16) LightingUBO {
     // Scene ambient
@@ -106,6 +120,11 @@ struct alignas(16) LightingUBO {
     i32 shadowEnabled;                 // 1 = shadows enabled
     f32 shadowStrength;                // 0..1 shadow strength (0 = no shadow, 1 = full)
     f32 shadowMaxDistance;             // Maximum shadow distance (for fade-out)
+
+    // Point/spot shadow counts (how many UBO lights at indices 0..N-1 have shadow maps)
+    i32 pointShadowCount;
+    i32 spotShadowCount;
+    f32 _pointSpotPad[2];
 
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time

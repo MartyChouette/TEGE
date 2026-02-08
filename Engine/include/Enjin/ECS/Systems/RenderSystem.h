@@ -12,6 +12,8 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/RenderTarget.h"
 #include "Enjin/Renderer/ShadowMap.h"
+#include "Enjin/Renderer/PointLightShadowMap.h"
+#include "Enjin/Renderer/SpotLightShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
@@ -280,6 +282,43 @@ private:
     bool m_ShadowsEnabled = true;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending
+
+    // Point light shadow mapping (cubemap array, up to 4 lights)
+    std::unique_ptr<Renderer::PointLightShadowMap> m_PointShadowMap;
+    std::unique_ptr<Renderer::VulkanPipeline> m_PointShadowPipeline;
+
+    // Spot light shadow mapping (2D array, up to 4 lights)
+    std::unique_ptr<Renderer::SpotLightShadowMap> m_SpotShadowMap;
+    std::unique_ptr<Renderer::VulkanPipeline> m_SpotShadowPipeline;
+
+    // Shadow data SSBO (uploaded per-frame with point/spot view-proj matrices)
+    std::unique_ptr<Renderer::VulkanBuffer> m_ShadowDataBuffer;
+
+    // Per-frame selected shadow-casting point/spot lights (sorted to front of UBO arrays)
+    struct ShadowPointLight {
+        Entity entity;
+        Math::Vector3 position;
+        f32 range;
+        f32 score;
+    };
+    struct ShadowSpotLight {
+        Entity entity;
+        Math::Vector3 position;
+        Math::Vector3 direction;
+        f32 outerConeAngle;
+        f32 range;
+        f32 score;
+    };
+    std::vector<ShadowPointLight> m_ShadowPointLights;
+    std::vector<ShadowSpotLight> m_ShadowSpotLights;
+    u32 m_ActivePointShadowCount = 0;
+    u32 m_ActiveSpotShadowCount = 0;
+
+    void CreatePointShadowPipeline();
+    void CreateSpotShadowPipeline();
+    void RenderPointShadowPass();
+    void RenderSpotShadowPass();
+    void SelectShadowLights();
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
