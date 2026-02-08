@@ -692,6 +692,21 @@ void RenderSystem::Update(f32 deltaTime) {
             ENJIN_LOG_WARN(Renderer, "Scene has %u sprites without batch renderer — high draw call count",
                            m_SceneComposition.spriteCount);
         }
+        // Warn on ortho/perspective camera mixing
+        {
+            u32 perspCount = 0, orthoCount = 0;
+            for (Entity e : m_World->GetEntitiesWithComponent<CameraComponent>()) {
+                auto* cam = m_World->GetComponent<CameraComponent>(e);
+                if (!cam || !cam->isActive) continue;
+                if (cam->projectionType == ProjectionType::Perspective) perspCount++;
+                else orthoCount++;
+            }
+            if (perspCount > 0 && orthoCount > 0) {
+                ENJIN_LOG_WARN(Renderer,
+                    "Mixed camera projections: %u perspective + %u orthographic — may cause unexpected rendering",
+                    perspCount, orthoCount);
+            }
+        }
     }
 
     // Begin the main render pass (after any pre-passes like shadows)
@@ -2458,6 +2473,20 @@ void RenderSystem::UpdateFrameUniforms() {
     lighting.spotLightCount = 0;
     lighting._pad1 = 0;
 
+    // Scene2D fast path: skip light iteration, shadow data, wind — no consumers
+    if (m_SceneComposition.mode == SceneRenderMode::Scene2D) {
+        lighting.directionalLightCount = 0;
+        lighting.pointLightCount = 0;
+        lighting.spotLightCount = 0;
+        lighting.shadowEnabled = 0;
+        lighting.pointShadowCount = 0;
+        lighting.spotShadowCount = 0;
+        lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
+        lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
+        (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+        return;
+    }
+
     bool hasAnyLight = false;
 
     for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
@@ -3312,7 +3341,7 @@ void RenderSystem::RenderSprites() {
         // Determine lit mode: Scene2D = unlit, Scene2_5D/Scene3D = lit (sprites respond to lights)
         bool litMode = (m_SceneComposition.mode != SceneRenderMode::Scene2D);
 
-        auto textureBindCallback = [this](const std::string& texturePath) {
+        auto textureBindCallback = [this, litMode](const std::string& texturePath) {
             // Handle atlas sentinel — bind the packed atlas texture
             if (texturePath == "__atlas__" && m_SpriteAtlas && m_SpriteAtlas->IsValid()) {
                 UpdateTextureDescriptor(m_SpriteAtlas->GetAtlasTexture());
@@ -3322,8 +3351,8 @@ void RenderSystem::RenderSprites() {
                     UpdateTextureDescriptor(tex.get());
                 }
             }
-            // Bind default normal map (flat normal) for lit sprites at binding 6
-            if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+            // Bind default normal map only for lit sprites (binding 6 unused by unlit shader)
+            if (litMode && m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
                 UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
             }
         };
