@@ -147,6 +147,10 @@ Binding 6: Normal map (fragment shader)
 Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
 ```
 
+### Descriptor Set Caching
+
+Per-entity texture (bindings 3/5/6/8/9) and bone buffer (binding 7) descriptor writes are cached via `m_LastBound` state in `RenderSystem`. `UpdateEntityTextureDescriptors()` and `UpdateBoneDescriptor()` compare resolved pointers against the last-written state and skip `vkUpdateDescriptorSets` when unchanged. The main render loop sorts entities by `MaterialComponent::cachedTextureKey` (a pointer-tuple struct) so identical materials draw consecutively, maximizing cache hits. `m_LastBound.Reset()` is called at each render pass boundary (main pass, splitscreen viewports, RenderToTarget, RenderSplitscreen).
+
 ### Push Constants (128 bytes, per-object)
 
 ```cpp
@@ -312,7 +316,7 @@ The engine has 100+ completed features across these categories. See `docs/USER_M
 Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for detailed plans and solutions.
 
 - **P0:** `vkDeviceWaitIdle()` full GPU stalls on shader hot-reload; `GetAllEntities()` + filter pattern (O(n) vs O(k)); shadow pass iterates x4 cascades
-- **P1:** Per-entity `GetOrLoadTexture()` string hashing; per-entity `vkUpdateDescriptorSets()`
+- **P1:** Per-entity `GetOrLoadTexture()` string hashing (mitigated by texture pointer caching on MaterialComponent); ~~per-entity `vkUpdateDescriptorSets()`~~ (resolved — last-bound tracking + material sort)
 - **Quick wins:** Use `GetEntitiesWithComponent<T>()`, cache texture pointers on MaterialComponent, replace `vkDeviceWaitIdle()` with per-frame fence waits
 
 ## Roadmap
