@@ -47,6 +47,7 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
     }
 
     ImportStats stats;
+    stats.sourceFilePath = filepath;
 
     // Count scene-level totals
     stats.meshCount = static_cast<u32>(scene.meshes.size());
@@ -289,6 +290,7 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
         // Add skeleton component
         auto& skelComp = world->AddComponent<ECS::SkeletonComponent>(entity);
         skelComp.skeleton = skeleton;
+        skelComp.sourceAssetPath = stats.sourceFilePath;
 
         // Add animator component
         auto& animComp = world->AddComponent<ECS::AnimatorComponent>(entity);
@@ -410,6 +412,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
     }
 
     ImportStats stats;
+    stats.sourceFilePath = filepath;
 
     // Count scene-level totals
     stats.meshCount = static_cast<u32>(scene.meshes.size());

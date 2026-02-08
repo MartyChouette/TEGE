@@ -262,6 +262,11 @@ public:
     using EventCallback = std::function<void(const std::string&)>;
     void SetEventCallback(EventCallback callback) { m_OnEvent = callback; }
 
+    // Accessors for serialization
+    const std::unordered_map<std::string, SkeletalAnimation>& GetAnimations() const { return m_Animations; }
+    const std::string& GetCurrentAnimationName() const { return m_CurrentAnimName; }
+    std::shared_ptr<Skeleton> GetSharedSkeleton() const { return m_Skeleton; }
+
     // Bone manipulation (for IK, procedural animation)
     void SetBoneLocalRotation(const std::string& boneName, const Math::Quaternion& rotation);
     void SetBoneLocalPosition(const std::string& boneName, const Math::Vector3& position);

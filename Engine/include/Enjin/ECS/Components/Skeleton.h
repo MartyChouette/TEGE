@@ -11,6 +11,7 @@ namespace ECS {
 // Skeleton component - holds shared skeleton data for skinned meshes
 struct ENJIN_API SkeletonComponent : public IComponent {
     std::shared_ptr<Animation::Skeleton> skeleton;
+    std::string sourceAssetPath;  // Original glTF/FBX path for potential re-import
 };
 
 // Animator component - drives skeletal animation playback

@@ -65,6 +65,7 @@ public:
         std::vector<std::string> texturePathsResolved;
         std::vector<std::string> texturePathsMissing;
         std::vector<std::string> warnings;
+        std::string sourceFilePath;  // Original import file path for skeleton re-import
     };
 
 private:

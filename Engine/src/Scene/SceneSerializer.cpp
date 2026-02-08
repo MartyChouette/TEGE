@@ -27,6 +27,7 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
@@ -80,6 +81,19 @@ Math::Vector4 DeserializeVector4(const json& j) {
 Math::Quaternion DeserializeQuaternion(const json& j) {
     if (!j.is_array() || j.size() < 4) return Math::Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     return Math::Quaternion(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
+}
+
+json SerializeMatrix4(const Math::Matrix4& mat) {
+    json arr = json::array();
+    for (int i = 0; i < 16; ++i) arr.push_back(mat.m[i]);
+    return arr;
+}
+
+Math::Matrix4 DeserializeMatrix4(const json& j) {
+    Math::Matrix4 mat;
+    if (!j.is_array() || j.size() < 16) return mat;
+    for (int i = 0; i < 16; ++i) mat.m[i] = j[i].get<f32>();
+    return mat;
 }
 
 // Serialize components
@@ -3670,6 +3684,340 @@ ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
     return mp;
 }
 
+// ============================================================================
+// Skeleton & Animator serialization
+// ============================================================================
+
+json SerializeSkeletonComponent(const ECS::SkeletonComponent& skelComp) {
+    json j;
+    j["sourceAssetPath"] = skelComp.sourceAssetPath;
+
+    if (skelComp.skeleton) {
+        j["name"] = skelComp.skeleton->name;
+        json bonesArr = json::array();
+        for (const auto& bone : skelComp.skeleton->bones) {
+            json bj;
+            bj["name"] = bone.name;
+            bj["parentIndex"] = bone.parentIndex;
+            bj["bindPosition"] = SerializeVector3(bone.bindPosition);
+            bj["bindRotation"] = SerializeQuaternion(bone.bindRotation);
+            bj["bindScale"] = SerializeVector3(bone.bindScale);
+            bj["inverseBindMatrix"] = SerializeMatrix4(bone.inverseBindMatrix);
+            bonesArr.push_back(bj);
+        }
+        j["bones"] = bonesArr;
+    }
+    return j;
+}
+
+ECS::SkeletonComponent DeserializeSkeletonComponent(const json& j) {
+    ECS::SkeletonComponent skelComp;
+    if (j.contains("sourceAssetPath")) skelComp.sourceAssetPath = j["sourceAssetPath"].get<std::string>();
+
+    auto skeleton = std::make_shared<Animation::Skeleton>();
+    if (j.contains("name")) skeleton->name = j["name"].get<std::string>();
+
+    if (j.contains("bones") && j["bones"].is_array()) {
+        for (const auto& bj : j["bones"]) {
+            Animation::Bone bone;
+            if (bj.contains("name")) bone.name = bj["name"].get<std::string>();
+            if (bj.contains("parentIndex")) bone.parentIndex = bj["parentIndex"].get<i32>();
+            if (bj.contains("bindPosition")) bone.bindPosition = DeserializeVector3(bj["bindPosition"]);
+            if (bj.contains("bindRotation")) bone.bindRotation = DeserializeQuaternion(bj["bindRotation"]);
+            if (bj.contains("bindScale")) bone.bindScale = DeserializeVector3(bj["bindScale"]);
+            if (bj.contains("inverseBindMatrix")) bone.inverseBindMatrix = DeserializeMatrix4(bj["inverseBindMatrix"]);
+            skeleton->bones.push_back(bone);
+        }
+    }
+    skelComp.skeleton = skeleton;
+    return skelComp;
+}
+
+json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
+    json j;
+    const auto& animator = animComp.animator;
+
+    j["speed"] = animator.GetSpeed();
+    j["currentAnimation"] = animator.GetCurrentAnimationName();
+
+    // Serialize all animation clips
+    json animsObj = json::object();
+    for (const auto& [name, anim] : animator.GetAnimations()) {
+        json aj;
+        aj["duration"] = anim.duration;
+        aj["ticksPerSecond"] = anim.ticksPerSecond;
+        aj["playMode"] = static_cast<i32>(anim.playMode);
+
+        json tracksArr = json::array();
+        for (const auto& track : anim.tracks) {
+            json tj;
+            tj["boneName"] = track.boneName;
+            tj["boneIndex"] = track.boneIndex;
+
+            // Position keyframes
+            json posTimes = json::array();
+            for (f32 t : track.positionTimes) posTimes.push_back(t);
+            tj["positionTimes"] = posTimes;
+
+            json positions = json::array();
+            for (const auto& p : track.positions) positions.push_back(SerializeVector3(p));
+            tj["positions"] = positions;
+
+            // Rotation keyframes
+            json rotTimes = json::array();
+            for (f32 t : track.rotationTimes) rotTimes.push_back(t);
+            tj["rotationTimes"] = rotTimes;
+
+            json rotations = json::array();
+            for (const auto& r : track.rotations) rotations.push_back(SerializeQuaternion(r));
+            tj["rotations"] = rotations;
+
+            // Scale keyframes
+            json scaleTimes = json::array();
+            for (f32 t : track.scaleTimes) scaleTimes.push_back(t);
+            tj["scaleTimes"] = scaleTimes;
+
+            json scales = json::array();
+            for (const auto& s : track.scales) scales.push_back(SerializeVector3(s));
+            tj["scales"] = scales;
+
+            tracksArr.push_back(tj);
+        }
+        aj["tracks"] = tracksArr;
+
+        // Animation events
+        json eventsArr = json::array();
+        for (const auto& evt : anim.events) {
+            json ej;
+            ej["time"] = evt.time;
+            ej["name"] = evt.name;
+            eventsArr.push_back(ej);
+        }
+        aj["events"] = eventsArr;
+
+        animsObj[name] = aj;
+    }
+    j["animations"] = animsObj;
+
+    // Serialize state machine
+    const auto& sm = animComp.stateMachine;
+    json smJson;
+    smJson["defaultState"] = sm.GetDefaultState();
+
+    // States
+    json statesObj = json::object();
+    for (const auto& [name, state] : sm.GetStates()) {
+        json sj;
+        sj["animationName"] = state.animationName;
+        sj["speed"] = state.speed;
+        sj["playMode"] = static_cast<i32>(state.playMode);
+        sj["editorPosition"] = SerializeVector2(state.editorPosition);
+        statesObj[name] = sj;
+    }
+    smJson["states"] = statesObj;
+
+    // Transitions
+    json transArr = json::array();
+    for (const auto& trans : sm.GetTransitions()) {
+        json tj;
+        tj["fromState"] = trans.fromState;
+        tj["toState"] = trans.toState;
+        tj["blendTime"] = trans.blendTime;
+        tj["hasExitTime"] = trans.hasExitTime;
+        tj["exitTime"] = trans.exitTime;
+
+        json condArr = json::array();
+        for (const auto& cond : trans.conditions) {
+            json cj;
+            cj["parameterName"] = cond.parameterName;
+            cj["type"] = static_cast<i32>(cond.type);
+            cj["comparison"] = static_cast<i32>(cond.comparison);
+            switch (cond.type) {
+                case Animation::TransitionCondition::Type::Bool:
+                case Animation::TransitionCondition::Type::Trigger:
+                    cj["boolValue"] = cond.value.boolValue;
+                    break;
+                case Animation::TransitionCondition::Type::Float:
+                    cj["floatValue"] = cond.value.floatValue;
+                    break;
+                case Animation::TransitionCondition::Type::Int:
+                    cj["intValue"] = cond.value.intValue;
+                    break;
+            }
+            condArr.push_back(cj);
+        }
+        tj["conditions"] = condArr;
+        transArr.push_back(tj);
+    }
+    smJson["transitions"] = transArr;
+
+    // Parameters
+    json boolParams = json::object();
+    for (const auto& [k, v] : sm.GetBoolParams()) boolParams[k] = v;
+    smJson["boolParams"] = boolParams;
+
+    json floatParams = json::object();
+    for (const auto& [k, v] : sm.GetFloatParams()) floatParams[k] = v;
+    smJson["floatParams"] = floatParams;
+
+    json intParams = json::object();
+    for (const auto& [k, v] : sm.GetIntParams()) intParams[k] = v;
+    smJson["intParams"] = intParams;
+
+    j["stateMachine"] = smJson;
+
+    return j;
+}
+
+ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_ptr<Animation::Skeleton> skeleton) {
+    ECS::AnimatorComponent animComp;
+    if (skeleton) {
+        animComp.Initialize(skeleton);
+    }
+
+    f32 speed = 1.0f;
+    if (j.contains("speed")) speed = j["speed"].get<f32>();
+    animComp.animator.SetSpeed(speed);
+
+    // Deserialize animation clips
+    if (j.contains("animations") && j["animations"].is_object()) {
+        for (auto& [name, aj] : j["animations"].items()) {
+            Animation::SkeletalAnimation anim;
+            anim.name = name;
+            if (aj.contains("duration")) anim.duration = aj["duration"].get<f32>();
+            if (aj.contains("ticksPerSecond")) anim.ticksPerSecond = aj["ticksPerSecond"].get<f32>();
+            if (aj.contains("playMode")) anim.playMode = static_cast<Animation::PlayMode>(aj["playMode"].get<i32>());
+
+            if (aj.contains("tracks") && aj["tracks"].is_array()) {
+                for (const auto& tj : aj["tracks"]) {
+                    Animation::BoneTrack track;
+                    if (tj.contains("boneName")) track.boneName = tj["boneName"].get<std::string>();
+                    if (tj.contains("boneIndex")) track.boneIndex = tj["boneIndex"].get<i32>();
+
+                    // Position keyframes
+                    if (tj.contains("positionTimes") && tj["positionTimes"].is_array()) {
+                        for (const auto& t : tj["positionTimes"]) track.positionTimes.push_back(t.get<f32>());
+                    }
+                    if (tj.contains("positions") && tj["positions"].is_array()) {
+                        for (const auto& p : tj["positions"]) track.positions.push_back(DeserializeVector3(p));
+                    }
+
+                    // Rotation keyframes
+                    if (tj.contains("rotationTimes") && tj["rotationTimes"].is_array()) {
+                        for (const auto& t : tj["rotationTimes"]) track.rotationTimes.push_back(t.get<f32>());
+                    }
+                    if (tj.contains("rotations") && tj["rotations"].is_array()) {
+                        for (const auto& r : tj["rotations"]) track.rotations.push_back(DeserializeQuaternion(r));
+                    }
+
+                    // Scale keyframes
+                    if (tj.contains("scaleTimes") && tj["scaleTimes"].is_array()) {
+                        for (const auto& t : tj["scaleTimes"]) track.scaleTimes.push_back(t.get<f32>());
+                    }
+                    if (tj.contains("scales") && tj["scales"].is_array()) {
+                        for (const auto& s : tj["scales"]) track.scales.push_back(DeserializeVector3(s));
+                    }
+
+                    anim.tracks.push_back(track);
+                }
+            }
+
+            // Animation events
+            if (aj.contains("events") && aj["events"].is_array()) {
+                for (const auto& ej : aj["events"]) {
+                    Animation::SkeletalAnimation::AnimEvent evt;
+                    if (ej.contains("time")) evt.time = ej["time"].get<f32>();
+                    if (ej.contains("name")) evt.name = ej["name"].get<std::string>();
+                    anim.events.push_back(evt);
+                }
+            }
+
+            animComp.animator.AddAnimation(anim);
+        }
+    }
+
+    // Deserialize state machine
+    if (j.contains("stateMachine") && j["stateMachine"].is_object()) {
+        const auto& smJson = j["stateMachine"];
+
+        if (smJson.contains("defaultState"))
+            animComp.stateMachine.SetDefaultState(smJson["defaultState"].get<std::string>());
+
+        // States
+        if (smJson.contains("states") && smJson["states"].is_object()) {
+            for (auto& [name, sj] : smJson["states"].items()) {
+                Animation::AnimationState state;
+                state.name = name;
+                if (sj.contains("animationName")) state.animationName = sj["animationName"].get<std::string>();
+                if (sj.contains("speed")) state.speed = sj["speed"].get<f32>();
+                if (sj.contains("playMode")) state.playMode = static_cast<Animation::PlayMode>(sj["playMode"].get<i32>());
+                if (sj.contains("editorPosition")) state.editorPosition = DeserializeVector2(sj["editorPosition"]);
+                animComp.stateMachine.AddState(state);
+            }
+        }
+
+        // Transitions
+        if (smJson.contains("transitions") && smJson["transitions"].is_array()) {
+            for (const auto& tj : smJson["transitions"]) {
+                Animation::AnimationTransition trans;
+                if (tj.contains("fromState")) trans.fromState = tj["fromState"].get<std::string>();
+                if (tj.contains("toState")) trans.toState = tj["toState"].get<std::string>();
+                if (tj.contains("blendTime")) trans.blendTime = tj["blendTime"].get<f32>();
+                if (tj.contains("hasExitTime")) trans.hasExitTime = tj["hasExitTime"].get<bool>();
+                if (tj.contains("exitTime")) trans.exitTime = tj["exitTime"].get<f32>();
+
+                if (tj.contains("conditions") && tj["conditions"].is_array()) {
+                    for (const auto& cj : tj["conditions"]) {
+                        Animation::TransitionCondition cond;
+                        if (cj.contains("parameterName")) cond.parameterName = cj["parameterName"].get<std::string>();
+                        if (cj.contains("type")) cond.type = static_cast<Animation::TransitionCondition::Type>(cj["type"].get<i32>());
+                        if (cj.contains("comparison")) cond.comparison = static_cast<Animation::TransitionCondition::Comparison>(cj["comparison"].get<i32>());
+
+                        switch (cond.type) {
+                            case Animation::TransitionCondition::Type::Bool:
+                            case Animation::TransitionCondition::Type::Trigger:
+                                if (cj.contains("boolValue")) cond.value.boolValue = cj["boolValue"].get<bool>();
+                                break;
+                            case Animation::TransitionCondition::Type::Float:
+                                if (cj.contains("floatValue")) cond.value.floatValue = cj["floatValue"].get<f32>();
+                                break;
+                            case Animation::TransitionCondition::Type::Int:
+                                if (cj.contains("intValue")) cond.value.intValue = cj["intValue"].get<i32>();
+                                break;
+                        }
+                        trans.conditions.push_back(cond);
+                    }
+                }
+
+                animComp.stateMachine.AddTransition(trans);
+            }
+        }
+
+        // Parameters
+        if (smJson.contains("boolParams") && smJson["boolParams"].is_object()) {
+            for (auto& [k, v] : smJson["boolParams"].items())
+                animComp.stateMachine.SetBool(k, v.get<bool>());
+        }
+        if (smJson.contains("floatParams") && smJson["floatParams"].is_object()) {
+            for (auto& [k, v] : smJson["floatParams"].items())
+                animComp.stateMachine.SetFloat(k, v.get<f32>());
+        }
+        if (smJson.contains("intParams") && smJson["intParams"].is_object()) {
+            for (auto& [k, v] : smJson["intParams"].items())
+                animComp.stateMachine.SetInt(k, v.get<i32>());
+        }
+    }
+
+    // Restore current animation playback
+    std::string currentAnim;
+    if (j.contains("currentAnimation")) currentAnim = j["currentAnimation"].get<std::string>();
+    if (!currentAnim.empty() && animComp.animator.HasAnimation(currentAnim)) {
+        animComp.animator.Play(currentAnim);
+    }
+
+    return animComp;
+}
+
 } // anonymous namespace
 
 SceneSerializer::SceneSerializer(ECS::World* world)
@@ -3731,6 +4079,16 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
                 entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
+            }
+
+            if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
+                const auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
+                entityJson["skeleton"] = SerializeSkeletonComponent(*skel);
+            }
+
+            if (m_World->HasComponent<ECS::AnimatorComponent>(entity)) {
+                const auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
+                entityJson["animator"] = SerializeAnimatorComponent(*anim);
             }
 
             if (m_World->HasComponent<ECS::LightComponent>(entity)) {
@@ -4274,6 +4632,19 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 }
             }
 
+            // Skeleton must be deserialized before animator
+            std::shared_ptr<Animation::Skeleton> loadedSkeleton;
+            if (entityJson.contains("skeleton")) {
+                auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
+                loadedSkeleton = skelComp.skeleton;
+                m_World->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
+            }
+
+            if (entityJson.contains("animator")) {
+                auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
+                m_World->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
+            }
+
             if (entityJson.contains("light")) {
                 auto light = DeserializeLightComponent(entityJson["light"]);
                 m_World->AddComponent<ECS::LightComponent>(entity, light);
@@ -4721,6 +5092,16 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
                 const auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
                 entityJson["mesh"] = SerializeMeshComponent(*mesh, options.includeVertexData);
+            }
+
+            if (m_World->HasComponent<ECS::SkeletonComponent>(entity)) {
+                const auto* skel = m_World->GetComponent<ECS::SkeletonComponent>(entity);
+                entityJson["skeleton"] = SerializeSkeletonComponent(*skel);
+            }
+
+            if (m_World->HasComponent<ECS::AnimatorComponent>(entity)) {
+                const auto* anim = m_World->GetComponent<ECS::AnimatorComponent>(entity);
+                entityJson["animator"] = SerializeAnimatorComponent(*anim);
             }
 
             if (m_World->HasComponent<ECS::LightComponent>(entity)) {
@@ -5219,6 +5600,19 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 }
             }
 
+            // Skeleton must be deserialized before animator
+            std::shared_ptr<Animation::Skeleton> loadedSkeleton;
+            if (entityJson.contains("skeleton")) {
+                auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
+                loadedSkeleton = skelComp.skeleton;
+                m_World->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
+            }
+
+            if (entityJson.contains("animator")) {
+                auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
+                m_World->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
+            }
+
             if (entityJson.contains("light")) {
                 auto light = DeserializeLightComponent(entityJson["light"]);
                 m_World->AddComponent<ECS::LightComponent>(entity, light);
@@ -5646,6 +6040,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["material"] = SerializeMaterialComponent(*world->GetComponent<ECS::MaterialComponent>(entity));
         if (world->HasComponent<ECS::MeshComponent>(entity))
             entityJson["mesh"] = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), true);
+        if (world->HasComponent<ECS::SkeletonComponent>(entity))
+            entityJson["skeleton"] = SerializeSkeletonComponent(*world->GetComponent<ECS::SkeletonComponent>(entity));
+        if (world->HasComponent<ECS::AnimatorComponent>(entity))
+            entityJson["animator"] = SerializeAnimatorComponent(*world->GetComponent<ECS::AnimatorComponent>(entity));
         if (world->HasComponent<ECS::LightComponent>(entity))
             entityJson["light"] = SerializeLightComponent(*world->GetComponent<ECS::LightComponent>(entity));
         if (world->HasComponent<ECS::NotesComponent>(entity))
@@ -5890,6 +6288,17 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("mesh")) {
             world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(entityJson["mesh"]));
+        }
+        // Skeleton must be deserialized before animator
+        std::shared_ptr<Animation::Skeleton> loadedSkeleton;
+        if (entityJson.contains("skeleton")) {
+            auto skelComp = DeserializeSkeletonComponent(entityJson["skeleton"]);
+            loadedSkeleton = skelComp.skeleton;
+            world->AddComponent<ECS::SkeletonComponent>(entity, skelComp);
+        }
+        if (entityJson.contains("animator")) {
+            auto animComp = DeserializeAnimatorComponent(entityJson["animator"], loadedSkeleton);
+            world->AddComponent<ECS::AnimatorComponent>(entity, std::move(animComp));
         }
         if (entityJson.contains("light")) {
             world->AddComponent<ECS::LightComponent>(entity, DeserializeLightComponent(entityJson["light"]));
@@ -6146,6 +6555,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeMaterialComponent(*world->GetComponent<ECS::MaterialComponent>(entity));
         else if (key == "mesh" && world->HasComponent<ECS::MeshComponent>(entity))
             j = SerializeMeshComponent(*world->GetComponent<ECS::MeshComponent>(entity), true);
+        else if (key == "skeleton" && world->HasComponent<ECS::SkeletonComponent>(entity))
+            j = SerializeSkeletonComponent(*world->GetComponent<ECS::SkeletonComponent>(entity));
+        else if (key == "animator" && world->HasComponent<ECS::AnimatorComponent>(entity))
+            j = SerializeAnimatorComponent(*world->GetComponent<ECS::AnimatorComponent>(entity));
         else if (key == "light" && world->HasComponent<ECS::LightComponent>(entity))
             j = SerializeLightComponent(*world->GetComponent<ECS::LightComponent>(entity));
         else if (key == "notes" && world->HasComponent<ECS::NotesComponent>(entity))
@@ -6333,6 +6746,14 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "transform") { world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(j)); return true; }
         if (key == "material") { world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(j)); return true; }
         if (key == "mesh") { world->AddComponent<ECS::MeshComponent>(entity, DeserializeMeshComponent(j)); return true; }
+        if (key == "skeleton") { world->AddComponent<ECS::SkeletonComponent>(entity, DeserializeSkeletonComponent(j)); return true; }
+        if (key == "animator") {
+            std::shared_ptr<Animation::Skeleton> skel;
+            if (world->HasComponent<ECS::SkeletonComponent>(entity))
+                skel = world->GetComponent<ECS::SkeletonComponent>(entity)->skeleton;
+            world->AddComponent<ECS::AnimatorComponent>(entity, DeserializeAnimatorComponent(j, skel));
+            return true;
+        }
         if (key == "light") { world->AddComponent<ECS::LightComponent>(entity, DeserializeLightComponent(j)); return true; }
         if (key == "notes") { world->AddComponent<ECS::NotesComponent>(entity, DeserializeNotesComponent(j)); return true; }
         if (key == "text") { world->AddComponent<ECS::TextComponent>(entity, DeserializeTextComponent(j)); return true; }
