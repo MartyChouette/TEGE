@@ -147,6 +147,17 @@ Binding 6: Normal map (fragment shader)
 Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
 ```
 
+### Sprite Texture Atlas
+
+`SpriteTextureAtlas` auto-packs small sprite textures (<=512px) into a single 4096x4096 GPU texture at runtime using shelf packing. Owned by `RenderSystem` (`m_SpriteAtlas`), wired into `SpriteBatchRenderer` via `SetAtlas()`. Sprites sharing the atlas render in one instanced draw call instead of one per unique texture.
+
+- **Request/Build cycle:** `RenderSprites()` calls `RequestTexture()` for every sprite each frame (sets dirty flag on new paths), then `Build()` if dirty. Build loads pixels via stb_image, sorts by height descending, shelf-packs with 1px padding, uploads to GPU with `CLAMP_TO_EDGE` / no mipmaps.
+- **Batch key:** Atlased sprites use `"__atlas__"` as the effective texture key in `SpriteBatchRenderer::Render()`, grouping them into one batch. The texture bind callback in `RenderSprites()` handles the sentinel by binding `m_SpriteAtlas->GetAtlasTexture()`.
+- **UV remapping:** Per-instance UVs (including sprite sheet frame sub-rects) are linearly remapped into the atlas region: `uvOut = regionStart + uvIn * regionSize`.
+- **Exclusions:** Textures >512px, failed loads, or atlas overflow go into `m_ExcludedPaths` and fall back to individual draw calls.
+- **Hot-reload:** `m_SpriteAtlas->Invalidate()` is called in the texture FileWatcher callback, clearing regions/exclusions so the atlas rebuilds next frame with fresh pixel data.
+- **Files:** `Engine/include/Enjin/Effects/SpriteTextureAtlas.h`, `Engine/src/Effects/SpriteTextureAtlas.cpp`
+
 ### Descriptor Set Caching
 
 Per-entity texture (bindings 3/5/6/8/9) and bone buffer (binding 7) descriptor writes are cached via `m_LastBound` state in `RenderSystem`. `UpdateEntityTextureDescriptors()` and `UpdateBoneDescriptor()` compare resolved pointers against the last-written state and skip `vkUpdateDescriptorSets` when unchanged. The main render loop sorts entities by `MaterialComponent::cachedTextureKey` (a pointer-tuple struct) so identical materials draw consecutively, maximizing cache hits. `m_LastBound.Reset()` is called at each render pass boundary (main pass, splitscreen viewports, RenderToTarget, RenderSplitscreen).
@@ -300,7 +311,7 @@ The engine has 100+ completed features across these categories. See `docs/USER_M
 
 - **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings
 - **ECS & Editor:** 60+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 15 startup templates, entity visibility toggle
-- **2D:** Sprite rendering, tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
+- **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
 - **3D:** glTF/FBX/OBJ/DAE import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree), cubemap skybox
 - **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
@@ -326,7 +337,7 @@ See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, a
 **Key categories of planned work:**
 - **Editor Tools:** Project hub, accent color theming, template rebuild, extended model formats (PLY/VOX), drag-and-drop improvements
 - **Runtime Systems:** Improved physics (2D, CCD), networking, destructible environments, fluid simulation, SVG support
-- **Rendering & Performance:** Sprite batching, pipeline optimization, soft shadows
+- **Rendering & Performance:** ~~Sprite batching~~ (done — texture atlas auto-packing), pipeline optimization, soft shadows
 - **Procedural Generation:** Cellular automata, WFC, BSP, L-systems, Voronoi, custom flora assets
 - **Scripting:** Plugin DLL repositories, documentation generator, ScriptableObject/DataAsset system
 - **Platform:** Mobile (Android/iOS), console, VR/XR (OpenXR), WebAssembly (WebGPU)
