@@ -111,7 +111,7 @@ void RenderSystem::Initialize() {
 
     // Create point light shadow map (cubemap array for up to 4 point lights)
     m_PointShadowMap = std::make_unique<Renderer::PointLightShadowMap>(m_Renderer->GetContext());
-    if (!m_PointShadowMap->Initialize(512)) {
+    if (!m_PointShadowMap->Initialize(1024)) {
         ENJIN_LOG_WARN(Renderer, "Failed to initialize point light shadow map");
         m_PointShadowMap.reset();
     } else {
@@ -1813,8 +1813,8 @@ void RenderSystem::CreateShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 1.5f;
-    config.depthBiasSlope = 1.5f;
+    config.depthBiasConstant = 0.75f;
+    config.depthBiasSlope = 0.75f;
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -3446,8 +3446,8 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 2.0f;
-    config.depthBiasSlope = 2.0f;
+    config.depthBiasConstant = 0.5f;
+    config.depthBiasSlope = 0.5f;
     config.hasColorAttachment = false;
 
     m_PointShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -3470,8 +3470,8 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 1.5f;
-    config.depthBiasSlope = 1.5f;
+    config.depthBiasConstant = 0.5f;
+    config.depthBiasSlope = 0.5f;
     config.hasColorAttachment = false;
 
     m_SpotShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

@@ -6,7 +6,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
-- **Cascaded Shadow Maps** - 4-cascade CSM with PCF filtering, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle)
+- **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle)
 - **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping, receiveShadows toggle
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
@@ -15,14 +15,14 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Skybox** - Procedural gradient sky, solid color, or six-face cubemap with rotation and sun direction
 - **Vegetation** - Instanced grass, shrub, and tree rendering with wind sway
 - **Terrain** - 3D heightmap terrain with sculpting brushes (raise, lower, flatten, smooth, paint) and 2D polyline terrain with drag-to-edit control points
-- **Multiple Light Sources** - Directional, point, and spot lights
+- **Multiple Light Sources** - Directional, point, and spot lights with shadow support for all three types
 - **GPU Skinning** - Skeletal animation via bone matrix SSBO
 - **Wireframe Rendering** - Toggle wireframe mode with wide line support
 - **World Curvature** - Vertex-shader horizon bending effect
 - **Render-to-Texture** - Offscreen rendering for Game View with separate uniform buffers
 - **Per-Scene Render Settings** - Full rendering config per scene with project-level defaults and editor UI
 - **Particle System** - CPU particle simulation (5 emitter shapes, size/speed curves, gravity/drag) with GPU instanced billboard rendering
-- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, shadow strength, per-entity dither modes
+- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, shadow strength, per-entity dither modes, point/spot shadow light selection by intensity/distance scoring
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 
 ### Editor
@@ -189,6 +189,7 @@ enjin/
 - [x] Alpha cutoff / transparency support
 - [x] Multiple Light Sources (point, spot, directional)
 - [x] Cascaded Shadow Maps (4-cascade CSM with PCF, texel stabilization, distance fade, shadow dither)
+- [x] Point/Spot Light Shadow Maps (cubemap array for point, 2D array for spot, Poisson disk soft shadows)
 - [x] Texture Support (albedo, normal, height, metallic-roughness, emissive)
 - [x] Normal Mapping (tangent-space)
 - [x] Parallax Occlusion Mapping

@@ -382,7 +382,7 @@ Ideas for "simple creation of complex games":
 ### Recently Completed
 
 - **GPU Frustum Culling** — Integrated into render pipeline, skips off-screen entities before draw calls
-- **Shadow Pipeline Overhaul** — Back-face culling in shadow pass with pipeline depth bias (1.5/1.5), removed shader-side bias. Fixes ring-of-light under curved objects. Correct cascade frustum computation with world-space ray interpolation
+- **Shadow Pipeline Overhaul** — Back-face culling in shadow pass with pipeline depth bias (CSM 0.75/0.75, point 0.5/0.5, spot 0.5/0.5), removed shader-side bias. Fixes ring-of-light under curved objects. Correct cascade frustum computation with world-space ray interpolation
 - **Per-Entity Shadow Dither** — 3 modes (by darkness, distance, angle) using Bayer 4x4 matrix, packed in flag bits 14-15
 - **receiveShadows Flag** — Now checked in shader; entities can opt out of receiving shadows
 - **Shadow Caster Caching** — Pre-filtered shadow caster list avoids redundant iteration per cascade
@@ -390,7 +390,7 @@ Ideas for "simple creation of complex games":
 ### Recently Completed (cont.)
 
 - **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
-- **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (512² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
+- **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (1024² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
 
 ### Pending
 
