@@ -302,7 +302,7 @@ Ideas for "simple creation of complex games":
 | Visual Scripting (Phases 1-4) | Very High | High | P1 | ✅ Complete |
 | Project Hub enhancements | Medium | Medium | P1 | ✅ Complete |
 | Skybox rendering fixes | Medium | Low | P1 | ✅ Complete |
-| Skeleton/Animator serialization | High | High | P1 | Pending |
+| Skeleton/Animator serialization | High | High | P1 | ✅ Complete |
 | Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
 | Soft shadows (Poisson disk PCF) | Medium | Medium | P1 | ✅ Complete |
 | Sprite batching by texture atlas | High | Medium | P1 | Pending |
