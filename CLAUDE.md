@@ -126,6 +126,16 @@ Bitmask system: `categoryBits` (which groups it belongs to) and `collisionMask` 
 
 `ProjectMode` enum: `Mode2D`, `Mode3D`, `Mixed`. Stored in `.enjinproject`. Components tagged with `DimensionTag` (Any/Only2D/Only3D) for Add Component filtering. Grid orientation: 2D = XY plane, 3D/Mixed = XZ plane.
 
+### Scene Composition & 2D/3D Pipeline
+
+`ClassifySceneComposition()` runs each frame and classifies the scene as `SceneRenderMode::Scene2D`, `Scene2_5D`, or `Scene3D` based on entity types present. This drives automatic pipeline optimizations:
+
+- **Scene2D** (sprites/tilemaps only): Shadow passes (directional CSM, point, spot) are skipped entirely. `UpdateFrameUniforms()` early-returns after uploading a minimal LightingUBO (ambient/fog only, zero lights/shadows). Normal map descriptor writes (binding 6) are skipped in the unlit sprite texture bind callback.
+- **Scene2_5D** (sprites + lights, no 3D meshes): Shadows skipped, but full lighting UBO is populated so lit sprites respond to lights. Normal map descriptor is bound.
+- **Scene3D** (3D meshes present): Full pipeline — all shadow passes, lighting, normal maps.
+
+A diagnostic warning logs every 300 frames if active cameras have mixed projection types (perspective + orthographic).
+
 ### Renderer
 
 - **`VulkanContext`** - Vulkan instance, device, queues
