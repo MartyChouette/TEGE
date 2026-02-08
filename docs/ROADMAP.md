@@ -22,10 +22,6 @@ Replaced all `GetAllEntities()` + filter patterns with `GetEntitiesWithComponent
 
 Added `cachedBaseColorTexture`, `cachedHeightTexture`, `cachedNormalTexture`, `cachedMetallicRoughnessTexture`, `cachedEmissiveTexture` on `MaterialComponent`. Cache invalidated via `InvalidateTextureCache()` on path changes.
 
-#### 4. Per-Entity Descriptor Set Updates — ✅ RESOLVED
-
-Implemented last-bound tracking + material sort. `UpdateEntityTextureDescriptors()` and `UpdateBoneDescriptor()` compare resolved texture/bone pointers against `m_LastBound` state and skip `vkUpdateDescriptorSets` on match. Main render loop sorts entities by `cachedTextureKey` (pointer tuple) so identical materials draw consecutively. State reset at each render pass boundary. For 1000 entities with 20 unique materials: ~2000 calls → ~40 calls (~98% reduction).
-
 ### Medium Priority Optimizations
 
 #### 5. Redundant Component Lookups
@@ -298,7 +294,6 @@ Ideas for "simple creation of complex games":
 | Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
 | Soft shadows (Poisson disk PCF) | Medium | Medium | P1 | ✅ Complete |
 | Sprite batching by texture atlas | High | Medium | P1 | Pending |
-| Per-entity descriptor set caching | High | Medium | P1 | ✅ Complete |
 | Point/spot light shadows | Medium | High | P1 | ✅ Complete |
 | 2D sprite art pipeline | High | High | P1 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
@@ -320,7 +315,6 @@ Ideas for "simple creation of complex games":
 - Draw calls per frame
 - Entity iteration count per system per frame
 - Texture cache hit rate
-- Descriptor set update frequency
 
 ### Editor UX
 
@@ -382,7 +376,6 @@ Ideas for "simple creation of complex games":
 
 - **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
 - **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (1024² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
-- **Descriptor Set Caching** — Last-bound tracking + material sort skips redundant `vkUpdateDescriptorSets` calls (~98% reduction for scenes with shared materials)
 
 ### Pending
 
