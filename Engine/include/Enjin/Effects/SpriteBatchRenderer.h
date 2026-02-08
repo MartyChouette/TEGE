@@ -18,6 +18,8 @@
 namespace Enjin {
 namespace Effects {
 
+class SpriteTextureAtlas;  // Forward declaration
+
 // Per-instance sprite data uploaded to GPU each frame.
 // Matches the sprite.vert shader instance attribute layout (locations 2-7).
 struct SpriteInstanceData {
@@ -74,6 +76,9 @@ public:
                 u32 viewportHeight = 0,
                 bool litMode = false);
 
+    // Set the texture atlas for batching sprites with different textures into one draw call
+    void SetAtlas(SpriteTextureAtlas* atlas) { m_Atlas = atlas; }
+
 private:
     void CreateQuadBuffers();
     void CreateInstanceBuffer();
@@ -104,6 +109,9 @@ private:
 
     // Reusable instance data cache to avoid per-frame allocation
     std::vector<SpriteInstanceData> m_InstanceDataCache;
+
+    // Texture atlas for packing small sprites into a single draw call
+    SpriteTextureAtlas* m_Atlas = nullptr;
 
     bool m_Initialized = false;
 };

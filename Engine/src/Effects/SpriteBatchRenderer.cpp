@@ -1,4 +1,5 @@
 #include "Enjin/Effects/SpriteBatchRenderer.h"
+#include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -364,13 +365,20 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     if (sortedSprites.empty()) return;
 
     // Sort by sorting layer (ascending), then order in layer (ascending)
+    // Tertiary sort groups atlased sprites together (empty key sorts first)
+    SpriteTextureAtlas* atlas = m_Atlas;
     std::sort(sortedSprites.begin(), sortedSprites.end(),
-        [](const SpriteEntry& a, const SpriteEntry& b) {
+        [atlas](const SpriteEntry& a, const SpriteEntry& b) {
             if (a.sortingLayer != b.sortingLayer)
                 return a.sortingLayer < b.sortingLayer;
             if (a.orderInLayer != b.orderInLayer)
                 return a.orderInLayer < b.orderInLayer;
-            // Tertiary sort by texture path to maximize batching within same layer
+            // Tertiary sort by effective texture key to maximize batching within same layer
+            // Atlased sprites use empty key so they group together
+            bool aAtlased = atlas && atlas->GetRegion(a.sprite->texturePath);
+            bool bAtlased = atlas && atlas->GetRegion(b.sprite->texturePath);
+            if (aAtlased != bAtlased) return aAtlased;  // Atlased first
+            if (aAtlased) return false;  // Both atlased — equal
             return a.sprite->texturePath < b.sprite->texturePath;
         });
 
@@ -457,14 +465,16 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         const auto* transform = world->GetComponent<ECS::TransformComponent>(entry.entity);
         if (!transform) continue;
 
-        // Determine texture path for batching
+        // Determine effective texture for batching — atlased sprites share "__atlas__" key
         const std::string& texPath = sprite->texturePath;
+        const AtlasRegion* atlasRegion = m_Atlas ? m_Atlas->GetRegion(texPath) : nullptr;
+        std::string effectiveTexture = atlasRegion ? "__atlas__" : texPath;
 
-        // Flush when texture changes (but not on the first sprite)
-        if (texPath != currentTexture && m_InstanceDataCache.size() > batchStart) {
+        // Flush when effective texture changes (but not on the first sprite)
+        if (effectiveTexture != currentTexture && m_InstanceDataCache.size() > batchStart) {
             flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
         }
-        currentTexture = texPath;
+        currentTexture = effectiveTexture;
 
         // Build instance data from sprite + transform
         SpriteInstanceData inst{};
@@ -489,6 +499,16 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             inst.uvTop    = 0.0f;
             inst.uvRight  = 1.0f;
             inst.uvBottom = 1.0f;
+        }
+
+        // Remap UVs into atlas region if this sprite is atlased
+        if (atlasRegion) {
+            f32 rw = atlasRegion->uvRight - atlasRegion->uvLeft;
+            f32 rh = atlasRegion->uvBottom - atlasRegion->uvTop;
+            inst.uvLeft   = atlasRegion->uvLeft + inst.uvLeft * rw;
+            inst.uvTop    = atlasRegion->uvTop  + inst.uvTop  * rh;
+            inst.uvRight  = atlasRegion->uvLeft + inst.uvRight * rw;
+            inst.uvBottom = atlasRegion->uvTop  + inst.uvBottom * rh;
         }
 
         // Tint color and alpha

@@ -205,6 +205,15 @@ void RenderSystem::Initialize() {
         m_SpriteBatchRenderer.reset();
     }
 
+    // Initialize sprite texture atlas (auto-packs small sprites into one GPU texture)
+    m_SpriteAtlas = std::make_unique<Effects::SpriteTextureAtlas>();
+    if (m_SpriteAtlas->Initialize(m_Renderer->GetContext())) {
+        if (m_SpriteBatchRenderer) m_SpriteBatchRenderer->SetAtlas(m_SpriteAtlas.get());
+    } else {
+        ENJIN_LOG_WARN(Renderer, "SpriteTextureAtlas initialization failed, atlas packing disabled");
+        m_SpriteAtlas.reset();
+    }
+
     // Initialize skybox
     m_Skybox.Initialize(m_Renderer->GetContext());
     CreateSkyboxCubeVBO();
@@ -269,6 +278,7 @@ void RenderSystem::Shutdown() {
     m_GrassRenderer.reset();
     m_ShrubRenderer.reset();
     m_TreeRenderer.reset();
+    m_SpriteAtlas.reset();
     m_SpriteBatchRenderer.reset();
 
     // Clean up GPU culling system
@@ -3289,11 +3299,24 @@ void RenderSystem::RenderSprites() {
 
     // Render sprites via batch renderer (instanced draw calls grouped by texture)
     if (m_SpriteBatchRenderer) {
+        // Populate sprite texture atlas with all sprite textures before rendering
+        if (m_SpriteAtlas) {
+            for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
+                auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
+                if (sprite && !sprite->texturePath.empty())
+                    m_SpriteAtlas->RequestTexture(sprite->texturePath);
+            }
+            if (m_SpriteAtlas->IsDirty()) m_SpriteAtlas->Build();
+        }
+
         // Determine lit mode: Scene2D = unlit, Scene2_5D/Scene3D = lit (sprites respond to lights)
         bool litMode = (m_SceneComposition.mode != SceneRenderMode::Scene2D);
 
         auto textureBindCallback = [this](const std::string& texturePath) {
-            if (!texturePath.empty()) {
+            // Handle atlas sentinel — bind the packed atlas texture
+            if (texturePath == "__atlas__" && m_SpriteAtlas && m_SpriteAtlas->IsValid()) {
+                UpdateTextureDescriptor(m_SpriteAtlas->GetAtlasTexture());
+            } else if (!texturePath.empty()) {
                 auto tex = GetOrLoadTexture(texturePath);
                 if (tex && tex->IsValid()) {
                     UpdateTextureDescriptor(tex.get());
@@ -3678,6 +3701,8 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
                         }
                     }
                 }
+                // Invalidate sprite atlas so it rebuilds with the new texture data
+                if (m_SpriteAtlas) m_SpriteAtlas->Invalidate();
             }
         }
     });

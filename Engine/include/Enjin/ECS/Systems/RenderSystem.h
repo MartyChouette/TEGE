@@ -23,6 +23,7 @@
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
+#include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
 #include "Enjin/Effects/ShrubRenderer.h"
 #include "Enjin/Effects/TreeRenderer.h"
@@ -367,6 +368,7 @@ private:
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
     std::unique_ptr<Effects::SpriteBatchRenderer> m_SpriteBatchRenderer;
+    std::unique_ptr<Effects::SpriteTextureAtlas> m_SpriteAtlas;
 
     // Scene composition cache (auto-detected per frame, drives rendering decisions)
     SceneComposition m_SceneComposition;
