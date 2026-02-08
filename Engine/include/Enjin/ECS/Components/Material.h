@@ -60,6 +60,9 @@ struct MaterialComponent {
     bool gouraudOnly = false;
     u8 vertexSnapResolution = 160; // PS1-style grid resolution (80-320)
 
+    // Shadow dither mode: 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
+    u8 shadowDitherMode = 0;
+
     // Cached texture pointers (mutable - cache only, not part of component state)
     // Avoids per-frame string hash lookups in GetOrLoadTexture
     mutable Renderer::Texture* cachedBaseColorTexture = nullptr;
@@ -123,6 +126,8 @@ struct alignas(16) MaterialGPU {
         if (mat.stippleTransparency) gpu.flags |= (1 << 23);
         if (mat.uvQuantize) gpu.flags |= (1 << 12);
         if (mat.gouraudOnly) gpu.flags |= (1 << 13);
+        // Shadow dither mode packed into bits 14-15
+        gpu.flags |= (static_cast<i32>(mat.shadowDitherMode & 0x3) << 14);
         // Vertex snap resolution packed into bits 24-31
         gpu.flags |= (static_cast<i32>(mat.vertexSnapResolution) << 24);
 

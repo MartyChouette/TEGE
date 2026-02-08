@@ -4115,6 +4115,14 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         ImGui::Checkbox("Cast Shadows", &material->castShadows);
         ImGui::Checkbox("Receive Shadows", &material->receiveShadows);
 
+        // Shadow dither mode
+        const char* shadowDitherModes[] = { "None", "By Darkness", "By Distance", "By Angle" };
+        int currentDither = static_cast<int>(material->shadowDitherMode);
+        if (ImGui::Combo("Shadow Dither", &currentDither, shadowDitherModes, 4)) {
+            material->shadowDitherMode = static_cast<u8>(currentDither);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Apply dither pattern to shadows instead of smooth darkening");
+
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
         int currentMode = static_cast<int>(material->alphaMode);
@@ -8366,8 +8374,9 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), TMPL_2D },
         { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), TMPL_2D },
         { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), TMPL_MULTI },
+        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), TMPL_3D },
     };
-    constexpr int builtinCount = 29;
+    constexpr int builtinCount = 30;
 
     // === Project info section ===
     f32 formX = (std::max)(area.x * 0.5f - 300.0f, 60.0f);
@@ -8885,8 +8894,9 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
         { "vampsurvivor","Survivor-like", "Top-down auto-attack survivor with enemy waves, XP, and level-up choices.",                      ImVec4(0.1f, 0.7f, 0.5f, 1.0f) },
         { "roguelike",   "2D Rogue-like", "Grid-based dungeon crawling with random rooms, permadeath, and procedural loot.",                ImVec4(0.6f, 0.5f, 0.1f, 1.0f) },
         { "couchcoop",   "2P Couch Co-op","Splitscreen cooperative play for 2 players in a shared world.",                                  ImVec4(0.8f, 0.4f, 0.2f, 1.0f) },
+        { "shadowtest",  "Shadow Test",   "Shadow debugging scene with ground plane, objects, and directional light for verifying CSM.",    ImVec4(0.9f, 0.9f, 0.3f, 1.0f) },
     };
-    constexpr int templateCount = 29;
+    constexpr int templateCount = 30;
 
     if (templateIdx < 0 || templateIdx >= templateCount) return;
 
@@ -9275,6 +9285,14 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Top-down 3D: standard layout with scene list + skybox, moderate game view
         m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox |
                           EditorPanel::SceneList | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.16f;
+        m_Layout.rightWidth = 0.22f;
+        m_Layout.gameViewW = 650.0f;
+        m_Layout.gameViewH = 420.0f;
+    }
+    else if (templateId == "shadowtest") {
+        // Shadow test: simple layout, focus on scene viewport
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 650.0f;
@@ -15176,6 +15194,93 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& groups = m_SceneManager.GetCollisionGroupNames();
             groups[1] = "Players";
             groups[2] = "Enemies";
+        }
+    }
+
+    else if (templateId == "shadowtest") {
+        // === SHADOW TEST TEMPLATE ===
+        // Bright white ground so shadows are clearly visible
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            gt.scale = Math::Vector3(40.0f, 0.1f, 40.0f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+            gmat.roughness = 0.95f;
+            gmat.receiveShadows = true;
+            gmat.castShadows = false;
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Cube
+        {
+            ECS::Entity cube = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cube, "Cube");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cube);
+            ct.position = Math::Vector3(0.0f, 1.0f, 0.0f);
+            auto& cm = m_World->AddComponent<ECS::MaterialComponent>(cube);
+            cm.baseColor = Math::Vector3(0.8f, 0.2f, 0.2f);
+            cm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(cube, Renderer::MeshFactory::CreateCube(2.0f));
+        }
+
+        // Tall pillar
+        {
+            ECS::Entity pillar = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillar, "Pillar");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pillar);
+            pt.position = Math::Vector3(-4.0f, 2.0f, -2.0f);
+            pt.scale = Math::Vector3(0.5f, 4.0f, 0.5f);
+            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(pillar);
+            pm.baseColor = Math::Vector3(0.2f, 0.6f, 0.2f);
+            pm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(pillar, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Sphere
+        {
+            ECS::Entity sphere = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sphere, "Sphere");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(sphere);
+            st.position = Math::Vector3(4.0f, 1.0f, 2.0f);
+            auto& sm = m_World->AddComponent<ECS::MaterialComponent>(sphere);
+            sm.baseColor = Math::Vector3(0.2f, 0.3f, 0.9f);
+            sm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(sphere, Renderer::MeshFactory::CreateSphere(1.0f, 24, 16));
+        }
+
+        // Capsule (like a character)
+        {
+            ECS::Entity capsule = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(capsule, "Character");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(capsule);
+            ct.position = Math::Vector3(2.0f, 1.0f, -3.0f);
+            auto& cm = m_World->AddComponent<ECS::MaterialComponent>(capsule);
+            cm.baseColor = Math::Vector3(0.9f, 0.6f, 0.1f);
+            cm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(capsule, Renderer::MeshFactory::CreateCapsule(0.4f, 1.2f));
+        }
+
+        // Procedural skybox (daytime)
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.15f, 0.35f, 0.85f);
+            skyConfig.horizonColor = Math::Vector3(0.6f, 0.75f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.5f, 0.8f, 0.3f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings: shadows ON, low ambient to make shadows obvious
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.08f);
+
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
         }
     }
 

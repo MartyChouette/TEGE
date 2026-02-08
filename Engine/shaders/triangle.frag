@@ -121,6 +121,10 @@ layout(push_constant) uniform PushConstants {
 #define FLAG_UV_QUANTIZE        (1 << 12)
 #define FLAG_GOURAUD_ONLY       (1 << 13)
 
+// Shadow dither mode (bits 14-15): 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
+#define FLAG_SHADOW_DITHER_SHIFT 14
+#define FLAG_SHADOW_DITHER_MASK  (3 << FLAG_SHADOW_DITHER_SHIFT)
+
 // Base color texture sampler (binding 3)
 layout(binding = 3) uniform sampler2D baseColorTexture;
 
@@ -142,6 +146,7 @@ layout(binding = 9) uniform sampler2D emissiveMap;
 // Calculate cascaded shadow factor using PCF (Percentage Closer Filtering)
 float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) {
     if (lighting.shadowEnabled == 0) return 1.0;
+    if ((material.flags & FLAG_RECEIVE_SHADOWS) == 0) return 1.0;
 
     // Select cascade based on view-space depth
     int cascadeIdx = 3;  // default to furthest
@@ -164,11 +169,7 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
         return 1.0;
     }
 
-    // Per-cascade bias: larger cascades need larger bias (texels cover more world space)
-    float cascadeScale = float(1 << cascadeIdx);  // 1, 2, 4, 8
-    float bias = max(lighting.shadowBias * cascadeScale * (1.0 - dot(normal, lightDir)),
-                     lighting.shadowBias * cascadeScale * 0.1);
-    float currentDepth = projCoords.z - bias;
+    float currentDepth = projCoords.z;
 
     // PCF 3x3 on the texture array layer
     float shadow = 0.0;
@@ -442,6 +443,26 @@ void main() {
         float shadow = 1.0;
         if (i == 0u) {
             shadow = calcShadowCSM(fragViewDepth, fragWorldPos, normal, lightDir);
+
+            // Shadow dither: replace smooth shadow with binary dither pattern
+            int shadowDitherMode = (material.flags & FLAG_SHADOW_DITHER_MASK) >> FLAG_SHADOW_DITHER_SHIFT;
+            if (shadowDitherMode > 0 && shadow < 1.0) {
+                float ditherThreshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+                float ditherFactor;
+
+                if (shadowDitherMode == 1) {
+                    // By darkness: shadow factor drives dither density
+                    ditherFactor = shadow;
+                } else if (shadowDitherMode == 2) {
+                    // By distance: farther from camera = denser dithering
+                    ditherFactor = 1.0 - clamp(fragViewDepth / lighting.shadowMaxDistance, 0.0, 1.0);
+                } else {
+                    // By angle: grazing light angle = denser dithering
+                    ditherFactor = max(dot(normal, lightDir), 0.0);
+                }
+
+                shadow = (ditherFactor > ditherThreshold) ? 1.0 : (1.0 - lighting.shadowStrength);
+            }
         }
 
         result += shadow * calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess);

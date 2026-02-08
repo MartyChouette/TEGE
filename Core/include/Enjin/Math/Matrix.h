@@ -172,7 +172,7 @@ struct ENJIN_API Matrix4 {
         result.m[5] = -2.0f / (top - bottom);  // Negated for Vulkan (clip Y points down)
         result.m[10] = -1.0f / (farPlane - nearPlane);  // Vulkan depth [0,1]
         result.m[12] = -(right + left) / (right - left);
-        result.m[13] = -(top + bottom) / (top - bottom);
+        result.m[13] = (top + bottom) / (top - bottom);  // Positive: matches negated m[5] for Vulkan Y-flip
         result.m[14] = -nearPlane / (farPlane - nearPlane);  // Vulkan depth [0,1]
         return result;
     }

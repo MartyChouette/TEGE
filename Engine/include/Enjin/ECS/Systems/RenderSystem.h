@@ -265,6 +265,7 @@ private:
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_FragmentShader;
+    std::unique_ptr<Renderer::VulkanShader> m_ShadowVertexShader;
 
     // Line rendering (editor grid)
     std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
@@ -273,6 +274,7 @@ private:
     // Shadow mapping
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
+    Math::Matrix4 m_CurrentCascadeVP;  // Set per-cascade in RenderShadowPass, read by RenderEntityShadow
     bool m_ShadowsEnabled = true;
     f32 m_ShadowDistance = 100.0f;
     u32 m_PendingShadowResolution = 0; // 0 = no change pending

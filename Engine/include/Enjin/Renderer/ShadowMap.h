@@ -19,7 +19,7 @@ struct ShadowMapConfig {
     u32 cascadeCount = 4;        // Number of cascaded shadow maps
     f32 shadowDistance = 100.0f;  // Maximum shadow distance from camera
     f32 splitLambda = 0.75f;     // Log/linear split blend (0=linear, 1=logarithmic)
-    f32 depthBias = 0.005f;      // Depth bias to reduce shadow acne
+    f32 depthBias = 0.001f;      // Depth bias to reduce shadow acne
 };
 
 // Shadow map class - manages cascaded shadow depth textures and framebuffers

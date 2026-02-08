@@ -131,6 +131,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["uvQuantize"] = material.uvQuantize;
     j["gouraudOnly"] = material.gouraudOnly;
     j["vertexSnapResolution"] = material.vertexSnapResolution;
+    j["shadowDitherMode"] = material.shadowDitherMode;
     return j;
 }
 
@@ -283,6 +284,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("uvQuantize")) material.uvQuantize = j["uvQuantize"].get<bool>();
     if (j.contains("gouraudOnly")) material.gouraudOnly = j["gouraudOnly"].get<bool>();
     if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
+    if (j.contains("shadowDitherMode")) material.shadowDitherMode = j["shadowDitherMode"].get<u8>();
     return material;
 }
 

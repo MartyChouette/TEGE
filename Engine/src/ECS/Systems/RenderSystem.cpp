@@ -75,6 +75,14 @@ void RenderSystem::Initialize() {
         return;
     }
 
+    // Create shadow vertex shader (push-constant-based, avoids HOST_COHERENT UBO race)
+    m_ShadowVertexShader = std::make_unique<Renderer::VulkanShader>(m_Renderer->GetContext());
+    if (!m_ShadowVertexShader->LoadFromSPIRV(
+        reinterpret_cast<const u8*>(Renderer::ShaderData::ShadowVertexShaderData),
+        Renderer::ShaderData::ShadowVertexShaderDataSize)) {
+        ENJIN_LOG_WARN(Renderer, "Failed to load shadow vertex shader");
+    }
+
     // Create pipeline
     CreatePipeline();
 
@@ -332,7 +340,7 @@ void RenderSystem::ProcessPendingRecreation() {
             break;
         }
         case PendingRecreationType::ShadowShader:
-            m_VertexShader = std::move(m_PendingVertexShader);
+            m_ShadowVertexShader = std::move(m_PendingVertexShader);
             RecreatePipelines(true);
             ENJIN_LOG_INFO(Renderer, "Shader hot-reload: shadow vertex shader reloaded successfully");
             break;
@@ -1028,6 +1036,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+                pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
             } else {
@@ -1361,6 +1370,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+                pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
             } else {
@@ -1742,24 +1752,25 @@ void RenderSystem::CreatePipeline() {
 }
 
 void RenderSystem::CreateShadowPipeline() {
-    if (!m_ShadowMap || !m_Pipeline) return;
+    if (!m_ShadowMap || !m_Pipeline || !m_ShadowVertexShader) return;
 
     Renderer::PipelineConfig config;
     config.renderPass = m_ShadowMap->GetRenderPass();
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling reduces shadow acne
+    config.cullMode = VK_CULL_MODE_BACK_BIT;  // Back-face culling: front faces in shadow map for tight contact shadows
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
-    config.depthBiasConstant = 1.25f;
-    config.depthBiasSlope = 1.75f;
+    config.depthBiasConstant = 1.5f;
+    config.depthBiasSlope = 1.5f;
     config.hasColorAttachment = false;  // Depth-only pass
 
     m_ShadowPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
-    // Share descriptor set layout with main pipeline so we can use the same descriptor sets
-    if (!m_ShadowPipeline->CreateWithLayout(config, m_VertexShader.get(), nullptr,
+    // Shadow shader uses push constants for MVP (avoids HOST_COHERENT UBO race).
+    // Share descriptor set layout with main pipeline for compatibility.
+    if (!m_ShadowPipeline->CreateWithLayout(config, m_ShadowVertexShader.get(), nullptr,
             m_Pipeline->GetDescriptorSetLayout())) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create shadow pipeline");
         m_ShadowPipeline.reset();
@@ -2704,7 +2715,7 @@ void RenderSystem::ReloadShadowShaders() {
         return;
     }
 
-    // Shadow pipeline reuses m_VertexShader — defer swap and recreation to next frame start
+    // Defer swap to m_ShadowVertexShader and pipeline recreation to next frame start
     m_PendingVertexShader = std::move(tempVert);
     m_PendingRecreation = PendingRecreationType::ShadowShader;
 }
@@ -2860,6 +2871,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (material->stippleTransparency) pushConstants.flags |= (1 << 23);
         if (material->uvQuantize) pushConstants.flags |= (1 << 12);
         if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
+        pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
         pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
         pushConstants.parallaxScale = material->parallaxScale;
     } else {
@@ -3123,19 +3135,17 @@ void RenderSystem::RenderShadowPass() {
 
     // Render each cascade
     for (u32 cascade = 0; cascade < m_ShadowMap->GetCascadeCount(); ++cascade) {
-        // Upload the cascade's view-projection matrix to the UBO as view=Identity, proj=cascadeVP
-        // so the shadow vertex shader (which computes proj * view * model * pos) uses the cascade matrix
-        Renderer::UniformBufferObject shadowUbo{};
-        shadowUbo.view = Math::Matrix4::Identity();
-        shadowUbo.proj = m_ShadowMap->GetCascadeViewProj(cascade);
-        m_UniformBuffers[currentFrame]->UploadData(&shadowUbo, sizeof(shadowUbo));
+        // Store cascade VP for RenderEntityShadow to pre-multiply with model matrix.
+        // Push constants are embedded in the command buffer, so they're immune to
+        // the HOST_COHERENT UBO race that was causing empty shadow maps.
+        m_CurrentCascadeVP = m_ShadowMap->GetCascadeViewProj(cascade);
 
         m_ShadowMap->BeginCascadePass(commandBuffer, cascade);
 
         // Bind shadow pipeline
         m_ShadowPipeline->Bind(commandBuffer);
 
-        // Bind descriptor set for uniforms
+        // Bind descriptor set (pipeline layout requires it even though shadow shader doesn't use UBO)
         vkCmdBindDescriptorSets(
             commandBuffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -3192,9 +3202,11 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     EntityRenderData& renderData = it->second;
 
-    // Push model matrix only (shadow pass doesn't need material)
+    // Push pre-multiplied cascadeVP * model as the MVP matrix.
+    // The shadow vertex shader reads this from push constants (first 64 bytes),
+    // avoiding the HOST_COHERENT UBO race condition.
     Renderer::PushConstants pushConstants{};
-    pushConstants.model = transform->ToMatrix();
+    pushConstants.model = m_CurrentCascadeVP * transform->ToMatrix();
 
     vkCmdPushConstants(commandBuffer, m_ShadowPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);

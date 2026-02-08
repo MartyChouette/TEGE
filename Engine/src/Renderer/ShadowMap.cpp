@@ -417,34 +417,40 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
     // Compute inverse view-projection to get frustum corners in world space
     Math::Matrix4 invViewProj = (cameraProj * cameraView).Inverse();
 
+    // Unproject the 4 frustum rays at the actual near (z_ndc=0) and far (z_ndc=1) planes.
+    // We then interpolate linearly in world space for each cascade's split distances,
+    // which is correct because depth varies linearly along each camera ray.
+    // (Using linear depth fractions as NDC z is WRONG — perspective maps depth non-linearly.)
+    Math::Vector3 nearCorners[4], farCorners[4];
+    {
+        int idx = 0;
+        for (int y = 0; y < 2; ++y) {
+            for (int x = 0; x < 2; ++x) {
+                Math::Vector4 nearNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 0.0f, 1.0f);
+                Math::Vector4 farNdc(x * 2.0f - 1.0f, y * 2.0f - 1.0f, 1.0f, 1.0f);
+                Math::Vector4 nw = invViewProj * nearNdc;
+                Math::Vector4 fw = invViewProj * farNdc;
+                nearCorners[idx] = Math::Vector3(nw.x / nw.w, nw.y / nw.w, nw.z / nw.w);
+                farCorners[idx]  = Math::Vector3(fw.x / fw.w, fw.y / fw.w, fw.z / fw.w);
+                idx++;
+            }
+        }
+    }
+
     for (u32 cascade = 0; cascade < m_Config.cascadeCount; ++cascade) {
         f32 splitNear = (cascade == 0) ? cameraNear : m_CascadeSplits[cascade - 1];
         f32 splitFar = m_CascadeSplits[cascade];
 
-        // Convert split distances to normalized depth [0,1] (Vulkan depth range)
-        // For a perspective projection: z_ndc = (far * near) / (far - z * (far - near)) approximately
-        // We compute frustum corners by interpolating between near and far NDC corners
-        f32 nearNorm = (splitNear - cameraNear) / (cameraFar - cameraNear);
-        f32 farNorm = (splitFar - cameraNear) / (cameraFar - cameraNear);
+        // Linear interpolation fractions along the camera rays (world space)
+        f32 nearT = (splitNear - cameraNear) / (cameraFar - cameraNear);
+        f32 farT  = (splitFar  - cameraNear) / (cameraFar - cameraNear);
 
-        // 8 NDC corners of the sub-frustum
+        // 8 world-space corners of the cascade sub-frustum
         Math::Vector3 corners[8];
-        int idx = 0;
-        for (int z = 0; z < 2; ++z) {
-            f32 zNdc = (z == 0) ? nearNorm : farNorm;
-            for (int y = 0; y < 2; ++y) {
-                for (int x = 0; x < 2; ++x) {
-                    Math::Vector4 ndc(
-                        x * 2.0f - 1.0f,
-                        y * 2.0f - 1.0f,
-                        zNdc,
-                        1.0f
-                    );
-                    Math::Vector4 world = invViewProj * ndc;
-                    corners[idx] = Math::Vector3(world.x / world.w, world.y / world.w, world.z / world.w);
-                    idx++;
-                }
-            }
+        for (int i = 0; i < 4; ++i) {
+            Math::Vector3 ray = farCorners[i] - nearCorners[i];
+            corners[i]     = nearCorners[i] + ray * nearT;
+            corners[i + 4] = nearCorners[i] + ray * farT;
         }
 
         // Compute frustum center
@@ -460,7 +466,7 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
         if (std::abs(lightDirN.Dot(lightUp)) > 0.99f) {
             lightUp = Math::Vector3(0.0f, 0.0f, 1.0f);
         }
-        Math::Matrix4 lightView = Math::Matrix4::LookAt(center + lightDirN * 50.0f, center, lightUp);
+        Math::Matrix4 lightView = Math::Matrix4::LookAt(center - lightDirN * 50.0f, center, lightUp);
 
         // Transform frustum corners to light space and compute AABB
         f32 minX = 1e9f, maxX = -1e9f;
@@ -491,8 +497,18 @@ void ShadowMap::UpdateCascades(const Math::Matrix4& cameraView, const Math::Matr
             maxY = std::floor(maxY / worldUnitsPerTexel) * worldUnitsPerTexel;
         }
 
-        // Build orthographic projection
-        Math::Matrix4 lightProj = Math::Matrix4::Orthographic(minX, maxX, minY, maxY, minZ, maxZ);
+        // Build orthographic projection directly from light-space AABB bounds.
+        // We bypass Math::Matrix4::Orthographic() because it applies a Vulkan Y-flip
+        // (m[5] negated) without adjusting the m[13] translation, which clips geometry
+        // for non-centered AABBs. Shadow maps are offscreen and don't need Y-flip.
+        // Depth maps to Vulkan [0,1]: z_view=maxZ (closest to light) → 0, z_view=minZ → 1.
+        Math::Matrix4 lightProj = Math::Matrix4::Identity();
+        lightProj.m[0]  =  2.0f / (maxX - minX);
+        lightProj.m[5]  =  2.0f / (maxY - minY);
+        lightProj.m[10] = -1.0f / (maxZ - minZ);
+        lightProj.m[12] = -(maxX + minX) / (maxX - minX);
+        lightProj.m[13] = -(maxY + minY) / (maxY - minY);
+        lightProj.m[14] =  maxZ / (maxZ - minZ);
 
         m_CascadeViewProj[cascade] = lightProj * lightView;
     }
