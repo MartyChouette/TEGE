@@ -22,17 +22,9 @@ Replaced all `GetAllEntities()` + filter patterns with `GetEntitiesWithComponent
 
 Added `cachedBaseColorTexture`, `cachedHeightTexture`, `cachedNormalTexture`, `cachedMetallicRoughnessTexture`, `cachedEmissiveTexture` on `MaterialComponent`. Cache invalidated via `InvalidateTextureCache()` on path changes.
 
-#### 4. Per-Entity Descriptor Set Updates (HIGH)
+#### 4. Per-Entity Descriptor Set Updates — ✅ RESOLVED
 
-**Problem:** `vkUpdateDescriptorSets()` called per-entity when texture changes.
-
-**Location:** RenderSystem.cpp:3008
-
-**Solution:**
-- Pre-allocate descriptor sets per unique material/texture combination
-- Use descriptor set caching by material hash
-- Batch descriptor updates once per frame instead of per-entity
-- Consider dynamic descriptor indexing (Vulkan 1.2+)
+Implemented last-bound tracking + material sort. `UpdateEntityTextureDescriptors()` and `UpdateBoneDescriptor()` compare resolved texture/bone pointers against `m_LastBound` state and skip `vkUpdateDescriptorSets` on match. Main render loop sorts entities by `cachedTextureKey` (pointer tuple) so identical materials draw consecutively. State reset at each render pass boundary. For 1000 entities with 20 unique materials: ~2000 calls → ~40 calls (~98% reduction).
 
 ### Medium Priority Optimizations
 
@@ -306,7 +298,7 @@ Ideas for "simple creation of complex games":
 | Visual Scripting (Phase 5+) | High | Medium | P1 | Pending |
 | Soft shadows (Poisson disk PCF) | Medium | Medium | P1 | ✅ Complete |
 | Sprite batching by texture atlas | High | Medium | P1 | Pending |
-| Per-entity descriptor set caching | High | Medium | P1 | Pending |
+| Per-entity descriptor set caching | High | Medium | P1 | ✅ Complete |
 | Point/spot light shadows | Medium | High | P1 | ✅ Complete |
 | 2D sprite art pipeline | High | High | P1 | Pending |
 | AI Behavior Tree Editor | High | Medium | P2 | Pending |
@@ -390,12 +382,12 @@ Ideas for "simple creation of complex games":
 
 - **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
 - **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (1024² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
+- **Descriptor Set Caching** — Last-bound tracking + material sort skips redundant `vkUpdateDescriptorSets` calls (~98% reduction for scenes with shared materials)
 
 ### Pending
 
 - **3D/2D Pipeline Audit** — Auto-disable shadow pass for 2D-only scenes, sprite batching by texture atlas (biggest 2D perf win), warn on ortho/perspective mixing, flat shading fast path for sprites
 - **Pipeline Optimization** — Multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling
-- **Descriptor Set Caching** — Pre-allocate descriptor sets per unique material/texture combo, batch updates once per frame
 
 ---
 
