@@ -268,6 +268,34 @@ struct VehicleController : public CharacterControllerBase {
     bool handbrake = false;
 };
 
+// Surface Aligned Controller (spherical/planet gravity, Super Mario Galaxy style)
+struct SurfaceAlignedController : public CharacterControllerBase {
+    // Movement
+    f32 acceleration = 30.0f;
+    f32 deceleration = 25.0f;
+    f32 jumpForce = 10.0f;
+
+    // Camera orbit
+    f32 cameraDistance = 8.0f;
+    f32 cameraHeight = 3.0f;
+    f32 cameraPitch = 20.0f;
+    f32 cameraYaw = 0.0f;
+    f32 cameraMinPitch = -30.0f;
+    f32 cameraMaxPitch = 60.0f;
+    f32 cameraSensitivity = 0.15f;
+    f32 cameraLerpSpeed = 15.0f;
+
+    // Surface alignment
+    f32 alignSpeed = 8.0f;             // Slerp rate toward surface normal
+    f32 groundCheckDistance = 1.5f;     // Distance to check for ground
+
+    // State
+    Math::Vector3 localUp = Math::Vector3(0.0f, 1.0f, 0.0f);
+    Math::Quaternion surfaceRotation;
+    bool isJumping = false;
+    bool isFalling = false;
+};
+
 // Possessable component — allows the player to switch which entity they control
 struct PossessableComponent {
     bool isPossessed = false;        // Currently controlled by the player

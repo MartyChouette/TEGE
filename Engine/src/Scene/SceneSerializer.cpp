@@ -1014,6 +1014,43 @@ ECS::VehicleController DeserializeVehicle(const json& j) {
     return ctrl;
 }
 
+json SerializeSurfaceAligned(const ECS::SurfaceAlignedController& ctrl) {
+    json j = SerializeControllerBase(ctrl);
+    j["acceleration"] = ctrl.acceleration;
+    j["deceleration"] = ctrl.deceleration;
+    j["jumpForce"] = ctrl.jumpForce;
+    j["cameraDistance"] = ctrl.cameraDistance;
+    j["cameraHeight"] = ctrl.cameraHeight;
+    j["cameraPitch"] = ctrl.cameraPitch;
+    j["cameraYaw"] = ctrl.cameraYaw;
+    j["cameraMinPitch"] = ctrl.cameraMinPitch;
+    j["cameraMaxPitch"] = ctrl.cameraMaxPitch;
+    j["cameraSensitivity"] = ctrl.cameraSensitivity;
+    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
+    j["alignSpeed"] = ctrl.alignSpeed;
+    j["groundCheckDistance"] = ctrl.groundCheckDistance;
+    return j;
+}
+
+ECS::SurfaceAlignedController DeserializeSurfaceAligned(const json& j) {
+    ECS::SurfaceAlignedController ctrl;
+    DeserializeControllerBase(j, ctrl);
+    if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
+    if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
+    if (j.contains("jumpForce")) ctrl.jumpForce = j["jumpForce"].get<f32>();
+    if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
+    if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
+    if (j.contains("cameraPitch")) ctrl.cameraPitch = j["cameraPitch"].get<f32>();
+    if (j.contains("cameraYaw")) ctrl.cameraYaw = j["cameraYaw"].get<f32>();
+    if (j.contains("cameraMinPitch")) ctrl.cameraMinPitch = j["cameraMinPitch"].get<f32>();
+    if (j.contains("cameraMaxPitch")) ctrl.cameraMaxPitch = j["cameraMaxPitch"].get<f32>();
+    if (j.contains("cameraSensitivity")) ctrl.cameraSensitivity = j["cameraSensitivity"].get<f32>();
+    if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
+    if (j.contains("alignSpeed")) ctrl.alignSpeed = j["alignSpeed"].get<f32>();
+    if (j.contains("groundCheckDistance")) ctrl.groundCheckDistance = j["groundCheckDistance"].get<f32>();
+    return ctrl;
+}
+
 json SerializePossessable(const ECS::PossessableComponent& comp) {
     json j;
     j["isPossessed"] = comp.isPossessed;
@@ -4531,6 +4568,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::VehicleController>(entity)) {
                 entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
             }
+            if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
+                entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
+            }
             if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
                 entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
             }
@@ -5105,6 +5145,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("vehicle")) {
                 m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
             }
+            if (entityJson.contains("surfaceAligned")) {
+                m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
+            }
             if (entityJson.contains("possessable")) {
                 m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
             }
@@ -5583,6 +5626,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::VehicleController>(entity)) {
                 entityJson["vehicle"] = SerializeVehicle(*m_World->GetComponent<ECS::VehicleController>(entity));
+            }
+            if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
+                entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
             }
             if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
                 entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
@@ -6113,6 +6159,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("vehicle")) {
                 m_World->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
             }
+            if (entityJson.contains("surfaceAligned")) {
+                m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
+            }
             if (entityJson.contains("possessable")) {
                 m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
             }
@@ -6516,6 +6565,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["firstPerson"] = SerializeFirstPerson(*world->GetComponent<ECS::FirstPersonController>(entity));
         if (world->HasComponent<ECS::VehicleController>(entity))
             entityJson["vehicle"] = SerializeVehicle(*world->GetComponent<ECS::VehicleController>(entity));
+        if (world->HasComponent<ECS::SurfaceAlignedController>(entity))
+            entityJson["surfaceAligned"] = SerializeSurfaceAligned(*world->GetComponent<ECS::SurfaceAlignedController>(entity));
         if (world->HasComponent<ECS::PossessableComponent>(entity))
             entityJson["possessable"] = SerializePossessable(*world->GetComponent<ECS::PossessableComponent>(entity));
         // Puzzle
@@ -6798,6 +6849,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(entityJson["firstPerson"]));
         if (entityJson.contains("vehicle"))
             world->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
+        if (entityJson.contains("surfaceAligned"))
+            world->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
         if (entityJson.contains("possessable"))
             world->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
         // Puzzle
@@ -7053,6 +7106,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeFirstPerson(*world->GetComponent<ECS::FirstPersonController>(entity));
         else if (key == "vehicle" && world->HasComponent<ECS::VehicleController>(entity))
             j = SerializeVehicle(*world->GetComponent<ECS::VehicleController>(entity));
+        else if (key == "surfaceAligned" && world->HasComponent<ECS::SurfaceAlignedController>(entity))
+            j = SerializeSurfaceAligned(*world->GetComponent<ECS::SurfaceAlignedController>(entity));
         else if (key == "possessable" && world->HasComponent<ECS::PossessableComponent>(entity))
             j = SerializePossessable(*world->GetComponent<ECS::PossessableComponent>(entity));
         else if (key == "lock" && world->HasComponent<ECS::LockComponent>(entity))
@@ -7236,6 +7291,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "thirdPerson") { world->AddComponent<ECS::ThirdPersonController>(entity, DeserializeThirdPerson(j)); return true; }
         if (key == "firstPerson") { world->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(j)); return true; }
         if (key == "vehicle") { world->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(j)); return true; }
+        if (key == "surfaceAligned") { world->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(j)); return true; }
         if (key == "possessable") { world->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(j)); return true; }
         if (key == "lock") { world->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(j)); return true; }
         if (key == "pushable") { world->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(j)); return true; }

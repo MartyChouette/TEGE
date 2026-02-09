@@ -141,6 +141,18 @@ void ControllerSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Update all Surface Aligned controllers (planet gravity)
+    for (Entity entity : m_World->GetEntitiesWithComponent<SurfaceAlignedController>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        if (!transform) continue;
+        auto* possess = m_World->GetComponent<PossessableComponent>(entity);
+        if (possess && !possess->isPossessed) continue;
+        auto* controller = m_World->GetComponent<SurfaceAlignedController>(entity);
+        if (controller->isEnabled) {
+            UpdateSurfaceAligned(entity, *controller, *transform, deltaTime);
+        }
+    }
+
     // Update all Vehicle controllers
     for (Entity entity : m_World->GetEntitiesWithComponent<VehicleController>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -1476,6 +1488,195 @@ void ControllerSystem::UpdateVehicle(Entity entity, VehicleController& ctrl, Tra
         );
 
         UpdateGameCameraTransform(newCamPos, lookTarget, Math::Vector3(0, 1, 0));
+    }
+}
+
+void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedController& ctrl, TransformComponent& transform, f32 dt) {
+    (void)entity;
+
+    // Find the highest-priority overlapping GravityZoneComponent (Point mode)
+    Math::Vector3 gravity(0.0f, -9.81f, 0.0f);
+    if (m_World) {
+        i32 bestPriority = -1;
+        for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
+            auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
+            if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
+            auto* zt = m_World->GetComponent<TransformComponent>(zone);
+            if (!zt) continue;
+            if (gz->ContainsPoint(zt->position, transform.position) && gz->priority > bestPriority) {
+                gravity = gz->GetGravityAt(zt->position, transform.position);
+                bestPriority = gz->priority;
+            }
+        }
+    }
+
+    // Compute local up from gravity direction
+    f32 gravLen = gravity.Length();
+    if (gravLen > 0.001f) {
+        ctrl.localUp = gravity * (-1.0f / gravLen);
+    }
+
+    // Build target surface rotation: align Y axis to localUp
+    // Use Quaternion::FromToRotation to rotate from world up to localUp
+    Math::Quaternion targetRot = Math::Quaternion::FromToRotation(
+        Math::Vector3(0.0f, 1.0f, 0.0f), ctrl.localUp);
+    // Slerp toward target rotation
+    f32 slerpT = 1.0f - std::exp(-ctrl.alignSpeed * dt);
+    ctrl.surfaceRotation = Math::Quaternion::Slerp(ctrl.surfaceRotation, targetRot, slerpT);
+    ctrl.surfaceRotation = ctrl.surfaceRotation.Normalized();
+
+    // Camera input: mouse/gamepad -> cameraYaw/cameraPitch (same as ThirdPerson)
+    if (!ctrl.disableMouseLook) {
+        if (Input::IsMouseCaptured() || Input::IsMouseButtonDown(MouseButton::Right)) {
+            Math::Vector2 mouseDelta = Input::GetMouseDelta();
+            ctrl.cameraYaw += mouseDelta.x * ctrl.cameraSensitivity;
+            ctrl.cameraPitch -= mouseDelta.y * ctrl.cameraSensitivity;
+            ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
+        }
+
+        if (ctrl.useGamepad && Input::IsGamepadConnected(ctrl.gamepadIndex)) {
+            Math::Vector2 rightStick = Input::GetGamepadRightStick(ctrl.gamepadIndex);
+            if (rightStick.x != 0.0f || rightStick.y != 0.0f) {
+                ctrl.cameraYaw += rightStick.x * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraPitch -= rightStick.y * ctrl.gamepadLookSensitivity * 100.0f * dt;
+                ctrl.cameraPitch = Math::Clamp(ctrl.cameraPitch, ctrl.cameraMinPitch, ctrl.cameraMaxPitch);
+            }
+        }
+    }
+
+    // Movement input
+    Math::Vector2 input = GetMovementInput(ctrl);
+
+    // Build tangent frame from surfaceRotation
+    Math::Matrix4 rotMat = ctrl.surfaceRotation.ToMatrix();
+    Math::Vector3 surfaceRight(rotMat.m[0], rotMat.m[1], rotMat.m[2]);
+    Math::Vector3 surfaceForward(rotMat.m[8], rotMat.m[9], rotMat.m[10]);
+
+    // Rotate tangent frame by camera yaw
+    f32 yawRad = Math::Radians(ctrl.cameraYaw);
+    f32 cosYaw = Math::Cos(yawRad);
+    f32 sinYaw = Math::Sin(yawRad);
+    Math::Vector3 forward = surfaceForward * (-cosYaw) + surfaceRight * (-sinYaw);
+    Math::Vector3 right = surfaceForward * sinYaw + surfaceRight * (-cosYaw);
+
+    // Compute movement direction on surface
+    Math::Vector3 moveDir = forward * input.y + right * input.x;
+    f32 moveMag = moveDir.Length();
+    if (moveMag > 1.0f) {
+        moveDir = moveDir * (1.0f / moveMag);
+        moveMag = 1.0f;
+    }
+
+    // Speed
+    f32 speed = ctrl.moveSpeed;
+    if (IsSprintHeld() && moveMag > 0.1f) {
+        speed *= ctrl.sprintMultiplier;
+    }
+
+    // Apply horizontal movement (tangent to surface)
+    Math::Vector3 targetVel = moveDir * speed;
+    if (moveMag > 0.01f) {
+        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVel.x, ctrl.acceleration * dt);
+        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, targetVel.y, ctrl.acceleration * dt);
+        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVel.z, ctrl.acceleration * dt);
+    } else {
+        ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, ctrl.deceleration * dt);
+        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, 0.0f, ctrl.deceleration * dt);
+        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, ctrl.deceleration * dt);
+    }
+
+    // Jump along localUp
+    if (IsJumpPressed() && ctrl.isGrounded) {
+        ctrl.velocity = ctrl.velocity + ctrl.localUp * ctrl.jumpForce;
+        ctrl.isJumping = true;
+        ctrl.isGrounded = false;
+    }
+
+    // Apply gravity
+    if (!ctrl.isGrounded) {
+        ctrl.velocity = ctrl.velocity + gravity * dt;
+        ctrl.isFalling = (ctrl.velocity.x * ctrl.localUp.x +
+                          ctrl.velocity.y * ctrl.localUp.y +
+                          ctrl.velocity.z * ctrl.localUp.z) < 0.0f;
+    }
+
+    // Apply velocity to position
+    transform.position = transform.position + ctrl.velocity * dt;
+
+    // Ground check: find nearest gravity zone center and check distance to planet surface
+    ctrl.isGrounded = false;
+    if (m_World) {
+        for (Entity zone : m_World->GetEntitiesWithComponent<GravityZoneComponent>()) {
+            auto* gz = m_World->GetComponent<GravityZoneComponent>(zone);
+            if (!gz || !gz->isActive || gz->mode != GravityZoneMode::Point) continue;
+            auto* zt = m_World->GetComponent<TransformComponent>(zone);
+            if (!zt) continue;
+            if (!gz->ContainsPoint(zt->position, transform.position)) continue;
+
+            // Approximate planet radius as the zone's X half-extent minus some margin
+            // The player stands on the surface when distance ~ halfExtents.x (sphere shape)
+            f32 planetRadius = gz->halfExtents.x * 0.4f; // inner solid surface
+            Math::Vector3 toCenter = zt->position - transform.position;
+            f32 dist = toCenter.Length();
+            f32 surfaceDist = dist - planetRadius;
+
+            if (surfaceDist <= ctrl.groundCheckDistance) {
+                // Snap to surface
+                f32 upVel = ctrl.velocity.x * ctrl.localUp.x +
+                            ctrl.velocity.y * ctrl.localUp.y +
+                            ctrl.velocity.z * ctrl.localUp.z;
+                if (upVel <= 0.0f) {
+                    // Remove velocity component along localUp (stop falling)
+                    ctrl.velocity = ctrl.velocity - ctrl.localUp * upVel;
+                    // Snap position to surface
+                    if (dist > 0.001f) {
+                        Math::Vector3 dir = toCenter * (1.0f / dist);
+                        transform.position = zt->position - dir * planetRadius;
+                    }
+                    ctrl.isGrounded = true;
+                    ctrl.isJumping = false;
+                    ctrl.isFalling = false;
+                }
+            }
+            break; // Use first matching zone
+        }
+    }
+
+    // Orient entity to surface (feet on ground)
+    // Compose: surfaceRotation * yaw rotation for character facing
+    if (moveMag > 0.1f) {
+        f32 moveAngle = Math::Atan2(
+            moveDir.x * surfaceRight.x + moveDir.y * surfaceRight.y + moveDir.z * surfaceRight.z,
+            moveDir.x * surfaceForward.x + moveDir.y * surfaceForward.y + moveDir.z * surfaceForward.z);
+        Math::Quaternion faceRot(ctrl.localUp, -moveAngle);
+        transform.rotation = (ctrl.surfaceRotation * faceRot).Normalized();
+    } else {
+        transform.rotation = ctrl.surfaceRotation;
+    }
+
+    // Camera: orbit around player, using localUp as the up vector
+    {
+        f32 pitchRad = Math::Radians(ctrl.cameraPitch);
+        f32 yawRad2 = Math::Radians(ctrl.cameraYaw);
+
+        // Camera offset in surface-local space
+        Math::Vector3 localOffset;
+        localOffset.x = Math::Cos(pitchRad) * Math::Sin(yawRad2) * ctrl.cameraDistance;
+        localOffset.y = Math::Sin(pitchRad) * ctrl.cameraDistance + ctrl.cameraHeight;
+        localOffset.z = Math::Cos(pitchRad) * Math::Cos(yawRad2) * ctrl.cameraDistance;
+
+        // Transform offset to world space using surface rotation
+        Math::Matrix4 surfMat = ctrl.surfaceRotation.ToMatrix();
+        Math::Vector3 worldOffset(
+            surfMat.m[0] * localOffset.x + surfMat.m[4] * localOffset.y + surfMat.m[8] * localOffset.z,
+            surfMat.m[1] * localOffset.x + surfMat.m[5] * localOffset.y + surfMat.m[9] * localOffset.z,
+            surfMat.m[2] * localOffset.x + surfMat.m[6] * localOffset.y + surfMat.m[10] * localOffset.z
+        );
+
+        Math::Vector3 cameraPos = transform.position + worldOffset;
+        Math::Vector3 lookTarget = transform.position + ctrl.localUp * ctrl.cameraHeight * 0.5f;
+
+        UpdateGameCameraTransform(cameraPos, lookTarget, ctrl.localUp);
     }
 }
 

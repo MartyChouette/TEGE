@@ -7,6 +7,7 @@
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 
 namespace Enjin {
 namespace ECS {
@@ -46,6 +47,7 @@ private:
     void UpdateThirdPerson(Entity entity, ThirdPersonController& controller, TransformComponent& transform, f32 dt);
     void UpdateFirstPerson(Entity entity, FirstPersonController& controller, TransformComponent& transform, f32 dt);
     void UpdateVehicle(Entity entity, VehicleController& ctrl, TransformComponent& transform, f32 dt);
+    void UpdateSurfaceAligned(Entity entity, SurfaceAlignedController& ctrl, TransformComponent& transform, f32 dt);
 
     // Helper methods
     Math::Vector2 GetMovementInput(const CharacterControllerBase& controller);
