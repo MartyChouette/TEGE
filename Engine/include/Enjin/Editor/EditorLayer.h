@@ -324,8 +324,9 @@ private:
     void DrawBehaviorTreeComponent(ECS::Entity entity);
     void DrawQuestFlowComponent(ECS::Entity entity);
 
-    // Vehicle / Possession
+    // Vehicle / Possession / Planet
     void DrawVehicleController(ECS::Entity entity);
+    void DrawSurfaceAlignedController(ECS::Entity entity);
     void DrawPossessableComponent(ECS::Entity entity);
 
     // New gameplay components
@@ -717,6 +718,8 @@ private:
     std::string m_ImportDialogExtension;  // Cached on dialog open
     u64 m_ImportDialogFileSize = 0;       // Cached on dialog open
     bool m_ImportDialogIsReimport = false; // Cached on dialog open
+    Assets::SourceApp m_ImportDialogDetectedApp = Assets::SourceApp::Auto;  // Auto-detected source app
+    bool m_ImportDialogScaleFromPreset = false;  // True if scale was auto-filled from preset
 
     // Deferred import (renders one "Loading..." frame before the blocking import)
     bool m_ImportPending = false;

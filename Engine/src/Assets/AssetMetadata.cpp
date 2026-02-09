@@ -74,6 +74,14 @@ bool AssetMetadata::Save(const std::string& assetPath) const {
     opts["importAnimations"] = importOptions.importAnimations;
     opts["generateColliders"] = importOptions.generateColliders;
     opts["generateLODs"] = importOptions.generateLODs;
+    opts["sourceApp"] = static_cast<int>(importOptions.sourceApp);
+    opts["convertAxes"] = importOptions.convertAxes;
+    opts["flipX"] = importOptions.flipX;
+    opts["flipY"] = importOptions.flipY;
+    opts["flipZ"] = importOptions.flipZ;
+    if (!importOptions.textureSearchPaths.empty()) {
+        opts["textureSearchPaths"] = importOptions.textureSearchPaths;
+    }
     j["importOptions"] = opts;
 
     // Stats
@@ -128,6 +136,19 @@ bool AssetMetadata::Load(const std::string& assetPath) {
             if (opts.contains("importAnimations")) importOptions.importAnimations = opts["importAnimations"].get<bool>();
             if (opts.contains("generateColliders")) importOptions.generateColliders = opts["generateColliders"].get<bool>();
             if (opts.contains("generateLODs")) importOptions.generateLODs = opts["generateLODs"].get<bool>();
+            if (opts.contains("sourceApp")) {
+                int appVal = opts["sourceApp"].get<int>();
+                if (appVal >= 0 && appVal <= static_cast<int>(SourceApp::Custom)) {
+                    importOptions.sourceApp = static_cast<SourceApp>(appVal);
+                }
+            }
+            if (opts.contains("convertAxes")) importOptions.convertAxes = opts["convertAxes"].get<bool>();
+            if (opts.contains("flipX")) importOptions.flipX = opts["flipX"].get<bool>();
+            if (opts.contains("flipY")) importOptions.flipY = opts["flipY"].get<bool>();
+            if (opts.contains("flipZ")) importOptions.flipZ = opts["flipZ"].get<bool>();
+            if (opts.contains("textureSearchPaths")) {
+                importOptions.textureSearchPaths = opts["textureSearchPaths"].get<std::vector<std::string>>();
+            }
         }
 
         // Stats

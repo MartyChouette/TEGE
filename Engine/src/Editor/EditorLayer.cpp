@@ -175,6 +175,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VehicleController>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::VehicleController>(e); },
             "vehicle", DimensionTag::Only3D},
+        {"Surface Aligned (Planet)", "Character Controller", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SurfaceAlignedController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SurfaceAlignedController>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SurfaceAlignedController>(e); },
+            "surfaceAligned", DimensionTag::Only3D},
 
         // -- Physics --
         {"Rigidbody", "Physics", nullptr,
@@ -3921,6 +3926,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::VehicleController>(m_PrimarySelected)) {
             DrawVehicleController(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SurfaceAlignedController>(m_PrimarySelected)) {
+            DrawSurfaceAlignedController(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::PossessableComponent>(m_PrimarySelected)) {
             DrawPossessableComponent(m_PrimarySelected);
@@ -9694,9 +9702,10 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), TMPL_2D },
         { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), TMPL_2D },
         { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), TMPL_MULTI },
+        { "planetgravity","Planet Gravity","Spherical gravity\nWalk on a planet surface",              ImVec4(0.2f, 0.5f, 0.9f, 1.0f), TMPL_3D },
         { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), TMPL_3D },
     };
-    constexpr int builtinCount = 30;
+    constexpr int builtinCount = 31;
 
     // === Project info section ===
     f32 formX = (std::max)(area.x * 0.5f - 300.0f, 60.0f);
@@ -10356,15 +10365,16 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
         const char* description;
         const char* scenePath;
         ImVec4 accentColor;
+        const char* templateId;
     };
 
     DemoInfo demos[] = {
-        { "2D Platformer",   "Side-scrolling platformer with\njumping, enemies, and collectibles.",   "demos/platformer_demo.enjin",   ImVec4(0.3f, 0.8f, 0.3f, 1.0f) },
-        { "3D Third Person",  "Over-the-shoulder exploration\nwith third-person camera controls.",    "demos/thirdperson_demo.enjin",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f) },
-        { "Flower Garden",   "Interactive flower plucking\nwith physics and scoring.",                "demos/flower_demo.enjin",       ImVec4(0.9f, 0.4f, 0.6f, 1.0f) },
-        { "4P Racing",       "Splitscreen multiplayer\nracing with vehicles.",                        "demos/racing_demo.enjin",       ImVec4(0.9f, 0.3f, 0.1f, 1.0f) },
-        { "Visual Novel",    "Story-driven dialogue\nwith branching choices.",                        "demos/visualnovel_demo.enjin",  ImVec4(0.9f, 0.7f, 0.9f, 1.0f) },
-        { "Top-Down RPG",    "Overhead RPG with NPCs,\nquests, and inventory.",                      "demos/topdown_demo.enjin",      ImVec4(0.3f, 0.6f, 0.9f, 1.0f) },
+        { "2D Platformer",   "Side-scrolling platformer with\njumping, enemies, and collectibles.",   "demos/platformer_demo.enjin",   ImVec4(0.3f, 0.8f, 0.3f, 1.0f), "platformer" },
+        { "3D Third Person",  "Over-the-shoulder exploration\nwith third-person camera controls.",    "demos/thirdperson_demo.enjin",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), "thirdperson" },
+        { "Flower Garden",   "Interactive flower plucking\nwith physics and scoring.",                "demos/flower_demo.enjin",       ImVec4(0.9f, 0.4f, 0.6f, 1.0f), "flower" },
+        { "4P Racing",       "Splitscreen multiplayer\nracing with vehicles.",                        "demos/racing_demo.enjin",       ImVec4(0.9f, 0.3f, 0.1f, 1.0f), "racing" },
+        { "Visual Novel",    "Story-driven dialogue\nwith branching choices.",                        "demos/visualnovel_demo.enjin",  ImVec4(0.9f, 0.7f, 0.9f, 1.0f), "visualnovel" },
+        { "Top-Down RPG",    "Overhead RPG with NPCs,\nquests, and inventory.",                      "demos/topdown_demo.enjin",      ImVec4(0.3f, 0.6f, 0.9f, 1.0f), "rpg_village" },
     };
     constexpr int demoCount = 6;
 
@@ -10372,14 +10382,15 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
     if (!m_DemosCacheValid) {
         m_DemoAvailability.resize(demoCount);
         for (int i = 0; i < demoCount; ++i) {
-            m_DemoAvailability[i] = std::filesystem::exists(demos[i].scenePath);
+            // Scene file on disk, or fallback to template (always available)
+            m_DemoAvailability[i] = true;
         }
         m_DemosCacheValid = true;
     }
 
     // Subtitle
     f32 subtitleFontSize = 18.0f;
-    const char* subtitle = "Demo scenes showcase engine features — coming in future updates.";
+    const char* subtitle = "Click to explore — each demo creates a scene from a built-in template.";
     ImVec2 subSz = font->CalcTextSizeA(subtitleFontSize, FLT_MAX, 0.0f, subtitle);
     f32 subX = (area.x - subSz.x) * 0.5f;
     dl->AddText(nullptr, subtitleFontSize, ImVec2(subX, contentY + 8.0f),
@@ -10469,7 +10480,11 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
 
         // Click to open available demos
         if (available && hovered && ImGui::IsMouseClicked(0)) {
-            OpenScene(demos[i].scenePath);
+            if (std::filesystem::exists(demos[i].scenePath)) {
+                OpenScene(demos[i].scenePath);
+            } else {
+                ApplyTemplate(demos[i].templateId);
+            }
             m_ShowProjectHub = false;
         }
     }
@@ -10609,6 +10624,15 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 650.0f;
         m_Layout.gameViewH = 420.0f;
+    }
+    else if (templateId == "planetgravity") {
+        // Planet gravity: game view, inspector for controller tuning, skybox
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
+        m_Layout.leftWidth = 0.16f;
+        m_Layout.rightWidth = 0.23f;
+        m_Layout.inspectorSplit = 0.65f;
+        m_Layout.gameViewW = 680.0f;
+        m_Layout.gameViewH = 440.0f;
     }
     else if (templateId == "shadowtest") {
         // Shadow test: simple layout, focus on scene viewport
@@ -10934,6 +10958,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.moveSpeed = 5.0f;
         ctrl.jumpForce = 10.0f;
         SetupCameraForController(player, "Platformer2D");
+        {
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(player);
+            notes.notes = "TIP: Use PolygonCollider2DComponent for precise sprite collision shapes.\n"
+                "Auto-generate with SpriteColliderGenerator::FitPolygonCollider().";
+        }
 
         // Render settings
         m_RenderSystem->SetShadowsEnabled(false);
@@ -11206,6 +11235,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         textComp.text = "Welcome to the visual novel template.";
         textComp.fontSize = 32.0f;
         textComp.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+        m_World->AddComponent<ECS::DialogueBoxComponent>(dialogue);
 
         // Directional Light (even illumination)
         ECS::Entity vnLight = m_World->CreateEntity();
@@ -11289,6 +11319,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player);
             ctrl.moveSpeed = 5.0f;
             SetupCameraForController(player, "ThirdPerson");
+            m_World->AddComponent<ECS::DialogueBoxComponent>(player);
         }
         // NPC
         {
@@ -11340,6 +11371,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             eh.currentHealth = 50.0f;
             auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
             dmg.damage = 10.0f;
+            m_World->AddComponent<ECS::BehaviorTreeComponent>(enemy);
         }
         // Skybox: Midday
         {
@@ -11740,6 +11772,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ctrl.cameraDistance = 4.0f;
             ctrl.cameraHeight = 2.5f;
             SetupCameraForController(player, "ThirdPerson");
+            m_World->AddComponent<ECS::DialogueBoxComponent>(player);
         }
 
         // NPC 1: Quest Giver (dialogue changes after quest completion)
@@ -13627,6 +13660,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ctrl.sprintMultiplier = 1.3f;
             SetupCameraForController(player, "FirstPerson");
             m_World->AddComponent<ECS::AudioListenerComponent>(player);
+            auto& dlgBox = m_World->AddComponent<ECS::DialogueBoxComponent>(player);
+            dlgBox.boxColor = Math::Vector3(0.05f, 0.05f, 0.08f);
+            dlgBox.boxAlpha = 0.95f;
+            dlgBox.textColor = Math::Vector3(0.7f, 0.7f, 0.75f);
         }
 
         // Flashlight (spot light attached to player)
@@ -15388,6 +15425,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& etag = m_World->AddComponent<ECS::TagComponent>(enemy);
             etag.tags.push_back("enemy");
             etag.tags.push_back("wave_1");
+            m_World->AddComponent<ECS::BehaviorTreeComponent>(enemy);
         }
 
         // --- XP gem pickups scattered around ---
@@ -15632,6 +15670,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             health.invulnerabilityTime = 0.5f;
 
             m_World->AddComponent<ECS::InventoryComponent>(player);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(player);
+            notes.notes = "TIP: Use ProceduralAlgorithms (CellularAutomata, BSP, WFC) to\n"
+                "generate dungeon layouts at runtime instead of hand-crafting tiles.";
         }
 
         // --- Build dungeon tiles ---
@@ -16049,6 +16090,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             dmg.knockbackForce = 3.0f;
             auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(enemy);
             col.size = Math::Vector3(0.6f, 1.8f, 0.6f);
+            m_World->AddComponent<ECS::BehaviorTreeComponent>(enemy);
         }
 
         // Treasure Chest
@@ -16517,6 +16559,139 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
     }
 
+    else if (templateId == "planetgravity") {
+        // === PLANET GRAVITY TEMPLATE ===
+        // Planet (large sphere with gravity zone)
+        ECS::Entity planet = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(planet, "Planet");
+        auto& planetT = m_World->AddComponent<ECS::TransformComponent>(planet);
+        planetT.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+        planetT.scale = Math::Vector3(20.0f, 20.0f, 20.0f);
+        auto& planetMat = m_World->AddComponent<ECS::MaterialComponent>(planet);
+        planetMat.baseColor = Math::Vector3(0.25f, 0.55f, 0.2f);
+        planetMat.roughness = 0.85f;
+        planetMat.castShadows = true;
+        planetMat.receiveShadows = true;
+        m_World->AddComponent<ECS::MeshComponent>(planet, Renderer::MeshFactory::CreateSphere(1.0f, 32, 24));
+        auto& planetCol = m_World->AddComponent<ECS::SphereColliderComponent>(planet);
+        planetCol.radius = 10.0f;
+        auto& gz = m_World->AddComponent<ECS::GravityZoneComponent>(planet);
+        gz.mode = ECS::GravityZoneMode::Point;
+        gz.shape = ECS::GravityZoneShape::Sphere;
+        gz.halfExtents = Math::Vector3(50.0f, 50.0f, 50.0f);
+        gz.gravityStrength = 15.0f;
+
+        // Player (capsule on top of planet)
+        ECS::Entity player = m_World->CreateEntity();
+        m_World->AddComponent<ECS::NameComponent>(player, "Player");
+        auto& playerT = m_World->AddComponent<ECS::TransformComponent>(player);
+        playerT.position = Math::Vector3(0.0f, 11.5f, 0.0f);
+        auto& playerMat = m_World->AddComponent<ECS::MaterialComponent>(player);
+        playerMat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
+        playerMat.metallic = 0.3f;
+        playerMat.castShadows = true;
+        m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule(0.4f, 1.0f));
+        auto& saCtrl = m_World->AddComponent<ECS::SurfaceAlignedController>(player);
+        saCtrl.moveSpeed = 6.0f;
+        saCtrl.jumpForce = 12.0f;
+        saCtrl.cameraDistance = 10.0f;
+        saCtrl.cameraHeight = 4.0f;
+
+        // Camera
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Game Camera");
+            auto& camT = m_World->AddComponent<ECS::TransformComponent>(cam);
+            camT.position = Math::Vector3(0.0f, 20.0f, 15.0f);
+            auto& camC = m_World->AddComponent<ECS::CameraComponent>(cam);
+            camC.fieldOfView = 60.0f;
+            camC.nearPlane = 0.1f;
+            camC.farPlane = 500.0f;
+            m_SelectedGameCamera = cam;
+        }
+
+        // Platforms on planet surface at cardinal directions
+        auto addPlatform = [&](const char* name, Math::Vector3 dir, Math::Vector3 color) {
+            ECS::Entity plat = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(plat, name);
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(plat);
+            f32 planetRadius = 10.0f;
+            Math::Vector3 norm = dir * (1.0f / dir.Length());
+            pt.position = norm * (planetRadius + 0.5f);
+            pt.scale = Math::Vector3(3.0f, 1.0f, 3.0f);
+            // Orient platform so Y faces outward from planet
+            pt.rotation = Math::Quaternion::FromToRotation(Math::Vector3(0, 1, 0), norm);
+            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(plat);
+            pm.baseColor = color;
+            pm.roughness = 0.7f;
+            pm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(plat, Renderer::MeshFactory::CreateCube(1.0f));
+        };
+        addPlatform("Platform North", Math::Vector3(0, 0, 10), Math::Vector3(0.6f, 0.3f, 0.15f));
+        addPlatform("Platform South", Math::Vector3(0, 0, -10), Math::Vector3(0.6f, 0.3f, 0.15f));
+        addPlatform("Platform East",  Math::Vector3(10, 0, 0),  Math::Vector3(0.6f, 0.3f, 0.15f));
+        addPlatform("Platform West",  Math::Vector3(-10, 0, 0), Math::Vector3(0.6f, 0.3f, 0.15f));
+
+        // Coins (golden spheres scattered around planet)
+        auto addCoin = [&](const char* name, Math::Vector3 dir) {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, name);
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+            Math::Vector3 norm = dir * (1.0f / dir.Length());
+            ct.position = norm * 11.5f;
+            ct.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
+            auto& cm = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            cm.baseColor = Math::Vector3(1.0f, 0.85f, 0.1f);
+            cm.metallic = 0.9f;
+            cm.roughness = 0.2f;
+            cm.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.1f);
+            cm.emissiveStrength = 0.3f;
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(1.0f, 12, 8));
+        };
+        addCoin("Coin 1", Math::Vector3(5, 8, 0));
+        addCoin("Coin 2", Math::Vector3(-5, 8, 0));
+        addCoin("Coin 3", Math::Vector3(0, 8, 5));
+        addCoin("Coin 4", Math::Vector3(0, 8, -5));
+        addCoin("Coin 5", Math::Vector3(7, 0, 7));
+        addCoin("Coin 6", Math::Vector3(-7, 0, -7));
+
+        // Sun (directional light)
+        {
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Sun");
+            auto& sunT = m_World->AddComponent<ECS::TransformComponent>(sun);
+            sunT.position = Math::Vector3(30.0f, 40.0f, 20.0f);
+            auto& sunL = m_World->AddComponent<ECS::LightComponent>(sun);
+            sunL.type = ECS::LightType::Directional;
+            sunL.color = Math::Vector3(1.0f, 0.95f, 0.85f);
+            sunL.intensity = 1.5f;
+            sunL.castShadows = true;
+        }
+
+        // Dark space skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.02f, 0.02f, 0.08f);
+            skyConfig.horizonColor = Math::Vector3(0.05f, 0.03f, 0.12f);
+            skyConfig.bottomColor = Math::Vector3(0.01f, 0.01f, 0.04f);
+            skyConfig.sunDirection = Math::Vector3(0.5f, 0.8f, 0.3f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.12f);
+
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.7f;
+            pp.bloomIntensity = 0.4f;
+        }
+    }
+
     else if (templateId == "shadowtest") {
         // === SHADOW TEST TEMPLATE ===
         // Bright white ground so shadows are clearly visible
@@ -16700,12 +16875,38 @@ void EditorLayer::ImportModel(const std::string& path) {
         }
     } catch (...) {}
     m_ImportDialogIsReimport = Assets::AssetMetadata::Exists(path);
+
+    // Auto-detect source app from file metadata
+    m_ImportDialogDetectedApp = Assets::SourceApp::Auto;
+    m_ImportDialogScaleFromPreset = false;
+    std::string ext = m_ImportDialogExtension;
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+    if (ext == ".gltf" || ext == ".glb") {
+        // Quick parse: load glTF to get generator string
+        Assets::GLTFScene tempScene;
+        if (Assets::GLTFLoader::Load(path, tempScene)) {
+            if (!tempScene.generator.empty()) {
+                std::string g = tempScene.generator;
+                std::transform(g.begin(), g.end(), g.begin(), ::tolower);
+                if (g.find("blender") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Blender;
+                else if (g.find("maya") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Maya;
+                else if (g.find("3ds max") != std::string::npos || g.find("3dsmax") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Max3ds;
+                else if (g.find("houdini") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Houdini;
+                else if (g.find("cinema") != std::string::npos || g.find("c4d") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Cinema4D;
+                else if (g.find("zbrush") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::ZBrush;
+                else if (g.find("substance") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::SubstancePainter;
+                else if (g.find("unreal") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Unreal;
+                else if (g.find("unity") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::Unity;
+                else if (g.find("sketchup") != std::string::npos) m_ImportDialogDetectedApp = Assets::SourceApp::SketchUp;
+            }
+        }
+    }
 }
 
 void EditorLayer::DrawImportDialog() {
     ImGui::OpenPopup("Import Settings");
 
-    ImGui::SetNextWindowSize(ImVec2(420, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(480, 0), ImGuiCond_Always);
     if (ImGui::BeginPopupModal("Import Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         // File info (cached values — no filesystem calls per frame)
         ImGui::Text("File: %s", m_ImportDialogFilename.c_str());
@@ -16729,7 +16930,54 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Separator();
         ImGui::Spacing();
 
-        // Import options
+        // --- Source Application ---
+        ImGui::Text("Source Application");
+
+        // Build combo label with auto-detect hint
+        const char* sourceAppNames[] = {
+            "Auto", "Blender", "Maya", "3ds Max", "Houdini", "Cinema 4D",
+            "ZBrush", "Substance Painter", "Unreal Engine", "Unity", "SketchUp", "Custom"
+        };
+        int currentApp = static_cast<int>(m_ImportDialogOptions.sourceApp);
+
+        // Show detected hint
+        if (m_ImportDialogDetectedApp != Assets::SourceApp::Auto) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.5f, 0.8f, 0.5f, 1.0f), "(Detected: %s)",
+                               Assets::GetSourceAppName(m_ImportDialogDetectedApp));
+        }
+
+        if (ImGui::Combo("##SourceApp", &currentApp, sourceAppNames, IM_ARRAYSIZE(sourceAppNames))) {
+            Assets::SourceApp newApp = static_cast<Assets::SourceApp>(currentApp);
+            m_ImportDialogOptions.sourceApp = newApp;
+            // Auto-fill scale from preset when switching source app
+            if (newApp != Assets::SourceApp::Auto && newApp != Assets::SourceApp::Custom) {
+                Assets::SourceAppPreset preset = Assets::GetSourceAppPreset(newApp);
+                m_ImportDialogOptions.scale = preset.scale;
+                m_ImportDialogScaleFromPreset = true;
+            }
+        }
+
+        ImGui::Checkbox("Apply Axis Conversion", &m_ImportDialogOptions.convertAxes);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Automatically convert coordinate system (Z-up to Y-up, handedness) based on source app");
+        }
+
+        if (m_ImportDialogOptions.convertAxes) {
+            ImGui::Indent(16.0f);
+            ImGui::Checkbox("Flip X", &m_ImportDialogOptions.flipX);
+            ImGui::SameLine();
+            ImGui::Checkbox("Flip Y", &m_ImportDialogOptions.flipY);
+            ImGui::SameLine();
+            ImGui::Checkbox("Flip Z", &m_ImportDialogOptions.flipZ);
+            ImGui::Unindent(16.0f);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // --- Import Options ---
         ImGui::Text("Import Options");
         ImGui::DragFloat("Scale", &m_ImportDialogOptions.scale, 0.01f, 0.001f, 100.0f, "%.3f");
         ImGui::Checkbox("Import Materials", &m_ImportDialogOptions.importMaterials);
@@ -16738,6 +16986,49 @@ void EditorLayer::DrawImportDialog() {
         ImGui::Checkbox("Generate LODs", &m_ImportDialogOptions.generateLODs);
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("Generate Level-of-Detail meshes (can be slow for large models)");
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // --- Texture Search Paths ---
+        ImGui::Text("Texture Search Paths");
+        auto& searchPaths = m_ImportDialogOptions.textureSearchPaths;
+        i32 removeIdx = -1;
+        for (i32 i = 0; i < static_cast<i32>(searchPaths.size()); ++i) {
+            ImGui::PushID(i);
+            ImGui::Text("%s", searchPaths[i].c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                removeIdx = i;
+            }
+            ImGui::PopID();
+        }
+        if (removeIdx >= 0) {
+            searchPaths.erase(searchPaths.begin() + removeIdx);
+        }
+        if (ImGui::SmallButton("+ Add Path...")) {
+            // Use nfd or a simple text input — for now, use current model's parent dir as a starting point
+            // We'll add a simple text input approach
+            searchPaths.push_back("");
+        }
+        // Editable text input for the last empty entry
+        if (!searchPaths.empty() && searchPaths.back().empty()) {
+            static char pathBuf[512] = {};
+            ImGui::SetNextItemWidth(-1);
+            if (ImGui::InputText("##NewTexPath", pathBuf, sizeof(pathBuf),
+                                 ImGuiInputTextFlags_EnterReturnsTrue)) {
+                if (pathBuf[0] != '\0') {
+                    searchPaths.back() = pathBuf;
+                    pathBuf[0] = '\0';
+                } else {
+                    searchPaths.pop_back();
+                }
+            }
+            if (ImGui::IsItemDeactivated() && pathBuf[0] == '\0') {
+                searchPaths.pop_back();
+            }
         }
 
         ImGui::Spacing();
@@ -21091,6 +21382,76 @@ void EditorLayer::DrawVehicleController(ECS::Entity entity) {
         ImGui::Separator();
         ImGui::TextDisabled("Speed: %.1f  Steer: %.1f deg  Drifting: %s",
             ctrl->currentSpeed, ctrl->currentSteerAngle, ctrl->isDrifting ? "Yes" : "No");
+    }
+}
+
+// ============================================================================
+// Surface Aligned (Planet) Controller Inspector
+// ============================================================================
+
+void EditorLayer::DrawSurfaceAlignedController(ECS::Entity entity) {
+    bool ctrlOpen = ImGui::CollapsingHeader("Surface Aligned (Planet) Controller", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("SurfaceAlignedCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::SurfaceAlignedController>(entity, "surfaceAligned", "Surface Aligned");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (ctrlOpen) {
+        auto* ctrl = m_World->GetComponent<ECS::SurfaceAlignedController>(entity);
+        if (!ctrl) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &ctrl->isEnabled);
+
+        if (ImGui::TreeNode("Input##SurfAligned")) {
+            InspectorUndo::Checkbox(m_UndoRedo, "WASD##sa", &ctrl->useWASD);
+            ImGui::SameLine();
+            InspectorUndo::Checkbox(m_UndoRedo, "Arrow Keys##sa", &ctrl->useArrowKeys);
+            ImGui::SameLine();
+            InspectorUndo::Checkbox(m_UndoRedo, "Gamepad##sa", &ctrl->useGamepad);
+            if (ctrl->useGamepad) {
+                InspectorUndo::DragInt(m_UndoRedo, "Gamepad Index##sa", &ctrl->gamepadIndex, 1, 0, 3);
+                InspectorUndo::DragFloat(m_UndoRedo, "Stick Sensitivity##sa", &ctrl->gamepadLookSensitivity, 0.1f, 0.1f, 10.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Movement##SurfAligned")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Move Speed##sa", &ctrl->moveSpeed, 0.1f, 0.1f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Sprint Multiplier##sa", &ctrl->sprintMultiplier, 0.1f, 1.0f, 5.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Acceleration##sa", &ctrl->acceleration, 0.5f, 0.0f, 200.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Deceleration##sa", &ctrl->deceleration, 0.5f, 0.0f, 200.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Jump Force##sa", &ctrl->jumpForce, 0.1f, 1.0f, 30.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Surface Alignment")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Align Speed", &ctrl->alignSpeed, 0.5f, 0.1f, 30.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("How fast the character aligns to surface normal");
+            InspectorUndo::DragFloat(m_UndoRedo, "Ground Check Distance", &ctrl->groundCheckDistance, 0.1f, 0.1f, 10.0f);
+            ImGui::Text("Local Up: (%.2f, %.2f, %.2f)", ctrl->localUp.x, ctrl->localUp.y, ctrl->localUp.z);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Camera##SurfAligned")) {
+            InspectorUndo::Checkbox(m_UndoRedo, "Disable Mouse Look##sa", &ctrl->disableMouseLook);
+            InspectorUndo::DragFloat(m_UndoRedo, "Distance##sa", &ctrl->cameraDistance, 0.1f, 1.0f, 30.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Height##sa", &ctrl->cameraHeight, 0.1f, 0.0f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Sensitivity##sa", &ctrl->cameraSensitivity, 0.1f, 0.1f, 10.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Lerp Speed##sa", &ctrl->cameraLerpSpeed, 0.5f, 1.0f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Pitch##sa", &ctrl->cameraPitch, 1.0f, ctrl->cameraMinPitch, ctrl->cameraMaxPitch);
+            InspectorUndo::DragFloat(m_UndoRedo, "Min Pitch##sa", &ctrl->cameraMinPitch, 1.0f, -89.0f, 0.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Max Pitch##sa", &ctrl->cameraMaxPitch, 1.0f, 0.0f, 89.0f);
+            ImGui::TreePop();
+        }
+
+        // State display
+        ImGui::TextDisabled("State: %s%s%s",
+            ctrl->isGrounded ? "Grounded " : "",
+            ctrl->isJumping ? "Jumping " : "",
+            ctrl->isFalling ? "Falling " : "");
     }
 }
 

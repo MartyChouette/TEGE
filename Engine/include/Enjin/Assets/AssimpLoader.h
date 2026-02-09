@@ -66,7 +66,8 @@ struct AssimpScene {
     std::vector<AssimpMaterial> materials;
     std::vector<AssimpNode> nodes;
     std::vector<i32> rootNodes;
-    std::string basePath;  // Directory containing the file
+    std::string basePath;   // Directory containing the file
+    std::string creator;    // DCC tool that created this file (from FBX metadata)
 };
 
 // Assimp loader class - supports FBX, OBJ, DAE, 3DS, and more

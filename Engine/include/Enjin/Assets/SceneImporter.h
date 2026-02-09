@@ -11,6 +11,36 @@
 namespace Enjin {
 namespace Assets {
 
+// Source application presets for axis/scale conversion
+enum class SourceApp : u8 {
+    Auto,               // Auto-detect from file metadata
+    Blender,            // Z-up, 1m scale, -X forward
+    Maya,               // Y-up, cm (scale 0.01)
+    Max3ds,             // Z-up, system-unit auto
+    Houdini,            // Y-up, 1m scale
+    Cinema4D,           // Y-up, cm (scale 0.01)
+    ZBrush,             // Z-up, large scale
+    SubstancePainter,   // Texture-centric, Y-up
+    Unreal,             // Left-hand, cm (scale 0.01)
+    Unity,              // Left-hand, 1m scale
+    SketchUp,           // Z-up, inches (scale 0.0254)
+    Custom              // User-defined
+};
+
+// Preset values for a source application
+struct SourceAppPreset {
+    f32 scale;
+    bool zUpToYUp;      // Needs Z->Y axis swap
+    bool leftToRight;   // Needs left->right handedness flip
+    const char* name;
+};
+
+// Get default preset values for a source app
+ENJIN_API SourceAppPreset GetSourceAppPreset(SourceApp app);
+
+// Get the display name for a source app enum value
+ENJIN_API const char* GetSourceAppName(SourceApp app);
+
 // Import options for scene loading
 struct ImportOptions {
     f32 scale = 1.0f;
@@ -19,6 +49,14 @@ struct ImportOptions {
     bool importAnimations = true;
     bool generateColliders = true;
     bool generateLODs = false;  // Off by default — LOD generation is expensive for large meshes
+
+    // Source application preset
+    SourceApp sourceApp = SourceApp::Auto;
+    bool convertAxes = true;     // Apply axis conversion from source app preset
+    bool flipX = false;          // Per-axis sign overrides
+    bool flipY = false;
+    bool flipZ = false;
+    std::vector<std::string> textureSearchPaths;  // Additional dirs to search for textures
 };
 
 // Result of a scene import operation

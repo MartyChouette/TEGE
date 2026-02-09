@@ -104,7 +104,8 @@ struct GLTFScene {
     std::vector<i32> rootNodes;
     std::vector<GLTFSkin> skins;
     std::vector<GLTFAnimation> animations;
-    std::string basePath;  // Directory containing the glTF file
+    std::string basePath;    // Directory containing the glTF file
+    std::string generator;   // DCC tool that created this file (from asset.generator)
 };
 
 // glTF loader class

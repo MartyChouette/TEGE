@@ -14,11 +14,156 @@
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Logging/Log.h"
 #include <cfloat>
+#include <cmath>
 #include <filesystem>
 #include <algorithm>
 
 namespace Enjin {
 namespace Assets {
+
+// --- Source App Presets ---
+
+SourceAppPreset GetSourceAppPreset(SourceApp app) {
+    switch (app) {
+        case SourceApp::Blender:           return { 1.0f,    true,  false, "Blender" };
+        case SourceApp::Maya:              return { 0.01f,   false, false, "Maya" };
+        case SourceApp::Max3ds:            return { 1.0f,    true,  false, "3ds Max" };
+        case SourceApp::Houdini:           return { 1.0f,    false, false, "Houdini" };
+        case SourceApp::Cinema4D:          return { 0.01f,   false, false, "Cinema 4D" };
+        case SourceApp::ZBrush:            return { 1.0f,    true,  false, "ZBrush" };
+        case SourceApp::SubstancePainter:  return { 1.0f,    false, false, "Substance Painter" };
+        case SourceApp::Unreal:            return { 0.01f,   false, true,  "Unreal Engine" };
+        case SourceApp::Unity:             return { 1.0f,    false, true,  "Unity" };
+        case SourceApp::SketchUp:          return { 0.0254f, true,  false, "SketchUp" };
+        case SourceApp::Custom:            return { 1.0f,    false, false, "Custom" };
+        default:                           return { 1.0f,    false, false, "Auto" };
+    }
+}
+
+const char* GetSourceAppName(SourceApp app) {
+    switch (app) {
+        case SourceApp::Auto:              return "Auto";
+        case SourceApp::Blender:           return "Blender";
+        case SourceApp::Maya:              return "Maya";
+        case SourceApp::Max3ds:            return "3ds Max";
+        case SourceApp::Houdini:           return "Houdini";
+        case SourceApp::Cinema4D:          return "Cinema 4D";
+        case SourceApp::ZBrush:            return "ZBrush";
+        case SourceApp::SubstancePainter:  return "Substance Painter";
+        case SourceApp::Unreal:            return "Unreal Engine";
+        case SourceApp::Unity:             return "Unity";
+        case SourceApp::SketchUp:          return "SketchUp";
+        case SourceApp::Custom:            return "Custom";
+        default:                           return "Unknown";
+    }
+}
+
+// --- Auto-detection ---
+
+static std::string ToLowerStr(const std::string& s) {
+    std::string result = s;
+    std::transform(result.begin(), result.end(), result.begin(), ::tolower);
+    return result;
+}
+
+static SourceApp DetectSourceApp(const std::string& generator, const std::string& creator) {
+    auto check = [](const std::string& haystack, const char* needle) {
+        return haystack.find(needle) != std::string::npos;
+    };
+
+    // Check generator string (glTF)
+    std::string g = ToLowerStr(generator);
+    if (check(g, "blender"))    return SourceApp::Blender;
+    if (check(g, "maya"))       return SourceApp::Maya;
+    if (check(g, "3ds max") || check(g, "3dsmax")) return SourceApp::Max3ds;
+    if (check(g, "houdini"))    return SourceApp::Houdini;
+    if (check(g, "cinema 4d") || check(g, "cinema4d") || check(g, "c4d")) return SourceApp::Cinema4D;
+    if (check(g, "zbrush"))     return SourceApp::ZBrush;
+    if (check(g, "substance"))  return SourceApp::SubstancePainter;
+    if (check(g, "unreal"))     return SourceApp::Unreal;
+    if (check(g, "unity"))      return SourceApp::Unity;
+    if (check(g, "sketchup"))   return SourceApp::SketchUp;
+
+    // Check creator string (FBX via Assimp)
+    std::string c = ToLowerStr(creator);
+    if (check(c, "blender"))    return SourceApp::Blender;
+    if (check(c, "maya"))       return SourceApp::Maya;
+    if (check(c, "3ds max") || check(c, "3dsmax")) return SourceApp::Max3ds;
+    if (check(c, "houdini"))    return SourceApp::Houdini;
+    if (check(c, "cinema 4d") || check(c, "cinema4d") || check(c, "c4d")) return SourceApp::Cinema4D;
+    if (check(c, "zbrush"))     return SourceApp::ZBrush;
+    if (check(c, "substance"))  return SourceApp::SubstancePainter;
+    if (check(c, "unreal"))     return SourceApp::Unreal;
+    if (check(c, "unity"))      return SourceApp::Unity;
+    if (check(c, "sketchup"))   return SourceApp::SketchUp;
+
+    return SourceApp::Auto; // Unknown — no conversion applied
+}
+
+// --- Axis Conversion Utilities ---
+
+static Math::Vector3 ConvertPosition(const Math::Vector3& v, bool zToY, bool lToR,
+                                      bool flipX, bool flipY, bool flipZ) {
+    Math::Vector3 r = v;
+    if (zToY) {
+        // Z-up -> Y-up: (x, y, z) -> (x, z, -y)
+        r = Math::Vector3(v.x, v.z, -v.y);
+    }
+    if (lToR) {
+        // Left-hand -> Right-hand: negate X
+        r.x = -r.x;
+    }
+    // Per-axis flip overrides
+    if (flipX) r.x = -r.x;
+    if (flipY) r.y = -r.y;
+    if (flipZ) r.z = -r.z;
+    return r;
+}
+
+static Math::Vector3 ConvertNormal(const Math::Vector3& n, bool zToY, bool lToR) {
+    Math::Vector3 r = n;
+    if (zToY) {
+        r = Math::Vector3(n.x, n.z, -n.y);
+    }
+    if (lToR) {
+        r.x = -r.x;
+    }
+    return r;
+}
+
+static Math::Quaternion ConvertRotation(const Math::Quaternion& q, bool zToY, bool lToR) {
+    Math::Quaternion r = q;
+    if (zToY) {
+        // Z-up -> Y-up: (x, y, z, w) -> (x, z, -y, w)
+        r = Math::Quaternion(q.x, q.z, -q.y, q.w);
+        // Renormalize
+        f32 len = std::sqrt(r.x * r.x + r.y * r.y + r.z * r.z + r.w * r.w);
+        if (len > 0.0001f) {
+            f32 inv = 1.0f / len;
+            r.x *= inv; r.y *= inv; r.z *= inv; r.w *= inv;
+        }
+    }
+    if (lToR) {
+        // Left-hand -> Right-hand: negate x and w
+        r.x = -r.x;
+        r.w = -r.w;
+    }
+    return r;
+}
+
+// --- Texture search path helper ---
+
+static std::string TryTextureSearchPaths(const std::string& filename,
+                                          const std::vector<std::string>& searchPaths) {
+    namespace fs = std::filesystem;
+    for (const auto& dir : searchPaths) {
+        fs::path resolved = fs::path(dir) / filename;
+        if (fs::exists(resolved)) {
+            return resolved.string();
+        }
+    }
+    return "";
+}
 
 // Helper: copy accumulated stats into ImportResult
 static void CopyStatsToResult(ImportResult& result, const SceneImporter::ImportStats& stats) {
@@ -48,6 +193,27 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
         return result;
     }
 
+    // Resolve source app and axis conversion
+    ImportOptions effectiveOptions = options;
+    SourceApp resolvedApp = options.sourceApp;
+    if (resolvedApp == SourceApp::Auto) {
+        resolvedApp = DetectSourceApp(scene.generator, "");
+    }
+
+    // For glTF files, the glTF spec mandates Y-up right-handed.
+    // Well-behaved exporters (e.g. Blender's glTF exporter) already convert axes.
+    // So for glTF/GLB we skip axis conversion even if a source app is detected,
+    // unless the user explicitly chose a preset (non-Auto).
+    bool skipAxisForGltf = (options.sourceApp == SourceApp::Auto);
+
+    if (effectiveOptions.convertAxes && !skipAxisForGltf && resolvedApp != SourceApp::Auto) {
+        SourceAppPreset preset = GetSourceAppPreset(resolvedApp);
+        effectiveOptions.scale *= preset.scale;
+        ENJIN_LOG_INFO(Asset, "Applying %s preset (scale=%.4f, zToY=%d, lToR=%d) for %s",
+                       preset.name, effectiveOptions.scale, preset.zUpToYUp, preset.leftToRight,
+                       filepath.c_str());
+    }
+
     ImportStats stats;
     stats.sourceFilePath = filepath;
 
@@ -60,7 +226,7 @@ ImportResult SceneImporter::ImportGLTF(const std::string& filepath, ECS::World* 
 
     // Create entities from root nodes
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromNode(scene, rootIndex, world, options, result.entities, stats);
+        ECS::Entity entity = CreateEntityFromNode(scene, rootIndex, world, effectiveOptions, result.entities, stats);
         if (result.rootEntity == ECS::INVALID_ENTITY) {
             result.rootEntity = entity;
         }
@@ -91,10 +257,23 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
     world->AddComponent<ECS::NameComponent>(entity, name);
     stats.entityNames.push_back(name);
 
+    // Determine axis conversion flags
+    // For glTF with Auto source app, skip axis conversion (glTF is already Y-up)
+    bool doAxisConvert = options.convertAxes && options.sourceApp != SourceApp::Auto;
+    SourceAppPreset preset = GetSourceAppPreset(options.sourceApp);
+    bool zToY = doAxisConvert && preset.zUpToYUp;
+    bool lToR = doAxisConvert && preset.leftToRight;
+
     // Add transform component
     auto& transform = world->AddComponent<ECS::TransformComponent>(entity);
-    transform.position = node.translation * options.scale;
-    transform.rotation = node.rotation;
+    Math::Vector3 pos = node.translation;
+    Math::Quaternion rot = node.rotation;
+    if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+        pos = ConvertPosition(pos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+        rot = ConvertRotation(rot, zToY, lToR);
+    }
+    transform.position = pos * options.scale;
+    transform.rotation = rot;
     transform.scale = node.scale * options.scale;
 
     // Add mesh component if node has a mesh
@@ -112,8 +291,16 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                 ECS::MeshComponent::Vertex vertex;
                 vertex.position = gltfVert.position;
                 vertex.normal = gltfVert.normal;
-                vertex.uv = gltfVert.texCoord;
                 vertex.tangent = gltfVert.tangent;
+                // Apply axis conversion to vertex positions, normals, tangents
+                if (zToY || lToR) {
+                    vertex.position = ConvertNormal(vertex.position, zToY, lToR);
+                    vertex.normal = ConvertNormal(vertex.normal, zToY, lToR);
+                    Math::Vector3 tang3(vertex.tangent.x, vertex.tangent.y, vertex.tangent.z);
+                    tang3 = ConvertNormal(tang3, zToY, lToR);
+                    vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, vertex.tangent.w);
+                }
+                vertex.uv = gltfVert.texCoord;
                 vertex.boneWeights = gltfVert.boneWeights;
                 vertex.boneIndices[0] = gltfVert.boneIndices[0];
                 vertex.boneIndices[1] = gltfVert.boneIndices[1];
@@ -213,6 +400,15 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         if (fs::exists(resolved)) {
                             stats.texturePathsResolved.push_back(resolved.string());
                             return resolved.string();
+                        }
+                        // Try user-specified texture search paths
+                        if (!options.textureSearchPaths.empty()) {
+                            std::string found = TryTextureSearchPaths(
+                                fs::path(uri).filename().string(), options.textureSearchPaths);
+                            if (!found.empty()) {
+                                stats.texturePathsResolved.push_back(found);
+                                return found;
+                            }
                         }
                         stats.texturePathsMissing.push_back(uri);
                         return uri;
@@ -336,10 +532,13 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         track->positionTimes.assign(channel.times.begin(), channel.times.begin() + keyCount);
                         track->positions.resize(keyCount);
                         for (usize k = 0; k < keyCount; ++k) {
-                            track->positions[k] = Math::Vector3(
-                                channel.values[k * 3 + 0],
-                                channel.values[k * 3 + 1],
-                                channel.values[k * 3 + 2]);
+                            Math::Vector3 p(channel.values[k * 3 + 0],
+                                            channel.values[k * 3 + 1],
+                                            channel.values[k * 3 + 2]);
+                            if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+                                p = ConvertPosition(p, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+                            }
+                            track->positions[k] = p;
                         }
                         break;
                     }
@@ -349,11 +548,14 @@ ECS::Entity SceneImporter::CreateEntityFromNode(const GLTFScene& scene, i32 node
                         track->rotationTimes.assign(channel.times.begin(), channel.times.begin() + keyCount);
                         track->rotations.resize(keyCount);
                         for (usize k = 0; k < keyCount; ++k) {
-                            track->rotations[k] = Math::Quaternion(
-                                channel.values[k * 4 + 0],
-                                channel.values[k * 4 + 1],
-                                channel.values[k * 4 + 2],
-                                channel.values[k * 4 + 3]);
+                            Math::Quaternion q(channel.values[k * 4 + 0],
+                                               channel.values[k * 4 + 1],
+                                               channel.values[k * 4 + 2],
+                                               channel.values[k * 4 + 3]);
+                            if (zToY || lToR) {
+                                q = ConvertRotation(q, zToY, lToR);
+                            }
+                            track->rotations[k] = q;
                         }
                         break;
                     }
@@ -413,6 +615,22 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
         return result;
     }
 
+    // Resolve source app and axis conversion
+    ImportOptions effectiveOptions = options;
+    SourceApp resolvedApp = options.sourceApp;
+    if (resolvedApp == SourceApp::Auto) {
+        resolvedApp = DetectSourceApp("", scene.creator);
+        effectiveOptions.sourceApp = resolvedApp;
+    }
+
+    if (effectiveOptions.convertAxes && resolvedApp != SourceApp::Auto) {
+        SourceAppPreset preset = GetSourceAppPreset(resolvedApp);
+        effectiveOptions.scale *= preset.scale;
+        ENJIN_LOG_INFO(Asset, "Applying %s preset (scale=%.4f, zToY=%d, lToR=%d) for %s",
+                       preset.name, effectiveOptions.scale, preset.zUpToYUp, preset.leftToRight,
+                       filepath.c_str());
+    }
+
     ImportStats stats;
     stats.sourceFilePath = filepath;
 
@@ -422,7 +640,7 @@ ImportResult SceneImporter::ImportAssimp(const std::string& filepath, ECS::World
 
     // Create entities from root nodes
     for (i32 rootIndex : scene.rootNodes) {
-        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, options, result.entities, stats);
+        ECS::Entity entity = CreateEntityFromAssimpNode(scene, rootIndex, world, effectiveOptions, result.entities, stats);
         if (result.rootEntity == ECS::INVALID_ENTITY) {
             result.rootEntity = entity;
         }
@@ -445,6 +663,16 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
         return ImportGLTF(filepath, world, options);
     }
 
+    // Resolve axis conversion for simple formats (PLY, VOX)
+    bool doAxisConvert = options.convertAxes && options.sourceApp != SourceApp::Auto;
+    SourceAppPreset simplePreset = GetSourceAppPreset(options.sourceApp);
+    bool simpleZToY = doAxisConvert && simplePreset.zUpToYUp;
+    bool simpleLToR = doAxisConvert && simplePreset.leftToRight;
+    f32 effectiveScale = options.scale;
+    if (doAxisConvert) {
+        effectiveScale *= simplePreset.scale;
+    }
+
     // PLY point cloud/mesh format
     if (ext == ".ply") {
         ImportResult result;
@@ -456,7 +684,7 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
         ECS::Entity entity = world->CreateEntity();
         world->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent{path.stem().string()});
         ECS::TransformComponent transform;
-        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
+        transform.scale = Math::Vector3(effectiveScale, effectiveScale, effectiveScale);
         world->AddComponent<ECS::TransformComponent>(entity, transform);
         ECS::MeshComponent mesh;
         mesh.vertices.reserve(plyMesh.vertices.size());
@@ -464,6 +692,10 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
             ECS::MeshComponent::Vertex vert;
             vert.position = v.position;
             vert.normal = v.hasNormal ? v.normal : Math::Vector3(0, 1, 0);
+            if (simpleZToY || simpleLToR) {
+                vert.position = ConvertNormal(vert.position, simpleZToY, simpleLToR);
+                vert.normal = ConvertNormal(vert.normal, simpleZToY, simpleLToR);
+            }
             vert.uv = v.hasTexCoord ? v.texCoord : Math::Vector2(0, 0);
             vert.color = v.hasColor ? Math::Vector4(v.color.x, v.color.y, v.color.z, 1.0f) : Math::Vector4(1, 1, 1, 1);
             mesh.vertices.push_back(vert);
@@ -493,7 +725,7 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
         ECS::Entity entity = world->CreateEntity();
         world->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent{path.stem().string()});
         ECS::TransformComponent transform;
-        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
+        transform.scale = Math::Vector3(effectiveScale, effectiveScale, effectiveScale);
         world->AddComponent<ECS::TransformComponent>(entity, transform);
         ECS::MeshComponent mesh;
         mesh.vertices.reserve(voxMesh.vertices.size());
@@ -501,6 +733,10 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
             ECS::MeshComponent::Vertex vert;
             vert.position = v.position;
             vert.normal = v.normal;
+            if (simpleZToY || simpleLToR) {
+                vert.position = ConvertNormal(vert.position, simpleZToY, simpleLToR);
+                vert.normal = ConvertNormal(vert.normal, simpleZToY, simpleLToR);
+            }
             vert.color = Math::Vector4(v.color.x, v.color.y, v.color.z, 1.0f);
             mesh.vertices.push_back(vert);
         }
@@ -547,10 +783,22 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
     world->AddComponent<ECS::NameComponent>(entity, name);
     stats.entityNames.push_back(name);
 
+    // Determine axis conversion flags
+    bool doAxisConvert = options.convertAxes && options.sourceApp != SourceApp::Auto;
+    SourceAppPreset preset = GetSourceAppPreset(options.sourceApp);
+    bool zToY = doAxisConvert && preset.zUpToYUp;
+    bool lToR = doAxisConvert && preset.leftToRight;
+
     // Add transform component
     auto& transform = world->AddComponent<ECS::TransformComponent>(entity);
-    transform.position = node.translation * options.scale;
-    transform.rotation = node.rotation;
+    Math::Vector3 pos = node.translation;
+    Math::Quaternion rot = node.rotation;
+    if (zToY || lToR || options.flipX || options.flipY || options.flipZ) {
+        pos = ConvertPosition(pos, zToY, lToR, options.flipX, options.flipY, options.flipZ);
+        rot = ConvertRotation(rot, zToY, lToR);
+    }
+    transform.position = pos * options.scale;
+    transform.rotation = rot;
     transform.scale = node.scale * options.scale;
 
     // Add mesh component if node has meshes
@@ -580,6 +828,14 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     ECS::MeshComponent::Vertex vertex;
                     vertex.position = assimpVert.position;
                     vertex.normal = assimpVert.normal;
+                    // Apply axis conversion to vertex positions, normals, tangents
+                    if (zToY || lToR) {
+                        vertex.position = ConvertNormal(vertex.position, zToY, lToR);
+                        vertex.normal = ConvertNormal(vertex.normal, zToY, lToR);
+                        Math::Vector3 tang3(assimpVert.tangent.x, assimpVert.tangent.y, assimpVert.tangent.z);
+                        tang3 = ConvertNormal(tang3, zToY, lToR);
+                        vertex.tangent = Math::Vector4(tang3.x, tang3.y, tang3.z, assimpVert.tangent.w);
+                    }
                     vertex.uv = assimpVert.texCoord;
                     meshComp.vertices.push_back(vertex);
                 }
@@ -674,6 +930,15 @@ ECS::Entity SceneImporter::CreateEntityFromAssimpNode(const AssimpScene& scene, 
                     if (fs::exists(resolved)) {
                         stats.texturePathsResolved.push_back(resolved.string());
                         return resolved.string();
+                    }
+                    // Try user-specified texture search paths
+                    if (!options.textureSearchPaths.empty()) {
+                        std::string found = TryTextureSearchPaths(
+                            p.filename().string(), options.textureSearchPaths);
+                        if (!found.empty()) {
+                            stats.texturePathsResolved.push_back(found);
+                            return found;
+                        }
                     }
                     stats.texturePathsMissing.push_back(texPath);
                     return texPath; // Return as-is, RenderSystem will attempt to load

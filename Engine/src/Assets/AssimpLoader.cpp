@@ -68,6 +68,20 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     std::filesystem::path path(filepath);
     outScene.basePath = path.parent_path().string();
 
+    // Extract creator/DCC tool from scene metadata (FBX stores this)
+    if (scene->mMetaData) {
+        aiString creatorStr;
+        if (scene->mMetaData->Get("Creator", creatorStr)) {
+            outScene.creator = creatorStr.C_Str();
+        }
+        if (outScene.creator.empty()) {
+            aiString appStr;
+            if (scene->mMetaData->Get("SourceAsset_Generator", appStr)) {
+                outScene.creator = appStr.C_Str();
+            }
+        }
+    }
+
     // Load materials
     outScene.materials.resize(scene->mNumMaterials);
     for (unsigned int i = 0; i < scene->mNumMaterials; ++i) {

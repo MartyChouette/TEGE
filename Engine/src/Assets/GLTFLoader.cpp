@@ -33,6 +33,11 @@ bool GLTFLoader::Load(const std::string& filepath, GLTFScene& outScene) {
         return false;
     }
 
+    // Extract generator metadata (DCC tool identification)
+    if (data->asset.generator) {
+        outScene.generator = data->asset.generator;
+    }
+
     // Store base path for texture loading
     std::filesystem::path path(filepath);
     outScene.basePath = path.parent_path().string();
