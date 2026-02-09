@@ -128,6 +128,9 @@ struct EditorSettings {
     bool surfaceSnap = false;
     bool surfaceAlignNormal = true;
 
+    // Window Icon
+    std::string windowIconPath;    // Custom icon.png path (empty = default)
+
     // External IDE
     u32 externalIDE = 0;          // 0=Auto, 1=VS Code, 2=Visual Studio, 3=Rider, 4=Custom
     std::string customIDEPath;     // Only used when externalIDE == 4

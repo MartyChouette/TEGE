@@ -110,6 +110,8 @@ When you launch the editor for the first time:
 
 To set a custom window icon, place an `icon.png` file next to the editor executable. The engine will load it automatically on startup.
 
+You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon**. Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in editor settings and auto-applied on startup. Use **Clear** to revert to the OS default.
+
 ---
 
 ## 2. Editor Overview
@@ -136,6 +138,24 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Quest Flow** | Visual quest designer with objectives, branches, conditions, and rewards. |
 | **Pixel Editor** | Pixel art creation tool with layers, 8 drawing tools, undo/redo, and retro presets. |
 | **Sprite Sheet Importer** | Import and slice sprite sheets with grid or auto-detect modes. |
+
+### Entity and Component Icons
+
+Entities in the **Hierarchy** panel display bracket-tag icons based on their primary component type, making it easy to identify entity roles at a glance:
+
+`[C]` Camera, `[L]` Light, `[M]` Mesh, `[S]` Sprite, `[T]` Tilemap, `[P]` Particle, `[A]` Audio, `[R]` Rigidbody, `[D]` Dialogue, `[V]` Visual Script, `[U]` UI Canvas, `[AI]` AI, `[BT]` Behavior Tree.
+
+Similarly, component headers in the **Inspector** panel show bracket-tag icons (e.g., `[T] Transform`, `[M] Mesh`, `[L] Light`).
+
+### Empty States
+
+Panels display helpful empty-state messages when there is nothing to show:
+
+- **Hierarchy** — "No World Loaded" or "No Entities" (with a "Create Entity" button)
+- **Inspector** — "No Entity Selected"
+- **Asset Browser** — "Directory Not Found"
+- **Dialogue** — "No DialogueComponent"
+- **Plugin Browser** — "No Plugins Found"
 
 ### Keyboard Shortcuts
 
@@ -956,6 +976,33 @@ Retro RPG-style dialogue system with typewriter effect and branching choices.
 | `choices` | list | [] | Branching choices, each with `text` and `nextDialogueId`. |
 
 Methods: `IsComplete()`, `StartDialogue(lines)`, `GetVisibleText()`.
+
+#### DialogueBoxComponent
+
+Automatically builds a UICanvas-based dialogue box overlay for displaying dialogue. Attach this alongside a `DialogueComponent` and a `UICanvasComponent` — the system creates and syncs all UI elements automatically.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `boxHeight` | f32 | 200.0 | Height of the dialogue panel in pixels. |
+| `boxMargin` | f32 | 20.0 | Margin from screen edges. |
+| `boxPadding` | f32 | 16.0 | Interior padding. |
+| `boxColor` | Vector3 | (0.05, 0.05, 0.08) | Background color of the panel. |
+| `boxAlpha` | f32 | 0.92 | Panel opacity. |
+| `boxBorderRadius` | f32 | 8.0 | Corner rounding radius. |
+| `speakerFontSize` | f32 | 20.0 | Font size for the speaker name. |
+| `defaultSpeakerColor` | Vector3 | (0.9, 0.85, 0.5) | Default color for speaker name text. |
+| `textFontSize` | f32 | 17.0 | Font size for dialogue text. |
+| `textColor` | Vector3 | (0.9, 0.9, 0.9) | Dialogue text color. |
+| `showPortrait` | bool | true | Show character portrait image. |
+| `portraitSize` | f32 | 96.0 | Portrait dimensions in pixels. |
+| `choiceFontSize` | f32 | 16.0 | Font size for choice buttons. |
+| `choiceColor` | Vector3 | (0.7, 0.7, 0.7) | Default choice text color. |
+| `choiceHighlightColor` | Vector3 | (1.0, 0.9, 0.3) | Highlighted choice color. |
+| `showContinueIndicator` | bool | true | Show blinking "continue" indicator. |
+| `continueText` | string | ">" | Text for the continue indicator. |
+| `continueBlinkRate` | f32 | 2.0 | Blink speed in Hz. |
+
+The inspector groups settings into collapsible sections: **Box Layout**, **Text Style**, **Portrait**, **Choices**, and **Continue Indicator**.
 
 ---
 
@@ -2580,7 +2627,7 @@ Files are automatically categorized and color-coded:
 
 ### SVG Support
 
-Enjin supports loading SVG vector images at runtime via the integrated nanosvg library. SVG files are rasterized to textures at load time and can be used anywhere a regular image texture is accepted. The Asset Browser shows SVG files with thumbnail previews alongside raster images.
+Enjin supports loading SVG vector images at runtime via the integrated nanosvg library. SVG files are rasterized to textures at load time and can be used anywhere a regular image texture is accepted — including **UIElement Image widgets** in UI canvases. The Asset Browser shows SVG files with thumbnail previews alongside raster images.
 
 ---
 

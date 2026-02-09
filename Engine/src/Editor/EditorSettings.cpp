@@ -361,6 +361,9 @@ bool EditorSettings::Save(const std::string& path) const {
         j["surfaceSnap"] = surfaceSnap;
         j["surfaceAlignNormal"] = surfaceAlignNormal;
 
+        // Window Icon
+        j["windowIconPath"] = windowIconPath;
+
         // External IDE
         j["externalIDE"] = externalIDE;
         j["customIDEPath"] = customIDEPath;
@@ -488,6 +491,9 @@ bool EditorSettings::Load(const std::string& path) {
         // Surface Snap
         if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();
         if (j.contains("surfaceAlignNormal")) surfaceAlignNormal = j["surfaceAlignNormal"].get<bool>();
+
+        // Window Icon
+        if (j.contains("windowIconPath")) windowIconPath = j["windowIconPath"].get<std::string>();
 
         // External IDE
         if (j.contains("externalIDE")) externalIDE = j["externalIDE"].get<u32>();

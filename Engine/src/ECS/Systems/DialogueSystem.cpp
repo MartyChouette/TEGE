@@ -309,6 +309,208 @@ void DialogueSystem::Update(World* world, f32 deltaTime) {
     }
 
     m_ActiveEntity = activeDialogue;
+
+    // Sync DialogueBoxComponent → UICanvasComponent
+    for (Entity entity : world->GetEntitiesWithComponent<DialogueBoxComponent>()) {
+        auto* box = world->GetComponent<DialogueBoxComponent>(entity);
+        auto* canvas = world->GetComponent<GUI::UICanvasComponent>(entity);
+        auto* dlg = world->GetComponent<DialogueComponent>(entity);
+        if (!box || !canvas || !dlg) continue;
+
+        if (!box->initialized) {
+            BuildDialogueBoxUI(*canvas, *box);
+        }
+        SyncDialogueBoxUI(*canvas, *box, *dlg, deltaTime);
+    }
+}
+
+void DialogueSystem::BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueBoxComponent& box) {
+    // Build the UI element tree for the dialogue box
+    f32 dw = canvas.designWidth;
+    f32 dh = canvas.designHeight;
+    f32 m = box.boxMargin;
+
+    // Root panel (anchored to bottom of screen)
+    u32 panelId = canvas.AddElement(GUI::UIWidgetType::Panel, "DialogueBox");
+    auto* panel = canvas.GetElement(panelId);
+    panel->anchor.anchorMin = Math::Vector2(0.0f, 1.0f);
+    panel->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+    panel->anchor.pivot = Math::Vector2(0.5f, 1.0f);
+    panel->anchor.offsetLeft = m;
+    panel->anchor.offsetRight = m;
+    panel->anchor.offsetTop = -(dh - box.boxHeight - m);
+    panel->anchor.offsetBottom = m;
+    panel->style.bgColor = box.boxColor;
+    panel->style.bgAlpha = box.boxAlpha;
+    panel->style.borderRadius = box.boxBorderRadius;
+    panel->visible = false;
+    box.panelElementId = panelId;
+
+    f32 pad = box.boxPadding;
+    f32 textLeft = pad;
+
+    // Portrait image (left side of panel)
+    if (box.showPortrait) {
+        u32 portraitId = canvas.AddElement(GUI::UIWidgetType::Image, "Portrait", panelId);
+        auto* portrait = canvas.GetElement(portraitId);
+        portrait->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+        portrait->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
+        portrait->anchor.pivot = Math::Vector2(0.0f, 0.0f);
+        portrait->anchor.offsetLeft = pad;
+        portrait->anchor.offsetTop = pad;
+        portrait->anchor.offsetRight = -(pad + box.portraitSize);
+        portrait->anchor.offsetBottom = -(pad + box.portraitSize);
+        box.portraitElementId = portraitId;
+        textLeft = pad + box.portraitSize + pad;
+    }
+
+    // Speaker name label
+    u32 speakerId = canvas.AddElement(GUI::UIWidgetType::Label, "SpeakerName", panelId);
+    auto* speaker = canvas.GetElement(speakerId);
+    speaker->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+    speaker->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+    speaker->anchor.pivot = Math::Vector2(0.0f, 0.0f);
+    speaker->anchor.offsetLeft = textLeft;
+    speaker->anchor.offsetTop = pad;
+    speaker->anchor.offsetRight = pad;
+    speaker->anchor.offsetBottom = -(pad + box.speakerFontSize + 4.0f);
+    speaker->style.fontSize = box.speakerFontSize;
+    speaker->data.textAlignH = 0; // left
+    speaker->data.textAlignV = 1;
+    box.speakerElementId = speakerId;
+
+    // Dialogue text label
+    f32 textTop = pad + box.speakerFontSize + 8.0f;
+    u32 textId = canvas.AddElement(GUI::UIWidgetType::Label, "DialogueText", panelId);
+    auto* text = canvas.GetElement(textId);
+    text->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+    text->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+    text->anchor.pivot = Math::Vector2(0.0f, 0.0f);
+    text->anchor.offsetLeft = textLeft;
+    text->anchor.offsetTop = textTop;
+    text->anchor.offsetRight = pad;
+    text->anchor.offsetBottom = pad + 24.0f;
+    text->style.fontSize = box.textFontSize;
+    text->style.textColor = box.textColor;
+    text->data.textAlignH = 0;
+    text->data.textAlignV = 0; // top
+    box.textElementId = textId;
+
+    // Continue indicator (bottom-right)
+    u32 contId = canvas.AddElement(GUI::UIWidgetType::Label, "ContinueIndicator", panelId);
+    auto* cont = canvas.GetElement(contId);
+    cont->anchor.anchorMin = Math::Vector2(1.0f, 1.0f);
+    cont->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+    cont->anchor.pivot = Math::Vector2(1.0f, 1.0f);
+    cont->anchor.offsetLeft = -(pad + 60.0f);
+    cont->anchor.offsetTop = -(pad + 20.0f);
+    cont->anchor.offsetRight = pad;
+    cont->anchor.offsetBottom = pad;
+    cont->data.text = box.continueText;
+    cont->data.textAlignH = 2; // right
+    cont->data.textAlignV = 1;
+    cont->visible = false;
+    box.continueElementId = contId;
+
+    // Choice buttons
+    box.choiceCount = 0;
+    for (u32 i = 0; i < DialogueBoxComponent::MAX_CHOICES; ++i) {
+        u32 btnId = canvas.AddElement(GUI::UIWidgetType::Button, "Choice" + std::to_string(i), panelId);
+        auto* btn = canvas.GetElement(btnId);
+        f32 btnTop = textTop + (static_cast<f32>(i) * (box.textFontSize + box.choiceSpacing + 8.0f));
+        btn->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+        btn->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+        btn->anchor.pivot = Math::Vector2(0.0f, 0.0f);
+        btn->anchor.offsetLeft = textLeft;
+        btn->anchor.offsetTop = btnTop;
+        btn->anchor.offsetRight = pad;
+        btn->anchor.offsetBottom = -(btnTop + box.textFontSize + 8.0f);
+        btn->style.bgColor = box.choiceColor;
+        btn->style.bgAlpha = 0.8f;
+        btn->style.textColor = box.choiceTextColor;
+        btn->style.fontSize = box.textFontSize;
+        btn->style.borderRadius = 4.0f;
+        btn->data.textAlignH = 0;
+        btn->visible = false;
+        box.choiceElementIds[i] = btnId;
+    }
+
+    box.initialized = true;
+}
+
+void DialogueSystem::SyncDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueBoxComponent& box,
+                                         const DialogueComponent& dlg, f32 deltaTime) {
+    bool active = dlg.treeActive || (!dlg.dialogueLines.empty() && !dlg.IsComplete());
+
+    // Show/hide the panel
+    auto* panel = canvas.GetElement(box.panelElementId);
+    if (panel) panel->visible = active;
+    if (!active) return;
+
+    // Speaker name
+    auto* speaker = canvas.GetElement(box.speakerElementId);
+    if (speaker) {
+        std::string name = dlg.currentSpeaker.empty() ? dlg.speakerName : dlg.currentSpeaker;
+        speaker->data.text = name;
+        Math::Vector3 col = dlg.IsTreeMode() ? dlg.currentSpeakerColor : box.defaultSpeakerColor;
+        speaker->style.textColor = col;
+    }
+
+    // Dialogue text (typewriter)
+    auto* text = canvas.GetElement(box.textElementId);
+    if (text) {
+        text->data.text = dlg.IsTreeMode() ? dlg.GetTreeVisibleText() : dlg.GetVisibleText();
+    }
+
+    // Portrait
+    if (box.showPortrait) {
+        auto* portrait = canvas.GetElement(box.portraitElementId);
+        if (portrait) {
+            portrait->data.imagePath = dlg.portraitPath;
+            portrait->visible = !dlg.portraitPath.empty();
+        }
+    }
+
+    // Continue indicator (blink when waiting for input, no choices)
+    auto* cont = canvas.GetElement(box.continueElementId);
+    if (cont) {
+        bool showContinue = dlg.waitingForInput && dlg.currentChoices.empty();
+        if (showContinue) {
+            box.blinkTimer += deltaTime;
+            f32 blink = std::sin(box.blinkTimer * box.continueBlinkSpeed * 3.14159f);
+            cont->visible = blink > 0.0f;
+        } else {
+            cont->visible = false;
+            box.blinkTimer = 0.0f;
+        }
+    }
+
+    // Choices
+    bool hasChoices = dlg.waitingForInput && !dlg.currentChoices.empty();
+    u32 numChoices = hasChoices ? static_cast<u32>(dlg.currentChoices.size()) : 0;
+    if (numChoices > DialogueBoxComponent::MAX_CHOICES)
+        numChoices = DialogueBoxComponent::MAX_CHOICES;
+
+    // Hide text label when showing choices, show choice buttons instead
+    if (text) text->visible = !hasChoices;
+
+    for (u32 i = 0; i < DialogueBoxComponent::MAX_CHOICES; ++i) {
+        auto* btn = canvas.GetElement(box.choiceElementIds[i]);
+        if (!btn) continue;
+        if (i < numChoices) {
+            btn->visible = true;
+            std::string prefix = (static_cast<i32>(i) == dlg.selectedChoice) ? "> " : "  ";
+            btn->data.text = prefix + dlg.currentChoices[i].text;
+            // Highlight selected choice
+            if (static_cast<i32>(i) == dlg.selectedChoice) {
+                btn->style.bgAlpha = 1.0f;
+            } else {
+                btn->style.bgAlpha = 0.6f;
+            }
+        } else {
+            btn->visible = false;
+        }
+    }
 }
 
 void DialogueSystem::BroadcastEvent(Entity entity, const std::string& eventName) {

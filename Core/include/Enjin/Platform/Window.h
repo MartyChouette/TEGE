@@ -45,6 +45,9 @@ public:
     virtual bool IsFocused() const = 0;
     virtual bool IsIconified() const = 0;
 
+    // Set window icon at runtime (PNG path)
+    virtual void SetIcon(const char* iconPath) = 0;
+
     // Block until an event occurs (for use when minimized to avoid busy-spin)
     virtual void WaitEvents() = 0;
 };

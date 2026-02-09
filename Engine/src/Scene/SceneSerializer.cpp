@@ -1970,6 +1970,59 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
 }
 
 // ============================================================================
+// Dialogue Box
+// ============================================================================
+
+json SerializeDialogueBoxComponent(const ECS::DialogueBoxComponent& b) {
+    json j;
+    j["boxHeight"] = b.boxHeight;
+    j["boxMargin"] = b.boxMargin;
+    j["boxPadding"] = b.boxPadding;
+    j["boxColor"] = { b.boxColor.x, b.boxColor.y, b.boxColor.z };
+    j["boxAlpha"] = b.boxAlpha;
+    j["boxBorderRadius"] = b.boxBorderRadius;
+    j["speakerFontSize"] = b.speakerFontSize;
+    j["defaultSpeakerColor"] = { b.defaultSpeakerColor.x, b.defaultSpeakerColor.y, b.defaultSpeakerColor.z };
+    j["textFontSize"] = b.textFontSize;
+    j["textColor"] = { b.textColor.x, b.textColor.y, b.textColor.z };
+    j["showPortrait"] = b.showPortrait;
+    j["portraitSize"] = b.portraitSize;
+    j["choiceSpacing"] = b.choiceSpacing;
+    j["choiceColor"] = { b.choiceColor.x, b.choiceColor.y, b.choiceColor.z };
+    j["choiceTextColor"] = { b.choiceTextColor.x, b.choiceTextColor.y, b.choiceTextColor.z };
+    j["continueText"] = b.continueText;
+    j["continueBlinkSpeed"] = b.continueBlinkSpeed;
+    return j;
+}
+
+ECS::DialogueBoxComponent DeserializeDialogueBoxComponent(const json& j) {
+    ECS::DialogueBoxComponent b;
+    if (j.contains("boxHeight")) b.boxHeight = j["boxHeight"].get<f32>();
+    if (j.contains("boxMargin")) b.boxMargin = j["boxMargin"].get<f32>();
+    if (j.contains("boxPadding")) b.boxPadding = j["boxPadding"].get<f32>();
+    if (j.contains("boxColor") && j["boxColor"].is_array() && j["boxColor"].size() >= 3)
+        b.boxColor = Math::Vector3(j["boxColor"][0], j["boxColor"][1], j["boxColor"][2]);
+    if (j.contains("boxAlpha")) b.boxAlpha = j["boxAlpha"].get<f32>();
+    if (j.contains("boxBorderRadius")) b.boxBorderRadius = j["boxBorderRadius"].get<f32>();
+    if (j.contains("speakerFontSize")) b.speakerFontSize = j["speakerFontSize"].get<f32>();
+    if (j.contains("defaultSpeakerColor") && j["defaultSpeakerColor"].is_array() && j["defaultSpeakerColor"].size() >= 3)
+        b.defaultSpeakerColor = Math::Vector3(j["defaultSpeakerColor"][0], j["defaultSpeakerColor"][1], j["defaultSpeakerColor"][2]);
+    if (j.contains("textFontSize")) b.textFontSize = j["textFontSize"].get<f32>();
+    if (j.contains("textColor") && j["textColor"].is_array() && j["textColor"].size() >= 3)
+        b.textColor = Math::Vector3(j["textColor"][0], j["textColor"][1], j["textColor"][2]);
+    if (j.contains("showPortrait")) b.showPortrait = j["showPortrait"].get<bool>();
+    if (j.contains("portraitSize")) b.portraitSize = j["portraitSize"].get<f32>();
+    if (j.contains("choiceSpacing")) b.choiceSpacing = j["choiceSpacing"].get<f32>();
+    if (j.contains("choiceColor") && j["choiceColor"].is_array() && j["choiceColor"].size() >= 3)
+        b.choiceColor = Math::Vector3(j["choiceColor"][0], j["choiceColor"][1], j["choiceColor"][2]);
+    if (j.contains("choiceTextColor") && j["choiceTextColor"].is_array() && j["choiceTextColor"].size() >= 3)
+        b.choiceTextColor = Math::Vector3(j["choiceTextColor"][0], j["choiceTextColor"][1], j["choiceTextColor"][2]);
+    if (j.contains("continueText")) b.continueText = j["continueText"].get<std::string>();
+    if (j.contains("continueBlinkSpeed")) b.continueBlinkSpeed = j["continueBlinkSpeed"].get<f32>();
+    return b;
+}
+
+// ============================================================================
 // Visual Script
 // ============================================================================
 
@@ -4641,6 +4694,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
                 entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::DialogueBoxComponent>(entity)) {
+                entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*m_World->GetComponent<ECS::DialogueBoxComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
                 entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
             }
@@ -5211,6 +5267,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("dialogue")) {
                 m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
             }
+            if (entityJson.contains("dialogueBox")) {
+                m_World->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(entityJson["dialogueBox"]));
+            }
             if (entityJson.contains("tween")) {
                 m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
             }
@@ -5687,6 +5746,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
                 entityJson["dialogue"] = SerializeDialogueComponent(*m_World->GetComponent<ECS::DialogueComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::DialogueBoxComponent>(entity)) {
+                entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*m_World->GetComponent<ECS::DialogueBoxComponent>(entity));
             }
             if (m_World->HasComponent<ECS::TweenComponent>(entity)) {
                 entityJson["tween"] = SerializeTweenComponent(*m_World->GetComponent<ECS::TweenComponent>(entity));
@@ -6213,6 +6275,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("dialogue")) {
                 m_World->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(entityJson["dialogue"]));
             }
+            if (entityJson.contains("dialogueBox")) {
+                m_World->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(entityJson["dialogueBox"]));
+            }
             if (entityJson.contains("tween")) {
                 m_World->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(entityJson["tween"]));
             }
@@ -6563,6 +6628,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["stateMachine"] = SerializeStateMachineComponent(*world->GetComponent<ECS::StateMachineComponent>(entity));
         if (world->HasComponent<ECS::DialogueComponent>(entity))
             entityJson["dialogue"] = SerializeDialogueComponent(*world->GetComponent<ECS::DialogueComponent>(entity));
+        if (world->HasComponent<ECS::DialogueBoxComponent>(entity))
+            entityJson["dialogueBox"] = SerializeDialogueBoxComponent(*world->GetComponent<ECS::DialogueBoxComponent>(entity));
         if (world->HasComponent<ECS::TweenComponent>(entity))
             entityJson["tween"] = SerializeTweenComponent(*world->GetComponent<ECS::TweenComponent>(entity));
         if (world->HasComponent<ECS::VisualScriptComponent>(entity))
@@ -7048,6 +7115,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeStateMachineComponent(*world->GetComponent<ECS::StateMachineComponent>(entity));
         else if (key == "dialogue" && world->HasComponent<ECS::DialogueComponent>(entity))
             j = SerializeDialogueComponent(*world->GetComponent<ECS::DialogueComponent>(entity));
+        else if (key == "dialogueBox" && world->HasComponent<ECS::DialogueBoxComponent>(entity))
+            j = SerializeDialogueBoxComponent(*world->GetComponent<ECS::DialogueBoxComponent>(entity));
         else if (key == "tween" && world->HasComponent<ECS::TweenComponent>(entity))
             j = SerializeTweenComponent(*world->GetComponent<ECS::TweenComponent>(entity));
         else if (key == "visualScript" && world->HasComponent<ECS::VisualScriptComponent>(entity))
@@ -7200,6 +7269,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "camera2DBounds") { world->AddComponent<ECS::Camera2DBoundsComponent>(entity, DeserializeCamera2DBoundsComponent(j)); return true; }
         if (key == "stateMachine") { world->AddComponent<ECS::StateMachineComponent>(entity, DeserializeStateMachineComponent(j)); return true; }
         if (key == "dialogue") { world->AddComponent<ECS::DialogueComponent>(entity, DeserializeDialogueComponent(j)); return true; }
+        if (key == "dialogueBox") { world->AddComponent<ECS::DialogueBoxComponent>(entity, DeserializeDialogueBoxComponent(j)); return true; }
         if (key == "tween") { world->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(j)); return true; }
         if (key == "visualScript") { world->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(j)); return true; }
         if (key == "aiController") { world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(j)); return true; }

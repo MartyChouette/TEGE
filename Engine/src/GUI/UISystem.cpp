@@ -440,15 +440,30 @@ void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
 void UISystem::RenderImage(const UIElement& element, const UITheme& theme) {
     (void)theme;
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-
-    // Image rendering placeholder — actual texture loading requires VulkanImage integration
-    // For now, draw a tinted rect to show the element bounds
     f32 alpha = element.data.imageAlpha;
     auto& tint = element.data.imageTint;
+
+    if (!element.data.imagePath.empty() && m_TextureResolver) {
+        u32 texW = 0, texH = 0;
+        void* texId = m_TextureResolver(element.data.imagePath, texW, texH);
+        if (texId) {
+            u8 r = static_cast<u8>(tint.x * 255.0f);
+            u8 g = static_cast<u8>(tint.y * 255.0f);
+            u8 b = static_cast<u8>(tint.z * 255.0f);
+            u8 a = static_cast<u8>(alpha * 255.0f);
+            ImU32 tintCol = IM_COL32(r, g, b, a);
+            ImVec2 pMin(element.computedRect.x, element.computedRect.y);
+            ImVec2 pMax(element.computedRect.x + element.computedRect.w,
+                        element.computedRect.y + element.computedRect.h);
+            dl->AddImage(reinterpret_cast<ImTextureID>(texId), pMin, pMax,
+                         ImVec2(0, 0), ImVec2(1, 1), tintCol);
+            return;
+        }
+    }
+
+    // Fallback: tinted rect with path label
     ImU32 color = ImGui::ColorConvertFloat4ToU32(ImVec4(tint.x * 0.3f, tint.y * 0.3f, tint.z * 0.3f, alpha * 0.5f));
     DrawRoundedRect(dl, element.computedRect, color, 0.0f);
-
-    // Draw image path label in center if no texture loaded
     if (!element.data.imagePath.empty()) {
         ImFont* font = ImGui::GetFont();
         std::string label = "[" + element.data.imagePath + "]";

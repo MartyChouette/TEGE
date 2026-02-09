@@ -134,6 +134,23 @@ public:
         glfwWaitEvents();
     }
 
+    void SetIcon(const char* iconPath) override {
+        if (!m_Window || !iconPath) return;
+        int w = 0, h = 0, ch = 0;
+        unsigned char* pixels = stbi_load(iconPath, &w, &h, &ch, 4);
+        if (pixels) {
+            GLFWimage icon;
+            icon.width = w;
+            icon.height = h;
+            icon.pixels = pixels;
+            glfwSetWindowIcon(m_Window, 1, &icon);
+            stbi_image_free(pixels);
+            ENJIN_LOG_INFO(Core, "Window icon updated: %s (%dx%d)", iconPath, w, h);
+        } else {
+            ENJIN_LOG_WARN(Core, "Failed to load window icon: %s", iconPath);
+        }
+    }
+
     GLFWwindow* GetGLFWHandle() const { return m_Window; }
 
 private:

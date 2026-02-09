@@ -922,6 +922,53 @@ struct DialogueComponent {
 };
 
 // ============================================================================
+// DIALOGUE BOX UI (auto-builds UICanvas elements for dialogue display)
+// ============================================================================
+
+struct DialogueBoxComponent {
+    // --- Configuration ---
+    f32 boxHeight = 200.0f;             // Dialogue box height in design pixels
+    f32 boxMargin = 20.0f;              // Margin from screen edges
+    f32 boxPadding = 16.0f;             // Inner padding
+    Math::Vector3 boxColor = Math::Vector3(0.05f, 0.05f, 0.08f);
+    f32 boxAlpha = 0.92f;
+    f32 boxBorderRadius = 8.0f;
+
+    // Speaker name
+    f32 speakerFontSize = 20.0f;
+    Math::Vector3 defaultSpeakerColor = Math::Vector3(0.9f, 0.85f, 0.5f);
+
+    // Dialogue text
+    f32 textFontSize = 17.0f;
+    Math::Vector3 textColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+
+    // Portrait
+    bool showPortrait = true;
+    f32 portraitSize = 96.0f;           // Width and height of portrait image
+
+    // Choice buttons
+    f32 choiceSpacing = 6.0f;
+    Math::Vector3 choiceColor = Math::Vector3(0.15f, 0.15f, 0.2f);
+    Math::Vector3 choiceTextColor = Math::Vector3(0.85f, 0.85f, 0.85f);
+
+    // Continue indicator
+    std::string continueText = ">>>";
+    f32 continueBlinkSpeed = 2.0f;      // Blinks per second
+
+    // --- Runtime state (not serialized) ---
+    bool initialized = false;
+    u32 panelElementId = 0;
+    u32 speakerElementId = 0;
+    u32 textElementId = 0;
+    u32 portraitElementId = 0;
+    u32 continueElementId = 0;
+    static constexpr u32 MAX_CHOICES = 6;
+    u32 choiceElementIds[MAX_CHOICES] = {};
+    u32 choiceCount = 0;
+    f32 blinkTimer = 0.0f;
+};
+
+// ============================================================================
 // SAVE DATA (for game progress)
 // ============================================================================
 

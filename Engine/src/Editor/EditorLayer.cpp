@@ -309,6 +309,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueComponent>(e); },
             "dialogue"},
+        {"Dialogue Box", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::DialogueBoxComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueBoxComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueBoxComponent>(e); },
+            "dialogueBox"},
         {"Visual Script", "Scripting", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VisualScriptComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VisualScriptComponent>(e); },
@@ -718,6 +723,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     Input::SetMouseSmoothing(m_EditorSettings.mouseSmoothing);
     m_SurfaceSnap = m_EditorSettings.surfaceSnap;
     m_SurfaceAlignNormal = m_EditorSettings.surfaceAlignNormal;
+    if (!m_EditorSettings.windowIconPath.empty() && m_Window) {
+        m_Window->SetIcon(m_EditorSettings.windowIconPath.c_str());
+    }
 
     // Initialize in-game pause menu system
     m_GameMenu.SetInputMap(&m_InputMap);
@@ -3233,6 +3241,15 @@ void EditorLayer::DrawHierarchyPanel() {
         // Only show root entities (no parent) at top level; children are drawn recursively
         const auto& entities = m_World->GetAllEntities();
 
+        if (entities.empty()) {
+            DrawEmptyState("( )", "No Entities", "Right-click to create your first entity",
+                "Create Entity", [this]() {
+                    ECS::Entity entity = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::TransformComponent>(entity);
+                    SelectEntity(entity);
+                });
+        }
+
         for (ECS::Entity entity : entities) {
             // Skip entities that have a parent — they'll be drawn under their parent
             if (ECS::HasParent(m_World, entity)) continue;
@@ -3285,10 +3302,103 @@ void EditorLayer::DrawHierarchyPanel() {
             ImGui::EndPopup();
         }
     } else {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
     }
 
     ImGui::End();
+}
+
+void EditorLayer::DrawEmptyState(const char* icon, const char* heading, const char* body,
+                                  const char* ctaLabel, std::function<void()> ctaAction) {
+    ImVec2 avail = ImGui::GetContentRegionAvail();
+    f32 centerY = avail.y * 0.35f;
+
+    // Icon (large, 40% opacity)
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + centerY);
+    ImFont* headingFont = m_ImGuiLayer ? m_ImGuiLayer->GetHeadingFont() : nullptr;
+    if (headingFont) ImGui::PushFont(headingFont);
+    ImVec2 iconSize = ImGui::CalcTextSize(icon);
+    ImGui::SetCursorPosX((avail.x - iconSize.x) * 0.5f);
+    ImGui::TextColored(ImVec4(1.0f, 1.0f, 1.0f, 0.4f), "%s", icon);
+    if (headingFont) ImGui::PopFont();
+
+    // Heading
+    ImVec2 headingSize = ImGui::CalcTextSize(heading);
+    ImGui::SetCursorPosX((avail.x - headingSize.x) * 0.5f);
+    ImGui::Text("%s", heading);
+
+    // Body text
+    ImVec2 bodySize = ImGui::CalcTextSize(body);
+    ImGui::SetCursorPosX((avail.x - bodySize.x) * 0.5f);
+    ImGui::TextDisabled("%s", body);
+
+    // Optional CTA button
+    if (ctaLabel && ctaAction) {
+        ImGui::Spacing();
+        ImVec2 btnSize = ImGui::CalcTextSize(ctaLabel);
+        btnSize.x += 24.0f;
+        btnSize.y += 10.0f;
+        ImGui::SetCursorPosX((avail.x - btnSize.x) * 0.5f);
+        if (ImGui::Button(ctaLabel, btnSize)) {
+            ctaAction();
+        }
+    }
+}
+
+static const char* GetComponentIcon(const char* componentName) {
+    // Map component names to bracket icons
+    struct IconMap { const char* name; const char* icon; };
+    static const IconMap icons[] = {
+        {"Transform", "[+] "},
+        {"Mesh", "[M] "},
+        {"Material", "[*] "},
+        {"Light", "[L] "},
+        {"Camera", "[C] "},
+        {"Sprite 2D", "[S] "},
+        {"Tilemap", "[T] "},
+        {"Particle Emitter", "[P] "},
+        {"Audio Source", "[A] "},
+        {"Rigidbody", "[R] "},
+        {"Box Collider", "[B] "},
+        {"Sphere Collider", "[O] "},
+        {"Capsule Collider", "[I] "},
+        {"Dialogue", "[D] "},
+        {"Dialogue Box", "[D] "},
+        {"Visual Script", "[V] "},
+        {"UI Canvas", "[U] "},
+        {"Terrain", "[~] "},
+        {"Animator", "[>] "},
+        {"Health", "[H] "},
+        {"AI Controller", "[AI]"},
+        {"Behavior Tree", "[BT]"},
+        {"LOD", "[#] "},
+        {"Skybox", "[=] "},
+    };
+    for (const auto& m : icons) {
+        if (std::strcmp(componentName, m.name) == 0) return m.icon;
+    }
+    return "";
+}
+
+static const char* GetEntityIcon(ECS::World* world, ECS::Entity entity) {
+    if (world->HasComponent<ECS::CameraComponent>(entity))      return "[C] ";
+    if (world->HasComponent<ECS::LightComponent>(entity))       return "[L] ";
+    if (world->HasComponent<ECS::MeshComponent>(entity))        return "[M] ";
+    if (world->HasComponent<ECS::Sprite2DComponent>(entity))    return "[S] ";
+    if (world->HasComponent<ECS::TilemapComponent>(entity))     return "[T] ";
+    if (world->HasComponent<ECS::ParticleEmitterComponent>(entity)) return "[P] ";
+    if (world->HasComponent<ECS::AudioSourceComponent>(entity)) return "[A] ";
+    if (world->HasComponent<ECS::RigidbodyComponent>(entity))   return "[R] ";
+    if (world->HasComponent<ECS::DialogueComponent>(entity))    return "[D] ";
+    if (world->HasComponent<ECS::VisualScriptComponent>(entity)) return "[V] ";
+    if (world->HasComponent<GUI::UICanvasComponent>(entity))    return "[U] ";
+    if (world->HasComponent<ECS::TerrainComponent>(entity))     return "[~] ";
+    if (world->HasComponent<ECS::WeatherZoneComponent>(entity)) return "[W] ";
+    if (world->HasComponent<ECS::WaterVolumeComponent>(entity))  return "[~] ";
+    if (world->HasComponent<ECS::GrassVolumeComponent>(entity)) return "[G] ";
+    if (world->HasComponent<ECS::AIControllerComponent>(entity)) return "[AI]";
+    if (world->HasComponent<ECS::BehaviorTreeComponent>(entity)) return "[BT]";
+    return "";
 }
 
 void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
@@ -3306,7 +3416,9 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         flags |= ImGuiTreeNodeFlags_Selected;
     }
 
-    bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", name.c_str());
+    const char* icon = GetEntityIcon(m_World, entity);
+    std::string label = std::string(icon) + name;
+    bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
 
     // Capture tree node interaction state before the eye icon overwrites "last item"
     bool nodeClicked = ImGui::IsItemClicked();
@@ -3767,6 +3879,9 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::DialogueComponent>(m_PrimarySelected)) {
             DrawDialogueComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::DialogueBoxComponent>(m_PrimarySelected)) {
+            DrawDialogueBoxComponent(m_PrimarySelected);
+        }
 
         // Other components
         if (m_World->HasComponent<ECS::TagComponent>(m_PrimarySelected)) {
@@ -4110,14 +4225,15 @@ void EditorLayer::DrawInspectorPanel() {
             m_ComponentSearchSelectedIndex = -1;
         }
     } else {
-        ImGui::TextDisabled("No entity selected");
+        DrawEmptyState("< >", "No Entity Selected", "Select an entity in the Hierarchy to inspect it");
     }
 
     ImGui::End();
 }
 
 void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
-    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+    std::string hdr = std::string(GetComponentIcon("Transform")) + "Transform";
+    if (ImGui::CollapsingHeader(hdr.c_str(), ImGuiTreeNodeFlags_DefaultOpen)) {
         ECS::TransformComponent* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) return;
 
@@ -4154,7 +4270,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMeshComponent(ECS::Entity entity) {
-    bool meshOpen = ImGui::CollapsingHeader("Mesh", ImGuiTreeNodeFlags_DefaultOpen);
+    bool meshOpen = ImGui::CollapsingHeader("[M] Mesh", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MeshCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MeshComponent>(entity, "mesh", "Mesh");
@@ -4240,7 +4356,7 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
-    bool matOpen = ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen);
+    bool matOpen = ImGui::CollapsingHeader("[*] Material", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("MaterialCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::MaterialComponent>(entity, "material", "Material");
@@ -4452,7 +4568,7 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawLightComponent(ECS::Entity entity) {
-    bool lightOpen = ImGui::CollapsingHeader("Light", ImGuiTreeNodeFlags_DefaultOpen);
+    bool lightOpen = ImGui::CollapsingHeader("[L] Light", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("LightCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::LightComponent>(entity, "light", "Light");
@@ -4506,7 +4622,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
-    bool camOpen = ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen);
+    bool camOpen = ImGui::CollapsingHeader("[C] Camera", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("CameraCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::CameraComponent>(entity, "camera", "Camera");
@@ -5775,11 +5891,11 @@ void EditorLayer::DrawAssetBrowserPanel() {
     fs::path browsePath(m_AssetBrowserPath);
 
     if (!fs::exists(browsePath) || !fs::is_directory(browsePath)) {
-        ImGui::TextDisabled("Directory not found");
-        if (ImGui::Button("Reset to Project Root")) {
-            m_AssetBrowserPath = ".";
-            m_AssetBrowserCacheDirty = true;
-        }
+        DrawEmptyState("?", "Directory Not Found", "The current path does not exist",
+            "Reset to Project Root", [this]() {
+                m_AssetBrowserPath = ".";
+                m_AssetBrowserCacheDirty = true;
+            });
         ImGui::EndChild();
         ImGui::End();
         return;
@@ -6997,6 +7113,37 @@ void EditorLayer::DrawProjectSettingsPanel() {
             "Mixed mode: All components visible"
         };
         ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "%s", desc[currentMode]);
+    }
+
+    if (ImGui::CollapsingHeader("Window Icon")) {
+        char iconBuf[256];
+        strncpy(iconBuf, m_EditorSettings.windowIconPath.c_str(), sizeof(iconBuf) - 1);
+        iconBuf[sizeof(iconBuf) - 1] = '\0';
+        if (ImGui::InputText("Icon Path", iconBuf, sizeof(iconBuf))) {
+            m_EditorSettings.windowIconPath = iconBuf;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Browse...##icon")) {
+            std::vector<FileFilter> filters = {{ "Image Files", "*.png;*.jpg;*.bmp" }};
+            std::string path = FileDialog::OpenFile("Select Window Icon", filters);
+            if (!path.empty()) {
+                m_EditorSettings.windowIconPath = path;
+            }
+        }
+        if (!m_EditorSettings.windowIconPath.empty()) {
+            ImGui::TextDisabled("Icon: %s", m_EditorSettings.windowIconPath.c_str());
+            if (ImGui::Button("Apply Icon")) {
+                if (m_Window) {
+                    m_Window->SetIcon(m_EditorSettings.windowIconPath.c_str());
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear")) {
+                m_EditorSettings.windowIconPath.clear();
+            }
+        } else {
+            ImGui::TextDisabled("Using default icon (icon.png next to executable)");
+        }
     }
 
     if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -17988,7 +18135,7 @@ void EditorLayer::DrawFirstPersonController(ECS::Entity entity) {
 // ============================================================================
 
 void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
-    bool healthOpen = ImGui::CollapsingHeader("Health", ImGuiTreeNodeFlags_DefaultOpen);
+    bool healthOpen = ImGui::CollapsingHeader("[H] Health", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("HealthCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::HealthComponent>(entity, "health", "Health");
@@ -18036,7 +18183,7 @@ void EditorLayer::DrawHealthComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
-    bool rbOpen = ImGui::CollapsingHeader("Rigidbody", ImGuiTreeNodeFlags_DefaultOpen);
+    bool rbOpen = ImGui::CollapsingHeader("[R] Rigidbody", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("RigidbodyCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::RigidbodyComponent>(entity, "rigidbody", "Rigidbody");
@@ -18127,7 +18274,7 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
-    bool audioOpen = ImGui::CollapsingHeader("Audio Source", ImGuiTreeNodeFlags_DefaultOpen);
+    bool audioOpen = ImGui::CollapsingHeader("[A] Audio Source", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("AudioSourceCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::AudioSourceComponent>(entity, "audioSource", "Audio Source");
@@ -18179,7 +18326,7 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
 }
 
 void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
-    bool spriteOpen = ImGui::CollapsingHeader("Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    bool spriteOpen = ImGui::CollapsingHeader("[S] Sprite 2D", ImGuiTreeNodeFlags_DefaultOpen);
     if (ImGui::BeginPopupContextItem("Sprite2DCtx")) {
         if (ImGui::MenuItem("Remove Component")) {
             RemoveComponentWithUndo<ECS::Sprite2DComponent>(entity, "sprite2D", "Sprite");
@@ -19223,6 +19370,79 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
                 newKeyBuf[0] = '\0';
             }
             ImGui::TreePop();
+        }
+    }
+}
+
+void EditorLayer::DrawDialogueBoxComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Dialogue Box", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* box = m_World->GetComponent<ECS::DialogueBoxComponent>(entity);
+        if (!box) return;
+
+        if (ImGui::TreeNode("Box Layout")) {
+            ImGui::DragFloat("Height", &box->boxHeight, 1.0f, 50.0f, 600.0f);
+            ImGui::DragFloat("Margin", &box->boxMargin, 0.5f, 0.0f, 100.0f);
+            ImGui::DragFloat("Padding", &box->boxPadding, 0.5f, 0.0f, 50.0f);
+            f32 col[3] = { box->boxColor.x, box->boxColor.y, box->boxColor.z };
+            if (ImGui::ColorEdit3("Box Color", col)) {
+                box->boxColor = Math::Vector3(col[0], col[1], col[2]);
+            }
+            ImGui::SliderFloat("Box Alpha", &box->boxAlpha, 0.0f, 1.0f);
+            ImGui::DragFloat("Border Radius", &box->boxBorderRadius, 0.5f, 0.0f, 32.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Text Style")) {
+            ImGui::DragFloat("Speaker Font Size", &box->speakerFontSize, 0.5f, 8.0f, 48.0f);
+            f32 sc[3] = { box->defaultSpeakerColor.x, box->defaultSpeakerColor.y, box->defaultSpeakerColor.z };
+            if (ImGui::ColorEdit3("Default Speaker Color", sc)) {
+                box->defaultSpeakerColor = Math::Vector3(sc[0], sc[1], sc[2]);
+            }
+            ImGui::DragFloat("Text Font Size", &box->textFontSize, 0.5f, 8.0f, 48.0f);
+            f32 tc[3] = { box->textColor.x, box->textColor.y, box->textColor.z };
+            if (ImGui::ColorEdit3("Text Color", tc)) {
+                box->textColor = Math::Vector3(tc[0], tc[1], tc[2]);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Portrait")) {
+            ImGui::Checkbox("Show Portrait", &box->showPortrait);
+            if (box->showPortrait) {
+                ImGui::DragFloat("Portrait Size", &box->portraitSize, 1.0f, 32.0f, 256.0f);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Choices")) {
+            ImGui::DragFloat("Choice Spacing", &box->choiceSpacing, 0.5f, 0.0f, 24.0f);
+            f32 cc[3] = { box->choiceColor.x, box->choiceColor.y, box->choiceColor.z };
+            if (ImGui::ColorEdit3("Choice BG Color", cc)) {
+                box->choiceColor = Math::Vector3(cc[0], cc[1], cc[2]);
+            }
+            f32 ctc[3] = { box->choiceTextColor.x, box->choiceTextColor.y, box->choiceTextColor.z };
+            if (ImGui::ColorEdit3("Choice Text Color", ctc)) {
+                box->choiceTextColor = Math::Vector3(ctc[0], ctc[1], ctc[2]);
+            }
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Continue Indicator")) {
+            char buf[64];
+            strncpy(buf, box->continueText.c_str(), sizeof(buf) - 1);
+            buf[sizeof(buf) - 1] = '\0';
+            if (ImGui::InputText("Text", buf, sizeof(buf))) {
+                box->continueText = buf;
+            }
+            ImGui::DragFloat("Blink Speed", &box->continueBlinkSpeed, 0.1f, 0.5f, 10.0f);
+            ImGui::TreePop();
+        }
+
+        if (box->initialized) {
+            ImGui::TextDisabled("UI elements built (%u panel)", box->panelElementId);
+            if (ImGui::Button("Rebuild UI")) {
+                box->initialized = false;
+            }
         }
     }
 }
@@ -24709,7 +24929,7 @@ void EditorLayer::DrawParticleEditorPanel() {
     }
 
     if (!m_World) {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
         ImGui::End();
         return;
     }
@@ -25011,7 +25231,7 @@ void EditorLayer::DrawAnimGraphPanel() {
     }
 
     if (!m_World) {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
         ImGui::End();
         return;
     }
@@ -25038,7 +25258,7 @@ void EditorLayer::DrawDialoguePanel() {
     }
 
     if (!m_World) {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
         ImGui::End();
         return;
     }
@@ -25056,7 +25276,7 @@ void EditorLayer::DrawDialoguePanel() {
     }
 
     if (dialogueEntities.empty()) {
-        ImGui::TextDisabled("No DialogueComponent\nfound in scene");
+        DrawEmptyState("...", "No Dialogue Trees", "Add a DialogueComponent to an entity to begin");
     } else {
         for (ECS::Entity entity : dialogueEntities) {
             std::string name = "Entity " + std::to_string(entity);
@@ -25375,7 +25595,7 @@ void EditorLayer::DrawBehaviorTreePanel() {
     }
 
     if (!m_World) {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
         ImGui::End();
         return;
     }
@@ -25439,7 +25659,7 @@ void EditorLayer::DrawQuestFlowPanel() {
     }
 
     if (!m_World) {
-        ImGui::TextDisabled("No world loaded");
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
         ImGui::End();
         return;
     }
@@ -26589,7 +26809,7 @@ void EditorLayer::DrawPluginBrowserPanel() {
     }
 
     if (catalog.empty()) {
-        ImGui::TextDisabled("No plugins in catalog. Add a repository source and click Refresh.");
+        DrawEmptyState("{+}", "No Plugins Found", "Add a repository source and click Refresh");
     }
 
     // Repository sources management

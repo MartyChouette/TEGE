@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/GUI/DialogueTree.h"
+#include "Enjin/GUI/UICanvas.h"
 #include <unordered_map>
 #include <functional>
 
@@ -63,6 +64,9 @@ private:
     void ProcessLegacy(World* world, Entity entity, DialogueComponent& dlg, f32 deltaTime);
     void BroadcastEvent(Entity entity, const std::string& eventName);
     void ShowSubtitle(const DialogueComponent& dlg);
+    void BuildDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueBoxComponent& box);
+    void SyncDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueBoxComponent& box,
+                           const DialogueComponent& dlg, f32 deltaTime);
 };
 
 } // namespace ECS

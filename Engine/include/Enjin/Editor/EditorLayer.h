@@ -238,6 +238,7 @@ private:
     void DrawSplashScreen();
     void DrawBuildDialog();
 
+    void DrawEmptyState(const char* icon, const char* heading, const char* body, const char* ctaLabel = nullptr, std::function<void()> ctaAction = nullptr);
     void DrawEntityNode(ECS::Entity entity, const std::string& name);
     void DrawTransformComponent(ECS::Entity entity);
     void DrawMeshComponent(ECS::Entity entity);
@@ -298,6 +299,7 @@ private:
     void DrawCamera2DBoundsComponent(ECS::Entity entity);
     void DrawStateMachineComponent(ECS::Entity entity);
     void DrawDialogueComponent(ECS::Entity entity);
+    void DrawDialogueBoxComponent(ECS::Entity entity);
 
     // Terrain components
     void DrawTerrainComponent(ECS::Entity entity);

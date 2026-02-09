@@ -196,6 +196,9 @@ struct PushConstants {
 - **`PlayMode`** - Play/Pause/Stop game preview controls
 - **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo. Methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `SelectRange()`, `SelectEntitiesInRect()`
 - **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+click` toggle select, `Shift+click` range select, viewport drag for marquee
+- **Entity icons:** `GetEntityIcon()` prefixes hierarchy labels with bracket-tags by primary component type (`[C]` Camera, `[L]` Light, `[M]` Mesh, `[S]` Sprite, `[T]` Tilemap, `[P]` Particle, `[A]` Audio, `[R]` Rigidbody, `[D]` Dialogue, `[V]` Visual Script, `[U]` UI Canvas, `[AI]` AI, `[BT]` Behavior Tree)
+- **Component icons:** `GetComponentIcon()` adds bracket-tags to inspector `CollapsingHeader` labels (Transform, Mesh, Material, Light, Camera, Sprite 2D, Audio, Rigidbody, Health)
+- **Empty states:** `DrawEmptyState()` helper renders centered icon (heading font, 40% opacity), heading, body text, and optional CTA button. Applied to Hierarchy (no world/no entities), Inspector (no selection), Asset Browser (dir not found), Dialogue, Plugin Browser, and all "No world loaded" panels
 
 ### Skybox
 
@@ -207,7 +210,8 @@ struct PushConstants {
 - **`UIElement`** — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`
 - **`UIWidgetType`**: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle
 - **`NineSliceConfig`** — 9-slice sprite config: `texturePath`, `borderLeft/Right/Top/Bottom` (texels)
-- **`UISystem`** — Layout + render + input. `SetTextureResolver()` for Vulkan texture loading
+- **`UISystem`** — Layout + render + input. `SetTextureResolver()` for Vulkan texture loading. `RenderImage()` resolves textures via the resolver (SVG files auto-route through `SVGLoader`)
+- **`DialogueBoxComponent`** — Auto-builds UICanvas elements for dialogue display: panel, speaker label, text label, portrait image, continue indicator, 6 choice buttons. `BuildDialogueBoxUI()` creates the element tree; `SyncDialogueBoxUI()` updates from `DialogueComponent` state each frame. Inspector with box layout, text style, portrait, choice, and continue settings
 - **UI Editor** — Viewport WYSIWYG: click-select, drag-move, resize handles, right-click context menu
 
 ### Effects Systems
@@ -237,7 +241,7 @@ struct PushConstants {
 
 ### Window Icon
 
-Place `icon.png` (32x32 or 64x64) next to the executable. Loaded via stb_image + `glfwSetWindowIcon()`. Missing file uses OS default silently.
+Place `icon.png` (32x32 or 64x64) next to the executable. Loaded via stb_image + `glfwSetWindowIcon()`. Missing file uses OS default silently. Editor also supports a **Window Icon Picker** in Project Settings: `windowIconPath` on `EditorSettings` with JSON persistence, browse/apply/clear UI, and `Window::SetIcon()` virtual method (GLFW `stbi_load` + `glfwSetWindowIcon` implementation). Auto-applies on settings load.
 
 ## Shader Workflow
 
