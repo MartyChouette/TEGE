@@ -13,7 +13,15 @@ enum class EditorTheme : u32 {
     Dark = 0,
     Light,
     HighContrastDark,
-    HighContrastLight
+    HighContrastLight,
+    // Retro console themes
+    SNES,
+    PS2,
+    Xbox,
+    Dreamcast,
+    SegaSaturn,
+    GBA,
+    DS
 };
 
 // Frame rate limit options (shared between editor and game settings)
@@ -31,11 +39,50 @@ inline f32 GetTargetFPS(FrameRateLimit limit) {
     return limit == FrameRateLimit::Uncapped ? 0.0f : static_cast<f32>(static_cast<u32>(limit));
 }
 
+// Accent color (RGBA float)
+struct AccentColor {
+    f32 r, g, b, a;
+    AccentColor() : r(0), g(0), b(0), a(1) {}
+    AccentColor(f32 r_, f32 g_, f32 b_, f32 a_ = 1.0f) : r(r_), g(g_), b(b_), a(a_) {}
+};
+
+// Customizable accent color configuration for the editor UI
+struct AccentColorConfig {
+    AccentColor button       = {0.22f, 0.27f, 0.24f, 1.00f};
+    AccentColor buttonHover  = {0.30f, 0.38f, 0.32f, 1.00f};
+    AccentColor buttonActive = {0.35f, 0.45f, 0.38f, 1.00f};
+    AccentColor checkMark    = {0.55f, 0.78f, 0.58f, 1.00f};
+    AccentColor sliderGrab   = {0.50f, 0.70f, 0.52f, 1.00f};
+    AccentColor sliderGrabActive = {0.60f, 0.82f, 0.63f, 1.00f};
+    AccentColor resizeGrip   = {0.30f, 0.40f, 0.33f, 0.50f};
+    AccentColor textSelected = {0.35f, 0.50f, 0.38f, 0.50f};
+    AccentColor dragDropTarget = {0.55f, 0.78f, 0.58f, 0.90f};
+    AccentColor tabActive    = {0.25f, 0.33f, 0.28f, 1.00f};
+    AccentColor tabHovered   = {0.35f, 0.45f, 0.38f, 1.00f};
+    bool useCustom = false;  // When false, theme defaults are used
+
+    static AccentColorConfig DefaultDark();
+    static AccentColorConfig DefaultLight();
+    static AccentColorConfig DefaultHighContrastDark();
+    static AccentColorConfig DefaultHighContrastLight();
+    static AccentColorConfig DefaultSNES();
+    static AccentColorConfig DefaultPS2();
+    static AccentColorConfig DefaultXbox();
+    static AccentColorConfig DefaultDreamcast();
+    static AccentColorConfig DefaultSegaSaturn();
+    static AccentColorConfig DefaultGBA();
+    static AccentColorConfig DefaultDS();
+    static AccentColorConfig DefaultForTheme(EditorTheme theme);
+};
+
 // Persistent editor settings (saved to disk as JSON)
 struct EditorSettings {
     // Visual
     EditorTheme theme = EditorTheme::Dark;
     f32 uiScale = 1.0f;          // 0.75 - 2.0
+
+    // Accent Colors
+    AccentColorConfig accentColors;
 
     // Accessibility: Visual
     u32 colorblindMode = 0;       // 0=off, 1-7 = colorblind types
@@ -76,6 +123,10 @@ struct EditorSettings {
     u32 inputPreset = 0;     // 0=Default, 1=LeftHand, 2=RightHand, 3=GamepadOnly
     bool rawMouseInput = true;
     f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy
+
+    // Surface Snap
+    bool surfaceSnap = false;
+    bool surfaceAlignNormal = true;
 
     // External IDE
     u32 externalIDE = 0;          // 0=Auto, 1=VS Code, 2=Visual Studio, 3=Rider, 4=Custom

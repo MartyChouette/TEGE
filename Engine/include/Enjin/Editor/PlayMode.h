@@ -10,6 +10,7 @@
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
+#include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -18,6 +19,7 @@
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
@@ -86,6 +88,7 @@ public:
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
     ECS::VisualScriptSystem* GetVisualScriptSystem() { return &m_VisualScriptSystem; }
+    ECS::BehaviorTreeSystem* GetBehaviorTreeSystem() { return &m_BehaviorTreeSystem; }
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
@@ -137,6 +140,9 @@ private:
 
     // Visual script system
     ECS::VisualScriptSystem m_VisualScriptSystem;
+
+    // Behavior tree system
+    ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
 
     // Render system pointers (owned externally)
     ECS::RenderSystem* m_RenderSystem = nullptr;

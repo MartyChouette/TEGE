@@ -497,6 +497,49 @@ void VisualScriptEditor::Render(const EditorSettings& settings, bool isPlaying) 
 
     // Draw the node search popup (must be at window scope, not inside children)
     DrawNodeSearchPopup();
+
+    // Breakpoint condition edit popup
+    if (ImGui::BeginPopup("EditBreakpointCondition")) {
+        auto* script = GetTargetScript();
+        if (script && m_SelectedNode != 0) {
+            auto bpIt = script->breakpoints.find(m_SelectedNode);
+            if (bpIt != script->breakpoints.end()) {
+                auto& bp = bpIt->second;
+
+                ImGui::Text("Breakpoint Condition");
+                ImGui::Separator();
+
+                ImGui::Checkbox("Enabled", &bp.enabled);
+
+                static char condBuf[128] = "";
+                // Copy current condition to buffer on first frame
+                if (ImGui::IsWindowAppearing()) {
+                    strncpy(condBuf, bp.condition.c_str(), sizeof(condBuf) - 1);
+                    condBuf[sizeof(condBuf) - 1] = '\0';
+                }
+                ImGui::Text("Condition (e.g. health < 50):");
+                if (ImGui::InputText("##bpcond", condBuf, sizeof(condBuf))) {
+                    bp.condition = condBuf;
+                }
+
+                i32 hitTarget = static_cast<i32>(bp.hitCountTarget);
+                if (ImGui::InputInt("Hit Count Target", &hitTarget)) {
+                    bp.hitCountTarget = static_cast<u32>(std::max(0, hitTarget));
+                }
+                ImGui::Text("Current hit count: %u", bp.hitCount);
+
+                if (ImGui::Button("Reset Hit Count")) {
+                    bp.hitCount = 0;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Remove Breakpoint")) {
+                    script->breakpoints.erase(m_SelectedNode);
+                    ImGui::CloseCurrentPopup();
+                }
+            }
+        }
+        ImGui::EndPopup();
+    }
 }
 
 // ============================================================================
@@ -655,7 +698,7 @@ void VisualScriptEditor::ToggleBreakpoint(NodeId nodeId) {
     if (script->breakpoints.count(nodeId) > 0) {
         script->breakpoints.erase(nodeId);
     } else {
-        script->breakpoints.insert(nodeId);
+        script->breakpoints[nodeId] = ECS::VisualScriptComponent::BreakpointInfo{};
     }
 }
 
@@ -790,6 +833,92 @@ void VisualScriptEditor::DrawInspector(bool isPlaying) {
         DrawVariableEditor();
     }
 
+    // Functions section
+    if (ImGui::CollapsingHeader("Functions")) {
+        DrawFunctionsPanel();
+    }
+
+    // Watch Window & Call Stack (play mode)
+    if (isPlaying && script->isPaused) {
+        if (ImGui::CollapsingHeader("Watch", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // Add watch input
+            static char watchBuf[64] = "";
+            ImGui::SetNextItemWidth(-40);
+            ImGui::InputText("##addwatch", watchBuf, sizeof(watchBuf));
+            ImGui::SameLine();
+            if (ImGui::SmallButton("+##aw")) {
+                if (watchBuf[0] != '\0') {
+                    script->watchVariables.push_back(watchBuf);
+                    watchBuf[0] = '\0';
+                }
+            }
+
+            // Watch table
+            if (!script->watchVariables.empty() && ImGui::BeginTable("WatchTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 80);
+                ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 50);
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableHeadersRow();
+
+                for (usize wi = 0; wi < script->watchVariables.size(); wi++) {
+                    const auto& wname = script->watchVariables[wi];
+                    const auto* var = script->FindVariable(wname);
+
+                    ImGui::TableNextRow();
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", wname.c_str());
+
+                    ImGui::TableNextColumn();
+                    if (var) {
+                        if (std::holds_alternative<f32>(var->value)) ImGui::Text("Float");
+                        else if (std::holds_alternative<i32>(var->value)) ImGui::Text("Int");
+                        else if (std::holds_alternative<bool>(var->value)) ImGui::Text("Bool");
+                        else if (std::holds_alternative<std::string>(var->value)) ImGui::Text("String");
+                        else if (std::holds_alternative<Math::Vector3>(var->value)) ImGui::Text("Vec3");
+                        else ImGui::Text("?");
+                    } else {
+                        ImGui::TextDisabled("--");
+                    }
+
+                    ImGui::TableNextColumn();
+                    if (var) {
+                        if (std::holds_alternative<f32>(var->value))
+                            ImGui::Text("%.3f", std::get<f32>(var->value));
+                        else if (std::holds_alternative<i32>(var->value))
+                            ImGui::Text("%d", std::get<i32>(var->value));
+                        else if (std::holds_alternative<bool>(var->value))
+                            ImGui::Text("%s", std::get<bool>(var->value) ? "true" : "false");
+                        else if (std::holds_alternative<std::string>(var->value))
+                            ImGui::Text("%s", std::get<std::string>(var->value).c_str());
+                        else if (std::holds_alternative<Math::Vector3>(var->value)) {
+                            auto v = std::get<Math::Vector3>(var->value);
+                            ImGui::Text("(%.1f, %.1f, %.1f)", v.x, v.y, v.z);
+                        }
+                    } else {
+                        ImGui::TextDisabled("not found");
+                    }
+                }
+                ImGui::EndTable();
+            }
+        }
+
+        if (ImGui::CollapsingHeader("Call Stack", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (script->callStack.empty()) {
+                ImGui::TextDisabled("Empty");
+            } else {
+                for (i32 si = static_cast<i32>(script->callStack.size()) - 1; si >= 0; si--) {
+                    const auto& entry = script->callStack[si];
+                    char label[128];
+                    snprintf(label, sizeof(label), "#%d %s (%s)", si, entry.displayName.c_str(), entry.nodeType.c_str());
+                    if (ImGui::Selectable(label)) {
+                        // Navigate to this node
+                        m_SelectedNode = entry.nodeId;
+                    }
+                }
+            }
+        }
+    }
+
     // Execution Timeline (play mode)
     if (isPlaying) {
         DrawExecutionTimeline();
@@ -919,6 +1048,101 @@ void VisualScriptEditor::DrawVariableEditor() {
         }
 
         ImGui::PopID();
+    }
+}
+
+// ============================================================================
+// FUNCTIONS PANEL (Subgraph management)
+// ============================================================================
+
+void VisualScriptEditor::DrawFunctionsPanel() {
+    auto* script = m_World ? m_World->GetComponent<ECS::VisualScriptComponent>(m_TargetEntity) : nullptr;
+    if (!script) return;
+
+    // Breadcrumb: show current editing context
+    if (m_EditingFunctionIndex >= 0 && m_EditingFunctionIndex < static_cast<i32>(script->functions.size())) {
+        ImGui::TextDisabled("Editing:");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Main Graph")) {
+            // Save subgraph back and switch to main graph
+            script->functions[m_EditingFunctionIndex].graph = m_GraphData;
+            script->functions[m_EditingFunctionIndex].nodeMeta.clear();
+            for (const auto& [nid, meta] : script->nodeMeta) {
+                script->functions[m_EditingFunctionIndex].nodeMeta[nid] = meta;
+            }
+            // Restore main graph
+            m_GraphData = script->graph;
+            m_NeedsSync = true;
+            m_EditingFunctionIndex = -1;
+        }
+        ImGui::SameLine();
+        ImGui::Text("> %s", script->functions[m_EditingFunctionIndex].name.c_str());
+    }
+
+    // List existing functions
+    for (i32 i = 0; i < static_cast<i32>(script->functions.size()); i++) {
+        auto& func = script->functions[i];
+        ImGui::PushID(i);
+
+        bool isCurrent = (i == m_EditingFunctionIndex);
+        if (isCurrent) ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+
+        if (ImGui::Selectable(func.name.c_str(), isCurrent)) {
+            if (!isCurrent) {
+                // Save current graph first
+                if (m_EditingFunctionIndex >= 0) {
+                    script->functions[m_EditingFunctionIndex].graph = m_GraphData;
+                } else {
+                    script->graph = m_GraphData;
+                    SyncToComponent();
+                }
+
+                // Switch to function subgraph
+                m_EditingFunctionIndex = i;
+                m_GraphData = func.graph;
+                m_NeedsSync = true;
+            }
+        }
+
+        if (isCurrent) ImGui::PopStyleColor();
+
+        ImGui::SameLine();
+        if (ImGui::SmallButton("X##del")) {
+            if (i == m_EditingFunctionIndex) {
+                // Go back to main graph first
+                m_GraphData = script->graph;
+                m_EditingFunctionIndex = -1;
+                m_NeedsSync = true;
+            }
+            script->functions.erase(script->functions.begin() + i);
+            ImGui::PopID();
+            break;
+        }
+
+        ImGui::PopID();
+    }
+
+    // Add new function
+    ImGui::InputText("##funcname", m_NewFuncName, sizeof(m_NewFuncName));
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Add Function")) {
+        std::string funcName = m_NewFuncName;
+        if (!funcName.empty()) {
+            ECS::VisualScriptFunction newFunc;
+            newFunc.name = funcName;
+
+            // Create a Function_Entry node in the subgraph
+            NodeId entryId = newFunc.graph.AddNode("Function Entry", Math::Vector2(100, 200),
+                                                     Math::Vector3(0.2f, 0.6f, 0.3f));
+            newFunc.graph.AddPin(entryId, "", PinType::Flow, PinKind::Output);
+
+            ECS::VisualScriptNodeMeta meta;
+            meta.nodeType = VisualScript::NodeTypes::FunctionEntry;
+            newFunc.nodeMeta[entryId] = meta;
+
+            script->functions.push_back(std::move(newFunc));
+            std::strncpy(m_NewFuncName, "NewFunction", sizeof(m_NewFuncName));
+        }
     }
 }
 
@@ -1574,7 +1798,18 @@ void VisualScriptEditor::HandleKeyboardShortcuts() {
 
     // F9 - Toggle breakpoint on selected node
     if (ImGui::IsKeyPressed(ImGuiKey_F9) && m_SelectedNode != 0) {
-        ToggleBreakpoint(m_SelectedNode);
+        if (ImGui::GetIO().KeyShift) {
+            // Shift+F9 - Edit breakpoint condition
+            auto* script = GetTargetScript();
+            if (script) {
+                if (script->breakpoints.count(m_SelectedNode) == 0) {
+                    script->breakpoints[m_SelectedNode] = ECS::VisualScriptComponent::BreakpointInfo{};
+                }
+                ImGui::OpenPopup("EditBreakpointCondition");
+            }
+        } else {
+            ToggleBreakpoint(m_SelectedNode);
+        }
     }
 }
 
@@ -1817,17 +2052,27 @@ static void DrawBreakpointIndicators(ImDrawList* dl, const NodeGraphData& graphD
     if (!script) return;
 
     for (const auto& node : graphData.GetNodes()) {
-        if (script->breakpoints.count(node.id) > 0) {
+        auto bpIt = script->breakpoints.find(node.id);
+        if (bpIt != script->breakpoints.end()) {
+            const auto& bp = bpIt->second;
+
             // Calculate node screen position
             f32 s = zoom * uiScale;
             f32 nodeX = canvasPos.x + node.position.x * zoom + scrollOffset.x;
             f32 nodeY = canvasPos.y + node.position.y * zoom + scrollOffset.y;
 
-            // Draw red breakpoint dot at top-left of node
             ImVec2 dotPos(nodeX - 4.0f, nodeY + 10.0f * s);
-            dl->AddCircleFilled(dotPos, 5.0f * s, IM_COL32(255, 50, 50, 255));
 
-            // White circle outline
+            // Color: red=unconditional, yellow=conditional, gray=disabled
+            ImU32 color;
+            if (!bp.enabled)
+                color = IM_COL32(128, 128, 128, 200);
+            else if (!bp.condition.empty() || bp.hitCountTarget > 0)
+                color = IM_COL32(255, 200, 50, 255);  // Yellow for conditional
+            else
+                color = IM_COL32(255, 50, 50, 255);    // Red for unconditional
+
+            dl->AddCircleFilled(dotPos, 5.0f * s, color);
             dl->AddCircle(dotPos, 5.0f * s, IM_COL32(255, 255, 255, 180), 12, 1.0f);
         }
     }

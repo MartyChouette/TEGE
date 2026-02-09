@@ -1,7 +1,11 @@
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Logging/Log.h"
+#include <cstring>
 
 namespace Enjin {
 namespace Editor {
@@ -407,6 +411,93 @@ void RemoveComponentCommand::Undo() {
     if (!m_Snapshot.empty()) {
         Scene::SceneSerializer::DeserializeOneComponent(m_World, m_Entity, m_ComponentKey, m_Snapshot);
     }
+}
+
+// ============================================================================
+// TilemapPaintCommand
+// ============================================================================
+
+void TilemapPaintCommand::Execute() {
+    auto* tilemap = m_World->GetComponent<ECS::TilemapComponent>(m_Entity);
+    if (!tilemap) return;
+    for (auto& c : m_Changes) {
+        tilemap->SetTile(c.x, c.y, c.newIndex);
+    }
+}
+
+void TilemapPaintCommand::Undo() {
+    auto* tilemap = m_World->GetComponent<ECS::TilemapComponent>(m_Entity);
+    if (!tilemap) return;
+    for (auto it = m_Changes.rbegin(); it != m_Changes.rend(); ++it) {
+        tilemap->SetTile(it->x, it->y, it->oldIndex);
+    }
+}
+
+// ============================================================================
+// TerrainSculptCommand
+// ============================================================================
+
+void TerrainSculptCommand::Execute() {
+    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(m_Entity);
+    if (!terrain) return;
+    terrain->heightmap = m_NewHeightmap;
+    terrain->splatmap = m_NewSplatmap;
+    terrain->meshDirty = true;
+}
+
+void TerrainSculptCommand::Undo() {
+    auto* terrain = m_World->GetComponent<ECS::TerrainComponent>(m_Entity);
+    if (!terrain) return;
+    terrain->heightmap = m_OldHeightmap;
+    terrain->splatmap = m_OldSplatmap;
+    terrain->meshDirty = true;
+}
+
+// ============================================================================
+// UIAnchorEditCommand
+// ============================================================================
+
+void UIAnchorEditCommand::Execute() {
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_CanvasEntity);
+    if (!canvas) return;
+    auto* elem = canvas->GetElement(m_ElementId);
+    if (elem) elem->anchor = m_NewAnchor;
+}
+
+void UIAnchorEditCommand::Undo() {
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_CanvasEntity);
+    if (!canvas) return;
+    auto* elem = canvas->GetElement(m_ElementId);
+    if (elem) elem->anchor = m_OldAnchor;
+}
+
+bool UIAnchorEditCommand::CanMergeWith(const ICommand* other) const {
+    auto* o = dynamic_cast<const UIAnchorEditCommand*>(other);
+    return o && o->m_CanvasEntity == m_CanvasEntity &&
+           o->m_ElementId == m_ElementId &&
+           std::strcmp(o->m_Desc, m_Desc) == 0;
+}
+
+void UIAnchorEditCommand::MergeWith(const ICommand* other) {
+    auto* o = dynamic_cast<const UIAnchorEditCommand*>(other);
+    if (o) m_NewAnchor = o->m_NewAnchor;
+}
+
+// ============================================================================
+// UIElementDeleteCommand
+// ============================================================================
+
+void UIElementDeleteCommand::Execute() {
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_CanvasEntity);
+    if (!canvas) return;
+    canvas->RemoveElement(m_Element.id);
+}
+
+void UIElementDeleteCommand::Undo() {
+    auto* canvas = m_World->GetComponent<GUI::UICanvasComponent>(m_CanvasEntity);
+    if (!canvas) return;
+    // Re-insert the element into the canvas
+    canvas->elements.push_back(m_Element);
 }
 
 // ============================================================================

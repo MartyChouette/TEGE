@@ -13,6 +13,8 @@
 namespace Enjin {
 namespace Renderer {
 
+class HiZPyramid; // Forward declaration
+
 // Bounding box for GPU culling
 struct ENJIN_API BoundingBox {
     Math::Vector3 min;
@@ -92,6 +94,21 @@ public:
         return m_CachedVisibility[objectIndex] != 0;
     }
 
+    // Get the compacted indirect draw buffer (only visible objects, tightly packed)
+    VkBuffer GetIndirectDrawBuffer() const;
+    // Get the draw count buffer (atomic counter written by GPU)
+    VkBuffer GetDrawCountBuffer() const;
+    // Get the ObjectData SSBO (per-object material/transform for indirect draws)
+    VkBuffer GetObjectDataBuffer() const;
+    u32 GetMaxObjects() const { return m_MaxObjects; }
+
+    // Upload per-object data to the ObjectData SSBO
+    bool UploadObjectData(const void* data, usize sizeBytes);
+
+    // Set the Hi-Z pyramid for occlusion culling (optional — falls back to frustum-only)
+    void SetHiZPyramid(HiZPyramid* hiz) { m_HiZPyramid = hiz; }
+    bool HasHiZ() const { return m_HiZPyramid != nullptr; }
+
 private:
     bool CreateComputePipeline();
     bool CreateBuffers();
@@ -103,21 +120,24 @@ private:
     u32 m_ObjectCount = 0;
 
     VulkanContext* m_Context = nullptr;
-    
+
     // Compute pipeline for culling
     VkPipeline m_CullPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
-    
+
     // Buffers
     std::unique_ptr<VulkanBuffer> m_ObjectBuffer;      // Input: Objects to cull
-    std::unique_ptr<VulkanBuffer> m_IndirectDrawBuffer; // Output: Indirect draw commands
+    std::unique_ptr<VulkanBuffer> m_IndirectDrawBuffer; // Output: Indirect draw commands (compacted)
     std::unique_ptr<VulkanBuffer> m_FrustumBuffer;     // Frustum planes
     std::unique_ptr<VulkanBuffer> m_VisibilityBuffer;   // Per-object visibility
-    
+    std::unique_ptr<VulkanBuffer> m_DrawCountBuffer;    // Atomic draw count (4 bytes)
+    std::unique_ptr<VulkanBuffer> m_ObjectDataBuffer;   // Per-object material/transform SSBO
+
     CullingStats m_Stats;
     u32 m_MaxObjects = 100000; // Support up to 100k objects
     std::vector<u32> m_CachedVisibility; // Per-object visibility from last ExecuteCulling
+    HiZPyramid* m_HiZPyramid = nullptr; // Optional Hi-Z pyramid for occlusion culling
 };
 
 } // namespace Renderer

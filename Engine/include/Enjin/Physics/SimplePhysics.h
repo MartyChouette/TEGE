@@ -79,6 +79,14 @@ struct CollisionEvent {
     bool isTrigger = false;
 };
 
+// Collider info extracted from whichever collider type exists on an entity
+struct ColliderInfo {
+    u32 categoryBits = 1;
+    u32 collisionMask = 0xFFFFFFFF;
+    bool isTrigger = false;
+    bool hasCollider = false;
+};
+
 class ConstraintSolver;
 
 // Simple physics world - handles basic collision detection
@@ -115,6 +123,9 @@ public:
     // Get all entities with colliders
     std::vector<ECS::Entity> GetCollidersInRadius(const Math::Vector3& center, f32 radius, u32 layerMask = 0xFFFFFFFF);
 
+    // Get all entities whose AABB overlaps with a box
+    std::vector<ECS::Entity> OverlapBox(const Math::Vector3& center, const Math::Vector3& halfExtents, u32 layerMask = 0xFFFFFFFF);
+
     // Gravity
     void SetGravity(const Math::Vector3& gravity) { m_Gravity = gravity; }
     Math::Vector3 GetGravity() const { return m_Gravity; }
@@ -128,6 +139,9 @@ private:
     void DetectCollisionEvents();
     // Get world-space AABB for an entity
     AABB GetEntityAABB(ECS::Entity entity);
+
+    // Get collider info (categoryBits, collisionMask, isTrigger) from whichever collider exists
+    ColliderInfo GetColliderInfo(ECS::Entity entity);
 
     // Get categoryBits from whichever collider exists on an entity
     u32 GetEntityCategoryBits(ECS::Entity entity);

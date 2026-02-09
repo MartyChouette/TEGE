@@ -164,6 +164,24 @@ struct VisualScriptNodeMeta {
 };
 
 // ============================================================================
+// VISUAL SCRIPT FUNCTIONS (Subgraphs)
+// ============================================================================
+
+struct VisualScriptFunction {
+    std::string name;
+    Editor::NodeGraphData graph;
+    std::unordered_map<Editor::NodeId, VisualScriptNodeMeta> nodeMeta;
+
+    struct Parameter {
+        std::string name;
+        Editor::PinType type = Editor::PinType::Float;
+        VariableValue defaultValue;
+    };
+    std::vector<Parameter> inputParams;
+    std::vector<Parameter> outputParams;
+};
+
+// ============================================================================
 // VISUAL SCRIPT COMPONENT
 // ============================================================================
 
@@ -184,6 +202,9 @@ struct VisualScriptComponent {
     // Per-node metadata (node ID -> metadata)
     std::unordered_map<Editor::NodeId, VisualScriptNodeMeta> nodeMeta;
 
+    // User-defined functions (subgraphs)
+    std::vector<VisualScriptFunction> functions;
+
     // ========== Runtime state (not serialized) ==========
 
     bool enabled = true;           // Is this script active?
@@ -201,10 +222,27 @@ struct VisualScriptComponent {
 
     // ========== Debug state (for breakpoints and step-through) ==========
 
-    std::unordered_set<Editor::NodeId> breakpoints;  // Nodes with breakpoints set
+    // Breakpoint info per node
+    struct BreakpointInfo {
+        bool enabled = true;
+        std::string condition;  // Empty = unconditional; "varName op literal" for conditional
+        u32 hitCount = 0;
+        u32 hitCountTarget = 0; // 0 = always break when condition met
+    };
+    std::unordered_map<Editor::NodeId, BreakpointInfo> breakpoints;  // Nodes with breakpoints set
     bool isPaused = false;                            // Script paused at breakpoint
     Editor::NodeId pausedAtNode = 0;                  // Which node we're paused at
     bool stepRequested = false;                       // User requested single step
+
+    // ========== Call stack and watch state ==========
+
+    struct CallStackEntry {
+        Editor::NodeId nodeId = 0;
+        std::string nodeType;
+        std::string displayName;
+    };
+    std::vector<CallStackEntry> callStack;          // Active during execution
+    std::vector<std::string> watchVariables;         // User-specified watch variable names
 
     // ========== Profiler state (for execution timeline) ==========
 
@@ -269,6 +307,14 @@ struct VisualScriptComponent {
         isPaused = false;
         pausedAtNode = 0;
         stepRequested = false;
+
+        // Reset breakpoint hit counts (keep breakpoints and conditions)
+        for (auto& [nodeId, bp] : breakpoints) {
+            bp.hitCount = 0;
+        }
+
+        // Clear call stack (keep watch variables)
+        callStack.clear();
 
         // Clear profiler history
         executionHistory.clear();

@@ -21,6 +21,12 @@ public:
     // Set the world to operate on
     void SetWorld(World* world) { m_World = world; }
 
+    // Set physics system for physics query nodes
+    void SetPhysics(Physics::SimplePhysics* physics) { m_Executor.SetPhysics(physics); }
+
+    // Set script engine for interop nodes
+    void SetScriptEngine(Scripting::ScriptEngine* engine) { m_Executor.SetScriptEngine(engine); }
+
     // Called once when play mode starts
     void Initialize();
 

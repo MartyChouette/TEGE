@@ -196,6 +196,23 @@ struct ENJIN_API Quaternion {
     constexpr f32 Dot(const Quaternion& other) const {
         return x * other.x + y * other.y + z * other.z + w * other.w;
     }
+
+    // Compute quaternion that rotates vector 'from' to vector 'to'
+    static Quaternion FromToRotation(const Vector3& from, const Vector3& to) {
+        Vector3 f = from.Normalized();
+        Vector3 t = to.Normalized();
+        f32 d = f.Dot(t);
+        if (d > 0.9999f) return Identity();
+        if (d < -0.9999f) {
+            // 180-degree rotation around a perpendicular axis
+            Vector3 perp = Vector3(1, 0, 0);
+            if (std::abs(f.x) > 0.9f) perp = Vector3(0, 1, 0);
+            Vector3 axis = f.Cross(perp).Normalized();
+            return Quaternion(axis.x, axis.y, axis.z, 0.0f).Normalized();
+        }
+        Vector3 axis = f.Cross(t);
+        return Quaternion(axis.x, axis.y, axis.z, 1.0f + d).Normalized();
+    }
 };
 
 // Type alias

@@ -1,5 +1,6 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Logging/Log.h"
 
 /**
@@ -58,6 +59,7 @@ void World::DestroyEntity(Entity entity) {
     }
 
     m_EntityManager.DestroyEntity(entity);
+    m_NameCacheDirty = true;
 }
 
 bool World::IsValid(Entity entity) const {
@@ -71,6 +73,30 @@ void World::Update(f32 deltaTime) {
 void World::Clear() {
     m_ComponentStorages.clear();
     m_EntityManager.Reset();
+    m_NameCache.clear();
+    m_NameCacheDirty = true;
+}
+
+void World::RebuildNameCache() {
+    m_NameCache.clear();
+    for (Entity e : GetEntitiesWithComponent<NameComponent>()) {
+        auto* nc = GetComponent<NameComponent>(e);
+        if (nc && !nc->name.empty()) {
+            m_NameCache[nc->name] = e;
+        }
+    }
+    m_NameCacheDirty = false;
+}
+
+Entity World::FindEntityByName(const std::string& name) {
+    if (m_NameCacheDirty) {
+        RebuildNameCache();
+    }
+    auto it = m_NameCache.find(name);
+    if (it != m_NameCache.end()) {
+        return it->second;
+    }
+    return INVALID_ENTITY;
 }
 
 } // namespace ECS

@@ -74,6 +74,9 @@ private:
     // Draw node-specific properties in inspector
     void DrawNodeProperties();
 
+    // Draw functions panel (subgraph management)
+    void DrawFunctionsPanel();
+
     // Toggle breakpoint on a node
     void ToggleBreakpoint(NodeId nodeId);
 
@@ -126,6 +129,11 @@ private:
     // New variable creation
     char m_NewVarName[128] = "NewVariable";
     int m_NewVarType = 2;  // 0=Bool, 1=Int, 2=Float, 3=String, 4=Vector3, 5=Entity
+
+    // Function editing state
+    char m_NewFuncName[128] = "NewFunction";
+    i32 m_EditingFunctionIndex = -1;  // -1 = editing main graph
+    std::string m_FunctionBreadcrumb;  // For breadcrumb display
 
     // Selected node for inspector
     NodeId m_SelectedNode = 0;

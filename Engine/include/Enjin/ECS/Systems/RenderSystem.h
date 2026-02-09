@@ -22,6 +22,7 @@
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/FluidRenderer.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
 #include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
@@ -29,6 +30,10 @@
 #include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
+#include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
+#include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
+#include "Enjin/Renderer/Vulkan/ThreadPool.h"
+#include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
 #include "Enjin/Assets/FileWatcher.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
@@ -68,12 +73,40 @@ struct ViewportCamera {
     f32 viewportHeight;  // Normalized height (0-1)
 };
 
-// Per-entity rendering data
+// Per-object GPU data for indirect draws (std430, matches GLSL ObjectData)
+struct ObjectDataGPU {
+    Math::Matrix4 model;             // 64 bytes
+    Math::Vector3 baseColor;         // 12 bytes
+    f32 metallic;                    // 4 bytes
+    Math::Vector3 emissiveColor;     // 12 bytes
+    f32 roughness;                   // 4 bytes
+    f32 emissiveStrength;            // 4 bytes
+    f32 opacity;                     // 4 bytes
+    f32 alphaCutoff;                 // 4 bytes
+    i32 flags;                       // 4 bytes
+    f32 parallaxScale;               // 4 bytes
+    f32 _pad[3];                     // 12 bytes (pad to 128 total)
+};
+static_assert(sizeof(ObjectDataGPU) == 128, "ObjectDataGPU must be 128 bytes for std430");
+
+// Per-entity rendering data (stored in dense vector indexed by entity ID)
 struct EntityRenderData {
     std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> indexBuffer;
     std::unique_ptr<Renderer::VulkanBuffer> boneBuffer;
     u32 indexCount = 0;
+    bool valid = false;  // true if this slot is occupied
+    // Merged geometry pool allocation (valid when entity uses the shared pool)
+    Renderer::MeshAllocation poolAlloc;
+
+    void Invalidate() {
+        vertexBuffer.reset();
+        indexBuffer.reset();
+        boneBuffer.reset();
+        indexCount = 0;
+        valid = false;
+        poolAlloc = {};
+    }
 };
 
 // Render system - renders entities with Transform and Mesh components
@@ -94,6 +127,11 @@ public:
     void OnEntityRemoved(Entity entity) override;
 
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+
+    // Editor mode: when true, GPU frustum culling is disabled so all entities
+    // are visible in the scene view for editing. The Player leaves this false
+    // so the game camera frustum culls normally.
+    void SetEditorMode(bool editor) { m_IsEditorMode = editor; }
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
@@ -163,6 +201,9 @@ public:
     }
     void ClearMainPassWeather() { m_MainPassWeather = nullptr; }
 
+    // Set fluid simulation (for FluidRenderer to read grid data)
+    void SetFluidSimulation(Effects::FluidSimulation* sim);
+
     // Weather, grass, and tree renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
     Effects::GrassRenderer* GetGrassRenderer() { return m_GrassRenderer.get(); }
@@ -174,6 +215,7 @@ public:
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                 u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderFluid(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderTrees(u32 viewportWidth = 0, u32 viewportHeight = 0);
@@ -257,9 +299,9 @@ private:
     void CreateUniformBuffers();
     void CreateDescriptorSets();
     void UpdateUniformBuffer(Entity entity);
-    // Sets up GPU buffers for an entity's mesh. Returns iterator into m_EntityRenderData,
-    // or m_EntityRenderData.end() if the entity has no valid mesh.
-    std::unordered_map<Entity, EntityRenderData>::iterator SetupEntityBuffers(Entity entity);
+    // Sets up GPU buffers for an entity's mesh. Returns pointer to EntityRenderData,
+    // or nullptr if the entity has no valid mesh.
+    EntityRenderData* SetupEntityBuffers(Entity entity);
     void RenderShadowPass();
 
     World* m_World = nullptr;
@@ -346,9 +388,11 @@ private:
     bool m_GlobalGouraudOnly = false;
     u8 m_GlobalVertexSnapResolution = 160;
 
-    // Textures
+    // Textures — integer-keyed for O(1) lookup after initial load
     std::unique_ptr<Renderer::Texture> m_DefaultWhiteTexture;
-    std::unordered_map<std::string, std::shared_ptr<Renderer::Texture>> m_TextureCache;
+    std::unordered_map<std::string, u32> m_TexturePathToId;          // path → ID (only hit on first load)
+    std::vector<std::shared_ptr<Renderer::Texture>> m_TextureById;   // dense: ID → texture
+    std::vector<std::string> m_TextureIdToPath;                       // reverse: ID → path (for hot-reload)
     std::unordered_set<std::string> m_FailedTextures; // Paths that failed to load (avoid per-frame retry)
 
     // Text rendering
@@ -364,6 +408,7 @@ private:
     Effects::WeatherSystem* m_MainPassWeather = nullptr;  // Weather for main pass (editor viewport)
     bool m_MainPassWeatherIsRain = false;
     std::unique_ptr<Effects::ParticleRenderer> m_ParticleRenderer;
+    std::unique_ptr<Effects::FluidRenderer> m_FluidRenderer;
     std::unique_ptr<Effects::GrassRenderer> m_GrassRenderer;
     std::unique_ptr<Effects::ShrubRenderer> m_ShrubRenderer;
     std::unique_ptr<Effects::TreeRenderer> m_TreeRenderer;
@@ -379,13 +424,31 @@ private:
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
 
+    // Merged geometry buffer (single VB+IB for all static 3D meshes)
+    std::unique_ptr<Renderer::MergedGeometryBuffer> m_GeometryPool;
+    bool IsPoolEligible(Entity entity) const;  // Check if entity should use merged pool
+
     // GPU frustum culling system
     std::unique_ptr<Renderer::GPUCullingSystem> m_GPUCulling;
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
-    bool m_GPUCullingEnabled = false;  // Disabled: compute readback has sync issues
+    bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
+    bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
     void BuildCullableObjectList();
     void PerformGPUCulling();
+    void PerformGPUCullingAsync(); // Record to compute command buffer
+
+    // Indirect draw: ObjectData upload + vkCmdDrawIndexedIndirectCount
+    std::vector<ObjectDataGPU> m_ObjectDataCPU;
+    void UploadObjectData();
+    void DrawIndirect(VkCommandBuffer commandBuffer);
+
+    // Hi-Z occlusion culling (previous-frame depth pyramid)
+    std::unique_ptr<Renderer::HiZPyramid> m_HiZPyramid;
+
+    // Multi-threaded command buffer recording
+    Renderer::ThreadPool m_ThreadPool;
+    std::unique_ptr<Renderer::CommandBufferPool> m_CmdBufferPool;
 
     // Skybox
     Renderer::Skybox m_Skybox;
@@ -463,8 +526,8 @@ private:
     // Splitscreen viewports for the main render pass (set by Player)
     std::vector<ViewportCamera> m_MainPassViewports;
 
-    // Per-entity render data
-    std::unordered_map<Entity, EntityRenderData> m_EntityRenderData;
+    // Per-entity render data — dense vector indexed by entity ID for cache-friendly O(1) lookup
+    std::vector<EntityRenderData> m_EntityRenderData;
 
     // Descriptor set caching — tracks what was last written to the shared descriptor set.
     // When the next entity's textures/bones match, vkUpdateDescriptorSets is skipped.

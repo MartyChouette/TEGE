@@ -8,7 +8,6 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
-#include <map>
 
 namespace Enjin {
 namespace ECS {
@@ -880,7 +879,7 @@ struct DialogueComponent {
 
     // --- Tree-based dialogue (node graph) ---
     GUI::DialogueTreeData dialogueTree;  // If nodes non-empty -> tree mode
-    std::map<std::string, std::string> variables;  // Persisted dialogue variables
+    std::unordered_map<std::string, std::string> variables;  // Persisted dialogue variables
 
     // Runtime state for tree mode (not serialized — managed by DialogueSystem)
     bool treeActive = false;
@@ -1506,6 +1505,33 @@ struct RagdollComponent {
     f32 gravityScale = 1.0f;
     f32 linearDamping = 0.1f;
     f32 angularDamping = 0.3f;
+};
+
+// ============================================================================
+// PER-FRAME COLLIDER (animation hitboxes)
+// ============================================================================
+
+struct PerFrameColliderComponent {
+    struct FrameCollider {
+        Math::Vector2 offset;    // Collider center offset from sprite pivot
+        Math::Vector2 size;      // Box extents (width, height)
+        bool enabled = true;
+    };
+    std::vector<FrameCollider> frameColliders; // Indexed by animation frame
+    bool autoApply = true;  // Update BoxCollider on frame change
+};
+
+// ============================================================================
+// POLYGON COLLIDER 2D (sprite silhouette)
+// ============================================================================
+
+struct PolygonCollider2DComponent {
+    std::vector<Math::Vector2> vertices; // CCW winding, local space
+    bool isTrigger = false;
+    f32 friction = 0.5f;
+    f32 bounciness = 0.0f;
+    u32 categoryBits = 1;
+    u32 collisionMask = 0xFFFFFFFF;
 };
 
 } // namespace ECS

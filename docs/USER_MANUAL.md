@@ -28,6 +28,12 @@ This manual covers everything you need to get started and build games with Enjin
 18. [Level Streaming](#18-level-streaming)
 19. [Terrain Editing](#19-terrain-editing)
 20. [AI and Pathfinding](#20-ai-and-pathfinding)
+21. [Quest Flow Editor](#21-quest-flow-editor)
+22. [Visual Scripting](#22-visual-scripting)
+23. [Behavior Tree Editor](#23-behavior-tree-editor)
+24. [Pixel Editor](#24-pixel-editor)
+25. [Sprite Sheet Importer](#25-sprite-sheet-importer)
+26. [Asset Browser](#26-asset-browser)
 
 ---
 
@@ -117,14 +123,19 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Hierarchy** | Entity tree view. Right-click to add, delete, or duplicate entities. Supports drag-and-drop reparenting. |
 | **Inspector** | Component editor for the selected entity. Displays and edits all attached components (50+ component types). Includes an "Add Component" button. |
 | **Console** | Log output for engine messages, warnings, and errors. |
-| **Asset Browser** | Browse and manage project files. |
-| **Settings** | Grid display, gizmo settings, and editor preferences. |
+| **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
+| **Settings** | Grid display, gizmo settings, accent colors, and editor preferences. |
 | **Post Processing** | Configure bloom, vignette, color grading, FXAA, and film grain. |
 | **Effects (Retro)** | CRT scanlines, pixelation, dithering, and color quantization post-processing. |
 | **Game View** | Rendered game camera output with Play/Pause/Stop controls. |
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
 | **Skybox** | Skybox configuration: procedural presets, cubemap paths, solid color, and Y-axis rotation. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
+| **Visual Script** | Blueprint-style visual scripting editor with 40+ node types and debugger. |
+| **Behavior Tree** | AI behavior tree editor with 20 node types, blackboard editor, and play-mode visualization. |
+| **Quest Flow** | Visual quest designer with objectives, branches, conditions, and rewards. |
+| **Pixel Editor** | Pixel art creation tool with layers, 8 drawing tools, undo/redo, and retro presets. |
+| **Sprite Sheet Importer** | Import and slice sprite sheets with grid or auto-detect modes. |
 
 ### Keyboard Shortcuts
 
@@ -1179,6 +1190,32 @@ Tracks quest progress for RPG and narrative games.
 | `objectiveFlags` | list | [] | Named boolean flags for objective completion. |
 | `timeElapsed` | f32 | 0.0 | Time since quest was started. |
 
+#### QuestFlowComponent
+
+Visual node-graph-based quest authoring for complex, branching quests. While `QuestStateComponent` works for simple linear quests, `QuestFlowComponent` provides a visual editor for designing quest flows with conditions, branching, delays, rewards, and events.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `questId` | string | "" | Unique quest identifier. |
+| `questTitle` | string | "" | Display name for the quest. |
+| `questDescription` | string | "" | Quest description text. |
+| `enabled` | bool | true | Whether the quest flow is active. |
+| `startNodeId` | NodeId | 0 | Entry point node (created automatically). |
+| `graph` | NodeGraphData | -- | Visual graph layout (nodes, pins, links). |
+| `nodeMeta` | map | {} | Per-node metadata and properties. |
+
+**Runtime state** (not serialized, reset on play/stop):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | enum | `Inactive`, `Active`, `Completed`, or `Failed`. |
+| `activeNodes` | set | Nodes currently being processed. |
+| `completedNodes` | set | Nodes that have finished. |
+| `nodeTimers` | map | Accumulated time for Delay nodes. |
+| `nodeCounters` | map | Progress counters for Objective nodes. |
+
+See [Section 21: Quest Flow Editor](#21-quest-flow-editor) for full editor usage.
+
 ---
 
 ### 5.16 HUD System
@@ -1433,6 +1470,7 @@ The following systems are updated each frame during play mode:
 - **CoroutineScheduler** -- resumes suspended script coroutines.
 - **FootstepSystem** -- surface-aware footstep audio.
 - **QuestSystem** -- quest state tracking and objective updates.
+- **Quest Flow** -- visual quest graph processing (advances active `QuestFlowComponent` entities).
 - **HUDSystem** -- HUD widget rendering and data binding.
 - **CinematicSystem** -- cinematic camera sequence playback.
 - **ObjectPool** -- object lifetime management and recycling.
@@ -1561,14 +1599,31 @@ Enjin includes comprehensive accessibility features, configurable from the **Set
 
 ### Editor Themes
 
-Four themes are available:
+Eleven themes are available, including four standard themes and seven retro console-inspired themes:
 
 | Theme | Description |
 |-------|-------------|
-| **Dark** | Default dark theme. |
+| **Dark** | Default dark theme with sage green accents. |
 | **Light** | Light background theme. |
 | **High Contrast Dark** | High-contrast dark for low vision. |
 | **High Contrast Light** | High-contrast light for low vision. |
+| **SNES** | Super Nintendo inspired -- deep purple and indigo tones with lavender accents. |
+| **PS2** | PlayStation 2 inspired -- dark blue with PS2-signature blue accents. |
+| **Xbox** | Xbox inspired -- dark charcoal with Xbox green accents. |
+| **Dreamcast** | Dreamcast inspired -- warm grey-blues with Dreamcast orange-red accents. |
+| **Sega Saturn** | Sega Saturn inspired -- dark blue-greys with Saturn blue accents. |
+| **GBA** | Game Boy Advance inspired -- dark teal-grey with GBA purple accents. |
+| **DS** | Nintendo DS inspired -- slate grey with DS red accents. |
+
+### Customizable Accent Colors
+
+Beyond the built-in themes, you can fully customize the editor's accent colors from **Settings > Accent Colors**:
+
+- **Enable Custom Colors** checkbox activates per-color overrides.
+- 11 accent color fields are available: Button, Button Hover, Button Active, Check Mark, Slider Grab, Slider Grab Active, Resize Grip, Text Selected, Drag Drop Target, Tab Active, Tab Hovered.
+- Each field has a color picker (with alpha).
+- **Reset to Defaults** restores the default accent colors for the current theme.
+- Custom accent colors are saved persistently and apply to any base theme.
 
 ### Colorblind Modes
 
@@ -2130,6 +2185,405 @@ AI entities use pathfinding results to navigate around obstacles instead of movi
 
 ---
 
+## 21. Quest Flow Editor
+
+The Quest Flow Editor is a visual node-graph tool for designing complex, branching quests. It builds on the same `NodeGraphEditor` framework used by the Behavior Tree and Visual Script editors.
+
+### Opening the Editor
+
+1. Select an entity and add the **Quest Flow** component from **Add Component > Gameplay > Quest Flow**.
+2. In the inspector, click **Open Editor** to open the Quest Flow panel.
+3. Alternatively, open it from **View > Tools > Quest Flow**.
+
+The editor auto-targets the selected entity when it has a `QuestFlowComponent`.
+
+### Node Types
+
+The Quest Flow system provides 8 node types organized into 3 categories:
+
+#### Flow Nodes
+
+| Node | Color | Pins | Description |
+|------|-------|------|-------------|
+| **Start** | Green | 1 output (Next) | Entry point. Created automatically. Cannot be deleted. Activates when the quest begins. |
+| **End** | Red | 1 input (In) | Terminates the quest. Set `endStatus` to `completed` or `failed`. |
+| **Delay** | Grey | 1 input (In), 1 output (Next) | Waits for `duration` seconds before continuing. |
+| **Event** | Teal | 1 input (In), 1 output (Next) | Fires a named event string (`eventName`) for script integration, then continues. |
+
+#### Objective Nodes
+
+| Node | Color | Pins | Description |
+|------|-------|------|-------------|
+| **Objective** | Blue | 1 input (In), 1 output (Done) | A task to complete. Tracks progress via `nodeCounters` against `targetCount`. |
+
+Objective properties:
+
+| Property | Description |
+|----------|-------------|
+| `description` | Human-readable objective text. |
+| `objectiveType` | `kill`, `collect`, `reach`, `interact`, or `custom`. |
+| `targetCount` | Number of completions required (default: 1). |
+| `targetTag` | Tag to match against for auto-tracking. |
+
+#### Logic Nodes
+
+| Node | Color | Pins | Description |
+|------|-------|------|-------------|
+| **Condition** | Orange | 1 input, 2 outputs (True/False) | Checks a game state condition and routes accordingly. |
+| **Branch** | Purple | 1 input, 2 outputs (True/False) | Identical to Condition; use for readability when branching quest paths. |
+| **Reward** | Gold | 1 input (In), 1 output (Next) | Grants a reward (logged to console), then continues. |
+
+Condition/Branch properties:
+
+| Property | Description |
+|----------|-------------|
+| `conditionType` | `hasItem`, `questComplete`, `variable`, or `custom`. |
+| `key` | The variable or item key to check. |
+| `operator` | Comparison operator (`==`, `!=`, `<`, `>`, `<=`, `>=`). |
+| `value` | The value to compare against. |
+
+Reward properties:
+
+| Property | Description |
+|----------|-------------|
+| `rewardType` | `xp`, `item`, `currency`, or `custom`. |
+| `amount` | Quantity to grant. |
+| `itemId` | Item identifier (for `item` type). |
+
+### Editor Layout
+
+The editor window has three areas:
+
+- **Toolbar** (top) -- Auto Layout and Fit All buttons.
+- **Graph Canvas** (left) -- The node graph where you create and connect nodes.
+- **Inspector Panel** (right, 280px) -- Quest info fields (ID, title, description) and selected node properties.
+
+### Creating Nodes
+
+Right-click on the canvas to open the context menu with three categories:
+
+- **Flow** -- Start, End, Delay, Event
+- **Objectives** -- Objective
+- **Logic** -- Condition, Branch, Reward
+
+### Connecting Nodes
+
+Drag from an output pin to an input pin to create a link. Validation rules:
+
+- Links connect Flow output to Flow input only.
+- Each input pin accepts at most 1 incoming link.
+- The Start node allows at most 1 outgoing link.
+- Self-links are not allowed.
+
+### Editing Properties
+
+Select a node in the canvas to see its properties in the inspector panel. Edit property values directly in the text fields.
+
+### Play Mode
+
+When you enter Play mode:
+
+1. All `QuestFlowComponent` runtime state is reset.
+2. Enabled quests automatically start processing from their Start node.
+3. The graph walker advances each frame:
+   - **Start** immediately completes and activates its output.
+   - **Objective** waits until its counter reaches `targetCount`.
+   - **Condition/Branch** evaluates and routes to True or False output.
+   - **Reward** logs the grant and continues.
+   - **Delay** accumulates time and continues when elapsed.
+   - **Event** fires the named event and continues.
+   - **End** sets the quest status and stops processing.
+4. Active nodes show a yellow dot, completed nodes show a green dot, and unreached nodes show grey.
+5. The inspector shows live status, active node count, and objective progress.
+
+When Play mode stops, all runtime state is cleared.
+
+### Auto Layout
+
+Click **Auto Layout** to arrange nodes in a top-down tree layout starting from the Start node. Orphaned (unconnected) nodes are placed below the tree.
+
+### Example: Simple Fetch Quest
+
+```
+Start --> Objective ("Collect 5 herbs", targetCount=5)
+      --> Reward (xp, amount=200)
+      --> End (completed)
+```
+
+### Example: Branching Quest
+
+```
+Start --> Objective ("Talk to the merchant")
+      --> Branch (conditionType=hasItem, key="gold", operator=">=", value="100")
+          True  --> Reward (item, itemId="sword")
+                --> End (completed)
+          False --> Objective ("Earn more gold", targetCount=100)
+                --> Reward (item, itemId="sword")
+                --> End (completed)
+```
+
+### Serialization
+
+Quest flow graphs are saved and loaded automatically with the scene. The serialization key is `"questFlow"` in the scene JSON. All graph layout, node metadata, and quest info fields are preserved. Runtime state (active nodes, counters, timers) is not saved.
+
+---
+
+## 22. Visual Scripting
+
+Enjin includes a full Blueprint-style visual scripting system for creating game logic without writing code. The visual script editor is accessible from **View > Tools > Visual Script** or by clicking **Open Editor** on a Visual Script component.
+
+### Getting Started
+
+1. Select an entity and add the **Visual Script** component from **Add Component > Scripting > Visual Script**.
+2. Click **Open Editor** in the inspector to open the visual scripting panel.
+3. Right-click on the canvas to add nodes from the categorized context menu.
+4. Connect nodes by dragging from output pins to input pins.
+
+### Node Categories
+
+The visual script system provides 80+ built-in nodes organized into these categories:
+
+| Category | Nodes | Description |
+|----------|-------|-------------|
+| **Events** | On Start, On Update | Entry points that fire once or every frame. |
+| **Flow Control** | Branch, Sequence, Delay, For Loop, While Loop, Do Once, Gate, Flip Flop | Control execution flow with conditions and loops. |
+| **Variables** | Get Variable, Set Variable, Get Self | Read/write named variables on the script's blackboard. |
+| **Math** | Add, Subtract, Multiply, Divide, Modulo, Power, Sqrt, Abs, Min, Max, Clamp, Lerp, Floor, Ceil, Round, Sin, Cos, Tan, Atan2, Random Float, Random Int, Negate | Arithmetic and trigonometric operations. |
+| **Logic** | Greater Than, Less Than, Equal, Not Equal, Greater or Equal, Less or Equal, Not, And, Or, Nand, Xor | Boolean comparison and logic gates. |
+| **Transform** | Get/Set Position, Get/Set Rotation, Get/Set Scale, Translate, Rotate, Look At | Manipulate entity transforms. |
+| **Vector** | Make Vector3, Break Vector3, Vector Length, Normalize, Dot Product, Cross Product, Distance, Lerp Vector | 3D vector operations. |
+| **Entity** | Find Entity, Destroy Entity, Spawn Entity, Is Valid, Get Name, Has Component | Entity lifecycle and queries. |
+| **Physics** | Add Force, Add Impulse, Set/Get Velocity, Set Gravity Scale, Raycast, Sphere Check, Box Check | Physics simulation and spatial queries. |
+| **Health** | Get Health, Set Health, Damage | Health/damage system integration. |
+| **Collision** | On Collision Enter/Exit, On Trigger Enter/Exit | Collision event handlers. |
+| **Audio** | Play Audio, Stop Audio, Is Audio Playing, Set Audio Volume, Wait For Audio | Sound playback control. |
+| **Animation** | Play Animation, Set/Get Animation Speed, Wait For Animation | Skeletal animation control. |
+| **Debug** | Print String, Print Warning, Print Error | Console output for debugging. |
+| **Functions** | Function Entry, Function Return, Call Function | Reusable subgraph functions. |
+| **Script** | Call Script | Call AngelScript functions from visual scripts. |
+
+### Debugger
+
+The visual script debugger helps you step through execution in Play mode:
+
+- **Breakpoints**: Click the left margin of any node to toggle a breakpoint (red dot). Execution pauses when a breakpoint is hit.
+- **Conditional Breakpoints**: Shift+F9 on a node to set a condition expression and/or hit count threshold.
+- **Step Through**: When paused, use Step Over / Step Into / Step Out to advance execution.
+- **Watch Window**: View variable values in real-time while paused.
+- **Call Stack**: See the current execution path through function calls (max depth: 32).
+- **Execution Timeline**: Profiler showing which nodes executed each frame and their duration.
+
+### Subgraph Functions
+
+Create reusable logic as functions:
+
+1. Use the **Functions** panel to create a new function with a name.
+2. The function gets a **Function Entry** node (with configurable input pins) and one or more **Function Return** nodes.
+3. Call the function from any graph using a **Call Function** node.
+4. Functions support up to 32 levels of nested calls.
+
+### AngelScript Interop
+
+Visual scripts can call AngelScript functions via the **Call Script** node, and AngelScript can trigger visual script execution via bound functions:
+
+- `VisualScript_SendEvent(entity, eventName)` — triggers a named event on the entity's visual script.
+- `VisualScript_SetVariable(entity, name, value)` — sets a variable on the script's blackboard.
+- `VisualScript_GetVariable(entity, name)` — reads a variable from the script's blackboard.
+
+---
+
+## 23. Behavior Tree Editor
+
+The Behavior Tree (BT) editor provides a visual tool for designing AI logic as hierarchical trees of tasks, conditions, and decorators.
+
+### Opening the Editor
+
+1. Select an entity and add the **Behavior Tree** component from **Add Component > AI > Behavior Tree**.
+2. Click **Open Editor** in the inspector, or open from **View > Tools > Behavior Tree**.
+
+### Node Types
+
+The BT system provides 20 node types in 4 categories, each color-coded in the editor:
+
+#### Composite Nodes (Blue)
+
+| Node | Description |
+|------|-------------|
+| **Sequence** | Runs children left-to-right. Fails on first failure. Succeeds if all succeed. |
+| **Selector** | Runs children left-to-right. Succeeds on first success. Fails if all fail. |
+| **Parallel** | Runs all children simultaneously. Configurable success/failure policy. |
+| **RandomSelector** | Picks a random child to run. |
+| **RandomSequence** | Runs children in random order. |
+
+#### Decorator Nodes (Purple)
+
+| Node | Description |
+|------|-------------|
+| **Inverter** | Flips child's success/failure result. |
+| **Repeater** | Repeats child N times (or indefinitely). |
+| **RepeatUntilFail** | Repeats child until it returns failure. |
+| **Succeeder** | Always returns success regardless of child result. |
+| **Cooldown** | Prevents child from running again for a time duration. |
+| **TimeLimit** | Fails child if it runs longer than a time limit. |
+
+#### Action Nodes (Green)
+
+| Node | Description |
+|------|-------------|
+| **MoveTo** | Moves the entity toward a target position. |
+| **Wait** | Waits for a specified duration. |
+| **PlayAnimation** | Triggers an animation clip. |
+| **SetBlackboard** | Writes a value to the blackboard. |
+| **Log** | Prints a message to the console. |
+
+#### Condition Nodes (Orange)
+
+| Node | Description |
+|------|-------------|
+| **CheckBlackboard** | Checks a blackboard value against a condition. |
+| **IsInRange** | Checks if a target is within a specified distance. |
+| **HasLineOfSight** | Checks for an unobstructed path to target. |
+| **Custom** | User-defined condition with a custom key. |
+
+### Blackboard
+
+The blackboard is a key-value store shared across all nodes in a tree. Edit default values in the **Blackboard** section of the BT editor panel. Keys can store strings that are interpreted as floats, booleans, or entity references at runtime.
+
+### Play Mode Visualization
+
+During Play mode, the BT editor shows live status for each node:
+
+- **Green dot** — node succeeded this tick.
+- **Yellow dot** — node is running (in progress).
+- **Red dot** — node failed this tick.
+- **Grey dot** — node was not reached.
+
+### Auto Layout
+
+Click **Auto Layout** to arrange the tree in a top-down hierarchy from the root node. The layout algorithm spaces nodes evenly and handles subtree widths.
+
+---
+
+## 24. Pixel Editor
+
+The Pixel Editor is a built-in sprite creation tool for making pixel art directly in the engine.
+
+### Opening the Editor
+
+Open from **View > Tools > Pixel Editor**.
+
+### Drawing Tools
+
+| Tool | Description |
+|------|-------------|
+| **Pencil** | Draw individual pixels. |
+| **Eraser** | Erase pixels to transparent. |
+| **Line** | Draw straight lines between two points. |
+| **Rectangle** | Draw filled or outlined rectangles. |
+| **Circle** | Draw filled or outlined circles. |
+| **Fill** | Flood-fill a contiguous area with the current color. |
+| **Color Picker** | Sample a color from the canvas. |
+| **Select** | Rectangular selection for copy/paste/move. |
+
+### Layers
+
+- Create, delete, reorder, and rename layers.
+- Toggle layer visibility and opacity.
+- Layers composite top-to-bottom.
+
+### Retro Presets
+
+Quick-apply classic console color palettes and resolution constraints (e.g., NES, Game Boy, SNES).
+
+### Onion Skinning
+
+When working with animation frames, onion skinning shows ghost images of adjacent frames to help with smooth motion. Configure the number of previous/next frames and their opacity.
+
+### Animation Timeline
+
+A timeline bar at the bottom lets you create frame-by-frame animations:
+
+- Add, remove, and reorder frames.
+- Set per-frame duration.
+- Preview animation playback directly in the editor.
+
+### Undo/Redo
+
+Full undo/redo support for all drawing operations (Ctrl+Z / Ctrl+Y).
+
+### Export
+
+- **Export as PNG** — saves the current canvas to disk via stb_image_write.
+- **Export as Prefab** — generates a sprite sheet image plus a `.enjprefab` file ready for use in the engine.
+
+---
+
+## 25. Sprite Sheet Importer
+
+The Sprite Sheet Importer slices existing sprite sheet images into individual frames for animation.
+
+### Opening the Importer
+
+Open from **View > Tools > Sprite Sheet Importer**.
+
+### Import Modes
+
+| Mode | Description |
+|------|-------------|
+| **Grid** | Specify cell width and height. The importer divides the sheet into a uniform grid. |
+| **Auto Detect** | Automatically detects sprite boundaries by analyzing alpha transparency. |
+
+### Workflow
+
+1. Load a sprite sheet image.
+2. Choose Grid or Auto Detect mode.
+3. For Grid mode, enter the cell dimensions and optional padding.
+4. Preview the detected frames overlaid on the source image.
+5. Confirm to create individual sprite frames usable by `SpriteAnimationComponent`.
+
+---
+
+## 26. Asset Browser
+
+The Asset Browser provides a visual interface for browsing, searching, and managing project files.
+
+### Layout
+
+- **Toolbar** — search bar, grid/list toggle button, thumbnail size slider.
+- **Content Area** — file cards displayed in grid or list view.
+
+### Features
+
+| Feature | Description |
+|---------|-------------|
+| **Search** | Case-insensitive filter by file name. |
+| **Grid View** | Thumbnail cards with file type labels and color coding. |
+| **List View** | Compact rows with name, type, and file size. |
+| **Thumbnails** | Image files (.png, .jpg, .bmp, .tga, .svg) show a thumbnail preview. |
+| **Hover Preview** | Hovering an image file shows a larger 256px tooltip preview. |
+| **Drag & Drop** | Drag files from the browser to other panels (payload type: `ASSET_PATH`). |
+| **Thumbnail Size** | Adjustable slider from 48px to 200px. |
+
+### File Type Labels
+
+Files are automatically categorized and color-coded:
+
+| Label | Extensions | Color |
+|-------|-----------|-------|
+| **IMG** | .png, .jpg, .jpeg, .bmp, .tga, .svg | Teal |
+| **3D** | .gltf, .glb, .fbx, .obj, .dae | Blue |
+| **SCN** | .enjscene | Green |
+| **SHD** | .vert, .frag, .comp, .glsl | Yellow |
+| **AS** | .as | Orange |
+| **SFX** | .wav, .mp3, .ogg, .flac | Purple |
+| **PFB** | .enjprefab | Cyan |
+
+### SVG Support
+
+Enjin supports loading SVG vector images at runtime via the integrated nanosvg library. SVG files are rasterized to textures at load time and can be used anywhere a regular image texture is accepted. The Asset Browser shows SVG files with thumbnail previews alongside raster images.
+
+---
+
 ## Appendix A: Shader Workflow
 
 Shaders are written in GLSL and stored in `Engine/shaders/`. They must be compiled to SPIR-V and then embedded in `ShaderData.h`.
@@ -2249,11 +2703,13 @@ Enjin uses fixed-width type aliases throughout the codebase and exposed APIs:
 | `Enjin::Build` | Build pipeline, asset packer, asset reader, build report. |
 | `Enjin::Physics` | SimplePhysics, PhysicsWorld, ConstraintSolver, joints. |
 | `Enjin::Scripting` | AngelScript engine, script system, coroutines, script event bus. |
-| `Enjin::Gameplay` | HUD, quest, footstep, cinematic, and object pool systems. |
+| `Enjin::Gameplay` | HUD, quest, quest flow, footstep, cinematic, and object pool systems. |
 | `Enjin::Debug` | Profiler, scope timers, frame data. |
 | `Enjin::Plugin` | Plugin system, hot-reload. |
 | `Enjin::Animation` | Timeline/sequencer system. |
-| `Enjin::AI` | AI behaviors, navmesh, A* pathfinding. |
+| `Enjin::AI` | AI behaviors, navmesh, A* pathfinding, behavior trees. |
+| `Enjin::GUI` | UI canvas, UI elements, UI system, dialogue tree rendering. |
+| `Enjin::VisualScript` | Visual scripting node definitions, registry, executor, debugger. |
 
 ---
 

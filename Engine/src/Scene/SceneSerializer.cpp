@@ -15,6 +15,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
@@ -25,6 +26,8 @@
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/AI/BehaviorTree.h"
+#include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/Skeleton.h"
@@ -490,6 +493,7 @@ json SerializeShrubVolumeComponent(const ECS::ShrubVolumeComponent& shrub) {
     j["tipColor"] = SerializeVector3(shrub.tipColor);
     j["windSwayStrength"] = shrub.windSwayStrength;
     j["quadsPerShrub"] = shrub.quadsPerShrub;
+    if (!shrub.customAssetPath.empty()) j["customAssetPath"] = shrub.customAssetPath;
     return j;
 }
 
@@ -504,6 +508,7 @@ ECS::ShrubVolumeComponent DeserializeShrubVolumeComponent(const json& j) {
     if (j.contains("tipColor")) shrub.tipColor = DeserializeVector3(j["tipColor"]);
     if (j.contains("windSwayStrength")) shrub.windSwayStrength = j["windSwayStrength"].get<f32>();
     if (j.contains("quadsPerShrub")) shrub.quadsPerShrub = j["quadsPerShrub"].get<u32>();
+    if (j.contains("customAssetPath")) shrub.customAssetPath = j["customAssetPath"].get<std::string>();
     return shrub;
 }
 
@@ -682,6 +687,54 @@ ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     zone.priority = j["priority"].get<i32>();
     if (j.contains("isActive")) zone.isActive = j["isActive"].get<bool>();
     return zone;
+}
+
+json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
+    json j;
+    j["halfExtents"] = SerializeVector3(vol.halfExtents);
+    j["fluidType"] = static_cast<u32>(vol.fluidType);
+    j["dimension"] = static_cast<u32>(vol.dimension);
+    j["gridSize"] = vol.gridSize;
+    j["viscosity"] = vol.viscosity;
+    j["diffusion"] = vol.diffusion;
+    j["dissipation"] = vol.dissipation;
+    j["velocityDissipation"] = vol.velocityDissipation;
+    j["solverIterations"] = vol.solverIterations;
+    j["buoyancy"] = vol.buoyancy;
+    j["fluidColor"] = SerializeVector3(vol.fluidColor);
+    j["opacity"] = vol.opacity;
+    j["densityThreshold"] = vol.densityThreshold;
+    j["renderEnabled"] = vol.renderEnabled;
+    j["sourceRadius"] = vol.sourceRadius;
+    j["sourceDensity"] = vol.sourceDensity;
+    j["sourceVelocityScale"] = vol.sourceVelocityScale;
+    j["isActive"] = vol.isActive;
+    j["priority"] = vol.priority;
+    return j;
+}
+
+ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
+    ECS::FluidVolumeComponent vol;
+    if (j.contains("halfExtents")) vol.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("fluidType")) vol.fluidType = static_cast<ECS::FluidType>(j["fluidType"].get<u32>());
+    if (j.contains("dimension")) vol.dimension = static_cast<ECS::FluidDimension>(j["dimension"].get<u32>());
+    if (j.contains("gridSize")) vol.gridSize = j["gridSize"].get<u32>();
+    if (j.contains("viscosity")) vol.viscosity = j["viscosity"].get<f32>();
+    if (j.contains("diffusion")) vol.diffusion = j["diffusion"].get<f32>();
+    if (j.contains("dissipation")) vol.dissipation = j["dissipation"].get<f32>();
+    if (j.contains("velocityDissipation")) vol.velocityDissipation = j["velocityDissipation"].get<f32>();
+    if (j.contains("solverIterations")) vol.solverIterations = j["solverIterations"].get<i32>();
+    if (j.contains("buoyancy")) vol.buoyancy = j["buoyancy"].get<f32>();
+    if (j.contains("fluidColor")) vol.fluidColor = DeserializeVector3(j["fluidColor"]);
+    if (j.contains("opacity")) vol.opacity = j["opacity"].get<f32>();
+    if (j.contains("densityThreshold")) vol.densityThreshold = j["densityThreshold"].get<f32>();
+    if (j.contains("renderEnabled")) vol.renderEnabled = j["renderEnabled"].get<bool>();
+    if (j.contains("sourceRadius")) vol.sourceRadius = j["sourceRadius"].get<f32>();
+    if (j.contains("sourceDensity")) vol.sourceDensity = j["sourceDensity"].get<f32>();
+    if (j.contains("sourceVelocityScale")) vol.sourceVelocityScale = j["sourceVelocityScale"].get<f32>();
+    if (j.contains("isActive")) vol.isActive = j["isActive"].get<bool>();
+    if (j.contains("priority")) vol.priority = j["priority"].get<i32>();
+    return vol;
 }
 
 // Base controller fields helper
@@ -1119,6 +1172,80 @@ ECS::BoxColliderComponent DeserializeBoxColliderComponent(const json& j) {
     }
     if (j.contains("collisionMask")) col.collisionMask = j["collisionMask"].get<u32>();
     return col;
+}
+
+// ============================================================================
+// Per-Frame Collider Component
+// ============================================================================
+
+json SerializePerFrameColliderComponent(const ECS::PerFrameColliderComponent& pfc) {
+    json j;
+    j["autoApply"] = pfc.autoApply;
+    json frames = json::array();
+    for (const auto& fc : pfc.frameColliders) {
+        json f;
+        f["offset"] = json::array({fc.offset.x, fc.offset.y});
+        f["size"] = json::array({fc.size.x, fc.size.y});
+        f["enabled"] = fc.enabled;
+        frames.push_back(f);
+    }
+    j["frameColliders"] = frames;
+    return j;
+}
+
+ECS::PerFrameColliderComponent DeserializePerFrameColliderComponent(const json& j) {
+    ECS::PerFrameColliderComponent pfc;
+    if (j.contains("autoApply")) pfc.autoApply = j["autoApply"].get<bool>();
+    if (j.contains("frameColliders") && j["frameColliders"].is_array()) {
+        for (const auto& f : j["frameColliders"]) {
+            ECS::PerFrameColliderComponent::FrameCollider fc;
+            if (f.contains("offset") && f["offset"].is_array() && f["offset"].size() >= 2) {
+                fc.offset = Math::Vector2(f["offset"][0].get<f32>(), f["offset"][1].get<f32>());
+            }
+            if (f.contains("size") && f["size"].is_array() && f["size"].size() >= 2) {
+                fc.size = Math::Vector2(f["size"][0].get<f32>(), f["size"][1].get<f32>());
+            }
+            if (f.contains("enabled")) fc.enabled = f["enabled"].get<bool>();
+            pfc.frameColliders.push_back(fc);
+        }
+    }
+    return pfc;
+}
+
+// ============================================================================
+// Polygon Collider 2D Component
+// ============================================================================
+
+json SerializePolygonCollider2DComponent(const ECS::PolygonCollider2DComponent& poly) {
+    json j;
+    json verts = json::array();
+    for (const auto& v : poly.vertices) {
+        verts.push_back(json::array({v.x, v.y}));
+    }
+    j["vertices"] = verts;
+    j["isTrigger"] = poly.isTrigger;
+    j["friction"] = poly.friction;
+    j["bounciness"] = poly.bounciness;
+    j["categoryBits"] = poly.categoryBits;
+    j["collisionMask"] = poly.collisionMask;
+    return j;
+}
+
+ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json& j) {
+    ECS::PolygonCollider2DComponent poly;
+    if (j.contains("vertices") && j["vertices"].is_array()) {
+        for (const auto& v : j["vertices"]) {
+            if (v.is_array() && v.size() >= 2) {
+                poly.vertices.push_back(Math::Vector2(v[0].get<f32>(), v[1].get<f32>()));
+            }
+        }
+    }
+    if (j.contains("isTrigger")) poly.isTrigger = j["isTrigger"].get<bool>();
+    if (j.contains("friction")) poly.friction = j["friction"].get<f32>();
+    if (j.contains("bounciness")) poly.bounciness = j["bounciness"].get<f32>();
+    if (j.contains("categoryBits")) poly.categoryBits = j["categoryBits"].get<u32>();
+    if (j.contains("collisionMask")) poly.collisionMask = j["collisionMask"].get<u32>();
+    return poly;
 }
 
 json SerializeSphereColliderComponent(const ECS::SphereColliderComponent& col) {
@@ -2145,6 +2272,175 @@ ECS::AIControllerComponent DeserializeAIControllerComponent(const json& j) {
     return ai;
 }
 
+// ============================================================================
+// Behavior Tree Component
+// ============================================================================
+
+static json SerializeBlackboardValue(const AI::BlackboardValue& val) {
+    json j;
+    if (auto* b = std::get_if<bool>(&val)) {
+        j["type"] = "bool"; j["value"] = *b;
+    } else if (auto* i = std::get_if<i32>(&val)) {
+        j["type"] = "int"; j["value"] = *i;
+    } else if (auto* f = std::get_if<f32>(&val)) {
+        j["type"] = "float"; j["value"] = *f;
+    } else if (auto* s = std::get_if<std::string>(&val)) {
+        j["type"] = "string"; j["value"] = *s;
+    } else if (auto* v = std::get_if<Math::Vector3>(&val)) {
+        j["type"] = "vector3"; j["value"] = SerializeVector3(*v);
+    } else if (auto* e = std::get_if<ECS::Entity>(&val)) {
+        j["type"] = "entity"; j["value"] = static_cast<u64>(*e);
+    }
+    return j;
+}
+
+static AI::BlackboardValue DeserializeBlackboardValue(const json& j) {
+    std::string type = j.value("type", "string");
+    if (type == "bool") return j.value("value", false);
+    if (type == "int") return j.value("value", 0);
+    if (type == "float") return j.value("value", 0.0f);
+    if (type == "vector3") return DeserializeVector3(j["value"]);
+    if (type == "entity") return static_cast<ECS::Entity>(j.value("value", (u64)0));
+    return j.value("value", std::string(""));
+}
+
+json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
+    json j;
+    j["graph"] = bt.graph.ToJson();
+    j["rootNodeId"] = bt.rootNodeId;
+    j["enabled"] = bt.enabled;
+    j["tickInterval"] = bt.tickInterval;
+    j["debugEnabled"] = bt.debugEnabled;
+
+    // Node meta
+    json metaArr = json::array();
+    for (const auto& [nodeId, meta] : bt.nodeMeta) {
+        json m;
+        m["nodeId"] = nodeId;
+        m["nodeType"] = static_cast<u8>(meta.nodeType);
+        if (!meta.properties.empty()) {
+            json props = json::object();
+            for (const auto& [k, v] : meta.properties) {
+                props[k] = v;
+            }
+            m["properties"] = props;
+        }
+        metaArr.push_back(m);
+    }
+    j["nodeMeta"] = metaArr;
+
+    // Blackboard defaults
+    json bbArr = json::array();
+    for (const auto& entry : bt.blackboardDefaults) {
+        json e;
+        e["key"] = entry.key;
+        e["val"] = SerializeBlackboardValue(entry.value);
+        bbArr.push_back(e);
+    }
+    j["blackboardDefaults"] = bbArr;
+
+    return j;
+}
+
+ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
+    ECS::BehaviorTreeComponent bt;
+
+    if (j.contains("graph")) bt.graph.FromJson(j["graph"]);
+    if (j.contains("rootNodeId")) bt.rootNodeId = j["rootNodeId"].get<Editor::NodeId>();
+    if (j.contains("enabled")) bt.enabled = j["enabled"].get<bool>();
+    if (j.contains("tickInterval")) bt.tickInterval = j["tickInterval"].get<f32>();
+    if (j.contains("debugEnabled")) bt.debugEnabled = j["debugEnabled"].get<bool>();
+
+    if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
+        for (const auto& m : j["nodeMeta"]) {
+            Editor::NodeId nodeId = m.value("nodeId", (Editor::NodeId)0);
+            AI::BTNodeMeta meta;
+            meta.nodeType = static_cast<AI::BTNodeType>(m.value("nodeType", (u8)0));
+            if (m.contains("properties") && m["properties"].is_object()) {
+                for (auto& [k, v] : m["properties"].items()) {
+                    meta.properties[k] = v.get<std::string>();
+                }
+            }
+            bt.nodeMeta[nodeId] = meta;
+        }
+    }
+
+    if (j.contains("blackboardDefaults") && j["blackboardDefaults"].is_array()) {
+        for (const auto& e : j["blackboardDefaults"]) {
+            AI::BlackboardEntry entry;
+            entry.key = e.value("key", "");
+            if (e.contains("val")) {
+                entry.value = DeserializeBlackboardValue(e["val"]);
+            }
+            bt.blackboardDefaults.push_back(entry);
+        }
+    }
+
+    return bt;
+}
+
+// ============================================================================
+// Quest Flow Component
+// ============================================================================
+
+json SerializeQuestFlowComponent(const ECS::QuestFlowComponent& qf) {
+    json j;
+    j["graph"] = qf.graph.ToJson();
+    j["startNodeId"] = qf.startNodeId;
+    j["questId"] = qf.questId;
+    j["questTitle"] = qf.questTitle;
+    j["questDescription"] = qf.questDescription;
+    j["enabled"] = qf.enabled;
+
+    // Node meta
+    json metaArr = json::array();
+    for (const auto& [nodeId, meta] : qf.nodeMeta) {
+        json m;
+        m["nodeId"] = nodeId;
+        m["nodeType"] = static_cast<u8>(meta.nodeType);
+        if (!meta.properties.empty()) {
+            json props = json::object();
+            for (const auto& [k, v] : meta.properties) {
+                props[k] = v;
+            }
+            m["properties"] = props;
+        }
+        metaArr.push_back(m);
+    }
+    j["nodeMeta"] = metaArr;
+
+    return j;
+}
+
+ECS::QuestFlowComponent DeserializeQuestFlowComponent(const json& j) {
+    ECS::QuestFlowComponent qf;
+
+    if (j.contains("graph")) qf.graph.FromJson(j["graph"]);
+    if (j.contains("startNodeId")) qf.startNodeId = j["startNodeId"].get<Editor::NodeId>();
+    if (j.contains("questId")) qf.questId = j["questId"].get<std::string>();
+    if (j.contains("questTitle")) qf.questTitle = j["questTitle"].get<std::string>();
+    if (j.contains("questDescription")) qf.questDescription = j["questDescription"].get<std::string>();
+    if (j.contains("enabled")) qf.enabled = j["enabled"].get<bool>();
+
+    if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
+        for (const auto& m : j["nodeMeta"]) {
+            Editor::NodeId nodeId = m.value("nodeId", (Editor::NodeId)0);
+            Gameplay::QuestNodeMeta meta;
+            meta.nodeType = static_cast<Gameplay::QuestNodeType>(m.value("nodeType", (u8)0));
+            if (m.contains("properties") && m["properties"].is_object()) {
+                for (auto& [k, v] : m["properties"].items()) {
+                    meta.properties[k] = v.get<std::string>();
+                }
+            }
+            qf.nodeMeta[nodeId] = meta;
+        }
+    }
+
+    return qf;
+}
+
+// ============================================================================
+
 json SerializeFollowTargetComponent(const ECS::FollowTargetComponent& ft) {
     json j;
     j["target"] = static_cast<u64>(ft.target);
@@ -2542,6 +2838,7 @@ json SerializeGrassVolumeComponent(const ECS::GrassVolumeComponent& gv) {
     j["baseColor"] = SerializeVector3(gv.baseColor);
     j["tipColor"] = SerializeVector3(gv.tipColor);
     j["windSwayStrength"] = gv.windSwayStrength;
+    if (!gv.customAssetPath.empty()) j["customAssetPath"] = gv.customAssetPath;
     return j;
 }
 
@@ -2555,6 +2852,7 @@ ECS::GrassVolumeComponent DeserializeGrassVolumeComponent(const json& j) {
     if (j.contains("baseColor")) gv.baseColor = DeserializeVector3(j["baseColor"]);
     if (j.contains("tipColor")) gv.tipColor = DeserializeVector3(j["tipColor"]);
     if (j.contains("windSwayStrength")) gv.windSwayStrength = j["windSwayStrength"].get<f32>();
+    if (j.contains("customAssetPath")) gv.customAssetPath = j["customAssetPath"].get<std::string>();
     return gv;
 }
 
@@ -4156,6 +4454,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
             }
 
+            if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
+                const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
+                entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
+            }
+
             // Character controllers
             if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
                 entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
@@ -4264,6 +4567,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
                 entityJson["boxCollider"] = SerializeBoxColliderComponent(*m_World->GetComponent<ECS::BoxColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
+                entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
+                entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
                 entityJson["sphereCollider"] = SerializeSphereColliderComponent(*m_World->GetComponent<ECS::SphereColliderComponent>(entity));
             }
@@ -4342,6 +4651,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             // AI & Navigation
             if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
                 entityJson["aiController"] = SerializeAIControllerComponent(*m_World->GetComponent<ECS::AIControllerComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::BehaviorTreeComponent>(entity)) {
+                entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*m_World->GetComponent<ECS::BehaviorTreeComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::QuestFlowComponent>(entity)) {
+                entityJson["questFlow"] = SerializeQuestFlowComponent(*m_World->GetComponent<ECS::QuestFlowComponent>(entity));
             }
             if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
                 entityJson["followTarget"] = SerializeFollowTargetComponent(*m_World->GetComponent<ECS::FollowTargetComponent>(entity));
@@ -4710,6 +5025,11 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("fluidVolume")) {
+                auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
+                m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
+            }
+
             // Character controllers
             if (entityJson.contains("platformer2D")) {
                 m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
@@ -4819,6 +5139,12 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("boxCollider")) {
                 m_World->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
             }
+            if (entityJson.contains("polygonCollider2D")) {
+                m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
+            }
+            if (entityJson.contains("perFrameCollider")) {
+                m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
+            }
             if (entityJson.contains("sphereCollider")) {
                 m_World->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
             }
@@ -4895,6 +5221,12 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             // AI & Navigation
             if (entityJson.contains("aiController")) {
                 m_World->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
+            }
+            if (entityJson.contains("behaviorTree")) {
+                m_World->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
+            }
+            if (entityJson.contains("questFlow")) {
+                m_World->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
             }
             if (entityJson.contains("followTarget")) {
                 m_World->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
@@ -5169,6 +5501,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
             }
 
+            if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
+                const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
+                entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
+            }
+
             // Character controllers
             if (m_World->HasComponent<ECS::Platformer2DController>(entity)) {
                 entityJson["platformer2D"] = SerializePlatformer2D(*m_World->GetComponent<ECS::Platformer2DController>(entity));
@@ -5277,6 +5614,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
                 entityJson["boxCollider"] = SerializeBoxColliderComponent(*m_World->GetComponent<ECS::BoxColliderComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
+                entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
+                entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
                 entityJson["sphereCollider"] = SerializeSphereColliderComponent(*m_World->GetComponent<ECS::SphereColliderComponent>(entity));
             }
@@ -5355,6 +5698,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             // AI & Navigation
             if (m_World->HasComponent<ECS::AIControllerComponent>(entity)) {
                 entityJson["aiController"] = SerializeAIControllerComponent(*m_World->GetComponent<ECS::AIControllerComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::BehaviorTreeComponent>(entity)) {
+                entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*m_World->GetComponent<ECS::BehaviorTreeComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::QuestFlowComponent>(entity)) {
+                entityJson["questFlow"] = SerializeQuestFlowComponent(*m_World->GetComponent<ECS::QuestFlowComponent>(entity));
             }
             if (m_World->HasComponent<ECS::FollowTargetComponent>(entity)) {
                 entityJson["followTarget"] = SerializeFollowTargetComponent(*m_World->GetComponent<ECS::FollowTargetComponent>(entity));
@@ -5678,6 +6027,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("fluidVolume")) {
+                auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
+                m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
+            }
+
             // Character controllers
             if (entityJson.contains("platformer2D")) {
                 m_World->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
@@ -5787,6 +6141,12 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("boxCollider")) {
                 m_World->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
             }
+            if (entityJson.contains("polygonCollider2D")) {
+                m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
+            }
+            if (entityJson.contains("perFrameCollider")) {
+                m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
+            }
             if (entityJson.contains("sphereCollider")) {
                 m_World->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
             }
@@ -5863,6 +6223,12 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             // AI & Navigation
             if (entityJson.contains("aiController")) {
                 m_World->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
+            }
+            if (entityJson.contains("behaviorTree")) {
+                m_World->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
+            }
+            if (entityJson.contains("questFlow")) {
+                m_World->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
             }
             if (entityJson.contains("followTarget")) {
                 m_World->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
@@ -6070,6 +6436,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         if (world->HasComponent<ECS::GravityZoneComponent>(entity))
             entityJson["gravityZone"] = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        if (world->HasComponent<ECS::FluidVolumeComponent>(entity))
+            entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*world->GetComponent<ECS::FluidVolumeComponent>(entity));
         // Controllers
         if (world->HasComponent<ECS::Platformer2DController>(entity))
             entityJson["platformer2D"] = SerializePlatformer2D(*world->GetComponent<ECS::Platformer2DController>(entity));
@@ -6152,6 +6520,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["rigidbody"] = SerializeRigidbodyComponent(*world->GetComponent<ECS::RigidbodyComponent>(entity));
         if (world->HasComponent<ECS::BoxColliderComponent>(entity))
             entityJson["boxCollider"] = SerializeBoxColliderComponent(*world->GetComponent<ECS::BoxColliderComponent>(entity));
+        if (world->HasComponent<ECS::PolygonCollider2DComponent>(entity))
+            entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*world->GetComponent<ECS::PolygonCollider2DComponent>(entity));
+        if (world->HasComponent<ECS::PerFrameColliderComponent>(entity))
+            entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*world->GetComponent<ECS::PerFrameColliderComponent>(entity));
         if (world->HasComponent<ECS::SphereColliderComponent>(entity))
             entityJson["sphereCollider"] = SerializeSphereColliderComponent(*world->GetComponent<ECS::SphereColliderComponent>(entity));
         if (world->HasComponent<ECS::CapsuleColliderComponent>(entity))
@@ -6198,6 +6570,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         // AI
         if (world->HasComponent<ECS::AIControllerComponent>(entity))
             entityJson["aiController"] = SerializeAIControllerComponent(*world->GetComponent<ECS::AIControllerComponent>(entity));
+        if (world->HasComponent<ECS::BehaviorTreeComponent>(entity))
+            entityJson["behaviorTree"] = SerializeBehaviorTreeComponent(*world->GetComponent<ECS::BehaviorTreeComponent>(entity));
+        if (world->HasComponent<ECS::QuestFlowComponent>(entity))
+            entityJson["questFlow"] = SerializeQuestFlowComponent(*world->GetComponent<ECS::QuestFlowComponent>(entity));
         if (world->HasComponent<ECS::FollowTargetComponent>(entity))
             entityJson["followTarget"] = SerializeFollowTargetComponent(*world->GetComponent<ECS::FollowTargetComponent>(entity));
         if (world->HasComponent<ECS::LookAtTargetComponent>(entity))
@@ -6339,6 +6715,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("gravityZone")) {
             world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(entityJson["gravityZone"]));
         }
+        if (entityJson.contains("fluidVolume")) {
+            world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(entityJson["fluidVolume"]));
+        }
         // Controllers
         if (entityJson.contains("platformer2D"))
             world->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(entityJson["platformer2D"]));
@@ -6420,6 +6799,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(entityJson["rigidbody"]));
         if (entityJson.contains("boxCollider"))
             world->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
+        if (entityJson.contains("polygonCollider2D"))
+            world->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
+        if (entityJson.contains("perFrameCollider"))
+            world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
         if (entityJson.contains("sphereCollider"))
             world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(entityJson["sphereCollider"]));
         if (entityJson.contains("capsuleCollider"))
@@ -6466,6 +6849,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         // AI
         if (entityJson.contains("aiController"))
             world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(entityJson["aiController"]));
+        if (entityJson.contains("behaviorTree"))
+            world->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(entityJson["behaviorTree"]));
+        if (entityJson.contains("questFlow"))
+            world->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(entityJson["questFlow"]));
         if (entityJson.contains("followTarget"))
             world->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(entityJson["followTarget"]));
         if (entityJson.contains("lookAtTarget"))
@@ -6585,6 +6972,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         else if (key == "gravityZone" && world->HasComponent<ECS::GravityZoneComponent>(entity))
             j = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        else if (key == "fluidVolume" && world->HasComponent<ECS::FluidVolumeComponent>(entity))
+            j = SerializeFluidVolumeComponent(*world->GetComponent<ECS::FluidVolumeComponent>(entity));
         else if (key == "platformer2D" && world->HasComponent<ECS::Platformer2DController>(entity))
             j = SerializePlatformer2D(*world->GetComponent<ECS::Platformer2DController>(entity));
         else if (key == "topDown2D" && world->HasComponent<ECS::TopDown2DController>(entity))
@@ -6665,6 +7054,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeVisualScriptComponent(*world->GetComponent<ECS::VisualScriptComponent>(entity));
         else if (key == "aiController" && world->HasComponent<ECS::AIControllerComponent>(entity))
             j = SerializeAIControllerComponent(*world->GetComponent<ECS::AIControllerComponent>(entity));
+        else if (key == "behaviorTree" && world->HasComponent<ECS::BehaviorTreeComponent>(entity))
+            j = SerializeBehaviorTreeComponent(*world->GetComponent<ECS::BehaviorTreeComponent>(entity));
+        else if (key == "questFlow" && world->HasComponent<ECS::QuestFlowComponent>(entity))
+            j = SerializeQuestFlowComponent(*world->GetComponent<ECS::QuestFlowComponent>(entity));
         else if (key == "followTarget" && world->HasComponent<ECS::FollowTargetComponent>(entity))
             j = SerializeFollowTargetComponent(*world->GetComponent<ECS::FollowTargetComponent>(entity));
         else if (key == "lookAtTarget" && world->HasComponent<ECS::LookAtTargetComponent>(entity))
@@ -6767,6 +7160,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "cameraTrigger") { world->AddComponent<ECS::CameraTriggerComponent>(entity, DeserializeCameraTriggerComponent(j)); return true; }
         if (key == "temperatureZone") { world->AddComponent<ECS::TemperatureZoneComponent>(entity, DeserializeTemperatureZoneComponent(j)); return true; }
         if (key == "gravityZone") { world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(j)); return true; }
+        if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
         if (key == "platformer2D") { world->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(j)); return true; }
         if (key == "topDown2D") { world->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(j)); return true; }
         if (key == "topDown3D") { world->AddComponent<ECS::TopDown3DController>(entity, DeserializeTopDown3D(j)); return true; }
@@ -6787,6 +7181,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "audioListener") { world->AddComponent<ECS::AudioListenerComponent>(entity, DeserializeAudioListenerComponent(j)); return true; }
         if (key == "rigidbody") { world->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(j)); return true; }
         if (key == "boxCollider") { world->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(j)); return true; }
+        if (key == "polygonCollider2D") { world->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(j)); return true; }
+        if (key == "perFrameCollider") { world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(j)); return true; }
         if (key == "sphereCollider") { world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(j)); return true; }
         if (key == "capsuleCollider") { world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(j)); return true; }
         if (key == "health") { world->AddComponent<ECS::HealthComponent>(entity, DeserializeHealthComponent(j)); return true; }
@@ -6807,6 +7203,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "tween") { world->AddComponent<ECS::TweenComponent>(entity, DeserializeTweenComponent(j)); return true; }
         if (key == "visualScript") { world->AddComponent<ECS::VisualScriptComponent>(entity, DeserializeVisualScriptComponent(j)); return true; }
         if (key == "aiController") { world->AddComponent<ECS::AIControllerComponent>(entity, DeserializeAIControllerComponent(j)); return true; }
+        if (key == "behaviorTree") { world->AddComponent<ECS::BehaviorTreeComponent>(entity, DeserializeBehaviorTreeComponent(j)); return true; }
+        if (key == "questFlow") { world->AddComponent<ECS::QuestFlowComponent>(entity, DeserializeQuestFlowComponent(j)); return true; }
         if (key == "followTarget") { world->AddComponent<ECS::FollowTargetComponent>(entity, DeserializeFollowTargetComponent(j)); return true; }
         if (key == "lookAtTarget") { world->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(j)); return true; }
         if (key == "waypoint") { world->AddComponent<ECS::WaypointComponent>(entity, DeserializeWaypointComponent(j)); return true; }

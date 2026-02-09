@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -26,6 +27,9 @@ struct ENJIN_API GrassVolumeComponent {
 
     // Wind response
     f32 windSwayStrength = 1.0f;
+
+    // Custom asset path (texture or model) — overrides procedural grass when non-empty
+    std::string customAssetPath;
 };
 
 } // namespace ECS

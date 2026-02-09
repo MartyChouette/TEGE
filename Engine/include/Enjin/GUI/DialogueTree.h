@@ -6,7 +6,7 @@
 
 #include <string>
 #include <vector>
-#include <map>
+#include <unordered_map>
 #include <functional>
 #include <nlohmann/json.hpp>
 
@@ -103,7 +103,7 @@ namespace Enjin::GUI {
         u32 m_CurrentNodeId = 0;
         bool m_Active = false;
         bool m_WaitingForInput = false;
-        std::map<std::string, std::string> m_Variables;
+        std::unordered_map<std::string, std::string> m_Variables;
         EventCallback m_EventCallback;
 
         void ProcessNode();

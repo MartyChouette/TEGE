@@ -10,6 +10,8 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Platform/Input.h"
 #include <angelscript.h>
 #include <scriptstdstring/scriptstdstring.h>
@@ -939,6 +941,110 @@ void RegisterEventBindings(asIScriptEngine* engine) {
 }
 
 // ---------------------------------------------------------------------------
+// VisualScript Interop Bindings
+// ---------------------------------------------------------------------------
+
+static void VisualScript_SendEvent(u64 entity, const std::string& eventName) {
+    if (!s_BindingsWorld) return;
+    auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
+    if (!script) return;
+
+    // Verify the custom event exists; log if not found
+    auto nodeId = script->GetCustomEventNode(eventName);
+    if (nodeId == 0) {
+        ENJIN_LOG_WARN(Script, "VisualScript_SendEvent: No handler for event '%s' on entity %llu",
+                       eventName.c_str(), entity);
+    }
+}
+
+static void VisualScript_SetVariable(u64 entity, const std::string& varName, float value) {
+    if (!s_BindingsWorld) return;
+    auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
+    if (!script) return;
+
+    auto* var = script->FindVariable(varName);
+    if (var) {
+        var->value = value;
+    } else {
+        ENJIN_LOG_WARN(Script, "VisualScript_SetVariable: Variable '%s' not found on entity %llu",
+                       varName.c_str(), entity);
+    }
+}
+
+static float VisualScript_GetVariable(u64 entity, const std::string& varName) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
+    if (!script) return 0.0f;
+
+    const auto* var = script->FindVariable(varName);
+    if (var && std::holds_alternative<f32>(var->value)) {
+        return std::get<f32>(var->value);
+    }
+    return 0.0f;
+}
+
+// ---------------------------------------------------------------------------
+// DataAsset bindings
+// ---------------------------------------------------------------------------
+
+static bool DataAsset_Load(const std::string& assetName) {
+    return Enjin::Assets::DataAssetRegistry::Get().FindAsset(assetName) != nullptr;
+}
+
+static float DataAsset_GetFloat(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetFloat(assetName, field);
+}
+
+static int DataAsset_GetInt(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetInt(assetName, field);
+}
+
+static bool DataAsset_GetBool(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetBool(assetName, field);
+}
+
+static std::string DataAsset_GetString(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetString(assetName, field);
+}
+
+static Vector3 DataAsset_GetVector3(const std::string& assetName, const std::string& field) {
+    return Enjin::Assets::DataAssetRegistry::Get().GetVector3(assetName, field);
+}
+
+static void RegisterDataAssetBindings(asIScriptEngine* engine) {
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool DataAsset_Load(const string &in)",
+        asFUNCTION(DataAsset_Load), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float DataAsset_GetFloat(const string &in, const string &in)",
+        asFUNCTION(DataAsset_GetFloat), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int DataAsset_GetInt(const string &in, const string &in)",
+        asFUNCTION(DataAsset_GetInt), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool DataAsset_GetBool(const string &in, const string &in)",
+        asFUNCTION(DataAsset_GetBool), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "string DataAsset_GetString(const string &in, const string &in)",
+        asFUNCTION(DataAsset_GetString), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "Vector3 DataAsset_GetVector3(const string &in, const string &in)",
+        asFUNCTION(DataAsset_GetVector3), asCALL_CDECL));
+}
+
+static void RegisterVisualScriptBindings(asIScriptEngine* engine) {
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void VisualScript_SendEvent(uint64, const string &in)",
+        asFUNCTION(VisualScript_SendEvent), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void VisualScript_SetVariable(uint64, const string &in, float)",
+        asFUNCTION(VisualScript_SetVariable), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float VisualScript_GetVariable(uint64, const string &in)",
+        asFUNCTION(VisualScript_GetVariable), asCALL_CDECL));
+}
+
+// ---------------------------------------------------------------------------
 // RegisterAllBindings
 // ---------------------------------------------------------------------------
 void RegisterAllBindings(asIScriptEngine* engine) {
@@ -965,6 +1071,8 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterDialogueBindings(engine);
     RegisterRenderBindings(engine);
     RegisterNoiseBindings(engine);
+    RegisterVisualScriptBindings(engine);
+    RegisterDataAssetBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

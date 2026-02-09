@@ -82,6 +82,9 @@ bool VulkanRenderer::Initialize(Window* window) {
         return false;
     }
 
+    // Create async compute resources (optional — falls back to graphics queue)
+    CreateComputeResources();
+
     ENJIN_LOG_INFO(Renderer, "Vulkan renderer initialized successfully");
     return true;
 }
@@ -91,6 +94,7 @@ void VulkanRenderer::Shutdown() {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
 
+    DestroyComputeResources();
     DestroySyncObjects();
 
     if (m_CommandPool != VK_NULL_HANDLE) {
@@ -321,9 +325,19 @@ void VulkanRenderer::SubmitCommandBuffer() {
     VkSubmitInfo submitInfo{};
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 
-    VkSemaphore waitSemaphores[] = { m_ImageAvailableSemaphores[m_CurrentFrame] };
-    VkPipelineStageFlags waitStages[] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT };
-    submitInfo.waitSemaphoreCount = 1;
+    // Wait on image available. Also wait on compute semaphore if async compute was submitted.
+    VkSemaphore waitSemaphores[2] = { m_ImageAvailableSemaphores[m_CurrentFrame], VK_NULL_HANDLE };
+    VkPipelineStageFlags waitStages[2] = {
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_INPUT_BIT
+    };
+    u32 waitCount = 1;
+    if (m_ComputeSubmittedThisFrame) {
+        waitSemaphores[1] = m_ComputeFinishedSemaphores[m_CurrentFrame];
+        waitCount = 2;
+        m_ComputeSubmittedThisFrame = false;
+    }
+    submitInfo.waitSemaphoreCount = waitCount;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
     submitInfo.commandBufferCount = 1;
@@ -499,6 +513,104 @@ void VulkanRenderer::OnWindowResize(u32 width, u32 height) {
     }
 
     ENJIN_LOG_INFO(Renderer, "Window resized to %ux%u", width, height);
+}
+
+bool VulkanRenderer::CreateComputeResources() {
+    if (!m_Context->HasDedicatedComputeQueue()) {
+        ENJIN_LOG_INFO(Renderer, "No dedicated compute queue — compute work uses graphics queue");
+        return false;
+    }
+
+    VkCommandPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    poolInfo.queueFamilyIndex = m_Context->GetComputeQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+    if (vkCreateCommandPool(m_Context->GetDevice(), &poolInfo, nullptr, &m_ComputeCommandPool) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to create compute command pool");
+        return false;
+    }
+
+    m_ComputeCommandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.commandPool = m_ComputeCommandPool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+    if (vkAllocateCommandBuffers(m_Context->GetDevice(), &allocInfo, m_ComputeCommandBuffers.data()) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "Failed to allocate compute command buffers");
+        vkDestroyCommandPool(m_Context->GetDevice(), m_ComputeCommandPool, nullptr);
+        m_ComputeCommandPool = VK_NULL_HANDLE;
+        return false;
+    }
+
+    m_ComputeFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (vkCreateSemaphore(m_Context->GetDevice(), &semInfo, nullptr, &m_ComputeFinishedSemaphores[i]) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create compute semaphore %u", i);
+            DestroyComputeResources();
+            return false;
+        }
+    }
+
+    ENJIN_LOG_INFO(Renderer, "Async compute resources initialized (queue family %u)",
+                   m_Context->GetComputeQueueFamily());
+    return true;
+}
+
+void VulkanRenderer::DestroyComputeResources() {
+    if (!m_Context) return;
+    VkDevice device = m_Context->GetDevice();
+    for (auto sem : m_ComputeFinishedSemaphores) {
+        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(device, sem, nullptr);
+    }
+    m_ComputeFinishedSemaphores.clear();
+    m_ComputeCommandBuffers.clear();
+    if (m_ComputeCommandPool != VK_NULL_HANDLE) {
+        vkDestroyCommandPool(device, m_ComputeCommandPool, nullptr);
+        m_ComputeCommandPool = VK_NULL_HANDLE;
+    }
+}
+
+VkCommandBuffer VulkanRenderer::GetCurrentComputeCommandBuffer() const {
+    if (m_ComputeCommandBuffers.empty()) return VK_NULL_HANDLE;
+    return m_ComputeCommandBuffers[m_CurrentFrame];
+}
+
+bool VulkanRenderer::BeginComputeCommandBuffer() {
+    if (m_ComputeCommandPool == VK_NULL_HANDLE) return false;
+    VkCommandBuffer cmd = m_ComputeCommandBuffers[m_CurrentFrame];
+    vkResetCommandBuffer(cmd, 0);
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) return false;
+    m_ComputeRecording = true;
+    return true;
+}
+
+void VulkanRenderer::EndComputeCommandBuffer() {
+    if (!m_ComputeRecording) return;
+    vkEndCommandBuffer(m_ComputeCommandBuffers[m_CurrentFrame]);
+    m_ComputeRecording = false;
+}
+
+void VulkanRenderer::SubmitCompute() {
+    if (m_ComputeCommandPool == VK_NULL_HANDLE) return;
+    VkCommandBuffer cmd = m_ComputeCommandBuffers[m_CurrentFrame];
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pSignalSemaphores = &m_ComputeFinishedSemaphores[m_CurrentFrame];
+
+    VkQueue computeQueue = m_Context->GetComputeQueue();
+    vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    m_ComputeSubmittedThisFrame = true;
 }
 
 } // namespace Renderer

@@ -4,10 +4,12 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/GUI/UIElement.h"
 #include <string>
 #include <vector>
 #include <memory>
 #include <functional>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Editor {
@@ -317,6 +319,121 @@ private:
     std::string m_Description;
     std::string m_Snapshot; // JSON of the component data
     RemoveFunc m_RemoveFunc;
+};
+
+// ============================================================================
+// Tilemap Paint Command
+// ============================================================================
+
+struct TilemapTileChange {
+    u32 x, y;
+    i32 oldIndex, newIndex;
+};
+
+/**
+ * @brief Command to undo/redo an entire tilemap brush stroke.
+ * Stores per-cell old/new tile indices, deduplicated per cell.
+ */
+class ENJIN_API TilemapPaintCommand : public ICommand {
+public:
+    TilemapPaintCommand(ECS::World* world, ECS::Entity entity,
+                        std::vector<TilemapTileChange> changes)
+        : m_World(world), m_Entity(entity), m_Changes(std::move(changes)) {}
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "Tilemap Paint"; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::vector<TilemapTileChange> m_Changes;
+};
+
+// ============================================================================
+// Terrain Sculpt Command
+// ============================================================================
+
+/**
+ * @brief Command to undo/redo a terrain sculpt stroke.
+ * Stores snapshots of the full heightmap and splatmap before/after the stroke.
+ */
+class ENJIN_API TerrainSculptCommand : public ICommand {
+public:
+    TerrainSculptCommand(ECS::World* world, ECS::Entity entity,
+                         std::vector<f32> oldHeightmap, std::vector<f32> newHeightmap,
+                         std::vector<f32> oldSplatmap, std::vector<f32> newSplatmap)
+        : m_World(world), m_Entity(entity),
+          m_OldHeightmap(std::move(oldHeightmap)), m_NewHeightmap(std::move(newHeightmap)),
+          m_OldSplatmap(std::move(oldSplatmap)), m_NewSplatmap(std::move(newSplatmap)) {}
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "Terrain Sculpt"; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_Entity;
+    std::vector<f32> m_OldHeightmap;
+    std::vector<f32> m_NewHeightmap;
+    std::vector<f32> m_OldSplatmap;
+    std::vector<f32> m_NewSplatmap;
+};
+
+// ============================================================================
+// UI Anchor Edit Command
+// ============================================================================
+
+/**
+ * @brief Command to undo/redo UI element anchor changes (move, resize, nudge).
+ * Supports merging for arrow key nudges.
+ */
+class ENJIN_API UIAnchorEditCommand : public ICommand {
+public:
+    UIAnchorEditCommand(ECS::World* world, ECS::Entity canvasEntity, u32 elementId,
+                        const GUI::UIAnchor& oldAnchor, const GUI::UIAnchor& newAnchor,
+                        const char* desc = "UI Move")
+        : m_World(world), m_CanvasEntity(canvasEntity), m_ElementId(elementId),
+          m_OldAnchor(oldAnchor), m_NewAnchor(newAnchor), m_Desc(desc) {}
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return m_Desc; }
+
+    bool CanMergeWith(const ICommand* other) const override;
+    void MergeWith(const ICommand* other) override;
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_CanvasEntity;
+    u32 m_ElementId;
+    GUI::UIAnchor m_OldAnchor;
+    GUI::UIAnchor m_NewAnchor;
+    const char* m_Desc;
+};
+
+// ============================================================================
+// UI Element Delete Command
+// ============================================================================
+
+/**
+ * @brief Command to undo/redo UI element deletion.
+ * Stores a full copy of the UIElement for restoration.
+ */
+class ENJIN_API UIElementDeleteCommand : public ICommand {
+public:
+    UIElementDeleteCommand(ECS::World* world, ECS::Entity canvasEntity,
+                           const GUI::UIElement& element)
+        : m_World(world), m_CanvasEntity(canvasEntity), m_Element(element) {}
+
+    void Execute() override;
+    void Undo() override;
+    const char* GetDescription() const override { return "UI Delete Element"; }
+
+private:
+    ECS::World* m_World;
+    ECS::Entity m_CanvasEntity;
+    GUI::UIElement m_Element;
 };
 
 // ============================================================================

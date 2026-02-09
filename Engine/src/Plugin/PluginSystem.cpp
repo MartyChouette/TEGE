@@ -375,11 +375,19 @@ bool PluginSystem::LoadManifest(const std::string& jsonPath, PluginManifest& out
         out.version = j.value("version", "0.0.0");
         out.libraryPath = j.value("library", "");
         out.description = j.value("description", "");
+        out.author = j.value("author", "");
+        out.category = j.value("category", "");
         out.loadOnStartup = j.value("loadOnStartup", true);
 
         if (j.contains("dependencies") && j["dependencies"].is_array()) {
             for (const auto& dep : j["dependencies"]) {
                 out.dependencies.push_back(dep.get<std::string>());
+            }
+        }
+
+        if (j.contains("tags") && j["tags"].is_array()) {
+            for (const auto& tag : j["tags"]) {
+                out.tags.push_back(tag.get<std::string>());
             }
         }
 

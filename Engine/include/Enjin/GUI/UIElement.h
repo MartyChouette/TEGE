@@ -112,6 +112,12 @@ struct UIWidgetData {
     // TextInput (Phase 2+)
     std::string inputText;
     std::string placeholder;
+
+    // SDF rendering (resolution-independent vector art)
+    bool sdfMode = false;
+    f32 sdfSoftness = 0.01f;          // Edge softness (smoothstep range)
+    f32 sdfOutlineWidth = 0.0f;       // 0 = no outline
+    Math::Vector3 sdfOutlineColor = Math::Vector3(0, 0, 0);
 };
 
 // Computed rectangle (filled at layout time)

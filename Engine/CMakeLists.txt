@@ -59,11 +59,17 @@ target_link_libraries(EnjinEngine PUBLIC
     imgui
     imguizmo
     angelscript
+    nanosvg
     nlohmann_json::nlohmann_json
     assimp::assimp
 )
 
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)
+
+# EditorLayer.cpp exceeds the default MSVC section limit due to heavy template use
+if(MSVC)
+    target_compile_options(EnjinEngine PRIVATE /bigobj)
+endif()
 
 # Find Vulkan
 find_package(Vulkan REQUIRED)

@@ -6,6 +6,7 @@
 #include "Enjin/ECS/System.h"
 #include <unordered_map>
 #include <memory>
+#include <string>
 
 /**
  * @file World.h
@@ -127,6 +128,49 @@ public:
     }
 
     /**
+     * @brief Get entities that have both component types (intersection)
+     * @tparam T1 First component type
+     * @tparam T2 Second component type
+     * @return Vector of entities with both components
+     */
+    template<typename T1, typename T2>
+    std::vector<Entity> GetEntitiesWithComponents() const {
+        auto* s1 = GetStorage<T1>();
+        auto* s2 = GetStorage<T2>();
+        if (!s1 || !s2) return {};
+        // Iterate smaller set, check membership in larger
+        if (s1->Size() <= s2->Size()) {
+            const auto& entities = s1->GetEntities();
+            std::vector<Entity> result;
+            result.reserve(entities.size());
+            for (Entity e : entities) {
+                if (s2->Has(e)) result.push_back(e);
+            }
+            return result;
+        } else {
+            const auto& entities = s2->GetEntities();
+            std::vector<Entity> result;
+            result.reserve(entities.size());
+            for (Entity e : entities) {
+                if (s1->Has(e)) result.push_back(e);
+            }
+            return result;
+        }
+    }
+
+    /**
+     * @brief Find an entity by name using O(1) cached lookup
+     * @param name The entity name to search for
+     * @return The entity handle, or INVALID_ENTITY if not found
+     */
+    Entity FindEntityByName(const std::string& name);
+
+    /**
+     * @brief Invalidate the name cache (call when NameComponents change)
+     */
+    void InvalidateNameCache() { m_NameCacheDirty = true; }
+
+    /**
      * @brief Get all active entities
      * @return Vector of all active entity handles
      */
@@ -139,18 +183,32 @@ public:
     usize GetEntityCount() const { return m_EntityManager.GetEntityCount(); }
 
 private:
+    void RebuildNameCache();
+
     // Type-erased component storage wrapper
     struct StorageBase {
         virtual ~StorageBase() = default;
         virtual void Remove(Entity entity) = 0;
+        virtual bool Has(Entity entity) const = 0;
+        virtual usize Size() const = 0;
+        virtual const std::vector<Entity>& GetEntities() const = 0;
     };
 
     template<typename T>
     struct StorageWrapper : public StorageBase {
         ComponentStorage<T> storage;
-        
+
         void Remove(Entity entity) override {
             storage.Remove(entity);
+        }
+        bool Has(Entity entity) const override {
+            return storage.Has(entity);
+        }
+        usize Size() const override {
+            return storage.Size();
+        }
+        const std::vector<Entity>& GetEntities() const override {
+            return storage.GetEntities();
         }
     };
 
@@ -180,6 +238,10 @@ private:
     EntityManager m_EntityManager;
     std::unique_ptr<SystemManager> m_SystemManager;
     std::unordered_map<ComponentTypeId, std::unique_ptr<StorageBase>> m_ComponentStorages;
+
+    // Name cache for O(1) entity lookup by name
+    std::unordered_map<std::string, Entity> m_NameCache;
+    bool m_NameCacheDirty = true;
 };
 
 } // namespace ECS

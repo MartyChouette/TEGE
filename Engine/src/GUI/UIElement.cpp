@@ -135,4 +135,68 @@ std::vector<u32> UICanvasComponent::GetChildIds(u32 parentId) const {
     return children;
 }
 
+u32 UICanvasComponent::DuplicateElement(u32 id) {
+    const UIElement* src = GetElement(id);
+    if (!src) return 0;
+
+    UIElement copy = *src;
+    copy.id = nextElementId++;
+    copy.name = src->name + " Copy";
+    copy.childIds.clear();
+    copy.computedRect = UIRect{};
+    copy.interaction = UIInteractionState{};
+
+    // Offset position slightly so it's visually distinct
+    copy.anchor.offsetLeft   += 10.0f;
+    copy.anchor.offsetRight  += 10.0f;
+    copy.anchor.offsetTop    += 10.0f;
+    copy.anchor.offsetBottom += 10.0f;
+
+    u32 newId = copy.id;
+
+    // Register as child of same parent
+    if (copy.parentId != 0) {
+        UIElement* parent = GetElement(copy.parentId);
+        if (parent) {
+            parent->childIds.push_back(newId);
+        }
+    }
+
+    elements.push_back(std::move(copy));
+    return newId;
+}
+
+void UICanvasComponent::MoveElementUp(u32 id) {
+    for (usize i = 1; i < elements.size(); ++i) {
+        if (elements[i].id == id) {
+            // Find previous sibling (same parent)
+            u32 parentId = elements[i].parentId;
+            for (usize j = i - 1; j < elements.size(); --j) {
+                if (elements[j].parentId == parentId) {
+                    std::swap(elements[i], elements[j]);
+                    return;
+                }
+                if (j == 0) break;
+            }
+            return;
+        }
+    }
+}
+
+void UICanvasComponent::MoveElementDown(u32 id) {
+    for (usize i = 0; i + 1 < elements.size(); ++i) {
+        if (elements[i].id == id) {
+            // Find next sibling (same parent)
+            u32 parentId = elements[i].parentId;
+            for (usize j = i + 1; j < elements.size(); ++j) {
+                if (elements[j].parentId == parentId) {
+                    std::swap(elements[i], elements[j]);
+                    return;
+                }
+            }
+            return;
+        }
+    }
+}
+
 } // namespace Enjin::GUI

@@ -322,34 +322,36 @@ The engine has 100+ completed features across these categories. See `docs/USER_M
 - **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings
 - **ECS & Editor:** 60+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 15 startup templates, entity visibility toggle
 - **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
-- **3D:** glTF/FBX/OBJ/DAE import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree), cubemap skybox
-- **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask)
+- **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
+- **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
-- **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system
-- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types), tweening (25 easing functions), object pooling, damage/stamina systems
+- **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
+- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro)
 - **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
+- **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview
 - **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P)
-- **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system
+- **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system, shader graph (skeleton), audio event graph (skeleton), particle graph (skeleton)
 - **Accessibility:** 4 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion
 
 ## Known Performance Issues
 
-Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for detailed plans and solutions.
+Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for remaining plans.
 
-- **P0:** `vkDeviceWaitIdle()` full GPU stalls on shader hot-reload; `GetAllEntities()` + filter pattern (O(n) vs O(k)); shadow pass iterates x4 cascades
-- **P1:** Per-entity `GetOrLoadTexture()` string hashing (mitigated by texture pointer caching on MaterialComponent); ~~per-entity `vkUpdateDescriptorSets()`~~ (resolved — last-bound tracking + material sort)
-- **Quick wins:** Use `GetEntitiesWithComponent<T>()`, cache texture pointers on MaterialComponent, replace `vkDeviceWaitIdle()` with per-frame fence waits
+- **P0 (all resolved):** ~~`vkDeviceWaitIdle()` GPU stalls~~ (replaced with per-frame fences), ~~`GetAllEntities()` + filter~~ (replaced with `GetEntitiesWithComponent<T>()`), ~~shadow pass iteration~~ (shadow caster caching)
+- **P1 (all resolved):** ~~Per-entity texture lookups~~ (cached texture pointers on MaterialComponent), ~~per-entity descriptor writes~~ (last-bound tracking + material sort)
+- **P2 (all resolved):** ~~Redundant per-entity `GetComponent()` calls~~ (multi-component query + `GetColliderInfo()` helper + Has+Get merged to single Get+null-check), ~~string-based entity lookups in scripts~~ (name cache on World with lazy rebuild), ~~vector allocations without `reserve()` in FlowerSystem~~ (reserve before spawn loops), ~~`std::map` in DialogueTree/Gameplay~~ (switched to `unordered_map`)
 
 ## Roadmap
 
 See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, and progress tracking.
 
 **Key categories of planned work:**
-- **Editor Tools:** Project hub, accent color theming, template rebuild, extended model formats (PLY/VOX), drag-and-drop improvements
-- **Runtime Systems:** Improved physics (2D, CCD), networking, destructible environments, fluid simulation, SVG support
-- **Rendering & Performance:** ~~Sprite batching~~ (done — texture atlas auto-packing), pipeline optimization, soft shadows
-- **Procedural Generation:** Cellular automata, WFC, BSP, L-systems, Voronoi, custom flora assets
-- **Scripting:** Plugin DLL repositories, documentation generator, ScriptableObject/DataAsset system
-- **Platform:** Mobile (Android/iOS), console, VR/XR (OpenXR), WebAssembly (WebGPU)
+- **Editor Tools:** ~~Accent color theming~~ (done), project hub, template rebuild, ~~extended model formats (PLY/VOX)~~ (done), drag-and-drop improvements, ~~micro-interactions~~ (done — spring easing, hover transitions)
+- **Runtime Systems:** ~~Improved physics (2D, CCD)~~ (done — PhysicsWorld2D), networking, ~~destructible environments~~ (done — DestructibleSystem), fluid simulation, ~~SVG import~~ (done), ~~dialogue assets + localization~~ (done — .enjdlg files, LocalizationManager)
+- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done)
+- **Procedural Generation:** ~~All algorithms~~ (done — 9 algorithms + editor panel), ~~custom flora assets~~ (done)
+- **Scripting:** ~~Plugin DLL repositories~~ (done), ~~documentation generator~~ (done), ~~ScriptableObject/DataAsset system~~ (done)
+- **Graph Systems:** ~~Shader Graph, Audio Event Graph, Particle Graph~~ (done — skeleton node types + editor shells)
+- **Platform:** Linux, Steam Deck (Steam Input + gyro), macOS (MoltenVK), Xbox Series X|S (GDK/D3D12), PS5 (PSDK/AGC), Switch 2 (Vulkan 1.3), Switch 1 (NVN), Mobile (Android/iOS), VR/XR (OpenXR), WebAssembly (WebGPU). Platform abstraction layer (`PlatformTarget`) with adaptive quality, input/save/achievement abstractions
 - **Accessibility:** Screen reader support, keyboard-only navigation, motor accessibility
 - **Collaboration:** Git integration, scene/entity locking, collaborative editing

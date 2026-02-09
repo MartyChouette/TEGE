@@ -49,6 +49,13 @@ struct UICanvasComponent {
 
     // Get children of an element
     std::vector<u32> GetChildIds(u32 parentId) const;
+
+    // Duplicate an element (deep copy), returns new ID
+    u32 DuplicateElement(u32 id);
+
+    // Reorder element in the elements vector (render order)
+    void MoveElementUp(u32 id);    // Swap with previous sibling
+    void MoveElementDown(u32 id);  // Swap with next sibling
 };
 
 } // namespace Enjin::GUI

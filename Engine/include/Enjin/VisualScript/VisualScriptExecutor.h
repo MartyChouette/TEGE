@@ -52,6 +52,12 @@ public:
     };
     const ExecutionStats& GetLastStats() const { return m_LastStats; }
 
+    // Physics system for physics query nodes
+    void SetPhysics(Physics::SimplePhysics* physics) { m_Physics = physics; }
+
+    // Script engine for interop nodes
+    void SetScriptEngine(Scripting::ScriptEngine* engine) { m_ScriptEngine = engine; }
+
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }
     u32 GetMaxIterations() const { return m_MaxIterations; }
@@ -85,6 +91,10 @@ private:
 
     ExecutionStats m_LastStats;
     u32 m_MaxIterations = 10000;  // Safety limit to prevent infinite loops
+    Physics::SimplePhysics* m_Physics = nullptr;
+    Scripting::ScriptEngine* m_ScriptEngine = nullptr;
+    u32 m_FunctionCallDepth = 0;
+    static constexpr u32 MAX_CALL_DEPTH = 32;
 };
 
 } // namespace VisualScript

@@ -85,6 +85,13 @@ public:
     using ResizeCallback = std::function<void(u32, u32)>;
     void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }
 
+    // Async compute: begin/end compute command buffer, submit to compute queue
+    VkCommandBuffer GetCurrentComputeCommandBuffer() const;
+    bool BeginComputeCommandBuffer();
+    void EndComputeCommandBuffer();
+    void SubmitCompute();  // Submit compute queue, signal semaphore
+    bool HasAsyncCompute() const { return m_ComputeCommandPool != VK_NULL_HANDLE; }
+
 private:
     bool CreateSurface();
     bool CreateRenderPass();
@@ -119,6 +126,16 @@ private:
     bool m_DeviceLost = false;
 
     std::vector<ResizeCallback> m_ResizeCallbacks;
+
+    // Async compute queue resources
+    VkCommandPool m_ComputeCommandPool = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> m_ComputeCommandBuffers;
+    std::vector<VkSemaphore> m_ComputeFinishedSemaphores;
+    bool m_ComputeRecording = false;
+    bool m_ComputeSubmittedThisFrame = false; // True if SubmitCompute was called
+
+    bool CreateComputeResources();
+    void DestroyComputeResources();
 };
 
 } // namespace Renderer

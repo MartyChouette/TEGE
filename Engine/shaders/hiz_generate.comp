@@ -1,0 +1,39 @@
+#version 450
+
+// Hi-Z Pyramid Generation — downsample depth buffer to mip chain
+// Each level stores the MAX depth from the 2x2 parent texels (conservative occlusion)
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Source mip level (read)
+layout(set = 0, binding = 0) uniform sampler2D srcDepth;
+
+// Destination mip level (write)
+layout(set = 0, binding = 1, r32f) writeonly uniform image2D dstMip;
+
+// Push constant: source mip dimensions
+layout(push_constant) uniform PushConstants {
+    ivec2 srcSize; // width, height of source mip
+} pc;
+
+void main() {
+    ivec2 dstCoord = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 dstSize = imageSize(dstMip);
+
+    if (dstCoord.x >= dstSize.x || dstCoord.y >= dstSize.y) return;
+
+    // Sample 4 texels from the source mip (using texel centers for exact sampling)
+    vec2 srcTexelSize = 1.0 / vec2(pc.srcSize);
+    vec2 uv = (vec2(dstCoord) * 2.0 + 1.0) * srcTexelSize;
+
+    // Gather the 2x2 block from the source
+    float d00 = textureLod(srcDepth, uv + vec2(-0.5, -0.5) * srcTexelSize, 0).r;
+    float d10 = textureLod(srcDepth, uv + vec2( 0.5, -0.5) * srcTexelSize, 0).r;
+    float d01 = textureLod(srcDepth, uv + vec2(-0.5,  0.5) * srcTexelSize, 0).r;
+    float d11 = textureLod(srcDepth, uv + vec2( 0.5,  0.5) * srcTexelSize, 0).r;
+
+    // MAX reduction: conservative depth (further = larger depth in [0,1] Vulkan range)
+    float maxDepth = max(max(d00, d10), max(d01, d11));
+
+    imageStore(dstMip, dstCoord, vec4(maxDepth, 0.0, 0.0, 0.0));
+}

@@ -104,15 +104,7 @@ static u64 Scene_FindEntity(const std::string& name) {
         return INVALID_ENTITY;
     }
 
-    const auto& entities = s_BindingsWorld->GetAllEntities();
-    for (Entity e : entities) {
-        auto* nc = s_BindingsWorld->GetComponent<NameComponent>(e);
-        if (nc && nc->name == name) {
-            return static_cast<u64>(e);
-        }
-    }
-
-    return static_cast<u64>(INVALID_ENTITY);
+    return static_cast<u64>(s_BindingsWorld->FindEntityByName(name));
 }
 
 static u64 Scene_FindEntityByTag(const std::string& tag) {
@@ -212,6 +204,7 @@ static void Scene_SetEntityName(u64 id, const std::string& name) {
     } else {
         s_BindingsWorld->AddComponent<NameComponent>(entity, NameComponent(name));
     }
+    s_BindingsWorld->InvalidateNameCache();
 }
 
 static void Scene_AddTag(u64 id, const std::string& tag) {

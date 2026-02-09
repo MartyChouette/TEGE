@@ -23,6 +23,7 @@
 #include "Enjin/Renderer/PointLightShadowMap.h"
 #include "Enjin/Renderer/SpotLightShadowMap.h"
 #include "Enjin/Renderer/MeshFactory.h"
+#include "Enjin/Renderer/SVGLoader.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -177,6 +178,13 @@ void RenderSystem::Initialize() {
         m_ParticleRenderer.reset();
     }
 
+    // Initialize fluid renderer
+    m_FluidRenderer = std::make_unique<Effects::FluidRenderer>();
+    if (!m_FluidRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
+        ENJIN_LOG_WARN(Renderer, "FluidRenderer initialization failed, fluid rendering disabled");
+        m_FluidRenderer.reset();
+    }
+
     // Initialize grass renderer
     m_GrassRenderer = std::make_unique<Effects::GrassRenderer>();
     if (!m_GrassRenderer->Initialize(m_Renderer, m_Pipeline->GetDescriptorSetLayout())) {
@@ -225,7 +233,14 @@ void RenderSystem::Initialize() {
         SetupShaderWatchers();
     }
 
-    // Initialize GPU frustum culling system (disabled by default due to compute readback sync issues)
+    // Initialize merged geometry buffer (single VB+IB for all static 3D meshes)
+    m_GeometryPool = std::make_unique<Renderer::MergedGeometryBuffer>(m_Renderer->GetContext());
+    if (!m_GeometryPool->Initialize()) {
+        ENJIN_LOG_WARN(Renderer, "MergedGeometryBuffer initialization failed, using per-entity buffers");
+        m_GeometryPool.reset();
+    }
+
+    // Initialize GPU frustum culling system (no readback stall — visibility read from previous frame)
     if (m_GPUCullingEnabled) {
         m_GPUCulling = std::make_unique<Renderer::GPUCullingSystem>(m_Renderer->GetContext());
         if (!m_GPUCulling->Initialize()) {
@@ -235,6 +250,16 @@ void RenderSystem::Initialize() {
         } else {
             ENJIN_LOG_INFO(Renderer, "GPU frustum culling enabled");
         }
+    }
+
+    // Initialize thread pool and per-thread command buffer pools
+    m_ThreadPool.Initialize();
+    u32 framesInFlight = 2; // Matches VulkanRenderer::MAX_FRAMES_IN_FLIGHT
+    m_CmdBufferPool = std::make_unique<Renderer::CommandBufferPool>();
+    if (!m_CmdBufferPool->Initialize(m_Renderer->GetContext(),
+                                     m_ThreadPool.GetThreadCount(), framesInFlight)) {
+        ENJIN_LOG_WARN(Renderer, "CommandBufferPool init failed, shadow passes will be single-threaded");
+        m_CmdBufferPool.reset();
     }
 
     m_Initialized = true;
@@ -280,6 +305,13 @@ void RenderSystem::Shutdown() {
     m_TreeRenderer.reset();
     m_SpriteAtlas.reset();
     m_SpriteBatchRenderer.reset();
+
+    // Clean up merged geometry buffer (before entity render data so pool frees are valid)
+    m_GeometryPool.reset();
+
+    // Clean up thread pool and command buffer pools (before GPU culling)
+    m_ThreadPool.Shutdown();
+    m_CmdBufferPool.reset();
 
     // Clean up GPU culling system
     if (m_GPUCulling) {
@@ -428,6 +460,11 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset per-frame stats
     ResetFrameCounters();
 
+    // Reset per-thread command buffer pools for this frame
+    if (m_CmdBufferPool) {
+        m_CmdBufferPool->ResetFrame(m_Renderer->GetCurrentFrameIndex());
+    }
+
     // Poll texture and shader file watchers every 30 frames (~0.5s at 60fps)
     if (++m_WatcherPollCounter >= 30) {
         m_WatcherPollCounter = 0;
@@ -452,7 +489,8 @@ void RenderSystem::Update(f32 deltaTime) {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
                 // Force re-upload of GPU buffers
-                m_EntityRenderData.erase(entity);
+                if (static_cast<usize>(entity) < m_EntityRenderData.size())
+                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
                 terrain->meshDirty = false;
             }
         }
@@ -465,7 +503,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 } else {
                     m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
                 }
-                m_EntityRenderData.erase(entity);
+                if (static_cast<usize>(entity) < m_EntityRenderData.size())
+                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
                 terrain2d->meshDirty = false;
             }
         }
@@ -475,12 +514,13 @@ void RenderSystem::Update(f32 deltaTime) {
         for (Entity entity : m_World->GetEntitiesWithComponent<JellyMeshComponent>()) {
             auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
             if (jelly && jelly->meshDirty) {
-                auto it = m_EntityRenderData.find(entity);
-                if (it != m_EntityRenderData.end() && it->second.vertexBuffer) {
+                EntityRenderData* rd = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+                    ? &m_EntityRenderData[static_cast<usize>(entity)] : nullptr;
+                if (rd && rd->vertexBuffer) {
                     auto* mesh = m_World->GetComponent<MeshComponent>(entity);
                     if (mesh && !mesh->vertices.empty()) {
                         usize dataSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
-                        it->second.vertexBuffer->UploadData(mesh->vertices.data(), dataSize);
+                        rd->vertexBuffer->UploadData(mesh->vertices.data(), dataSize);
                     }
                 } else {
                     // No existing buffer — will be created on next render via SetupEntityBuffers
@@ -512,6 +552,21 @@ void RenderSystem::Update(f32 deltaTime) {
                 sprite->spriteDirty = true;
             } else {
                 anim->frameChanged = false;
+            }
+
+            // Apply per-frame collider on frame change
+            if (anim->frameChanged) {
+                auto* pfc = m_World->GetComponent<PerFrameColliderComponent>(entity);
+                if (pfc && pfc->autoApply && anim->currentFrame < static_cast<u32>(pfc->frameColliders.size())) {
+                    auto* box = m_World->GetComponent<BoxColliderComponent>(entity);
+                    if (box) {
+                        const auto& fc = pfc->frameColliders[anim->currentFrame];
+                        if (fc.enabled) {
+                            box->center = Math::Vector3(fc.offset.x, fc.offset.y, 0.0f);
+                            box->size = Math::Vector3(fc.size.x, fc.size.y, 0.1f);
+                        }
+                    }
+                }
             }
         }
 
@@ -549,7 +604,8 @@ void RenderSystem::Update(f32 deltaTime) {
             } else {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
-            m_EntityRenderData.erase(entity);
+            if (static_cast<usize>(entity) < m_EntityRenderData.size())
+                m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
             sprite->spriteDirty = false;
         }
 
@@ -564,7 +620,8 @@ void RenderSystem::Update(f32 deltaTime) {
             } else {
                 m_World->AddComponent<MeshComponent>(entity, std::move(mesh));
             }
-            m_EntityRenderData.erase(entity);
+            if (static_cast<usize>(entity) < m_EntityRenderData.size())
+                m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
             tilemap->meshDirty = false;
         }
     }
@@ -647,8 +704,9 @@ void RenderSystem::Update(f32 deltaTime) {
     ClassifySceneComposition();
 
     // Build list of cullable objects for GPU frustum culling
-    // Only done when we have 3D meshes and GPU culling is enabled
-    if (m_GPUCullingEnabled && m_SceneComposition.mesh3DCount > 0) {
+    // Only done when we have 3D meshes and GPU culling is enabled.
+    // In editor mode, skip culling entirely so all entities are visible for editing.
+    if (m_GPUCullingEnabled && !m_IsEditorMode && m_SceneComposition.mesh3DCount > 0) {
         BuildCullableObjectList();
     }
 
@@ -680,9 +738,20 @@ void RenderSystem::Update(f32 deltaTime) {
     }
 
     // GPU frustum culling (compute shader dispatch before main render pass)
-    // This runs the compute shader to determine which objects are visible
-    if (m_GPUCullingEnabled && !m_CullableObjects.empty()) {
-        PerformGPUCulling();
+    // Upload per-object material/transform data, then run the compute culling shader.
+    // When async compute is available, record to dedicated compute command buffer.
+    // Skipped in editor mode — the editor scene view shows all entities.
+    if (m_GPUCullingEnabled && !m_IsEditorMode && !m_CullableObjects.empty()) {
+        UploadObjectData();
+        if (m_Renderer->HasAsyncCompute() && m_Renderer->BeginComputeCommandBuffer()) {
+            // Record culling on async compute queue
+            PerformGPUCullingAsync();
+            m_Renderer->EndComputeCommandBuffer();
+            m_Renderer->SubmitCompute();
+        } else {
+            // Fall back to graphics queue
+            PerformGPUCulling();
+        }
     }
 
     // Periodic diagnostic warnings (every 300 frames)
@@ -791,8 +860,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (!m_World->HasComponent<TransformComponent>(entity)) continue;
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
                 if (xform && !xform->visible) continue;
-                // Skip GPU-culled entities (frustum culling)
-                if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+                // Skip GPU-culled entities (frustum culling — disabled in editor mode)
+                if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
                     usize entityIdx = static_cast<usize>(entity);
                     if (entityIdx < m_EntityToCullIndex.size()) {
                         u32 cullIdx = m_EntityToCullIndex[entityIdx];
@@ -816,6 +885,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RenderShrubs(vpW, vpH);
             RenderTrees(vpW, vpH);
             RenderParticles(vpW, vpH);
+            RenderFluid(vpW, vpH);
         }
 
         m_Camera = prevCamera;
@@ -876,8 +946,8 @@ void RenderSystem::Update(f32 deltaTime) {
                 if (xform && !xform->visible) continue;
             }
 
-            // Skip GPU-culled entities (frustum culling)
-            if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
+            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
                 usize entityIdx = static_cast<usize>(entity);
                 if (entityIdx < m_EntityToCullIndex.size()) {
                     u32 cullIdx = m_EntityToCullIndex[entityIdx];
@@ -922,7 +992,8 @@ void RenderSystem::Update(f32 deltaTime) {
                             auto* mesh = m_World->GetComponent<MeshComponent>(entity);
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
                                 *mesh = lod->levels[newLOD].mesh;
-                                m_EntityRenderData.erase(entity);
+                                if (static_cast<usize>(entity) < m_EntityRenderData.size())
+                                    m_EntityRenderData[static_cast<usize>(entity)].Invalidate();
                                 lod->activeLOD = newLOD;
                             }
                         }
@@ -937,11 +1008,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
 
-    // Render effect passes (grass, shrubs, trees, particles)
+    // Render effect passes (grass, shrubs, trees, particles, fluid)
     RenderGrass(0, 0);
     RenderShrubs(0, 0);
     RenderTrees(0, 0);
     RenderParticles(0, 0);
+    RenderFluid(0, 0);
 
     // Render weather particles in main pass if set (editor viewport)
     if (m_MainPassWeather) {
@@ -1017,8 +1089,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
             if (xformRT && !xformRT->visible) continue;
 
-            // Skip GPU-culled entities (frustum culling)
-            if (m_GPUCullingEnabled && m_GPUCulling && !m_CullableObjects.empty()) {
+            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
+            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
                 usize entityIdx = static_cast<usize>(entity);
                 if (entityIdx < m_EntityToCullIndex.size()) {
                     u32 cullIdx = m_EntityToCullIndex[entityIdx];
@@ -1031,12 +1103,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
-            auto it = m_EntityRenderData.find(entity);
-            if (it == m_EntityRenderData.end()) {
-                it = SetupEntityBuffers(entity);
-                if (it == m_EntityRenderData.end()) continue;
-            }
-            EntityRenderData& renderData = it->second;
+            EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+                ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+            if (!pRD) continue;
+            EntityRenderData& renderData = *pRD;
 
             // Update per-entity material UBO
             UpdateMaterialBuffer(entity);
@@ -1242,11 +1312,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                 sizeof(Renderer::PushConstants), &pushConstants);
 
-            VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-            VkDeviceSize offsets[] = { 0 };
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            if (renderData.poolAlloc.valid && m_GeometryPool) {
+                m_GeometryPool->BindBuffers(commandBuffer);
+                vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                                 renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+            } else {
+                VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                VkDeviceSize offsets[] = { 0 };
+                vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            }
             m_DrawCallCount++;
             m_TriangleCount += renderData.indexCount / 3;
         }
@@ -1255,7 +1331,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
 
-    // Render effect passes (grass, shrubs, trees, particles)
+    // Render effect passes (grass, shrubs, trees, particles, fluid)
     // Pass render target dimensions so vegetation renderers use the correct viewport
     u32 targetW = target->GetWidth();
     u32 targetH = target->GetHeight();
@@ -1263,6 +1339,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderShrubs(targetW, targetH);
     RenderTrees(targetW, targetH);
     RenderParticles(targetW, targetH);
+    RenderFluid(targetW, targetH);
 
     // Restore main pass camera, buffers, and descriptor sets
     m_Camera = prevCamera;
@@ -1374,12 +1451,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
-            auto it = m_EntityRenderData.find(entity);
-            if (it == m_EntityRenderData.end()) {
-                it = SetupEntityBuffers(entity);
-                if (it == m_EntityRenderData.end()) continue;
-            }
-            EntityRenderData& renderData = it->second;
+            EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+                ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+            if (!pRD) continue;
+            EntityRenderData& renderData = *pRD;
 
             UpdateMaterialBuffer(entity);
 
@@ -1576,11 +1651,17 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                 sizeof(Renderer::PushConstants), &pushConstants);
 
-            VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-            VkDeviceSize offsets[] = { 0 };
-            vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-            vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-            vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            if (renderData.poolAlloc.valid && m_GeometryPool) {
+                m_GeometryPool->BindBuffers(commandBuffer);
+                vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                                 renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+            } else {
+                VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+                VkDeviceSize offsets[] = { 0 };
+                vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+                vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+                vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+            }
             m_DrawCallCount++;
             m_TriangleCount += renderData.indexCount / 3;
         }
@@ -1593,6 +1674,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderShrubs(targetW, targetH);
         RenderTrees(targetW, targetH);
         RenderParticles(targetW, targetH);
+        RenderFluid(targetW, targetH);
     }
 
     // Restore main pass state
@@ -1627,7 +1709,14 @@ void RenderSystem::OnEntityAdded(Entity entity) {
 }
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
-    m_EntityRenderData.erase(entity);
+    // Free merged geometry pool allocation before erasing render data
+    if (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
+        auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        if (rd.poolAlloc.valid && m_GeometryPool) {
+            m_GeometryPool->Free(rd.poolAlloc);
+        }
+        rd.Invalidate();
+    }
     m_TextTextureCache.erase(entity);
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
@@ -1805,8 +1894,17 @@ void RenderSystem::BuildCullableObjectList() {
         obj.transform = xform->ToMatrix();
         obj.meshIndex = static_cast<u32>(entity); // Use entity ID as mesh index for now
         obj.indexCount = static_cast<u32>(mesh->indices.size());
-        obj.indexOffset = 0;
-        obj.vertexOffset = 0;
+
+        // Use pool offsets if entity has a merged geometry allocation
+        if (static_cast<usize>(entity) < m_EntityRenderData.size() &&
+            m_EntityRenderData[static_cast<usize>(entity)].valid &&
+            m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.valid) {
+            obj.indexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.indexOffset;
+            obj.vertexOffset = m_EntityRenderData[static_cast<usize>(entity)].poolAlloc.vertexOffset;
+        } else {
+            obj.indexOffset = 0;
+            obj.vertexOffset = 0;
+        }
 
         // Map entity to cull index
         if (static_cast<usize>(entity) < m_EntityToCullIndex.size()) {
@@ -1841,6 +1939,125 @@ void RenderSystem::PerformGPUCulling() {
         auto stats = m_GPUCulling->GetStats();
         (void)stats; // Stats available for profiler display
     }
+}
+
+void RenderSystem::PerformGPUCullingAsync() {
+    if (!m_GPUCulling || !m_GPUCullingEnabled || !m_Camera) return;
+    if (m_CullableObjects.empty()) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentComputeCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    m_GPUCulling->SubmitObjects(m_CullableObjects);
+
+    VkBuffer indirectBuffer;
+    u32 drawCount;
+    m_GPUCulling->ExecuteCulling(
+        m_Camera->GetViewMatrix(),
+        m_Camera->GetProjectionMatrix(),
+        commandBuffer,
+        indirectBuffer,
+        drawCount);
+}
+
+void RenderSystem::UploadObjectData() {
+    if (!m_GPUCulling || m_CullableObjects.empty()) return;
+
+    // Build ObjectData array matching cullable objects 1:1
+    m_ObjectDataCPU.resize(m_CullableObjects.size());
+
+    u32 idx = 0;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+
+        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        if (!xform || !xform->visible) continue;
+
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!mesh || !mesh->IsValid()) continue;
+
+        if (idx >= m_ObjectDataCPU.size()) break;
+
+        ObjectDataGPU& obj = m_ObjectDataCPU[idx];
+        obj.model = xform->ToMatrix();
+
+        auto* material = m_World->GetComponent<MaterialComponent>(entity);
+        if (material) {
+            obj.baseColor = material->baseColor;
+            obj.metallic = material->metallic;
+            obj.emissiveColor = material->emissiveColor;
+            obj.roughness = material->roughness;
+            obj.emissiveStrength = material->emissiveStrength;
+            obj.opacity = material->opacity;
+            obj.alphaCutoff = material->alphaCutoff;
+
+            i32 flags = 0;
+            if (material->doubleSided) flags |= 1;
+            if (material->castShadows) flags |= 2;
+            if (material->receiveShadows) flags |= 4;
+            flags |= (static_cast<i32>(material->alphaMode) << 8);
+            if (material->baseColorTexture >= 0) flags |= (1 << 16);
+            if (material->normalTexture >= 0) flags |= (1 << 17);
+            if (material->metallicRoughnessTexture >= 0) flags |= (1 << 18);
+            if (material->emissiveTexture >= 0) flags |= (1 << 19);
+            if (material->heightTexture >= 0) flags |= (1 << 10);
+            if (material->flatShading) flags |= (1 << 20);
+            if (material->affineTexturing) flags |= (1 << 21);
+            if (material->vertexSnapping) flags |= (1 << 22);
+            if (material->stippleTransparency) flags |= (1 << 23);
+            if (material->uvQuantize) flags |= (1 << 12);
+            if (material->gouraudOnly) flags |= (1 << 13);
+            flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
+            flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+            obj.flags = flags;
+            obj.parallaxScale = material->parallaxScale;
+        } else {
+            obj.baseColor = Math::Vector3(1.0f);
+            obj.metallic = 0.0f;
+            obj.emissiveColor = Math::Vector3(0.0f);
+            obj.roughness = 0.5f;
+            obj.emissiveStrength = 0.0f;
+            obj.opacity = 1.0f;
+            obj.alphaCutoff = 0.5f;
+            obj.flags = 0;
+            obj.parallaxScale = 0.0f;
+        }
+
+        if (m_GlobalFlatShading) obj.flags |= (1 << 20);
+        obj._pad[0] = obj._pad[1] = obj._pad[2] = 0.0f;
+        idx++;
+    }
+
+    // Upload to GPU via GPUCulling's ObjectData buffer
+    usize uploadSize = idx * sizeof(ObjectDataGPU);
+    if (uploadSize > 0) {
+        m_GPUCulling->UploadObjectData(m_ObjectDataCPU.data(), uploadSize);
+    }
+}
+
+void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
+    if (!m_GPUCulling || !m_GPUCullingEnabled || !m_GeometryPool) return;
+    if (m_CullableObjects.empty()) return;
+
+    VkBuffer indirectBuffer = m_GPUCulling->GetIndirectDrawBuffer();
+    VkBuffer drawCountBuffer = m_GPUCulling->GetDrawCountBuffer();
+    if (indirectBuffer == VK_NULL_HANDLE || drawCountBuffer == VK_NULL_HANDLE) return;
+
+    // Bind the merged geometry pool (single VB + IB for all static meshes)
+    m_GeometryPool->BindBuffers(commandBuffer);
+
+    // Issue a single indirect draw call for all visible static meshes
+    vkCmdDrawIndexedIndirectCount(
+        commandBuffer,
+        indirectBuffer,             // VkDrawIndexedIndirectCommand array
+        0,                          // offset
+        drawCountBuffer,            // buffer containing actual draw count
+        0,                          // count buffer offset
+        m_GPUCulling->GetMaxObjects(), // maxDrawCount
+        sizeof(VkDrawIndexedIndirectCommand) // stride
+    );
 }
 
 void RenderSystem::CreatePipeline() {
@@ -2015,14 +2232,14 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
-    // Create descriptor pool (3 UBOs + 8 combined image samplers + 2 SSBOs per set)
+    // Create descriptor pool (3 UBOs + 8 combined image samplers + 3 SSBOs per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[1].descriptorCount = totalSets * 8;  // base color + shadow + height + normal + metallic-roughness + emissive + point shadow + spot shadow
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 2;  // bone matrices SSBO + shadow data SSBO
+    poolSizes[2].descriptorCount = totalSets * 3;  // bone matrices SSBO + shadow data SSBO + object data SSBO
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2143,7 +2360,20 @@ void RenderSystem::CreateDescriptorSets() {
             shadowDataBufferInfo.range = m_ShadowDataBuffer->GetSize();
         }
 
-        std::array<VkWriteDescriptorSet, 13> descriptorWrites{};
+        // ObjectData SSBO (binding 13) - per-object material/transform for indirect draws
+        VkDescriptorBufferInfo objectDataBufferInfo{};
+        if (m_GPUCulling && m_GPUCulling->GetObjectDataBuffer() != VK_NULL_HANDLE) {
+            objectDataBufferInfo.buffer = m_GPUCulling->GetObjectDataBuffer();
+            objectDataBufferInfo.offset = 0;
+            objectDataBufferInfo.range = VK_WHOLE_SIZE;
+        } else if (m_DefaultBoneBuffer) {
+            // Fallback: bind any valid SSBO so the descriptor isn't null
+            objectDataBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            objectDataBufferInfo.offset = 0;
+            objectDataBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        std::array<VkWriteDescriptorSet, 14> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2262,6 +2492,15 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[12].descriptorCount = 1;
         descriptorWrites[12].pBufferInfo = &shadowDataBufferInfo;
 
+        // ObjectData SSBO descriptor (binding 13)
+        descriptorWrites[13].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[13].dstSet = m_DescriptorSets[i];
+        descriptorWrites[13].dstBinding = 13;
+        descriptorWrites[13].dstArrayElement = 0;
+        descriptorWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[13].descriptorCount = 1;
+        descriptorWrites[13].pBufferInfo = &objectDataBufferInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -2351,8 +2590,19 @@ void RenderSystem::CreateDescriptorSets() {
                     offShadowDataInfo.range = m_ShadowDataBuffer->GetSize();
                 }
 
-                std::array<VkWriteDescriptorSet, 13> offWrites{};
-                for (u32 w = 0; w < 13; ++w) {
+                VkDescriptorBufferInfo offObjectDataInfo{};
+                if (m_GPUCulling && m_GPUCulling->GetObjectDataBuffer() != VK_NULL_HANDLE) {
+                    offObjectDataInfo.buffer = m_GPUCulling->GetObjectDataBuffer();
+                    offObjectDataInfo.offset = 0;
+                    offObjectDataInfo.range = VK_WHOLE_SIZE;
+                } else if (m_DefaultBoneBuffer) {
+                    offObjectDataInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offObjectDataInfo.offset = 0;
+                    offObjectDataInfo.range = m_DefaultBoneBuffer->GetSize();
+                }
+
+                std::array<VkWriteDescriptorSet, 14> offWrites{};
+                for (u32 w = 0; w < 14; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -2385,6 +2635,8 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[11].pImageInfo = &offSpotShadowInfo;
                 offWrites[12].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[12].pBufferInfo = &offShadowDataInfo;
+                offWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[13].pBufferInfo = &offObjectDataInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);
@@ -2393,28 +2645,63 @@ void RenderSystem::CreateDescriptorSets() {
     }
 }
 
-std::unordered_map<Entity, EntityRenderData>::iterator RenderSystem::SetupEntityBuffers(Entity entity) {
+bool RenderSystem::IsPoolEligible(Entity entity) const {
+    if (!m_GeometryPool) return false;
+    // Dynamic meshes: terrain, jelly, sprites, tilemaps, water — keep per-entity buffers
+    if (m_World->HasComponent<Sprite2DComponent>(entity)) return false;
+    if (m_World->HasComponent<TilemapComponent>(entity)) return false;
+    if (m_World->HasComponent<TerrainComponent>(entity)) return false;
+    if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
+    if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
+    if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
+    // Skinned meshes stay per-entity (bone deformation updates vertex data)
+    if (m_World->HasComponent<AnimatorComponent>(entity)) return false;
+    return true;
+}
+
+EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
     if (!mesh || !mesh->IsValid()) {
-        return m_EntityRenderData.end();
+        return nullptr;
     }
 
-    auto [insertIt, _] = m_EntityRenderData.try_emplace(entity);
-    EntityRenderData& renderData = insertIt->second;
+    // Ensure dense vector is large enough for this entity ID
+    if (static_cast<usize>(entity) >= m_EntityRenderData.size()) {
+        m_EntityRenderData.resize(static_cast<usize>(entity) + 1);
+    }
+    EntityRenderData& renderData = m_EntityRenderData[static_cast<usize>(entity)];
+    renderData.Invalidate();
+    renderData.valid = true;
 
-    // Create vertex buffer
+    // Try merged geometry pool for static 3D meshes
+    if (IsPoolEligible(entity)) {
+        auto alloc = m_GeometryPool->Upload(
+            mesh->vertices.data(),
+            static_cast<u32>(mesh->vertices.size()),
+            mesh->indices.data(),
+            static_cast<u32>(mesh->indices.size()));
+        if (alloc.valid) {
+            renderData.poolAlloc = alloc;
+            renderData.indexCount = alloc.indexCount;
+            // No per-entity VB/IB needed — pool owns the memory
+            return &renderData;
+        }
+        // Pool allocation failed (overflow) — fall through to per-entity buffers
+    }
+
+    // Per-entity buffers (dynamic meshes, pool overflow fallback)
     usize vertexBufferSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
     renderData.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
     if (!renderData.vertexBuffer->Create(vertexBufferSize, Renderer::BufferUsage::Vertex, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create vertex buffer for entity %llu", entity);
-        m_EntityRenderData.erase(insertIt);
-        return m_EntityRenderData.end();
+        renderData.Invalidate();
+        return nullptr;
     }
 
     if (!renderData.vertexBuffer->UploadData(mesh->vertices.data(), vertexBufferSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload vertex data for entity %llu", entity);
-        m_EntityRenderData.erase(insertIt);
-        return m_EntityRenderData.end();
+        renderData.Invalidate();
+        return nullptr;
     }
 
     // Create index buffer
@@ -2422,14 +2709,14 @@ std::unordered_map<Entity, EntityRenderData>::iterator RenderSystem::SetupEntity
     renderData.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
     if (!renderData.indexBuffer->Create(indexBufferSize, Renderer::BufferUsage::Index, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create index buffer for entity %llu", entity);
-        m_EntityRenderData.erase(insertIt);
-        return m_EntityRenderData.end();
+        renderData.Invalidate();
+        return nullptr;
     }
 
     if (!renderData.indexBuffer->UploadData(mesh->indices.data(), indexBufferSize)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to upload index data for entity %llu", entity);
-        m_EntityRenderData.erase(insertIt);
-        return m_EntityRenderData.end();
+        renderData.Invalidate();
+        return nullptr;
     }
 
     renderData.indexCount = static_cast<u32>(mesh->indices.size());
@@ -2448,7 +2735,7 @@ std::unordered_map<Entity, EntityRenderData>::iterator RenderSystem::SetupEntity
         }
     }
 
-    return insertIt;
+    return &renderData;
 }
 
 void RenderSystem::UpdateFrameUniforms() {
@@ -2886,13 +3173,14 @@ void RenderSystem::SetupShaderWatchers() {
     m_ShaderWatcher.Watch(shaderPath("tree.vert"), treeReload);
     m_ShaderWatcher.Watch(shaderPath("tree.frag"), treeReload);
 
-    // Particle + Weather (shared shaders)
+    // Particle + Weather + Fluid (shared shaders)
     auto particleReload = [this, dir](const std::string&) {
         VkDescriptorSetLayout l = m_Pipeline ? m_Pipeline->GetDescriptorSetLayout() : VK_NULL_HANDLE;
         bool any = false;
         if (m_ParticleRenderer && m_ParticleRenderer->ReloadShaders(dir, l)) any = true;
         if (m_WeatherRenderer && m_WeatherRenderer->ReloadShaders(dir, l)) any = true;
-        if (any) ENJIN_LOG_INFO(Renderer, "Shader hot-reload: particle/weather shaders reloaded");
+        if (m_FluidRenderer && m_FluidRenderer->ReloadShaders(dir, l)) any = true;
+        if (any) ENJIN_LOG_INFO(Renderer, "Shader hot-reload: particle/weather/fluid shaders reloaded");
     };
     m_ShaderWatcher.Watch(shaderPath("particle.vert"), particleReload);
     m_ShaderWatcher.Watch(shaderPath("particle.frag"), particleReload);
@@ -3047,15 +3335,10 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Skip invisible entities (safety net — callers should also check)
     if (!transform->visible) return;
 
-    auto it = m_EntityRenderData.find(entity);
-    if (it == m_EntityRenderData.end()) {
-        it = SetupEntityBuffers(entity);
-        if (it == m_EntityRenderData.end()) {
-            return;
-        }
-    }
-
-    EntityRenderData& renderData = it->second;
+    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    if (!pRD) return;
+    EntityRenderData& renderData = *pRD;
 
     // Get command buffer
     VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
@@ -3285,16 +3568,18 @@ void RenderSystem::RenderEntity(Entity entity) {
     vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
-    // Bind vertex buffer
-    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-    // Bind index buffer
-    vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-    // Draw indexed
-    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Bind and draw — pool-allocated entities use merged buffer with offsets
+    if (renderData.poolAlloc.valid && m_GeometryPool) {
+        m_GeometryPool->BindBuffers(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+    } else {
+        VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    }
     m_DrawCallCount++;
     m_TriangleCount += renderData.indexCount / 3;
 }
@@ -3494,13 +3779,10 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     if (!transform || !mesh || !mesh->IsValid()) return;
 
-    auto it = m_EntityRenderData.find(entity);
-    if (it == m_EntityRenderData.end()) {
-        it = SetupEntityBuffers(entity);
-        if (it == m_EntityRenderData.end()) return;
-    }
-
-    EntityRenderData& renderData = it->second;
+    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    if (!pRD) return;
+    EntityRenderData& renderData = *pRD;
 
     // Push pre-multiplied cascadeVP * model as the MVP matrix.
     // The shadow vertex shader reads this from push constants (first 64 bytes),
@@ -3511,16 +3793,18 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     vkCmdPushConstants(commandBuffer, m_ShadowPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
 
-    // Bind vertex buffer
-    VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
-    VkDeviceSize offsets[] = { 0 };
-    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
-
-    // Bind index buffer
-    vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
-
-    // Draw indexed
-    vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    // Bind and draw — pool-allocated entities use merged buffer with offsets
+    if (renderData.poolAlloc.valid && m_GeometryPool) {
+        m_GeometryPool->BindBuffers(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+    } else {
+        VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    }
 }
 
 void RenderSystem::CreatePointShadowPipeline() {
@@ -3685,10 +3969,10 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         return nullptr;
     }
 
-    // Check cache first
-    auto it = m_TextureCache.find(path);
-    if (it != m_TextureCache.end()) {
-        return it->second;
+    // Check integer-keyed cache first (O(1) after initial load — no string hashing)
+    auto idIt = m_TexturePathToId.find(path);
+    if (idIt != m_TexturePathToId.end()) {
+        return m_TextureById[idIt->second];
     }
 
     // Check failed cache (avoid retrying broken paths every frame)
@@ -3696,9 +3980,18 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
         return nullptr;
     }
 
-    // Load new texture
-    auto texture = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
-    if (!texture->LoadFromFile(path)) {
+    // Load new texture (SVG or raster)
+    std::shared_ptr<Renderer::Texture> texture;
+    if (Renderer::SVGLoader::IsSVGFile(path)) {
+        texture = Renderer::SVGLoader::LoadAsTexture(m_Renderer->GetContext(), path);
+    } else {
+        texture = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+        if (!texture->LoadFromFile(path)) {
+            texture = nullptr;
+        }
+    }
+
+    if (!texture) {
         ENJIN_LOG_WARN(Renderer, "Failed to load texture (will not retry): %s", path.c_str());
         m_FailedTextures.insert(path);
         return nullptr;
@@ -3707,15 +4000,19 @@ std::shared_ptr<Renderer::Texture> RenderSystem::GetOrLoadTexture(const std::str
     ENJIN_LOG_INFO(Renderer, "Loaded texture: %s (%dx%d)",
         path.c_str(), texture->GetWidth(), texture->GetHeight());
 
-    // Cache and watch for hot-reload
-    m_TextureCache[path] = texture;
+    // Cache with integer ID and watch for hot-reload
+    u32 texId = static_cast<u32>(m_TextureById.size());
+    m_TexturePathToId[path] = texId;
+    m_TextureById.push_back(texture);
+    m_TextureIdToPath.push_back(path);
+
     m_TextureWatcher.Watch(path, [this](const std::string& changedPath) {
         ENJIN_LOG_INFO(Renderer, "Texture changed, reloading: %s", changedPath.c_str());
-        auto it = m_TextureCache.find(changedPath);
-        if (it != m_TextureCache.end()) {
+        auto pathIt = m_TexturePathToId.find(changedPath);
+        if (pathIt != m_TexturePathToId.end()) {
             auto newTex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
             if (newTex->LoadFromFile(changedPath)) {
-                it->second = newTex;
+                m_TextureById[pathIt->second] = newTex;
                 // Invalidate cached raw pointers on all materials referencing this texture
                 if (m_World) {
                     for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::MaterialComponent>()) {
@@ -4076,6 +4373,24 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
                                viewportWidth, viewportHeight);
 }
 
+void RenderSystem::RenderFluid(u32 viewportWidth, u32 viewportHeight) {
+    if (!m_FluidRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_FluidRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
+                             GetActiveBufferIndex(currentFrame), m_World,
+                             viewportWidth, viewportHeight);
+}
+
+void RenderSystem::SetFluidSimulation(Effects::FluidSimulation* sim) {
+    if (m_FluidRenderer) {
+        m_FluidRenderer->SetFluidSimulation(sim);
+    }
+}
+
 void RenderSystem::RenderGrass(u32 viewportWidth, u32 viewportHeight) {
     if (!m_GrassRenderer || !m_Renderer || !m_Initialized || !m_World || !m_ActiveDescriptorSets) return;
 
@@ -4127,6 +4442,9 @@ void RenderSystem::RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass)
     }
     if (m_ParticleRenderer) {
         m_ParticleRenderer->RecreateForRenderPass(renderPass, layout);
+    }
+    if (m_FluidRenderer) {
+        m_FluidRenderer->RecreateForRenderPass(renderPass, layout);
     }
     if (m_TreeRenderer) {
         m_TreeRenderer->RecreateForRenderPass(renderPass, layout);

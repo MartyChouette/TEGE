@@ -36,6 +36,7 @@ add_subdirectory(Core)
 add_subdirectory(third_party/imgui)
 add_subdirectory(third_party/imguizmo)
 add_subdirectory(third_party/angelscript)
+add_subdirectory(third_party/nanosvg)
 add_subdirectory(Engine)
 
 if(ENJIN_BUILD_EDITOR)

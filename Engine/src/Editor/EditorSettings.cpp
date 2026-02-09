@@ -11,6 +11,221 @@ using json = nlohmann::json;
 namespace Enjin {
 namespace Editor {
 
+// Default accent color configs for each theme
+AccentColorConfig AccentColorConfig::DefaultDark() {
+    AccentColorConfig c;
+    c.button       = {0.22f, 0.27f, 0.24f, 1.00f};
+    c.buttonHover  = {0.30f, 0.38f, 0.32f, 1.00f};
+    c.buttonActive = {0.35f, 0.45f, 0.38f, 1.00f};
+    c.checkMark    = {0.55f, 0.78f, 0.58f, 1.00f};
+    c.sliderGrab   = {0.50f, 0.70f, 0.52f, 1.00f};
+    c.sliderGrabActive = {0.60f, 0.82f, 0.63f, 1.00f};
+    c.resizeGrip   = {0.30f, 0.40f, 0.33f, 0.50f};
+    c.textSelected = {0.35f, 0.50f, 0.38f, 0.50f};
+    c.dragDropTarget = {0.55f, 0.78f, 0.58f, 0.90f};
+    c.tabActive    = {0.25f, 0.33f, 0.28f, 1.00f};
+    c.tabHovered   = {0.35f, 0.45f, 0.38f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultLight() {
+    AccentColorConfig c;
+    c.button       = {0.78f, 0.84f, 0.79f, 1.00f};
+    c.buttonHover  = {0.68f, 0.76f, 0.70f, 1.00f};
+    c.buttonActive = {0.58f, 0.68f, 0.61f, 1.00f};
+    c.checkMark    = {0.20f, 0.50f, 0.30f, 1.00f};
+    c.sliderGrab   = {0.28f, 0.55f, 0.35f, 1.00f};
+    c.sliderGrabActive = {0.20f, 0.48f, 0.28f, 1.00f};
+    c.resizeGrip   = {0.55f, 0.65f, 0.58f, 0.50f};
+    c.textSelected = {0.50f, 0.65f, 0.53f, 0.50f};
+    c.dragDropTarget = {0.30f, 0.60f, 0.35f, 0.90f};
+    c.tabActive    = {0.70f, 0.80f, 0.73f, 1.00f};
+    c.tabHovered   = {0.60f, 0.72f, 0.63f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultHighContrastDark() {
+    AccentColorConfig c;
+    c.button       = {0.15f, 0.18f, 0.16f, 1.00f};
+    c.buttonHover  = {0.25f, 0.35f, 0.28f, 1.00f};
+    c.buttonActive = {0.35f, 0.48f, 0.38f, 1.00f};
+    c.checkMark    = {0.50f, 0.90f, 0.55f, 1.00f};
+    c.sliderGrab   = {0.50f, 0.90f, 0.55f, 1.00f};
+    c.sliderGrabActive = {0.60f, 0.95f, 0.65f, 1.00f};
+    c.resizeGrip   = {0.45f, 0.65f, 0.48f, 0.60f};
+    c.textSelected = {0.30f, 0.55f, 0.35f, 0.60f};
+    c.dragDropTarget = {0.50f, 0.90f, 0.55f, 1.00f};
+    c.tabActive    = {0.20f, 0.30f, 0.23f, 1.00f};
+    c.tabHovered   = {0.30f, 0.40f, 0.33f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultHighContrastLight() {
+    AccentColorConfig c;
+    c.button       = {0.82f, 0.87f, 0.83f, 1.00f};
+    c.buttonHover  = {0.68f, 0.76f, 0.70f, 1.00f};
+    c.buttonActive = {0.55f, 0.65f, 0.58f, 1.00f};
+    c.checkMark    = {0.10f, 0.45f, 0.18f, 1.00f};
+    c.sliderGrab   = {0.10f, 0.45f, 0.18f, 1.00f};
+    c.sliderGrabActive = {0.08f, 0.38f, 0.15f, 1.00f};
+    c.resizeGrip   = {0.28f, 0.42f, 0.32f, 0.60f};
+    c.textSelected = {0.38f, 0.55f, 0.42f, 0.50f};
+    c.dragDropTarget = {0.15f, 0.55f, 0.25f, 0.90f};
+    c.tabActive    = {0.75f, 0.84f, 0.78f, 1.00f};
+    c.tabHovered   = {0.65f, 0.74f, 0.67f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultSNES() {
+    AccentColorConfig c;
+    c.button       = {0.25f, 0.20f, 0.35f, 1.00f};
+    c.buttonHover  = {0.35f, 0.28f, 0.50f, 1.00f};
+    c.buttonActive = {0.45f, 0.38f, 0.62f, 1.00f};
+    c.checkMark    = {0.68f, 0.55f, 0.85f, 1.00f};
+    c.sliderGrab   = {0.58f, 0.48f, 0.75f, 1.00f};
+    c.sliderGrabActive = {0.70f, 0.58f, 0.88f, 1.00f};
+    c.resizeGrip   = {0.40f, 0.32f, 0.55f, 0.50f};
+    c.textSelected = {0.45f, 0.35f, 0.60f, 0.50f};
+    c.dragDropTarget = {0.68f, 0.55f, 0.85f, 0.90f};
+    c.tabActive    = {0.30f, 0.25f, 0.42f, 1.00f};
+    c.tabHovered   = {0.40f, 0.32f, 0.55f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultPS2() {
+    AccentColorConfig c;
+    c.button       = {0.12f, 0.18f, 0.35f, 1.00f};
+    c.buttonHover  = {0.18f, 0.28f, 0.52f, 1.00f};
+    c.buttonActive = {0.24f, 0.38f, 0.65f, 1.00f};
+    c.checkMark    = {0.35f, 0.55f, 0.95f, 1.00f};
+    c.sliderGrab   = {0.28f, 0.45f, 0.85f, 1.00f};
+    c.sliderGrabActive = {0.38f, 0.58f, 0.98f, 1.00f};
+    c.resizeGrip   = {0.20f, 0.32f, 0.60f, 0.50f};
+    c.textSelected = {0.20f, 0.35f, 0.65f, 0.50f};
+    c.dragDropTarget = {0.35f, 0.55f, 0.95f, 0.90f};
+    c.tabActive    = {0.16f, 0.24f, 0.45f, 1.00f};
+    c.tabHovered   = {0.22f, 0.32f, 0.58f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultXbox() {
+    AccentColorConfig c;
+    c.button       = {0.12f, 0.22f, 0.12f, 1.00f};
+    c.buttonHover  = {0.18f, 0.38f, 0.18f, 1.00f};
+    c.buttonActive = {0.22f, 0.50f, 0.22f, 1.00f};
+    c.checkMark    = {0.30f, 0.78f, 0.30f, 1.00f};
+    c.sliderGrab   = {0.25f, 0.65f, 0.25f, 1.00f};
+    c.sliderGrabActive = {0.35f, 0.82f, 0.35f, 1.00f};
+    c.resizeGrip   = {0.20f, 0.42f, 0.20f, 0.50f};
+    c.textSelected = {0.18f, 0.45f, 0.18f, 0.50f};
+    c.dragDropTarget = {0.30f, 0.78f, 0.30f, 0.90f};
+    c.tabActive    = {0.15f, 0.30f, 0.15f, 1.00f};
+    c.tabHovered   = {0.20f, 0.42f, 0.20f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultDreamcast() {
+    AccentColorConfig c;
+    c.button       = {0.28f, 0.20f, 0.13f, 1.00f};
+    c.buttonHover  = {0.42f, 0.28f, 0.15f, 1.00f};
+    c.buttonActive = {0.55f, 0.35f, 0.18f, 1.00f};
+    c.checkMark    = {0.90f, 0.55f, 0.18f, 1.00f};
+    c.sliderGrab   = {0.80f, 0.48f, 0.15f, 1.00f};
+    c.sliderGrabActive = {0.95f, 0.58f, 0.20f, 1.00f};
+    c.resizeGrip   = {0.50f, 0.32f, 0.15f, 0.50f};
+    c.textSelected = {0.50f, 0.32f, 0.15f, 0.50f};
+    c.dragDropTarget = {0.90f, 0.55f, 0.18f, 0.90f};
+    c.tabActive    = {0.35f, 0.24f, 0.14f, 1.00f};
+    c.tabHovered   = {0.48f, 0.32f, 0.16f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultSegaSaturn() {
+    AccentColorConfig c;
+    c.button       = {0.18f, 0.20f, 0.35f, 1.00f};
+    c.buttonHover  = {0.28f, 0.32f, 0.52f, 1.00f};
+    c.buttonActive = {0.35f, 0.40f, 0.62f, 1.00f};
+    c.checkMark    = {0.45f, 0.52f, 0.88f, 1.00f};
+    c.sliderGrab   = {0.38f, 0.44f, 0.78f, 1.00f};
+    c.sliderGrabActive = {0.50f, 0.56f, 0.92f, 1.00f};
+    c.resizeGrip   = {0.30f, 0.35f, 0.58f, 0.50f};
+    c.textSelected = {0.28f, 0.32f, 0.55f, 0.50f};
+    c.dragDropTarget = {0.45f, 0.52f, 0.88f, 0.90f};
+    c.tabActive    = {0.22f, 0.25f, 0.42f, 1.00f};
+    c.tabHovered   = {0.32f, 0.36f, 0.55f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultGBA() {
+    AccentColorConfig c;
+    c.button       = {0.20f, 0.16f, 0.35f, 1.00f};
+    c.buttonHover  = {0.30f, 0.24f, 0.52f, 1.00f};
+    c.buttonActive = {0.40f, 0.32f, 0.65f, 1.00f};
+    c.checkMark    = {0.58f, 0.42f, 0.92f, 1.00f};
+    c.sliderGrab   = {0.48f, 0.35f, 0.82f, 1.00f};
+    c.sliderGrabActive = {0.62f, 0.48f, 0.95f, 1.00f};
+    c.resizeGrip   = {0.35f, 0.26f, 0.58f, 0.50f};
+    c.textSelected = {0.35f, 0.26f, 0.58f, 0.50f};
+    c.dragDropTarget = {0.58f, 0.42f, 0.92f, 0.90f};
+    c.tabActive    = {0.25f, 0.20f, 0.42f, 1.00f};
+    c.tabHovered   = {0.35f, 0.28f, 0.58f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultDS() {
+    AccentColorConfig c;
+    c.button       = {0.20f, 0.22f, 0.30f, 1.00f};
+    c.buttonHover  = {0.26f, 0.32f, 0.45f, 1.00f};
+    c.buttonActive = {0.32f, 0.42f, 0.58f, 1.00f};
+    c.checkMark    = {0.35f, 0.58f, 0.85f, 1.00f};
+    c.sliderGrab   = {0.30f, 0.50f, 0.75f, 1.00f};
+    c.sliderGrabActive = {0.40f, 0.62f, 0.90f, 1.00f};
+    c.resizeGrip   = {0.28f, 0.38f, 0.55f, 0.50f};
+    c.textSelected = {0.25f, 0.38f, 0.58f, 0.50f};
+    c.dragDropTarget = {0.35f, 0.58f, 0.85f, 0.90f};
+    c.tabActive    = {0.22f, 0.28f, 0.40f, 1.00f};
+    c.tabHovered   = {0.28f, 0.36f, 0.52f, 1.00f};
+    c.useCustom = false;
+    return c;
+}
+
+AccentColorConfig AccentColorConfig::DefaultForTheme(EditorTheme theme) {
+    switch (theme) {
+        case EditorTheme::Light:              return DefaultLight();
+        case EditorTheme::HighContrastDark:   return DefaultHighContrastDark();
+        case EditorTheme::HighContrastLight:  return DefaultHighContrastLight();
+        case EditorTheme::SNES:               return DefaultSNES();
+        case EditorTheme::PS2:                return DefaultPS2();
+        case EditorTheme::Xbox:               return DefaultXbox();
+        case EditorTheme::Dreamcast:          return DefaultDreamcast();
+        case EditorTheme::SegaSaturn:         return DefaultSegaSaturn();
+        case EditorTheme::GBA:               return DefaultGBA();
+        case EditorTheme::DS:                return DefaultDS();
+        default:                              return DefaultDark();
+    }
+}
+
+static json AccentColorToJson(const AccentColor& c) {
+    return json::array({c.r, c.g, c.b, c.a});
+}
+
+static AccentColor AccentColorFromJson(const json& j) {
+    if (j.is_array() && j.size() >= 4) {
+        return AccentColor(j[0].get<f32>(), j[1].get<f32>(), j[2].get<f32>(), j[3].get<f32>());
+    }
+    return AccentColor();
+}
+
 void EditorSettings::AddRecentProject(const std::string& path) {
     // Remove existing entry if present (will re-add at front)
     recentProjects.erase(
@@ -84,6 +299,24 @@ bool EditorSettings::Save(const std::string& path) const {
         j["theme"] = static_cast<u32>(theme);
         j["uiScale"] = uiScale;
 
+        // Accent colors
+        if (accentColors.useCustom) {
+            json ac;
+            ac["useCustom"] = true;
+            ac["button"] = AccentColorToJson(accentColors.button);
+            ac["buttonHover"] = AccentColorToJson(accentColors.buttonHover);
+            ac["buttonActive"] = AccentColorToJson(accentColors.buttonActive);
+            ac["checkMark"] = AccentColorToJson(accentColors.checkMark);
+            ac["sliderGrab"] = AccentColorToJson(accentColors.sliderGrab);
+            ac["sliderGrabActive"] = AccentColorToJson(accentColors.sliderGrabActive);
+            ac["resizeGrip"] = AccentColorToJson(accentColors.resizeGrip);
+            ac["textSelected"] = AccentColorToJson(accentColors.textSelected);
+            ac["dragDropTarget"] = AccentColorToJson(accentColors.dragDropTarget);
+            ac["tabActive"] = AccentColorToJson(accentColors.tabActive);
+            ac["tabHovered"] = AccentColorToJson(accentColors.tabHovered);
+            j["accentColors"] = ac;
+        }
+
         // Visual accessibility
         j["colorblindMode"] = colorblindMode;
         j["colorblindStrength"] = colorblindStrength;
@@ -123,6 +356,10 @@ bool EditorSettings::Save(const std::string& path) const {
         j["inputPreset"] = inputPreset;
         j["rawMouseInput"] = rawMouseInput;
         j["mouseSmoothing"] = mouseSmoothing;
+
+        // Surface Snap
+        j["surfaceSnap"] = surfaceSnap;
+        j["surfaceAlignNormal"] = surfaceAlignNormal;
 
         // External IDE
         j["externalIDE"] = externalIDE;
@@ -185,6 +422,23 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("theme")) theme = static_cast<EditorTheme>(j["theme"].get<u32>());
         if (j.contains("uiScale")) uiScale = j["uiScale"].get<f32>();
 
+        // Accent colors
+        if (j.contains("accentColors") && j["accentColors"].is_object()) {
+            const auto& ac = j["accentColors"];
+            if (ac.contains("useCustom")) accentColors.useCustom = ac["useCustom"].get<bool>();
+            if (ac.contains("button")) accentColors.button = AccentColorFromJson(ac["button"]);
+            if (ac.contains("buttonHover")) accentColors.buttonHover = AccentColorFromJson(ac["buttonHover"]);
+            if (ac.contains("buttonActive")) accentColors.buttonActive = AccentColorFromJson(ac["buttonActive"]);
+            if (ac.contains("checkMark")) accentColors.checkMark = AccentColorFromJson(ac["checkMark"]);
+            if (ac.contains("sliderGrab")) accentColors.sliderGrab = AccentColorFromJson(ac["sliderGrab"]);
+            if (ac.contains("sliderGrabActive")) accentColors.sliderGrabActive = AccentColorFromJson(ac["sliderGrabActive"]);
+            if (ac.contains("resizeGrip")) accentColors.resizeGrip = AccentColorFromJson(ac["resizeGrip"]);
+            if (ac.contains("textSelected")) accentColors.textSelected = AccentColorFromJson(ac["textSelected"]);
+            if (ac.contains("dragDropTarget")) accentColors.dragDropTarget = AccentColorFromJson(ac["dragDropTarget"]);
+            if (ac.contains("tabActive")) accentColors.tabActive = AccentColorFromJson(ac["tabActive"]);
+            if (ac.contains("tabHovered")) accentColors.tabHovered = AccentColorFromJson(ac["tabHovered"]);
+        }
+
         // Visual accessibility
         if (j.contains("colorblindMode")) colorblindMode = j["colorblindMode"].get<u32>();
         if (j.contains("colorblindStrength")) colorblindStrength = j["colorblindStrength"].get<f32>();
@@ -230,6 +484,10 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("inputPreset")) inputPreset = j["inputPreset"].get<u32>();
         if (j.contains("rawMouseInput")) rawMouseInput = j["rawMouseInput"].get<bool>();
         if (j.contains("mouseSmoothing")) mouseSmoothing = j["mouseSmoothing"].get<f32>();
+
+        // Surface Snap
+        if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();
+        if (j.contains("surfaceAlignNormal")) surfaceAlignNormal = j["surfaceAlignNormal"].get<bool>();
 
         // External IDE
         if (j.contains("externalIDE")) externalIDE = j["externalIDE"].get<u32>();

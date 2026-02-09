@@ -200,13 +200,40 @@ bool VulkanContext::CreateLogicalDevice() {
     // This will need to be updated when we integrate with windowing system
     m_PresentQueueFamily = m_GraphicsQueueFamily;
 
-    // Create device
+    // Search for dedicated compute queue family (COMPUTE_BIT && !GRAPHICS_BIT)
+    m_ComputeQueueFamily = m_GraphicsQueueFamily; // Fallback to graphics family
+    for (u32 i = 0; i < queueFamilyCount; ++i) {
+        if ((queueFamilies[i].queueFlags & VK_QUEUE_COMPUTE_BIT) &&
+            !(queueFamilies[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)) {
+            m_ComputeQueueFamily = i;
+            ENJIN_LOG_INFO(Renderer, "Found dedicated compute queue family: %u", i);
+            break;
+        }
+    }
+    if (m_ComputeQueueFamily == m_GraphicsQueueFamily) {
+        ENJIN_LOG_INFO(Renderer, "No dedicated compute queue, using graphics queue family for compute");
+    }
+
+    // Create device queues
     float queuePriority = 1.0f;
-    VkDeviceQueueCreateInfo queueCreateInfo{};
-    queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    queueCreateInfo.queueFamilyIndex = m_GraphicsQueueFamily;
-    queueCreateInfo.queueCount = 1;
-    queueCreateInfo.pQueuePriorities = &queuePriority;
+    std::vector<VkDeviceQueueCreateInfo> queueCreateInfos;
+
+    VkDeviceQueueCreateInfo graphicsQueueInfo{};
+    graphicsQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    graphicsQueueInfo.queueFamilyIndex = m_GraphicsQueueFamily;
+    graphicsQueueInfo.queueCount = 1;
+    graphicsQueueInfo.pQueuePriorities = &queuePriority;
+    queueCreateInfos.push_back(graphicsQueueInfo);
+
+    // Add separate compute queue create info if dedicated
+    if (m_ComputeQueueFamily != m_GraphicsQueueFamily) {
+        VkDeviceQueueCreateInfo computeQueueInfo{};
+        computeQueueInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        computeQueueInfo.queueFamilyIndex = m_ComputeQueueFamily;
+        computeQueueInfo.queueCount = 1;
+        computeQueueInfo.pQueuePriorities = &queuePriority;
+        queueCreateInfos.push_back(computeQueueInfo);
+    }
 
     VkPhysicalDeviceFeatures deviceFeatures{};
     deviceFeatures.fillModeNonSolid = VK_TRUE;
@@ -218,14 +245,22 @@ bool VulkanContext::CreateLogicalDevice() {
         deviceFeatures.wideLines = VK_TRUE;
     }
 
+    // Enable multi-draw indirect for GPU-driven rendering pipeline
+    if (supportedFeatures.multiDrawIndirect) {
+        deviceFeatures.multiDrawIndirect = VK_TRUE;
+    }
+    if (supportedFeatures.drawIndirectFirstInstance) {
+        deviceFeatures.drawIndirectFirstInstance = VK_TRUE;
+    }
+
     const std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    createInfo.pQueueCreateInfos = &queueCreateInfo;
-    createInfo.queueCreateInfoCount = 1;
+    createInfo.pQueueCreateInfos = queueCreateInfos.data();
+    createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
     createInfo.pEnabledFeatures = &deviceFeatures;
     createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
@@ -251,6 +286,8 @@ bool VulkanContext::CreateQueues() {
     // Present queue will be set when we have a surface
     m_PresentQueueFamily = m_GraphicsQueueFamily;
     m_PresentQueue = m_GraphicsQueue;
+    // Get compute queue (may be same as graphics if no dedicated compute family)
+    vkGetDeviceQueue(m_Device, m_ComputeQueueFamily, 0, &m_ComputeQueue);
     return true;
 }
 

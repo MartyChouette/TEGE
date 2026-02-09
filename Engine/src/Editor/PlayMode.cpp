@@ -45,6 +45,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         // Initialize visual script system
         m_VisualScriptSystem.SetWorld(world);
 
+        // Initialize behavior tree system
+        m_BehaviorTreeSystem.SetWorld(world);
+
         ENJIN_LOG_INFO(Editor, "Script engine initialized");
     } else {
         ENJIN_LOG_WARN(Editor, "Failed to initialize script engine");
@@ -97,8 +100,24 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
 
     // Initialize visual script system
+    m_VisualScriptSystem.SetPhysics(&m_Physics);
+    m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
+
+    // Initialize behavior tree system
+    m_BehaviorTreeSystem.Initialize();
+    ENJIN_LOG_INFO(Editor, "PlayMode: BehaviorTreeSystem initialized");
+
+    // Initialize quest flow components
+    {
+        auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
+        for (auto entity : qfEntities) {
+            auto* qf = m_World->GetComponent<ECS::QuestFlowComponent>(entity);
+            if (qf) qf->ResetRuntimeState();
+        }
+        ENJIN_LOG_INFO(Editor, "PlayMode: QuestFlow initialized (%zu quests)", qfEntities.size());
+    }
 
     // Disable editor camera controller
     if (m_CameraController) {
@@ -153,7 +172,15 @@ void PlayMode::Stop() {
         return;
     }
 
-    // Shutdown visual scripts and scripts first (before scene restore destroys entities)
+    // Shutdown quest flows, behavior trees, visual scripts, and scripts first (before scene restore destroys entities)
+    {
+        auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
+        for (auto entity : qfEntities) {
+            auto* qf = m_World->GetComponent<ECS::QuestFlowComponent>(entity);
+            if (qf) qf->ResetRuntimeState();
+        }
+    }
+    m_BehaviorTreeSystem.Shutdown();
     m_VisualScriptSystem.Shutdown();
     m_ScriptSystem.ShutdownAllScripts();
     m_ScriptSystem.SetEnabled(false);
@@ -240,9 +267,19 @@ void PlayMode::Update(f32 deltaTime) {
         m_TweenSystem.Update(m_World, deltaTime);
         m_StateMachineSystem.Update(m_World, deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
+        m_BehaviorTreeSystem.Update(deltaTime);
         m_DialogueSystem.Update(m_World, deltaTime);
         m_CinematicSystem.Update(m_World, m_Camera, deltaTime);
         m_QuestSystem.Update(m_World, deltaTime);
+
+        // Quest flow graphs
+        {
+            auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
+            for (auto entity : qfEntities) {
+                Gameplay::AdvanceQuestFlow(m_World, entity, deltaTime);
+            }
+        }
+
         m_FootstepSystem.Update(m_World, deltaTime);
         m_ObjectPool.Update(m_World, deltaTime);
         m_EntityEventBus.ProcessDeferred();

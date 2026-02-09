@@ -67,6 +67,30 @@ void GPUCullingSystem::Shutdown() {
     m_IndirectDrawBuffer.reset();
     m_FrustumBuffer.reset();
     m_VisibilityBuffer.reset();
+    m_DrawCountBuffer.reset();
+    m_ObjectDataBuffer.reset();
+}
+
+VkBuffer GPUCullingSystem::GetIndirectDrawBuffer() const {
+    return m_IndirectDrawBuffer ? m_IndirectDrawBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
+VkBuffer GPUCullingSystem::GetDrawCountBuffer() const {
+    return m_DrawCountBuffer ? m_DrawCountBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
+VkBuffer GPUCullingSystem::GetObjectDataBuffer() const {
+    return m_ObjectDataBuffer ? m_ObjectDataBuffer->GetBuffer() : VK_NULL_HANDLE;
+}
+
+bool GPUCullingSystem::UploadObjectData(const void* data, usize sizeBytes) {
+    if (!m_ObjectDataBuffer || !data || sizeBytes == 0) return false;
+    usize maxSize = static_cast<usize>(m_MaxObjects) * 128; // 128 bytes per ObjectData
+    if (sizeBytes > maxSize) {
+        ENJIN_LOG_WARN(Renderer, "ObjectData upload truncated: %zu > %zu bytes", sizeBytes, maxSize);
+        sizeBytes = maxSize;
+    }
+    return m_ObjectDataBuffer->UploadData(data, sizeBytes);
 }
 
 void GPUCullingSystem::SubmitObjects(const std::vector<CullableObject>& objects) {
@@ -189,6 +213,20 @@ bool GPUCullingSystem::ExecuteCulling(
     // Update descriptor set
     UpdateDescriptorSet(commandBuffer);
 
+    // Reset atomic draw count to 0 BEFORE dispatch
+    if (m_DrawCountBuffer) {
+        vkCmdFillBuffer(commandBuffer, m_DrawCountBuffer->GetBuffer(), 0, sizeof(u32), 0);
+
+        VkMemoryBarrier fillBarrier{};
+        fillBarrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        fillBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        fillBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
+        vkCmdPipelineBarrier(commandBuffer,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 1, &fillBarrier, 0, nullptr, 0, nullptr);
+    }
+
     // Bind compute pipeline
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, m_CullPipeline);
 
@@ -205,40 +243,37 @@ bool GPUCullingSystem::ExecuteCulling(
     VkMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_INDIRECT_COMMAND_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
     vkCmdPipelineBarrier(commandBuffer,
         VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT,
+        VK_PIPELINE_STAGE_DRAW_INDIRECT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
         0, 1, &barrier, 0, nullptr, 0, nullptr);
 
     outIndirectDrawBuffer = m_IndirectDrawBuffer->GetBuffer();
 
-    // Read back visibility buffer to count visible objects and cache results
-    // Note: This requires a GPU->CPU sync which can stall. In production,
-    // use an atomic counter in the compute shader or query the count from
-    // the previous frame to avoid the stall.
-    u32 visibleCount = 0;
+    // GPU-driven: no CPU readback. Draw count is stored in m_DrawCountBuffer
+    // for vkCmdDrawIndexedIndirectCount. Visibility buffer still written for
+    // CPU-side fallback queries (IsVisible), read lazily from previous frame.
     m_CachedVisibility.resize(m_ObjectCount);
     void* mapped = m_VisibilityBuffer->Map();
     if (mapped) {
         const u32* visibility = static_cast<const u32*>(mapped);
+        u32 visibleCount = 0;
         for (u32 i = 0; i < m_ObjectCount; ++i) {
             m_CachedVisibility[i] = visibility[i];
-            if (visibility[i] != 0) {
-                visibleCount++;
-            }
+            if (visibility[i] != 0) visibleCount++;
         }
         m_VisibilityBuffer->Unmap();
+        m_Stats.visibleObjects = visibleCount;
+        m_Stats.culledObjects = m_ObjectCount - visibleCount;
     } else {
-        // Fallback: assume all visible if readback fails
-        visibleCount = m_ObjectCount;
         std::fill(m_CachedVisibility.begin(), m_CachedVisibility.end(), 1u);
+        m_Stats.visibleObjects = m_ObjectCount;
+        m_Stats.culledObjects = 0;
     }
 
-    outDrawCount = m_ObjectCount; // Use full count for indirect draw (culled entries have instanceCount=0)
+    outDrawCount = m_ObjectCount;
     m_Stats.totalObjects = m_ObjectCount;
-    m_Stats.visibleObjects = visibleCount;
-    m_Stats.culledObjects = m_ObjectCount - visibleCount;
 
     return true;
 }
@@ -280,12 +315,31 @@ bool GPUCullingSystem::CreateBuffers() {
         return false;
     }
 
+    // Draw count buffer (atomic counter, 4 bytes)
+    m_DrawCountBuffer = std::make_unique<VulkanBuffer>(m_Context);
+    VkBufferUsageFlags drawCountUsage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (!m_DrawCountBuffer->Create(sizeof(u32), drawCountUsage, true)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create draw count buffer");
+        return false;
+    }
+
+    // Object data SSBO (per-object material/transform for indirect rendering)
+    // 128 bytes per object, matches ObjectDataGPU struct in triangle.vert/frag
+    usize objectDataSize = m_MaxObjects * 128;
+    m_ObjectDataBuffer = std::make_unique<VulkanBuffer>(m_Context);
+    if (!m_ObjectDataBuffer->Create(objectDataSize, BufferUsage::Storage, true)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create object data buffer");
+        return false;
+    }
+
     return true;
 }
 
 bool GPUCullingSystem::CreateComputePipeline() {
     // Create descriptor set layout
-    std::vector<VkDescriptorSetLayoutBinding> bindings(4);
+    std::vector<VkDescriptorSetLayoutBinding> bindings(5);
 
     // Object buffer (binding 0)
     bindings[0].binding = 0;
@@ -310,6 +364,12 @@ bool GPUCullingSystem::CreateComputePipeline() {
     bindings[3].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     bindings[3].descriptorCount = 1;
     bindings[3].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Draw count buffer (binding 4) — atomic counter
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
 
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -338,9 +398,9 @@ bool GPUCullingSystem::CreateComputePipeline() {
     }
 
     // Create descriptor pool
-    std::vector<VkDescriptorPoolSize> poolSizes(4);
+    std::vector<VkDescriptorPoolSize> poolSizes(2);
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[0].descriptorCount = 3; // Object, indirect, visibility buffers
+    poolSizes[0].descriptorCount = 4; // Object, indirect, visibility, draw count buffers
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[1].descriptorCount = 1; // Frustum buffer
 
@@ -427,8 +487,8 @@ bool GPUCullingSystem::CreateComputePipeline() {
 void GPUCullingSystem::UpdateDescriptorSet(VkCommandBuffer commandBuffer) {
     (void)commandBuffer; // Not needed for descriptor set update
 
-    std::vector<VkWriteDescriptorSet> writes(4);
-    std::vector<VkDescriptorBufferInfo> bufferInfos(4);
+    std::vector<VkWriteDescriptorSet> writes(5);
+    std::vector<VkDescriptorBufferInfo> bufferInfos(5);
 
     // Object buffer
     bufferInfos[0].buffer = m_ObjectBuffer->GetBuffer();
@@ -482,7 +542,20 @@ void GPUCullingSystem::UpdateDescriptorSet(VkCommandBuffer commandBuffer) {
     writes[3].descriptorCount = 1;
     writes[3].pBufferInfo = &bufferInfos[3];
 
-    vkUpdateDescriptorSets(m_Context->GetDevice(), 
+    // Draw count buffer (atomic counter)
+    bufferInfos[4].buffer = m_DrawCountBuffer->GetBuffer();
+    bufferInfos[4].offset = 0;
+    bufferInfos[4].range = VK_WHOLE_SIZE;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = m_DescriptorSet;
+    writes[4].dstBinding = 4;
+    writes[4].dstArrayElement = 0;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[4].descriptorCount = 1;
+    writes[4].pBufferInfo = &bufferInfos[4];
+
+    vkUpdateDescriptorSets(m_Context->GetDevice(),
         static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 }
 

@@ -1,6 +1,8 @@
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Assets/GLTFLoader.h"
 #include "Enjin/Assets/AssimpLoader.h"
+#include "Enjin/Assets/PLYLoader.h"
+#include "Enjin/Assets/VOXLoader.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -441,6 +443,79 @@ ImportResult SceneImporter::Import(const std::string& filepath, ECS::World* worl
     // Use native glTF loader for glTF files
     if (ext == ".gltf" || ext == ".glb") {
         return ImportGLTF(filepath, world, options);
+    }
+
+    // PLY point cloud/mesh format
+    if (ext == ".ply") {
+        ImportResult result;
+        PLYMesh plyMesh;
+        if (!PLYLoader::Load(filepath, plyMesh)) {
+            result.errorMessage = "PLY load failed: " + PLYLoader::GetLastError();
+            return result;
+        }
+        ECS::Entity entity = world->CreateEntity();
+        world->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent{path.stem().string()});
+        ECS::TransformComponent transform;
+        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
+        world->AddComponent<ECS::TransformComponent>(entity, transform);
+        ECS::MeshComponent mesh;
+        mesh.vertices.reserve(plyMesh.vertices.size());
+        for (const auto& v : plyMesh.vertices) {
+            ECS::MeshComponent::Vertex vert;
+            vert.position = v.position;
+            vert.normal = v.hasNormal ? v.normal : Math::Vector3(0, 1, 0);
+            vert.uv = v.hasTexCoord ? v.texCoord : Math::Vector2(0, 0);
+            vert.color = v.hasColor ? Math::Vector4(v.color.x, v.color.y, v.color.z, 1.0f) : Math::Vector4(1, 1, 1, 1);
+            mesh.vertices.push_back(vert);
+        }
+        mesh.indices = plyMesh.indices;
+        world->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+        if (options.importMaterials) {
+            world->AddComponent<ECS::MaterialComponent>(entity, ECS::MaterialComponent{});
+        }
+        result.success = true;
+        result.rootEntity = entity;
+        result.entities.push_back(entity);
+        result.meshCount = 1;
+        ENJIN_LOG_INFO(Asset, "Imported PLY: %zu vertices, %zu indices",
+                       plyMesh.vertices.size(), plyMesh.indices.size());
+        return result;
+    }
+
+    // MagicaVoxel VOX format
+    if (ext == ".vox") {
+        ImportResult result;
+        VOXMesh voxMesh;
+        if (!VOXLoader::LoadAsMesh(filepath, voxMesh)) {
+            result.errorMessage = "VOX load failed: " + VOXLoader::GetLastError();
+            return result;
+        }
+        ECS::Entity entity = world->CreateEntity();
+        world->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent{path.stem().string()});
+        ECS::TransformComponent transform;
+        transform.scale = Math::Vector3(options.scale, options.scale, options.scale);
+        world->AddComponent<ECS::TransformComponent>(entity, transform);
+        ECS::MeshComponent mesh;
+        mesh.vertices.reserve(voxMesh.vertices.size());
+        for (const auto& v : voxMesh.vertices) {
+            ECS::MeshComponent::Vertex vert;
+            vert.position = v.position;
+            vert.normal = v.normal;
+            vert.color = Math::Vector4(v.color.x, v.color.y, v.color.z, 1.0f);
+            mesh.vertices.push_back(vert);
+        }
+        mesh.indices = voxMesh.indices;
+        world->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+        if (options.importMaterials) {
+            world->AddComponent<ECS::MaterialComponent>(entity, ECS::MaterialComponent{});
+        }
+        result.success = true;
+        result.rootEntity = entity;
+        result.entities.push_back(entity);
+        result.meshCount = 1;
+        ENJIN_LOG_INFO(Asset, "Imported VOX: %zu vertices, %zu indices",
+                       voxMesh.vertices.size(), voxMesh.indices.size());
+        return result;
     }
 
     // Use Assimp for all other supported formats

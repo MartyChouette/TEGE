@@ -23,8 +23,11 @@ public:
     VkPhysicalDevice GetPhysicalDevice() const { return m_PhysicalDevice; }
     VkQueue GetGraphicsQueue() const { return m_GraphicsQueue; }
     VkQueue GetPresentQueue() const { return m_PresentQueue; }
+    VkQueue GetComputeQueue() const { return m_ComputeQueue; }
     u32 GetGraphicsQueueFamily() const { return m_GraphicsQueueFamily; }
     u32 GetPresentQueueFamily() const { return m_PresentQueueFamily; }
+    u32 GetComputeQueueFamily() const { return m_ComputeQueueFamily; }
+    bool HasDedicatedComputeQueue() const { return m_ComputeQueueFamily != m_GraphicsQueueFamily; }
 
     // Find present queue family for a surface
     u32 FindPresentQueueFamily(VkSurfaceKHR surface) const;
@@ -54,8 +57,10 @@ protected:
     VkDevice m_Device = VK_NULL_HANDLE;
     VkQueue m_GraphicsQueue = VK_NULL_HANDLE;
     VkQueue m_PresentQueue = VK_NULL_HANDLE;
+    VkQueue m_ComputeQueue = VK_NULL_HANDLE;
     u32 m_GraphicsQueueFamily = UINT32_MAX;
     u32 m_PresentQueueFamily = UINT32_MAX;
+    u32 m_ComputeQueueFamily = UINT32_MAX;
 
     std::atomic<usize> m_TotalGPUAllocatedBytes{0};
 

@@ -754,6 +754,9 @@ void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math
     const f32 dripSpeed = config ? config->breakDripSpeed : 0.5f;
     const f32 dripLifetime = config ? config->breakDripLifetime : 1.2f;
 
+    // Reserve space for all particles we're about to add
+    m_Particles.reserve(m_Particles.size() + burstCount + dripCount);
+
     // Main burst — violent jets radiating outward
     for (int i = 0; i < burstCount; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
@@ -813,6 +816,8 @@ void FlowerSystem::SpawnGroundSplash(const Math::Vector3& position, const Math::
     const f32 splashUpKick = config ? config->splashUpKick : 2.5f;
     const f32 splashLifetime = config ? config->splashLifetime : 0.7f;
 
+    m_Particles.reserve(m_Particles.size() + count);
+
     for (int i = 0; i < count; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
@@ -851,6 +856,8 @@ void FlowerSystem::SpawnTensionDrip(const Math::Vector3& position, const Math::V
     i32 spawnCount = static_cast<i32>(m_DripAccumulator);
     m_DripAccumulator -= static_cast<f32>(spawnCount);
     if (spawnCount < 1) return;
+
+    m_Particles.reserve(m_Particles.size() + spawnCount);
 
     for (i32 i = 0; i < spawnCount; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;

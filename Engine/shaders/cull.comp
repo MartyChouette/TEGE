@@ -1,7 +1,6 @@
 #version 450
 
-// GPU Frustum Culling Compute Shader
-// INNOVATION: Move culling to GPU for massive performance gains
+// GPU Frustum Culling Compute Shader with Atomic Compaction
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -24,7 +23,7 @@ layout(set = 0, binding = 0) readonly buffer ObjectBuffer {
     CullableObject objects[];
 };
 
-// Output: Indirect draw commands
+// Output: Indirect draw commands (compacted — only visible objects)
 struct DrawCommand {
     uint indexCount;
     uint instanceCount;
@@ -42,28 +41,33 @@ layout(set = 0, binding = 2) uniform FrustumBuffer {
     vec4 frustumPlanes[6]; // left, right, bottom, top, near, far
 };
 
-// Visibility flags
+// Visibility flags (per-object, for CPU-side queries)
 layout(set = 0, binding = 3) writeonly buffer VisibilityBuffer {
     uint visibility[];
 };
 
+// Atomic draw count (reset to 0 before dispatch via vkCmdFillBuffer)
+layout(set = 0, binding = 4) buffer DrawCountBuffer {
+    uint drawCount;
+};
+
 // Check if AABB is inside frustum
-bool IsAABBVisible(vec3 min, vec3 max, mat4 transform) {
+bool IsAABBVisible(vec3 aabbMin, vec3 aabbMax, mat4 transform) {
     // Transform AABB corners to world space
     vec3 corners[8];
-    corners[0] = vec3(transform * vec4(min.x, min.y, min.z, 1.0));
-    corners[1] = vec3(transform * vec4(max.x, min.y, min.z, 1.0));
-    corners[2] = vec3(transform * vec4(min.x, max.y, min.z, 1.0));
-    corners[3] = vec3(transform * vec4(max.x, max.y, min.z, 1.0));
-    corners[4] = vec3(transform * vec4(min.x, min.y, max.z, 1.0));
-    corners[5] = vec3(transform * vec4(max.x, min.y, max.z, 1.0));
-    corners[6] = vec3(transform * vec4(min.x, max.y, max.z, 1.0));
-    corners[7] = vec3(transform * vec4(max.x, max.y, max.z, 1.0));
+    corners[0] = vec3(transform * vec4(aabbMin.x, aabbMin.y, aabbMin.z, 1.0));
+    corners[1] = vec3(transform * vec4(aabbMax.x, aabbMin.y, aabbMin.z, 1.0));
+    corners[2] = vec3(transform * vec4(aabbMin.x, aabbMax.y, aabbMin.z, 1.0));
+    corners[3] = vec3(transform * vec4(aabbMax.x, aabbMax.y, aabbMin.z, 1.0));
+    corners[4] = vec3(transform * vec4(aabbMin.x, aabbMin.y, aabbMax.z, 1.0));
+    corners[5] = vec3(transform * vec4(aabbMax.x, aabbMin.y, aabbMax.z, 1.0));
+    corners[6] = vec3(transform * vec4(aabbMin.x, aabbMax.y, aabbMax.z, 1.0));
+    corners[7] = vec3(transform * vec4(aabbMax.x, aabbMax.y, aabbMax.z, 1.0));
 
     // Check against each frustum plane
     for (int plane = 0; plane < 6; plane++) {
         bool inside = false;
-        
+
         // Check if any corner is inside this plane
         for (int i = 0; i < 8; i++) {
             float distance = dot(frustumPlanes[plane].xyz, corners[i]) + frustumPlanes[plane].w;
@@ -72,51 +76,42 @@ bool IsAABBVisible(vec3 min, vec3 max, mat4 transform) {
                 break;
             }
         }
-        
+
         // If all corners are outside any plane, object is culled
         if (!inside) {
             return false;
         }
     }
-    
+
     return true;
 }
 
 void main() {
     uint index = gl_GlobalInvocationID.x;
-    
+
     if (index >= objects.length()) {
         return;
     }
-    
+
     CullableObject obj = objects[index];
     vec3 boundsMin = obj.boundsMin.xyz;
     vec3 boundsMax = obj.boundsMax.xyz;
-    
+
     // Check visibility
     bool visible = IsAABBVisible(boundsMin, boundsMax, obj.transform);
-    
+
     visibility[index] = visible ? 1u : 0u;
-    
+
     if (visible) {
-        // Create indirect draw command
+        // Atomic compaction: allocate a slot in the output buffer
+        uint slot = atomicAdd(drawCount, 1);
+
         DrawCommand cmd;
         cmd.indexCount = obj.indexCount;
         cmd.instanceCount = 1;
         cmd.firstIndex = obj.indexOffset;
         cmd.vertexOffset = int(obj.vertexOffset);
-        cmd.firstInstance = index;
-        
-        drawCommands[index] = cmd;
-    } else {
-        // Zero out draw command (culled)
-        DrawCommand cmd;
-        cmd.indexCount = 0;
-        cmd.instanceCount = 0;
-        cmd.firstIndex = 0;
-        cmd.vertexOffset = 0;
-        cmd.firstInstance = 0;
-        
-        drawCommands[index] = cmd;
+        cmd.firstInstance = index; // Original object index for ObjectData lookup
+        drawCommands[slot] = cmd;
     }
 }

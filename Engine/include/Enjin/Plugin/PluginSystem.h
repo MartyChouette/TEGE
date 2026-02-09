@@ -28,7 +28,10 @@ struct PluginManifest {
     std::string version;
     std::string libraryPath;  // .dll / .so / .dylib
     std::string description;
+    std::string author;
+    std::string category;
     std::vector<std::string> dependencies;
+    std::vector<std::string> tags;
     bool loadOnStartup = true;
 };
 

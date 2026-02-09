@@ -67,6 +67,25 @@ layout(std430, binding = 7) readonly buffer BoneMatrixSSBO {
     mat4 boneMatrices[];
 };
 
+// Per-object data SSBO for indirect draws (binding 13)
+// Indexed by gl_InstanceIndex (set to original object index via firstInstance)
+struct ObjectData {
+    mat4 model;
+    vec3 baseColor;
+    float metallic;
+    vec3 emissiveColor;
+    float roughness;
+    float emissiveStrength;
+    float opacity;
+    float alphaCutoff;
+    int flags;
+    float parallaxScale;
+    float _objPad[3];
+};
+layout(std430, binding = 13) readonly buffer ObjectDataSSBO {
+    ObjectData objectData[];
+};
+
 layout(location = 0) out vec3 fragWorldPos;
 layout(location = 1) out vec3 fragNormal;
 layout(location = 2) out vec2 fragUV;

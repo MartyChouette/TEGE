@@ -174,6 +174,19 @@ constexpr const char* Print         = "Debug_Print";
 constexpr const char* PrintWarning  = "Debug_PrintWarning";
 constexpr const char* PrintError    = "Debug_PrintError";
 
+// Functions (Subgraphs)
+constexpr const char* FunctionEntry  = "Function_Entry";
+constexpr const char* FunctionReturn = "Function_Return";
+constexpr const char* FunctionCall   = "Function_Call";
+
+// Script Interop
+constexpr const char* ScriptCall     = "Script_Call";
+
+// Data Assets
+constexpr const char* DataAssetLoad      = "DataAsset_Load";
+constexpr const char* DataAssetGetFloat  = "DataAsset_GetFloat";
+constexpr const char* DataAssetGetString = "DataAsset_GetString";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

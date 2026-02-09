@@ -24,6 +24,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
@@ -35,6 +36,14 @@
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Editor/AnimationGraphEditor.h"
 #include "Enjin/Editor/VisualScriptEditor.h"
+#include "Enjin/Editor/SpriteSheetImporter.h"
+#include "Enjin/Editor/PixelEditor.h"
+#include "Enjin/Editor/SpriteColliderGenerator.h"
+#include "Enjin/Editor/BehaviorTreeEditor.h"
+#include "Enjin/Editor/QuestFlowEditor.h"
+#include "Enjin/Editor/DocGenerator.h"
+#include "Enjin/Plugin/PluginRepository.h"
+#include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include <string>
 #include <functional>
 #include <memory>
@@ -78,6 +87,14 @@ enum class EditorPanel : u32 {
     AnimGraph = 1 << 14,
     Dialogue = 1 << 15,
     VisualScript = 1 << 16,
+    SpriteSheetImport = 1 << 17,
+    PixelEditorPanel = 1 << 18,
+    BehaviorTree = 1 << 19,
+    QuestFlow = 1 << 20,
+    UserManual = 1 << 21,
+    DataAssets = 1 << 22,
+    PluginBrowser = 1 << 23,
+    ProceduralGen = 1 << 24,
     All = 0xFFFFFFFF
 };
 
@@ -209,6 +226,14 @@ private:
     void DrawAnimGraphPanel();
     void DrawDialoguePanel();
     void DrawVisualScriptPanel();
+    void DrawSpriteSheetImporterPanel();
+    void DrawPixelEditorPanel();
+    void DrawBehaviorTreePanel();
+    void DrawQuestFlowPanel();
+    void DrawUserManualPanel();
+    void DrawDataAssetPanel();
+    void DrawPluginBrowserPanel();
+    void DrawProceduralGenPanel();
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -231,6 +256,7 @@ private:
     void DrawCameraTriggerComponent(ECS::Entity entity);
     void DrawTemperatureZoneComponent(ECS::Entity entity);
     void DrawGravityZoneComponent(ECS::Entity entity);
+    void DrawFluidVolumeComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -280,6 +306,9 @@ private:
     // Other components
     void DrawTagComponent(ECS::Entity entity);
     void DrawSpawnPointComponent(ECS::Entity entity);
+    void DrawLayerComponent(ECS::Entity entity);
+    void DrawSaveDataComponent(ECS::Entity entity);
+    void DrawSkeletonComponent(ECS::Entity entity);
 
     // Flower components
     void DrawJellyMeshComponent(ECS::Entity entity);
@@ -290,6 +319,8 @@ private:
 
     // Scripting
     void DrawScriptComponent(ECS::Entity entity);
+    void DrawBehaviorTreeComponent(ECS::Entity entity);
+    void DrawQuestFlowComponent(ECS::Entity entity);
 
     // Vehicle / Possession
     void DrawVehicleController(ECS::Entity entity);
@@ -324,6 +355,8 @@ private:
     void DrawTeleporterComponent(ECS::Entity entity);
     void DrawDestructibleComponent(ECS::Entity entity);
     void DrawMovingPlatformComponent(ECS::Entity entity);
+    void DrawPerFrameColliderComponent(ECS::Entity entity);
+    void DrawPolygonCollider2DComponent(ECS::Entity entity);
 
     // Runtime dialogue overlay (rendered during play mode)
     void UpdateDialogue(f32 deltaTime);
@@ -339,6 +372,12 @@ private:
 
     // Visual Script graph editor
     VisualScriptEditor m_VisualScriptEditor;
+
+    // Behavior Tree graph editor
+    BehaviorTreeEditor m_BehaviorTreeEditor;
+
+    // Quest Flow graph editor
+    QuestFlowEditor m_QuestFlowEditor;
 
     // Scene management
     void SaveScene(const std::string& path);
@@ -382,6 +421,20 @@ private:
     bool m_ShowStatsOverlay = true;
     bool m_ShowAboutDialog = false;
 
+    // User Manual panel state
+    struct ManualSection {
+        std::string title;
+        std::string content;      // Raw markdown text
+        int level = 0;            // Header level (1 = ##, 2 = ###, etc.)
+        bool showChildrenInline = false; // True when content is empty — show child sections inline
+    };
+    std::vector<ManualSection> m_ManualSections;
+    char m_ManualSearchBuf[256] = {};
+    int m_ManualSelectedSection = -1;
+    bool m_ManualLoaded = false;
+    void LoadUserManual();
+    void ExportManualAsHTML(const std::string& outputPath);
+
     // Scene state
     std::string m_CurrentScenePath;
 
@@ -407,6 +460,8 @@ private:
     f32 m_TranslateSnap = 0.5f;
     f32 m_RotateSnap = 15.0f;
     f32 m_ScaleSnap = 0.1f;
+    bool m_SurfaceSnap = false;         // Project entities onto terrain/sphere surfaces
+    bool m_SurfaceAlignNormal = true;   // Align entity Y-axis to surface normal
 
     // Frame time tracking for stats overlay
     static constexpr usize FRAME_TIME_HISTORY_SIZE = 120;  // ~2 seconds at 60fps
@@ -452,8 +507,8 @@ private:
     // Splash screen
     bool m_ShowSplash = true;
     f32 m_SplashTimer = 0.0f;
-    f32 m_SplashDuration = 3.0f;   // Show for 3 seconds
-    f32 m_SplashFadeStart = 2.0f;  // Start fading at 2 seconds
+    f32 m_SplashDuration = 4.0f;   // Show for 4 seconds
+    f32 m_SplashFadeStart = 3.0f;  // Start fading at 3 seconds
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
     // Project Hub (shown after splash)
@@ -553,6 +608,9 @@ private:
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Effects::ParticleSystem m_ParticleSystem;
 
+    // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
+    Effects::FluidSimulation m_FluidSimulation;
+
     // World time and seasonal weather
     Effects::WorldTimeSystem m_WorldTime;
     Effects::SeasonalWeatherSystem m_SeasonalWeather;
@@ -605,6 +663,22 @@ private:
     // Asset browser state
     std::string m_AssetBrowserPath;  // Current browsing directory
     std::string m_AssetBrowserSelected; // Currently selected file
+    char m_AssetSearchBuf[256] = {};
+    bool m_AssetGridView = true;          // true = grid with thumbnails, false = list
+    f32 m_AssetThumbnailSize = 80.0f;     // Grid thumbnail size
+
+    // Cached directory listing (avoid re-scan every frame)
+    struct AssetEntry {
+        std::string name;
+        std::string fullPath;
+        std::string extension;
+        bool isDirectory = false;
+        u64 fileSize = 0;
+    };
+    std::vector<AssetEntry> m_AssetBrowserCache;
+    std::string m_AssetBrowserCachedPath;  // Path the cache was built for
+    bool m_AssetBrowserCacheDirty = true;
+    void RefreshAssetBrowserCache();
 
     // Undo/Redo manager
     UndoRedoManager m_UndoRedo;
@@ -686,6 +760,15 @@ private:
     i32 m_TileBrushIndex = 0;
     void HandleTilemapBrush();
 
+    // Tilemap brush undo state
+    bool m_TilemapBrushActive = false;
+    std::vector<TilemapTileChange> m_TilemapPaintChanges;
+    std::unordered_map<u64, usize> m_TilemapPaintCellIndex; // (y*65536+x) -> index into m_TilemapPaintChanges
+
+    // Terrain sculpt undo state
+    std::vector<f32> m_TerrainUndoHeightmapSnapshot;
+    std::vector<f32> m_TerrainUndoSplatmapSnapshot;
+
     // UI editor (viewport WYSIWYG) state
     bool m_UIEditMode = false;
     u32 m_UIEditSelectedElementId = 0;
@@ -693,6 +776,52 @@ private:
     UIEditDragMode m_UIEditDragMode = UIEditDragMode::None;
     ImVec2 m_UIEditDragStart = {0, 0};
     GUI::UIAnchor m_UIEditDragStartAnchor;
+
+    // Pixel editor
+    PixelEditor m_PixelEditor;
+
+    // Data Asset editor state
+    char m_DataAssetSchemaSearchBuf[128] = {};
+    char m_DataAssetSearchBuf[128] = {};
+    std::string m_SelectedSchemaName;
+    std::string m_SelectedAssetName;
+    bool m_EditingSchema = false;
+    std::string m_NewSchemaName;
+    std::string m_NewAssetName;
+
+    // Documentation generator
+    DocGenerator m_DocGenerator;
+
+    // Plugin repository
+    Plugin::PluginRepository m_PluginRepository;
+    char m_PluginSearchBuf[128] = {};
+    std::string m_PluginCategoryFilter;
+    bool m_PluginShowInstalledOnly = false;
+
+    // Sprite sheet importer
+    SpriteSheetImporter m_SpriteSheetImporter;
+    u32 m_SpriteSheetGridW = 32;
+    u32 m_SpriteSheetGridH = 32;
+    u32 m_SpriteSheetPadding = 0;
+    SpriteSheetImportResult m_SpriteSheetResult;
+    bool m_SpriteSheetUseAutoDetect = false;
+
+    // Procedural generation panel state
+    i32 m_ProceduralAlgorithm = 0;      // Algorithm dropdown index
+    u32 m_ProceduralSeed = 0;           // 0 = random
+    Procedural::CellularAutomata::Params m_CAParams;
+    Procedural::RandomWalker::Params m_RWParams;
+    Procedural::BSPGenerator::Params m_BSPParams;
+    Procedural::DiamondSquare::Params m_DSParams;
+    Procedural::LSystemGenerator::Params m_LSParams;
+    Procedural::WaveFunctionCollapse::Params m_WFCParams;
+    Procedural::VoronoiGenerator::Params m_VoronoiParams;
+    Procedural::GrammarGenerator::Params m_GrammarParams;
+    Procedural::PrefabAssembler::Params m_PAParams;
+    std::vector<std::vector<u8>> m_ProceduralPreview;    // 2D grid preview
+    std::vector<std::vector<f32>> m_ProceduralHeightmap; // Heightmap preview
+    u32 m_ProceduralPreviewW = 0, m_ProceduralPreviewH = 0;
+    bool m_ProceduralPreviewDirty = true;
 
     // Component search popup state
     char m_ComponentSearchBuf[256] = {};

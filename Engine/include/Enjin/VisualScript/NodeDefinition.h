@@ -15,6 +15,12 @@ namespace Enjin {
 namespace ECS {
     class World;
 }
+namespace Physics {
+    class SimplePhysics;
+}
+namespace Scripting {
+    class ScriptEngine;
+}
 
 namespace VisualScript {
 
@@ -35,6 +41,12 @@ struct ExecutionContext {
     // Flow control output - which flow output to follow next
     // -1 means execution stops, 0 = first flow output, 1 = second, etc.
     i32 nextFlowIndex = 0;
+
+    // Physics system for query nodes
+    Physics::SimplePhysics* physics = nullptr;
+
+    // Script engine for interop nodes
+    Scripting::ScriptEngine* scriptEngine = nullptr;
 
     // For event nodes, additional data
     std::string customEventName;

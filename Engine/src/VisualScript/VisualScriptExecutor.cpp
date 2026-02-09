@@ -57,6 +57,8 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
     ctx.script = script;
     ctx.deltaTime = deltaTime;
     ctx.otherEntity = otherEntity;
+    ctx.physics = m_Physics;
+    ctx.scriptEngine = m_ScriptEngine;
     ctx.nextFlowIndex = 0;
 
     // Execute flow starting from the entry node
@@ -104,13 +106,73 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
         }
 
         // Check for breakpoint at this node
-        if (ctx.script->breakpoints.count(nodeId) > 0) {
-            if (!ctx.script->stepRequested) {
-                // Hit breakpoint, pause execution
-                ctx.script->isPaused = true;
-                ctx.script->pausedAtNode = nodeId;
-                ctx.script->currentlyExecutingNode = nodeId;
-                return;
+        {
+            auto bpIt = ctx.script->breakpoints.find(nodeId);
+            if (bpIt != ctx.script->breakpoints.end() && bpIt->second.enabled) {
+                if (!ctx.script->stepRequested) {
+                    auto& bp = bpIt->second;
+                    bool shouldBreak = true;
+
+                    // Evaluate simple condition: "varName op literal"
+                    if (!bp.condition.empty()) {
+                        shouldBreak = false;
+                        // Parse: varName op literal (e.g. "health < 50")
+                        std::string cond = bp.condition;
+                        // Find operator
+                        std::string ops[] = {"<=", ">=", "!=", "==", "<", ">"};
+                        for (const auto& op : ops) {
+                            auto pos = cond.find(op);
+                            if (pos != std::string::npos) {
+                                std::string varName = cond.substr(0, pos);
+                                std::string literal = cond.substr(pos + op.size());
+                                // Trim whitespace
+                                while (!varName.empty() && varName.back() == ' ') varName.pop_back();
+                                while (!literal.empty() && literal.front() == ' ') literal.erase(literal.begin());
+
+                                const auto* var = ctx.script->FindVariable(varName);
+                                if (var && std::holds_alternative<f32>(var->value)) {
+                                    f32 val = std::get<f32>(var->value);
+                                    f32 lit = 0.0f;
+                                    try { lit = std::stof(literal); } catch (...) {}
+
+                                    if (op == "<") shouldBreak = val < lit;
+                                    else if (op == ">") shouldBreak = val > lit;
+                                    else if (op == "<=") shouldBreak = val <= lit;
+                                    else if (op == ">=") shouldBreak = val >= lit;
+                                    else if (op == "==") shouldBreak = std::abs(val - lit) < 0.0001f;
+                                    else if (op == "!=") shouldBreak = std::abs(val - lit) >= 0.0001f;
+                                } else if (var && std::holds_alternative<i32>(var->value)) {
+                                    i32 val = std::get<i32>(var->value);
+                                    i32 lit = 0;
+                                    try { lit = std::stoi(literal); } catch (...) {}
+
+                                    if (op == "<") shouldBreak = val < lit;
+                                    else if (op == ">") shouldBreak = val > lit;
+                                    else if (op == "<=") shouldBreak = val <= lit;
+                                    else if (op == ">=") shouldBreak = val >= lit;
+                                    else if (op == "==") shouldBreak = val == lit;
+                                    else if (op == "!=") shouldBreak = val != lit;
+                                }
+                                break;
+                            }
+                        }
+                    }
+
+                    // Hit count check
+                    if (shouldBreak) {
+                        bp.hitCount++;
+                        if (bp.hitCountTarget > 0 && bp.hitCount < bp.hitCountTarget) {
+                            shouldBreak = false;
+                        }
+                    }
+
+                    if (shouldBreak) {
+                        ctx.script->isPaused = true;
+                        ctx.script->pausedAtNode = nodeId;
+                        ctx.script->currentlyExecutingNode = nodeId;
+                        return;
+                    }
+                }
             }
         }
 
@@ -123,6 +185,15 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
 
         // Track currently executing node for visualization
         ctx.script->currentlyExecutingNode = nodeId;
+
+        // ===== CALL STACK TRACKING =====
+        {
+            ECS::VisualScriptComponent::CallStackEntry entry;
+            entry.nodeId = nodeId;
+            entry.nodeType = nodeType;
+            entry.displayName = graphNode->title;
+            ctx.script->callStack.push_back(entry);
+        }
 
         // ===== EXECUTION RECORDING =====
         auto nodeStartTime = std::chrono::high_resolution_clock::now();
@@ -236,6 +307,11 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
 
         m_LastStats.nodesExecuted++;
 
+        // Pop call stack entry after execution
+        if (!ctx.script->callStack.empty()) {
+            ctx.script->callStack.pop_back();
+        }
+
         // If we're stepping, pause after this node
         if (ctx.script->isPaused) {
             return;
@@ -254,6 +330,73 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
             }
             // All outputs executed, done with this branch
             break;
+        }
+
+        // Handle Function Call specially (execute subgraph)
+        if (nodeType == NodeTypes::FunctionCall) {
+            const auto& props = metaIt->second.properties;
+            auto funcNameIt = props.find("functionName");
+            if (funcNameIt != props.end() && ctx.script) {
+                const std::string& funcName = funcNameIt->second;
+                // Find function in script
+                for (const auto& func : ctx.script->functions) {
+                    if (func.name == funcName) {
+                        if (m_FunctionCallDepth >= MAX_CALL_DEPTH) {
+                            ENJIN_LOG_WARN(Script, "VisualScript: Function call depth limit reached (%u)", MAX_CALL_DEPTH);
+                            break;
+                        }
+
+                        m_FunctionCallDepth++;
+
+                        // Find the Function_Entry node in the subgraph
+                        Editor::NodeId entryNodeId = 0;
+                        for (const auto& [nid, meta] : func.nodeMeta) {
+                            if (meta.nodeType == NodeTypes::FunctionEntry) {
+                                entryNodeId = nid;
+                                break;
+                            }
+                        }
+
+                        if (entryNodeId != 0) {
+                            // Save current script state and swap to function subgraph
+                            auto savedGraph = ctx.script->graph;
+                            auto savedMeta = ctx.script->nodeMeta;
+
+                            ctx.script->graph = func.graph;
+                            ctx.script->nodeMeta = func.nodeMeta;
+
+                            // Bind input parameters to function entry outputs
+                            // (inputs to CallFunction become outputs of FunctionEntry)
+
+                            // Execute the function subgraph
+                            Editor::NodeId funcFlowStart = 0;
+                            const auto* entryGraphNode = func.graph.FindNode(entryNodeId);
+                            if (entryGraphNode) {
+                                for (const auto& pin : entryGraphNode->outputs) {
+                                    if (pin.type == Editor::PinType::Flow) {
+                                        funcFlowStart = FollowFlowLink(ctx.script, pin.id);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            if (funcFlowStart != 0) {
+                                ExecuteFlow(ctx, funcFlowStart);
+                            }
+
+                            // Restore main graph
+                            ctx.script->graph = savedGraph;
+                            ctx.script->nodeMeta = savedMeta;
+                        }
+
+                        m_FunctionCallDepth--;
+                        break;
+                    }
+                }
+            }
+
+            // Follow normal flow output after function completes
+            ctx.nextFlowIndex = 0;
         }
 
         // Handle Set Variable specially

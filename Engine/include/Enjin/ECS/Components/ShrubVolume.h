@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include <string>
 
 namespace Enjin {
 namespace ECS {
@@ -28,6 +29,9 @@ struct ENJIN_API ShrubVolumeComponent {
 
     // Number of intersecting quads per shrub (star pattern)
     u32 quadsPerShrub = 3;
+
+    // Custom asset path (texture or model) — overrides procedural shrubs when non-empty
+    std::string customAssetPath;
 };
 
 } // namespace ECS

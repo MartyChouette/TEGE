@@ -5,6 +5,9 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -2769,6 +2772,571 @@ void NodeRegistry::RegisterBuiltinNodes() {
                          std::vector<ECS::VariableValue>& outputs) {
             // Latent action - handled by executor
             ctx.nextFlowIndex = -1;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PHYSICS QUERY NODES
+    // ========================================================================
+
+    // Physics Raycast
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::Raycast;
+        def.displayName = "Raycast";
+        def.description = "Cast a ray and check for collisions";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Origin", PK::Input),
+            Vec3("Direction", PK::Input, Math::Vector3(0, 0, -1)),
+            Float("Max Distance", PK::Input, 1000.0f),
+            Int("Layer Mask", PK::Input, static_cast<i32>(0x7FFFFFFF))
+        };
+        def.outputs = {
+            FlowOut("Hit"),
+            FlowOut("Miss"),
+            Bool("Did Hit", PK::Output),
+            Vec3("Hit Point", PK::Output),
+            Vec3("Hit Normal", PK::Output),
+            Float("Distance", PK::Output),
+            EntityPin("Hit Entity", PK::Output)
+        };
+        def.keywords = {"raycast", "ray", "cast", "trace", "line", "physics"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(5);
+
+            if (!ctx.physics) {
+                outputs[0] = false;
+                outputs[1] = Math::Vector3(0, 0, 0);
+                outputs[2] = Math::Vector3(0, 0, 0);
+                outputs[3] = 0.0f;
+                outputs[4] = ECS::INVALID_ENTITY;
+                ctx.nextFlowIndex = 1; // Miss
+                return;
+            }
+
+            Math::Vector3 origin = (inputs.size() > 0 && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            Math::Vector3 direction = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, -1);
+            f32 maxDist = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 1000.0f;
+            u32 layerMask = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3]))
+                ? static_cast<u32>(std::get<i32>(inputs[3])) : 0xFFFFFFFF;
+
+            // Normalize direction
+            f32 len = std::sqrt(direction.x * direction.x + direction.y * direction.y + direction.z * direction.z);
+            if (len > 0.0001f) {
+                direction.x /= len;
+                direction.y /= len;
+                direction.z /= len;
+            }
+
+            Physics::Ray ray;
+            ray.origin = origin;
+            ray.direction = direction;
+
+            Physics::RaycastHit hit = ctx.physics->Raycast(ray, maxDist, layerMask);
+
+            outputs[0] = hit.hit;
+            outputs[1] = hit.hit ? hit.point : Math::Vector3(0, 0, 0);
+            outputs[2] = hit.hit ? hit.normal : Math::Vector3(0, 0, 0);
+            outputs[3] = hit.hit ? hit.distance : 0.0f;
+            outputs[4] = hit.hit ? hit.entity : ECS::INVALID_ENTITY;
+
+            ctx.nextFlowIndex = hit.hit ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Physics Sphere Check
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SphereCheck;
+        def.displayName = "Sphere Check";
+        def.description = "Find all entities within a sphere radius";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Center", PK::Input),
+            Float("Radius", PK::Input, 5.0f),
+            Int("Layer Mask", PK::Input, static_cast<i32>(0x7FFFFFFF))
+        };
+        def.outputs = {
+            FlowOut(),
+            Bool("Has Hits", PK::Output),
+            EntityPin("First Entity", PK::Output)
+        };
+        def.keywords = {"sphere", "overlap", "check", "radius", "physics"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(2);
+
+            if (!ctx.physics) {
+                outputs[0] = false;
+                outputs[1] = ECS::INVALID_ENTITY;
+                ctx.nextFlowIndex = 0;
+                return;
+            }
+
+            Math::Vector3 center = (inputs.size() > 0 && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
+                ? std::get<f32>(inputs[1]) : 5.0f;
+            u32 layerMask = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? static_cast<u32>(std::get<i32>(inputs[2])) : 0xFFFFFFFF;
+
+            auto entities = ctx.physics->GetCollidersInRadius(center, radius, layerMask);
+            bool hasHits = !entities.empty();
+
+            outputs[0] = hasHits;
+            outputs[1] = hasHits ? entities[0] : ECS::INVALID_ENTITY;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Physics Box Check
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BoxCheck;
+        def.displayName = "Box Check";
+        def.description = "Find all entities within a box volume";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Center", PK::Input),
+            Vec3("Half Extents", PK::Input, Math::Vector3(1, 1, 1)),
+            Int("Layer Mask", PK::Input, static_cast<i32>(0x7FFFFFFF))
+        };
+        def.outputs = {
+            FlowOut(),
+            Bool("Has Hits", PK::Output),
+            EntityPin("First Entity", PK::Output)
+        };
+        def.keywords = {"box", "overlap", "check", "aabb", "physics"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(2);
+
+            if (!ctx.physics) {
+                outputs[0] = false;
+                outputs[1] = ECS::INVALID_ENTITY;
+                ctx.nextFlowIndex = 0;
+                return;
+            }
+
+            Math::Vector3 center = (inputs.size() > 0 && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            Math::Vector3 halfExtents = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(1, 1, 1);
+            u32 layerMask = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? static_cast<u32>(std::get<i32>(inputs[2])) : 0xFFFFFFFF;
+
+            auto entities = ctx.physics->OverlapBox(center, halfExtents, layerMask);
+            bool hasHits = !entities.empty();
+
+            outputs[0] = hasHits;
+            outputs[1] = hasHits ? entities[0] : ECS::INVALID_ENTITY;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // MISSING STUB NODES
+    // ========================================================================
+
+    // Math Negate (Pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::Negate;
+        def.displayName = "Negate";
+        def.description = "Returns -Value";
+        def.category = NodeCategory::Math;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.3f);
+        def.flags = NodeDefFlags::Pure | NodeDefFlags::Compact;
+        def.inputs = {Float("Value", PK::Input, 0.0f)};
+        def.outputs = {Float("Result", PK::Output)};
+        def.keywords = {"negate", "negative", "minus", "invert"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            if (inputs.empty()) return 0.0f;
+            f32 val = std::holds_alternative<f32>(inputs[0]) ? std::get<f32>(inputs[0]) : 0.0f;
+            return -val;
+        };
+        RegisterNode(def);
+    }
+
+    // Component Has (Pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HasComponent;
+        def.displayName = "Has Component";
+        def.description = "Check if an entity has a specific component type by name";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {
+            EntityPin("Entity", PK::Input),
+            String("Component", PK::Input, "HealthComponent")
+        };
+        def.outputs = {Bool("Has", PK::Output)};
+        def.keywords = {"has", "component", "check", "exists"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            if (!ctx.world || inputs.size() < 2) return false;
+
+            ECS::Entity entity = ctx.entity;
+            if (std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) entity = e;
+            }
+
+            std::string compName;
+            if (std::holds_alternative<std::string>(inputs[1])) {
+                compName = std::get<std::string>(inputs[1]);
+            }
+
+            if (compName == "HealthComponent" || compName == "Health") {
+                return ctx.world->HasComponent<ECS::HealthComponent>(entity);
+            }
+            if (compName == "TransformComponent" || compName == "Transform") {
+                return ctx.world->HasComponent<ECS::TransformComponent>(entity);
+            }
+            if (compName == "NameComponent" || compName == "Name") {
+                return ctx.world->HasComponent<ECS::NameComponent>(entity);
+            }
+            if (compName == "AnimatorComponent" || compName == "Animator") {
+                return ctx.world->HasComponent<ECS::AnimatorComponent>(entity);
+            }
+
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // Debug Print Warning
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PrintWarning;
+        def.displayName = "Print Warning";
+        def.description = "Print a warning message to the console";
+        def.category = NodeCategory::Debug;
+        def.headerColor = Math::Vector3(0.6f, 0.5f, 0.2f);  // Yellow-ish
+        def.flags = NodeDefFlags::Development;
+        def.inputs = {
+            FlowIn(),
+            String("Message", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"print", "warn", "warning", "log", "debug"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string msg = "[VisualScript] ";
+            if (inputs.size() > 0) {
+                if (std::holds_alternative<std::string>(inputs[0])) {
+                    msg += std::get<std::string>(inputs[0]);
+                } else if (std::holds_alternative<f32>(inputs[0])) {
+                    msg += std::to_string(std::get<f32>(inputs[0]));
+                } else if (std::holds_alternative<i32>(inputs[0])) {
+                    msg += std::to_string(std::get<i32>(inputs[0]));
+                } else if (std::holds_alternative<bool>(inputs[0])) {
+                    msg += std::get<bool>(inputs[0]) ? "true" : "false";
+                }
+            }
+            ENJIN_LOG_WARN(Script, "%s", msg.c_str());
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Debug Print Error
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PrintError;
+        def.displayName = "Print Error";
+        def.description = "Print an error message to the console";
+        def.category = NodeCategory::Debug;
+        def.headerColor = Math::Vector3(0.7f, 0.2f, 0.2f);  // Red
+        def.flags = NodeDefFlags::Development;
+        def.inputs = {
+            FlowIn(),
+            String("Message", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"print", "error", "log", "debug"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string msg = "[VisualScript] ";
+            if (inputs.size() > 0) {
+                if (std::holds_alternative<std::string>(inputs[0])) {
+                    msg += std::get<std::string>(inputs[0]);
+                } else if (std::holds_alternative<f32>(inputs[0])) {
+                    msg += std::to_string(std::get<f32>(inputs[0]));
+                } else if (std::holds_alternative<i32>(inputs[0])) {
+                    msg += std::to_string(std::get<i32>(inputs[0]));
+                } else if (std::holds_alternative<bool>(inputs[0])) {
+                    msg += std::get<bool>(inputs[0]) ? "true" : "false";
+                }
+            }
+            ENJIN_LOG_ERROR(Script, "%s", msg.c_str());
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // FUNCTION NODES (Subgraphs)
+    // ========================================================================
+
+    // Function Entry (event-style node inside a function subgraph)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FunctionEntry;
+        def.displayName = "Function Entry";
+        def.description = "Entry point for a function subgraph. Outputs flow and parameters.";
+        def.category = NodeCategory::FlowControl;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.flags = NodeDefFlags::Event;
+        def.outputs = {FlowOut()};
+        def.keywords = {"function", "entry", "subgraph", "start"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Function Return (terminates function execution)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FunctionReturn;
+        def.displayName = "Function Return";
+        def.description = "Returns from a function subgraph";
+        def.category = NodeCategory::FlowControl;
+        def.headerColor = Math::Vector3(0.7f, 0.3f, 0.3f);
+        def.inputs = {FlowIn()};
+        def.keywords = {"function", "return", "end"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ctx.nextFlowIndex = -1; // Stop execution (return to caller)
+        };
+        RegisterNode(def);
+    }
+
+    // Function Call (calls a user-defined function)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FunctionCall;
+        def.displayName = "Call Function";
+        def.description = "Call a user-defined function by name";
+        def.category = NodeCategory::FlowControl;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            String("Function", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"function", "call", "invoke", "subgraph"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Execution is handled specially in VisualScriptExecutor
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // SCRIPT INTEROP
+    // ========================================================================
+
+    // Script Call (call an AngelScript function from visual script)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ScriptCall;
+        def.displayName = "Call Script";
+        def.description = "Call an AngelScript function by module and name";
+        def.category = NodeCategory::Utility;
+        def.headerColor = Math::Vector3(0.5f, 0.4f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            String("Module", PK::Input, ""),
+            String("Function", PK::Input, ""),
+            Float("Arg1", PK::Input, 0.0f),
+            Float("Arg2", PK::Input, 0.0f)
+        };
+        def.outputs = {
+            FlowOut(),
+            Float("Return", PK::Output)
+        };
+        def.keywords = {"script", "call", "angelscript", "function"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            outputs[0] = 0.0f;
+
+            std::string module = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            std::string func = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            f32 arg1 = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 0.0f;
+            f32 arg2 = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                ? std::get<f32>(inputs[3]) : 0.0f;
+
+            if (ctx.scriptEngine) {
+                asIScriptEngine* asEngine = ctx.scriptEngine->GetASEngine();
+                if (asEngine) {
+                    asIScriptModule* mod = asEngine->GetModule(module.c_str());
+                    if (mod) {
+                        // Try to find function by declaration pattern
+                        std::string decl = "float " + func + "(float, float)";
+                        asIScriptFunction* asFunc = mod->GetFunctionByDecl(decl.c_str());
+                        if (!asFunc) {
+                            // Try without args
+                            decl = "float " + func + "()";
+                            asFunc = mod->GetFunctionByDecl(decl.c_str());
+                        }
+
+                        if (asFunc) {
+                            asIScriptContext* asCtx = ctx.scriptEngine->AcquireContext();
+                            if (asCtx) {
+                                asCtx->Prepare(asFunc);
+                                if (asFunc->GetParamCount() >= 2) {
+                                    asCtx->SetArgFloat(0, arg1);
+                                    asCtx->SetArgFloat(1, arg2);
+                                } else if (asFunc->GetParamCount() >= 1) {
+                                    asCtx->SetArgFloat(0, arg1);
+                                }
+
+                                int r = asCtx->Execute();
+                                if (r == asEXECUTION_FINISHED) {
+                                    outputs[0] = asCtx->GetReturnFloat();
+                                } else {
+                                    ENJIN_LOG_WARN(Script, "[VisualScript] Script call failed (exec error): %s::%s",
+                                                   module.c_str(), func.c_str());
+                                }
+                                ctx.scriptEngine->ReturnContext(asCtx);
+                            }
+                        } else {
+                            ENJIN_LOG_WARN(Script, "[VisualScript] Script function not found: %s::%s",
+                                           module.c_str(), func.c_str());
+                        }
+                    } else {
+                        ENJIN_LOG_WARN(Script, "[VisualScript] Script module not found: %s", module.c_str());
+                    }
+                }
+            } else {
+                ENJIN_LOG_WARN(Script, "[VisualScript] Script call failed: no script engine available");
+            }
+
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // DATA ASSETS
+    // ========================================================================
+
+    // DataAsset Load (impure — check if asset is available)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DataAssetLoad;
+        def.displayName = "Load Data Asset";
+        def.description = "Check if a data asset is loaded by name";
+        def.category = NodeCategory::Utility;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.5f);
+        def.inputs = {
+            FlowIn(),
+            String("Asset Name", PK::Input, "")
+        };
+        def.outputs = {
+            FlowOut(),
+            Bool("Found", PK::Output)
+        };
+        def.keywords = {"data", "asset", "load", "scriptable", "object"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            std::string assetName = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            bool found = Assets::DataAssetRegistry::Get().FindAsset(assetName) != nullptr;
+            outputs[0] = found;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // DataAsset GetFloat (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DataAssetGetFloat;
+        def.displayName = "Get Data Float";
+        def.description = "Get a float field from a data asset";
+        def.category = NodeCategory::Utility;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.5f);
+        def.inputs = {
+            String("Asset Name", PK::Input, ""),
+            String("Field", PK::Input, "")
+        };
+        def.outputs = {
+            Float("Value", PK::Output)
+        };
+        def.keywords = {"data", "asset", "get", "float", "field"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string assetName = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            std::string field = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            return Assets::DataAssetRegistry::Get().GetFloat(assetName, field);
+        };
+        RegisterNode(def);
+    }
+
+    // DataAsset GetString (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DataAssetGetString;
+        def.displayName = "Get Data String";
+        def.description = "Get a string field from a data asset";
+        def.category = NodeCategory::Utility;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.5f);
+        def.inputs = {
+            String("Asset Name", PK::Input, ""),
+            String("Field", PK::Input, "")
+        };
+        def.outputs = {
+            String("Value", PK::Output, "")
+        };
+        def.keywords = {"data", "asset", "get", "string", "field"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string assetName = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            std::string field = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            return Assets::DataAssetRegistry::Get().GetString(assetName, field);
         };
         RegisterNode(def);
     }

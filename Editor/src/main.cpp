@@ -52,6 +52,7 @@ public:
         // Setup render system
         m_RenderSystem = m_World->RegisterSystem<Enjin::ECS::RenderSystem>(m_World.get(), m_Renderer.get());
         m_RenderSystem->SetCamera(m_Camera.get());
+        m_RenderSystem->SetEditorMode(true);
         m_RenderSystem->Initialize();
 
         // Setup editor UI
