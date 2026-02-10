@@ -1,5 +1,6 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
@@ -318,6 +319,9 @@ void PlayMode::SaveEditorState() {
 
     // Save scene to JSON string
     Scene::SceneSerializer serializer(m_World);
+    if (m_RenderSystem) {
+        serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+    }
     m_SavedSceneJson = serializer.SaveToString();
 
     // Save camera state
@@ -325,7 +329,8 @@ void PlayMode::SaveEditorState() {
     m_SavedCameraRot = m_Camera->GetRotation();
     m_SavedCameraFov = m_Camera->GetFOV();
 
-    ENJIN_LOG_DEBUG(Editor, "Saved editor state");
+    usize entityCount = m_World->GetAllEntities().size();
+    ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities, %zu bytes JSON)", entityCount, m_SavedSceneJson.size());
 }
 
 void PlayMode::RestoreEditorState() {
@@ -336,7 +341,20 @@ void PlayMode::RestoreEditorState() {
     // Restore scene from saved JSON
     if (!m_SavedSceneJson.empty()) {
         Scene::SceneSerializer serializer(m_World);
-        serializer.LoadFromString(m_SavedSceneJson, true);
+        auto result = serializer.LoadFromString(m_SavedSceneJson, true);
+        if (!result.success) {
+            ENJIN_LOG_ERROR(Editor, "Failed to restore editor state: %s", result.error.c_str());
+        }
+
+        // Apply skybox config that was saved with the scene
+        if (m_RenderSystem) {
+            m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        }
+
+        usize entityCount = m_World->GetAllEntities().size();
+        ENJIN_LOG_DEBUG(Editor, "Restored editor state (%zu entities)", entityCount);
+    } else {
+        ENJIN_LOG_WARN(Editor, "No saved scene JSON to restore — editor state was empty");
     }
 
     // Restore camera state
@@ -348,8 +366,6 @@ void PlayMode::RestoreEditorState() {
     if (m_CameraController) {
         m_CameraController->SyncFromCamera();
     }
-
-    ENJIN_LOG_DEBUG(Editor, "Restored editor state");
 }
 
 } // namespace Editor

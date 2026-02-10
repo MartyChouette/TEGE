@@ -60,6 +60,13 @@ static f32 RF(f32 val) {
     return std::round(val * mult) / mult;
 }
 
+// Tolerant bool deserialization — handles numbers (from RF() bug) and booleans
+static bool JB(const json& val) {
+    if (val.is_boolean()) return val.get<bool>();
+    if (val.is_number()) return val.get<double>() != 0.0;
+    return false;
+}
+
 json SerializeVector2(const Math::Vector2& v) {
     return json::array({RF(v.x), RF(v.y)});
 }
@@ -758,13 +765,13 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     json j;
     j["moveSpeed"] = RF(base.moveSpeed);
     j["sprintMultiplier"] = RF(base.sprintMultiplier);
-    j["isEnabled"] = RF(base.isEnabled);
-    j["useWASD"] = RF(base.useWASD);
-    j["useArrowKeys"] = RF(base.useArrowKeys);
+    j["isEnabled"] = base.isEnabled;
+    j["useWASD"] = base.useWASD;
+    j["useArrowKeys"] = base.useArrowKeys;
     j["useGamepad"] = base.useGamepad;
     j["gamepadIndex"] = RF(base.gamepadIndex);
     j["gamepadLookSensitivity"] = RF(base.gamepadLookSensitivity);
-    j["disableMouseLook"] = RF(base.disableMouseLook);
+    j["disableMouseLook"] = base.disableMouseLook;
     j["gridMovement"] = base.gridMovement;
     j["gridCellSize"] = RF(base.gridCellSize);
     j["gridMoveSpeed"] = RF(base.gridMoveSpeed);
@@ -774,14 +781,14 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
 void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base) {
     if (j.contains("moveSpeed")) base.moveSpeed = j["moveSpeed"].get<f32>();
     if (j.contains("sprintMultiplier")) base.sprintMultiplier = j["sprintMultiplier"].get<f32>();
-    if (j.contains("isEnabled")) base.isEnabled = j["isEnabled"].get<bool>();
-    if (j.contains("useWASD")) base.useWASD = j["useWASD"].get<bool>();
-    if (j.contains("useArrowKeys")) base.useArrowKeys = j["useArrowKeys"].get<bool>();
-    if (j.contains("useGamepad")) base.useGamepad = j["useGamepad"].get<bool>();
+    if (j.contains("isEnabled")) base.isEnabled = JB(j["isEnabled"]);
+    if (j.contains("useWASD")) base.useWASD = JB(j["useWASD"]);
+    if (j.contains("useArrowKeys")) base.useArrowKeys = JB(j["useArrowKeys"]);
+    if (j.contains("useGamepad")) base.useGamepad = JB(j["useGamepad"]);
     if (j.contains("gamepadIndex")) base.gamepadIndex = j["gamepadIndex"].get<i32>();
     if (j.contains("gamepadLookSensitivity")) base.gamepadLookSensitivity = j["gamepadLookSensitivity"].get<f32>();
-    if (j.contains("disableMouseLook")) base.disableMouseLook = j["disableMouseLook"].get<bool>();
-    if (j.contains("gridMovement")) base.gridMovement = j["gridMovement"].get<bool>();
+    if (j.contains("disableMouseLook")) base.disableMouseLook = JB(j["disableMouseLook"]);
+    if (j.contains("gridMovement")) base.gridMovement = JB(j["gridMovement"]);
     if (j.contains("gridCellSize")) base.gridCellSize = j["gridCellSize"].get<f32>();
     if (j.contains("gridMoveSpeed")) base.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();
 }
@@ -796,8 +803,8 @@ json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
     j["airControl"] = RF(ctrl.airControl);
     j["coyoteTime"] = RF(ctrl.coyoteTime);
     j["jumpBufferTime"] = RF(ctrl.jumpBufferTime);
-    j["enableWallJump"] = RF(ctrl.enableWallJump);
-    j["enableWallSlide"] = RF(ctrl.enableWallSlide);
+    j["enableWallJump"] = ctrl.enableWallJump;
+    j["enableWallSlide"] = ctrl.enableWallSlide;
     j["wallSlideSpeed"] = RF(ctrl.wallSlideSpeed);
     j["wallJumpForce"] = RF(ctrl.wallJumpForce);
     return j;
@@ -814,8 +821,8 @@ ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
     if (j.contains("airControl")) ctrl.airControl = j["airControl"].get<f32>();
     if (j.contains("coyoteTime")) ctrl.coyoteTime = j["coyoteTime"].get<f32>();
     if (j.contains("jumpBufferTime")) ctrl.jumpBufferTime = j["jumpBufferTime"].get<f32>();
-    if (j.contains("enableWallJump")) ctrl.enableWallJump = j["enableWallJump"].get<bool>();
-    if (j.contains("enableWallSlide")) ctrl.enableWallSlide = j["enableWallSlide"].get<bool>();
+    if (j.contains("enableWallJump")) ctrl.enableWallJump = JB(j["enableWallJump"]);
+    if (j.contains("enableWallSlide")) ctrl.enableWallSlide = JB(j["enableWallSlide"]);
     if (j.contains("wallSlideSpeed")) ctrl.wallSlideSpeed = j["wallSlideSpeed"].get<f32>();
     if (j.contains("wallJumpForce")) ctrl.wallJumpForce = j["wallJumpForce"].get<f32>();
     return ctrl;
@@ -825,7 +832,7 @@ json SerializeTopDown2D(const ECS::TopDown2DController& ctrl) {
     json j = SerializeControllerBase(ctrl);
     j["acceleration"] = RF(ctrl.acceleration);
     j["deceleration"] = RF(ctrl.deceleration);
-    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
     j["rotationSpeed"] = RF(ctrl.rotationSpeed);
     j["enableDash"] = ctrl.enableDash;
     j["dashSpeed"] = RF(ctrl.dashSpeed);
@@ -839,9 +846,9 @@ ECS::TopDown2DController DeserializeTopDown2D(const json& j) {
     DeserializeControllerBase(j, ctrl);
     if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
     if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
-    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = JB(j["rotateToFaceMovement"]);
     if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
-    if (j.contains("enableDash")) ctrl.enableDash = j["enableDash"].get<bool>();
+    if (j.contains("enableDash")) ctrl.enableDash = JB(j["enableDash"]);
     if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
     if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
     if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
@@ -852,13 +859,13 @@ json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
     json j = SerializeControllerBase(ctrl);
     j["acceleration"] = RF(ctrl.acceleration);
     j["deceleration"] = RF(ctrl.deceleration);
-    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
     j["rotationSpeed"] = RF(ctrl.rotationSpeed);
     j["cameraAngle"] = RF(ctrl.cameraAngle);
     j["cameraDistance"] = RF(ctrl.cameraDistance);
     j["cameraHeight"] = RF(ctrl.cameraHeight);
-    j["lockCameraToPlayer"] = RF(ctrl.lockCameraToPlayer);
-    j["enableClickToMove"] = RF(ctrl.enableClickToMove);
+    j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
+    j["enableClickToMove"] = ctrl.enableClickToMove;
     j["enableDash"] = ctrl.enableDash;
     j["dashSpeed"] = RF(ctrl.dashSpeed);
     j["dashDuration"] = RF(ctrl.dashDuration);
@@ -871,14 +878,14 @@ ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
     DeserializeControllerBase(j, ctrl);
     if (j.contains("acceleration")) ctrl.acceleration = j["acceleration"].get<f32>();
     if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
-    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = JB(j["rotateToFaceMovement"]);
     if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
     if (j.contains("cameraAngle")) ctrl.cameraAngle = j["cameraAngle"].get<f32>();
     if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
-    if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = j["lockCameraToPlayer"].get<bool>();
-    if (j.contains("enableClickToMove")) ctrl.enableClickToMove = j["enableClickToMove"].get<bool>();
-    if (j.contains("enableDash")) ctrl.enableDash = j["enableDash"].get<bool>();
+    if (j.contains("lockCameraToPlayer")) ctrl.lockCameraToPlayer = JB(j["lockCameraToPlayer"]);
+    if (j.contains("enableClickToMove")) ctrl.enableClickToMove = JB(j["enableClickToMove"]);
+    if (j.contains("enableDash")) ctrl.enableDash = JB(j["enableDash"]);
     if (j.contains("dashSpeed")) ctrl.dashSpeed = j["dashSpeed"].get<f32>();
     if (j.contains("dashDuration")) ctrl.dashDuration = j["dashDuration"].get<f32>();
     if (j.contains("dashCooldown")) ctrl.dashCooldown = j["dashCooldown"].get<f32>();
@@ -891,8 +898,8 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["deceleration"] = RF(ctrl.deceleration);
     j["jumpForce"] = RF(ctrl.jumpForce);
     j["gravity"] = RF(ctrl.gravity);
-    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
-    j["rotateToFaceCamera"] = RF(ctrl.rotateToFaceCamera);
+    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
+    j["rotateToFaceCamera"] = ctrl.rotateToFaceCamera;
     j["rotationSpeed"] = RF(ctrl.rotationSpeed);
     j["cameraDistance"] = RF(ctrl.cameraDistance);
     j["cameraHeight"] = RF(ctrl.cameraHeight);
@@ -904,8 +911,8 @@ json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     j["cameraMaxPitch"] = RF(ctrl.cameraMaxPitch);
     j["cameraSensitivity"] = RF(ctrl.cameraSensitivity);
     j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
-    j["enableCameraCollision"] = RF(ctrl.enableCameraCollision);
-    j["enableLockOn"] = RF(ctrl.enableLockOn);
+    j["enableCameraCollision"] = ctrl.enableCameraCollision;
+    j["enableLockOn"] = ctrl.enableLockOn;
     return j;
 }
 
@@ -916,8 +923,8 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("deceleration")) ctrl.deceleration = j["deceleration"].get<f32>();
     if (j.contains("jumpForce")) ctrl.jumpForce = j["jumpForce"].get<f32>();
     if (j.contains("gravity")) ctrl.gravity = j["gravity"].get<f32>();
-    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = j["rotateToFaceMovement"].get<bool>();
-    if (j.contains("rotateToFaceCamera")) ctrl.rotateToFaceCamera = j["rotateToFaceCamera"].get<bool>();
+    if (j.contains("rotateToFaceMovement")) ctrl.rotateToFaceMovement = JB(j["rotateToFaceMovement"]);
+    if (j.contains("rotateToFaceCamera")) ctrl.rotateToFaceCamera = JB(j["rotateToFaceCamera"]);
     if (j.contains("rotationSpeed")) ctrl.rotationSpeed = j["rotationSpeed"].get<f32>();
     if (j.contains("cameraDistance")) ctrl.cameraDistance = j["cameraDistance"].get<f32>();
     if (j.contains("cameraHeight")) ctrl.cameraHeight = j["cameraHeight"].get<f32>();
@@ -929,8 +936,8 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
     if (j.contains("cameraMaxPitch")) ctrl.cameraMaxPitch = j["cameraMaxPitch"].get<f32>();
     if (j.contains("cameraSensitivity")) ctrl.cameraSensitivity = j["cameraSensitivity"].get<f32>();
     if (j.contains("cameraLerpSpeed")) ctrl.cameraLerpSpeed = j["cameraLerpSpeed"].get<f32>();
-    if (j.contains("enableCameraCollision")) ctrl.enableCameraCollision = j["enableCameraCollision"].get<bool>();
-    if (j.contains("enableLockOn")) ctrl.enableLockOn = j["enableLockOn"].get<bool>();
+    if (j.contains("enableCameraCollision")) ctrl.enableCameraCollision = JB(j["enableCameraCollision"]);
+    if (j.contains("enableLockOn")) ctrl.enableLockOn = JB(j["enableLockOn"]);
     return ctrl;
 }
 
@@ -943,7 +950,7 @@ json SerializeFirstPerson(const ECS::FirstPersonController& ctrl) {
     j["mouseSensitivity"] = RF(ctrl.mouseSensitivity);
     j["minPitch"] = RF(ctrl.minPitch);
     j["maxPitch"] = RF(ctrl.maxPitch);
-    j["invertY"] = RF(ctrl.invertY);
+    j["invertY"] = ctrl.invertY;
     j["enableHeadBob"] = ctrl.enableHeadBob;
     j["headBobFrequency"] = RF(ctrl.headBobFrequency);
     j["headBobAmplitude"] = RF(ctrl.headBobAmplitude);
@@ -967,16 +974,16 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
     if (j.contains("mouseSensitivity")) ctrl.mouseSensitivity = j["mouseSensitivity"].get<f32>();
     if (j.contains("minPitch")) ctrl.minPitch = j["minPitch"].get<f32>();
     if (j.contains("maxPitch")) ctrl.maxPitch = j["maxPitch"].get<f32>();
-    if (j.contains("invertY")) ctrl.invertY = j["invertY"].get<bool>();
-    if (j.contains("enableHeadBob")) ctrl.enableHeadBob = j["enableHeadBob"].get<bool>();
+    if (j.contains("invertY")) ctrl.invertY = JB(j["invertY"]);
+    if (j.contains("enableHeadBob")) ctrl.enableHeadBob = JB(j["enableHeadBob"]);
     if (j.contains("headBobFrequency")) ctrl.headBobFrequency = j["headBobFrequency"].get<f32>();
     if (j.contains("headBobAmplitude")) ctrl.headBobAmplitude = j["headBobAmplitude"].get<f32>();
-    if (j.contains("enableCrouch")) ctrl.enableCrouch = j["enableCrouch"].get<bool>();
+    if (j.contains("enableCrouch")) ctrl.enableCrouch = JB(j["enableCrouch"]);
     if (j.contains("standingHeight")) ctrl.standingHeight = j["standingHeight"].get<f32>();
     if (j.contains("crouchingHeight")) ctrl.crouchingHeight = j["crouchingHeight"].get<f32>();
     if (j.contains("crouchSpeed")) ctrl.crouchSpeed = j["crouchSpeed"].get<f32>();
     if (j.contains("sprintFOVIncrease")) ctrl.sprintFOVIncrease = j["sprintFOVIncrease"].get<f32>();
-    if (j.contains("dungeonCrawlerMode")) ctrl.dungeonCrawlerMode = j["dungeonCrawlerMode"].get<bool>();
+    if (j.contains("dungeonCrawlerMode")) ctrl.dungeonCrawlerMode = JB(j["dungeonCrawlerMode"]);
     if (j.contains("snapTurnAngle")) ctrl.snapTurnAngle = j["snapTurnAngle"].get<f32>();
     return ctrl;
 }
@@ -1069,25 +1076,25 @@ ECS::SurfaceAlignedController DeserializeSurfaceAligned(const json& j) {
 
 json SerializePossessable(const ECS::PossessableComponent& comp) {
     json j;
-    j["isPossessed"] = RF(comp.isPossessed);
-    j["autoDetect"] = RF(comp.autoDetect);
-    j["playerIndex"] = RF(comp.playerIndex);
+    j["isPossessed"] = comp.isPossessed;
+    j["autoDetect"] = comp.autoDetect;
+    j["playerIndex"] = comp.playerIndex;
     j["possessRange"] = RF(comp.possessRange);
     j["promptText"] = comp.promptText;
     j["transitionDuration"] = RF(comp.transitionDuration);
-    j["disableOnUnpossess"] = RF(comp.disableOnUnpossess);
+    j["disableOnUnpossess"] = comp.disableOnUnpossess;
     return j;
 }
 
 ECS::PossessableComponent DeserializePossessable(const json& j) {
     ECS::PossessableComponent comp;
-    if (j.contains("isPossessed")) comp.isPossessed = j["isPossessed"].get<bool>();
-    if (j.contains("autoDetect")) comp.autoDetect = j["autoDetect"].get<bool>();
+    if (j.contains("isPossessed")) comp.isPossessed = JB(j["isPossessed"]);
+    if (j.contains("autoDetect")) comp.autoDetect = JB(j["autoDetect"]);
     if (j.contains("playerIndex")) comp.playerIndex = j["playerIndex"].get<i32>();
     if (j.contains("possessRange")) comp.possessRange = j["possessRange"].get<f32>();
     if (j.contains("promptText")) comp.promptText = j["promptText"].get<std::string>();
     if (j.contains("transitionDuration")) comp.transitionDuration = j["transitionDuration"].get<f32>();
-    if (j.contains("disableOnUnpossess")) comp.disableOnUnpossess = j["disableOnUnpossess"].get<bool>();
+    if (j.contains("disableOnUnpossess")) comp.disableOnUnpossess = JB(j["disableOnUnpossess"]);
     return comp;
 }
 

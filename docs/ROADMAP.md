@@ -1000,6 +1000,85 @@ The engine is currently source-built (clone + cmake + build). Future distributio
 
 ---
 
+## Artistic Rendering & Visual Techniques (Planned)
+
+Goal: Make these techniques clear and artistically accessible to creators — not just engineer-facing.
+
+### Surface & Material Rendering
+
+- **Parallax Occlusion Mapping** — High-quality self-occluding parallax (beyond current basic parallax). Ray-marched heightmap with self-shadowing, silhouette correction, configurable depth. Per-material toggle in inspector with live preview. Elevation to a first-class authoring tool with intuitive depth/scale sliders
+- **Flat-Shaded Low-Poly with Dithered Gradients** — Dedicated flat-shading pipeline with per-face normals (no smoothing), 2-4 color dithered gradient ramps (Bayer/blue noise), configurable palette. Artistic presets ("PS1 era", "Low-fi", "Zine"). Per-material opt-in, works with existing retro effects
+- **Metaball / Blob Rendering** — Implicit surface rendering via marching cubes or screen-space metaball compositing. Configurable blob radius, merge threshold, surface smoothness. Use cases: fluid blobs, organic creatures, stylized VFX. Inspector component with live preview and preset shapes
+
+### Lighting & Global Illumination
+
+- **Spherical Harmonics Lighting** — SH probe baking (L2, 9 coefficients) for diffuse indirect lighting. Probe grid placement tool in editor, per-probe visualization (color spheres), blend weights. Lightweight GI alternative to full ray-traced GI — runs on any GPU. Bake button in Rendering settings
+- **Beam Tracing and Cone Tracing** — Voxel cone tracing (VXGI-style) for real-time diffuse/specular GI and soft shadows. Voxelized scene representation (64/128/256 resolution), cone-traced lighting queries. Also: volumetric beam tracing for god rays and light shafts through participating media
+
+### SDF & Distance Field Rendering
+
+- **SDF Ray Marching** — Fullscreen or per-object signed distance field ray marching. Built-in SDF primitives (sphere, box, torus, cylinder) with boolean CSG ops (union, subtraction, intersection, smooth blend). Visual node graph for SDF composition. Use cases: procedural geometry, abstract art, infinite detail without polygons
+- **Signed Distance Field Rendering (3D Vector Art)** — Mesh-to-SDF conversion for resolution-independent 3D rendering. SDF text rendering (font → SDF atlas). Smooth LOD transitions, perfect silhouettes at any distance. Think: 3D vector graphics that never pixelate
+
+### Transparency & Compositing
+
+- **Order-Independent Transparency (Depth Peeling)** — Multi-pass depth peeling for correct alpha blending of overlapping transparent surfaces. Configurable peel count (2-8 layers), fallback to sorted alpha for distant objects. Solves the classic transparency sorting problem. Per-material opt-in
+- **Framebuffer Feedback Effects** — Previous-frame feedback as a compositing/distortion source. Use cases: motion trails, echo/ghosting, recursive visual effects, kaleidoscope, CRT phosphor persistence, dream sequences. Configurable blend mode, decay rate, UV offset/rotation per frame. Artistic presets: "Echo", "Melt", "Infinite Mirror", "VHS Tracking"
+
+### Distortion & Post-Processing
+
+- **Screen-Space Distortion as Primary Aesthetic** — Promote distortion from a subtle effect to a first-class visual style. Heat haze, shockwave, underwater caustics, dream/psychedelic warping, portal edges. Per-object distortion volumes, world-space or screen-space UV distortion maps, animated noise textures. Distortion as a material property, not just a post-process
+
+### Mesh & Animation
+
+- **Inverse Kinematics-Driven Mesh Deformation** — Real-time IK-driven vertex deformation for organic motion: tentacles, ropes, tails, procedural animation. Spline-based IK chains with mesh skinning, configurable joint count, stiffness, gravity. Visual IK chain editor in inspector. Extends existing LookAtIK/InteractionIK components
+
+### Procedural & Terrain
+
+- **Fractal Terrain and L-System Vegetation** — Fractal terrain generation (diamond-square, fBm, ridged multifractal) with erosion simulation (hydraulic, thermal). L-system vegetation beyond current implementation: parameterized grammars, stochastic branching, seasonal variation, wind animation. Goal: one-click "Generate Forest" with artistic control over density, species mix, age distribution
+
+---
+
+## Asset Libraries (Planned)
+
+Goal: Ship a curated, commercially licensable library so users have beautiful assets out of the box — important for a licensable engine.
+
+### Font Library
+
+- **Curated collection of beautiful, commercially licensable fonts** — OFL (SIL Open Font License) and Apache 2.0 licensed fonts that can be freely redistributed with the engine and in games built with it
+- Categories: Sans-serif (UI/HUD), Serif (narrative/books), Monospace (code/terminal), Display/decorative (titles/logos), Handwriting/script, Pixel/retro, Fantasy/medieval, Sci-fi/futuristic
+- Embedded as engine assets with one-click apply in text/UI components
+- Font preview panel in editor with size/weight preview, character set coverage indicator
+- Target: 30-50 high-quality fonts covering all major game genres
+- Sources: Google Fonts (OFL), Font Squirrel (verified commercial licenses), The League of Moveable Type
+
+### 3D Asset Library
+
+- **Commercially licensable 3D model collection** — CC0 (public domain) and CC-BY assets that can be redistributed with the engine
+- Categories: Architecture (modular building kits), Nature (trees, rocks, plants), Props (furniture, crates, barrels), Characters (base meshes, rigged), Vehicles, Weapons/tools, Food/items, Sci-fi/fantasy
+- PBR-ready with base color, normal, roughness/metallic textures
+- Multiple LOD levels per asset
+- Consistent art style options: realistic, stylized/low-poly, pixel-art-3D
+- Drag-and-drop from Asset Browser with auto-import (materials, textures, colliders)
+- Sources: Kenney.nl (CC0), Quaternius (CC0), Poly Pizza, Sketchfab (CC0 filtered), custom commissions under CC0
+
+### 2D Asset Library
+
+- **Commercially licensable 2D sprite/texture collection** — CC0 and CC-BY licensed
+- Categories: UI elements (buttons, frames, icons, cursors), Tilesets (platformer, RPG, top-down), Character sprites (animated walk/idle/attack cycles), Backgrounds (parallax layers), VFX sprites (explosions, magic, smoke), Portraits/dialogue art
+- Compatible with existing sprite sheet importer and texture atlas
+- Multiple art styles: pixel art (multiple resolutions), hand-drawn, vector/flat, anime-inspired
+- Sources: Kenney.nl (CC0), OpenGameArt.org (curated CC0), itch.io asset packs (with license verification), custom commissions under CC0
+
+### Licensing Strategy
+
+- All bundled assets must be **CC0 or OFL/Apache 2.0** — no CC-BY-NC, no CC-BY-SA (share-alike creates friction for commercial games)
+- Engine license grants full sublicense rights — users can ship assets in their games without attribution requirements
+- Clear `LICENSE.md` per asset category documenting provenance and license terms
+- Consider commissioning original CC0 assets for a distinctive "Enjin style" that differentiates from Unity/Unreal default look
+
+---
+
 ## UI/UX Design Philosophy
 
 - Aesthetically accessible, clean, forward-thinking, timeless
@@ -1009,4 +1088,4 @@ The engine is currently source-built (clone + cmake + build). Future distributio
 
 ---
 
-*Last updated: 2026-02-10*
+*Last updated: 2026-02-10 — Added Artistic Rendering & Visual Techniques, Asset Libraries*

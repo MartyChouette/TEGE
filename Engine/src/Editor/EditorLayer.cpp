@@ -950,6 +950,7 @@ void EditorLayer::Update(f32 deltaTime) {
         m_PendingPlayStop = false;
         if (!m_PlayMode.IsStopped()) {
             m_PlayMode.Stop();
+            ClearSelection(); // Entities have new IDs after scene restore
             m_PrePlayRenderSettings.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             if (m_FocusMode) {
@@ -1202,6 +1203,7 @@ void EditorLayer::Update(f32 deltaTime) {
         } else if (m_PlayMode.IsPaused() && !m_GameMenu.IsMenuOpen()) {
             // Paused without menu (fallback): stop play mode
             m_PlayMode.Stop();
+            ClearSelection(); // Entities have new IDs after scene restore
             m_PrePlayRenderSettings.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
@@ -30216,6 +30218,7 @@ void EditorLayer::RegisterPaletteCommands() {
         [this]() {
             if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
                 m_PlayMode.Stop();
+                ClearSelection();
             }
         }
     });
