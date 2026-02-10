@@ -386,6 +386,18 @@ Import dialog enhancements:
 
 All pipeline optimization items resolved: multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling.
 
+### Camera Presets & Cinematic Effects (Planned)
+
+- **Camera Presets** — Built-in ortho and perspective presets (isometric 45/30, side-scroller, top-down, first-person, third-person, cinematic widescreen, security cam, bird's eye). Quick-switch buttons in inspector and viewport toolbar. Per-preset FOV, near/far, aspect, rotation
+- **Tilt-Shift / Miniature Effect** — Post-process blur with configurable focus band position, width, falloff curve, and blur strength. Horizontal/vertical/radial modes. Gives a "toy model" look to scenes
+- **Bokeh Depth of Field** — Physically-based DoF with aperture shape (circle, hexagon, octagon), bokeh size, focal distance, focal range, and highlight threshold for bright-spot bokeh. Separate near/far blur. CoC (circle of confusion) visualization debug mode
+- **Cel Shading / Toon Rendering** — Configurable color quantization steps (2-8 bands), outline edge detection (Sobel on depth+normals), adjustable line weights (thin 1px, medium 2px, thick 3px, variable by depth), ink color, specular band with hard cutoff. Per-material opt-in/out
+- **Full-Screen Stippling & Dither** — Post-process stipple/dither effect with pattern selection (Bayer 2x2/4x4/8x8, blue noise, halftone dots, cross-hatch, ordered, Floyd-Steinberg error diffusion). Configurable density, scale, and color mode (mono/duo-tone/full color). Combines with existing retro effects pipeline
+
+### Artistic Surface Materials ✅ COMPLETE
+
+Lightweight artist controls for metal, glass, and rim-light effects reusing existing push constant slots. Reflectivity (fake environment reflection via `skyReflectColor`), Fresnel Power (edge vs center falloff), Rim Light (additive edge glow). 4 presets: Metal, Glass, Rim Glow, Clear. Zero new descriptor bindings.
+
 ---
 
 ## 2D Sprite Art Pipeline ✅ COMPLETE

@@ -1237,6 +1237,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
+                // Artistic surface params (reused push constant slots)
+                pushConstants.surfaceParam1 = material->reflectivity;
+                pushConstants.surfaceParam2 = material->fresnelPower;
+                pushConstants.surfaceParam3 = material->rimLightStrength;
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1277,9 +1281,9 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 }
                 if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
                     pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
-                    pushConstants.shoreWidth = waterVol->shoreWidth;
-                    pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
-                    pushConstants.foamScale = waterVol->foamScale;
+                    pushConstants.surfaceParam1 = waterVol->shoreWidth;
+                    pushConstants.surfaceParam2 = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
+                    pushConstants.surfaceParam3 = waterVol->foamScale;
                 }
                 if (waterVol->waterType == WaterType::Ocean) {
                     pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN
@@ -1582,6 +1586,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
                 pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
                 pushConstants.parallaxScale = material->parallaxScale;
+                // Artistic surface params (reused push constant slots)
+                pushConstants.surfaceParam1 = material->reflectivity;
+                pushConstants.surfaceParam2 = material->fresnelPower;
+                pushConstants.surfaceParam3 = material->rimLightStrength;
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1619,9 +1627,9 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 }
                 if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
                     pushConstants.flags |= (1 << 7);
-                    pushConstants.shoreWidth = waterVol->shoreWidth;
-                    pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
-                    pushConstants.foamScale = waterVol->foamScale;
+                    pushConstants.surfaceParam1 = waterVol->shoreWidth;
+                    pushConstants.surfaceParam2 = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
+                    pushConstants.surfaceParam3 = waterVol->foamScale;
                 }
                 if (waterVol->waterType == WaterType::Ocean) {
                     pushConstants.flags |= (1 << 11);
@@ -3479,6 +3487,10 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
         pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
         pushConstants.parallaxScale = material->parallaxScale;
+        // Artistic surface params (reused push constant slots)
+        pushConstants.surfaceParam1 = material->reflectivity;
+        pushConstants.surfaceParam2 = material->fresnelPower;
+        pushConstants.surfaceParam3 = material->rimLightStrength;
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -3542,9 +3554,9 @@ void RenderSystem::RenderEntity(Entity entity) {
         }
         if (waterVol->enableShore && waterVol->freezeProgress < 0.8f) {
             pushConstants.flags |= (1 << 7); // FLAG_WATER_SHORE
-            pushConstants.shoreWidth = waterVol->shoreWidth;
-            pushConstants.foamIntensity = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
-            pushConstants.foamScale = waterVol->foamScale;
+            pushConstants.surfaceParam1 = waterVol->shoreWidth;
+            pushConstants.surfaceParam2 = waterVol->foamIntensity * (1.0f - waterVol->freezeProgress);
+            pushConstants.surfaceParam3 = waterVol->foamScale;
         }
         if (waterVol->waterType == WaterType::Ocean) {
             pushConstants.flags |= (1 << 11); // FLAG_WATER_OCEAN

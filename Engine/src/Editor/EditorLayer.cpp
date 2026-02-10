@@ -4744,6 +4744,27 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Apply dither pattern to shadows instead of smooth darkening");
 
+        // Artistic surface controls
+        if (ImGui::TreeNode("Artistic Surface")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Reflectivity", &material->reflectivity, 0.005f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Fake environment reflection strength (0 = off, 0.3 = chrome, 0.8 = mirror)");
+            InspectorUndo::DragFloat(m_UndoRedo, "Fresnel Power", &material->fresnelPower, 0.05f, 0.5f, 10.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Edge vs center falloff (low = uniform chrome, high = edge-only glass)");
+            InspectorUndo::DragFloat(m_UndoRedo, "Rim Light", &material->rimLightStrength, 0.01f, 0.0f, 3.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Additive edge glow for silhouettes and backlit effects");
+
+            // Preset buttons
+            if (ImGui::Button("Metal")) { material->reflectivity = 0.6f; material->fresnelPower = 2.5f; material->rimLightStrength = 0.0f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Glass")) { material->reflectivity = 0.3f; material->fresnelPower = 5.0f; material->rimLightStrength = 0.3f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Rim Glow")) { material->reflectivity = 0.0f; material->fresnelPower = 3.0f; material->rimLightStrength = 1.5f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Clear##artistic")) { material->reflectivity = 0.0f; material->fresnelPower = 5.0f; material->rimLightStrength = 0.0f; }
+
+            ImGui::TreePop();
+        }
+
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
         int currentMode = static_cast<int>(material->alphaMode);

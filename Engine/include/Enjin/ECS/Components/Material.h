@@ -63,6 +63,11 @@ struct MaterialComponent {
     // Shadow dither mode: 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
     u8 shadowDitherMode = 0;
 
+    // Artistic surface controls (reuse water push constant slots for non-water entities)
+    f32 reflectivity = 0.0f;      // 0-1: environment reflection strength
+    f32 fresnelPower = 5.0f;      // 0.5-10: edge vs center reflection falloff
+    f32 rimLightStrength = 0.0f;  // 0-3: additive rim/edge glow
+
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
     struct TextureKey {

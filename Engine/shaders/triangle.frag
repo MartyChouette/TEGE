@@ -93,9 +93,9 @@ layout(push_constant) uniform PushConstants {
     float alphaCutoff;
     int flags;  // bits 0-7: render flags, 8-9: alpha mode, 10: height tex, 16-19: texture flags, 20-31: retro
     float parallaxScale;
-    float shoreWidth;
-    float foamIntensity;
-    float foamScale;
+    float surfaceParam1;  // water: shoreWidth | artistic: reflectivity
+    float surfaceParam2;  // water: foamIntensity | artistic: fresnelPower
+    float surfaceParam3;  // water: foamScale | artistic: rimLightStrength
 } material;
 
 // Material flag bits
@@ -720,9 +720,9 @@ void main() {
         result = mix(result, reflectColor, fresnel * reflectStrength);
 
         // Shore foam: procedural noise foam near edges
-        if ((material.flags & FLAG_WATER_SHORE) != 0 && material.foamIntensity > 0.0) {
+        if ((material.flags & FLAG_WATER_SHORE) != 0 && material.surfaceParam2 > 0.0) {
             float edgeDist = fragVertColor.g;  // 0=edge, 1=center
-            float shoreW = material.shoreWidth;
+            float shoreW = material.surfaceParam1;
 
             // Shallow water color blend near edges
             float shallowBlend = 1.0 - smoothstep(0.0, shoreW * 2.0, edgeDist);
@@ -732,7 +732,7 @@ void main() {
             result = mix(result, shoreColor, shallowBlend * 0.4);
 
             // Multi-octave hash noise for foam pattern
-            float foamSc = material.foamScale;
+            float foamSc = material.surfaceParam3;
             float waterTime = lighting.windData.w;
             vec2 wp = fragWorldPos.xz;
 
@@ -746,10 +746,41 @@ void main() {
 
             // Animated threshold: foam appears and disappears
             float foamThreshold = smoothstep(shoreW, 0.0, edgeDist);
-            float foam = smoothstep(0.35, 0.65, noise) * foamThreshold * material.foamIntensity;
+            float foam = smoothstep(0.35, 0.65, noise) * foamThreshold * material.surfaceParam2;
 
             // Blend white foam into result
             result = mix(result, vec3(0.9, 0.95, 1.0), foam);
+        }
+    }
+
+    // Artistic surface: environment reflection + rim light (non-water entities only)
+    if ((material.flags & FLAG_WATER_SURFACE) == 0 &&
+        (material.surfaceParam1 > 0.0 || material.surfaceParam3 > 0.0)) {
+        float reflectivity = material.surfaceParam1;
+        float fresnelPow   = material.surfaceParam2;
+        float rimStrength   = material.surfaceParam3;
+
+        float NdotV = max(dot(normal, viewDir), 0.0);
+        float fresnel = reflectivity + (1.0 - reflectivity) * pow(1.0 - NdotV, fresnelPow);
+
+        // Fake environment: gradient from dark ground to sky color via reflected direction
+        vec3 reflectDir = reflect(-viewDir, normal);
+        vec3 skyCol = lighting.skyReflectColor.xyz;
+        vec3 envColor = mix(skyCol * 0.15, skyCol, clamp(reflectDir.y * 0.5 + 0.5, 0.0, 1.0));
+
+        // Add specular highlight from directional lights
+        for (int i = 0; i < int(lighting.directionalLightCount); i++) {
+            float spec = pow(max(dot(reflectDir, normalize(lighting.directionalLights[i].direction)), 0.0), 64.0);
+            envColor += lighting.directionalLights[i].color * lighting.directionalLights[i].intensity * spec * 0.5;
+        }
+
+        if (reflectivity > 0.0)
+            result = mix(result, envColor, fresnel);
+
+        // Additive rim light
+        if (rimStrength > 0.0) {
+            float rim = pow(1.0 - NdotV, fresnelPow) * rimStrength;
+            result += rim * skyCol;
         }
     }
 

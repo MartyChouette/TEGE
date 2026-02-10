@@ -383,9 +383,9 @@ void TreeRenderer::Render(VkCommandBuffer commandBuffer,
         pc.alphaCutoff = canopyBase.x;  // Pack canopyBase R
         pc.flags = static_cast<i32>(tree->density);
         pc.parallaxScale = tree->windSwayStrength;
-        pc.shoreWidth = canopyBase.y;   // Pack canopyBase G
-        pc.foamIntensity = canopyBase.z; // Pack canopyBase B
-        pc.foamScale = canopyScale;      // seasonFactor
+        pc.surfaceParam1 = canopyBase.y;   // Pack canopyBase G
+        pc.surfaceParam2 = canopyBase.z; // Pack canopyBase B
+        pc.surfaceParam3 = canopyScale;  // seasonFactor
 
         vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
             VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);

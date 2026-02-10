@@ -159,6 +159,9 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["gouraudOnly"] = material.gouraudOnly;
     j["vertexSnapResolution"] = material.vertexSnapResolution;
     j["shadowDitherMode"] = material.shadowDitherMode;
+    j["reflectivity"] = material.reflectivity;
+    j["fresnelPower"] = material.fresnelPower;
+    j["rimLightStrength"] = material.rimLightStrength;
     return j;
 }
 
@@ -312,6 +315,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("gouraudOnly")) material.gouraudOnly = j["gouraudOnly"].get<bool>();
     if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     if (j.contains("shadowDitherMode")) material.shadowDitherMode = j["shadowDitherMode"].get<u8>();
+    if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
+    if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
+    if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
     return material;
 }
 
