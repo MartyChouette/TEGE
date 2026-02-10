@@ -1,6 +1,13 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Renderer/RayTracing/RTShadows.h"
+#include "Enjin/Renderer/RayTracing/RTReflections.h"
+#include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
+#include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include <nlohmann/json.hpp>
 
 using json = nlohmann::json;
@@ -40,6 +47,46 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.globalUVQuantize           = rs->GetGlobalUVQuantize();
         s.globalGouraudOnly          = rs->GetGlobalGouraudOnly();
         s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
+
+        // Ray Tracing
+        s.rtEnabled = rs->IsRayTracingEnabled();
+        s.rtMode = rs->GetRTMode();
+        if (auto* rtShadows = rs->GetRTShadows()) {
+            s.rtShadowsEnabled = rtShadows->GetConfig().enabled;
+            s.rtShadowMaxDistance = rtShadows->GetConfig().maxDistance;
+            s.rtShadowRadius = rtShadows->GetConfig().radius;
+        }
+        if (auto* rtReflect = rs->GetRTReflections()) {
+            s.rtReflectionsEnabled = rtReflect->GetConfig().enabled;
+            s.rtReflectionMaxDistance = rtReflect->GetConfig().maxDistance;
+            s.rtReflectionRoughnessThreshold = rtReflect->GetConfig().roughnessThreshold;
+        }
+        if (auto* rtAO = rs->GetRTAO()) {
+            s.rtAOEnabled = rtAO->GetConfig().enabled;
+            s.rtAORadius = rtAO->GetConfig().radius;
+            s.rtAOPower = rtAO->GetConfig().power;
+        }
+        if (auto* rtGI = rs->GetRTGI()) {
+            s.rtGIEnabled = rtGI->GetConfig().enabled;
+            s.rtGIMaxDistance = rtGI->GetConfig().maxDistance;
+            s.rtGIIntensity = rtGI->GetConfig().intensity;
+            s.rtGIBounces = rtGI->GetConfig().bounces;
+        }
+        if (auto* pathTracer = rs->GetPathTracer()) {
+            s.rtPathTracerMaxBounces = pathTracer->GetConfig().maxBounces;
+            s.rtPathTracerTargetSPP = pathTracer->GetConfig().targetSPP;
+        }
+        if (auto* denoiser = rs->GetSVGFDenoiser()) {
+            s.rtDenoiserEnabled = true;
+            s.rtDenoiserIterations = denoiser->GetConfig().atrousIterations;
+            s.rtDenoiserTemporalAlpha = denoiser->GetConfig().temporalAlpha;
+        }
+        if (auto* compositor = rs->GetRTCompositor()) {
+            s.rtShadowStrength = compositor->GetConfig().shadowStrength;
+            s.rtReflectionStrength = compositor->GetConfig().reflectionStrength;
+            s.rtAOStrength = compositor->GetConfig().aoStrength;
+            s.rtGIStrength = compositor->GetConfig().giStrength;
+        }
     }
 
     if (pp) {
@@ -162,6 +209,45 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGlobalUVQuantize(globalUVQuantize);
         rs->SetGlobalGouraudOnly(globalGouraudOnly);
         rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
+
+        // Ray Tracing
+        rs->SetRayTracingEnabled(rtEnabled);
+        rs->SetRTMode(rtMode);
+        if (auto* rtShadows = rs->GetRTShadows()) {
+            rtShadows->GetConfig().enabled = rtShadowsEnabled;
+            rtShadows->GetConfig().maxDistance = rtShadowMaxDistance;
+            rtShadows->GetConfig().radius = rtShadowRadius;
+        }
+        if (auto* rtReflect = rs->GetRTReflections()) {
+            rtReflect->GetConfig().enabled = rtReflectionsEnabled;
+            rtReflect->GetConfig().maxDistance = rtReflectionMaxDistance;
+            rtReflect->GetConfig().roughnessThreshold = rtReflectionRoughnessThreshold;
+        }
+        if (auto* rtAO = rs->GetRTAO()) {
+            rtAO->GetConfig().enabled = rtAOEnabled;
+            rtAO->GetConfig().radius = rtAORadius;
+            rtAO->GetConfig().power = rtAOPower;
+        }
+        if (auto* rtGI = rs->GetRTGI()) {
+            rtGI->GetConfig().enabled = rtGIEnabled;
+            rtGI->GetConfig().maxDistance = rtGIMaxDistance;
+            rtGI->GetConfig().intensity = rtGIIntensity;
+            rtGI->GetConfig().bounces = rtGIBounces;
+        }
+        if (auto* pathTracer = rs->GetPathTracer()) {
+            pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
+            pathTracer->GetConfig().targetSPP = rtPathTracerTargetSPP;
+        }
+        if (auto* denoiser = rs->GetSVGFDenoiser()) {
+            denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
+            denoiser->GetConfig().temporalAlpha = rtDenoiserTemporalAlpha;
+        }
+        if (auto* compositor = rs->GetRTCompositor()) {
+            compositor->GetConfig().shadowStrength = rtShadowStrength;
+            compositor->GetConfig().reflectionStrength = rtReflectionStrength;
+            compositor->GetConfig().aoStrength = rtAOStrength;
+            compositor->GetConfig().giStrength = rtGIStrength;
+        }
     }
 
     if (pp) {
@@ -400,6 +486,32 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["globalGouraudOnly"]          = s.globalGouraudOnly;
     j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
 
+    // Ray Tracing
+    j["rtEnabled"]                    = s.rtEnabled;
+    j["rtMode"]                       = s.rtMode;
+    j["rtShadowsEnabled"]             = s.rtShadowsEnabled;
+    j["rtShadowMaxDistance"]           = s.rtShadowMaxDistance;
+    j["rtShadowRadius"]               = s.rtShadowRadius;
+    j["rtReflectionsEnabled"]          = s.rtReflectionsEnabled;
+    j["rtReflectionMaxDistance"]       = s.rtReflectionMaxDistance;
+    j["rtReflectionRoughnessThreshold"] = s.rtReflectionRoughnessThreshold;
+    j["rtAOEnabled"]                   = s.rtAOEnabled;
+    j["rtAORadius"]                    = s.rtAORadius;
+    j["rtAOPower"]                     = s.rtAOPower;
+    j["rtGIEnabled"]                   = s.rtGIEnabled;
+    j["rtGIMaxDistance"]               = s.rtGIMaxDistance;
+    j["rtGIIntensity"]                 = s.rtGIIntensity;
+    j["rtGIBounces"]                   = s.rtGIBounces;
+    j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
+    j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
+    j["rtDenoiserEnabled"]             = s.rtDenoiserEnabled;
+    j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
+    j["rtDenoiserTemporalAlpha"]       = s.rtDenoiserTemporalAlpha;
+    j["rtShadowStrength"]              = s.rtShadowStrength;
+    j["rtReflectionStrength"]          = s.rtReflectionStrength;
+    j["rtAOStrength"]                  = s.rtAOStrength;
+    j["rtGIStrength"]                  = s.rtGIStrength;
+
     return j;
 }
 
@@ -522,6 +634,32 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = j["globalUVQuantize"].get<bool>();
     if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = j["globalGouraudOnly"].get<bool>();
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
+
+    // Ray Tracing
+    if (j.contains("rtEnabled"))                      s.rtEnabled                      = j["rtEnabled"].get<bool>();
+    if (j.contains("rtMode"))                         s.rtMode                         = j["rtMode"].get<u32>();
+    if (j.contains("rtShadowsEnabled"))               s.rtShadowsEnabled               = j["rtShadowsEnabled"].get<bool>();
+    if (j.contains("rtShadowMaxDistance"))             s.rtShadowMaxDistance             = j["rtShadowMaxDistance"].get<f32>();
+    if (j.contains("rtShadowRadius"))                 s.rtShadowRadius                 = j["rtShadowRadius"].get<f32>();
+    if (j.contains("rtReflectionsEnabled"))            s.rtReflectionsEnabled            = j["rtReflectionsEnabled"].get<bool>();
+    if (j.contains("rtReflectionMaxDistance"))         s.rtReflectionMaxDistance         = j["rtReflectionMaxDistance"].get<f32>();
+    if (j.contains("rtReflectionRoughnessThreshold")) s.rtReflectionRoughnessThreshold = j["rtReflectionRoughnessThreshold"].get<f32>();
+    if (j.contains("rtAOEnabled"))                    s.rtAOEnabled                    = j["rtAOEnabled"].get<bool>();
+    if (j.contains("rtAORadius"))                     s.rtAORadius                     = j["rtAORadius"].get<f32>();
+    if (j.contains("rtAOPower"))                      s.rtAOPower                      = j["rtAOPower"].get<f32>();
+    if (j.contains("rtGIEnabled"))                    s.rtGIEnabled                    = j["rtGIEnabled"].get<bool>();
+    if (j.contains("rtGIMaxDistance"))                 s.rtGIMaxDistance                 = j["rtGIMaxDistance"].get<f32>();
+    if (j.contains("rtGIIntensity"))                  s.rtGIIntensity                  = j["rtGIIntensity"].get<f32>();
+    if (j.contains("rtGIBounces"))                    s.rtGIBounces                    = j["rtGIBounces"].get<u32>();
+    if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
+    if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
+    if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = j["rtDenoiserEnabled"].get<bool>();
+    if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();
+    if (j.contains("rtDenoiserTemporalAlpha"))        s.rtDenoiserTemporalAlpha        = j["rtDenoiserTemporalAlpha"].get<f32>();
+    if (j.contains("rtShadowStrength"))               s.rtShadowStrength               = j["rtShadowStrength"].get<f32>();
+    if (j.contains("rtReflectionStrength"))            s.rtReflectionStrength            = j["rtReflectionStrength"].get<f32>();
+    if (j.contains("rtAOStrength"))                   s.rtAOStrength                   = j["rtAOStrength"].get<f32>();
+    if (j.contains("rtGIStrength"))                   s.rtGIStrength                   = j["rtGIStrength"].get<f32>();
 
     return s;
 }

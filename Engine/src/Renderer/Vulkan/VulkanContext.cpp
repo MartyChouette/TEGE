@@ -156,6 +156,12 @@ bool VulkanContext::SelectPhysicalDevice() {
             score += 100;
         }
 
+        // Bonus for ray tracing support
+        RTCapabilities rtCaps = RTCapabilities::Query(device);
+        if (rtCaps.supported) {
+            score += 1000;
+        }
+
         if (score > bestScore) {
             bestScore = score;
             bestDevice = device;
@@ -171,6 +177,9 @@ bool VulkanContext::SelectPhysicalDevice() {
     VkPhysicalDeviceProperties properties;
     vkGetPhysicalDeviceProperties(bestDevice, &properties);
     ENJIN_LOG_INFO(Renderer, "Selected physical device: %s", properties.deviceName);
+
+    // Query ray tracing capabilities
+    m_RTCapabilities = RTCapabilities::Query(bestDevice);
 
     return true;
 }
@@ -253,15 +262,51 @@ bool VulkanContext::CreateLogicalDevice() {
         deviceFeatures.drawIndirectFirstInstance = VK_TRUE;
     }
 
-    const std::vector<const char*> deviceExtensions = {
+    std::vector<const char*> deviceExtensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME
     };
+
+    // Add ray tracing extensions if supported
+    if (m_RTCapabilities.supported) {
+        const auto& rtExts = RTCapabilities::GetRequiredExtensions();
+        deviceExtensions.insert(deviceExtensions.end(), rtExts.begin(), rtExts.end());
+        ENJIN_LOG_INFO(Renderer, "Enabling %zu ray tracing device extensions", rtExts.size());
+    }
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
     createInfo.pQueueCreateInfos = queueCreateInfos.data();
     createInfo.queueCreateInfoCount = static_cast<u32>(queueCreateInfos.size());
-    createInfo.pEnabledFeatures = &deviceFeatures;
+
+    // Build feature chain for RT support
+    VkPhysicalDeviceBufferDeviceAddressFeatures bdaFeatures{};
+    bdaFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+    bdaFeatures.bufferDeviceAddress = VK_TRUE;
+
+    VkPhysicalDeviceAccelerationStructureFeaturesKHR asFeatures{};
+    asFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+    asFeatures.accelerationStructure = VK_TRUE;
+
+    VkPhysicalDeviceRayTracingPipelineFeaturesKHR rtPipelineFeatures{};
+    rtPipelineFeatures.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+    rtPipelineFeatures.rayTracingPipeline = VK_TRUE;
+
+    VkPhysicalDeviceFeatures2 deviceFeatures2{};
+    deviceFeatures2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+    deviceFeatures2.features = deviceFeatures;
+
+    if (m_RTCapabilities.supported) {
+        // Chain: deviceFeatures2 -> bdaFeatures -> asFeatures -> rtPipelineFeatures
+        deviceFeatures2.pNext = &bdaFeatures;
+        bdaFeatures.pNext = &asFeatures;
+        asFeatures.pNext = &rtPipelineFeatures;
+
+        createInfo.pNext = &deviceFeatures2;
+        createInfo.pEnabledFeatures = nullptr;  // Use pNext chain instead
+    } else {
+        createInfo.pEnabledFeatures = &deviceFeatures;
+    }
+
     createInfo.enabledExtensionCount = static_cast<u32>(deviceExtensions.size());
     createInfo.ppEnabledExtensionNames = deviceExtensions.data();
 

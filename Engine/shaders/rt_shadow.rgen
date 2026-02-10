@@ -1,0 +1,69 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 5, set = 0, r16f) uniform image2D shadowOutput;
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;      // xyz=direction, w=intensity
+    vec4 lightColor;    // xyz=color, w=shadowDistance
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float shadowRadius;
+} uLight;
+
+layout(location = 0) rayPayloadEXT float shadowPayload;
+
+#include "rt_common.glsl"
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+
+    // Reconstruct world position from depth
+    float depth = texture(depthTex, uv).r;
+    if (depth >= 1.0) {
+        imageStore(shadowOutput, pixel, vec4(1.0));
+        return;
+    }
+
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = uLight.invViewProj * clipPos;
+    worldPos /= worldPos.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Shadow ray toward light
+    vec3 rayOrigin = worldPos.xyz + worldNormal * 0.001;
+    vec3 rayDir = normalize(-uLight.lightDir.xyz);
+    float tMax = uLight.lightColor.w;  // shadowDistance
+
+    // Optional: jitter for soft shadows
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+    if (uLight.shadowRadius > 0.0) {
+        vec3 T, B;
+        build_onb(rayDir, T, B);
+        vec2 jitter = rand_vec2(seed) * uLight.shadowRadius;
+        rayDir = normalize(rayDir + jitter.x * T + jitter.y * B);
+    }
+
+    shadowPayload = 0.0;  // Assume occluded
+
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        0xFF,           // mask
+        0,              // sbtRecordOffset
+        0,              // sbtRecordStride
+        0,              // missIndex
+        rayOrigin,
+        0.001,          // tMin
+        rayDir,
+        tMax,           // tMax
+        0               // payload location
+    );
+
+    imageStore(shadowOutput, pixel, vec4(shadowPayload));
+}

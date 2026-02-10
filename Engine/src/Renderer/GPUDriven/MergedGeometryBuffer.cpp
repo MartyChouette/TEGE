@@ -1,4 +1,5 @@
 #include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
+#include "Enjin/Renderer/RayTracing/RTCapabilities.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 
@@ -21,6 +22,11 @@ bool MergedGeometryBuffer::Initialize(u32 maxVertices, u32 maxIndices) {
     usize vertexBufferSize = static_cast<usize>(maxVertices) * VERTEX_STRIDE;
     m_VertexBuffer = std::make_unique<VulkanBuffer>(m_Context);
     VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    // Add RT usage flags when ray tracing is supported (needed for BLAS building)
+    if (m_Context->IsRayTracingSupported()) {
+        vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
     if (!m_VertexBuffer->Create(vertexBufferSize, vertexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "MergedGeometryBuffer: Failed to create vertex buffer (%u vertices, %zu bytes)",
                         maxVertices, vertexBufferSize);
@@ -31,6 +37,10 @@ bool MergedGeometryBuffer::Initialize(u32 maxVertices, u32 maxIndices) {
     usize indexBufferSize = static_cast<usize>(maxIndices) * sizeof(u32);
     m_IndexBuffer = std::make_unique<VulkanBuffer>(m_Context);
     VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    if (m_Context->IsRayTracingSupported()) {
+        indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
     if (!m_IndexBuffer->Create(indexBufferSize, indexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "MergedGeometryBuffer: Failed to create index buffer (%u indices, %zu bytes)",
                         maxIndices, indexBufferSize);

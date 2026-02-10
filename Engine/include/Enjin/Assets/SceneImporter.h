@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Assets/GLTFLoader.h"
 #include "Enjin/Assets/AssimpLoader.h"
+#include "Enjin/Assets/TextureCompressor.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
 #include <string>
@@ -57,6 +58,9 @@ struct ImportOptions {
     bool flipY = false;
     bool flipZ = false;
     std::vector<std::string> textureSearchPaths;  // Additional dirs to search for textures
+
+    // Texture compression settings (applied to imported textures)
+    TextureCompressionSettings textureCompression;
 };
 
 // Result of a scene import operation

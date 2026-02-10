@@ -24,6 +24,15 @@
 #include "Enjin/Renderer/SpotLightShadowMap.h"
 #include "Enjin/Renderer/MeshFactory.h"
 #include "Enjin/Renderer/SVGLoader.h"
+#include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
+#include "Enjin/Renderer/RayTracing/RTShadows.h"
+#include "Enjin/Renderer/RayTracing/RTReflections.h"
+#include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
+#include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -262,6 +271,9 @@ void RenderSystem::Initialize() {
         m_CmdBufferPool.reset();
     }
 
+    // Initialize ray tracing subsystems (if hardware supports it)
+    InitializeRayTracing();
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -344,6 +356,9 @@ void RenderSystem::Shutdown() {
         }
     }
     m_Skybox.Shutdown();
+
+    // Clean up ray tracing subsystems
+    ShutdownRayTracing();
 
     // Clean up line pipeline
     m_LinePipeline.reset();
@@ -751,6 +766,16 @@ void RenderSystem::Update(f32 deltaTime) {
         } else {
             // Fall back to graphics queue
             PerformGPUCulling();
+        }
+    }
+
+    // Ray tracing pass (after shadow passes, before main render pass)
+    if (m_RTEnabled && m_ASManager && m_SceneComposition.mode == SceneRenderMode::Scene3D) {
+        VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+        if (commandBuffer != VK_NULL_HANDLE) {
+            RebuildTLAS(commandBuffer);
+            DispatchRTEffects(commandBuffer);
+            DenoiseRTOutputs(commandBuffer);
         }
     }
 
@@ -2690,9 +2715,19 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     }
 
     // Per-entity buffers (dynamic meshes, pool overflow fallback)
+    // Add ShaderDeviceAddress usage when RT is supported for BLAS building
+    VkBufferUsageFlags vertexUsage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    VkBufferUsageFlags indexUsage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if (IsRayTracingSupported()) {
+        vertexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                       VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+        indexUsage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                      VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR;
+    }
+
     usize vertexBufferSize = mesh->vertices.size() * sizeof(MeshComponent::Vertex);
     renderData.vertexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!renderData.vertexBuffer->Create(vertexBufferSize, Renderer::BufferUsage::Vertex, true)) {
+    if (!renderData.vertexBuffer->Create(vertexBufferSize, vertexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create vertex buffer for entity %llu", entity);
         renderData.Invalidate();
         return nullptr;
@@ -2707,7 +2742,7 @@ EntityRenderData* RenderSystem::SetupEntityBuffers(Entity entity) {
     // Create index buffer
     usize indexBufferSize = mesh->indices.size() * sizeof(u32);
     renderData.indexBuffer = std::make_unique<Renderer::VulkanBuffer>(m_Renderer->GetContext());
-    if (!renderData.indexBuffer->Create(indexBufferSize, Renderer::BufferUsage::Index, true)) {
+    if (!renderData.indexBuffer->Create(indexBufferSize, indexUsage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create index buffer for entity %llu", entity);
         renderData.Invalidate();
         return nullptr;
@@ -4769,6 +4804,737 @@ void RenderSystem::RenderSkybox(VkCommandBuffer commandBuffer,
     vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
 
     vkCmdDraw(commandBuffer, 36, 1, 0, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Ray Tracing subsystem lifecycle
+// ---------------------------------------------------------------------------
+
+bool RenderSystem::IsRayTracingSupported() const {
+    if (!m_Renderer || !m_Renderer->GetContext()) return false;
+    return m_Renderer->GetContext()->IsRayTracingSupported();
+}
+
+void RenderSystem::InitializeRayTracing() {
+    if (!IsRayTracingSupported()) {
+        ENJIN_LOG_INFO(Renderer, "Ray tracing not supported on this device, RT features disabled");
+        return;
+    }
+
+    auto* ctx = m_Renderer->GetContext();
+    ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
+
+    // Create RT descriptor set layout (14 bindings)
+    std::array<VkDescriptorSetLayoutBinding, 14> rtBindings{};
+
+    // Binding 0: TLAS
+    rtBindings[0].binding = 0;
+    rtBindings[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+    rtBindings[0].descriptorCount = 1;
+    rtBindings[0].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+    // Binding 1: Scene HDR (storage image)
+    rtBindings[1].binding = 1;
+    rtBindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[1].descriptorCount = 1;
+    rtBindings[1].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 2: Depth buffer
+    rtBindings[2].binding = 2;
+    rtBindings[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    rtBindings[2].descriptorCount = 1;
+    rtBindings[2].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 3: World normals
+    rtBindings[3].binding = 3;
+    rtBindings[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    rtBindings[3].descriptorCount = 1;
+    rtBindings[3].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 4: Motion vectors
+    rtBindings[4].binding = 4;
+    rtBindings[4].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    rtBindings[4].descriptorCount = 1;
+    rtBindings[4].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 5: RT Shadow output (storage image)
+    rtBindings[5].binding = 5;
+    rtBindings[5].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[5].descriptorCount = 1;
+    rtBindings[5].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 6: RT Reflection output (storage image)
+    rtBindings[6].binding = 6;
+    rtBindings[6].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[6].descriptorCount = 1;
+    rtBindings[6].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 7: RT AO output (storage image)
+    rtBindings[7].binding = 7;
+    rtBindings[7].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[7].descriptorCount = 1;
+    rtBindings[7].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 8: RT GI output (storage image)
+    rtBindings[8].binding = 8;
+    rtBindings[8].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[8].descriptorCount = 1;
+    rtBindings[8].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Bindings 9-12: Storage buffers (material, vertex, index, transforms)
+    for (u32 i = 9; i <= 12; ++i) {
+        rtBindings[i].binding = i;
+        rtBindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        rtBindings[i].descriptorCount = 1;
+        rtBindings[i].stageFlags = VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+    }
+
+    // Binding 13: Light data UBO
+    rtBindings[13].binding = 13;
+    rtBindings[13].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    rtBindings[13].descriptorCount = 1;
+    rtBindings[13].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
+    layoutInfo.pBindings = rtBindings.data();
+
+    if (vkCreateDescriptorSetLayout(ctx->GetDevice(), &layoutInfo, nullptr, &m_RTDescriptorSetLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT descriptor set layout");
+        return;
+    }
+
+    // Create RT descriptor pool (includes all descriptor types used by RT bindings)
+    std::array<VkDescriptorPoolSize, 5> poolSizes{};
+    poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5 };
+    poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 };
+    poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.maxSets = 1;
+    poolInfo.poolSizeCount = static_cast<u32>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+
+    if (vkCreateDescriptorPool(ctx->GetDevice(), &poolInfo, nullptr, &m_RTDescriptorPool) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT descriptor pool");
+        return;
+    }
+
+    // Allocate RT descriptor set
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_RTDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_RTDescriptorSetLayout;
+
+    if (vkAllocateDescriptorSets(ctx->GetDevice(), &allocInfo, &m_RTDescriptorSet) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT descriptor set");
+        return;
+    }
+
+    // Initialize acceleration structure manager (shader-independent, always safe)
+    m_ASManager = std::make_unique<Renderer::AccelerationStructureManager>(ctx);
+    m_ASManager->Initialize();
+
+    // Check if RT shaders have been compiled from GLSL to SPIR-V.
+    // The embedded SPIR-V in RTShaderData.h contains placeholder stubs that are
+    // not valid for actual pipeline creation. Skip subsystem initialization until
+    // real compiled shaders are provided. The ASManager and descriptor layout are
+    // still available for when shaders are compiled.
+    //
+    // To compile real shaders:
+    //   cd Engine/shaders
+    //   glslangValidator --target-env vulkan1.2 -S rgen rt_shadow.rgen -o rt_shadow.rgen.spv
+    //   (etc. for all RT/compute shaders)
+    //   Then convert to C arrays and update RTShaderData.h
+    //
+    // Detect stubs: check if the first shader has the stub word count (9 words = 36 bytes)
+    {
+        bool usingStubs = (sizeof(Renderer::RT_SHADOW_RGEN_SPV) <= 40 * sizeof(u32));
+        if (usingStubs) {
+            ENJIN_LOG_INFO(Renderer, "RT shaders are placeholder stubs — skipping pipeline creation. "
+                           "Compile GLSL shaders in Engine/shaders/ and update RTShaderData.h for full RT support.");
+            return;
+        }
+    }
+
+    // Get render dimensions
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    u32 width = extent.width;
+    u32 height = extent.height;
+
+    // Initialize RT effect subsystems
+    m_RTShadows = std::make_unique<Renderer::RTShadows>(ctx);
+    if (!m_RTShadows->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Shadows initialization failed");
+        m_RTShadows.reset();
+    }
+
+    m_RTReflections = std::make_unique<Renderer::RTReflections>(ctx);
+    if (!m_RTReflections->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Reflections initialization failed");
+        m_RTReflections.reset();
+    }
+
+    m_RTAO = std::make_unique<Renderer::RTAmbientOcclusion>(ctx);
+    if (!m_RTAO->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT AO initialization failed");
+        m_RTAO.reset();
+    }
+
+    m_RTGI = std::make_unique<Renderer::RTGlobalIllumination>(ctx);
+    if (!m_RTGI->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT GI initialization failed");
+        m_RTGI.reset();
+    }
+
+    m_PathTracer = std::make_unique<Renderer::PathTracer>(ctx);
+    if (!m_PathTracer->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "Path Tracer initialization failed");
+        m_PathTracer.reset();
+    }
+
+    // Initialize SVGF denoiser
+    m_SVGFDenoiser = std::make_unique<Renderer::SVGFDenoiser>(ctx);
+    if (!m_SVGFDenoiser->Initialize(width, height)) {
+        ENJIN_LOG_WARN(Renderer, "SVGF Denoiser initialization failed");
+        m_SVGFDenoiser.reset();
+    }
+
+    // Initialize RT compositor (uses RT descriptor set layout for pipeline compatibility)
+    m_RTCompositor = std::make_unique<Renderer::RTCompositor>(ctx);
+    if (!m_RTCompositor->Initialize(m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Compositor initialization failed");
+        m_RTCompositor.reset();
+    }
+
+    // Create dummy resources and RT light UBOs for descriptor binding
+    CreateRTDummyResources();
+
+    ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s)",
+                   m_RTShadows ? "yes" : "no", m_RTReflections ? "yes" : "no",
+                   m_RTAO ? "yes" : "no", m_RTGI ? "yes" : "no",
+                   m_PathTracer ? "yes" : "no");
+}
+
+void RenderSystem::ShutdownRayTracing() {
+    m_RTCompositor.reset();
+    m_SVGFDenoiser.reset();
+    m_PathTracer.reset();
+    m_RTGI.reset();
+    m_RTAO.reset();
+    m_RTReflections.reset();
+    m_RTShadows.reset();
+    m_ASManager.reset();
+
+    DestroyRTDummyResources();
+
+    if (m_Renderer && m_Renderer->GetContext()) {
+        VkDevice device = m_Renderer->GetContext()->GetDevice();
+        if (m_RTDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device, m_RTDescriptorPool, nullptr);
+            m_RTDescriptorPool = VK_NULL_HANDLE;
+        }
+        if (m_RTDescriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, m_RTDescriptorSetLayout, nullptr);
+            m_RTDescriptorSetLayout = VK_NULL_HANDLE;
+        }
+    }
+    m_RTDescriptorSet = VK_NULL_HANDLE;
+    m_RTDescriptorsWritten = false;
+}
+
+void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
+    if (!m_ASManager || !m_RTEnabled) return;
+
+    m_ASManager->ResetInstances();
+
+    // Add all mesh entities to the TLAS
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!transform || !mesh || !transform->visible) continue;
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+
+        // Get or create entity render data for buffer addresses
+        // Pool-allocated entities are skipped — only per-entity buffers support BLAS building
+        // TODO: Add pool buffer BLAS support (requires debugging device address issues)
+        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
+        const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        if (!rd.valid || !rd.vertexBuffer || !rd.indexBuffer) continue;
+
+        VkDeviceAddress vertAddr = rd.vertexBuffer->GetDeviceAddress();
+        VkDeviceAddress idxAddr = rd.indexBuffer->GetDeviceAddress();
+        if (vertAddr == 0 || idxAddr == 0) continue;
+
+        // Hash based on buffer addresses (unique per mesh data)
+        u64 meshHash = vertAddr ^ (idxAddr << 32) ^ (idxAddr >> 32);
+
+        u32 blasId = m_ASManager->RegisterMesh(
+            meshHash,
+            vertAddr, static_cast<u32>(mesh->vertices.size()), sizeof(MeshComponent::Vertex),
+            idxAddr, static_cast<u32>(mesh->indices.size()));
+
+        // Build model matrix
+        Math::Matrix4 model = transform->ToMatrix();
+
+        m_ASManager->AddInstance(blasId, model, static_cast<u32>(entity));
+    }
+
+    // Flush BLAS builds and build/update TLAS
+    if (m_ASManager->HasPendingBuilds()) {
+        m_ASManager->FlushPendingBLASBuilds(cmd);
+    }
+    m_ASManager->BuildTLAS(cmd);
+
+    // Write all RT descriptors once TLAS is valid (need a real handle for binding 0)
+    if (!m_RTDescriptorsWritten && m_ASManager->HasValidTLAS()) {
+        WriteRTDescriptors();
+        TransitionRTOutputImages(cmd);
+        m_RTDescriptorsWritten = true;
+    }
+}
+
+void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
+    if (!m_RTEnabled || !m_ASManager || !m_ASManager->HasValidTLAS()) return;
+    if (!m_RTDescriptorsWritten) return;
+
+    // Compute inverse view-projection and camera position
+    Math::Matrix4 view = m_Camera->GetViewMatrix();
+    Math::Matrix4 proj = m_Camera->GetProjectionMatrix();
+    Math::Matrix4 viewProj = proj * view;
+    Math::Matrix4 invViewProj = viewProj.Inverse();
+    Math::Vector3 cameraPos = m_Camera->GetPosition();
+
+    // Find primary directional light direction from its transform
+    Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
+    f32 lightIntensity = 1.0f;
+    f32 lightShadowDistance = 100.0f;
+    Math::Vector3 lightColor(1.0f, 1.0f, 1.0f);
+    for (Entity entity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+        auto* light = m_World->GetComponent<LightComponent>(entity);
+        if (light && light->type == LightType::Directional) {
+            auto* lightTransform = m_World->GetComponent<TransformComponent>(entity);
+            if (lightTransform) {
+                Math::Vector3 forward(0.0f, 0.0f, -1.0f);
+                lightDir = lightTransform->rotation.Rotate(forward);
+            }
+            lightIntensity = light->intensity;
+            lightColor = light->color;
+            break;
+        }
+    }
+
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    m_RTFrameCount++;
+
+    // Update RT light UBO with current frame data
+    f32 shadowRadius = m_RTShadows ? m_RTShadows->GetConfig().radius : 0.01f;
+    if (m_RTShadows) lightShadowDistance = m_RTShadows->GetConfig().maxDistance;
+    UpdateRTLightUBO(invViewProj, lightDir, lightIntensity, lightShadowDistance,
+                     shadowRadius, m_RTFrameCount);
+
+    // Update TLAS descriptor (handle may change on rebuild)
+    {
+        auto* ctx = m_Renderer->GetContext();
+        VkAccelerationStructureKHR tlas = m_ASManager->GetTLAS();
+        VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
+        asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+        asInfo.accelerationStructureCount = 1;
+        asInfo.pAccelerationStructures = &tlas;
+
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.pNext = &asInfo;
+        write.dstSet = m_RTDescriptorSet;
+        write.dstBinding = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        vkUpdateDescriptorSets(ctx->GetDevice(), 1, &write, 0, nullptr);
+    }
+
+    if (m_RTMode == 1 && m_PathTracer) {
+        // Path trace mode — progressive accumulation
+        m_PathTracer->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
+                               lightDir, m_RTFrameCount);
+        return;
+    }
+
+    // Hybrid mode — dispatch individual effects
+    if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
+        m_RTShadows->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
+                              lightIntensity, m_RTFrameCount);
+    }
+    if (m_RTReflections && m_RTReflections->GetConfig().enabled) {
+        m_RTReflections->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
+                                  m_RTFrameCount);
+    }
+    if (m_RTAO && m_RTAO->GetConfig().enabled) {
+        m_RTAO->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
+                         m_RTFrameCount);
+    }
+    if (m_RTGI && m_RTGI->GetConfig().enabled) {
+        m_RTGI->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
+                         cameraPos, m_RTFrameCount);
+    }
+}
+
+void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
+    if (!m_RTEnabled || !m_SVGFDenoiser || m_RTMode == 1) return;
+    // Denoising is handled by the SVGF denoiser using the RT output images
+    // In a full implementation, this would call DenoiseSingleChannel/DenoiseColor
+    // for each active RT effect. For now, the raw outputs are used directly.
+    // TODO: Wire up denoiser when G-buffer MRT (motion vectors + normals) is available
+}
+
+void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
+    if (!m_RTEnabled || !m_RTCompositor || m_RTMode == 1) return;
+
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+
+    // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi
+    u32 enableFlags = 0;
+    if (m_RTShadows && m_RTShadows->GetConfig().enabled) enableFlags |= 1;
+    if (m_RTReflections && m_RTReflections->GetConfig().enabled) enableFlags |= 2;
+    if (m_RTAO && m_RTAO->GetConfig().enabled) enableFlags |= 4;
+    if (m_RTGI && m_RTGI->GetConfig().enabled) enableFlags |= 8;
+
+    if (enableFlags == 0) return;
+
+    m_RTCompositor->Dispatch(cmd, m_RTDescriptorSet, extent.width, extent.height, enableFlags);
+}
+
+void RenderSystem::CreateRTDummyResources() {
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    // Create 1x1 dummy image for placeholder descriptor bindings
+    {
+        VkImageCreateInfo imgInfo{};
+        imgInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imgInfo.imageType = VK_IMAGE_TYPE_2D;
+        imgInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imgInfo.extent = { 1, 1, 1 };
+        imgInfo.mipLevels = 1;
+        imgInfo.arrayLayers = 1;
+        imgInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imgInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imgInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
+        imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        vkCreateImage(device, &imgInfo, nullptr, &m_RTDummyImage);
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, m_RTDummyImage, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyImageMemory);
+        vkBindImageMemory(device, m_RTDummyImage, m_RTDummyImageMemory, 0);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_RTDummyImage;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        vkCreateImageView(device, &viewInfo, nullptr, &m_RTDummyImageView);
+    }
+
+    // Create sampler for combined image sampler bindings
+    {
+        VkSamplerCreateInfo samplerInfo{};
+        samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        samplerInfo.magFilter = VK_FILTER_NEAREST;
+        samplerInfo.minFilter = VK_FILTER_NEAREST;
+        samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        vkCreateSampler(device, &samplerInfo, nullptr, &m_RTDummySampler);
+    }
+
+    // Create dummy buffer for storage buffer bindings (256 bytes)
+    {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = 256;
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTDummyBuffer);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTDummyBuffer, &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyBufferMemory);
+        vkBindBufferMemory(device, m_RTDummyBuffer, m_RTDummyBufferMemory, 0);
+    }
+
+    // Create RT light UBOs (per frame in flight, host visible + coherent, persistently mapped)
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = 256;  // Enough for RTLightUBO struct (112 bytes + padding)
+        bufInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTLightUBO[i]);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTLightUBO[i], &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTLightUBOMemory[i]);
+        vkBindBufferMemory(device, m_RTLightUBO[i], m_RTLightUBOMemory[i], 0);
+        vkMapMemory(device, m_RTLightUBOMemory[i], 0, 256, 0, &m_RTLightUBOMapped[i]);
+        std::memset(m_RTLightUBOMapped[i], 0, 256);
+    }
+
+    ENJIN_LOG_INFO(Renderer, "RT dummy resources and light UBOs created");
+}
+
+void RenderSystem::DestroyRTDummyResources() {
+    if (!m_Renderer || !m_Renderer->GetContext()) return;
+    VkDevice device = m_Renderer->GetContext()->GetDevice();
+
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        if (m_RTLightUBOMapped[i]) {
+            vkUnmapMemory(device, m_RTLightUBOMemory[i]);
+            m_RTLightUBOMapped[i] = nullptr;
+        }
+        if (m_RTLightUBO[i]) { vkDestroyBuffer(device, m_RTLightUBO[i], nullptr); m_RTLightUBO[i] = VK_NULL_HANDLE; }
+        if (m_RTLightUBOMemory[i]) { vkFreeMemory(device, m_RTLightUBOMemory[i], nullptr); m_RTLightUBOMemory[i] = VK_NULL_HANDLE; }
+    }
+
+    if (m_RTDummySampler) { vkDestroySampler(device, m_RTDummySampler, nullptr); m_RTDummySampler = VK_NULL_HANDLE; }
+    if (m_RTDummyImageView) { vkDestroyImageView(device, m_RTDummyImageView, nullptr); m_RTDummyImageView = VK_NULL_HANDLE; }
+    if (m_RTDummyImage) { vkDestroyImage(device, m_RTDummyImage, nullptr); m_RTDummyImage = VK_NULL_HANDLE; }
+    if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
+    if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
+    if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
+}
+
+void RenderSystem::WriteRTDescriptors() {
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+    u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+
+    // Binding 0: TLAS (acceleration structure)
+    VkAccelerationStructureKHR tlas = m_ASManager->GetTLAS();
+    VkWriteDescriptorSetAccelerationStructureKHR asInfo{};
+    asInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    asInfo.accelerationStructureCount = 1;
+    asInfo.pAccelerationStructures = &tlas;
+
+    // Binding 1: Scene HDR / Accumulation (storage image) — use path tracer output or dummy
+    VkDescriptorImageInfo storageImageInfo1{};
+    storageImageInfo1.imageView = m_PathTracer ? m_PathTracer->GetOutputView() : m_RTDummyImageView;
+    storageImageInfo1.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Bindings 2, 3, 4: Depth, normals, motion vectors (combined image sampler) — dummy for now
+    // Use GENERAL layout to match the actual image layout (dummy image is transitioned to GENERAL)
+    VkDescriptorImageInfo samplerInfos[3]{};
+    for (auto& si : samplerInfos) {
+        si.sampler = m_RTDummySampler;
+        si.imageView = m_RTDummyImageView;
+        si.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    }
+
+    // Bindings 5-8: RT output images (storage image)
+    VkDescriptorImageInfo rtOutputInfos[4]{};
+    rtOutputInfos[0].imageView = m_RTShadows ? m_RTShadows->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[1].imageView = m_RTReflections ? m_RTReflections->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[1].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[2].imageView = m_RTAO ? m_RTAO->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[2].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[3].imageView = m_RTGI ? m_RTGI->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[3].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    // Bindings 9-12: Storage buffers (dummy for now — will be real vertex/index/material data later)
+    VkDescriptorBufferInfo dummyBufInfos[4]{};
+    for (auto& bi : dummyBufInfos) {
+        bi.buffer = m_RTDummyBuffer;
+        bi.offset = 0;
+        bi.range = 256;
+    }
+
+    // Binding 13: RT light UBO
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = m_RTLightUBO[frameIdx];
+    uboInfo.offset = 0;
+    uboInfo.range = 256;
+
+    // Build write array for all 14 bindings
+    std::array<VkWriteDescriptorSet, 14> writes{};
+
+    // Binding 0: TLAS
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].pNext = &asInfo;
+    writes[0].dstSet = m_RTDescriptorSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorCount = 1;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+
+    // Binding 1: Scene HDR (storage image)
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = m_RTDescriptorSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorCount = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[1].pImageInfo = &storageImageInfo1;
+
+    // Bindings 2, 3, 4: Depth, normals, motion vectors
+    for (u32 i = 0; i < 3; ++i) {
+        writes[2 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[2 + i].dstSet = m_RTDescriptorSet;
+        writes[2 + i].dstBinding = 2 + i;
+        writes[2 + i].descriptorCount = 1;
+        writes[2 + i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[2 + i].pImageInfo = &samplerInfos[i];
+    }
+
+    // Bindings 5-8: RT output images
+    for (u32 i = 0; i < 4; ++i) {
+        writes[5 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[5 + i].dstSet = m_RTDescriptorSet;
+        writes[5 + i].dstBinding = 5 + i;
+        writes[5 + i].descriptorCount = 1;
+        writes[5 + i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+        writes[5 + i].pImageInfo = &rtOutputInfos[i];
+    }
+
+    // Bindings 9-12: Storage buffers
+    for (u32 i = 0; i < 4; ++i) {
+        writes[9 + i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[9 + i].dstSet = m_RTDescriptorSet;
+        writes[9 + i].dstBinding = 9 + i;
+        writes[9 + i].descriptorCount = 1;
+        writes[9 + i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        writes[9 + i].pBufferInfo = &dummyBufInfos[i];
+    }
+
+    // Binding 13: Light UBO
+    writes[13].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[13].dstSet = m_RTDescriptorSet;
+    writes[13].dstBinding = 13;
+    writes[13].descriptorCount = 1;
+    writes[13].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[13].pBufferInfo = &uboInfo;
+
+    vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
+
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 14 bindings)");
+}
+
+void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
+    // Transition all RT output images from UNDEFINED → GENERAL for storage image usage
+    std::vector<VkImageMemoryBarrier> barriers;
+
+    auto addBarrier = [&](VkImage image) {
+        if (image == VK_NULL_HANDLE) return;
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT;
+        barriers.push_back(barrier);
+    };
+
+    if (m_RTShadows) addBarrier(m_RTShadows->GetOutputImage());
+    if (m_RTReflections) addBarrier(m_RTReflections->GetOutputImage());
+    if (m_RTAO) addBarrier(m_RTAO->GetOutputImage());
+    if (m_RTGI) addBarrier(m_RTGI->GetOutputImage());
+    if (m_PathTracer) addBarrier(m_PathTracer->GetOutputImage());
+
+    // Also transition the dummy image
+    addBarrier(m_RTDummyImage);
+
+    if (!barriers.empty()) {
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr,
+            static_cast<u32>(barriers.size()), barriers.data());
+    }
+
+    ENJIN_LOG_INFO(Renderer, "RT output images transitioned to GENERAL layout (%zu images)", barriers.size());
+}
+
+void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
+                                     f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount) {
+    u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
+    if (!m_RTLightUBOMapped[frameIdx]) return;
+
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+
+    // RT light UBO layout (std140):
+    // vec4 lightDir       (offset 0)
+    // vec4 lightColor     (offset 16)
+    // mat4 invViewProj    (offset 32)
+    // vec2 screenSize     (offset 96)
+    // uint frameCount     (offset 104)
+    // float shadowRadius  (offset 108)
+    struct RTLightData {
+        f32 lightDir[4];
+        f32 lightColor[4];
+        f32 invViewProj[16];
+        f32 screenSize[2];
+        u32 frameCount;
+        f32 shadowRadius;
+    };
+
+    RTLightData data{};
+    data.lightDir[0] = lightDir.x;
+    data.lightDir[1] = lightDir.y;
+    data.lightDir[2] = lightDir.z;
+    data.lightDir[3] = lightIntensity;
+    data.lightColor[0] = 1.0f;
+    data.lightColor[1] = 1.0f;
+    data.lightColor[2] = 1.0f;
+    data.lightColor[3] = shadowDistance;
+
+    // Copy mat4 (our Matrix4 stores as flat f32 m[16])
+    for (int i = 0; i < 16; ++i) {
+        data.invViewProj[i] = invViewProj.m[i];
+    }
+
+    data.screenSize[0] = static_cast<f32>(extent.width);
+    data.screenSize[1] = static_cast<f32>(extent.height);
+    data.frameCount = frameCount;
+    data.shadowRadius = shadowRadius;
+
+    std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
+
+    // Update descriptor binding 13 to point to this frame's UBO
+    VkDescriptorBufferInfo uboInfo{};
+    uboInfo.buffer = m_RTLightUBO[frameIdx];
+    uboInfo.offset = 0;
+    uboInfo.range = 256;
+
+    VkWriteDescriptorSet write{};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.dstSet = m_RTDescriptorSet;
+    write.dstBinding = 13;
+    write.descriptorCount = 1;
+    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    write.pBufferInfo = &uboInfo;
+    vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
 }
 
 } // namespace ECS

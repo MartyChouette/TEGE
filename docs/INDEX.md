@@ -31,6 +31,7 @@
 | Terrain | `Enjin/ECS/Components/Terrain.h` | 3D heightmap sculpting (5 brush modes) and 2D polyline terrain |
 | AI | `Enjin/AI/AIBehaviors.h` | State-based AI, navmesh generation, A* pathfinding |
 | Render Backend | `Enjin/Renderer/RenderBackend.h` | Platform abstraction interface |
+| Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF denoiser, path tracer |
 
 ---
 

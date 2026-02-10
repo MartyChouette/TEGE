@@ -1,0 +1,96 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Temporal accumulation pass: reproject history using motion vectors,
+// blend with current noisy input, track luminance moments for variance estimation
+
+layout(binding = 0) uniform sampler2D noisyInput;
+layout(binding = 1) uniform sampler2D depthTex;
+layout(binding = 2) uniform sampler2D normalTex;
+layout(binding = 3) uniform sampler2D motionTex;
+layout(binding = 4, rgba16f) uniform image2D historyImage;
+layout(binding = 5, rg16f) uniform image2D momentsImage;
+layout(binding = 7, rgba16f) uniform image2D outputImage;
+
+layout(push_constant) uniform PushConstants {
+    int stepSize;
+    float temporalAlpha;
+    float sigmaDepth;
+    float sigmaNormal;
+    float sigmaLuminance;
+    int iteration;
+    int flags;  // bit 0: single channel, bit 1: has history
+    int pad;
+} pc;
+
+float luminance(vec3 c) {
+    return dot(c, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(outputImage);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    vec2 uv = (vec2(pixel) + 0.5) / vec2(size);
+    vec4 currentColor = texture(noisyInput, uv);
+
+    bool hasHistory = (pc.flags & 2) != 0;
+
+    if (!hasHistory) {
+        // First frame — just write current as output and history
+        imageStore(outputImage, pixel, currentColor);
+        imageStore(historyImage, pixel, currentColor);
+        float lum = luminance(currentColor.rgb);
+        imageStore(momentsImage, pixel, vec4(lum, lum * lum, 0.0, 0.0));
+        return;
+    }
+
+    // Reproject using motion vectors
+    vec2 motion = texture(motionTex, uv).xy;
+    vec2 prevUV = uv - motion;
+
+    // Check if reprojection is valid (within screen bounds)
+    bool validReproject = prevUV.x >= 0.0 && prevUV.x <= 1.0 &&
+                          prevUV.y >= 0.0 && prevUV.y <= 1.0;
+
+    vec4 historyColor = vec4(0.0);
+    if (validReproject) {
+        ivec2 prevPixel = ivec2(prevUV * vec2(size));
+        prevPixel = clamp(prevPixel, ivec2(0), size - 1);
+        historyColor = imageLoad(historyImage, prevPixel);
+
+        // Depth/normal consistency check for disocclusion detection
+        float currentDepth = texture(depthTex, uv).r;
+        vec3 currentNormal = texture(normalTex, uv).xyz * 2.0 - 1.0;
+        float prevDepth = texture(depthTex, prevUV).r;
+        vec3 prevNormal = texture(normalTex, prevUV).xyz * 2.0 - 1.0;
+
+        float depthDiff = abs(currentDepth - prevDepth);
+        float normalDot = dot(currentNormal, prevNormal);
+
+        if (depthDiff > 0.1 || normalDot < 0.9) {
+            validReproject = false;
+        }
+    }
+
+    // Blend
+    float alpha = validReproject ? pc.temporalAlpha : 1.0;
+    vec4 blended = mix(historyColor, currentColor, alpha);
+
+    // Update moments
+    float lum = luminance(blended.rgb);
+    vec2 prevMoments = vec2(0.0);
+    if (validReproject) {
+        ivec2 prevPixel = ivec2((uv - motion) * vec2(size));
+        prevPixel = clamp(prevPixel, ivec2(0), size - 1);
+        prevMoments = imageLoad(momentsImage, prevPixel).xy;
+    }
+    vec2 moments;
+    moments.x = mix(prevMoments.x, lum, alpha);
+    moments.y = mix(prevMoments.y, lum * lum, alpha);
+
+    imageStore(outputImage, pixel, blended);
+    imageStore(historyImage, pixel, blended);
+    imageStore(momentsImage, pixel, vec4(moments, 0.0, 0.0));
+}

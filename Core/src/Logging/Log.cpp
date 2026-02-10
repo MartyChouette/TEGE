@@ -200,6 +200,7 @@ std::string Logger::GetCategoryString(LogCategory category) const {
         case LogCategory::Script:   return "SCRIPT";
         case LogCategory::Editor:   return "EDITOR";
         case LogCategory::Game:     return "GAME  ";
+        case LogCategory::Network:  return "NET   ";
         default: return "UNKNOWN";
     }
 }

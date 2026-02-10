@@ -124,6 +124,21 @@ struct EditorSettings {
     bool rawMouseInput = true;
     f32 mouseSmoothing = 0.0f; // 0.0 = none, 1.0 = heavy
 
+    // Accessibility: Motor
+    f32 clickThreshold = 5.0f;        // Pixels of movement before click becomes drag (1-20)
+    f32 dragThreshold = 6.0f;         // Pixels before drag starts (1-30)
+    bool dwellClickEnabled = false;   // Auto-click after hovering in place
+    f32 dwellClickDelay = 1.0f;       // Seconds before dwell-click triggers (0.3-3.0)
+    bool stickyDragEnabled = false;   // Click to start drag, click again to release
+    f32 holdRepeatDelay = 0.5f;       // Initial hold-repeat delay in seconds (0.1-1.5)
+    f32 holdRepeatRate = 0.05f;       // Hold-repeat rate in seconds (0.01-0.2)
+
+    // Accessibility: Keyboard Navigation
+    bool keyboardNavEnabled = false;  // Enable full keyboard-only editor navigation
+    f32 gizmoNudgeAmount = 0.1f;      // World units per arrow-key nudge (0.01-10.0)
+    f32 gizmoNudgeFine = 0.01f;       // Fine nudge (Ctrl+Arrow) units (0.001-1.0)
+    f32 gizmoRotateNudge = 5.0f;      // Degrees per rotate nudge (1-45)
+
     // Surface Snap
     bool surfaceSnap = false;
     bool surfaceAlignNormal = true;

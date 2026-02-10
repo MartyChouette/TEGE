@@ -17,6 +17,11 @@
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/AudioVisualIndicator.h"
+#include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/Editor/ProceduralGraph.h"
+#include "Enjin/Editor/CommandPalette.h"
+#include "Enjin/Accessibility/AlternativeInput.h"
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Wind.h"
@@ -33,6 +38,9 @@
 #include "Enjin/Editor/UndoRedo.h"
 #include "Enjin/Build/BuildReport.h"
 #include "Enjin/Assets/AssetMetadata.h"
+#include "Enjin/Assets/ThumbnailGenerator.h"
+#include "Enjin/Assets/TextureCompressor.h"
+#include "Enjin/Renderer/Texture.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Editor/AnimationGraphEditor.h"
 #include "Enjin/Editor/VisualScriptEditor.h"
@@ -42,6 +50,10 @@
 #include "Enjin/Editor/BehaviorTreeEditor.h"
 #include "Enjin/Editor/QuestFlowEditor.h"
 #include "Enjin/Editor/DocGenerator.h"
+#include "Enjin/Editor/SceneLock.h"
+#include "Enjin/Editor/CollaborativeEditing.h"
+#include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Plugin/PluginRepository.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include <string>
@@ -96,6 +108,9 @@ enum class EditorPanel : u32 {
     PluginBrowser = 1 << 23,
     ProceduralGen = 1 << 24,
     GitIntegration = 1 << 25,
+    NetworkPanel = 1 << 26,
+    Collaboration = 1 << 27,
+    FlashTimeline = 1 << 28,
     All = 0xFFFFFFFF
 };
 
@@ -248,6 +263,7 @@ private:
     void DrawPluginBrowserPanel();
     void DrawProceduralGenPanel();
     void DrawGitIntegrationPanel();
+    void DrawNetworkPanel();
     static std::string RunGitCommand(const std::string& args, const std::string& workingDir);
     void DetectGitRepo();
     void RefreshGitStatus();
@@ -386,6 +402,10 @@ private:
     void DrawMovingPlatformComponent(ECS::Entity entity);
     void DrawPerFrameColliderComponent(ECS::Entity entity);
     void DrawPolygonCollider2DComponent(ECS::Entity entity);
+
+    // Networking components
+    void DrawNetworkIdentityComponent(ECS::Entity entity);
+    void DrawNetworkTransformComponent(ECS::Entity entity);
 
     // Runtime dialogue overlay (rendered during play mode)
     void UpdateDialogue(f32 deltaTime);
@@ -741,6 +761,24 @@ private:
     // Subtitle system (accessibility)
     Accessibility::SubtitleSystem m_SubtitleSystem;
 
+    // Audio visual indicator system (accessibility)
+    Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
+
+    // Accessibility announcer (screen reader groundwork)
+    Accessibility::AccessibilityAnnouncer m_Announcer;
+
+    // Procedural generation graph editor
+    ProceduralGraphEditor m_ProcGraphEditor;
+    ProcGraphData m_ProcGraphData;
+
+    // Command palette (Ctrl+P)
+    CommandPalette m_CommandPalette;
+    bool m_CommandsRegistered = false;
+    void RegisterPaletteCommands();
+
+    // Alternative input devices
+    Accessibility::AlternativeInputManager m_AlternativeInput;
+
     // Import dialog state
     bool m_ShowImportDialog = false;
     std::string m_ImportDialogPath;
@@ -775,6 +813,11 @@ private:
     std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;
     VkDescriptorSet GetImGuiTexture(const std::string& path);
     void CleanupImGuiTextureCache();
+
+    // Thumbnail generator for non-image assets (3D models, scenes, etc.)
+    Assets::ThumbnailGenerator m_ThumbnailGenerator;
+    std::vector<std::shared_ptr<Renderer::Texture>> m_ThumbnailTextures; // Keep GPU textures alive
+    VkDescriptorSet GetAssetThumbnail(const std::string& path);
 
     // Sprite frame picker state
     f32 m_SpriteFramePickerW = 32.0f;
@@ -864,6 +907,45 @@ private:
     char m_ComponentSearchBuf[256] = {};
     int m_ComponentSearchSelectedIndex = -1;
     bool m_ShowAllComponents = false;
+
+    // Network panel state
+    char m_NetworkIP[64] = "127.0.0.1";
+    i32 m_NetworkPort = 7777;
+    char m_NetworkPlayerName[64] = "Player";
+
+    // Scene & Entity Locking
+    SceneLockManager m_SceneLockManager;
+    f32 m_LockRefreshTimer = 0.0f;
+
+    // Collaborative Editing
+    CollaborativeEditingSystem m_CollabSystem;
+    char m_CollabHostIP[64] = "127.0.0.1";
+    i32 m_CollabPort = 7778;
+    char m_CollabUserName[64] = {};
+    void DrawCollaborationPanel();
+
+    // Flash Timeline Editor
+    FlashTimelineEditor m_FlashTimelineEditor;
+    FlashTimelineData m_FlashTimelineData;
+    Scripting::AS3Transpiler m_AS3Transpiler;
+    char m_AS3TranspileInput[4096] = {};
+    std::string m_AS3TranspileOutput;
+    void DrawFlashTimelinePanel();
+
+    // Keyboard navigation state
+    enum class FocusedPanel : u8 {
+        None = 0, Hierarchy, Inspector, Viewport, Console, AssetBrowser
+    };
+    FocusedPanel m_FocusedPanel = FocusedPanel::None;
+    bool m_ShowFocusRing = false;
+
+    // Dwell-click state
+    ImVec2 m_DwellPos = {0, 0};
+    f32 m_DwellTimer = 0.0f;
+    bool m_DwellActive = false;
+
+    // Keyboard gizmo nudge
+    void HandleKeyboardGizmoNudge();
 
     // Git integration state
     bool m_GitAvailable = false;

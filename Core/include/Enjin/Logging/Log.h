@@ -34,6 +34,7 @@ enum class LogCategory : u8 {
     Animation = 11,
     Build     = 12,
     Player    = 13,
+    Network   = 14,
     Count
 };
 

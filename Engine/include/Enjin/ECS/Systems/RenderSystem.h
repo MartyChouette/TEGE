@@ -35,11 +35,24 @@
 #include "Enjin/Renderer/Vulkan/ThreadPool.h"
 #include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
 #include "Enjin/Assets/FileWatcher.h"
+#include "Enjin/Renderer/RayTracing/RTCapabilities.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
 #include <vector>
+
+// Forward declarations for RT subsystems
+namespace Enjin { namespace Renderer {
+    class AccelerationStructureManager;
+    class RTShadows;
+    class RTReflections;
+    class RTAmbientOcclusion;
+    class RTGlobalIllumination;
+    class PathTracer;
+    class SVGFDenoiser;
+    class RTCompositor;
+}}
 
 namespace Enjin {
 namespace ECS {
@@ -271,6 +284,23 @@ public:
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
     Renderer::Skybox* GetSkybox() { return &m_Skybox; }
+
+    // Ray tracing
+    bool IsRayTracingSupported() const;
+    bool IsRayTracingEnabled() const { return m_RTEnabled; }
+    void SetRayTracingEnabled(bool enabled) { m_RTEnabled = enabled; }
+    u32 GetRTMode() const { return m_RTMode; }
+    void SetRTMode(u32 mode) { m_RTMode = mode; }
+
+    // RT subsystem accessors
+    Renderer::AccelerationStructureManager* GetASManager() { return m_ASManager.get(); }
+    Renderer::RTShadows* GetRTShadows() { return m_RTShadows.get(); }
+    Renderer::RTReflections* GetRTReflections() { return m_RTReflections.get(); }
+    Renderer::RTAmbientOcclusion* GetRTAO() { return m_RTAO.get(); }
+    Renderer::RTGlobalIllumination* GetRTGI() { return m_RTGI.get(); }
+    Renderer::PathTracer* GetPathTracer() { return m_PathTracer.get(); }
+    Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
+    Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
 
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
@@ -572,6 +602,55 @@ private:
     void ProcessPendingRecreation();
 
     bool m_Initialized = false;
+
+    // --- Ray Tracing subsystems (null when unsupported) ---
+    void InitializeRayTracing();
+    void ShutdownRayTracing();
+    void RebuildTLAS(VkCommandBuffer cmd);
+    void DispatchRTEffects(VkCommandBuffer cmd);
+    void DenoiseRTOutputs(VkCommandBuffer cmd);
+    void CompositeRTResults(VkCommandBuffer cmd);
+
+    bool m_RTEnabled = false;
+    u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
+    u32 m_RTFrameCount = 0;
+
+    std::unique_ptr<Renderer::AccelerationStructureManager> m_ASManager;
+    std::unique_ptr<Renderer::RTShadows> m_RTShadows;
+    std::unique_ptr<Renderer::RTReflections> m_RTReflections;
+    std::unique_ptr<Renderer::RTAmbientOcclusion> m_RTAO;
+    std::unique_ptr<Renderer::RTGlobalIllumination> m_RTGI;
+    std::unique_ptr<Renderer::PathTracer> m_PathTracer;
+    std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;
+    std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
+
+    // RT descriptor set layout and pool
+    VkDescriptorSetLayout m_RTDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_RTDescriptorPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_RTDescriptorSet = VK_NULL_HANDLE;
+
+    // RT dummy/placeholder resources for unwritten descriptor bindings
+    VkImage m_RTDummyImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTDummyImageMemory = VK_NULL_HANDLE;
+    VkImageView m_RTDummyImageView = VK_NULL_HANDLE;
+    VkSampler m_RTDummySampler = VK_NULL_HANDLE;
+    VkBuffer m_RTDummyBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTDummyBufferMemory = VK_NULL_HANDLE;
+
+    // RT light data UBO (one per frame in flight)
+    static constexpr u32 RT_FRAMES_IN_FLIGHT = 2;
+    VkBuffer m_RTLightUBO[RT_FRAMES_IN_FLIGHT] = {};
+    VkDeviceMemory m_RTLightUBOMemory[RT_FRAMES_IN_FLIGHT] = {};
+    void* m_RTLightUBOMapped[RT_FRAMES_IN_FLIGHT] = {};
+
+    bool m_RTDescriptorsWritten = false;
+
+    void CreateRTDummyResources();
+    void DestroyRTDummyResources();
+    void WriteRTDescriptors();
+    void TransitionRTOutputImages(VkCommandBuffer cmd);
+    void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
+                          f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount);
 };
 
 } // namespace ECS

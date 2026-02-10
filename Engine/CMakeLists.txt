@@ -66,6 +66,11 @@ target_link_libraries(EnjinEngine PUBLIC
 
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)
 
+# Link Winsock2 for networking on Windows
+if(WIN32)
+    target_link_libraries(EnjinEngine PUBLIC ws2_32)
+endif()
+
 # EditorLayer.cpp exceeds the default MSVC section limit due to heavy template use
 if(MSVC)
     target_compile_options(EnjinEngine PRIVATE /bigobj)

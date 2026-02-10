@@ -1295,6 +1295,43 @@ ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json
     return poly;
 }
 
+// Network components
+json SerializeNetworkIdentityComponent(const ECS::NetworkIdentityComponent& net) {
+    json j;
+    j["networkId"] = net.networkId;
+    j["ownerId"] = net.ownerId;
+    j["syncTransform"] = net.syncTransform;
+    j["syncInterval"] = RF(net.syncInterval);
+    return j;
+}
+
+ECS::NetworkIdentityComponent DeserializeNetworkIdentityComponent(const json& j) {
+    ECS::NetworkIdentityComponent net;
+    if (j.contains("networkId")) net.networkId = j["networkId"].get<u32>();
+    if (j.contains("ownerId")) net.ownerId = j["ownerId"].get<u8>();
+    if (j.contains("syncTransform")) net.syncTransform = j["syncTransform"].get<bool>();
+    if (j.contains("syncInterval")) net.syncInterval = j["syncInterval"].get<f32>();
+    return net;
+}
+
+json SerializeNetworkTransformComponent(const ECS::NetworkTransformComponent& nt) {
+    json j;
+    j["lastSyncedPosition"] = SerializeVector3(nt.lastSyncedPosition);
+    j["lastSyncedRotation"] = SerializeQuaternion(nt.lastSyncedRotation);
+    j["lastSyncedScale"] = SerializeVector3(nt.lastSyncedScale);
+    j["interpDuration"] = RF(nt.interpDuration);
+    return j;
+}
+
+ECS::NetworkTransformComponent DeserializeNetworkTransformComponent(const json& j) {
+    ECS::NetworkTransformComponent nt;
+    if (j.contains("lastSyncedPosition")) nt.lastSyncedPosition = DeserializeVector3(j["lastSyncedPosition"]);
+    if (j.contains("lastSyncedRotation")) nt.lastSyncedRotation = DeserializeQuaternion(j["lastSyncedRotation"]);
+    if (j.contains("lastSyncedScale")) nt.lastSyncedScale = DeserializeVector3(j["lastSyncedScale"]);
+    if (j.contains("interpDuration")) nt.interpDuration = j["interpDuration"].get<f32>();
+    return nt;
+}
+
 json SerializeSphereColliderComponent(const ECS::SphereColliderComponent& col) {
     json j;
     j["center"] = SerializeVector3(col.center);
@@ -4587,6 +4624,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
                 entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
             }
+            if (m_World->HasComponent<ECS::NetworkIdentityComponent>(entity)) {
+                entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*m_World->GetComponent<ECS::NetworkIdentityComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::NetworkTransformComponent>(entity)) {
+                entityJson["networkTransform"] = SerializeNetworkTransformComponent(*m_World->GetComponent<ECS::NetworkTransformComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
                 entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
             }
@@ -5164,6 +5207,12 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("surfaceAligned")) {
                 m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
             }
+            if (entityJson.contains("networkIdentity")) {
+                m_World->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
+            }
+            if (entityJson.contains("networkTransform")) {
+                m_World->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
+            }
             if (entityJson.contains("possessable")) {
                 m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
             }
@@ -5651,6 +5700,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::SurfaceAlignedController>(entity)) {
                 entityJson["surfaceAligned"] = SerializeSurfaceAligned(*m_World->GetComponent<ECS::SurfaceAlignedController>(entity));
+            }
+            if (m_World->HasComponent<ECS::NetworkIdentityComponent>(entity)) {
+                entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*m_World->GetComponent<ECS::NetworkIdentityComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::NetworkTransformComponent>(entity)) {
+                entityJson["networkTransform"] = SerializeNetworkTransformComponent(*m_World->GetComponent<ECS::NetworkTransformComponent>(entity));
             }
             if (m_World->HasComponent<ECS::PossessableComponent>(entity)) {
                 entityJson["possessable"] = SerializePossessable(*m_World->GetComponent<ECS::PossessableComponent>(entity));
@@ -6184,6 +6239,12 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("surfaceAligned")) {
                 m_World->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
             }
+            if (entityJson.contains("networkIdentity")) {
+                m_World->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
+            }
+            if (entityJson.contains("networkTransform")) {
+                m_World->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
+            }
             if (entityJson.contains("possessable")) {
                 m_World->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
             }
@@ -6589,6 +6650,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["vehicle"] = SerializeVehicle(*world->GetComponent<ECS::VehicleController>(entity));
         if (world->HasComponent<ECS::SurfaceAlignedController>(entity))
             entityJson["surfaceAligned"] = SerializeSurfaceAligned(*world->GetComponent<ECS::SurfaceAlignedController>(entity));
+        if (world->HasComponent<ECS::NetworkIdentityComponent>(entity))
+            entityJson["networkIdentity"] = SerializeNetworkIdentityComponent(*world->GetComponent<ECS::NetworkIdentityComponent>(entity));
+        if (world->HasComponent<ECS::NetworkTransformComponent>(entity))
+            entityJson["networkTransform"] = SerializeNetworkTransformComponent(*world->GetComponent<ECS::NetworkTransformComponent>(entity));
         if (world->HasComponent<ECS::PossessableComponent>(entity))
             entityJson["possessable"] = SerializePossessable(*world->GetComponent<ECS::PossessableComponent>(entity));
         // Puzzle
@@ -6873,6 +6938,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(entityJson["vehicle"]));
         if (entityJson.contains("surfaceAligned"))
             world->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(entityJson["surfaceAligned"]));
+        if (entityJson.contains("networkIdentity"))
+            world->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(entityJson["networkIdentity"]));
+        if (entityJson.contains("networkTransform"))
+            world->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(entityJson["networkTransform"]));
         if (entityJson.contains("possessable"))
             world->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(entityJson["possessable"]));
         // Puzzle
@@ -7130,6 +7199,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeVehicle(*world->GetComponent<ECS::VehicleController>(entity));
         else if (key == "surfaceAligned" && world->HasComponent<ECS::SurfaceAlignedController>(entity))
             j = SerializeSurfaceAligned(*world->GetComponent<ECS::SurfaceAlignedController>(entity));
+        else if (key == "networkIdentity" && world->HasComponent<ECS::NetworkIdentityComponent>(entity))
+            j = SerializeNetworkIdentityComponent(*world->GetComponent<ECS::NetworkIdentityComponent>(entity));
+        else if (key == "networkTransform" && world->HasComponent<ECS::NetworkTransformComponent>(entity))
+            j = SerializeNetworkTransformComponent(*world->GetComponent<ECS::NetworkTransformComponent>(entity));
         else if (key == "possessable" && world->HasComponent<ECS::PossessableComponent>(entity))
             j = SerializePossessable(*world->GetComponent<ECS::PossessableComponent>(entity));
         else if (key == "lock" && world->HasComponent<ECS::LockComponent>(entity))
@@ -7314,6 +7387,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "firstPerson") { world->AddComponent<ECS::FirstPersonController>(entity, DeserializeFirstPerson(j)); return true; }
         if (key == "vehicle") { world->AddComponent<ECS::VehicleController>(entity, DeserializeVehicle(j)); return true; }
         if (key == "surfaceAligned") { world->AddComponent<ECS::SurfaceAlignedController>(entity, DeserializeSurfaceAligned(j)); return true; }
+        if (key == "networkIdentity") { world->AddComponent<ECS::NetworkIdentityComponent>(entity, DeserializeNetworkIdentityComponent(j)); return true; }
+        if (key == "networkTransform") { world->AddComponent<ECS::NetworkTransformComponent>(entity, DeserializeNetworkTransformComponent(j)); return true; }
         if (key == "possessable") { world->AddComponent<ECS::PossessableComponent>(entity, DeserializePossessable(j)); return true; }
         if (key == "lock") { world->AddComponent<ECS::LockComponent>(entity, DeserializeLockComponent(j)); return true; }
         if (key == "pushable") { world->AddComponent<ECS::PushableComponent>(entity, DeserializePushableComponent(j)); return true; }

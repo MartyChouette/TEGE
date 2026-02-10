@@ -1,0 +1,65 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 6, set = 0, rgba16f) uniform image2D reflectionOutput;
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float maxDistance;
+    vec4 cameraPos;
+    float roughnessThreshold;
+    float pad1, pad2, pad3;
+} uLight;
+
+layout(location = 0) rayPayloadEXT vec4 reflectPayload;
+
+#include "rt_common.glsl"
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+
+    float depth = texture(depthTex, uv).r;
+    if (depth >= 1.0) {
+        imageStore(reflectionOutput, pixel, vec4(0.0));
+        return;
+    }
+
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = uLight.invViewProj * clipPos;
+    worldPos /= worldPos.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Reflection direction
+    vec3 viewDir = normalize(worldPos.xyz - uLight.cameraPos.xyz);
+    vec3 reflectDir = reflect(viewDir, worldNormal);
+
+    // Jitter for glossy reflections
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+    vec3 T, B;
+    build_onb(reflectDir, T, B);
+    vec2 jitter = rand_vec2(seed) * 0.01;  // Small jitter for glossy
+    reflectDir = normalize(reflectDir + jitter.x * T + jitter.y * B);
+
+    vec3 rayOrigin = worldPos.xyz + worldNormal * 0.001;
+
+    reflectPayload = vec4(0.0);
+
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsNoneEXT,
+        0xFF, 0, 0, 0,  // missIndex = 0
+        rayOrigin, 0.001,
+        reflectDir, uLight.maxDistance,
+        0
+    );
+
+    imageStore(reflectionOutput, pixel, reflectPayload);
+}

@@ -1,0 +1,102 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 1, set = 0, rgba16f) uniform image2D accumulationImage;
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float pad0;
+    vec4 cameraPos;
+    int maxBounces;
+    int accumulatedSamples;
+    float pad1, pad2;
+} uLight;
+
+layout(location = 0) rayPayloadEXT vec4 pathPayload;
+
+#include "rt_common.glsl"
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+
+    // Jittered pixel for anti-aliasing
+    vec2 jitter = rand_vec2(seed) - 0.5;
+    vec2 uv = (vec2(pixel) + 0.5 + jitter) / uLight.screenSize;
+
+    // Generate primary ray
+    vec4 clipNear = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+    vec4 clipFar = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+    vec4 worldNear = uLight.invViewProj * clipNear;
+    vec4 worldFar = uLight.invViewProj * clipFar;
+    worldNear /= worldNear.w;
+    worldFar /= worldFar.w;
+
+    vec3 rayOrigin = uLight.cameraPos.xyz;
+    vec3 rayDir = normalize(worldFar.xyz - worldNear.xyz);
+
+    // Trace path
+    vec3 throughput = vec3(1.0);
+    vec3 radiance = vec3(0.0);
+
+    for (int bounce = 0; bounce <= uLight.maxBounces; ++bounce) {
+        pathPayload = vec4(0.0);
+
+        traceRayEXT(topLevelAS,
+            gl_RayFlagsNoneEXT,
+            0xFF, 0, 0, 0,
+            rayOrigin, 0.001,
+            rayDir, 10000.0,
+            0
+        );
+
+        if (pathPayload.w <= 0.0) {
+            // Miss — add sky contribution
+            float t = 0.5 * (rayDir.y + 1.0);
+            vec3 skyColor = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
+            radiance += throughput * skyColor;
+            break;
+        }
+
+        // Hit — accumulate emissive and prepare next bounce
+        vec3 hitColor = pathPayload.rgb;
+        radiance += throughput * hitColor * 0.1;  // Emissive
+
+        // Russian roulette after 3 bounces
+        if (bounce > 2) {
+            float p = max(throughput.x, max(throughput.y, throughput.z));
+            if (rand_float(seed) > p) break;
+            throughput /= p;
+        }
+
+        // Lambertian bounce (simplified — no material lookup)
+        throughput *= hitColor * 0.7;
+
+        // Generate next bounce direction
+        vec2 u = rand_vec2(seed);
+        vec3 normal = vec3(0.0, 1.0, 0.0);  // Approximate
+        vec3 T, B;
+        build_onb(normal, T, B);
+        vec3 bounceDir = cosine_hemisphere_sample(u);
+        rayDir = tangent_to_world(bounceDir, normal, T, B);
+        rayOrigin = rayOrigin + rayDir * pathPayload.w + normal * 0.001;
+    }
+
+    // Accumulate with previous samples
+    vec4 prev = imageLoad(accumulationImage, pixel);
+    float sampleCount = float(uLight.accumulatedSamples);
+
+    vec3 accumulated;
+    if (sampleCount <= 0.0) {
+        accumulated = radiance;
+    } else {
+        accumulated = (prev.rgb * sampleCount + radiance) / (sampleCount + 1.0);
+    }
+
+    imageStore(accumulationImage, pixel, vec4(accumulated, 1.0));
+}

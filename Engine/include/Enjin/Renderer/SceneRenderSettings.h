@@ -137,6 +137,46 @@ struct SceneRenderSettings {
     bool globalGouraudOnly = false;
     u32 globalVertexSnapResolution = 160;
 
+    // --- Ray Tracing ---
+    bool rtEnabled = false;
+    u32 rtMode = 0;                    // 0=Hybrid, 1=PathTrace
+
+    // RT Shadows
+    bool rtShadowsEnabled = true;
+    f32 rtShadowMaxDistance = 100.0f;
+    f32 rtShadowRadius = 0.01f;
+
+    // RT Reflections
+    bool rtReflectionsEnabled = true;
+    f32 rtReflectionMaxDistance = 50.0f;
+    f32 rtReflectionRoughnessThreshold = 0.5f;
+
+    // RT Ambient Occlusion
+    bool rtAOEnabled = true;
+    f32 rtAORadius = 2.0f;
+    f32 rtAOPower = 1.5f;
+
+    // RT Global Illumination
+    bool rtGIEnabled = false;
+    f32 rtGIMaxDistance = 50.0f;
+    f32 rtGIIntensity = 1.0f;
+    u32 rtGIBounces = 1;
+
+    // Path Tracer
+    u32 rtPathTracerMaxBounces = 4;
+    u32 rtPathTracerTargetSPP = 1024;
+
+    // Denoiser (SVGF)
+    bool rtDenoiserEnabled = true;
+    u32 rtDenoiserIterations = 5;
+    f32 rtDenoiserTemporalAlpha = 0.05f;
+
+    // Composite strengths
+    f32 rtShadowStrength = 1.0f;
+    f32 rtReflectionStrength = 0.5f;
+    f32 rtAOStrength = 1.0f;
+    f32 rtGIStrength = 0.5f;
+
     // --- Conversion helpers ---
     static SceneRenderSettings CaptureFromRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp);
     void ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSettings* pp) const;

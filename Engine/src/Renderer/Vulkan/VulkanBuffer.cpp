@@ -140,14 +140,39 @@ u32 VulkanBuffer::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags propertie
     return UINT32_MAX;
 }
 
+VkDeviceAddress VulkanBuffer::GetDeviceAddress() const {
+    if (m_Buffer == VK_NULL_HANDLE) return 0;
+
+    // Buffer must have been created with VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+    if (!(m_UsageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT)) return 0;
+
+    VkBufferDeviceAddressInfo addrInfo{};
+    addrInfo.sType = VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO;
+    addrInfo.buffer = m_Buffer;
+
+    auto fn = (PFN_vkGetBufferDeviceAddressKHR)vkGetDeviceProcAddr(
+        m_Context->GetDevice(), "vkGetBufferDeviceAddressKHR");
+    if (!fn) return 0;
+    return fn(m_Context->GetDevice(), &addrInfo);
+}
+
 bool VulkanBuffer::AllocateMemory(VkMemoryPropertyFlags properties) {
     VkMemoryRequirements memRequirements;
     vkGetBufferMemoryRequirements(m_Context->GetDevice(), m_Buffer, &memRequirements);
+
+    VkMemoryAllocateFlagsInfo allocFlagsInfo{};
+    allocFlagsInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
 
     VkMemoryAllocateInfo allocInfo{};
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memRequirements.size;
     allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, properties);
+
+    // Enable device address if buffer was created with that usage
+    if (m_UsageFlags & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
+        allocFlagsInfo.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+        allocInfo.pNext = &allocFlagsInfo;
+    }
 
     if (allocInfo.memoryTypeIndex == UINT32_MAX) {
         return false;

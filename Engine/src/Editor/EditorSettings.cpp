@@ -357,6 +357,21 @@ bool EditorSettings::Save(const std::string& path) const {
         j["rawMouseInput"] = rawMouseInput;
         j["mouseSmoothing"] = mouseSmoothing;
 
+        // Motor accessibility
+        j["clickThreshold"] = clickThreshold;
+        j["dragThreshold"] = dragThreshold;
+        j["dwellClickEnabled"] = dwellClickEnabled;
+        j["dwellClickDelay"] = dwellClickDelay;
+        j["stickyDragEnabled"] = stickyDragEnabled;
+        j["holdRepeatDelay"] = holdRepeatDelay;
+        j["holdRepeatRate"] = holdRepeatRate;
+
+        // Keyboard navigation
+        j["keyboardNavEnabled"] = keyboardNavEnabled;
+        j["gizmoNudgeAmount"] = gizmoNudgeAmount;
+        j["gizmoNudgeFine"] = gizmoNudgeFine;
+        j["gizmoRotateNudge"] = gizmoRotateNudge;
+
         // Surface Snap
         j["surfaceSnap"] = surfaceSnap;
         j["surfaceAlignNormal"] = surfaceAlignNormal;
@@ -487,6 +502,21 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("inputPreset")) inputPreset = j["inputPreset"].get<u32>();
         if (j.contains("rawMouseInput")) rawMouseInput = j["rawMouseInput"].get<bool>();
         if (j.contains("mouseSmoothing")) mouseSmoothing = j["mouseSmoothing"].get<f32>();
+
+        // Motor accessibility
+        if (j.contains("clickThreshold")) clickThreshold = j["clickThreshold"].get<f32>();
+        if (j.contains("dragThreshold")) dragThreshold = j["dragThreshold"].get<f32>();
+        if (j.contains("dwellClickEnabled")) dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
+        if (j.contains("dwellClickDelay")) dwellClickDelay = j["dwellClickDelay"].get<f32>();
+        if (j.contains("stickyDragEnabled")) stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
+        if (j.contains("holdRepeatDelay")) holdRepeatDelay = j["holdRepeatDelay"].get<f32>();
+        if (j.contains("holdRepeatRate")) holdRepeatRate = j["holdRepeatRate"].get<f32>();
+
+        // Keyboard navigation
+        if (j.contains("keyboardNavEnabled")) keyboardNavEnabled = j["keyboardNavEnabled"].get<bool>();
+        if (j.contains("gizmoNudgeAmount")) gizmoNudgeAmount = j["gizmoNudgeAmount"].get<f32>();
+        if (j.contains("gizmoNudgeFine")) gizmoNudgeFine = j["gizmoNudgeFine"].get<f32>();
+        if (j.contains("gizmoRotateNudge")) gizmoRotateNudge = j["gizmoRotateNudge"].get<f32>();
 
         // Surface Snap
         if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();

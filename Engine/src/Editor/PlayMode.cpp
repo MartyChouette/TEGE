@@ -48,6 +48,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         // Initialize behavior tree system
         m_BehaviorTreeSystem.SetWorld(world);
 
+        // Initialize network system
+        m_NetworkSystem.SetWorld(world);
+
         ENJIN_LOG_INFO(Editor, "Script engine initialized");
     } else {
         ENJIN_LOG_WARN(Editor, "Failed to initialize script engine");
@@ -108,6 +111,12 @@ void PlayMode::Play() {
     // Initialize behavior tree system
     m_BehaviorTreeSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: BehaviorTreeSystem initialized");
+
+    // Enable network system if connected
+    if (m_NetworkSystem.IsConnected()) {
+        m_NetworkSystem.SetEnabled(true);
+        ENJIN_LOG_INFO(Editor, "PlayMode: NetworkSystem enabled");
+    }
 
     // Initialize quest flow components
     {
@@ -187,6 +196,9 @@ void PlayMode::Stop() {
     m_CoroutineScheduler.Clear();
     m_EventBus.Clear();
     m_EntityEventBus.Clear();
+
+    // Disable network system (but don't disconnect — lobby persists)
+    m_NetworkSystem.SetEnabled(false);
 
     // Disable controller, flower, and gameplay systems
     m_ControllerSystem.SetEnabled(false);
@@ -283,6 +295,12 @@ void PlayMode::Update(f32 deltaTime) {
         m_FootstepSystem.Update(m_World, deltaTime);
         m_ObjectPool.Update(m_World, deltaTime);
         m_EntityEventBus.ProcessDeferred();
+
+        // Networking
+        {
+            ENJIN_PROFILE_SCOPE("Networking");
+            m_NetworkSystem.Update(deltaTime);
+        }
 
         // Regenerate resources
         auto resEntities = m_World->GetEntitiesWithComponent<ECS::ResourceComponent>();

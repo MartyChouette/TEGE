@@ -1,0 +1,65 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 7, set = 0, r16f) uniform image2D aoOutput;
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float aoRadius;
+    vec4 cameraPos;
+    float aoPower;
+    float pad1, pad2, pad3;
+} uLight;
+
+layout(location = 0) rayPayloadEXT float aoPayload;
+
+#include "rt_common.glsl"
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+
+    float depth = texture(depthTex, uv).r;
+    if (depth >= 1.0) {
+        imageStore(aoOutput, pixel, vec4(1.0));
+        return;
+    }
+
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = uLight.invViewProj * clipPos;
+    worldPos /= worldPos.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    // Cosine-weighted hemisphere sample
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+    vec2 u = rand_vec2(seed);
+    vec3 sampleDir = cosine_hemisphere_sample(u);
+
+    vec3 T, B;
+    build_onb(worldNormal, T, B);
+    vec3 rayDir = tangent_to_world(sampleDir, worldNormal, T, B);
+
+    vec3 rayOrigin = worldPos.xyz + worldNormal * 0.001;
+
+    aoPayload = 0.0;  // Assume occluded
+
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        0xFF, 0, 0, 0,
+        rayOrigin, 0.001,
+        rayDir, uLight.aoRadius,
+        0
+    );
+
+    // Apply power curve
+    float ao = pow(aoPayload, uLight.aoPower);
+    imageStore(aoOutput, pixel, vec4(ao));
+}

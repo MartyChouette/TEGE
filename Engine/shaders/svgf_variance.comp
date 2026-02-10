@@ -1,0 +1,47 @@
+#version 460
+layout(local_size_x = 8, local_size_y = 8) in;
+
+// Variance estimation pass: compute per-pixel variance from moments
+// and spatially filter for stability (3x3 box filter)
+
+layout(binding = 5, rg16f) uniform image2D momentsImage;
+layout(binding = 6, r16f) uniform image2D varianceImage;
+
+layout(push_constant) uniform PushConstants {
+    int stepSize;
+    float temporalAlpha;
+    float sigmaDepth;
+    float sigmaNormal;
+    float sigmaLuminance;
+    int iteration;
+    int flags;
+    int pad;
+} pc;
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(varianceImage);
+    if (pixel.x >= size.x || pixel.y >= size.y) return;
+
+    // 3x3 spatial filter on moments for stable variance
+    vec2 momentSum = vec2(0.0);
+    float weight = 0.0;
+
+    for (int dy = -1; dy <= 1; ++dy) {
+        for (int dx = -1; dx <= 1; ++dx) {
+            ivec2 p = pixel + ivec2(dx, dy);
+            if (p.x >= 0 && p.x < size.x && p.y >= 0 && p.y < size.y) {
+                vec2 m = imageLoad(momentsImage, p).xy;
+                momentSum += m;
+                weight += 1.0;
+            }
+        }
+    }
+
+    momentSum /= weight;
+
+    // Variance = E[X^2] - E[X]^2
+    float variance = max(0.0, momentSum.y - momentSum.x * momentSum.x);
+
+    imageStore(varianceImage, pixel, vec4(variance, 0.0, 0.0, 0.0));
+}

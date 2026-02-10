@@ -34,6 +34,7 @@ This manual covers everything you need to get started and build games with Enjin
 24. [Pixel Editor](#24-pixel-editor)
 25. [Sprite Sheet Importer](#25-sprite-sheet-importer)
 26. [Asset Browser](#26-asset-browser)
+27. [Ray Tracing](#27-ray-tracing)
 
 ---
 
@@ -2774,3 +2775,76 @@ ENJIN_LOG_FATAL(Category, "Fatal: cannot continue");
 Common categories: `Renderer`, `Editor`, `Physics`, `Audio`, `Build`, `Player`, `Script`.
 
 Log output appears in the editor's Console panel and in the terminal.
+
+---
+
+## 27. Ray Tracing
+
+Enjin includes a full Vulkan ray tracing pipeline for hybrid raster+RT rendering. The system detects RT hardware support at startup and gracefully falls back to raster-only rendering on unsupported GPUs.
+
+> **Note:** The RT pipeline code is complete but currently uses placeholder SPIR-V shader stubs. Once the RT shaders are compiled and embedded, the system will activate automatically.
+
+### Requirements
+
+- **GPU:** NVIDIA RTX 20xx+, AMD RX 6000+, or Intel Arc (Vulkan RT extensions required)
+- **Extensions:** `VK_KHR_ray_tracing_pipeline`, `VK_KHR_acceleration_structure`, `VK_KHR_deferred_host_operations`, `VK_KHR_buffer_device_address`
+
+### Editor Panel
+
+The Ray Tracing settings panel is located in the Rendering section of the editor settings:
+
+- **Supported indicator** — Green "Supported" or red "Not Supported" text based on GPU capabilities
+- **Enable toggle** — Master on/off for the RT pipeline
+- **Mode dropdown** — Choose between Hybrid (raster + RT effects) or Path Trace (progressive full path tracing)
+
+### RT Effects (Hybrid Mode)
+
+Each effect can be independently enabled/disabled with its own configuration:
+
+| Effect | Output Format | Settings |
+|--------|---------------|----------|
+| **RT Shadows** | R16F | Max distance, shadow radius |
+| **RT Reflections** | RGBA16F | Max distance, roughness threshold |
+| **RT Ambient Occlusion** | R16F | Radius, power |
+| **RT Global Illumination** | RGBA16F | Bounce count, intensity |
+
+**Composite strength sliders** control the blend factor for each effect when composited into the final image.
+
+### Path Tracing Mode
+
+Progressive path tracer for reference-quality rendering:
+
+- **Max bounces** — Maximum ray bounce depth (default 8)
+- **Target SPP** — Target samples per pixel for convergence
+- **Progress bar** — Shows current SPP / target SPP
+- **Converged indicator** — Displays when target SPP is reached
+- **Reset button** — Clears accumulation buffer (automatically resets on camera/scene changes)
+
+### SVGF Denoiser
+
+The SVGF (Spatiotemporal Variance-Guided Filtering) denoiser smooths noisy RT output:
+
+1. **Temporal accumulation** — Blends current frame with history using motion vectors (configurable alpha)
+2. **Variance estimation** — Computes per-pixel variance from luminance moments
+3. **A-trous wavelet** — Edge-preserving spatial filter (configurable iteration count, default 5)
+
+Settings: temporal alpha, a-trous iterations, reset history button.
+
+### Scene Render Settings
+
+All RT settings are saved/loaded with scene render settings (JSON). 24 configuration fields are persisted, including:
+- Master enable, RT mode (Hybrid/PathTrace)
+- Per-effect enable flags and config values
+- Path tracer max bounces and target SPP
+- Denoiser type and SVGF parameters
+- Composite strength per effect
+
+### How It Works
+
+1. **BLAS** (Bottom-Level Acceleration Structure) — One per unique mesh, cached by hash. Built lazily when new meshes appear
+2. **TLAS** (Top-Level Acceleration Structure) — Rebuilt each frame from entity transforms. Uses UPDATE mode when only transforms changed
+3. **RT dispatch** — After shadow pass, before main render pass. Each effect dispatches ray generation shaders
+4. **Denoise** — SVGF 3-pass compute shader smooths noisy RT output
+5. **Composite** — Compute shader multiplies shadows, adds reflections, multiplies AO, adds GI into scene HDR
+
+The RT pipeline only runs for 3D scenes (`SceneRenderMode::Scene3D`). 2D and 2.5D scenes skip RT entirely with no performance impact.

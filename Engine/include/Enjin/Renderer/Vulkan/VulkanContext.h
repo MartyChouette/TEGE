@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include "Enjin/Renderer/RayTracing/RTCapabilities.h"
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <atomic>
@@ -41,6 +42,10 @@ public:
     void TrackDeallocation(usize bytes) { m_TotalGPUAllocatedBytes.fetch_sub(bytes, std::memory_order_relaxed); }
     usize GetTotalGPUAllocatedBytes() const { return m_TotalGPUAllocatedBytes.load(std::memory_order_relaxed); }
 
+    // Ray tracing capabilities
+    const RTCapabilities& GetRTCapabilities() const { return m_RTCapabilities; }
+    bool IsRayTracingSupported() const { return m_RTCapabilities.supported; }
+
 protected:
     friend class VulkanRenderer;
     bool CreateInstance();
@@ -63,6 +68,9 @@ protected:
     u32 m_ComputeQueueFamily = UINT32_MAX;
 
     std::atomic<usize> m_TotalGPUAllocatedBytes{0};
+
+    // Ray tracing capabilities (populated during SelectPhysicalDevice)
+    RTCapabilities m_RTCapabilities;
 
 #ifdef ENJIN_BUILD_DEBUG
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;

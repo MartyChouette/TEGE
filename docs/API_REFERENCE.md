@@ -253,6 +253,110 @@ gui.ShowMaterialEditor(true);
 gui.Render();
 ```
 
+## Ray Tracing System
+
+### RTCapabilities
+
+```cpp
+// Query RT hardware support (before logical device creation)
+RTCapabilities caps = RTCapabilities::Query(physicalDevice);
+if (caps.supported) {
+    // All required extensions available
+    // caps.maxRayRecursionDepth, caps.shaderGroupHandleSize, etc.
+}
+
+// Get required device extensions
+const auto& extensions = RTCapabilities::GetRequiredExtensions();
+```
+
+### AccelerationStructureManager
+
+```cpp
+AccelerationStructureManager asManager(context);
+asManager.Initialize();
+
+// Register a mesh (returns BLAS ID, deduplicates by hash)
+u32 blasId = asManager.RegisterMesh(meshHash,
+    vertexAddress, vertexCount, vertexStride,
+    indexAddress, indexCount);
+
+// Build pending BLAS structures
+asManager.FlushPendingBLASBuilds(commandBuffer);
+
+// Per-frame: add instances and rebuild TLAS
+asManager.ResetInstances();
+asManager.AddInstance(blasId, modelMatrix, customIndex, mask, sbtOffset, flags);
+asManager.BuildTLAS(commandBuffer, transformsOnly);
+
+// Access TLAS
+VkAccelerationStructureKHR tlas = asManager.GetTLAS();
+bool valid = asManager.HasValidTLAS();
+```
+
+### RT Effects
+
+```cpp
+// Each effect follows the same pattern:
+RTShadows shadows(context);
+shadows.Initialize(width, height);
+shadows.Dispatch(commandBuffer, config);
+shadows.Shutdown();
+
+// Config structs per effect:
+RTShadowConfig shadowConfig;
+shadowConfig.enabled = true;
+shadowConfig.maxDistance = 100.0f;
+shadowConfig.shadowRadius = 0.01f;
+
+RTReflectionConfig reflectConfig;
+reflectConfig.enabled = true;
+reflectConfig.maxDistance = 50.0f;
+reflectConfig.roughnessThreshold = 0.5f;
+
+RTAOConfig aoConfig;
+aoConfig.enabled = true;
+aoConfig.radius = 2.0f;
+aoConfig.power = 1.0f;
+
+RTGIConfig giConfig;
+giConfig.enabled = true;
+giConfig.bounces = 2;
+giConfig.intensity = 1.0f;
+```
+
+### Path Tracer
+
+```cpp
+PathTracer pathTracer(context);
+pathTracer.Initialize(width, height);
+
+// Progressive rendering (1 SPP per dispatch)
+pathTracer.Dispatch(commandBuffer, config);
+
+// Query convergence
+u32 currentSPP = pathTracer.GetCurrentSPP();
+bool converged = pathTracer.IsConverged();
+
+// Reset accumulation (on camera/scene change)
+pathTracer.ResetAccumulation();
+```
+
+### SVGFDenoiser
+
+```cpp
+SVGFDenoiser denoiser(context);
+denoiser.Initialize(width, height);
+
+// 3-pass denoise
+denoiser.Denoise(commandBuffer, noisyInput, denoisedOutput,
+    depthImage, normalImage, motionVectorImage);
+
+// Configure
+denoiser.SetTemporalAlpha(0.05f);
+denoiser.SetATrousIterations(5);
+denoiser.ResetHistory();  // On scene change
+```
+
 ## Complete API Documentation
 
 See individual header files for detailed API documentation:

@@ -88,7 +88,8 @@ enjin/
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
 │   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
-│   │   │   └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   │   ├── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   │   └── RayTracing/ # RT pipeline, acceleration structures, denoiser
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   └── Scripting/      # AngelScript engine, bindings, coroutines, events
 │   ├── shaders/            # GLSL shaders (triangle.vert/frag, grass.vert/frag)
@@ -119,12 +120,43 @@ enjin/
 **Features**:
 - Blinn-Phong lighting with multi-light support
 - PBR material system with base color, normal, and height maps
-- Shadow mapping with PCF filtering
+- Shadow mapping with PCF filtering (directional CSM, point cubemap, spot 2D array)
 - Skeletal animation with GPU skinning (bone SSBO)
 - Instanced grass rendering
 - Retro rendering effects (per-material)
 - Wireframe rendering mode
 - Text-to-texture rasterization (stb_truetype)
+- Ray tracing pipeline (hybrid raster+RT, path tracing mode)
+- SVGF compute denoiser (temporal, variance, a-trous wavelet)
+
+### Ray Tracing System
+
+**Components**:
+- `RTCapabilities` - Extension detection and hardware properties query
+- `AccelerationStructure` (BLAS/TLAS) - Low-level AS wrappers with vkGetDeviceProcAddr function pointers
+- `AccelerationStructureManager` - BLAS cache by mesh hash, per-frame TLAS rebuild
+- `RTPipeline` - RT pipeline wrapper with shader binding table (SBT) construction
+- `RTShadows` - 1 SPP shadow ray dispatch with configurable distance/radius
+- `RTReflections` - Single-bounce specular reflection dispatch
+- `RTAmbientOcclusion` - Short-range AO hemisphere sampling
+- `RTGlobalIllumination` - Multi-bounce diffuse GI
+- `PathTracer` - Progressive path tracer with accumulation buffer and SPP tracking
+- `SVGFDenoiser` - 3-pass compute denoiser (temporal accumulation, variance estimation, a-trous wavelet)
+- `RTCompositor` - Fullscreen compute shader compositing RT layers into scene HDR
+
+**Features**:
+- Hybrid raster+RT pipeline (raster for primary visibility, RT for lighting effects)
+- BLAS per unique mesh with hash-based deduplication
+- TLAS rebuilt per frame from entity transforms (UPDATE mode for transform-only changes)
+- Per-effect enable/disable with independent configuration
+- Progressive path tracing mode with automatic reset on camera/scene changes
+- SVGF denoising with configurable temporal alpha and a-trous iterations
+- RT descriptor set (14 bindings, separate from main pipeline set 0)
+- Graceful fallback: placeholder SPIR-V stubs detected and skipped, raster path unaffected
+- Only active for Scene3D render mode (2D/2.5D scenes skip RT entirely)
+- Editor panel with per-effect toggles, config sliders, BLAS/instance stats
+
+**Files**: `Engine/include/Enjin/Renderer/RayTracing/`, `Engine/src/Renderer/RayTracing/`, `Engine/shaders/rt_*.glsl`, `Engine/shaders/svgf_*.comp`, `Engine/shaders/rt_composite.comp`
 
 ### ECS System
 

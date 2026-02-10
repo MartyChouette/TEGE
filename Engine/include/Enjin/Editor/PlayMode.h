@@ -11,6 +11,7 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
+#include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -90,6 +91,8 @@ public:
     ECS::VisualScriptSystem* GetVisualScriptSystem() { return &m_VisualScriptSystem; }
     ECS::BehaviorTreeSystem* GetBehaviorTreeSystem() { return &m_BehaviorTreeSystem; }
 
+    Networking::NetworkSystem* GetNetworkSystem() { return &m_NetworkSystem; }
+
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
@@ -143,6 +146,9 @@ private:
 
     // Behavior tree system
     ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
+
+    // Network system
+    Networking::NetworkSystem m_NetworkSystem;
 
     // Render system pointers (owned externally)
     ECS::RenderSystem* m_RenderSystem = nullptr;

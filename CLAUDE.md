@@ -70,7 +70,8 @@ enjin/
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
 │   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
-│   │   │   └── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   │   ├── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
+│   │   │   └── RayTracing/ # RT pipeline, acceleration structures, denoiser
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
 │   │   ├── Scripting/      # ScriptEngine, ScriptBindings, TegeBehavior
 │   │   └── VisualScript/   # NodeDefinition, NodeRegistry, VisualScriptExecutor
@@ -156,6 +157,40 @@ Binding 5: Height map for parallax mapping (fragment shader)
 Binding 6: Normal map (fragment shader)
 Binding 7: Bone matrix SSBO for skeletal animation (vertex shader)
 ```
+
+### Ray Tracing Pipeline
+
+Full Vulkan RT pipeline with hybrid raster+RT rendering. Code is complete; `RTShaderData.h` has placeholder SPIR-V stubs — once compiled, the system activates automatically.
+
+- **`RTCapabilities`** - Extension detection (`Query(VkPhysicalDevice)`) and properties. VulkanContext adds +1000 score for RT-capable GPUs, enables RT extensions via VkPhysicalDeviceFeatures2 pNext chain
+- **`AccelerationStructureManager`** - BLAS cache by mesh hash (`RegisterMesh()`), per-frame TLAS rebuild (`BuildTLAS()`), instance management. Uses `vkGetDeviceProcAddr` for all RT functions
+- **`RTPipeline`** - RT pipeline + shader binding table (SBT) construction
+- **RT Effects** - `RTShadows` (R16F), `RTReflections` (RGBA16F), `RTAmbientOcclusion` (R16F), `RTGlobalIllumination` (RGBA16F), `PathTracer` (progressive accumulation). Each has Initialize/Dispatch/Shutdown + config struct
+- **`SVGFDenoiser`** - 3-pass compute: temporal accumulation (alpha=0.05), variance estimation (3x3 box), a-trous wavelet (5 iterations, ping-pong buffers)
+- **`RTCompositor`** - Fullscreen compute shader composites RT layers into scene HDR
+- **Integration** - `RenderSystem::InitializeRayTracing()` creates RT descriptor set (14 bindings), all subsystems. Runs after shadow pass, before main render pass. Only for Scene3D mode. Stub detection skips pipeline creation if SPIR-V is placeholder
+- **Editor** - "Ray Tracing" TreeNode in Rendering settings: supported indicator, enable toggle, mode dropdown (Hybrid/Path Trace), per-effect config sliders, path tracer SPP progress, SVGF settings, BLAS/instance stats
+- **`SceneRenderSettings`** - 24 RT config fields with full JSON serialize/deserialize and CaptureFromRuntime/ApplyToRuntime
+
+**RT Descriptor Set (Set 1)**:
+```
+Binding 0:  ACCELERATION_STRUCTURE (TLAS)
+Binding 1:  STORAGE_IMAGE (Scene HDR)
+Binding 2:  COMBINED_IMAGE_SAMPLER (Depth)
+Binding 3:  COMBINED_IMAGE_SAMPLER (World normals)
+Binding 4:  COMBINED_IMAGE_SAMPLER (Motion vectors)
+Binding 5:  STORAGE_IMAGE (RT Shadow output)
+Binding 6:  STORAGE_IMAGE (RT Reflection output)
+Binding 7:  STORAGE_IMAGE (RT AO output)
+Binding 8:  STORAGE_IMAGE (RT GI output)
+Binding 9:  STORAGE_BUFFER (Material data)
+Binding 10: STORAGE_BUFFER (Vertex data)
+Binding 11: STORAGE_BUFFER (Index data)
+Binding 12: STORAGE_BUFFER (Per-instance transforms)
+Binding 13: UNIFORM_BUFFER (Light data)
+```
+
+**20 GLSL Shaders** (`Engine/shaders/`): `rt_common.glsl`, `rt_shadow/reflect/ao/gi/pathtrace .rgen/.rmiss/.rchit`, `svgf_temporal/variance/atrous.comp`, `rt_composite.comp`
 
 ### Sprite Texture Atlas
 
@@ -323,7 +358,7 @@ if (result.success) {
 
 The engine has 100+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.
 
-- **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings
+- **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings, ray tracing pipeline (RT shadows, reflections, AO, GI, path tracing, SVGF denoiser — awaiting compiled SPIR-V shaders)
 - **ECS & Editor:** 60+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 15 startup templates, entity visibility toggle
 - **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
 - **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
@@ -331,11 +366,12 @@ The engine has 100+ completed features across these categories. See `docs/USER_M
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
 - **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
 - **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro)
+- **Networking:** LAN multiplayer (host-authoritative UDP, client-side prediction, 20Hz state sync, interpolation buffer, entity ownership, RPC system, lobby, reliable delivery, editor Network Panel)
 - **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
 - **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview
 - **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P)
 - **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system, shader graph (skeleton), audio event graph (skeleton), particle graph (skeleton)
-- **Accessibility:** 4 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion
+- **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer
 
 ## Known Performance Issues
 
@@ -352,7 +388,7 @@ See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, a
 **Key categories of planned work:**
 - **Editor Tools:** ~~Accent color theming~~ (done), project hub, template rebuild, ~~extended model formats (PLY/VOX)~~ (done), drag-and-drop improvements, ~~micro-interactions~~ (done — spring easing, hover transitions)
 - **Runtime Systems:** ~~Improved physics (2D, CCD)~~ (done — PhysicsWorld2D), networking, ~~destructible environments~~ (done — DestructibleSystem), fluid simulation, ~~SVG import~~ (done), ~~dialogue assets + localization~~ (done — .enjdlg files, LocalizationManager)
-- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done)
+- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done), ~~ray tracing pipeline~~ (done — RT shadows/reflections/AO/GI, path tracing, SVGF denoiser, awaiting compiled SPIR-V)
 - **Procedural Generation:** ~~All algorithms~~ (done — 9 algorithms + editor panel), ~~custom flora assets~~ (done)
 - **Scripting:** ~~Plugin DLL repositories~~ (done), ~~documentation generator~~ (done), ~~ScriptableObject/DataAsset system~~ (done)
 - **Graph Systems:** ~~Shader Graph, Audio Event Graph, Particle Graph~~ (done — skeleton node types + editor shells)

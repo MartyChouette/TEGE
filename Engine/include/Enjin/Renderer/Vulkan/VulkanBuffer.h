@@ -20,7 +20,11 @@ enum class BufferUsage {
     Storage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
     TransferSrc = VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
     TransferDst = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
-    IndirectDraw = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT
+    IndirectDraw = VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+    AccelerationStructureInput = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR,
+    AccelerationStructureStorage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR,
+    ShaderBindingTable = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR,
+    ShaderDeviceAddress = VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
 };
 
 // Vulkan buffer wrapper
@@ -40,6 +44,9 @@ public:
     VkBuffer GetBuffer() const { return m_Buffer; }
     VkDeviceMemory GetMemory() const { return m_Memory; }
     usize GetSize() const { return m_Size; }
+
+    // Get device address (requires buffer created with ShaderDeviceAddress usage)
+    VkDeviceAddress GetDeviceAddress() const;
 
 private:
     u32 FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties);

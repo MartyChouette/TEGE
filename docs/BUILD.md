@@ -252,11 +252,57 @@ glslangValidator -V triangle.vert -o triangle.vert.spv
 glslangValidator -V triangle.frag -o triangle.frag.spv
 ```
 
-After compiling to SPIR-V, the bytecodes are embedded into `ShaderData.h` for distribution. The full workflow is:
+### Ray tracing shader compilation
 
-1. Edit `.vert` or `.frag` files in `Engine/shaders/`
+RT shaders require Vulkan 1.2+ target environment and the `GL_EXT_ray_tracing` extension:
+
+```bash
+cd Engine/shaders
+
+# Ray generation shaders (.rgen)
+glslangValidator --target-env vulkan1.2 -V rt_shadow.rgen -o rt_shadow.rgen.spv
+glslangValidator --target-env vulkan1.2 -V rt_reflect.rgen -o rt_reflect.rgen.spv
+glslangValidator --target-env vulkan1.2 -V rt_ao.rgen -o rt_ao.rgen.spv
+glslangValidator --target-env vulkan1.2 -V rt_gi.rgen -o rt_gi.rgen.spv
+glslangValidator --target-env vulkan1.2 -V rt_pathtrace.rgen -o rt_pathtrace.rgen.spv
+
+# Miss shaders (.rmiss)
+glslangValidator --target-env vulkan1.2 -V rt_shadow.rmiss -o rt_shadow.rmiss.spv
+glslangValidator --target-env vulkan1.2 -V rt_reflect.rmiss -o rt_reflect.rmiss.spv
+glslangValidator --target-env vulkan1.2 -V rt_ao.rmiss -o rt_ao.rmiss.spv
+glslangValidator --target-env vulkan1.2 -V rt_gi.rmiss -o rt_gi.rmiss.spv
+glslangValidator --target-env vulkan1.2 -V rt_pathtrace.rmiss -o rt_pathtrace.rmiss.spv
+
+# Closest hit shaders (.rchit)
+glslangValidator --target-env vulkan1.2 -V rt_shadow.rchit -o rt_shadow.rchit.spv
+glslangValidator --target-env vulkan1.2 -V rt_reflect.rchit -o rt_reflect.rchit.spv
+glslangValidator --target-env vulkan1.2 -V rt_ao.rchit -o rt_ao.rchit.spv
+glslangValidator --target-env vulkan1.2 -V rt_gi.rchit -o rt_gi.rchit.spv
+glslangValidator --target-env vulkan1.2 -V rt_pathtrace.rchit -o rt_pathtrace.rchit.spv
+
+# SVGF denoiser compute shaders
+glslangValidator --target-env vulkan1.2 -V svgf_temporal.comp -o svgf_temporal.comp.spv
+glslangValidator --target-env vulkan1.2 -V svgf_variance.comp -o svgf_variance.comp.spv
+glslangValidator --target-env vulkan1.2 -V svgf_atrous.comp -o svgf_atrous.comp.spv
+
+# RT compositor compute shader
+glslangValidator --target-env vulkan1.2 -V rt_composite.comp -o rt_composite.comp.spv
+```
+
+RT SPIR-V bytecodes are embedded into `RTShaderData.h`. The system currently has placeholder stubs — replace them with compiled bytecode to activate the RT pipeline.
+
+### Embedding compiled SPIR-V
+
+After compiling to SPIR-V, the bytecodes are embedded into header files for distribution:
+
+- Raster/compute shaders → `ShaderData.h`
+- Ray tracing shaders → `RTShaderData.h`
+
+The full workflow is:
+
+1. Edit shader files in `Engine/shaders/`
 2. Compile to `.spv` using glslc or glslangValidator
-3. Convert to C++ byte arrays and update `ShaderData.h`
+3. Convert to C++ byte arrays and update `ShaderData.h` / `RTShaderData.h`
 4. Rebuild the engine
 
 ## 7. Cross-Compilation

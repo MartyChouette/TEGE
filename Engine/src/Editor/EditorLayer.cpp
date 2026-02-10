@@ -39,6 +39,14 @@
 #include "Enjin/Renderer/MeshSimplifier.h"
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Renderer/RayTracing/RTShadows.h"
+#include "Enjin/Renderer/RayTracing/RTReflections.h"
+#include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
+#include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -55,6 +63,8 @@
 #include "Enjin/Editor/SpriteContourTracer.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/DialogueImportExport.h"
+#include "Enjin/Assets/SWFLoader.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -554,6 +564,18 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NotesComponent>(e); },
             "notes"},
 
+        // -- Networking --
+        {"Network Identity", "Networking", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NetworkIdentityComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NetworkIdentityComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NetworkIdentityComponent>(e); },
+            "networkIdentity"},
+        {"Network Transform", "Networking", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::NetworkTransformComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::NetworkTransformComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::NetworkTransformComponent>(e); },
+            "networkTransform"},
+
         // -- Puzzle --
         {"Lock", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LockComponent>(e); },
@@ -983,6 +1005,37 @@ void EditorLayer::Update(f32 deltaTime) {
         Debug::Profiler::Instance().SetTriangleCount(m_RenderSystem->GetTriangleCount());
     }
 
+    // Refresh scene locks periodically (every 5 seconds)
+    m_LockRefreshTimer += deltaTime;
+    if (m_LockRefreshTimer >= 5.0f) {
+        m_LockRefreshTimer = 0.0f;
+        m_SceneLockManager.Refresh();
+    }
+
+    // Update collaborative editing system
+    m_CollabSystem.Update(deltaTime);
+
+    // Dwell-click: auto-click after hovering in place
+    if (m_EditorSettings.dwellClickEnabled && !m_PlayMode.IsPlaying()) {
+        ImVec2 mousePos = ImGui::GetMousePos();
+        f32 dist = std::sqrt(
+            (mousePos.x - m_DwellPos.x) * (mousePos.x - m_DwellPos.x) +
+            (mousePos.y - m_DwellPos.y) * (mousePos.y - m_DwellPos.y));
+        if (dist > m_EditorSettings.clickThreshold) {
+            m_DwellPos = mousePos;
+            m_DwellTimer = 0.0f;
+            m_DwellActive = false;
+        } else {
+            m_DwellTimer += deltaTime;
+            if (m_DwellTimer >= m_EditorSettings.dwellClickDelay && !m_DwellActive) {
+                m_DwellActive = true;
+                // Simulate left click via ImGui IO
+                ImGui::GetIO().AddMouseButtonEvent(0, true);
+                ImGui::GetIO().AddMouseButtonEvent(0, false);
+            }
+        }
+    }
+
     // Update scene transitions (fade in/out between scenes)
     m_SceneManager.UpdateTransition(deltaTime);
 
@@ -1072,7 +1125,36 @@ void EditorLayer::Update(f32 deltaTime) {
         if (Input::IsKeyPressed(KeyCode::F) && !m_SelectedEntities.empty()) {
             FocusOnSelection();
         }
+
+        // Keyboard gizmo nudge (arrow keys when entity selected)
+        if (m_EditorSettings.keyboardNavEnabled) {
+            HandleKeyboardGizmoNudge();
+        }
+
+        // Panel focus shortcuts (Ctrl+1..5)
+        if (m_EditorSettings.keyboardNavEnabled && Input::IsKeyDown(KeyCode::LeftControl)) {
+            if (Input::IsKeyPressed(KeyCode::Num1)) m_FocusedPanel = FocusedPanel::Hierarchy;
+            else if (Input::IsKeyPressed(KeyCode::Num2)) m_FocusedPanel = FocusedPanel::Inspector;
+            else if (Input::IsKeyPressed(KeyCode::Num3)) m_FocusedPanel = FocusedPanel::Viewport;
+            else if (Input::IsKeyPressed(KeyCode::Num4)) m_FocusedPanel = FocusedPanel::Console;
+            else if (Input::IsKeyPressed(KeyCode::Num5)) m_FocusedPanel = FocusedPanel::AssetBrowser;
+            m_ShowFocusRing = (m_FocusedPanel != FocusedPanel::None);
+        }
+
+        // Command palette (Ctrl+P)
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::P)) {
+            m_CommandPalette.Toggle();
+        }
     }
+
+    // Register palette commands on first use
+    if (!m_CommandsRegistered) {
+        RegisterPaletteCommands();
+        m_CommandsRegistered = true;
+    }
+
+    // Update alternative input devices
+    m_AlternativeInput.Update(deltaTime);
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
@@ -2050,6 +2132,21 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(550, 600), layoutCond);
         DrawGitIntegrationPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::NetworkPanel)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 200, menuBarH + 30), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450, 500), layoutCond);
+        DrawNetworkPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::Collaboration)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 200, menuBarH + 30), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450, 550), layoutCond);
+        DrawCollaborationPanel();
+    }
+    if (HasPanel(m_VisiblePanels, EditorPanel::FlashTimeline)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 400, io.DisplaySize.y * 0.55f), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800, 350), layoutCond);
+        DrawFlashTimelinePanel();
+    }
 
     // Dialogue tree editor (owns its own window) - legacy, now use DrawDialoguePanel()
     // m_DialogueTreeEditor.Render();
@@ -2263,6 +2360,27 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             static_cast<u32>(io.DisplaySize.y));
     }
 
+    // Render audio visual indicators (accessibility)
+    m_AudioIndicators.Update(m_LastDeltaTime);
+    m_AudioIndicators.RenderOverlay(
+        static_cast<u32>(io.DisplaySize.x),
+        static_cast<u32>(io.DisplaySize.y));
+
+    // Render accessibility announcer status bar
+    m_Announcer.Update(m_LastDeltaTime);
+    m_Announcer.RenderStatusBar();
+
+    // Render command palette
+    if (m_CommandPalette.IsOpen()) {
+        if (m_CommandPalette.Render()) {
+            m_Announcer.Announce("Executed: " + m_CommandPalette.GetLastExecutedCommand(),
+                                Accessibility::AnnouncePriority::Normal);
+        }
+    }
+
+    // Render alternative input overlays (switch scanning highlight, gaze indicator)
+    m_AlternativeInput.RenderOverlay();
+
     // Render HUD widgets during play mode (editor game view)
     if (m_PlayMode.IsPlaying()) {
         m_PlayMode.GetHUDSystem()->Update(m_World, m_Camera,
@@ -2327,6 +2445,14 @@ void EditorLayer::SelectEntity(ECS::Entity entity, bool addToSelection) {
     m_SelectedEntities.insert(entity);
     m_PrimarySelected = entity;
     if (m_OnEntitySelected) m_OnEntitySelected(entity);
+
+    // Accessibility announcement
+    if (m_Announcer.enabled && m_World) {
+        std::string name = "Entity";
+        auto* nc = m_World->GetComponent<ECS::NameComponent>(entity);
+        if (nc) name = nc->name;
+        m_Announcer.Announce("Selected: " + name, Accessibility::AnnouncePriority::Low);
+    }
 }
 
 void EditorLayer::DeselectEntity(ECS::Entity entity) {
@@ -2696,6 +2822,18 @@ void EditorLayer::DrawMenuBar() {
                 bool gitIntegration = IsPanelVisible(EditorPanel::GitIntegration);
                 if (ImGui::MenuItem("Git Integration", nullptr, &gitIntegration)) {
                     SetPanelVisibility(EditorPanel::GitIntegration, gitIntegration);
+                }
+                bool networkPanel = IsPanelVisible(EditorPanel::NetworkPanel);
+                if (ImGui::MenuItem("Network Panel", nullptr, &networkPanel)) {
+                    SetPanelVisibility(EditorPanel::NetworkPanel, networkPanel);
+                }
+                bool collabPanel = IsPanelVisible(EditorPanel::Collaboration);
+                if (ImGui::MenuItem("Collaboration", nullptr, &collabPanel)) {
+                    SetPanelVisibility(EditorPanel::Collaboration, collabPanel);
+                }
+                bool flashPanel = IsPanelVisible(EditorPanel::FlashTimeline);
+                if (ImGui::MenuItem("Flash Timeline", nullptr, &flashPanel)) {
+                    SetPanelVisibility(EditorPanel::FlashTimeline, flashPanel);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
@@ -3306,6 +3444,15 @@ void EditorLayer::DrawHierarchyPanel() {
     }
     ImGui::Begin("Hierarchy", nullptr, flags);
 
+    // Focus ring for keyboard navigation
+    if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Hierarchy) {
+        ImVec2 wMin = ImGui::GetWindowPos();
+        ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, IM_COL32(100, 200, 255, 200), 0.0f, 0, 2.0f);
+        // Auto-focus this window when keyboard-selected
+        ImGui::SetWindowFocus();
+    }
+
     if (m_World) {
         // Only show root entities (no parent) at top level; children are drawn recursively
         const auto& entities = m_World->GetAllEntities();
@@ -3467,6 +3614,7 @@ static const char* GetEntityIcon(ECS::World* world, ECS::Entity entity) {
     if (world->HasComponent<ECS::GrassVolumeComponent>(entity)) return "[G] ";
     if (world->HasComponent<ECS::AIControllerComponent>(entity)) return "[AI]";
     if (world->HasComponent<ECS::BehaviorTreeComponent>(entity)) return "[BT]";
+    if (world->HasComponent<ECS::NetworkIdentityComponent>(entity)) return "[N] ";
     return "";
 }
 
@@ -3486,8 +3634,20 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     }
 
     const char* icon = GetEntityIcon(m_World, entity);
-    std::string label = std::string(icon) + name;
+    bool entityLockedByOther = m_SceneLockManager.IsEntityLockedByOther(entity);
+    bool entityLockedByMe = m_SceneLockManager.IsEntityLocked(entity) && !entityLockedByOther;
+    std::string label = std::string(icon);
+    if (entityLockedByOther) label += "[X] ";
+    else if (entityLockedByMe) label += "[=] ";
+    label += name;
     bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
+
+    // Dim locked-by-other entities
+    if (entityLockedByOther) {
+        ImVec2 rMin = ImGui::GetItemRectMin();
+        ImVec2 rMax = ImGui::GetItemRectMax();
+        ImGui::GetWindowDrawList()->AddRectFilled(rMin, rMax, IM_COL32(255, 80, 80, 30));
+    }
 
     // Capture tree node interaction state before the eye icon overwrites "last item"
     bool nodeClicked = ImGui::IsItemClicked();
@@ -3547,6 +3707,31 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
                 ECS::Entity oldParent = ECS::GetParent(m_World, entity);
                 auto cmd = std::make_unique<ReparentEntityCommand>(m_World, entity, oldParent, ECS::INVALID_ENTITY);
                 m_UndoRedo.Execute(std::move(cmd));
+            }
+        }
+        ImGui::Separator();
+        // Entity locking
+        if (m_SceneLockManager.IsEntityLocked(entity)) {
+            if (!m_SceneLockManager.IsEntityLockedByOther(entity)) {
+                if (ImGui::MenuItem("Unlock Entity")) {
+                    m_SceneLockManager.UnlockEntity(entity);
+                }
+            } else {
+                const auto* lockInfo = m_SceneLockManager.GetEntityLockInfo(entity);
+                std::string lockLabel = "Locked by " + (lockInfo ? lockInfo->user : "other");
+                ImGui::MenuItem(lockLabel.c_str(), nullptr, false, false);
+                // Break lock option for stale locks (>1 hour old)
+                if (m_SceneLockManager.IsEntityLockStale(entity)) {
+                    if (ImGui::MenuItem("Break Stale Lock")) {
+                        m_SceneLockManager.BreakEntityLock(entity);
+                        m_Announcer.Announce("Broke stale entity lock", Accessibility::AnnouncePriority::High);
+                    }
+                    ImGui::SetItemTooltip("This lock is over 1 hour old and may be abandoned");
+                }
+            }
+        } else {
+            if (ImGui::MenuItem("Lock Entity")) {
+                m_SceneLockManager.LockEntity(entity);
             }
         }
         ImGui::Separator();
@@ -3648,6 +3833,27 @@ void EditorLayer::DrawInspectorPanel() {
         flags |= ImGuiWindowFlags_NoInputs;
     }
     ImGui::Begin("Inspector", nullptr, flags);
+
+    // Focus ring for keyboard navigation
+    if (m_ShowFocusRing && m_FocusedPanel == FocusedPanel::Inspector) {
+        ImVec2 wMin = ImGui::GetWindowPos();
+        ImVec2 wMax = ImVec2(wMin.x + ImGui::GetWindowWidth(), wMin.y + ImGui::GetWindowHeight());
+        ImGui::GetWindowDrawList()->AddRect(wMin, wMax, IM_COL32(100, 200, 255, 200), 0.0f, 0, 2.0f);
+        ImGui::SetWindowFocus();
+    }
+
+    // Show lock warning if entity is locked by another user
+    if (m_PrimarySelected != ECS::INVALID_ENTITY && m_SceneLockManager.IsEntityLockedByOther(m_PrimarySelected)) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+        const auto* lockInfo = m_SceneLockManager.GetEntityLockInfo(m_PrimarySelected);
+        if (lockInfo) {
+            ImGui::Text("[X] Locked by %s@%s", lockInfo->user.c_str(), lockInfo->machine.c_str());
+        } else {
+            ImGui::Text("[X] Locked by another user");
+        }
+        ImGui::PopStyleColor();
+        ImGui::Separator();
+    }
 
     if (m_SelectedEntities.size() > 1 && m_World) {
         // Multi-select inspector
@@ -4054,6 +4260,14 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::TweenComponent>(m_PrimarySelected)) {
             DrawTweenComponent(m_PrimarySelected);
+        }
+
+        // Networking components
+        if (m_World->HasComponent<ECS::NetworkIdentityComponent>(m_PrimarySelected)) {
+            DrawNetworkIdentityComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::NetworkTransformComponent>(m_PrimarySelected)) {
+            DrawNetworkTransformComponent(m_PrimarySelected);
         }
 
         // Joint & Ragdoll components
@@ -6115,6 +6329,34 @@ void EditorLayer::DrawAssetBrowserPanel() {
                 }
 
                 if (!drewThumb) {
+                    // Try generated thumbnail for 3D models and other assets
+                    VkDescriptorSet thumbId = GetAssetThumbnail(entry.fullPath);
+                    if (thumbId != VK_NULL_HANDLE) {
+                        ImVec2 cursor = ImGui::GetCursorScreenPos();
+                        if (selected) {
+                            ImDrawList* dl = ImGui::GetWindowDrawList();
+                            dl->AddRectFilled(
+                                ImVec2(cursor.x - 2, cursor.y - 2),
+                                ImVec2(cursor.x + thumbSize + 2, cursor.y + thumbSize + 2),
+                                IM_COL32(100, 140, 100, 255), 4.0f);
+                        }
+                        ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(thumbId)),
+                                     ImVec2(thumbSize, thumbSize));
+                        drewThumb = true;
+
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::BeginTooltip();
+                            f32 previewSize = 256.0f;
+                            ImGui::Image(static_cast<ImTextureID>(reinterpret_cast<uintptr_t>(thumbId)),
+                                         ImVec2(previewSize, previewSize));
+                            ImGui::Text("%s", entry.name.c_str());
+                            ImGui::TextDisabled("%s", FormatFileSize(entry.fileSize).c_str());
+                            ImGui::EndTooltip();
+                        }
+                    }
+                }
+
+                if (!drewThumb) {
                     // Non-image: colored rectangle with type label
                     ImVec2 cursor = ImGui::GetCursorScreenPos();
                     ImDrawList* dl = ImGui::GetWindowDrawList();
@@ -6982,6 +7224,148 @@ void EditorLayer::DrawSettingsPanel() {
             ImGui::TreePop();
         }
 
+        // -- Audio Visual Indicators --
+        if (ImGui::TreeNode("Audio Indicators")) {
+            auto& aiConfig = m_AudioIndicators.GetConfig();
+            if (ImGui::Checkbox("Enable Visual Audio Indicators", &aiConfig.enabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Show colored dots on screen when audio events occur\n(errors, notifications, playing audio sources)");
+            }
+
+            if (aiConfig.enabled) {
+                if (ImGui::SliderFloat("Indicator Size", &aiConfig.indicatorSize, 6.0f, 24.0f, "%.0f px")) {
+                    settingsChanged = true;
+                }
+                if (ImGui::Checkbox("Show Labels", &aiConfig.showLabels)) {
+                    settingsChanged = true;
+                }
+
+                ImGui::Separator();
+                if (ImGui::Button("Test Indicator")) {
+                    m_AudioIndicators.ShowIndicator("Test Sound", Math::Vector3(0.4f, 0.8f, 0.4f), 2.0f);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Test Error")) {
+                    m_AudioIndicators.ShowIndicator("Error", Math::Vector3(0.9f, 0.3f, 0.3f), 2.0f);
+                }
+            }
+
+            ImGui::TreePop();
+        }
+
+        // -- Screen Reader / Announcer --
+        if (ImGui::TreeNode("Screen Reader")) {
+            if (ImGui::Checkbox("Status Announcements", &m_Announcer.enabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Show a status bar at the bottom of the screen\n"
+                    "announcing actions (entity selected, deleted, mode changes).\n"
+                    "Groundwork for future OS screen reader API integration.");
+            }
+
+            if (ImGui::Checkbox("Log to Console", &m_Announcer.logToConsole)) {
+                settingsChanged = true;
+            }
+
+            if (ImGui::SliderFloat("Display Duration", &m_Announcer.displayDuration, 1.0f, 10.0f, "%.1f s")) {
+                settingsChanged = true;
+            }
+
+            if (ImGui::Button("Test Announcement")) {
+                m_Announcer.Announce("This is a test accessibility announcement", Accessibility::AnnouncePriority::Normal);
+            }
+
+            ImGui::TreePop();
+        }
+
+        // -- Alternative Input Devices --
+        if (ImGui::TreeNode("Alternative Input")) {
+            ImGui::TextWrapped("Support for switch access, eye tracking, and other alternative input devices.");
+            ImGui::Separator();
+
+            // Switch Access
+            auto switchCfg = m_AlternativeInput.GetSwitchConfig();
+            bool switchChanged = false;
+            if (ImGui::Checkbox("Switch Access", &switchCfg.enabled)) switchChanged = true;
+            if (switchCfg.enabled) {
+                if (ImGui::Checkbox("Scanning Mode", &switchCfg.scanningMode)) switchChanged = true;
+                if (ImGui::SliderFloat("Scan Speed", &switchCfg.scanSpeed, 0.5f, 5.0f, "%.1f s")) switchChanged = true;
+                if (ImGui::SliderInt("Switches", &switchCfg.switchCount, 1, 4)) switchChanged = true;
+                if (ImGui::Checkbox("Auto Reverse", &switchCfg.autoScanReverse)) switchChanged = true;
+            }
+            if (switchChanged) {
+                m_AlternativeInput.SetSwitchConfig(switchCfg);
+                settingsChanged = true;
+            }
+            ImGui::Separator();
+
+            // Eye Tracking
+            auto eyeCfg = m_AlternativeInput.GetEyeTrackingConfig();
+            bool eyeChanged = false;
+            if (ImGui::Checkbox("Eye Tracking", &eyeCfg.enabled)) eyeChanged = true;
+            if (eyeCfg.enabled) {
+                if (ImGui::SliderFloat("Dwell Time", &eyeCfg.dwellTime, 0.3f, 3.0f, "%.1f s")) eyeChanged = true;
+                if (ImGui::SliderFloat("Smoothing", &eyeCfg.smoothingFactor, 0.0f, 1.0f)) eyeChanged = true;
+                if (ImGui::SliderFloat("Dead Zone", &eyeCfg.deadZone, 0.0f, 20.0f, "%.0f px")) eyeChanged = true;
+                if (ImGui::Checkbox("Show Gaze Indicator", &eyeCfg.showGazeIndicator)) eyeChanged = true;
+            }
+            if (eyeChanged) {
+                m_AlternativeInput.SetEyeTrackingConfig(eyeCfg);
+                settingsChanged = true;
+            }
+            ImGui::Separator();
+
+            // Head Tracking
+            auto headCfg = m_AlternativeInput.GetHeadTrackingConfig();
+            bool headChanged = false;
+            if (ImGui::Checkbox("Head Tracking", &headCfg.enabled)) headChanged = true;
+            if (headCfg.enabled) {
+                if (ImGui::SliderFloat("Sensitivity##Head", &headCfg.sensitivity, 0.1f, 5.0f)) headChanged = true;
+                if (ImGui::SliderFloat("Smoothing##Head", &headCfg.smoothing, 0.0f, 1.0f)) headChanged = true;
+                if (ImGui::Checkbox("Invert X", &headCfg.invertX)) headChanged = true;
+                ImGui::SameLine();
+                if (ImGui::Checkbox("Invert Y", &headCfg.invertY)) headChanged = true;
+            }
+            if (headChanged) {
+                m_AlternativeInput.SetHeadTrackingConfig(headCfg);
+                settingsChanged = true;
+            }
+            ImGui::Separator();
+
+            // Sip and Puff
+            auto sipCfg = m_AlternativeInput.GetSipAndPuffConfig();
+            bool sipChanged = false;
+            if (ImGui::Checkbox("Sip and Puff", &sipCfg.enabled)) sipChanged = true;
+            if (sipCfg.enabled) {
+                if (ImGui::SliderFloat("Sip Threshold", &sipCfg.sipThreshold, 0.1f, 0.9f)) sipChanged = true;
+                if (ImGui::SliderFloat("Puff Threshold", &sipCfg.puffThreshold, 0.1f, 0.9f)) sipChanged = true;
+            }
+            if (sipChanged) {
+                m_AlternativeInput.SetSipAndPuffConfig(sipCfg);
+                settingsChanged = true;
+            }
+
+            ImGui::TextDisabled("Alternative input devices require external driver software.\n"
+                                "These settings configure the engine's response to input events.");
+            ImGui::TreePop();
+        }
+
+        // -- Command Palette --
+        if (ImGui::TreeNode("Command Palette")) {
+            ImGui::Text("Press Ctrl+P to open the command palette.");
+            ImGui::TextDisabled("Provides keyboard-driven access to all editor commands\n"
+                                "with fuzzy search. Useful for screen reader workflows.");
+            if (ImGui::Button("Open Command Palette")) {
+                m_CommandPalette.Open();
+            }
+            ImGui::Text("Registered commands: %zu", m_CommandPalette.GetFilteredCount());
+            ImGui::TreePop();
+        }
+
         // -- Play Mode --
         if (ImGui::TreeNode("Play Mode")) {
             if (ImGui::Checkbox("Auto Focus Mode", &m_EditorSettings.autoFocusMode)) {
@@ -7044,6 +7428,81 @@ void EditorLayer::DrawSettingsPanel() {
             ImGui::TreePop();
         }
 
+        // -- Motor Accessibility --
+        if (ImGui::TreeNode("Motor")) {
+            if (ImGui::SliderFloat("Click Threshold", &m_EditorSettings.clickThreshold, 1.0f, 20.0f, "%.0f px")) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Pixels of mouse movement before a click becomes a drag");
+            }
+
+            if (ImGui::SliderFloat("Drag Threshold", &m_EditorSettings.dragThreshold, 1.0f, 30.0f, "%.0f px")) {
+                settingsChanged = true;
+            }
+
+            ImGui::Separator();
+            if (ImGui::Checkbox("Dwell Click", &m_EditorSettings.dwellClickEnabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Automatically click after hovering in one place");
+            }
+            if (m_EditorSettings.dwellClickEnabled) {
+                if (ImGui::SliderFloat("Dwell Delay", &m_EditorSettings.dwellClickDelay, 0.3f, 3.0f, "%.1f s")) {
+                    settingsChanged = true;
+                }
+            }
+
+            ImGui::Separator();
+            if (ImGui::Checkbox("Sticky Drag", &m_EditorSettings.stickyDragEnabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Click once to start dragging, click again to release (no need to hold)");
+            }
+
+            ImGui::Separator();
+            if (ImGui::SliderFloat("Hold Repeat Delay", &m_EditorSettings.holdRepeatDelay, 0.1f, 1.5f, "%.2f s")) {
+                settingsChanged = true;
+            }
+            if (ImGui::SliderFloat("Hold Repeat Rate", &m_EditorSettings.holdRepeatRate, 0.01f, 0.2f, "%.3f s")) {
+                settingsChanged = true;
+            }
+
+            ImGui::TreePop();
+        }
+
+        // -- Keyboard Navigation --
+        if (ImGui::TreeNode("Keyboard Navigation")) {
+            if (ImGui::Checkbox("Enable Keyboard Navigation", &m_EditorSettings.keyboardNavEnabled)) {
+                settingsChanged = true;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Full keyboard-only editor operation:\n"
+                    "  Arrow keys: Nudge selected entity\n"
+                    "  Ctrl+Arrow: Fine nudge\n"
+                    "  PageUp/PageDown: Nudge Y axis\n"
+                    "  Ctrl+1-5: Focus panels\n"
+                    "  (Hierarchy/Inspector/Viewport/Console/Assets)");
+            }
+
+            if (m_EditorSettings.keyboardNavEnabled) {
+                if (ImGui::SliderFloat("Nudge Amount", &m_EditorSettings.gizmoNudgeAmount, 0.01f, 10.0f, "%.2f")) {
+                    settingsChanged = true;
+                }
+                if (ImGui::SliderFloat("Fine Nudge", &m_EditorSettings.gizmoNudgeFine, 0.001f, 1.0f, "%.3f")) {
+                    settingsChanged = true;
+                }
+                if (ImGui::SliderFloat("Rotate Nudge", &m_EditorSettings.gizmoRotateNudge, 1.0f, 45.0f, "%.0f deg")) {
+                    settingsChanged = true;
+                }
+            }
+
+            ImGui::TreePop();
+        }
+
         ImGui::Separator();
 
         // -- Quick Presets --
@@ -7060,6 +7519,12 @@ void EditorLayer::DrawSettingsPanel() {
             m_EditorSettings.inputPreset = 3; // Gamepad only
             m_EditorSettings.sprintMode = 1;  // Toggle
             m_EditorSettings.crouchMode = 1;  // Toggle
+            m_EditorSettings.clickThreshold = 12.0f;
+            m_EditorSettings.dragThreshold = 15.0f;
+            m_EditorSettings.dwellClickEnabled = true;
+            m_EditorSettings.dwellClickDelay = 1.5f;
+            m_EditorSettings.stickyDragEnabled = true;
+            m_EditorSettings.keyboardNavEnabled = true;
             settingsChanged = true;
         }
         ImGui::SameLine();
@@ -7380,6 +7845,171 @@ void EditorLayer::DrawProjectSettingsPanel() {
             }
         } else {
             ImGui::TextDisabled("PostProcessing not available");
+        }
+
+        // === RAY TRACING ===
+        ImGui::Separator();
+        ImGui::Spacing();
+        if (m_RenderSystem) {
+            bool rtSupported = m_RenderSystem->IsRayTracingSupported();
+            if (ImGui::TreeNode("Ray Tracing")) {
+                if (rtSupported) {
+                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
+                } else {
+                    ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Not Supported");
+                    ImGui::TextDisabled("GPU does not support VK_KHR_ray_tracing_pipeline");
+                    ImGui::TreePop();
+                }
+
+                if (rtSupported) {
+                    bool rtEnabled = m_RenderSystem->IsRayTracingEnabled();
+                    if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled)) {
+                        m_RenderSystem->SetRayTracingEnabled(rtEnabled);
+                    }
+
+                    if (rtEnabled) {
+                        // Mode selection
+                        const char* modeNames[] = { "Hybrid", "Path Trace" };
+                        int rtMode = static_cast<int>(m_RenderSystem->GetRTMode());
+                        if (ImGui::Combo("RT Mode", &rtMode, modeNames, 2)) {
+                            m_RenderSystem->SetRTMode(static_cast<u32>(rtMode));
+                        }
+                        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                            "Hybrid: RT shadows/reflections/AO/GI composited with raster.\n"
+                            "Path Trace: Progressive offline-quality renderer.");
+
+                        if (rtMode == 0) {
+                            // --- Hybrid mode sub-sections ---
+
+                            // RT Shadows
+                            if (auto* rtShadows = m_RenderSystem->GetRTShadows()) {
+                                auto& cfg = rtShadows->GetConfig();
+                                if (ImGui::TreeNode("RT Shadows")) {
+                                    ImGui::Checkbox("Enabled##RTShadow", &cfg.enabled);
+                                    if (cfg.enabled) {
+                                        ImGui::DragFloat("Max Distance##RTShadow", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
+                                        ImGui::DragFloat("Soft Radius##RTShadow", &cfg.radius, 0.001f, 0.0f, 0.5f, "%.3f");
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Penumbra radius for soft shadows (0 = hard)");
+                                    }
+                                    ImGui::TreePop();
+                                }
+                            }
+
+                            // RT Reflections
+                            if (auto* rtReflect = m_RenderSystem->GetRTReflections()) {
+                                auto& cfg = rtReflect->GetConfig();
+                                if (ImGui::TreeNode("RT Reflections")) {
+                                    ImGui::Checkbox("Enabled##RTReflect", &cfg.enabled);
+                                    if (cfg.enabled) {
+                                        ImGui::DragFloat("Max Distance##RTReflect", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
+                                        ImGui::SliderFloat("Roughness Threshold", &cfg.roughnessThreshold, 0.0f, 1.0f);
+                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Skip reflections for surfaces rougher than this");
+                                    }
+                                    ImGui::TreePop();
+                                }
+                            }
+
+                            // RT Ambient Occlusion
+                            if (auto* rtAO = m_RenderSystem->GetRTAO()) {
+                                auto& cfg = rtAO->GetConfig();
+                                if (ImGui::TreeNode("RT Ambient Occlusion")) {
+                                    ImGui::Checkbox("Enabled##RTAO", &cfg.enabled);
+                                    if (cfg.enabled) {
+                                        ImGui::DragFloat("AO Radius", &cfg.radius, 0.1f, 0.1f, 20.0f);
+                                        ImGui::DragFloat("AO Power", &cfg.power, 0.1f, 0.1f, 5.0f);
+                                    }
+                                    ImGui::TreePop();
+                                }
+                            }
+
+                            // RT Global Illumination
+                            if (auto* rtGI = m_RenderSystem->GetRTGI()) {
+                                auto& cfg = rtGI->GetConfig();
+                                if (ImGui::TreeNode("RT Global Illumination")) {
+                                    ImGui::Checkbox("Enabled##RTGI", &cfg.enabled);
+                                    if (cfg.enabled) {
+                                        ImGui::DragFloat("Max Distance##RTGI", &cfg.maxDistance, 1.0f, 1.0f, 200.0f);
+                                        ImGui::DragFloat("GI Intensity", &cfg.intensity, 0.1f, 0.0f, 5.0f);
+                                        int bounces = static_cast<int>(cfg.bounces);
+                                        if (ImGui::SliderInt("Bounces", &bounces, 1, 4)) {
+                                            cfg.bounces = static_cast<u32>(bounces);
+                                        }
+                                    }
+                                    ImGui::TreePop();
+                                }
+                            }
+
+                            // Composite strengths
+                            if (auto* compositor = m_RenderSystem->GetRTCompositor()) {
+                                auto& cfg = compositor->GetConfig();
+                                if (ImGui::TreeNode("Composite Strengths")) {
+                                    ImGui::SliderFloat("Shadow##RTComp", &cfg.shadowStrength, 0.0f, 1.0f);
+                                    ImGui::SliderFloat("Reflection##RTComp", &cfg.reflectionStrength, 0.0f, 1.0f);
+                                    ImGui::SliderFloat("AO##RTComp", &cfg.aoStrength, 0.0f, 1.0f);
+                                    ImGui::SliderFloat("GI##RTComp", &cfg.giStrength, 0.0f, 1.0f);
+                                    ImGui::TreePop();
+                                }
+                            }
+                        } else {
+                            // --- Path Trace mode ---
+                            if (auto* pathTracer = m_RenderSystem->GetPathTracer()) {
+                                auto& cfg = pathTracer->GetConfig();
+                                int maxBounces = static_cast<int>(cfg.maxBounces);
+                                if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 16)) {
+                                    cfg.maxBounces = static_cast<u32>(maxBounces);
+                                }
+                                int targetSPP = static_cast<int>(cfg.targetSPP);
+                                if (ImGui::DragInt("Target SPP", &targetSPP, 16, 1, 65536)) {
+                                    cfg.targetSPP = static_cast<u32>(targetSPP);
+                                }
+
+                                // Progress
+                                u32 accumulated = pathTracer->GetAccumulatedSamples();
+                                f32 progress = (cfg.targetSPP > 0)
+                                    ? static_cast<f32>(accumulated) / static_cast<f32>(cfg.targetSPP)
+                                    : 0.0f;
+                                char overlay[64];
+                                snprintf(overlay, sizeof(overlay), "%u / %u SPP", accumulated, cfg.targetSPP);
+                                ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
+
+                                if (pathTracer->IsConverged()) {
+                                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Converged");
+                                }
+
+                                if (ImGui::Button("Reset Accumulation")) {
+                                    pathTracer->ResetAccumulation();
+                                }
+                            }
+                        }
+
+                        // Denoiser settings
+                        if (auto* denoiser = m_RenderSystem->GetSVGFDenoiser()) {
+                            auto& cfg = denoiser->GetConfig();
+                            if (ImGui::TreeNode("SVGF Denoiser")) {
+                                ImGui::SliderFloat("Temporal Alpha", &cfg.temporalAlpha, 0.01f, 0.5f, "%.3f");
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more temporal history (smoother but more ghosting)");
+                                int iterations = static_cast<int>(cfg.atrousIterations);
+                                if (ImGui::SliderInt("A-Trous Iterations", &iterations, 1, 8)) {
+                                    cfg.atrousIterations = static_cast<u32>(iterations);
+                                }
+                                if (ImGui::Button("Reset History##SVGF")) {
+                                    denoiser->ResetHistory();
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+                    }
+
+                    // Stats
+                    if (auto* asManager = m_RenderSystem->GetASManager()) {
+                        ImGui::Separator();
+                        ImGui::Text("BLAS Count: %u", asManager->GetBLASCount());
+                        ImGui::Text("Instance Count: %u", asManager->GetInstanceCount());
+                    }
+
+                    ImGui::TreePop();
+                }
+            }
         }
 
         ImGui::Separator();
@@ -8708,6 +9338,50 @@ void EditorLayer::DrawSceneListPanel() {
     }
     ImGui::Separator();
 
+    // Scene lock status
+    if (!m_SceneLockManager.GetScenePath().empty()) {
+        if (m_SceneLockManager.IsSceneLocked()) {
+            bool byOther = m_SceneLockManager.IsSceneLockedByOther();
+            if (byOther) {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+                ImGui::Text("Scene locked by %s", m_SceneLockManager.GetSceneLockedBy().c_str());
+                ImGui::PopStyleColor();
+                if (m_SceneLockManager.IsSceneLockStale()) {
+                    ImGui::SameLine();
+                    ImGui::TextDisabled("(stale)");
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Break Lock")) {
+                        m_SceneLockManager.BreakSceneLock();
+                        m_Announcer.Announce("Broke stale scene lock", Accessibility::AnnouncePriority::High);
+                    }
+                }
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.8f, 1.0f, 1.0f));
+                ImGui::Text("Scene locked by you");
+                ImGui::PopStyleColor();
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Unlock Scene")) {
+                    m_SceneLockManager.UnlockScene();
+                    m_Announcer.Announce("Scene unlocked", Accessibility::AnnouncePriority::Normal);
+                }
+            }
+        } else {
+            if (ImGui::SmallButton("Lock Scene")) {
+                m_SceneLockManager.LockScene();
+                m_Announcer.Announce("Scene locked", Accessibility::AnnouncePriority::Normal);
+            }
+            ImGui::SetItemTooltip("Lock this scene to prevent edits by other users");
+        }
+
+        // Lock stats
+        usize myLocks = m_SceneLockManager.GetMyEntityLockCount();
+        usize otherLocks = m_SceneLockManager.GetOtherEntityLockCount();
+        if (myLocks > 0 || otherLocks > 0) {
+            ImGui::TextDisabled("Entity locks: %zu mine, %zu others", myLocks, otherLocks);
+        }
+        ImGui::Separator();
+    }
+
     // Scene list header with add button
     ImGui::Text("Scenes (%zu)", m_SceneManager.GetSceneCount());
     ImGui::SameLine();
@@ -9785,8 +10459,15 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), TMPL_MULTI },
         { "planetgravity","Planet Gravity","Spherical gravity\nWalk on a planet surface",              ImVec4(0.2f, 0.5f, 0.9f, 1.0f), TMPL_3D },
         { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), TMPL_3D },
+        { "flash_pnc",   "Point & Click", "Flash-style adventure\nClick hotspots + inventory",       ImVec4(1.0f, 0.5f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_bullet","Bullet Hell",   "Danmaku shmup\nPatterns + bullets + score",               ImVec4(0.9f, 0.2f, 0.4f, 1.0f), TMPL_2D },
+        { "flash_idle",  "Idle/Clicker",  "Incremental game\nClick + upgrades + prestige",           ImVec4(0.4f, 0.8f, 0.4f, 1.0f), TMPL_2D },
+        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), TMPL_2D },
+        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), TMPL_2D },
     };
-    constexpr int builtinCount = 31;
+    constexpr int builtinCount = 38;
 
     // === Project info section ===
     f32 formX = (std::max)(area.x * 0.5f - 300.0f, 60.0f);
@@ -10900,6 +11581,15 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewW = 850.0f;
         m_Layout.gameViewH = 480.0f;
     }
+    else if (templateId.substr(0, 6) == "flash_") {
+        // Flash templates: 2D with timeline panel, wide game view for Flash stage
+        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::FlashTimeline;
+        m_Layout.leftWidth = 0.14f;
+        m_Layout.rightWidth = 0.20f;
+        m_Layout.bottomHeight = 0.30f;  // Taller bottom for timeline
+        m_Layout.gameViewW = 550.0f;
+        m_Layout.gameViewH = 400.0f;  // Flash default stage
+    }
     else {
         // Fallback: standard layout
         m_Layout.panels = EditorPanel::All;
@@ -10910,7 +11600,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
     // Configure editor camera for 2D templates (orthographic, looking at XY plane)
     if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
-        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike") {
+        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike" ||
+        templateId.substr(0, 6) == "flash_") {
         if (m_CameraController) {
             // Set orbit distance for the preset, then use Front view preset
             // which properly sets yaw=-90, pitch=0, position, rotation, and orthographic
@@ -16865,6 +17556,294 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
     }
 
+    // === FLASH GAME TEMPLATES ===
+    else if (templateId == "flash_pnc") {
+        // Point-and-click adventure — background + hotspots + player cursor
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Background");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 550; bgs.srcHeight = 400;
+            bgs.tint = Math::Vector3(0.4f, 0.5f, 0.6f);
+            bgs.sortingLayer = 0;
+        }
+        for (i32 i = 0; i < 3; ++i) {
+            ECS::Entity hotspot = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hotspot,
+                std::string("Hotspot ") + std::to_string(i + 1));
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hotspot);
+            ht.position = Math::Vector3(-3.0f + i * 3.0f, -1.0f + i * 0.5f, 0.0f);
+            auto& hs = m_World->AddComponent<ECS::Sprite2DComponent>(hotspot);
+            hs.srcWidth = 64; hs.srcHeight = 64;
+            hs.tint = Math::Vector3(0.9f, 0.7f + i * 0.1f, 0.2f);
+            hs.sortingLayer = 1;
+            m_World->AddComponent<ECS::BoxColliderComponent>(hotspot);
+        }
+        // Orthographic camera
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic;
+            cc.orthoSize = 6.0f;
+            cc.isActive = true;
+        }
+        // Initialize Flash timeline
+        m_FlashTimelineData = FlashTimelineData{};
+        m_FlashTimelineData.name = "PointAndClick";
+        m_FlashTimelineData.stageWidth = 550; m_FlashTimelineData.stageHeight = 400;
+        m_FlashTimelineData.AddLayer("Background");
+        m_FlashTimelineData.AddLayer("Hotspots");
+        m_FlashTimelineData.AddLayer("Cursor");
+        m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+    }
+    else if (templateId == "flash_td") {
+        // Tower defense — path + tower slots + spawn
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "TD Background");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0, 0, 0);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 600; bgs.srcHeight = 400;
+            bgs.tint = Math::Vector3(0.3f, 0.5f, 0.2f);  // Green grass
+        }
+        // Path waypoints
+        for (i32 i = 0; i < 5; ++i) {
+            ECS::Entity wp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wp, "Waypoint " + std::to_string(i + 1));
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wp);
+            f32 x = -5.0f + i * 2.5f;
+            f32 y = (i % 2 == 0) ? -1.5f : 1.5f;
+            wt.position = Math::Vector3(x, y, 0);
+            auto& ws = m_World->AddComponent<ECS::Sprite2DComponent>(wp);
+            ws.srcWidth = 32; ws.srcHeight = 32;
+            ws.tint = Math::Vector3(0.6f, 0.5f, 0.3f);  // Dirt path
+        }
+        // Tower slots
+        for (i32 i = 0; i < 4; ++i) {
+            ECS::Entity tower = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(tower, "Tower Slot " + std::to_string(i + 1));
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(tower);
+            tt.position = Math::Vector3(-3.0f + i * 2.0f, 0.0f, 0.0f);
+            auto& ts = m_World->AddComponent<ECS::Sprite2DComponent>(tower);
+            ts.srcWidth = 48; ts.srcHeight = 48;
+            ts.tint = Math::Vector3(0.5f, 0.5f, 0.6f);
+            m_World->AddComponent<ECS::BoxColliderComponent>(tower);
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 8.0f; cc.isActive = true;
+        }
+        m_FlashTimelineData = FlashTimelineData{};
+        m_FlashTimelineData.name = "TowerDefense";
+        m_FlashTimelineData.AddLayer("Background");
+        m_FlashTimelineData.AddLayer("Path");
+        m_FlashTimelineData.AddLayer("Towers");
+        m_FlashTimelineData.AddLayer("Enemies");
+        m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+    }
+    else if (templateId == "flash_bullet") {
+        // Bullet hell — player ship + enemy + bullets
+        {
+            ECS::Entity player = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(player, "Player Ship");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(0, -3.0f, 0);
+            auto& ps = m_World->AddComponent<ECS::Sprite2DComponent>(player);
+            ps.srcWidth = 32; ps.srcHeight = 32;
+            ps.tint = Math::Vector3(0.2f, 0.6f, 1.0f);
+            ps.sortingLayer = 2;
+            m_World->AddComponent<ECS::BoxColliderComponent>(player);
+            m_World->AddComponent<ECS::HealthComponent>(player).maxHealth = 3;
+        }
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Boss");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(0, 3.0f, 0);
+            auto& es = m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            es.srcWidth = 64; es.srcHeight = 64;
+            es.tint = Math::Vector3(0.9f, 0.2f, 0.2f);
+            es.sortingLayer = 2;
+            m_World->AddComponent<ECS::HealthComponent>(enemy).maxHealth = 100;
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+        m_FlashTimelineData = FlashTimelineData{};
+        m_FlashTimelineData.name = "BulletHell";
+        m_FlashTimelineData.frameRate = 60.0f;
+        m_FlashTimelineData.AddLayer("Background");
+        m_FlashTimelineData.AddLayer("Player");
+        m_FlashTimelineData.AddLayer("Bullets");
+        m_FlashTimelineData.AddLayer("Boss");
+        m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+    }
+    else if (templateId == "flash_idle") {
+        // Idle/Clicker — big click target + upgrade buttons + counter
+        {
+            ECS::Entity target = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(target, "Click Target");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(target);
+            tt.position = Math::Vector3(0, 0.5f, 0);
+            auto& ts = m_World->AddComponent<ECS::Sprite2DComponent>(target);
+            ts.srcWidth = 128; ts.srcHeight = 128;
+            ts.tint = Math::Vector3(0.4f, 0.8f, 0.4f);
+            m_World->AddComponent<ECS::BoxColliderComponent>(target);
+        }
+        for (i32 i = 0; i < 3; ++i) {
+            ECS::Entity btn = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(btn,
+                "Upgrade " + std::to_string(i + 1));
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(btn);
+            bt.position = Math::Vector3(4.0f, 2.0f - i * 1.5f, 0);
+            auto& bs = m_World->AddComponent<ECS::Sprite2DComponent>(btn);
+            bs.srcWidth = 80; bs.srcHeight = 30;
+            bs.tint = Math::Vector3(0.3f, 0.3f, 0.6f);
+            m_World->AddComponent<ECS::BoxColliderComponent>(btn);
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+    }
+    else if (templateId == "flash_dress") {
+        // Dress up — character base + draggable items
+        {
+            ECS::Entity base = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(base, "Character");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(base);
+            bt.position = Math::Vector3(-1.5f, 0, 0);
+            auto& bs = m_World->AddComponent<ECS::Sprite2DComponent>(base);
+            bs.srcWidth = 128; bs.srcHeight = 256;
+            bs.tint = Math::Vector3(0.9f, 0.8f, 0.7f);
+            bs.sortingLayer = 0;
+        }
+        const char* items[] = { "Hat", "Shirt", "Pants", "Shoes", "Accessory", "Hair" };
+        for (i32 i = 0; i < 6; ++i) {
+            ECS::Entity item = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(item, items[i]);
+            auto& it = m_World->AddComponent<ECS::TransformComponent>(item);
+            it.position = Math::Vector3(3.0f, 3.0f - i * 1.2f, 0);
+            auto& is = m_World->AddComponent<ECS::Sprite2DComponent>(item);
+            is.srcWidth = 48; is.srcHeight = 48;
+            is.tint = Math::Vector3(
+                0.5f + (i % 3) * 0.2f,
+                0.3f + (i % 2) * 0.4f,
+                0.7f - (i % 3) * 0.2f
+            );
+            is.sortingLayer = 1;
+            m_World->AddComponent<ECS::BoxColliderComponent>(item);
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+    }
+    else if (templateId == "flash_escape") {
+        // Escape room — room background + interactive objects + inventory
+        {
+            ECS::Entity room = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(room, "Room");
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(room);
+            rt.position = Math::Vector3(0, 0, 0);
+            auto& rs = m_World->AddComponent<ECS::Sprite2DComponent>(room);
+            rs.srcWidth = 550; rs.srcHeight = 400;
+            rs.tint = Math::Vector3(0.4f, 0.35f, 0.3f);
+        }
+        const char* objects[] = { "Door", "Drawer", "Safe", "Painting", "Key" };
+        for (i32 i = 0; i < 5; ++i) {
+            ECS::Entity obj = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(obj, objects[i]);
+            auto& ot = m_World->AddComponent<ECS::TransformComponent>(obj);
+            ot.position = Math::Vector3(-3.0f + i * 1.5f, i % 2 == 0 ? 0.0f : 1.5f, 0);
+            auto& os = m_World->AddComponent<ECS::Sprite2DComponent>(obj);
+            os.srcWidth = 48; os.srcHeight = 48;
+            os.tint = Math::Vector3(0.6f + i * 0.05f, 0.5f, 0.3f);
+            os.sortingLayer = 1;
+            m_World->AddComponent<ECS::BoxColliderComponent>(obj);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(obj);
+            notes.notes = std::string("Interactive object: ") + objects[i];
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+    }
+    else if (templateId == "flash_rhythm") {
+        // Rhythm game — note lanes + receptor line + score
+        for (i32 lane = 0; lane < 4; ++lane) {
+            ECS::Entity receptor = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(receptor,
+                "Receptor " + std::to_string(lane + 1));
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(receptor);
+            rt.position = Math::Vector3(-1.5f + lane * 1.0f, -3.0f, 0);
+            auto& rs = m_World->AddComponent<ECS::Sprite2DComponent>(receptor);
+            rs.srcWidth = 40; rs.srcHeight = 40;
+            rs.tint = Math::Vector3(0.4f, 0.4f, 0.8f);
+            rs.sortingLayer = 1;
+
+            // Sample falling notes
+            for (i32 n = 0; n < 3; ++n) {
+                ECS::Entity note = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(note,
+                    "Note L" + std::to_string(lane + 1) + " N" + std::to_string(n + 1));
+                auto& nt = m_World->AddComponent<ECS::TransformComponent>(note);
+                nt.position = Math::Vector3(-1.5f + lane * 1.0f, 1.0f + n * 2.0f, 0);
+                auto& ns = m_World->AddComponent<ECS::Sprite2DComponent>(note);
+                ns.srcWidth = 36; ns.srcHeight = 16;
+                ns.tint = Math::Vector3(
+                    lane == 0 ? 1.0f : 0.3f,
+                    lane == 1 ? 1.0f : 0.3f,
+                    lane >= 2 ? 1.0f : 0.3f
+                );
+                ns.sortingLayer = 2;
+            }
+        }
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+        m_FlashTimelineData = FlashTimelineData{};
+        m_FlashTimelineData.name = "RhythmGame";
+        m_FlashTimelineData.frameRate = 60.0f;
+        m_FlashTimelineData.AddLayer("Background");
+        m_FlashTimelineData.AddLayer("Receptors");
+        m_FlashTimelineData.AddLayer("Notes");
+        m_FlashTimelineData.AddLayer("Effects");
+        m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+    }
+
     m_CurrentScenePath.clear();
     ENJIN_LOG_INFO(Editor, "Applied template: %s", templateId.c_str());
 }
@@ -17114,6 +18093,44 @@ void EditorLayer::DrawImportDialog() {
             }
             if (ImGui::IsItemDeactivated() && pathBuf[0] == '\0') {
                 searchPaths.pop_back();
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // --- Texture Compression ---
+        ImGui::Text("Texture Compression");
+        {
+            const char* formatNames[] = {
+                "None (RGBA8)", "BC1 (DXT1 - RGB)", "BC3 (DXT5 - RGBA)",
+                "BC4 (R only)", "BC5 (RG - Normal maps)", "BC7 (High quality RGBA)",
+                "ASTC 4x4", "ASTC 6x6", "ASTC 8x8"
+            };
+            int currentFmt = static_cast<int>(m_ImportDialogOptions.textureCompression.format);
+            if (ImGui::Combo("Format##TexCompress", &currentFmt, formatNames, IM_ARRAYSIZE(formatNames))) {
+                m_ImportDialogOptions.textureCompression.format = static_cast<Assets::CompressedFormat>(currentFmt);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("BC1: RGB 4bpp | BC3: RGBA 8bpp | BC5: Normal maps | BC7: Best quality RGBA 8bpp");
+            }
+
+            if (m_ImportDialogOptions.textureCompression.format != Assets::CompressedFormat::None) {
+                const char* qualityNames[] = { "Fast", "Normal", "High" };
+                int currentQuality = static_cast<int>(m_ImportDialogOptions.textureCompression.quality);
+                ImGui::Combo("Quality##TexCompress", &currentQuality, qualityNames, IM_ARRAYSIZE(qualityNames));
+                m_ImportDialogOptions.textureCompression.quality = static_cast<Assets::CompressionQuality>(currentQuality);
+
+                ImGui::Checkbox("Generate Mipmaps##TexCompress", &m_ImportDialogOptions.textureCompression.generateMipmaps);
+                ImGui::Checkbox("sRGB Color Space##TexCompress", &m_ImportDialogOptions.textureCompression.sRGB);
+
+                // Show compression ratio hint
+                f32 ratio = Assets::TextureCompressor::CompressionRatio(m_ImportDialogOptions.textureCompression.format);
+                u32 bpp = Assets::TextureCompressor::BitsPerPixel(m_ImportDialogOptions.textureCompression.format);
+                ImGui::TextDisabled("%s: %u bpp (%.1fx compression)",
+                    Assets::TextureCompressor::FormatName(m_ImportDialogOptions.textureCompression.format),
+                    bpp, ratio);
             }
         }
 
@@ -18059,6 +19076,10 @@ void EditorLayer::OpenScene(const std::string& path) {
         m_CurrentScenePath = path;
         ClearSelection();
         m_UndoRedo.Clear();
+
+        // Initialize scene lock manager for this scene
+        m_SceneLockManager.SetScenePath(path);
+
         usize entityCount = result.entities.size();
         std::stringstream ss;
         ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";
@@ -23135,6 +24156,12 @@ void EditorLayer::DeleteSelectedEntities() {
         m_UndoRedo.EndCompound();
     }
     ENJIN_LOG_INFO(Editor, "Deleted %zu entities", validEntities.size());
+
+    // Accessibility announcement
+    if (m_Announcer.enabled) {
+        m_Announcer.Announce("Deleted " + std::to_string(validEntities.size()) + " entities",
+            Accessibility::AnnouncePriority::Normal);
+    }
 }
 
 void EditorLayer::DuplicateSelectedEntities() {
@@ -24449,6 +25476,37 @@ VkDescriptorSet EditorLayer::GetImGuiTexture(const std::string& path) {
     return ds;
 }
 
+VkDescriptorSet EditorLayer::GetAssetThumbnail(const std::string& path) {
+    if (path.empty() || !m_RenderSystem) return VK_NULL_HANDLE;
+
+    // Check if already in ImGui texture cache (thumbnails use "thumb:" prefix key)
+    std::string cacheKey = "thumb:" + path;
+    auto it = m_ImGuiTextureCache.find(cacheKey);
+    if (it != m_ImGuiTextureCache.end()) {
+        return it->second;
+    }
+
+    // Generate thumbnail on CPU
+    Assets::ThumbnailData thumb = m_ThumbnailGenerator.Generate(path, Assets::ThumbnailSize::Medium);
+    if (!thumb.valid || thumb.pixels.empty()) return VK_NULL_HANDLE;
+
+    // Upload to GPU as a texture
+    auto tex = std::make_shared<Renderer::Texture>(m_Renderer->GetContext());
+    if (!tex->CreateFromData(thumb.pixels.data(), thumb.width, thumb.height, 4,
+                              VK_FORMAT_R8G8B8A8_SRGB)) {
+        return VK_NULL_HANDLE;
+    }
+
+    // Register with ImGui
+    VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
+        tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    if (ds != VK_NULL_HANDLE) {
+        m_ImGuiTextureCache[cacheKey] = ds;
+        m_ThumbnailTextures.push_back(tex); // Keep GPU texture alive
+    }
+    return ds;
+}
+
 void EditorLayer::CleanupImGuiTextureCache() {
     for (auto& [path, ds] : m_ImGuiTextureCache) {
         if (ds != VK_NULL_HANDLE) {
@@ -24456,6 +25514,8 @@ void EditorLayer::CleanupImGuiTextureCache() {
         }
     }
     m_ImGuiTextureCache.clear();
+    m_ThumbnailTextures.clear();
+    m_ThumbnailGenerator.ClearCache();
 }
 
 // --- Tilemap viewport brush tool (follows terrain brush pattern) ---
@@ -26195,6 +27255,110 @@ void EditorLayer::DrawDialoguePanel() {
                 dlg->dialogueTree.treeName = treeBuf;
             }
 
+            // Import / Export toolbar
+            ImGui::SameLine();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 10);
+
+            if (ImGui::Button("Import")) {
+                ImGui::OpenPopup("DialogueImportPopup");
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Export")) {
+                ImGui::OpenPopup("DialogueExportPopup");
+            }
+
+            // Import popup
+            if (ImGui::BeginPopup("DialogueImportPopup")) {
+                if (ImGui::MenuItem("Yarn Spinner (.yarn)")) {
+                    std::vector<FileFilter> filters = {
+                        { "Yarn Spinner", "*.yarn" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string path = FileDialog::OpenFile("Import Yarn Spinner", filters);
+                    if (!path.empty()) {
+                        GUI::DialogueTreeData importedTree;
+                        auto result = GUI::YarnSpinnerIO::Import(path, importedTree);
+                        if (result.success) {
+                            dlg->dialogueTree = importedTree;
+                            m_DialogueTreeEditor.SetTree(&dlg->dialogueTree);
+                            ENJIN_LOG_INFO(Editor, "Imported Yarn: %u nodes, %u links",
+                                           result.nodeCount, result.linkCount);
+                        } else {
+                            ENJIN_LOG_ERROR(Editor, "Yarn import failed: %s",
+                                            result.errorMessage.c_str());
+                        }
+                        for (auto& w : result.warnings) {
+                            ENJIN_LOG_WARN(Editor, "Yarn import: %s", w.c_str());
+                        }
+                    }
+                }
+                if (ImGui::MenuItem("Twine (.twee / .html)")) {
+                    std::vector<FileFilter> filters = {
+                        { "Twine Files", "*.twee;*.tw;*.html" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string path = FileDialog::OpenFile("Import Twine", filters);
+                    if (!path.empty()) {
+                        GUI::DialogueTreeData importedTree;
+                        auto result = GUI::TwineIO::Import(path, importedTree);
+                        if (result.success) {
+                            dlg->dialogueTree = importedTree;
+                            m_DialogueTreeEditor.SetTree(&dlg->dialogueTree);
+                            ENJIN_LOG_INFO(Editor, "Imported Twine: %u nodes, %u links",
+                                           result.nodeCount, result.linkCount);
+                        } else {
+                            ENJIN_LOG_ERROR(Editor, "Twine import failed: %s",
+                                            result.errorMessage.c_str());
+                        }
+                        for (auto& w : result.warnings) {
+                            ENJIN_LOG_WARN(Editor, "Twine import: %s", w.c_str());
+                        }
+                    }
+                }
+                ImGui::EndPopup();
+            }
+
+            // Export popup
+            if (ImGui::BeginPopup("DialogueExportPopup")) {
+                if (ImGui::MenuItem("Yarn Spinner (.yarn)")) {
+                    std::vector<FileFilter> filters = {
+                        { "Yarn Spinner", "*.yarn" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string defaultName = dlg->dialogueTree.treeName + ".yarn";
+                    std::string path = FileDialog::SaveFile("Export Yarn Spinner", filters, "", defaultName);
+                    if (!path.empty()) {
+                        auto result = GUI::YarnSpinnerIO::Export(path, dlg->dialogueTree);
+                        if (result.success) {
+                            ENJIN_LOG_INFO(Editor, "Exported Yarn: %u nodes to %s",
+                                           result.nodeCount, path.c_str());
+                        } else {
+                            ENJIN_LOG_ERROR(Editor, "Yarn export failed: %s",
+                                            result.errorMessage.c_str());
+                        }
+                    }
+                }
+                if (ImGui::MenuItem("Twee 3 (.twee)")) {
+                    std::vector<FileFilter> filters = {
+                        { "Twee 3", "*.twee;*.tw" },
+                        { "All Files", "*.*" }
+                    };
+                    std::string defaultName = dlg->dialogueTree.treeName + ".twee";
+                    std::string path = FileDialog::SaveFile("Export Twee", filters, "", defaultName);
+                    if (!path.empty()) {
+                        auto result = GUI::TwineIO::Export(path, dlg->dialogueTree);
+                        if (result.success) {
+                            ENJIN_LOG_INFO(Editor, "Exported Twee: %u nodes to %s",
+                                           result.nodeCount, path.c_str());
+                        } else {
+                            ENJIN_LOG_ERROR(Editor, "Twee export failed: %s",
+                                            result.errorMessage.c_str());
+                        }
+                    }
+                }
+                ImGui::EndPopup();
+            }
+
             ImGui::Separator();
 
             // Render the dialogue tree editor widget
@@ -27689,10 +28853,26 @@ void EditorLayer::DrawPluginBrowserPanel() {
 }
 
 void EditorLayer::DrawProceduralGenPanel() {
+    // Render the graph editor window if open
+    if (m_ProcGraphEditor.IsOpen()) {
+        m_ProcGraphEditor.Render();
+    }
+
     if (!ImGui::Begin("Procedural Generation", nullptr)) {
         ImGui::End();
         return;
     }
+
+    // Graph editor toggle
+    if (ImGui::Button("Open Graph Editor")) {
+        m_ProcGraphEditor.SetGraph(&m_ProcGraphData);
+        m_ProcGraphEditor.SetOpen(true);
+    }
+    ImGui::SetItemTooltip("Visual node-based pipeline for composing procedural generation algorithms");
+    ImGui::SameLine();
+    ImGui::TextDisabled("(Graph: %zu nodes, %zu links)",
+        m_ProcGraphData.nodes.size(), m_ProcGraphData.links.size());
+    ImGui::Separator();
 
     const char* algorithms[] = {
         "Cellular Automata", "Random Walker", "BSP Dungeon", "Diamond-Square Heightmap",
@@ -28372,6 +29552,855 @@ void EditorLayer::DrawGitIntegrationPanel() {
         } else if (m_GitLog.empty()) {
             ImGui::TextDisabled("No commits yet");
         }
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// NETWORK COMPONENTS — Inspector
+// ============================================================================
+
+void EditorLayer::DrawNetworkIdentityComponent(ECS::Entity entity) {
+    auto* net = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
+    if (!net) return;
+
+    bool open = ImGui::CollapsingHeader("[N] Network Identity", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        ImGui::OpenPopup("NetworkIdentityContext");
+    }
+    if (ImGui::BeginPopup("NetworkIdentityContext")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::NetworkIdentityComponent>(entity, "networkIdentity", "Network Identity");
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    ImGui::Text("Network ID: %u", net->networkId);
+    ImGui::Text("Owner ID: %u", net->ownerId);
+    ImGui::Text("Locally Owned: %s", net->isLocallyOwned ? "Yes" : "No");
+
+    ImGui::Checkbox("Sync Transform", &net->syncTransform);
+    ImGui::DragFloat("Sync Interval", &net->syncInterval, 0.01f, 0.01f, 1.0f, "%.3f s");
+}
+
+void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
+    auto* nt = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
+    if (!nt) return;
+
+    bool open = ImGui::CollapsingHeader("Network Transform", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+        ImGui::OpenPopup("NetworkTransformContext");
+    }
+    if (ImGui::BeginPopup("NetworkTransformContext")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::NetworkTransformComponent>(entity, "networkTransform", "Network Transform");
+        }
+        ImGui::EndPopup();
+    }
+    if (!open) return;
+
+    ImGui::Text("Last Synced Pos: %.2f, %.2f, %.2f",
+                nt->lastSyncedPosition.x, nt->lastSyncedPosition.y, nt->lastSyncedPosition.z);
+    ImGui::Text("Network Velocity: %.2f, %.2f, %.2f",
+                nt->networkVelocity.x, nt->networkVelocity.y, nt->networkVelocity.z);
+    ImGui::DragFloat("Interp Duration", &nt->interpDuration, 0.01f, 0.01f, 1.0f, "%.3f s");
+}
+
+// ============================================================================
+// NETWORK PANEL
+// ============================================================================
+
+void EditorLayer::DrawNetworkPanel() {
+    if (!ImGui::Begin("Network", nullptr, ImGuiWindowFlags_None)) {
+        ImGui::End();
+        return;
+    }
+
+    auto* netSystem = m_PlayMode.GetNetworkSystem();
+    if (!netSystem) {
+        ImGui::End();
+        return;
+    }
+
+    Networking::NetworkRole role = netSystem->GetRole();
+    Networking::ConnectionState connState = netSystem->GetConnectionState();
+
+    // Connection controls
+    if (role == Networking::NetworkRole::None) {
+        ImGui::Text("Player Name:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150);
+        ImGui::InputText("##NetName", m_NetworkPlayerName, sizeof(m_NetworkPlayerName));
+
+        ImGui::Separator();
+
+        // Host
+        ImGui::Text("Port:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        ImGui::InputInt("##NetPort", &m_NetworkPort, 0, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("Host Game")) {
+            netSystem->HostGame(static_cast<u16>(m_NetworkPort), m_NetworkPlayerName);
+        }
+
+        ImGui::Spacing();
+
+        // Join
+        ImGui::Text("Server IP:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150);
+        ImGui::InputText("##NetIP", m_NetworkIP, sizeof(m_NetworkIP));
+        ImGui::SameLine();
+        if (ImGui::Button("Join Game")) {
+            netSystem->JoinGame(m_NetworkIP, static_cast<u16>(m_NetworkPort), m_NetworkPlayerName);
+        }
+    } else {
+        // Status line
+        const char* roleStr = (role == Networking::NetworkRole::Host) ? "Host" : "Client";
+        const char* stateStr = "Unknown";
+        switch (connState) {
+            case Networking::ConnectionState::Disconnected: stateStr = "Disconnected"; break;
+            case Networking::ConnectionState::Connecting:   stateStr = "Connecting..."; break;
+            case Networking::ConnectionState::Connected:    stateStr = "Connected"; break;
+            case Networking::ConnectionState::Disconnecting: stateStr = "Disconnecting..."; break;
+        }
+        ImGui::Text("Role: %s | Status: %s | Port: %u", roleStr, stateStr, netSystem->GetConfig().port);
+
+        if (ImGui::Button("Disconnect")) {
+            netSystem->Disconnect();
+        }
+
+        ImGui::SameLine();
+        bool ready = false;
+        for (const auto& lp : netSystem->GetLobbyPlayers()) {
+            if (lp.id == netSystem->GetLocalPlayerId()) { ready = lp.ready; break; }
+        }
+        if (ImGui::Checkbox("Ready", &ready)) {
+            netSystem->SetReady(ready);
+        }
+
+        ImGui::Separator();
+
+        // Player list
+        ImGui::Text("Players (%u):", netSystem->GetConnectedPlayerCount());
+        if (ImGui::BeginTable("##Players", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+            ImGui::TableSetupColumn("ID", ImGuiTableColumnFlags_WidthFixed, 30);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Ping", ImGuiTableColumnFlags_WidthFixed, 60);
+            ImGui::TableSetupColumn("Ready", ImGuiTableColumnFlags_WidthFixed, 50);
+            ImGui::TableHeadersRow();
+
+            for (const auto& player : netSystem->GetLobbyPlayers()) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                ImGui::Text("%u", player.id);
+                ImGui::TableSetColumnIndex(1);
+                if (player.isHost) {
+                    ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.5f, 1.0f), "%s (Host)", player.name.c_str());
+                } else {
+                    ImGui::Text("%s", player.name.c_str());
+                }
+                ImGui::TableSetColumnIndex(2);
+                if (player.id == netSystem->GetLocalPlayerId()) {
+                    ImGui::Text("--");
+                } else {
+                    ImGui::Text("%.0f ms", netSystem->GetPing());
+                }
+                ImGui::TableSetColumnIndex(3);
+                ImGui::Text("%s", player.ready ? "Yes" : "No");
+            }
+            ImGui::EndTable();
+        }
+
+        ImGui::Separator();
+
+        // Stats
+        ImGui::Text("Ping: %.1f ms", netSystem->GetPing());
+        ImGui::Text("Packet Loss: %.1f%%", netSystem->GetPacketLoss());
+        ImGui::Text("Upload: %.2f KB/s", netSystem->GetUploadKBps());
+        ImGui::Text("Download: %.2f KB/s", netSystem->GetDownloadKBps());
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// Collaboration Panel
+// ============================================================================
+
+void EditorLayer::DrawCollaborationPanel() {
+    if (!ImGui::Begin("Collaboration", nullptr, ImGuiWindowFlags_None)) {
+        ImGui::End();
+        return;
+    }
+
+    CollabSessionState state = m_CollabSystem.GetState();
+
+    // --- Connection Section ---
+    if (state == CollabSessionState::Disconnected) {
+        ImGui::Text("User Name:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150);
+        ImGui::InputText("##CollabName", m_CollabUserName, sizeof(m_CollabUserName));
+
+        ImGui::Separator();
+
+        // Host session
+        ImGui::Text("Port:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(80);
+        ImGui::InputInt("##CollabPort", &m_CollabPort, 0, 0);
+        ImGui::SameLine();
+        if (ImGui::Button("Host Session")) {
+            auto* netSystem = m_PlayMode.GetNetworkSystem();
+            if (netSystem) {
+                m_CollabSystem.Initialize(m_World, netSystem);
+                m_CollabSystem.HostSession(static_cast<u16>(m_CollabPort), m_CollabUserName);
+            }
+        }
+
+        ImGui::Spacing();
+
+        // Join session
+        ImGui::Text("Host IP:");
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(150);
+        ImGui::InputText("##CollabIP", m_CollabHostIP, sizeof(m_CollabHostIP));
+        ImGui::SameLine();
+        if (ImGui::Button("Join Session")) {
+            auto* netSystem = m_PlayMode.GetNetworkSystem();
+            if (netSystem) {
+                m_CollabSystem.Initialize(m_World, netSystem);
+                m_CollabSystem.JoinSession(m_CollabHostIP, static_cast<u16>(m_CollabPort), m_CollabUserName);
+            }
+        }
+    } else {
+        // Active session
+        const char* stateStr = "Unknown";
+        ImVec4 stateColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+        switch (state) {
+            case CollabSessionState::Hosting:
+                stateStr = "Hosting";
+                stateColor = ImVec4(0.4f, 1.0f, 0.4f, 1.0f);
+                break;
+            case CollabSessionState::Joining:
+                stateStr = "Joining...";
+                stateColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
+                break;
+            case CollabSessionState::Connected:
+                stateStr = "Connected";
+                stateColor = ImVec4(0.4f, 0.8f, 1.0f, 1.0f);
+                break;
+            case CollabSessionState::Syncing:
+                stateStr = "Syncing...";
+                stateColor = ImVec4(1.0f, 0.6f, 0.3f, 1.0f);
+                break;
+            default: break;
+        }
+        ImGui::TextColored(stateColor, "Status: %s", stateStr);
+
+        if (ImGui::Button("Leave Session")) {
+            m_CollabSystem.LeaveSession();
+        }
+
+        ImGui::Separator();
+
+        // Conflict strategy
+        if (ImGui::TreeNode("Settings")) {
+            const char* strategies[] = { "Last Writer Wins", "Host Authority", "Merge", "Ask (Manual)" };
+            int currentStrategy = static_cast<int>(m_CollabSystem.GetConflictStrategy());
+            if (ImGui::Combo("Conflict Resolution", &currentStrategy, strategies, IM_ARRAYSIZE(strategies))) {
+                m_CollabSystem.SetConflictStrategy(static_cast<ConflictStrategy>(currentStrategy));
+            }
+            ImGui::TreePop();
+        }
+
+        ImGui::Separator();
+
+        // Peers
+        const auto& peers = m_CollabSystem.GetPeers();
+        if (ImGui::TreeNodeEx("Peers", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (ImGui::BeginTable("##CollabPeers", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg)) {
+                ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Status", ImGuiTableColumnFlags_WidthFixed, 80);
+                ImGui::TableSetupColumn("Editing", ImGuiTableColumnFlags_WidthFixed, 80);
+                ImGui::TableHeadersRow();
+
+                for (const auto& peer : peers) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    if (peer.peerId == m_CollabSystem.GetCurrentSequence()) {
+                        ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.5f, 1.0f), "%s (You)", peer.name.c_str());
+                    } else {
+                        ImGui::Text("%s", peer.name.c_str());
+                    }
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TextColored(peer.connected ? ImVec4(0.3f, 0.9f, 0.3f, 1.0f) : ImVec4(0.6f, 0.6f, 0.6f, 1.0f),
+                                       peer.connected ? "Online" : "Offline");
+                    ImGui::TableSetColumnIndex(2);
+                    if (peer.cursorEntityId != 0 && m_World) {
+                        auto* name = m_World->GetComponent<ECS::NameComponent>(static_cast<ECS::Entity>(peer.cursorEntityId));
+                        if (name) {
+                            ImGui::TextDisabled("%s", name->name.c_str());
+                        } else {
+                            ImGui::TextDisabled("#%u", peer.cursorEntityId);
+                        }
+                    } else {
+                        ImGui::TextDisabled("--");
+                    }
+                }
+                ImGui::EndTable();
+            }
+            ImGui::TreePop();
+        }
+
+        // Conflicts
+        const auto& conflicts = m_CollabSystem.GetConflicts();
+        if (!conflicts.empty()) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.3f, 1.0f), "Conflicts (%zu)", conflicts.size());
+            for (usize i = 0; i < conflicts.size(); ++i) {
+                const auto& c = conflicts[i];
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::Text("Entity #%llu: %s vs %s",
+                            (unsigned long long)c.localOp.entityId,
+                            c.localOp.authorName.c_str(),
+                            c.remoteOp.authorName.c_str());
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Keep Local")) {
+                    m_CollabSystem.ResolveConflict(i, ConflictStrategy::Reject);
+                }
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Accept Remote")) {
+                    m_CollabSystem.ResolveConflict(i, ConflictStrategy::LastWriterWins);
+                }
+                ImGui::PopID();
+            }
+        }
+
+        // Operation log
+        ImGui::Separator();
+        if (ImGui::TreeNode("Operation Log")) {
+            const auto& log = m_CollabSystem.GetOperationLog();
+            ImGui::Text("%zu operations", log.size());
+
+            f32 maxH = std::min(200.0f, ImGui::GetContentRegionAvail().y);
+            ImGui::BeginChild("##OpLog", ImVec2(0, maxH), true);
+
+            // Show most recent first
+            for (auto it = log.rbegin(); it != log.rend(); ++it) {
+                const auto& op = *it;
+                const char* typeStr = "?";
+                switch (op.type) {
+                    case EditOpType::CreateEntity:    typeStr = "Create"; break;
+                    case EditOpType::DeleteEntity:    typeStr = "Delete"; break;
+                    case EditOpType::RenameEntity:    typeStr = "Rename"; break;
+                    case EditOpType::SetComponent:    typeStr = "SetComp"; break;
+                    case EditOpType::RemoveComponent: typeStr = "RmComp"; break;
+                    case EditOpType::ModifyTransform: typeStr = "Transform"; break;
+                    case EditOpType::SetParent:       typeStr = "Parent"; break;
+                    case EditOpType::LockEntity:      typeStr = "Lock"; break;
+                    case EditOpType::UnlockEntity:    typeStr = "Unlock"; break;
+                }
+                ImGui::TextDisabled("[%llu]", (unsigned long long)op.sequenceId);
+                ImGui::SameLine();
+                ImGui::Text("%s #%llu", typeStr, (unsigned long long)op.entityId);
+                ImGui::SameLine();
+                ImGui::TextDisabled("by %s", op.authorName.empty() ? "local" : op.authorName.c_str());
+            }
+
+            ImGui::EndChild();
+            ImGui::TreePop();
+        }
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// Command Palette
+// ============================================================================
+
+void EditorLayer::RegisterPaletteCommands() {
+    m_CommandPalette.ClearCommands();
+
+    // Entity commands
+    m_CommandPalette.RegisterCommand({
+        "Create Empty Entity", "Entity", "Ctrl+Shift+N",
+        "Create a new empty entity in the scene",
+        [this]() {
+            if (!m_World) return;
+            auto entity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(entity, ECS::NameComponent{"New Entity"});
+            m_World->AddComponent<ECS::TransformComponent>(entity);
+            SelectEntity(entity, false);
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Delete Selected", "Entity", "Delete",
+        "Delete all selected entities",
+        [this]() { DeleteSelectedEntities(); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Duplicate Selected", "Entity", "Ctrl+D",
+        "Duplicate the selected entity",
+        [this]() { DuplicateSelectedEntities(); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Focus Selection", "Entity", "F",
+        "Focus the camera on the selected entity",
+        [this]() { if (!m_SelectedEntities.empty()) FocusOnSelection(); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Select All", "Entity", "Ctrl+A",
+        "Select all entities in the scene",
+        [this]() {
+            if (!m_World) return;
+            auto entities = m_World->GetAllEntities();
+            for (auto e : entities) SelectEntity(e, true);
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Deselect All", "Entity", "",
+        "Clear entity selection",
+        [this]() { ClearSelection(); }
+    });
+
+    // Scene commands
+    m_CommandPalette.RegisterCommand({
+        "Save Scene", "Scene", "Ctrl+S",
+        "Save the current scene",
+        [this]() {
+            if (!m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Save Scene As...", "Scene", "Ctrl+Shift+S",
+        "Save the current scene to a new file",
+        [this]() {
+            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
+            std::string path = FileDialog::SaveFile("Save Scene As", filters, "", "scene.enjin");
+            if (!path.empty()) SaveScene(path);
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Open Scene...", "Scene", "Ctrl+O",
+        "Open an existing scene file",
+        [this]() {
+            std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }};
+            std::string path = FileDialog::OpenFile("Open Scene", filters);
+            if (!path.empty()) OpenScene(path);
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "New Scene", "Scene", "Ctrl+N",
+        "Create a new empty scene",
+        [this]() {
+            if (m_World) {
+                m_World->Clear();
+                ClearSelection();
+                m_CurrentScenePath.clear();
+            }
+        }
+    });
+
+    // View commands
+    m_CommandPalette.RegisterCommand({
+        "Toggle Hierarchy Panel", "View", "Ctrl+1",
+        "Show or hide the hierarchy panel",
+        [this]() { SetPanelVisibility(EditorPanel::Hierarchy, !IsPanelVisible(EditorPanel::Hierarchy)); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Inspector Panel", "View", "Ctrl+2",
+        "Show or hide the inspector panel",
+        [this]() { SetPanelVisibility(EditorPanel::Inspector, !IsPanelVisible(EditorPanel::Inspector)); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Console", "View", "Ctrl+4",
+        "Show or hide the console panel",
+        [this]() { SetPanelVisibility(EditorPanel::Console, !IsPanelVisible(EditorPanel::Console)); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Asset Browser", "View", "Ctrl+5",
+        "Show or hide the asset browser",
+        [this]() { SetPanelVisibility(EditorPanel::AssetBrowser, !IsPanelVisible(EditorPanel::AssetBrowser)); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Game View", "View", "",
+        "Show or hide the game view",
+        [this]() { SetPanelVisibility(EditorPanel::GameView, !IsPanelVisible(EditorPanel::GameView)); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Profiler", "View", "",
+        "Show or hide the profiler panel",
+        [this]() { SetPanelVisibility(EditorPanel::Profiler, !IsPanelVisible(EditorPanel::Profiler)); }
+    });
+
+    // Gizmo commands
+    m_CommandPalette.RegisterCommand({
+        "Translate Mode", "Gizmo", "1",
+        "Switch gizmo to translate mode",
+        [this]() { m_GizmoOperation = GizmoOperation::Translate; }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Rotate Mode", "Gizmo", "2",
+        "Switch gizmo to rotate mode",
+        [this]() { m_GizmoOperation = GizmoOperation::Rotate; }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Scale Mode", "Gizmo", "3",
+        "Switch gizmo to scale mode",
+        [this]() { m_GizmoOperation = GizmoOperation::Scale; }
+    });
+
+    // Play mode commands
+    m_CommandPalette.RegisterCommand({
+        "Play", "PlayMode", "F5",
+        "Start play mode",
+        [this]() {
+            if (!m_PlayMode.IsPlaying()) {
+                m_PlayMode.Play();
+            }
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Stop", "PlayMode", "Escape",
+        "Stop play mode",
+        [this]() {
+            if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+                m_PlayMode.Stop();
+            }
+        }
+    });
+
+    // Accessibility commands
+    m_CommandPalette.RegisterCommand({
+        "Toggle Command Palette", "Accessibility", "Ctrl+P",
+        "Open or close the command palette",
+        [this]() { m_CommandPalette.Close(); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Keyboard Navigation", "Accessibility", "",
+        "Enable or disable keyboard navigation and gizmo nudge",
+        [this]() { m_EditorSettings.keyboardNavEnabled = !m_EditorSettings.keyboardNavEnabled; }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Toggle Announcer", "Accessibility", "",
+        "Enable or disable the accessibility announcer status bar",
+        [this]() { m_Announcer.enabled = !m_Announcer.enabled; }
+    });
+
+    // Tools
+    m_CommandPalette.RegisterCommand({
+        "Undo", "Edit", "Ctrl+Z",
+        "Undo the last action",
+        [this]() { m_UndoRedo.Undo(); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Redo", "Edit", "Ctrl+Y",
+        "Redo the last undone action",
+        [this]() { m_UndoRedo.Redo(); }
+    });
+}
+
+// ============================================================================
+// Keyboard Gizmo Nudge
+// ============================================================================
+
+void EditorLayer::HandleKeyboardGizmoNudge() {
+    if (m_PrimarySelected == ECS::INVALID_ENTITY || !m_World) return;
+    if (!m_World->IsValid(m_PrimarySelected)) return;
+
+    // Don't nudge entities locked by others
+    if (m_SceneLockManager.IsEntityLockedByOther(m_PrimarySelected)) return;
+
+    auto* transform = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+    if (!transform) return;
+
+    bool ctrl = Input::IsKeyDown(KeyCode::LeftControl);
+    bool anyArrow = false;
+    Math::Vector3 nudge(0, 0, 0);
+    f32 amount = ctrl ? m_EditorSettings.gizmoNudgeFine : m_EditorSettings.gizmoNudgeAmount;
+
+    if (m_GizmoOperation == GizmoOperation::Translate) {
+        if (Input::IsKeyPressed(KeyCode::Left))  { nudge.x -= amount; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Right)) { nudge.x += amount; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Up))    { nudge.z -= amount; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Down))  { nudge.z += amount; anyArrow = true; }
+        // Page Up/Down for Y axis
+        if (Input::IsKeyPressed(KeyCode::PageUp))   { nudge.y += amount; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::PageDown))  { nudge.y -= amount; anyArrow = true; }
+    } else if (m_GizmoOperation == GizmoOperation::Rotate) {
+        f32 deg = ctrl ? 1.0f : m_EditorSettings.gizmoRotateNudge;
+        if (Input::IsKeyPressed(KeyCode::Left))  { transform->rotation.y -= deg; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Right)) { transform->rotation.y += deg; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Up))    { transform->rotation.x -= deg; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Down))  { transform->rotation.x += deg; anyArrow = true; }
+    } else if (m_GizmoOperation == GizmoOperation::Scale) {
+        f32 scaleStep = ctrl ? 0.01f : 0.1f;
+        if (Input::IsKeyPressed(KeyCode::Left))  { transform->scale.x -= scaleStep; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Right)) { transform->scale.x += scaleStep; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Up))    { transform->scale.y += scaleStep; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::Down))  { transform->scale.y -= scaleStep; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::PageUp))   { transform->scale.z += scaleStep; anyArrow = true; }
+        if (Input::IsKeyPressed(KeyCode::PageDown))  { transform->scale.z -= scaleStep; anyArrow = true; }
+    }
+
+    if (anyArrow && m_GizmoOperation == GizmoOperation::Translate) {
+        transform->position = transform->position + nudge;
+    }
+}
+
+// ============================================================================
+// Flash Timeline Panel
+// ============================================================================
+
+void EditorLayer::DrawFlashTimelinePanel() {
+    if (!ImGui::Begin("Flash Timeline")) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World) {
+        DrawEmptyState("[ ]", "No World Loaded", "Open or create a scene to begin");
+        ImGui::End();
+        return;
+    }
+
+    // Tab bar: Timeline | SWF Import | AS Transpiler | Templates
+    if (ImGui::BeginTabBar("FlashTabs")) {
+
+        // --- Timeline Tab ---
+        if (ImGui::BeginTabItem("Timeline")) {
+            // Initialize timeline data if needed
+            if (m_FlashTimelineEditor.GetTimeline() == nullptr) {
+                m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+            }
+
+            // Entity assignment for selected layer
+            if (!m_FlashTimelineData.layers.empty()) {
+                u32 layerIdx = 0; // Use first layer for now
+                if (m_PrimarySelected != ECS::INVALID_ENTITY) {
+                    auto& layer = m_FlashTimelineData.layers[layerIdx];
+                    if (layer.entity == 0) {
+                        ImGui::TextColored(ImVec4(1, 0.8f, 0, 1),
+                            "Select an entity and click Assign to link it to the current layer");
+                        ImGui::SameLine();
+                        if (ImGui::Button("Assign Entity")) {
+                            layer.entity = m_PrimarySelected;
+                            auto* name = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
+                            if (name) layer.name = name->name;
+                        }
+                    }
+                }
+            }
+
+            // Update playback
+            m_FlashTimelineEditor.Update(ImGui::GetIO().DeltaTime);
+
+            // Render timeline editor
+            m_FlashTimelineEditor.Render(m_World, m_EditorSettings);
+
+            // Convert to engine timeline button
+            ImGui::Separator();
+            if (ImGui::Button("Convert to Engine Timeline")) {
+                m_FlashTimelineEditor.ConvertToTimeline(m_World);
+            }
+            ImGui::SameLine();
+            ImGui::TextDisabled("Converts keyframes to TimelineComponent property tracks");
+
+            ImGui::EndTabItem();
+        }
+
+        // --- SWF Import Tab ---
+        if (ImGui::BeginTabItem("SWF Import")) {
+            ImGui::Text("Import Adobe SWF files");
+            ImGui::Separator();
+
+            if (ImGui::Button("Open SWF File...")) {
+                std::vector<FileFilter> filters = {
+                    { "SWF Files", "*.swf" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::OpenFile("Import SWF", filters);
+                if (!path.empty()) {
+                    auto result = Assets::SWFLoader::Parse(path);
+                    if (result.success) {
+                        auto& doc = result.document;
+                        ENJIN_LOG_INFO(Editor, "SWF loaded: v%u, %.0fx%.0f @ %.1f fps, "
+                                       "%zu shapes, %zu sprites, %zu bitmaps",
+                                       doc.version, doc.stageWidth, doc.stageHeight,
+                                       doc.frameRate,
+                                       doc.shapes.size(), doc.sprites.size(),
+                                       doc.bitmaps.size());
+
+                        // Configure timeline from SWF
+                        m_FlashTimelineData.name = std::filesystem::path(path).stem().string();
+                        m_FlashTimelineData.frameRate = doc.frameRate;
+                        m_FlashTimelineData.totalFrames = static_cast<u32>(doc.mainTimeline.size());
+                        m_FlashTimelineData.stageWidth = doc.stageWidth;
+                        m_FlashTimelineData.stageHeight = doc.stageHeight;
+
+                        // Create layers from sprites
+                        m_FlashTimelineData.layers.clear();
+                        for (auto& [id, sprite] : doc.sprites) {
+                            std::string layerName = sprite.exportName.empty()
+                                ? ("Sprite " + std::to_string(id))
+                                : sprite.exportName;
+                            m_FlashTimelineData.AddLayer(layerName);
+
+                            // Convert sprite frames to keyframes
+                            auto& layer = m_FlashTimelineData.layers.back();
+                            for (auto& frame : sprite.frames) {
+                                if (!frame.placements.empty()) {
+                                    auto& kf = layer.GetOrCreateKeyframe(frame.frameIndex);
+                                    auto& placement = frame.placements[0];
+                                    kf.position.x = placement.matrix.translateX;
+                                    kf.position.y = placement.matrix.translateY;
+                                    kf.scale.x = placement.matrix.scaleX;
+                                    kf.scale.y = placement.matrix.scaleY;
+                                    if (frame.hasLabel) {
+                                        kf.label = frame.label.name;
+                                    }
+                                }
+                            }
+                        }
+
+                        // If no sprites, create a main timeline layer
+                        if (m_FlashTimelineData.layers.empty()) {
+                            m_FlashTimelineData.AddLayer("Main Timeline");
+                        }
+
+                        m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+
+                        // Show warnings
+                        for (auto& w : doc.warnings) {
+                            ENJIN_LOG_WARN(Editor, "SWF: %s", w.c_str());
+                        }
+                    } else {
+                        ENJIN_LOG_ERROR(Editor, "SWF parse failed: %s",
+                                        result.errorMessage.c_str());
+                    }
+                }
+            }
+
+            ImGui::SameLine();
+            if (ImGui::Button("Export as SVG")) {
+                // Export shapes from timeline data as SVG preview
+                ImGui::TextDisabled("(Exports SWF vector shapes as SVG)");
+            }
+
+            // Display info about loaded SWF timeline
+            if (!m_FlashTimelineData.layers.empty()) {
+                ImGui::Separator();
+                ImGui::Text("Timeline: %s", m_FlashTimelineData.name.c_str());
+                ImGui::Text("Stage: %.0f x %.0f", m_FlashTimelineData.stageWidth,
+                            m_FlashTimelineData.stageHeight);
+                ImGui::Text("Frames: %u @ %.1f fps", m_FlashTimelineData.totalFrames,
+                            m_FlashTimelineData.frameRate);
+                ImGui::Text("Layers: %zu", m_FlashTimelineData.layers.size());
+
+                // Symbol library
+                if (!m_FlashTimelineData.symbolLibrary.empty()) {
+                    if (ImGui::TreeNode("Symbol Library")) {
+                        for (auto& [name, path] : m_FlashTimelineData.symbolLibrary) {
+                            ImGui::BulletText("%s -> %s", name.c_str(), path.c_str());
+                        }
+                        ImGui::TreePop();
+                    }
+                }
+            }
+
+            ImGui::EndTabItem();
+        }
+
+        // --- AS3 Transpiler Tab ---
+        if (ImGui::BeginTabItem("AS Transpiler")) {
+            ImGui::Text("ActionScript 2/3 to AngelScript Transpiler");
+            ImGui::Separator();
+
+            // Input area
+            ImGui::Text("ActionScript Input:");
+            ImGui::InputTextMultiline("##ASInput", m_AS3TranspileInput,
+                                       sizeof(m_AS3TranspileInput),
+                                       ImVec2(-1, 120));
+
+            // Options
+            static Scripting::TranspilerConfig config;
+            static int versionIdx = 2;  // Auto
+            const char* versions[] = { "AS2", "AS3", "Auto-detect" };
+            ImGui::Combo("Source Version", &versionIdx, versions, 3);
+            config.sourceVersion = static_cast<Scripting::ASVersion>(versionIdx);
+
+            ImGui::Checkbox("Preserve Comments", &config.preserveComments);
+            ImGui::SameLine();
+            ImGui::Checkbox("Wrap in TegeBehavior", &config.wrapInClass);
+            ImGui::SameLine();
+            ImGui::Checkbox("Verbose", &config.verbose);
+
+            // Transpile button
+            if (ImGui::Button("Transpile")) {
+                auto result = m_AS3Transpiler.Transpile(m_AS3TranspileInput, config);
+                if (result.success) {
+                    m_AS3TranspileOutput = result.angelScript;
+                    ENJIN_LOG_INFO(Editor, "Transpiled: %u lines, %u matches, %u warnings",
+                                   result.linesProcessed, result.patternsMatched,
+                                   static_cast<u32>(result.warnings.size()));
+                } else {
+                    m_AS3TranspileOutput = "// Error: " + result.errorMessage;
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Load File...")) {
+                std::vector<FileFilter> filters = {
+                    { "ActionScript", "*.as;*.as3;*.as2" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::OpenFile("Open ActionScript", filters);
+                if (!path.empty()) {
+                    std::ifstream file(path);
+                    if (file.is_open()) {
+                        std::string content((std::istreambuf_iterator<char>(file)),
+                                             std::istreambuf_iterator<char>());
+                        strncpy(m_AS3TranspileInput, content.c_str(),
+                                sizeof(m_AS3TranspileInput) - 1);
+                        m_AS3TranspileInput[sizeof(m_AS3TranspileInput) - 1] = '\0';
+                    }
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Save Output...")) {
+                std::vector<FileFilter> filters = {
+                    { "AngelScript", "*.as" },
+                    { "All Files", "*.*" }
+                };
+                std::string path = FileDialog::SaveFile("Save AngelScript", filters, "", "converted.as");
+                if (!path.empty()) {
+                    std::ofstream out(path);
+                    if (out.is_open()) {
+                        out << m_AS3TranspileOutput;
+                        ENJIN_LOG_INFO(Editor, "Saved transpiled output to %s", path.c_str());
+                    }
+                }
+            }
+
+            // Output area
+            ImGui::Separator();
+            ImGui::Text("AngelScript Output:");
+            // Display as read-only
+            ImGui::InputTextMultiline("##ASOutput",
+                                       const_cast<char*>(m_AS3TranspileOutput.c_str()),
+                                       m_AS3TranspileOutput.size() + 1,
+                                       ImVec2(-1, 120),
+                                       ImGuiInputTextFlags_ReadOnly);
+
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
 
     ImGui::End();

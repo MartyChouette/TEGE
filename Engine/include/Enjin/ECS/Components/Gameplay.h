@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
+#include "Enjin/Math/Quaternion.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include <string>
@@ -1579,6 +1580,34 @@ struct PolygonCollider2DComponent {
     f32 bounciness = 0.0f;
     u32 categoryBits = 1;
     u32 collisionMask = 0xFFFFFFFF;
+};
+
+// ============================================================================
+// NETWORKING COMPONENTS
+// ============================================================================
+
+// Marks an entity as networked with ownership tracking
+struct NetworkIdentityComponent {
+    u32 networkId = 0;           // Assigned by NetworkSystem
+    u8 ownerId = 0xFF;          // PlayerId of owner (0xFF = unowned)
+    bool isLocallyOwned = false; // Runtime flag — true if we own this entity
+    bool syncTransform = true;   // Auto-sync position/rotation
+    f32 syncInterval = 0.05f;    // Seconds between syncs (20 Hz)
+    f32 syncTimer = 0.0f;        // Runtime accumulator
+};
+
+// Stores network synchronization state for interpolation and prediction
+struct NetworkTransformComponent {
+    Math::Vector3 lastSyncedPosition;
+    Math::Quaternion lastSyncedRotation = Math::Quaternion(0, 0, 0, 1);
+    Math::Vector3 lastSyncedScale = Math::Vector3(1.0f, 1.0f, 1.0f);
+    Math::Vector3 networkVelocity;
+    Math::Vector3 interpStartPosition;
+    Math::Quaternion interpStartRotation = Math::Quaternion(0, 0, 0, 1);
+    f32 interpProgress = 0.0f;
+    f32 interpDuration = 0.05f;
+    Math::Vector3 predictionError;
+    f32 correctionBlend = 0.0f;
 };
 
 } // namespace ECS
