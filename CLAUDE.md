@@ -55,18 +55,19 @@ enjin/
 │   │   ├── Audio/          # AudioSystem, SimpleAudio (miniaudio backend)
 │   │   ├── Debug/          # Profiler, ScopeTimer, FrameData
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # 60+ component types (incl. joints, ragdoll, script, LOD)
+│   │   │   ├── Components/ # 70+ component types (incl. joints, ragdoll, script, LOD)
 │   │   │   │   ├── Controllers/  # 5 character controller types + Vehicle
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Accessibility/  # ColorblindFilter, SubtitleSystem, ContentWarning
-│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, PerformanceStats
+│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, FeedbackSystem, VectorDrawingEditor, PerformanceStats
 │   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, Particles
 │   │   ├── Input/          # InputAction (remappable input action map)
 │   │   ├── GUI/            # ImGui integration, UICanvas, UISystem, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, ObjectPool, CinematicSystem
-│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
+│   │   ├── Networking/     # HTTPClient, LANMultiplayer, NewgroundsAPI
+│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
 │   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
@@ -356,20 +357,20 @@ if (result.success) {
 
 ## Current Feature Status
 
-The engine has 100+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.
+The engine has 120+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.
 
 - **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings, ray tracing pipeline (RT shadows, reflections, AO, GI, path tracing, SVGF denoiser — awaiting compiled SPIR-V shaders)
-- **ECS & Editor:** 60+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 15 startup templates, entity visibility toggle
+- **ECS & Editor:** 70+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 31 startup templates, entity visibility toggle, bug reporting & feedback system (auto-diagnostics, JSON persistence, remote submission), vector drawing editor (7 shapes, layers, SVG export), splash screen with animated mantra
 - **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
 - **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
 - **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
 - **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
-- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro)
+- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro), Newgrounds.io API (medals, scoreboards, cloud saves)
 - **Networking:** LAN multiplayer (host-authoritative UDP, client-side prediction, 20Hz state sync, interpolation buffer, entity ownership, RPC system, lobby, reliable delivery, editor Network Panel)
 - **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
 - **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview
-- **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P)
+- **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P), HTML5 export (canvas, preloader, responsive scaling, Newgrounds-compatible embed)
 - **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system, shader graph (skeleton), audio event graph (skeleton), particle graph (skeleton)
 - **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer
 
@@ -393,5 +394,6 @@ See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, a
 - **Scripting:** ~~Plugin DLL repositories~~ (done), ~~documentation generator~~ (done), ~~ScriptableObject/DataAsset system~~ (done)
 - **Graph Systems:** ~~Shader Graph, Audio Event Graph, Particle Graph~~ (done — skeleton node types + editor shells)
 - **Platform:** Linux, Steam Deck (Steam Input + gyro), macOS (MoltenVK), Xbox Series X|S (GDK/D3D12), PS5 (PSDK/AGC), Switch 2 (Vulkan 1.3), Switch 1 (NVN), Mobile (Android/iOS), VR/XR (OpenXR), WebAssembly (WebGPU). Platform abstraction layer (`PlatformTarget`) with adaptive quality, input/save/achievement abstractions
-- **Accessibility:** Screen reader support, keyboard-only navigation, motor accessibility
-- **Collaboration:** Git integration, scene/entity locking, collaborative editing
+- **Accessibility:** ~~Screen reader support~~ (done — Announcer), ~~keyboard-only navigation~~ (done — panel focus, gizmo nudge), ~~motor accessibility~~ (done — dwell-click, sticky drag, alternative input devices)
+- **Collaboration:** Git integration, ~~scene/entity locking~~ (done — .enjinlock advisory locks), collaborative editing
+- **Flash Game Revival:** ~~Vector drawing editor~~ (done), ~~Newgrounds.io API~~ (done), ~~HTML5 export~~ (done), SWF import, AS2/AS3 transpiler, Flash-style authoring

@@ -357,6 +357,120 @@ denoiser.SetATrousIterations(5);
 denoiser.ResetHistory();  // On scene change
 ```
 
+## Feedback & Bug Reporting System
+
+### FeedbackManager
+
+```cpp
+#include "Enjin/Editor/FeedbackSystem.h"
+using namespace Enjin::Editor;
+
+FeedbackManager manager;
+
+// Load/save persisted reports (JSON in %APPDATA%/enjin/feedback/)
+manager.LoadAll();
+manager.SaveAll();
+
+// Create a bug report
+BugReport& report = manager.CreateBugReport();
+report.title = "Crash on load";
+report.type = ReportType::Crash;
+report.severity = ReportSeverity::Critical;
+report.description = "Engine crashes when loading scene with >1000 entities";
+report.stepsToReproduce = "1. Create scene\n2. Add 1001 entities\n3. Save and reload";
+report.expectedBehavior = "Scene loads normally";
+report.actualBehavior = "Application crashes with access violation";
+manager.SaveBugReport(report);
+
+// Auto-capture diagnostics (engine version, GPU, RAM, FPS, scene state)
+DiagnosticSnapshot snap = DiagnosticSnapshot::Capture(
+    perfMetrics, fps, frameTimeMs, entityCount,
+    scenePath, consoleLog, selectedCount);
+
+// Create feedback
+FeedbackEntry& feedback = manager.CreateFeedback();
+feedback.title = "Add dark mode to asset browser";
+feedback.type = FeedbackType::FeatureRequest;
+feedback.priority = FeedbackPriority::Medium;
+feedback.satisfaction = SatisfactionRating::Good;
+manager.SaveFeedback(feedback);
+
+// Search and filter
+auto results = manager.SearchBugReports("crash");
+auto filtered = manager.FilterBugReports(
+    static_cast<i32>(ReportStatus::Draft),
+    static_cast<i32>(ReportSeverity::Critical));
+
+// Export
+manager.ExportBugReportAsJson(report.id, "report.json");
+manager.ExportAllAsJson("all_reports.json");
+
+// Remote submission via HTTPClient
+manager.SubmitBugReport(report.id, "https://api.example.com/bugs");
+manager.SubmitFeedback(feedback.id, "https://api.example.com/feedback");
+```
+
+## Vector Drawing Editor
+
+```cpp
+#include "Enjin/Editor/VectorDrawingEditor.h"
+using namespace Enjin::Editor;
+
+// VectorDrawingEditor is an EditorPanel (1<<29)
+// Supports 7 shape types: Line, Rect, Ellipse, Pen, Bezier, Star, Polygon
+// 8 tools: Select, Line, Rectangle, Ellipse, Pen, Bezier, Star, Polygon
+// Features: layers, undo/redo (50 levels), SVG export, snap-to-grid, zoom/pan
+// Flash symbol library integration for Flash game authoring
+```
+
+## HTML5 Export
+
+```cpp
+#include "Enjin/Build/HTML5Exporter.h"
+using namespace Enjin::Build;
+
+HTML5Exporter exporter;
+HTML5ExportConfig config;
+config.title = "My Game";
+config.width = 800;
+config.height = 600;
+config.outputDir = "export/html5";
+config.newgroundsCompatible = true;
+
+// Generates: index.html, preloader.js, style.css
+// Includes: responsive scaling, fullscreen, click-to-play audio
+exporter.Export(config);
+
+// Get embed code (iframe, NG-compatible)
+std::string embedCode = exporter.GetEmbedCode();
+```
+
+## Newgrounds.io API
+
+```cpp
+#include "Enjin/Networking/NewgroundsAPI.h"
+using namespace Enjin::Networking;
+
+NewgroundsAPI ng;
+ng.Connect(appId, encryptionKey);
+
+// Session management
+ng.CheckSession();
+bool connected = ng.IsConnected();
+std::string user = ng.GetUserName();
+
+// Medals & Scoreboards
+ng.UnlockMedal(medalId);
+ng.PostScore(scoreboardId, score);
+
+// Cloud saves
+ng.SaveSlot(slotId, jsonData);
+ng.LoadSlot(slotId);
+
+// Passport URL for login
+std::string url = ng.GetPassportUrl();
+```
+
 ## Complete API Documentation
 
 See individual header files for detailed API documentation:

@@ -35,6 +35,10 @@ This manual covers everything you need to get started and build games with Enjin
 25. [Sprite Sheet Importer](#25-sprite-sheet-importer)
 26. [Asset Browser](#26-asset-browser)
 27. [Ray Tracing](#27-ray-tracing)
+28. [Bug Reporting & Feedback](#28-bug-reporting--feedback)
+29. [Vector Drawing Editor](#29-vector-drawing-editor)
+30. [HTML5 Export](#30-html5-export)
+31. [Newgrounds.io Integration](#31-negroundsio-integration)
 
 ---
 
@@ -2848,3 +2852,137 @@ All RT settings are saved/loaded with scene render settings (JSON). 24 configura
 5. **Composite** — Compute shader multiplies shadows, adds reflections, multiplies AO, adds GI into scene HDR
 
 The RT pipeline only runs for 3D scenes (`SceneRenderMode::Scene3D`). 2D and 2.5D scenes skip RT entirely with no performance impact.
+
+---
+
+## 28. Bug Reporting & Feedback
+
+The editor includes a built-in bug reporting and feedback system accessible from the Help menu. Reports are saved locally as JSON and can optionally be submitted to a remote endpoint.
+
+### Accessing the System
+
+- **Help > Report Bug...** (Ctrl+Shift+B) — Opens the panel on the New Bug Report tab
+- **Help > Send Feedback...** — Opens the panel on the New Feedback tab
+- **Help > Bug Reports & Feedback** — Toggle the panel visibility
+- **Command Palette** (Ctrl+P) — Search for "Report Bug", "Send Feedback", or "Browse Bug Reports"
+
+### Bug Reports
+
+Create detailed bug reports with auto-captured diagnostics:
+
+| Field | Description |
+|-------|-------------|
+| **Title** | Brief summary of the bug (required) |
+| **Type** | Bug, Crash, Performance, Visual, Audio, Other |
+| **Severity** | Low, Medium, High, Critical |
+| **Description** | Detailed description of the issue |
+| **Steps to Reproduce** | Step-by-step instructions |
+| **Expected Behavior** | What should happen |
+| **Actual Behavior** | What actually happens |
+| **Include Logs** | Attach last 50 console log lines |
+| **Include Scene** | Attach current scene JSON snapshot |
+
+Each bug report automatically captures a diagnostic snapshot including:
+- Engine version, platform, GPU name
+- RAM/VRAM usage (total, available, process)
+- FPS, frame time, draw calls, entity count, triangle count
+- Current scene path and timestamp
+
+### Feedback Entries
+
+Submit feature requests, usability feedback, or general comments:
+
+| Field | Description |
+|-------|-------------|
+| **Title** | Brief summary |
+| **Type** | General, Feature Request, Usability, Documentation, Praise |
+| **Priority** | Low, Medium, High |
+| **Category** | Freeform category label |
+| **Satisfaction** | 1-5 star rating |
+| **Description** | Detailed feedback text |
+| **Include Diagnostics** | Optionally attach system diagnostics |
+
+### Browsing Reports
+
+The Bug Reports tab provides:
+- **Search bar** — Filter by title or description (case-insensitive)
+- **Status filter** — Draft, Submitted, Acknowledged, Resolved, Closed
+- **Severity filter** — Low, Medium, High, Critical
+- **Stats row** — Shows open count / total count
+- Click any report to view full details with Edit, Delete, Export, and Submit buttons
+
+### Persistence
+
+Reports are automatically saved to `%APPDATA%/enjin/feedback/feedback_data.json` (Windows) or `~/.config/enjin/feedback/` (Linux). Auto-save triggers on editor shutdown. Reports can be exported individually as JSON files.
+
+---
+
+## 29. Vector Drawing Editor
+
+A built-in vector drawing editor for creating 2D art assets directly in the engine. Access via **Tools > Vector Drawing Editor**.
+
+### Shape Tools
+
+| Tool | Description |
+|------|-------------|
+| **Line** | Draw straight lines |
+| **Rectangle** | Draw rectangles |
+| **Ellipse** | Draw ellipses/circles |
+| **Pen** | Freehand drawing |
+| **Bezier** | Cubic bezier curves |
+| **Star** | N-pointed stars |
+| **Polygon** | Regular polygons |
+
+### Editor Features
+
+- **8 tools**: Select, Line, Rectangle, Ellipse, Pen, Bezier, Star, Polygon
+- **Layer system** with add/remove/reorder
+- **Undo/Redo** with 50 levels of history
+- **Snap to grid** with configurable grid size
+- **Zoom and pan** with mouse wheel and middle mouse drag
+- **Property panel** for editing shape fill color, stroke color, stroke width
+- **SVG export** for use in web or other applications
+- **Flash symbol library** integration for Flash game revival workflow
+
+---
+
+## 30. HTML5 Export
+
+Export your project as a web-ready HTML5 application. Access via **Build > Export HTML5**.
+
+### Generated Files
+
+| File | Purpose |
+|------|---------|
+| **index.html** | Main page with canvas element, Module config, fullscreen support |
+| **preloader.js** | Loading progress bar with click-to-play audio interstitial |
+| **style.css** | Responsive scaling, preloader styling, fullscreen layout |
+
+### Export Dialog
+
+Configure the export via a modal dialog:
+- Output directory selection
+- Window title and resolution
+- Embed code generation (iframe, Newgrounds-compatible)
+
+---
+
+## 31. Newgrounds.io Integration
+
+Built-in support for the Newgrounds.io API for publishing Flash-style web games. Provides session management, medals, scoreboards, and cloud saves.
+
+### AngelScript Functions
+
+| Function | Description |
+|----------|-------------|
+| `NG_Connect(appId, encKey)` | Initialize connection |
+| `NG_IsConnected()` | Check connection status |
+| `NG_CheckSession()` | Validate current session |
+| `NG_UnlockMedal(medalId)` | Unlock an achievement |
+| `NG_PostScore(boardId, value)` | Submit a high score |
+| `NG_GetPassportUrl()` | Get login URL |
+| `NG_GetUserName()` | Get logged-in username |
+| `NG_SaveSlot(slotId, data)` | Save to cloud slot |
+| `NG_LoadSlot(slotId)` | Load from cloud slot |
+
+Configuration is done via the Newgrounds tab in the Flash Timeline panel.

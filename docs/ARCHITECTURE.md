@@ -75,15 +75,16 @@ enjin/
 │   │   ├── Audio/          # AudioSystem, SimpleAudio (miniaudio backend)
 │   │   ├── Debug/          # Profiler, ScopeTimer, FrameData tracking
 │   │   ├── ECS/            # Entity-Component-System
-│   │   │   ├── Components/ # 60+ component types (incl. joints, ragdoll)
+│   │   │   ├── Components/ # 70+ component types (incl. joints, ragdoll, behavior trees, dialogue box)
 │   │   │   │   ├── Controllers/  # 5 character controller types
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
-│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings
-│   │   ├── Effects/        # Weather, Water, Wind, RetroEffects
-│   │   ├── GUI/            # ImGui integration
-│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem
-│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver
+│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, FeedbackSystem, PerformanceStats, VectorDrawingEditor
+│   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteTextureAtlas, SpriteContourTracer
+│   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
+│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
+│   │   ├── Networking/     # LANMultiplayer, NetworkPanel
+│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
@@ -91,7 +92,8 @@ enjin/
 │   │   │   ├── Vulkan/     # VulkanContext, Pipeline, Buffer, etc.
 │   │   │   └── RayTracing/ # RT pipeline, acceleration structures, denoiser
 │   │   ├── Scene/          # SceneSerializer, SceneManager, LevelStreaming
-│   │   └── Scripting/      # AngelScript engine, bindings, coroutines, events
+│   │   ├── Scripting/      # AngelScript engine, bindings, coroutines, events
+│   │   └── VisualScript/   # NodeDefinition, NodeRegistry, VisualScriptExecutor
 │   ├── shaders/            # GLSL shaders (triangle.vert/frag, grass.vert/frag)
 │   └── src/
 │
@@ -163,7 +165,7 @@ enjin/
 **Components**:
 - `World` - Main ECS container managing entities and components
 - `Entity` - ID-based entities (u64)
-- 60+ component types across categories:
+- 70+ component types across categories:
   - Core (Transform, Mesh, Material, Light, Camera, Name, Notes, Text)
   - Controllers (Platformer2D, TopDown2D, TopDown3D, ThirdPerson, FirstPerson, Vehicle, Possessable)
   - Terrain (TerrainComponent, Terrain2DComponent)
@@ -171,11 +173,12 @@ enjin/
   - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
   - Combat (Health, Damage, DamageResistance, Resource)
-  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD)
-  - AI (AIController, FollowTarget, LookAtTarget, Waypoint)
+  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent)
+  - AI (AIController, FollowTarget, LookAtTarget, Waypoint, BehaviorTreeComponent)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
   - Streaming (StreamingVolume, StreamingPortal)
   - Timeline (TimelineComponent)
+  - Networking (NetworkIdentity, NetworkTransform)
   - Other (StateMachine, Dialogue, Skeleton, Animator)
 
 ### Editor System
@@ -187,14 +190,16 @@ enjin/
 - Template Selector - Startup project templates
 
 **Features**:
-- 12 editor panels (Hierarchy, Inspector, Console, Asset Browser, Settings, Post Processing, Effects, Game View, Scene List, Skybox, Stats Overlay, Profiler)
+- 20+ editor panels (Hierarchy, Inspector, Console, Asset Browser, Settings, Post Processing, Effects, Game View, Scene List, Skybox, Stats Overlay, Profiler, Pixel Editor, Vector Drawing, Behavior Tree, Procedural Generation, Sprite Sheet Importer, Bug Reports & Feedback, Network, Animation Timeline)
 - Transform gizmos (translate, rotate, scale) via ImGuizmo
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
 - Scene management with project manifests and scene transitions
-- Startup template selector with 15 built-in templates + custom templates
+- Startup template selector with 31 built-in templates + custom templates
 - Terrain sculpting brushes (raise, lower, flatten, smooth, paint) with viewport ray-heightmap intersection
 - 2D terrain control point drag-to-edit in viewport
+- Bug reporting and feedback system with auto-captured diagnostics
+- Command palette (Ctrl+P) with fuzzy search and 25+ commands
 
 ### Scene System
 
@@ -259,6 +264,22 @@ enjin/
 - Gravity zones (directional, point, zero-G overrides)
 - Temperature zones (heat/cold environmental effects)
 
+### 2D Physics System
+
+**PhysicsWorld2D** (2D impulse-based dynamics):
+- Circle, Box, Polygon collision shapes
+- SAT (Separating Axis Theorem) collision detection
+- 5 joint types (Distance, Revolute, Prismatic, Weld, Wheel)
+- Continuous Collision Detection (CCD)
+- Physics materials (friction, restitution, density)
+- 2D raycasts
+
+### Feedback System
+
+- `FeedbackManager` - Bug report and feedback CRUD with JSON persistence
+- `DiagnosticSnapshot` - Auto-captured engine state (version, GPU, RAM, FPS, scene)
+- Remote submission via HTTPClient, search/filter, JSON export
+
 ### Gameplay Systems
 
 - `SaveSystem` - 10-slot save/load with disk persistence
@@ -268,6 +289,9 @@ enjin/
 - `ObjectPool` - Entity recycling with lifetime auto-release
 - `CinematicSystem` - Waypoint-based camera sequences with easing
 - `EntityEventBus` - Decoupled C++ entity communication
+- `DestructibleSystem` - Voronoi, grid, radial, shatter fracture patterns with debris physics
+- `LocalizationManager` - String tables, CSV/JSON I/O, LOC() macro for UI text
+- `DialogueAsset` - .enjdlg dialogue files with tree editor
 
 ### Terrain System
 

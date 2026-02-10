@@ -24,6 +24,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Particle System** - CPU particle simulation (5 emitter shapes, size/speed curves, gravity/drag) with GPU instanced billboard rendering
 - **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, shadow strength, per-entity dither modes, point/spot shadow light selection by intensity/distance scoring
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
+- **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
+- **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
+- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser (awaiting compiled SPIR-V)
 
 ### Editor
 - **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
@@ -35,7 +38,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 30 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, Racing, Arena Fighter, PS1 RPG, City Builder, Survivor-like, Rogue-like, Shadow Test, and more)
+- **Startup Templates** - 31 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, Racing, Arena Fighter, PS1 RPG, City Builder, Survivor-like, Rogue-like, Shadow Test, Planet Gravity, and more)
 - **Custom Templates** - Save/load from templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
@@ -50,9 +53,16 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Animation Graph** - Visual state machine editor for AnimatorComponent with Entry pseudo-node, transitions, parameters
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
 - **Visual Script Editor** - Blueprint-style visual scripting with 50+ nodes, breakpoint debugging, execution profiler
+- **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
+- **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
+- **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
+- **Command Palette** - Ctrl+P fuzzy-search popup with 25+ commands for quick access
+- **Project Hub** - Startup wizard with template browser, recent projects, and project creation flow
+- **Entity Icons** - Bracket-tag icons in hierarchy by component type ([C] Camera, [L] Light, [M] Mesh, etc.)
+- **Empty State Patterns** - Helpful empty-state messages with call-to-action buttons in all panels
 
 ### Entity-Component System
-- **60+ Component Types** - Full inspector UI for all components
+- **70+ Component Types** - Full inspector UI for all components
 - **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
 - **Camera Component** - In-game cameras with projection settings and frustum visualization
 - **Physics** - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB), ground detection
@@ -66,6 +76,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **LOD System** - Distance-based mesh swapping
 - **Level Streaming** - Chunk-based distance loading with priority queue and async support
 - **Runtime UI** - Anchor-based layout, 8 widget types, event bus, 4 theme presets
+- **Behavior Tree AI** - 20 node types with visual editor, blackboard system, play-mode debugging
+- **Dialogue Box** - Auto-built UICanvas dialogue display with speaker, portrait, choices
+- **Surface Aligned Controller** - Planet gravity walking on spherical surfaces
 
 ### Animation
 - **Skeletal Animation** - glTF skin/joint/animation import, GPU skinning, auto-play
@@ -88,6 +101,13 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Subtitles** - Configurable font size, background, speaker names, direction indicators
 - **Content Warnings** - Per-scene warning flags with dismissable overlay
 - **Quick Presets** - Low Vision, Motor Impaired, Photosensitive, Reset All
+- **Keyboard Navigation** - Panel focus shortcuts (Ctrl+1-5), gizmo nudge (Arrow/PageUp/PageDown), focus rings
+- **Motor Accessibility** - Adjustable click/drag thresholds, dwell-click, sticky drag, motor impaired preset
+- **Command Palette** - Ctrl+P for keyboard-driven command access
+- **Alternative Input** - Switch access, eye tracking, sip-and-puff, head tracking support
+- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection
+- **Screen Reader Support** - Priority-queued text announcer with visual status bar
+- **Audio Visual Indicators** - Colored dot overlays for audio events
 
 ### Scene Management
 - **Project File Format** - .enjinproject JSON manifest
@@ -106,6 +126,10 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Cinematic Camera** - Waypoint sequences with easing curves for cutscenes
 - **Entity Event Bus** - Decoupled C++ entity communication system
 - **Raw Mouse Input** - Bypass OS mouse acceleration with smoothing options
+- **Destructible Environments** - 4 fracture patterns (Voronoi, Grid, Radial, Shatter) with debris physics
+- **2D Physics** - Circle, box, polygon shapes with 5 joint types, CCD, SAT collision
+- **Localization** - String tables, CSV/JSON I/O, parameterized strings, LOC() macro
+- **Dialogue Assets** - .enjdlg dialogue files with visual tree editor
 
 ### Build & Distribution
 - **Build Pipeline** - Scan project → validate assets → compress/obfuscate → pack into `.enjpak` with CRC32 integrity verification
@@ -121,6 +145,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Plugin System** - IPlugin interface, DLL/SO loading, manifest JSON, editor panel
 - **C++ Hot-Reload** - File watching, DLL reload with state save/restore
 - **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes
+- **Newgrounds.io API** - Session management, medals, scoreboards, cloud saves for web games
+- **DataAsset System** - Schema definitions with typed instances, JSON I/O, script bindings
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
@@ -182,7 +208,7 @@ enjin/
 - [x] Play Mode (play/pause/stop)
 - [x] Undo/Redo System
 - [x] Entity Clipboard (Cut/Copy/Paste)
-- [x] Startup Template Selector (30 templates)
+- [x] Startup Template Selector (31 templates)
 
 ### Phase 5: Advanced Rendering ✅
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)
@@ -246,6 +272,13 @@ enjin/
 - [x] Subtitle/Caption System
 - [x] Content Warning System
 - [x] Accessibility Quick Presets
+- [x] Keyboard Navigation (panel focus, gizmo nudge)
+- [x] Motor Accessibility (dwell-click, sticky drag, thresholds)
+- [x] Command Palette (Ctrl+P, 25+ commands)
+- [x] Alternative Input Devices (switch, eye tracking, sip-and-puff)
+- [x] Scene & Entity Locking
+- [x] Screen Reader Announcer
+- [x] Audio Visual Indicators
 
 ### Phase 11: Distribution
 - [x] Standalone Game Player
@@ -254,6 +287,15 @@ enjin/
 - [x] Scripting Language (AngelScript with hot-reload, coroutines, event bus)
 - [x] Visual Scripting System (Blueprint-style nodes, debugging, profiler)
 - [x] Dialogue Tree Editor (7 node types, EntityEventBus, SubtitleSystem)
+- [x] Behavior Tree Editor (20 node types, visual editor)
+- [x] Bug Reporting & Feedback System
+- [x] Vector Drawing Editor (SVG)
+- [x] HTML5 Export
+- [x] Newgrounds.io API Integration
+- [x] Procedural Generation (9 algorithms + graph editor)
+- [x] Destructible Environments
+- [x] 2D Physics System
+- [x] Localization System
 - [ ] Networking (client-server, peer-to-peer)
 
 ### Phase 12: Advanced Gameplay
@@ -268,6 +310,9 @@ enjin/
 - [x] Entity Event Bus
 - [x] Raw Mouse Input + Smoothing
 - [x] Window Icon Support
+- [x] Dialogue Assets (.enjdlg)
+- [x] DataAsset System
+- [x] Tweening (25 easing functions)
 
 ## Editor Controls
 

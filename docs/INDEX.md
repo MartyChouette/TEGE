@@ -32,6 +32,16 @@
 | AI | `Enjin/AI/AIBehaviors.h` | State-based AI, navmesh generation, A* pathfinding |
 | Render Backend | `Enjin/Renderer/RenderBackend.h` | Platform abstraction interface |
 | Ray Tracing | `Enjin/Renderer/RayTracing/` | RT pipeline, acceleration structures, SVGF denoiser, path tracer |
+| Feedback | `Enjin/Editor/FeedbackSystem.h` | Bug reporting, feedback collection, diagnostics capture, JSON persistence |
+| Vector Drawing | `Enjin/Editor/VectorDrawingEditor.h` | 7 shape types, layers, SVG export, Flash symbol library |
+| HTML5 Export | `Enjin/Build/HTML5Exporter.h` | Canvas export, preloader, responsive scaling, Newgrounds embed |
+| Newgrounds | `Enjin/Networking/NewgroundsAPI.h` | NG.io REST gateway: medals, scoreboards, cloud saves |
+| 2D Physics | `Enjin/Physics/Physics2D.h` | Circle/Box/Polygon shapes, 5 joint types, CCD, SAT collision |
+| Localization | `Enjin/GUI/Localization.h` | String tables, CSV/JSON I/O, LOC() macro, parameterized strings |
+| Behavior Trees | `Enjin/AI/BehaviorTree.h` | 20 node types, visual editor, blackboard, play-mode debugging |
+| Procedural Gen | `Enjin/Procedural/ProceduralAlgorithms.h` | 9 algorithms, visual node graph editor, preview canvas |
+| Destructible | `Enjin/Effects/Destructible.h` | 4 fracture patterns, debris physics, chain destruction |
+| Networking | `Enjin/Networking/LANMultiplayer.h` | Host-authoritative UDP, prediction, interpolation, RPC, lobby |
 
 ---
 

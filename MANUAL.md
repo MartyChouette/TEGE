@@ -54,14 +54,24 @@ The editor opens with a splash screen displaying "THE ENJIN ENGINE", then fades 
 | **Post-Processing** | Configure post-processing effects (bloom, vignette, etc.). |
 | **Effects** | Weather and water effect controls. |
 | **Game View** | Live feed from the active game camera (play mode preview). |
+| **Profiler** | Per-frame breakdown, FPS graph, scope-based profiling. |
+| **Scene List** | Manage multiple scenes within a project. |
+| **Skybox** | Configure procedural, cubemap, or solid color skybox. |
+| **Vector Drawing** | Built-in vector art editor with 7 shape types. |
+| **Pixel Editor** | Sprite pixel art editor with layers and retro presets. |
+| **Bug Reports** | Report bugs and submit feedback with auto-captured diagnostics. |
+| **Behavior Tree** | Visual node-based AI behavior tree editor. |
+| **Procedural Gen** | 9 procedural generation algorithms with preview canvas. |
 
 ### Menu Bar
 
-- **File**: New Scene, Open Scene, Save Scene, Import Model
-- **Edit**: Undo, Redo, Duplicate, Delete
-- **Entity**: Create Empty, Create primitives (Cube, Sphere, Plane), Create lights
-- **View**: Toggle panel visibility
-- **Help**: About, Demo Window
+- **File**: New Scene, Open Scene, Save Scene, Import Model, Export Prefab
+- **Edit**: Undo, Redo, Duplicate, Delete, Cut, Copy, Paste
+- **Entity**: Create Empty, Create primitives (Cube, Sphere, Plane, Cylinder, Cone), Create lights, Create 2D (Sprite, Tilemap, Camera2D)
+- **View**: Panels (toggle all editor panels), Settings, Effects, Tools sub-menus, Game View, Scene List
+- **Build**: Build Game, Export HTML5
+- **Tools**: Pixel Editor, Vector Drawing, Behavior Tree Editor, Procedural Generation, Sprite Sheet Importer
+- **Help**: About, User Manual, Report Bug... (Ctrl+Shift+B), Send Feedback..., Bug Reports & Feedback
 
 ---
 
@@ -580,6 +590,9 @@ f32 heightAtPoint = water.GetWaveHeight(x, z);
 | **Delete** | Delete selected entity |
 | **Ctrl+D** | Duplicate selected entity |
 | **F** | Focus camera on selected entity |
+| **Ctrl+Shift+B** | Report bug |
+| **Ctrl+P** | Command palette |
+| **Ctrl+1-5** | Focus panel (Hierarchy, Inspector, Console, Asset Browser, Settings) |
 
 ### Gizmo Controls
 
@@ -604,7 +617,7 @@ f32 heightAtPoint = water.GetWaveHeight(x, z);
 
 ### 3D Models
 
-Supported formats: `.gltf`, `.glb`, `.fbx`
+Supported formats: `.gltf`, `.glb`, `.fbx`, `.obj`, `.dae`, `.3ds`, `.ply` (ASCII/binary), `.vox` (MagicaVoxel)
 
 1. **File > Import Model**
 2. Browse to your model file
@@ -1277,14 +1290,19 @@ PrefabManager::Get().UnpackInstance(&world, entity);
 
 ---
 
+## Completed Features (Previously Planned)
+
+- **Scripting Language**: AngelScript with ~170 bindings, hot-reload, coroutines, event system
+- **Shadow Mapping**: 4-cascade CSM, point/spot shadows, Poisson disk soft shadows
+- **Texture Support**: Base color, normal, height, metallic-roughness, emissive maps
+- **Asset Hot-Reloading**: File watcher for textures and shaders with automatic reload
+- **Ray Tracing Pipeline**: RT shadows, reflections, AO, GI, path tracing, SVGF denoiser
+
 ## Planned Features
 
-- **Scripting Language**: Lua or C# binding for game logic
-- **Shadow Mapping**: Real-time shadows
-- **Texture Support**: Albedo, normal, roughness maps
-- **Asset Hot-Reloading**: Automatic reload when files change
-- **Networking**: Client-server and peer-to-peer support
+- **Networking**: Client-server multiplayer with prediction and interpolation
+- **Platform Ports**: Linux, macOS (MoltenVK), consoles, mobile, WebAssembly
 
 ---
 
-*Enjin Engine - Retro aesthetics, modern technology*
+*Enjin Engine - Collaborate. Compromise. Create.*
