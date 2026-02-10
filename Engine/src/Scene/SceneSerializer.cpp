@@ -41,6 +41,8 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include <sstream>
+#include <algorithm>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -50,16 +52,24 @@ namespace Scene {
 // JSON serialization helpers for math types
 namespace {
 
+// Round float to 6 decimal places for deterministic serialization
+static f32 RF(f32 val) {
+    if (std::isnan(val) || std::isinf(val)) return val;
+    if (std::fabs(val) < 1e-6f) return 0.0f;
+    constexpr f32 mult = 1000000.0f;
+    return std::round(val * mult) / mult;
+}
+
 json SerializeVector2(const Math::Vector2& v) {
-    return json::array({v.x, v.y});
+    return json::array({RF(v.x), RF(v.y)});
 }
 
 json SerializeVector3(const Math::Vector3& v) {
-    return json::array({v.x, v.y, v.z});
+    return json::array({RF(v.x), RF(v.y), RF(v.z)});
 }
 
 json SerializeQuaternion(const Math::Quaternion& q) {
-    return json::array({q.x, q.y, q.z, q.w});
+    return json::array({RF(q.x), RF(q.y), RF(q.z), RF(q.w)});
 }
 
 Math::Vector2 DeserializeVector2(const json& j) {
@@ -73,7 +83,7 @@ Math::Vector3 DeserializeVector3(const json& j) {
 }
 
 json SerializeVector4(const Math::Vector4& v) {
-    return json::array({v.x, v.y, v.z, v.w});
+    return json::array({RF(v.x), RF(v.y), RF(v.z), RF(v.w)});
 }
 
 Math::Vector4 DeserializeVector4(const json& j) {
@@ -88,7 +98,7 @@ Math::Quaternion DeserializeQuaternion(const json& j) {
 
 json SerializeMatrix4(const Math::Matrix4& mat) {
     json arr = json::array();
-    for (int i = 0; i < 16; ++i) arr.push_back(mat.m[i]);
+    for (int i = 0; i < 16; ++i) arr.push_back(RF(mat.m[i]));
     return arr;
 }
 
@@ -118,11 +128,11 @@ json SerializeTransformComponent(const ECS::TransformComponent& transform) {
 json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     json j;
     j["baseColor"] = SerializeVector3(material.baseColor);
-    j["opacity"] = material.opacity;
-    j["metallic"] = material.metallic;
-    j["roughness"] = material.roughness;
+    j["opacity"] = RF(material.opacity);
+    j["metallic"] = RF(material.metallic);
+    j["roughness"] = RF(material.roughness);
     j["emissiveColor"] = SerializeVector3(material.emissiveColor);
-    j["emissiveStrength"] = material.emissiveStrength;
+    j["emissiveStrength"] = RF(material.emissiveStrength);
     j["baseColorTexture"] = material.baseColorTexture;
     j["normalTexture"] = material.normalTexture;
     j["metallicRoughnessTexture"] = material.metallicRoughnessTexture;
@@ -136,10 +146,10 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["castShadows"] = material.castShadows;
     j["receiveShadows"] = material.receiveShadows;
     j["alphaMode"] = static_cast<i32>(material.alphaMode);
-    j["alphaCutoff"] = material.alphaCutoff;
+    j["alphaCutoff"] = RF(material.alphaCutoff);
     // Height/parallax mapping
     j["heightTexturePath"] = material.heightTexturePath;
-    j["parallaxScale"] = material.parallaxScale;
+    j["parallaxScale"] = RF(material.parallaxScale);
     // Retro rendering flags
     j["flatShading"] = material.flatShading;
     j["affineTexturing"] = material.affineTexturing;
@@ -190,13 +200,13 @@ json SerializeLightComponent(const ECS::LightComponent& light) {
     json j;
     j["type"] = static_cast<i32>(light.type);
     j["color"] = SerializeVector3(light.color);
-    j["intensity"] = light.intensity;
-    j["range"] = light.range;
-    j["constantAttenuation"] = light.constantAttenuation;
-    j["linearAttenuation"] = light.linearAttenuation;
-    j["quadraticAttenuation"] = light.quadraticAttenuation;
-    j["innerConeAngle"] = light.innerConeAngle;
-    j["outerConeAngle"] = light.outerConeAngle;
+    j["intensity"] = RF(light.intensity);
+    j["range"] = RF(light.range);
+    j["constantAttenuation"] = RF(light.constantAttenuation);
+    j["linearAttenuation"] = RF(light.linearAttenuation);
+    j["quadraticAttenuation"] = RF(light.quadraticAttenuation);
+    j["innerConeAngle"] = RF(light.innerConeAngle);
+    j["outerConeAngle"] = RF(light.outerConeAngle);
     j["castShadows"] = light.castShadows;
     return j;
 }
@@ -211,36 +221,36 @@ json SerializeTextComponent(const ECS::TextComponent& text) {
     json j;
     j["text"] = text.text;
     j["fontPath"] = text.fontPath;
-    j["fontSize"] = text.fontSize;
-    j["wrapWidth"] = text.wrapWidth;
+    j["fontSize"] = RF(text.fontSize);
+    j["wrapWidth"] = RF(text.wrapWidth);
     j["textureWidth"] = text.textureWidth;
     j["textureHeight"] = text.textureHeight;
     j["textColor"] = SerializeVector3(text.textColor);
     j["bgColor"] = SerializeVector3(text.bgColor);
-    j["bgOpacity"] = text.bgOpacity;
+    j["bgOpacity"] = RF(text.bgOpacity);
     j["horizontalAlign"] = static_cast<i32>(text.horizontalAlign);
-    j["paddingX"] = text.paddingX;
-    j["paddingY"] = text.paddingY;
+    j["paddingX"] = RF(text.paddingX);
+    j["paddingY"] = RF(text.paddingY);
     return j;
 }
 
 json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     json j;
     j["projectionType"] = static_cast<i32>(camera.projectionType);
-    j["fieldOfView"] = camera.fieldOfView;
-    j["nearPlane"] = camera.nearPlane;
-    j["farPlane"] = camera.farPlane;
-    j["orthoSize"] = camera.orthoSize;
+    j["fieldOfView"] = RF(camera.fieldOfView);
+    j["nearPlane"] = RF(camera.nearPlane);
+    j["farPlane"] = RF(camera.farPlane);
+    j["orthoSize"] = RF(camera.orthoSize);
     j["priority"] = camera.priority;
     j["isActive"] = camera.isActive;
     j["clearDepth"] = camera.clearDepth;
     j["clearColor"] = camera.clearColor;
     j["backgroundColor"] = SerializeVector3(camera.backgroundColor);
-    j["viewportX"] = camera.viewportX;
-    j["viewportY"] = camera.viewportY;
-    j["viewportWidth"] = camera.viewportWidth;
-    j["viewportHeight"] = camera.viewportHeight;
-    j["cullingMask"] = camera.cullingMask;
+    j["viewportX"] = RF(camera.viewportX);
+    j["viewportY"] = RF(camera.viewportY);
+    j["viewportWidth"] = RF(camera.viewportWidth);
+    j["viewportHeight"] = RF(camera.viewportHeight);
+    j["cullingMask"] = RF(camera.cullingMask);
     return j;
 }
 
@@ -406,17 +416,17 @@ json SerializeWeatherZoneComponent(const ECS::WeatherZoneComponent& zone) {
     json j;
     j["halfExtents"] = SerializeVector3(zone.halfExtents);
     j["weatherType"] = zone.weatherType;
-    j["rainIntensity"] = zone.rainIntensity;
-    j["snowIntensity"] = zone.snowIntensity;
-    j["fogDensity"] = zone.fogDensity;
+    j["rainIntensity"] = RF(zone.rainIntensity);
+    j["snowIntensity"] = RF(zone.snowIntensity);
+    j["fogDensity"] = RF(zone.fogDensity);
     j["fogColor"] = SerializeVector3(zone.fogColor);
-    j["fogStart"] = zone.fogStart;
-    j["fogEnd"] = zone.fogEnd;
-    j["lightningEnabled"] = zone.lightningEnabled;
-    j["lightningMinInterval"] = zone.lightningMinInterval;
-    j["lightningMaxInterval"] = zone.lightningMaxInterval;
+    j["fogStart"] = RF(zone.fogStart);
+    j["fogEnd"] = RF(zone.fogEnd);
+    j["lightningEnabled"] = RF(zone.lightningEnabled);
+    j["lightningMinInterval"] = RF(zone.lightningMinInterval);
+    j["lightningMaxInterval"] = RF(zone.lightningMaxInterval);
     j["windDirection"] = SerializeVector3(zone.windDirection);
-    j["windStrength"] = zone.windStrength;
+    j["windStrength"] = RF(zone.windStrength);
     j["priority"] = zone.priority;
     return j;
 }
@@ -445,19 +455,19 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
     j["halfExtents"] = SerializeVector3(volume.halfExtents);
     j["waterType"] = static_cast<u32>(volume.waterType);
     j["waterColor"] = SerializeVector3(volume.waterColor);
-    j["opacity"] = volume.opacity;
-    j["waveSpeed"] = volume.waveSpeed;
-    j["waveHeight"] = volume.waveHeight;
-    j["enableShore"] = volume.enableShore;
-    j["shoreWidth"] = volume.shoreWidth;
-    j["foamIntensity"] = volume.foamIntensity;
-    j["foamScale"] = volume.foamScale;
+    j["opacity"] = RF(volume.opacity);
+    j["waveSpeed"] = RF(volume.waveSpeed);
+    j["waveHeight"] = RF(volume.waveHeight);
+    j["enableShore"] = RF(volume.enableShore);
+    j["shoreWidth"] = RF(volume.shoreWidth);
+    j["foamIntensity"] = RF(volume.foamIntensity);
+    j["foamScale"] = RF(volume.foamScale);
     j["shoreColor"] = SerializeVector3(volume.shoreColor);
     j["priority"] = volume.priority;
     j["iceColor"] = SerializeVector3(volume.iceColor);
-    j["iceOpacity"] = volume.iceOpacity;
-    j["freezeRate"] = volume.freezeRate;
-    j["thawRate"] = volume.thawRate;
+    j["iceOpacity"] = RF(volume.iceOpacity);
+    j["freezeRate"] = RF(volume.freezeRate);
+    j["thawRate"] = RF(volume.thawRate);
     return j;
 }
 
@@ -486,12 +496,12 @@ json SerializeShrubVolumeComponent(const ECS::ShrubVolumeComponent& shrub) {
     json j;
     j["halfExtents"] = SerializeVector3(shrub.halfExtents);
     j["density"] = shrub.density;
-    j["shrubHeight"] = shrub.shrubHeight;
-    j["heightVariance"] = shrub.heightVariance;
+    j["shrubHeight"] = RF(shrub.shrubHeight);
+    j["heightVariance"] = RF(shrub.heightVariance);
     j["width"] = shrub.width;
     j["baseColor"] = SerializeVector3(shrub.baseColor);
     j["tipColor"] = SerializeVector3(shrub.tipColor);
-    j["windSwayStrength"] = shrub.windSwayStrength;
+    j["windSwayStrength"] = RF(shrub.windSwayStrength);
     j["quadsPerShrub"] = shrub.quadsPerShrub;
     if (!shrub.customAssetPath.empty()) j["customAssetPath"] = shrub.customAssetPath;
     return j;
@@ -516,17 +526,17 @@ json SerializeTreeVolumeComponent(const ECS::TreeVolumeComponent& tree) {
     json j;
     j["halfExtents"] = SerializeVector3(tree.halfExtents);
     j["density"] = tree.density;
-    j["trunkHeight"] = tree.trunkHeight;
-    j["trunkWidth"] = tree.trunkWidth;
-    j["canopyRadius"] = tree.canopyRadius;
-    j["canopyOffset"] = tree.canopyOffset;
+    j["trunkHeight"] = RF(tree.trunkHeight);
+    j["trunkWidth"] = RF(tree.trunkWidth);
+    j["canopyRadius"] = RF(tree.canopyRadius);
+    j["canopyOffset"] = RF(tree.canopyOffset);
     j["trunkColor"] = SerializeVector3(tree.trunkColor);
     j["canopyBaseColor"] = SerializeVector3(tree.canopyBaseColor);
     j["canopyTipColor"] = SerializeVector3(tree.canopyTipColor);
-    j["windSwayStrength"] = tree.windSwayStrength;
+    j["windSwayStrength"] = RF(tree.windSwayStrength);
     j["canopyQuads"] = tree.canopyQuads;
-    j["minHeightScale"] = tree.minHeightScale;
-    j["maxHeightScale"] = tree.maxHeightScale;
+    j["minHeightScale"] = RF(tree.minHeightScale);
+    j["maxHeightScale"] = RF(tree.maxHeightScale);
     j["treeType"] = static_cast<u32>(tree.treeType);
     j["springCanopyColor"] = SerializeVector3(tree.springCanopyColor);
     j["summerCanopyColor"] = SerializeVector3(tree.summerCanopyColor);
@@ -563,17 +573,17 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
 // Terrain component serialization
 json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
     json j;
-    j["gridWidth"] = terrain.gridWidth;
-    j["gridHeight"] = terrain.gridHeight;
-    j["cellSize"] = terrain.cellSize;
-    j["maxHeight"] = terrain.maxHeight;
+    j["gridWidth"] = RF(terrain.gridWidth);
+    j["gridHeight"] = RF(terrain.gridHeight);
+    j["cellSize"] = RF(terrain.cellSize);
+    j["maxHeight"] = RF(terrain.maxHeight);
     j["heightmap"] = terrain.heightmap;
     j["splatmap"] = terrain.splatmap;
     json layersArr = json::array();
     for (int i = 0; i < 4; ++i) {
         json layer;
         layer["texturePath"] = terrain.layers[i].texturePath;
-        layer["tileScale"] = terrain.layers[i].tileScale;
+        layer["tileScale"] = RF(terrain.layers[i].tileScale);
         layersArr.push_back(layer);
     }
     j["layers"] = layersArr;
@@ -609,10 +619,10 @@ json SerializeTerrain2DComponent(const ECS::Terrain2DComponent& terrain) {
         points.push_back(SerializeVector2(p));
     }
     j["controlPoints"] = points;
-    j["depth"] = terrain.depth;
-    j["uvScale"] = terrain.uvScale;
+    j["depth"] = RF(terrain.depth);
+    j["uvScale"] = RF(terrain.uvScale);
     j["texturePath"] = terrain.texturePath;
-    j["autoColliders"] = terrain.autoColliders;
+    j["autoColliders"] = RF(terrain.autoColliders);
     return j;
 }
 
@@ -636,7 +646,7 @@ json SerializeCameraTriggerComponent(const ECS::CameraTriggerComponent& trigger)
     j["halfExtents"] = SerializeVector3(trigger.halfExtents);
     j["targetCamera"] = static_cast<u64>(trigger.targetCamera);
     j["priority"] = trigger.priority;
-    j["blendTime"] = trigger.blendTime;
+    j["blendTime"] = RF(trigger.blendTime);
     return j;
 }
 
@@ -652,7 +662,7 @@ ECS::CameraTriggerComponent DeserializeCameraTriggerComponent(const json& j) {
 json SerializeTemperatureZoneComponent(const ECS::TemperatureZoneComponent& zone) {
     json j;
     j["halfExtents"] = SerializeVector3(zone.halfExtents);
-    j["temperature"] = zone.temperature;
+    j["temperature"] = RF(zone.temperature);
     j["priority"] = zone.priority;
     return j;
 }
@@ -671,7 +681,7 @@ json SerializeGravityZoneComponent(const ECS::GravityZoneComponent& zone) {
     j["mode"] = static_cast<u32>(zone.mode);
     j["halfExtents"] = SerializeVector3(zone.halfExtents);
     j["gravityDirection"] = SerializeVector3(zone.gravityDirection);
-    j["gravityStrength"] = zone.gravityStrength;
+    j["gravityStrength"] = RF(zone.gravityStrength);
     j["priority"] = zone.priority;
     j["isActive"] = zone.isActive;
     return j;
@@ -695,19 +705,19 @@ json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
     j["fluidType"] = static_cast<u32>(vol.fluidType);
     j["dimension"] = static_cast<u32>(vol.dimension);
     j["gridSize"] = vol.gridSize;
-    j["viscosity"] = vol.viscosity;
-    j["diffusion"] = vol.diffusion;
-    j["dissipation"] = vol.dissipation;
-    j["velocityDissipation"] = vol.velocityDissipation;
+    j["viscosity"] = RF(vol.viscosity);
+    j["diffusion"] = RF(vol.diffusion);
+    j["dissipation"] = RF(vol.dissipation);
+    j["velocityDissipation"] = RF(vol.velocityDissipation);
     j["solverIterations"] = vol.solverIterations;
-    j["buoyancy"] = vol.buoyancy;
+    j["buoyancy"] = RF(vol.buoyancy);
     j["fluidColor"] = SerializeVector3(vol.fluidColor);
-    j["opacity"] = vol.opacity;
-    j["densityThreshold"] = vol.densityThreshold;
-    j["renderEnabled"] = vol.renderEnabled;
-    j["sourceRadius"] = vol.sourceRadius;
-    j["sourceDensity"] = vol.sourceDensity;
-    j["sourceVelocityScale"] = vol.sourceVelocityScale;
+    j["opacity"] = RF(vol.opacity);
+    j["densityThreshold"] = RF(vol.densityThreshold);
+    j["renderEnabled"] = RF(vol.renderEnabled);
+    j["sourceRadius"] = RF(vol.sourceRadius);
+    j["sourceDensity"] = RF(vol.sourceDensity);
+    j["sourceVelocityScale"] = RF(vol.sourceVelocityScale);
     j["isActive"] = vol.isActive;
     j["priority"] = vol.priority;
     return j;
@@ -740,18 +750,18 @@ ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
 // Base controller fields helper
 json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     json j;
-    j["moveSpeed"] = base.moveSpeed;
-    j["sprintMultiplier"] = base.sprintMultiplier;
-    j["isEnabled"] = base.isEnabled;
-    j["useWASD"] = base.useWASD;
-    j["useArrowKeys"] = base.useArrowKeys;
+    j["moveSpeed"] = RF(base.moveSpeed);
+    j["sprintMultiplier"] = RF(base.sprintMultiplier);
+    j["isEnabled"] = RF(base.isEnabled);
+    j["useWASD"] = RF(base.useWASD);
+    j["useArrowKeys"] = RF(base.useArrowKeys);
     j["useGamepad"] = base.useGamepad;
-    j["gamepadIndex"] = base.gamepadIndex;
-    j["gamepadLookSensitivity"] = base.gamepadLookSensitivity;
-    j["disableMouseLook"] = base.disableMouseLook;
+    j["gamepadIndex"] = RF(base.gamepadIndex);
+    j["gamepadLookSensitivity"] = RF(base.gamepadLookSensitivity);
+    j["disableMouseLook"] = RF(base.disableMouseLook);
     j["gridMovement"] = base.gridMovement;
-    j["gridCellSize"] = base.gridCellSize;
-    j["gridMoveSpeed"] = base.gridMoveSpeed;
+    j["gridCellSize"] = RF(base.gridCellSize);
+    j["gridMoveSpeed"] = RF(base.gridMoveSpeed);
     return j;
 }
 
@@ -772,18 +782,18 @@ void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base
 
 json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["jumpForce"] = ctrl.jumpForce;
-    j["gravity"] = ctrl.gravity;
+    j["jumpForce"] = RF(ctrl.jumpForce);
+    j["gravity"] = RF(ctrl.gravity);
     j["maxJumps"] = ctrl.maxJumps;
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["airControl"] = ctrl.airControl;
-    j["coyoteTime"] = ctrl.coyoteTime;
-    j["jumpBufferTime"] = ctrl.jumpBufferTime;
-    j["enableWallJump"] = ctrl.enableWallJump;
-    j["enableWallSlide"] = ctrl.enableWallSlide;
-    j["wallSlideSpeed"] = ctrl.wallSlideSpeed;
-    j["wallJumpForce"] = ctrl.wallJumpForce;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["airControl"] = RF(ctrl.airControl);
+    j["coyoteTime"] = RF(ctrl.coyoteTime);
+    j["jumpBufferTime"] = RF(ctrl.jumpBufferTime);
+    j["enableWallJump"] = RF(ctrl.enableWallJump);
+    j["enableWallSlide"] = RF(ctrl.enableWallSlide);
+    j["wallSlideSpeed"] = RF(ctrl.wallSlideSpeed);
+    j["wallJumpForce"] = RF(ctrl.wallJumpForce);
     return j;
 }
 
@@ -807,14 +817,14 @@ ECS::Platformer2DController DeserializePlatformer2D(const json& j) {
 
 json SerializeTopDown2D(const ECS::TopDown2DController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
-    j["rotationSpeed"] = ctrl.rotationSpeed;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
+    j["rotationSpeed"] = RF(ctrl.rotationSpeed);
     j["enableDash"] = ctrl.enableDash;
-    j["dashSpeed"] = ctrl.dashSpeed;
-    j["dashDuration"] = ctrl.dashDuration;
-    j["dashCooldown"] = ctrl.dashCooldown;
+    j["dashSpeed"] = RF(ctrl.dashSpeed);
+    j["dashDuration"] = RF(ctrl.dashDuration);
+    j["dashCooldown"] = RF(ctrl.dashCooldown);
     return j;
 }
 
@@ -834,19 +844,19 @@ ECS::TopDown2DController DeserializeTopDown2D(const json& j) {
 
 json SerializeTopDown3D(const ECS::TopDown3DController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
-    j["rotationSpeed"] = ctrl.rotationSpeed;
-    j["cameraAngle"] = ctrl.cameraAngle;
-    j["cameraDistance"] = ctrl.cameraDistance;
-    j["cameraHeight"] = ctrl.cameraHeight;
-    j["lockCameraToPlayer"] = ctrl.lockCameraToPlayer;
-    j["enableClickToMove"] = ctrl.enableClickToMove;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
+    j["rotationSpeed"] = RF(ctrl.rotationSpeed);
+    j["cameraAngle"] = RF(ctrl.cameraAngle);
+    j["cameraDistance"] = RF(ctrl.cameraDistance);
+    j["cameraHeight"] = RF(ctrl.cameraHeight);
+    j["lockCameraToPlayer"] = RF(ctrl.lockCameraToPlayer);
+    j["enableClickToMove"] = RF(ctrl.enableClickToMove);
     j["enableDash"] = ctrl.enableDash;
-    j["dashSpeed"] = ctrl.dashSpeed;
-    j["dashDuration"] = ctrl.dashDuration;
-    j["dashCooldown"] = ctrl.dashCooldown;
+    j["dashSpeed"] = RF(ctrl.dashSpeed);
+    j["dashDuration"] = RF(ctrl.dashDuration);
+    j["dashCooldown"] = RF(ctrl.dashCooldown);
     return j;
 }
 
@@ -871,25 +881,25 @@ ECS::TopDown3DController DeserializeTopDown3D(const json& j) {
 
 json SerializeThirdPerson(const ECS::ThirdPersonController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["jumpForce"] = ctrl.jumpForce;
-    j["gravity"] = ctrl.gravity;
-    j["rotateToFaceMovement"] = ctrl.rotateToFaceMovement;
-    j["rotateToFaceCamera"] = ctrl.rotateToFaceCamera;
-    j["rotationSpeed"] = ctrl.rotationSpeed;
-    j["cameraDistance"] = ctrl.cameraDistance;
-    j["cameraHeight"] = ctrl.cameraHeight;
-    j["cameraMinDistance"] = ctrl.cameraMinDistance;
-    j["cameraMaxDistance"] = ctrl.cameraMaxDistance;
-    j["cameraPitch"] = ctrl.cameraPitch;
-    j["cameraYaw"] = ctrl.cameraYaw;
-    j["cameraMinPitch"] = ctrl.cameraMinPitch;
-    j["cameraMaxPitch"] = ctrl.cameraMaxPitch;
-    j["cameraSensitivity"] = ctrl.cameraSensitivity;
-    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
-    j["enableCameraCollision"] = ctrl.enableCameraCollision;
-    j["enableLockOn"] = ctrl.enableLockOn;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["jumpForce"] = RF(ctrl.jumpForce);
+    j["gravity"] = RF(ctrl.gravity);
+    j["rotateToFaceMovement"] = RF(ctrl.rotateToFaceMovement);
+    j["rotateToFaceCamera"] = RF(ctrl.rotateToFaceCamera);
+    j["rotationSpeed"] = RF(ctrl.rotationSpeed);
+    j["cameraDistance"] = RF(ctrl.cameraDistance);
+    j["cameraHeight"] = RF(ctrl.cameraHeight);
+    j["cameraMinDistance"] = RF(ctrl.cameraMinDistance);
+    j["cameraMaxDistance"] = RF(ctrl.cameraMaxDistance);
+    j["cameraPitch"] = RF(ctrl.cameraPitch);
+    j["cameraYaw"] = RF(ctrl.cameraYaw);
+    j["cameraMinPitch"] = RF(ctrl.cameraMinPitch);
+    j["cameraMaxPitch"] = RF(ctrl.cameraMaxPitch);
+    j["cameraSensitivity"] = RF(ctrl.cameraSensitivity);
+    j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
+    j["enableCameraCollision"] = RF(ctrl.enableCameraCollision);
+    j["enableLockOn"] = RF(ctrl.enableLockOn);
     return j;
 }
 
@@ -920,24 +930,24 @@ ECS::ThirdPersonController DeserializeThirdPerson(const json& j) {
 
 json SerializeFirstPerson(const ECS::FirstPersonController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["jumpForce"] = ctrl.jumpForce;
-    j["gravity"] = ctrl.gravity;
-    j["mouseSensitivity"] = ctrl.mouseSensitivity;
-    j["minPitch"] = ctrl.minPitch;
-    j["maxPitch"] = ctrl.maxPitch;
-    j["invertY"] = ctrl.invertY;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["jumpForce"] = RF(ctrl.jumpForce);
+    j["gravity"] = RF(ctrl.gravity);
+    j["mouseSensitivity"] = RF(ctrl.mouseSensitivity);
+    j["minPitch"] = RF(ctrl.minPitch);
+    j["maxPitch"] = RF(ctrl.maxPitch);
+    j["invertY"] = RF(ctrl.invertY);
     j["enableHeadBob"] = ctrl.enableHeadBob;
-    j["headBobFrequency"] = ctrl.headBobFrequency;
-    j["headBobAmplitude"] = ctrl.headBobAmplitude;
+    j["headBobFrequency"] = RF(ctrl.headBobFrequency);
+    j["headBobAmplitude"] = RF(ctrl.headBobAmplitude);
     j["enableCrouch"] = ctrl.enableCrouch;
-    j["standingHeight"] = ctrl.standingHeight;
-    j["crouchingHeight"] = ctrl.crouchingHeight;
-    j["crouchSpeed"] = ctrl.crouchSpeed;
-    j["sprintFOVIncrease"] = ctrl.sprintFOVIncrease;
+    j["standingHeight"] = RF(ctrl.standingHeight);
+    j["crouchingHeight"] = RF(ctrl.crouchingHeight);
+    j["crouchSpeed"] = RF(ctrl.crouchSpeed);
+    j["sprintFOVIncrease"] = RF(ctrl.sprintFOVIncrease);
     j["dungeonCrawlerMode"] = ctrl.dungeonCrawlerMode;
-    j["snapTurnAngle"] = ctrl.snapTurnAngle;
+    j["snapTurnAngle"] = RF(ctrl.snapTurnAngle);
     return j;
 }
 
@@ -967,25 +977,25 @@ ECS::FirstPersonController DeserializeFirstPerson(const json& j) {
 
 json SerializeVehicle(const ECS::VehicleController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["maxSpeed"] = ctrl.maxSpeed;
-    j["reverseMaxSpeed"] = ctrl.reverseMaxSpeed;
-    j["acceleration"] = ctrl.acceleration;
-    j["brakeForce"] = ctrl.brakeForce;
-    j["engineBrake"] = ctrl.engineBrake;
-    j["maxSteerAngle"] = ctrl.maxSteerAngle;
-    j["steerSpeed"] = ctrl.steerSpeed;
-    j["steerReturnSpeed"] = ctrl.steerReturnSpeed;
-    j["wheelBase"] = ctrl.wheelBase;
-    j["grip"] = ctrl.grip;
-    j["driftFactor"] = ctrl.driftFactor;
-    j["downforceMultiplier"] = ctrl.downforceMultiplier;
-    j["mass"] = ctrl.mass;
-    j["cameraDistance"] = ctrl.cameraDistance;
-    j["cameraHeight"] = ctrl.cameraHeight;
-    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
-    j["cameraLookAhead"] = ctrl.cameraLookAhead;
-    j["bodyRollAmount"] = ctrl.bodyRollAmount;
-    j["bodyPitchAmount"] = ctrl.bodyPitchAmount;
+    j["maxSpeed"] = RF(ctrl.maxSpeed);
+    j["reverseMaxSpeed"] = RF(ctrl.reverseMaxSpeed);
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["brakeForce"] = RF(ctrl.brakeForce);
+    j["engineBrake"] = RF(ctrl.engineBrake);
+    j["maxSteerAngle"] = RF(ctrl.maxSteerAngle);
+    j["steerSpeed"] = RF(ctrl.steerSpeed);
+    j["steerReturnSpeed"] = RF(ctrl.steerReturnSpeed);
+    j["wheelBase"] = RF(ctrl.wheelBase);
+    j["grip"] = RF(ctrl.grip);
+    j["driftFactor"] = RF(ctrl.driftFactor);
+    j["downforceMultiplier"] = RF(ctrl.downforceMultiplier);
+    j["mass"] = RF(ctrl.mass);
+    j["cameraDistance"] = RF(ctrl.cameraDistance);
+    j["cameraHeight"] = RF(ctrl.cameraHeight);
+    j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
+    j["cameraLookAhead"] = RF(ctrl.cameraLookAhead);
+    j["bodyRollAmount"] = RF(ctrl.bodyRollAmount);
+    j["bodyPitchAmount"] = RF(ctrl.bodyPitchAmount);
     return j;
 }
 
@@ -1016,19 +1026,19 @@ ECS::VehicleController DeserializeVehicle(const json& j) {
 
 json SerializeSurfaceAligned(const ECS::SurfaceAlignedController& ctrl) {
     json j = SerializeControllerBase(ctrl);
-    j["acceleration"] = ctrl.acceleration;
-    j["deceleration"] = ctrl.deceleration;
-    j["jumpForce"] = ctrl.jumpForce;
-    j["cameraDistance"] = ctrl.cameraDistance;
-    j["cameraHeight"] = ctrl.cameraHeight;
-    j["cameraPitch"] = ctrl.cameraPitch;
-    j["cameraYaw"] = ctrl.cameraYaw;
-    j["cameraMinPitch"] = ctrl.cameraMinPitch;
-    j["cameraMaxPitch"] = ctrl.cameraMaxPitch;
-    j["cameraSensitivity"] = ctrl.cameraSensitivity;
-    j["cameraLerpSpeed"] = ctrl.cameraLerpSpeed;
-    j["alignSpeed"] = ctrl.alignSpeed;
-    j["groundCheckDistance"] = ctrl.groundCheckDistance;
+    j["acceleration"] = RF(ctrl.acceleration);
+    j["deceleration"] = RF(ctrl.deceleration);
+    j["jumpForce"] = RF(ctrl.jumpForce);
+    j["cameraDistance"] = RF(ctrl.cameraDistance);
+    j["cameraHeight"] = RF(ctrl.cameraHeight);
+    j["cameraPitch"] = RF(ctrl.cameraPitch);
+    j["cameraYaw"] = RF(ctrl.cameraYaw);
+    j["cameraMinPitch"] = RF(ctrl.cameraMinPitch);
+    j["cameraMaxPitch"] = RF(ctrl.cameraMaxPitch);
+    j["cameraSensitivity"] = RF(ctrl.cameraSensitivity);
+    j["cameraLerpSpeed"] = RF(ctrl.cameraLerpSpeed);
+    j["alignSpeed"] = RF(ctrl.alignSpeed);
+    j["groundCheckDistance"] = RF(ctrl.groundCheckDistance);
     return j;
 }
 
@@ -1053,13 +1063,13 @@ ECS::SurfaceAlignedController DeserializeSurfaceAligned(const json& j) {
 
 json SerializePossessable(const ECS::PossessableComponent& comp) {
     json j;
-    j["isPossessed"] = comp.isPossessed;
-    j["autoDetect"] = comp.autoDetect;
-    j["playerIndex"] = comp.playerIndex;
-    j["possessRange"] = comp.possessRange;
+    j["isPossessed"] = RF(comp.isPossessed);
+    j["autoDetect"] = RF(comp.autoDetect);
+    j["playerIndex"] = RF(comp.playerIndex);
+    j["possessRange"] = RF(comp.possessRange);
     j["promptText"] = comp.promptText;
-    j["transitionDuration"] = comp.transitionDuration;
-    j["disableOnUnpossess"] = comp.disableOnUnpossess;
+    j["transitionDuration"] = RF(comp.transitionDuration);
+    j["disableOnUnpossess"] = RF(comp.disableOnUnpossess);
     return j;
 }
 
@@ -1098,14 +1108,14 @@ Accessibility::SceneContentFlags DeserializeContentFlags(const json& j) {
 json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     json j;
     j["clipPath"] = audio.clipPath;
-    j["volume"] = audio.volume;
-    j["pitch"] = audio.pitch;
-    j["minDistance"] = audio.minDistance;
-    j["maxDistance"] = audio.maxDistance;
-    j["playOnAwake"] = audio.playOnAwake;
+    j["volume"] = RF(audio.volume);
+    j["pitch"] = RF(audio.pitch);
+    j["minDistance"] = RF(audio.minDistance);
+    j["maxDistance"] = RF(audio.maxDistance);
+    j["playOnAwake"] = RF(audio.playOnAwake);
     j["loop"] = audio.loop;
-    j["is3D"] = audio.is3D;
-    j["spatialBlend"] = audio.spatialBlend;
+    j["is3D"] = RF(audio.is3D);
+    j["spatialBlend"] = RF(audio.spatialBlend);
     j["rolloff"] = static_cast<u8>(audio.rolloff);
     j["priority"] = audio.priority;
     return j;
@@ -1130,7 +1140,7 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
 json SerializeAudioListenerComponent(const ECS::AudioListenerComponent& listener) {
     json j;
     j["isActive"] = listener.isActive;
-    j["volumeScale"] = listener.volumeScale;
+    j["volumeScale"] = RF(listener.volumeScale);
     return j;
 }
 
@@ -1147,17 +1157,17 @@ ECS::AudioListenerComponent DeserializeAudioListenerComponent(const json& j) {
 
 json SerializeRigidbodyComponent(const ECS::RigidbodyComponent& rb) {
     json j;
-    j["mass"] = rb.mass;
-    j["drag"] = rb.drag;
-    j["angularDrag"] = rb.angularDrag;
+    j["mass"] = RF(rb.mass);
+    j["drag"] = RF(rb.drag);
+    j["angularDrag"] = RF(rb.angularDrag);
     j["useGravity"] = rb.useGravity;
-    j["gravityScale"] = rb.gravityScale;
-    j["freezePositionX"] = rb.freezePositionX;
-    j["freezePositionY"] = rb.freezePositionY;
-    j["freezePositionZ"] = rb.freezePositionZ;
-    j["freezeRotationX"] = rb.freezeRotationX;
-    j["freezeRotationY"] = rb.freezeRotationY;
-    j["freezeRotationZ"] = rb.freezeRotationZ;
+    j["gravityScale"] = RF(rb.gravityScale);
+    j["freezePositionX"] = RF(rb.freezePositionX);
+    j["freezePositionY"] = RF(rb.freezePositionY);
+    j["freezePositionZ"] = RF(rb.freezePositionZ);
+    j["freezeRotationX"] = RF(rb.freezeRotationX);
+    j["freezeRotationY"] = RF(rb.freezeRotationY);
+    j["freezeRotationZ"] = RF(rb.freezeRotationZ);
     j["bodyType"] = static_cast<u8>(rb.bodyType);
     j["collisionMode"] = static_cast<u8>(rb.collisionMode);
     return j;
@@ -1186,10 +1196,10 @@ json SerializeBoxColliderComponent(const ECS::BoxColliderComponent& col) {
     j["center"] = SerializeVector3(col.center);
     j["size"] = SerializeVector3(col.size);
     j["isTrigger"] = col.isTrigger;
-    j["friction"] = col.friction;
-    j["bounciness"] = col.bounciness;
-    j["categoryBits"] = col.categoryBits;
-    j["collisionMask"] = col.collisionMask;
+    j["friction"] = RF(col.friction);
+    j["bounciness"] = RF(col.bounciness);
+    j["categoryBits"] = RF(col.categoryBits);
+    j["collisionMask"] = RF(col.collisionMask);
     return j;
 }
 
@@ -1217,7 +1227,7 @@ ECS::BoxColliderComponent DeserializeBoxColliderComponent(const json& j) {
 
 json SerializePerFrameColliderComponent(const ECS::PerFrameColliderComponent& pfc) {
     json j;
-    j["autoApply"] = pfc.autoApply;
+    j["autoApply"] = RF(pfc.autoApply);
     json frames = json::array();
     for (const auto& fc : pfc.frameColliders) {
         json f;
@@ -1261,10 +1271,10 @@ json SerializePolygonCollider2DComponent(const ECS::PolygonCollider2DComponent& 
     }
     j["vertices"] = verts;
     j["isTrigger"] = poly.isTrigger;
-    j["friction"] = poly.friction;
-    j["bounciness"] = poly.bounciness;
-    j["categoryBits"] = poly.categoryBits;
-    j["collisionMask"] = poly.collisionMask;
+    j["friction"] = RF(poly.friction);
+    j["bounciness"] = RF(poly.bounciness);
+    j["categoryBits"] = RF(poly.categoryBits);
+    j["collisionMask"] = RF(poly.collisionMask);
     return j;
 }
 
@@ -1288,12 +1298,12 @@ ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json
 json SerializeSphereColliderComponent(const ECS::SphereColliderComponent& col) {
     json j;
     j["center"] = SerializeVector3(col.center);
-    j["radius"] = col.radius;
+    j["radius"] = RF(col.radius);
     j["isTrigger"] = col.isTrigger;
-    j["friction"] = col.friction;
-    j["bounciness"] = col.bounciness;
-    j["categoryBits"] = col.categoryBits;
-    j["collisionMask"] = col.collisionMask;
+    j["friction"] = RF(col.friction);
+    j["bounciness"] = RF(col.bounciness);
+    j["categoryBits"] = RF(col.categoryBits);
+    j["collisionMask"] = RF(col.collisionMask);
     return j;
 }
 
@@ -1317,14 +1327,14 @@ ECS::SphereColliderComponent DeserializeSphereColliderComponent(const json& j) {
 json SerializeCapsuleColliderComponent(const ECS::CapsuleColliderComponent& col) {
     json j;
     j["center"] = SerializeVector3(col.center);
-    j["radius"] = col.radius;
+    j["radius"] = RF(col.radius);
     j["height"] = col.height;
     j["direction"] = static_cast<u8>(col.direction);
     j["isTrigger"] = col.isTrigger;
-    j["friction"] = col.friction;
-    j["bounciness"] = col.bounciness;
-    j["categoryBits"] = col.categoryBits;
-    j["collisionMask"] = col.collisionMask;
+    j["friction"] = RF(col.friction);
+    j["bounciness"] = RF(col.bounciness);
+    j["categoryBits"] = RF(col.categoryBits);
+    j["collisionMask"] = RF(col.collisionMask);
     return j;
 }
 
@@ -1353,14 +1363,14 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
 
 json SerializeHealthComponent(const ECS::HealthComponent& h) {
     json j;
-    j["maxHealth"] = h.maxHealth;
-    j["regenRate"] = h.regenRate;
-    j["regenDelay"] = h.regenDelay;
-    j["isInvulnerable"] = h.isInvulnerable;
-    j["invulnerabilityTime"] = h.invulnerabilityTime;
-    j["maxShield"] = h.maxShield;
-    j["shieldRegenRate"] = h.shieldRegenRate;
-    j["shieldRegenDelay"] = h.shieldRegenDelay;
+    j["maxHealth"] = RF(h.maxHealth);
+    j["regenRate"] = RF(h.regenRate);
+    j["regenDelay"] = RF(h.regenDelay);
+    j["isInvulnerable"] = RF(h.isInvulnerable);
+    j["invulnerabilityTime"] = RF(h.invulnerabilityTime);
+    j["maxShield"] = RF(h.maxShield);
+    j["shieldRegenRate"] = RF(h.shieldRegenRate);
+    j["shieldRegenDelay"] = RF(h.shieldRegenDelay);
     return j;
 }
 
@@ -1381,11 +1391,11 @@ ECS::HealthComponent DeserializeHealthComponent(const json& j) {
 
 json SerializeDamageComponent(const ECS::DamageComponent& d) {
     json j;
-    j["damage"] = d.damage;
-    j["knockbackForce"] = d.knockbackForce;
-    j["destroyOnHit"] = d.destroyOnHit;
-    j["damageOnce"] = d.damageOnce;
-    j["damageInterval"] = d.damageInterval;
+    j["damage"] = RF(d.damage);
+    j["knockbackForce"] = RF(d.knockbackForce);
+    j["destroyOnHit"] = RF(d.destroyOnHit);
+    j["damageOnce"] = RF(d.damageOnce);
+    j["damageInterval"] = RF(d.damageInterval);
     j["type"] = static_cast<u8>(d.type);
     return j;
 }
@@ -1409,9 +1419,9 @@ json SerializeTriggerZoneComponent(const ECS::TriggerZoneComponent& tz) {
     json j;
     j["shape"] = static_cast<u8>(tz.shape);
     j["boxSize"] = SerializeVector3(tz.boxSize);
-    j["sphereRadius"] = tz.sphereRadius;
-    j["triggerMask"] = tz.triggerMask;
-    j["triggerOnce"] = tz.triggerOnce;
+    j["sphereRadius"] = RF(tz.sphereRadius);
+    j["triggerMask"] = RF(tz.triggerMask);
+    j["triggerOnce"] = RF(tz.triggerOnce);
     return j;
 }
 
@@ -1428,12 +1438,12 @@ ECS::TriggerZoneComponent DeserializeTriggerZoneComponent(const json& j) {
 json SerializeInteractableComponent(const ECS::InteractableComponent& ic) {
     json j;
     j["promptText"] = ic.promptText;
-    j["interactionRange"] = ic.interactionRange;
-    j["requiresLookAt"] = ic.requiresLookAt;
-    j["lookAtAngle"] = ic.lookAtAngle;
-    j["isEnabled"] = ic.isEnabled;
-    j["singleUse"] = ic.singleUse;
-    j["highlightOnHover"] = ic.highlightOnHover;
+    j["interactionRange"] = RF(ic.interactionRange);
+    j["requiresLookAt"] = RF(ic.requiresLookAt);
+    j["lookAtAngle"] = RF(ic.lookAtAngle);
+    j["isEnabled"] = RF(ic.isEnabled);
+    j["singleUse"] = RF(ic.singleUse);
+    j["highlightOnHover"] = RF(ic.highlightOnHover);
     j["highlightColor"] = SerializeVector3(ic.highlightColor);
     return j;
 }
@@ -1454,18 +1464,18 @@ ECS::InteractableComponent DeserializeInteractableComponent(const json& j) {
 json SerializePickupComponent(const ECS::PickupComponent& p) {
     json j;
     j["type"] = static_cast<u8>(p.type);
-    j["value"] = p.value;
+    j["value"] = RF(p.value);
     j["customId"] = p.customId;
-    j["pickupRange"] = p.pickupRange;
-    j["destroyOnPickup"] = p.destroyOnPickup;
-    j["magnetToPlayer"] = p.magnetToPlayer;
-    j["magnetRange"] = p.magnetRange;
-    j["magnetSpeed"] = p.magnetSpeed;
-    j["canRespawn"] = p.canRespawn;
-    j["respawnTime"] = p.respawnTime;
-    j["bobSpeed"] = p.bobSpeed;
-    j["bobHeight"] = p.bobHeight;
-    j["rotationSpeed"] = p.rotationSpeed;
+    j["pickupRange"] = RF(p.pickupRange);
+    j["destroyOnPickup"] = RF(p.destroyOnPickup);
+    j["magnetToPlayer"] = RF(p.magnetToPlayer);
+    j["magnetRange"] = RF(p.magnetRange);
+    j["magnetSpeed"] = RF(p.magnetSpeed);
+    j["canRespawn"] = RF(p.canRespawn);
+    j["respawnTime"] = RF(p.respawnTime);
+    j["bobSpeed"] = RF(p.bobSpeed);
+    j["bobHeight"] = RF(p.bobHeight);
+    j["rotationSpeed"] = RF(p.rotationSpeed);
     return j;
 }
 
@@ -1505,7 +1515,7 @@ ECS::TagComponent DeserializeTagComponent(const json& j) {
 
 json SerializeLayerComponent(const ECS::LayerComponent& l) {
     json j;
-    j["layer"] = l.layer;
+    j["layer"] = RF(l.layer);
     j["layerName"] = l.layerName;
     return j;
 }
@@ -1520,8 +1530,8 @@ ECS::LayerComponent DeserializeLayerComponent(const json& j) {
 json SerializeBillboardComponent(const ECS::BillboardComponent& b) {
     json j;
     j["faceCamera"] = b.faceCamera;
-    j["lockY"] = b.lockY;
-    j["rotationOffset"] = b.rotationOffset;
+    j["lockY"] = RF(b.lockY);
+    j["rotationOffset"] = RF(b.rotationOffset);
     return j;
 }
 
@@ -1539,40 +1549,40 @@ ECS::BillboardComponent DeserializeBillboardComponent(const json& j) {
 
 json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) {
     json j;
-    j["playOnAwake"] = pe.playOnAwake;
+    j["playOnAwake"] = RF(pe.playOnAwake);
     j["loop"] = pe.loop;
-    j["emissionRate"] = pe.emissionRate;
+    j["emissionRate"] = RF(pe.emissionRate);
     j["burstCount"] = pe.burstCount;
-    j["burstInterval"] = pe.burstInterval;
-    j["lifetime"] = pe.lifetime;
-    j["lifetimeVariance"] = pe.lifetimeVariance;
-    j["startSpeed"] = pe.startSpeed;
-    j["speedVariance"] = pe.speedVariance;
-    j["startSize"] = pe.startSize;
-    j["endSize"] = pe.endSize;
+    j["burstInterval"] = RF(pe.burstInterval);
+    j["lifetime"] = RF(pe.lifetime);
+    j["lifetimeVariance"] = RF(pe.lifetimeVariance);
+    j["startSpeed"] = RF(pe.startSpeed);
+    j["speedVariance"] = RF(pe.speedVariance);
+    j["startSize"] = RF(pe.startSize);
+    j["endSize"] = RF(pe.endSize);
     j["startColor"] = SerializeVector3(pe.startColor);
     j["endColor"] = SerializeVector3(pe.endColor);
-    j["startAlpha"] = pe.startAlpha;
-    j["endAlpha"] = pe.endAlpha;
+    j["startAlpha"] = RF(pe.startAlpha);
+    j["endAlpha"] = RF(pe.endAlpha);
     j["shape"] = static_cast<u8>(pe.shape);
-    j["shapeRadius"] = pe.shapeRadius;
-    j["coneAngle"] = pe.coneAngle;
+    j["shapeRadius"] = RF(pe.shapeRadius);
+    j["coneAngle"] = RF(pe.coneAngle);
     j["gravity"] = SerializeVector3(pe.gravity);
-    j["drag"] = pe.drag;
+    j["drag"] = RF(pe.drag);
     j["texturePath"] = pe.texturePath;
-    j["textureSheetX"] = pe.textureSheetX;
-    j["textureSheetY"] = pe.textureSheetY;
-    j["sizeMid"] = pe.sizeMid;
-    j["speedMultiplierMid"] = pe.speedMultiplierMid;
-    j["speedMultiplierEnd"] = pe.speedMultiplierEnd;
-    j["startRotation"] = pe.startRotation;
-    j["rotationVariance"] = pe.rotationVariance;
-    j["rotationSpeed"] = pe.rotationSpeed;
-    j["rotationSpeedVariance"] = pe.rotationSpeedVariance;
+    j["textureSheetX"] = RF(pe.textureSheetX);
+    j["textureSheetY"] = RF(pe.textureSheetY);
+    j["sizeMid"] = RF(pe.sizeMid);
+    j["speedMultiplierMid"] = RF(pe.speedMultiplierMid);
+    j["speedMultiplierEnd"] = RF(pe.speedMultiplierEnd);
+    j["startRotation"] = RF(pe.startRotation);
+    j["rotationVariance"] = RF(pe.rotationVariance);
+    j["rotationSpeed"] = RF(pe.rotationSpeed);
+    j["rotationSpeedVariance"] = RF(pe.rotationSpeedVariance);
     j["maxParticles"] = pe.maxParticles;
     j["simulationSpace"] = static_cast<u8>(pe.simulationSpace);
     j["renderMode"] = static_cast<u8>(pe.renderMode);
-    j["velocityStretchScale"] = pe.velocityStretchScale;
+    j["velocityStretchScale"] = RF(pe.velocityStretchScale);
     return j;
 }
 
@@ -1626,19 +1636,19 @@ json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
     json j;
     j["texturePath"] = s.texturePath;
     if (!s.normalMapPath.empty()) j["normalMapPath"] = s.normalMapPath;
-    j["srcX"] = s.srcX;
-    j["srcY"] = s.srcY;
-    j["srcWidth"] = s.srcWidth;
-    j["srcHeight"] = s.srcHeight;
+    j["srcX"] = RF(s.srcX);
+    j["srcY"] = RF(s.srcY);
+    j["srcWidth"] = RF(s.srcWidth);
+    j["srcHeight"] = RF(s.srcHeight);
     j["size"] = SerializeVector2(s.size);
     j["pivot"] = SerializeVector2(s.pivot);
     j["tint"] = SerializeVector3(s.tint);
-    j["alpha"] = s.alpha;
-    j["sortingLayer"] = s.sortingLayer;
-    j["orderInLayer"] = s.orderInLayer;
+    j["alpha"] = RF(s.alpha);
+    j["sortingLayer"] = RF(s.sortingLayer);
+    j["orderInLayer"] = RF(s.orderInLayer);
     j["flipX"] = s.flipX;
     j["flipY"] = s.flipY;
-    j["visible"] = s.visible;
+    j["visible"] = RF(s.visible);
     return j;
 }
 
@@ -1667,15 +1677,15 @@ json SerializeAnimatedSprite2DComponent(const ECS::AnimatedSprite2DComponent& a)
     json framesArr = json::array();
     for (const auto& f : a.frames) {
         json frame;
-        frame["srcX"] = f.srcX;
-        frame["srcY"] = f.srcY;
-        frame["duration"] = f.duration;
+        frame["srcX"] = RF(f.srcX);
+        frame["srcY"] = RF(f.srcY);
+        frame["duration"] = RF(f.duration);
         framesArr.push_back(frame);
     }
     j["frames"] = framesArr;
     j["playing"] = a.playing;
     j["loop"] = a.loop;
-    j["playbackSpeed"] = a.playbackSpeed;
+    j["playbackSpeed"] = RF(a.playbackSpeed);
     return j;
 }
 
@@ -1702,12 +1712,12 @@ json SerializeTilemapComponent(const ECS::TilemapComponent& tm) {
     j["width"] = tm.width;
     j["height"] = tm.height;
     j["tilesetPath"] = tm.tilesetPath;
-    j["tileWidth"] = tm.tileWidth;
-    j["tileHeight"] = tm.tileHeight;
+    j["tileWidth"] = RF(tm.tileWidth);
+    j["tileHeight"] = RF(tm.tileHeight);
     j["tilesetColumns"] = tm.tilesetColumns;
-    j["worldTileWidth"] = tm.worldTileWidth;
-    j["worldTileHeight"] = tm.worldTileHeight;
-    j["hasCollision"] = tm.hasCollision;
+    j["worldTileWidth"] = RF(tm.worldTileWidth);
+    j["worldTileHeight"] = RF(tm.worldTileHeight);
+    j["hasCollision"] = RF(tm.hasCollision);
     if (tm.hasCollision && !tm.collisionMask.empty()) {
         j["collisionMask"] = tm.collisionMask;
     }
@@ -1735,20 +1745,20 @@ json SerializeCamera2DBoundsComponent(const ECS::Camera2DBoundsComponent& cb) {
     j["useBounds"] = cb.useBounds;
     j["minBounds"] = SerializeVector2(cb.minBounds);
     j["maxBounds"] = SerializeVector2(cb.maxBounds);
-    j["boundsPadding"] = cb.boundsPadding;
-    j["followSmoothing"] = cb.followSmoothing;
+    j["boundsPadding"] = RF(cb.boundsPadding);
+    j["followSmoothing"] = RF(cb.followSmoothing);
     j["followOffset"] = SerializeVector2(cb.followOffset);
-    j["minZoom"] = cb.minZoom;
-    j["maxZoom"] = cb.maxZoom;
-    j["currentZoom"] = cb.currentZoom;
-    j["targetZoom"] = cb.targetZoom;
-    j["zoomSmoothing"] = cb.zoomSmoothing;
+    j["minZoom"] = RF(cb.minZoom);
+    j["maxZoom"] = RF(cb.maxZoom);
+    j["currentZoom"] = RF(cb.currentZoom);
+    j["targetZoom"] = RF(cb.targetZoom);
+    j["zoomSmoothing"] = RF(cb.zoomSmoothing);
     j["deadZoneSize"] = SerializeVector2(cb.deadZoneSize);
-    j["lookAheadDistance"] = cb.lookAheadDistance;
-    j["lookAheadSmoothing"] = cb.lookAheadSmoothing;
-    j["shakeFrequency"] = cb.shakeFrequency;
-    j["multiTargetPadding"] = cb.multiTargetPadding;
-    j["autoZoomToFitTargets"] = cb.autoZoomToFitTargets;
+    j["lookAheadDistance"] = RF(cb.lookAheadDistance);
+    j["lookAheadSmoothing"] = RF(cb.lookAheadSmoothing);
+    j["shakeFrequency"] = RF(cb.shakeFrequency);
+    j["multiTargetPadding"] = RF(cb.multiTargetPadding);
+    j["autoZoomToFitTargets"] = RF(cb.autoZoomToFitTargets);
     if (!cb.additionalTargets.empty()) {
         json targets = json::array();
         for (ECS::Entity e : cb.additionalTargets) {
@@ -1795,10 +1805,10 @@ json SerializeSMCondition(const ECS::SMTransitionCondition& cond) {
     j["param"] = cond.paramName;
     j["type"] = static_cast<i32>(cond.type);
     if (cond.type == ECS::SMConditionType::FloatGreater || cond.type == ECS::SMConditionType::FloatLess) {
-        j["threshold"] = cond.threshold;
+        j["threshold"] = RF(cond.threshold);
     }
     if (cond.type == ECS::SMConditionType::IntEquals || cond.type == ECS::SMConditionType::IntNotEquals) {
-        j["intValue"] = cond.intValue;
+        j["intValue"] = RF(cond.intValue);
     }
     return j;
 }
@@ -1846,7 +1856,7 @@ json SerializeSMState(const ECS::SMState& state) {
         transitions.push_back(SerializeSMTransition(t));
     }
     j["transitions"] = transitions;
-    j["editorPosition"] = { state.editorPosition.x, state.editorPosition.y };
+    j["editorPosition"] = { RF(state.editorPosition.x), RF(state.editorPosition.y) };
     if (!state.onEnter.empty()) j["onEnter"] = state.onEnter;
     if (!state.onUpdate.empty()) j["onUpdate"] = state.onUpdate;
     if (!state.onExit.empty()) j["onExit"] = state.onExit;
@@ -1955,7 +1965,7 @@ ECS::StateMachineComponent DeserializeStateMachineComponent(const json& j) {
 json SerializeDialogueComponent(const ECS::DialogueComponent& d) {
     json j;
     j["dialogueLines"] = d.dialogueLines;
-    j["charDelay"] = d.charDelay;
+    j["charDelay"] = RF(d.charDelay);
     j["speakerName"] = d.speakerName;
     j["portraitPath"] = d.portraitPath;
     j["typeSound"] = d.typeSound;
@@ -1969,7 +1979,7 @@ json SerializeDialogueComponent(const ECS::DialogueComponent& d) {
     }
     j["choices"] = choicesArr;
     if (!d.dialogueTree.nodes.empty()) {
-        j["dialogueTree"] = d.dialogueTree.ToJson();
+        j["dialogueTree"] = RF(d.dialogueTree.ToJson());
     }
     if (!d.variables.empty()) {
         json vars = json::object();
@@ -2012,23 +2022,23 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
 
 json SerializeDialogueBoxComponent(const ECS::DialogueBoxComponent& b) {
     json j;
-    j["boxHeight"] = b.boxHeight;
-    j["boxMargin"] = b.boxMargin;
-    j["boxPadding"] = b.boxPadding;
-    j["boxColor"] = { b.boxColor.x, b.boxColor.y, b.boxColor.z };
-    j["boxAlpha"] = b.boxAlpha;
-    j["boxBorderRadius"] = b.boxBorderRadius;
-    j["speakerFontSize"] = b.speakerFontSize;
-    j["defaultSpeakerColor"] = { b.defaultSpeakerColor.x, b.defaultSpeakerColor.y, b.defaultSpeakerColor.z };
-    j["textFontSize"] = b.textFontSize;
-    j["textColor"] = { b.textColor.x, b.textColor.y, b.textColor.z };
+    j["boxHeight"] = RF(b.boxHeight);
+    j["boxMargin"] = RF(b.boxMargin);
+    j["boxPadding"] = RF(b.boxPadding);
+    j["boxColor"] = { RF(b.boxColor.x), RF(b.boxColor.y), RF(b.boxColor.z) };
+    j["boxAlpha"] = RF(b.boxAlpha);
+    j["boxBorderRadius"] = RF(b.boxBorderRadius);
+    j["speakerFontSize"] = RF(b.speakerFontSize);
+    j["defaultSpeakerColor"] = { RF(b.defaultSpeakerColor.x), RF(b.defaultSpeakerColor.y), RF(b.defaultSpeakerColor.z) };
+    j["textFontSize"] = RF(b.textFontSize);
+    j["textColor"] = { RF(b.textColor.x), RF(b.textColor.y), RF(b.textColor.z) };
     j["showPortrait"] = b.showPortrait;
-    j["portraitSize"] = b.portraitSize;
-    j["choiceSpacing"] = b.choiceSpacing;
-    j["choiceColor"] = { b.choiceColor.x, b.choiceColor.y, b.choiceColor.z };
-    j["choiceTextColor"] = { b.choiceTextColor.x, b.choiceTextColor.y, b.choiceTextColor.z };
+    j["portraitSize"] = RF(b.portraitSize);
+    j["choiceSpacing"] = RF(b.choiceSpacing);
+    j["choiceColor"] = { RF(b.choiceColor.x), RF(b.choiceColor.y), RF(b.choiceColor.z) };
+    j["choiceTextColor"] = { RF(b.choiceTextColor.x), RF(b.choiceTextColor.y), RF(b.choiceTextColor.z) };
     j["continueText"] = b.continueText;
-    j["continueBlinkSpeed"] = b.continueBlinkSpeed;
+    j["continueBlinkSpeed"] = RF(b.continueBlinkSpeed);
     return j;
 }
 
@@ -2067,7 +2077,7 @@ json SerializeVisualScriptVariable(const ECS::VisualScriptVariable& var) {
     json j;
     j["name"] = var.name;
     j["type"] = static_cast<i32>(var.type);
-    j["exposed"] = var.exposed;
+    j["exposed"] = RF(var.exposed);
 
     // Serialize value based on type
     std::visit([&j](auto&& arg) {
@@ -2164,7 +2174,7 @@ json SerializeVisualScriptComponent(const ECS::VisualScriptComponent& vs) {
     json j;
 
     // Serialize graph data
-    j["graph"] = vs.graph.ToJson();
+    j["graph"] = RF(vs.graph.ToJson());
 
     // Serialize variables
     json varsArr = json::array();
@@ -2255,9 +2265,9 @@ json SerializeTweenEntry(const ECS::TweenEntry& te) {
     j["mode"] = static_cast<i32>(te.mode);
     j["startValue"] = SerializeVector3(te.startValue);
     j["endValue"] = SerializeVector3(te.endValue);
-    j["duration"] = te.duration;
-    j["delay"] = te.delay;
-    j["useCurrentAsStart"] = te.useCurrentAsStart;
+    j["duration"] = RF(te.duration);
+    j["delay"] = RF(te.delay);
+    j["useCurrentAsStart"] = RF(te.useCurrentAsStart);
     if (!te.onCompleteCallback.empty()) {
         j["onCompleteCallback"] = te.onCompleteCallback;
     }
@@ -2280,7 +2290,7 @@ ECS::TweenEntry DeserializeTweenEntry(const json& j) {
 
 json SerializeTweenComponent(const ECS::TweenComponent& tc) {
     json j;
-    j["autoPlay"] = tc.autoPlay;
+    j["autoPlay"] = RF(tc.autoPlay);
     json tweensArr = json::array();
     for (const auto& te : tc.tweens) {
         tweensArr.push_back(SerializeTweenEntry(te));
@@ -2306,30 +2316,30 @@ ECS::TweenComponent DeserializeTweenComponent(const json& j) {
 
 json SerializeAIControllerComponent(const ECS::AIControllerComponent& ai) {
     json j;
-    j["detectionRange"] = ai.detectionRange;
-    j["attackRange"] = ai.attackRange;
-    j["loseTargetRange"] = ai.loseTargetRange;
-    j["fieldOfView"] = ai.fieldOfView;
-    j["moveSpeed"] = ai.moveSpeed;
-    j["turnSpeed"] = ai.turnSpeed;
-    j["stoppingDistance"] = ai.stoppingDistance;
-    j["attackCooldown"] = ai.attackCooldown;
-    j["attackDamage"] = ai.attackDamage;
+    j["detectionRange"] = RF(ai.detectionRange);
+    j["attackRange"] = RF(ai.attackRange);
+    j["loseTargetRange"] = RF(ai.loseTargetRange);
+    j["fieldOfView"] = RF(ai.fieldOfView);
+    j["moveSpeed"] = RF(ai.moveSpeed);
+    j["turnSpeed"] = RF(ai.turnSpeed);
+    j["stoppingDistance"] = RF(ai.stoppingDistance);
+    j["attackCooldown"] = RF(ai.attackCooldown);
+    j["attackDamage"] = RF(ai.attackDamage);
     json patrolArr = json::array();
     for (const auto& p : ai.patrolPoints) {
         patrolArr.push_back(SerializeVector3(p));
     }
     j["patrolPoints"] = patrolArr;
-    j["patrolWaitTime"] = ai.patrolWaitTime;
+    j["patrolWaitTime"] = RF(ai.patrolWaitTime);
     j["patrolLoop"] = ai.patrolLoop;
     j["useNavmesh"] = ai.useNavmesh;
-    j["repathInterval"] = ai.repathInterval;
-    j["arrivalRadius"] = ai.arrivalRadius;
-    j["chaseSpeed"] = ai.chaseSpeed;
-    j["fleeSpeed"] = ai.fleeSpeed;
-    j["fleeDistance"] = ai.fleeDistance;
+    j["repathInterval"] = RF(ai.repathInterval);
+    j["arrivalRadius"] = RF(ai.arrivalRadius);
+    j["chaseSpeed"] = RF(ai.chaseSpeed);
+    j["fleeSpeed"] = RF(ai.fleeSpeed);
+    j["fleeDistance"] = RF(ai.fleeDistance);
     j["debugDrawPath"] = ai.debugDrawPath;
-    j["debugDrawDetection"] = ai.debugDrawDetection;
+    j["debugDrawDetection"] = RF(ai.debugDrawDetection);
     return j;
 }
 
@@ -2396,11 +2406,11 @@ static AI::BlackboardValue DeserializeBlackboardValue(const json& j) {
 
 json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
     json j;
-    j["graph"] = bt.graph.ToJson();
+    j["graph"] = RF(bt.graph.ToJson());
     j["rootNodeId"] = bt.rootNodeId;
     j["enabled"] = bt.enabled;
-    j["tickInterval"] = bt.tickInterval;
-    j["debugEnabled"] = bt.debugEnabled;
+    j["tickInterval"] = RF(bt.tickInterval);
+    j["debugEnabled"] = RF(bt.debugEnabled);
 
     // Node meta
     json metaArr = json::array();
@@ -2424,7 +2434,7 @@ json SerializeBehaviorTreeComponent(const ECS::BehaviorTreeComponent& bt) {
     for (const auto& entry : bt.blackboardDefaults) {
         json e;
         e["key"] = entry.key;
-        e["val"] = SerializeBlackboardValue(entry.value);
+        e["val"] = RF(SerializeBlackboardValue(entry.value));
         bbArr.push_back(e);
     }
     j["blackboardDefaults"] = bbArr;
@@ -2475,7 +2485,7 @@ ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
 
 json SerializeQuestFlowComponent(const ECS::QuestFlowComponent& qf) {
     json j;
-    j["graph"] = qf.graph.ToJson();
+    j["graph"] = RF(qf.graph.ToJson());
     j["startNodeId"] = qf.startNodeId;
     j["questId"] = qf.questId;
     j["questTitle"] = qf.questTitle;
@@ -2534,15 +2544,15 @@ ECS::QuestFlowComponent DeserializeQuestFlowComponent(const json& j) {
 json SerializeFollowTargetComponent(const ECS::FollowTargetComponent& ft) {
     json j;
     j["target"] = static_cast<u64>(ft.target);
-    j["followDistance"] = ft.followDistance;
-    j["minDistance"] = ft.minDistance;
-    j["maxDistance"] = ft.maxDistance;
-    j["moveSpeed"] = ft.moveSpeed;
-    j["smoothTime"] = ft.smoothTime;
-    j["matchTargetRotation"] = ft.matchTargetRotation;
-    j["rotationSpeed"] = ft.rotationSpeed;
+    j["followDistance"] = RF(ft.followDistance);
+    j["minDistance"] = RF(ft.minDistance);
+    j["maxDistance"] = RF(ft.maxDistance);
+    j["moveSpeed"] = RF(ft.moveSpeed);
+    j["smoothTime"] = RF(ft.smoothTime);
+    j["matchTargetRotation"] = RF(ft.matchTargetRotation);
+    j["rotationSpeed"] = RF(ft.rotationSpeed);
     j["offset"] = SerializeVector3(ft.offset);
-    j["useLocalOffset"] = ft.useLocalOffset;
+    j["useLocalOffset"] = RF(ft.useLocalOffset);
     return j;
 }
 
@@ -2565,16 +2575,16 @@ json SerializeLookAtTargetComponent(const ECS::LookAtTargetComponent& la) {
     json j;
     j["target"] = static_cast<u64>(la.target);
     j["worldTarget"] = SerializeVector3(la.worldTarget);
-    j["useWorldTarget"] = la.useWorldTarget;
-    j["rotationSpeed"] = la.rotationSpeed;
-    j["instant"] = la.instant;
-    j["constrainX"] = la.constrainX;
-    j["constrainY"] = la.constrainY;
-    j["constrainZ"] = la.constrainZ;
-    j["minYaw"] = la.minYaw;
-    j["maxYaw"] = la.maxYaw;
-    j["minPitch"] = la.minPitch;
-    j["maxPitch"] = la.maxPitch;
+    j["useWorldTarget"] = RF(la.useWorldTarget);
+    j["rotationSpeed"] = RF(la.rotationSpeed);
+    j["instant"] = RF(la.instant);
+    j["constrainX"] = RF(la.constrainX);
+    j["constrainY"] = RF(la.constrainY);
+    j["constrainZ"] = RF(la.constrainZ);
+    j["minYaw"] = RF(la.minYaw);
+    j["maxYaw"] = RF(la.maxYaw);
+    j["minPitch"] = RF(la.minPitch);
+    j["maxPitch"] = RF(la.maxPitch);
     return j;
 }
 
@@ -2599,8 +2609,8 @@ json SerializeWaypointComponent(const ECS::WaypointComponent& wp) {
     json j;
     j["waypointId"] = wp.waypointId;
     j["index"] = wp.index;
-    j["waitTime"] = wp.waitTime;
-    j["radius"] = wp.radius;
+    j["waitTime"] = RF(wp.waitTime);
+    j["radius"] = RF(wp.radius);
     return j;
 }
 
@@ -2621,12 +2631,12 @@ json SerializeSpawnPointComponent(const ECS::SpawnPointComponent& sp) {
     json j;
     j["spawnId"] = sp.spawnId;
     j["prefabToSpawn"] = sp.prefabToSpawn;
-    j["spawnOnStart"] = sp.spawnOnStart;
-    j["spawnDelay"] = sp.spawnDelay;
-    j["respawnTime"] = sp.respawnTime;
-    j["maxSpawns"] = sp.maxSpawns;
-    j["spawnRadius"] = sp.spawnRadius;
-    j["randomRotation"] = sp.randomRotation;
+    j["spawnOnStart"] = RF(sp.spawnOnStart);
+    j["spawnDelay"] = RF(sp.spawnDelay);
+    j["respawnTime"] = RF(sp.respawnTime);
+    j["maxSpawns"] = RF(sp.maxSpawns);
+    j["spawnRadius"] = RF(sp.spawnRadius);
+    j["randomRotation"] = RF(sp.randomRotation);
     return j;
 }
 
@@ -2645,7 +2655,7 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
 
 json SerializeTimerComponent(const ECS::TimerComponent& t) {
     json j;
-    j["duration"] = t.duration;
+    j["duration"] = RF(t.duration);
     j["loop"] = t.loop;
     j["autoStart"] = t.autoStart;
     return j;
@@ -2669,14 +2679,14 @@ json SerializeInventoryComponent(const ECS::InventoryComponent& inv) {
     for (const auto& s : inv.slots) {
         json slot;
         slot["itemId"] = s.itemId;
-        slot["quantity"] = s.quantity;
+        slot["quantity"] = RF(s.quantity);
         slot["maxStack"] = s.maxStack;
         slotsArr.push_back(slot);
     }
     j["slots"] = slotsArr;
     j["maxSlots"] = static_cast<u64>(inv.maxSlots);
-    j["coins"] = inv.coins;
-    j["gems"] = inv.gems;
+    j["coins"] = RF(inv.coins);
+    j["gems"] = RF(inv.gems);
     j["keys"] = inv.keys;
     return j;
 }
@@ -2701,10 +2711,10 @@ ECS::InventoryComponent DeserializeInventoryComponent(const json& j) {
 
 json SerializeSaveDataComponent(const ECS::SaveDataComponent& sd) {
     json j;
-    j["savePosition"] = sd.savePosition;
-    j["saveRotation"] = sd.saveRotation;
-    j["saveScale"] = sd.saveScale;
-    j["saveEnabled"] = sd.saveEnabled;
+    j["savePosition"] = RF(sd.savePosition);
+    j["saveRotation"] = RF(sd.saveRotation);
+    j["saveScale"] = RF(sd.saveScale);
+    j["saveEnabled"] = RF(sd.saveEnabled);
     json dataArr = json::array();
     for (const auto& p : sd.customData) {
         dataArr.push_back(json::array({p.first, p.second}));
@@ -2733,9 +2743,9 @@ ECS::SaveDataComponent DeserializeSaveDataComponent(const json& j) {
 
 json SerializeJellyMeshComponent(const ECS::JellyMeshComponent& jm) {
     json j;
-    j["springStiffness"] = jm.springStiffness;
-    j["damping"] = jm.damping;
-    j["maxStretch"] = jm.maxStretch;
+    j["springStiffness"] = RF(jm.springStiffness);
+    j["damping"] = RF(jm.damping);
+    j["maxStretch"] = RF(jm.maxStretch);
     return j;
 }
 
@@ -2752,13 +2762,13 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
     j["stemEntity"] = static_cast<u64>(t.stemEntity);
     j["connectedEntity"] = static_cast<u64>(t.connectedEntity);
     j["attachLocalPos"] = SerializeVector3(t.attachLocalPos);
-    j["breakDistance"] = t.breakDistance;
-    j["tensionRamp"] = t.tensionRamp;
-    j["autoMass"] = t.autoMass;
-    j["autoSpringK"] = t.autoSpringK;
-    j["autoDamping"] = t.autoDamping;
-    j["autoBreakForce"] = t.autoBreakForce;
-    j["autoDrag"] = t.autoDrag;
+    j["breakDistance"] = RF(t.breakDistance);
+    j["tensionRamp"] = RF(t.tensionRamp);
+    j["autoMass"] = RF(t.autoMass);
+    j["autoSpringK"] = RF(t.autoSpringK);
+    j["autoDamping"] = RF(t.autoDamping);
+    j["autoBreakForce"] = RF(t.autoBreakForce);
+    j["autoDrag"] = RF(t.autoDrag);
     return j;
 }
 
@@ -2783,11 +2793,11 @@ ECS::TetherComponent DeserializeTetherComponent(const json& j) {
 
 json SerializeGrabbableComponent(const ECS::GrabbableComponent& g) {
     json j;
-    j["pullForce"] = g.pullForce;
-    j["grabRadius"] = g.grabRadius;
-    j["maxPullDistance"] = g.maxPullDistance;
-    j["maxVelocity"] = g.maxVelocity;
-    j["windSwayScale"] = g.windSwayScale;
+    j["pullForce"] = RF(g.pullForce);
+    j["grabRadius"] = RF(g.grabRadius);
+    j["maxPullDistance"] = RF(g.maxPullDistance);
+    j["maxVelocity"] = RF(g.maxVelocity);
+    j["windSwayScale"] = RF(g.windSwayScale);
     return j;
 }
 
@@ -2803,12 +2813,12 @@ ECS::GrabbableComponent DeserializeGrabbableComponent(const json& j) {
 
 json SerializeFlowerStemComponent(const ECS::FlowerStemComponent& fs) {
     json j;
-    j["healthyBonus"] = fs.healthyBonus;
-    j["witheredPenalty"] = fs.witheredPenalty;
-    j["liquidIntensity"] = fs.liquidIntensity;
-    j["groundLevel"] = fs.groundLevel;
+    j["healthyBonus"] = RF(fs.healthyBonus);
+    j["witheredPenalty"] = RF(fs.witheredPenalty);
+    j["liquidIntensity"] = RF(fs.liquidIntensity);
+    j["groundLevel"] = RF(fs.groundLevel);
     j["sapColor"] = SerializeVector3(fs.sapColor);
-    j["stemSwayAmplitude"] = fs.stemSwayAmplitude;
+    j["stemSwayAmplitude"] = RF(fs.stemSwayAmplitude);
     return j;
 }
 
@@ -2825,22 +2835,22 @@ ECS::FlowerStemComponent DeserializeFlowerStemComponent(const json& j) {
 
 json SerializeFlowerParticleConfigComponent(const ECS::FlowerParticleConfigComponent& fp) {
     json j;
-    j["breakBurstCount"] = fp.breakBurstCount;
-    j["breakBurstSpeed"] = fp.breakBurstSpeed;
-    j["breakBurstUpKick"] = fp.breakBurstUpKick;
-    j["breakBurstLifetime"] = fp.breakBurstLifetime;
-    j["breakBurstScale"] = fp.breakBurstScale;
-    j["breakDripCount"] = fp.breakDripCount;
-    j["breakDripSpeed"] = fp.breakDripSpeed;
-    j["breakDripLifetime"] = fp.breakDripLifetime;
-    j["splashCount"] = fp.splashCount;
-    j["splashSpeed"] = fp.splashSpeed;
-    j["splashUpKick"] = fp.splashUpKick;
-    j["splashLifetime"] = fp.splashLifetime;
-    j["tensionDripRate"] = fp.tensionDripRate;
-    j["tensionDripThreshold"] = fp.tensionDripThreshold;
-    j["tensionSquirtSpeed"] = fp.tensionSquirtSpeed;
-    j["particleGravity"] = fp.particleGravity;
+    j["breakBurstCount"] = RF(fp.breakBurstCount);
+    j["breakBurstSpeed"] = RF(fp.breakBurstSpeed);
+    j["breakBurstUpKick"] = RF(fp.breakBurstUpKick);
+    j["breakBurstLifetime"] = RF(fp.breakBurstLifetime);
+    j["breakBurstScale"] = RF(fp.breakBurstScale);
+    j["breakDripCount"] = RF(fp.breakDripCount);
+    j["breakDripSpeed"] = RF(fp.breakDripSpeed);
+    j["breakDripLifetime"] = RF(fp.breakDripLifetime);
+    j["splashCount"] = RF(fp.splashCount);
+    j["splashSpeed"] = RF(fp.splashSpeed);
+    j["splashUpKick"] = RF(fp.splashUpKick);
+    j["splashLifetime"] = RF(fp.splashLifetime);
+    j["tensionDripRate"] = RF(fp.tensionDripRate);
+    j["tensionDripThreshold"] = RF(fp.tensionDripThreshold);
+    j["tensionSquirtSpeed"] = RF(fp.tensionSquirtSpeed);
+    j["particleGravity"] = RF(fp.particleGravity);
     return j;
 }
 
@@ -2871,11 +2881,11 @@ ECS::FlowerParticleConfigComponent DeserializeFlowerParticleConfigComponent(cons
 
 json SerializeLODComponent(const ECS::LODComponent& lod) {
     json j;
-    j["levelCount"] = lod.levelCount;
-    j["baseDistance"] = lod.baseDistance;
-    j["distanceMultiplier"] = lod.distanceMultiplier;
+    j["levelCount"] = RF(lod.levelCount);
+    j["baseDistance"] = RF(lod.baseDistance);
+    j["distanceMultiplier"] = RF(lod.distanceMultiplier);
     j["enabled"] = lod.enabled;
-    j["autoGenerated"] = lod.autoGenerated;
+    j["autoGenerated"] = RF(lod.autoGenerated);
     json ratios = json::array();
     for (int i = 0; i < ECS::LODComponent::MAX_LEVELS; ++i) {
         ratios.push_back(lod.reductionRatios[i]);
@@ -2885,8 +2895,8 @@ json SerializeLODComponent(const ECS::LODComponent& lod) {
     for (int i = 0; i < lod.levelCount; ++i) {
         json level;
         level["mesh"] = SerializeMeshComponent(lod.levels[i].mesh, true);
-        level["maxDistance"] = lod.levels[i].maxDistance;
-        level["reductionRatio"] = lod.levels[i].reductionRatio;
+        level["maxDistance"] = RF(lod.levels[i].maxDistance);
+        level["reductionRatio"] = RF(lod.levels[i].reductionRatio);
         levelsArr.push_back(level);
     }
     j["levels"] = levelsArr;
@@ -2922,12 +2932,12 @@ json SerializeGrassVolumeComponent(const ECS::GrassVolumeComponent& gv) {
     json j;
     j["halfExtents"] = SerializeVector3(gv.halfExtents);
     j["density"] = gv.density;
-    j["bladeHeight"] = gv.bladeHeight;
-    j["bladeHeightVariance"] = gv.bladeHeightVariance;
-    j["bladeWidth"] = gv.bladeWidth;
+    j["bladeHeight"] = RF(gv.bladeHeight);
+    j["bladeHeightVariance"] = RF(gv.bladeHeightVariance);
+    j["bladeWidth"] = RF(gv.bladeWidth);
     j["baseColor"] = SerializeVector3(gv.baseColor);
     j["tipColor"] = SerializeVector3(gv.tipColor);
-    j["windSwayStrength"] = gv.windSwayStrength;
+    j["windSwayStrength"] = RF(gv.windSwayStrength);
     if (!gv.customAssetPath.empty()) j["customAssetPath"] = gv.customAssetPath;
     return j;
 }
@@ -2948,9 +2958,9 @@ ECS::GrassVolumeComponent DeserializeGrassVolumeComponent(const json& j) {
 
 json SerializeVegetationComponent(const ECS::VegetationComponent& v) {
     json j;
-    j["swayStrength"] = v.swayStrength;
-    j["swayFrequency"] = v.swayFrequency;
-    j["useVertexColorWeight"] = v.useVertexColorWeight;
+    j["swayStrength"] = RF(v.swayStrength);
+    j["swayFrequency"] = RF(v.swayFrequency);
+    j["useVertexColorWeight"] = RF(v.useVertexColorWeight);
     return j;
 }
 
@@ -2964,12 +2974,12 @@ ECS::VegetationComponent DeserializeVegetationComponent(const json& j) {
 
 json SerializeDamageResistanceComponent(const ECS::DamageResistanceComponent& r) {
     json j;
-    j["physicalMult"] = r.physicalMult;
-    j["fireMult"] = r.fireMult;
-    j["iceMult"] = r.iceMult;
-    j["electricMult"] = r.electricMult;
-    j["poisonMult"] = r.poisonMult;
-    j["magicMult"] = r.magicMult;
+    j["physicalMult"] = RF(r.physicalMult);
+    j["fireMult"] = RF(r.fireMult);
+    j["iceMult"] = RF(r.iceMult);
+    j["electricMult"] = RF(r.electricMult);
+    j["poisonMult"] = RF(r.poisonMult);
+    j["magicMult"] = RF(r.magicMult);
     return j;
 }
 
@@ -2987,15 +2997,15 @@ ECS::DamageResistanceComponent DeserializeDamageResistanceComponent(const json& 
 json SerializeResourceComponent(const ECS::ResourceComponent& r) {
     json j;
     j["resourceName"] = r.resourceName;
-    j["maxValue"] = r.maxValue;
-    j["currentValue"] = r.currentValue;
-    j["regenRate"] = r.regenRate;
-    j["regenDelay"] = r.regenDelay;
-    j["depletedThreshold"] = r.depletedThreshold;
-    j["sprintCostPerSec"] = r.sprintCostPerSec;
-    j["jumpCost"] = r.jumpCost;
-    j["dashCost"] = r.dashCost;
-    j["attackCost"] = r.attackCost;
+    j["maxValue"] = RF(r.maxValue);
+    j["currentValue"] = RF(r.currentValue);
+    j["regenRate"] = RF(r.regenRate);
+    j["regenDelay"] = RF(r.regenDelay);
+    j["depletedThreshold"] = RF(r.depletedThreshold);
+    j["sprintCostPerSec"] = RF(r.sprintCostPerSec);
+    j["jumpCost"] = RF(r.jumpCost);
+    j["dashCost"] = RF(r.dashCost);
+    j["attackCost"] = RF(r.attackCost);
     return j;
 }
 
@@ -3018,10 +3028,10 @@ json SerializeFootstepComponent(const ECS::FootstepComponent& f) {
     json j;
     j["defaultWalkSound"] = f.defaultWalkSound;
     j["defaultRunSound"] = f.defaultRunSound;
-    j["walkStepInterval"] = f.walkStepInterval;
-    j["runStepInterval"] = f.runStepInterval;
-    j["volume"] = f.volume;
-    j["pitchVariance"] = f.pitchVariance;
+    j["walkStepInterval"] = RF(f.walkStepInterval);
+    j["runStepInterval"] = RF(f.runStepInterval);
+    j["volume"] = RF(f.volume);
+    j["pitchVariance"] = RF(f.pitchVariance);
     j["currentSurface"] = f.currentSurface;
     json surfaces = json::array();
     for (const auto& s : f.surfaceSounds) {
@@ -3029,7 +3039,7 @@ json SerializeFootstepComponent(const ECS::FootstepComponent& f) {
         sj["surfaceTag"] = s.surfaceTag;
         sj["walkSound"] = s.walkSound;
         sj["runSound"] = s.runSound;
-        sj["volumeScale"] = s.volumeScale;
+        sj["volumeScale"] = RF(s.volumeScale);
         surfaces.push_back(sj);
     }
     j["surfaceSounds"] = surfaces;
@@ -3061,7 +3071,7 @@ ECS::FootstepComponent DeserializeFootstepComponent(const json& j) {
 json SerializePoolableComponent(const ECS::PoolableComponent& p) {
     json j;
     j["poolId"] = p.poolId;
-    j["lifetime"] = p.lifetime;
+    j["lifetime"] = RF(p.lifetime);
     return j;
 }
 
@@ -3076,8 +3086,8 @@ json SerializeQuestStateComponent(const ECS::QuestStateComponent& q) {
     json j;
     j["questId"] = q.questId;
     j["status"] = static_cast<u8>(q.status);
-    j["currentObjective"] = q.currentObjective;
-    j["timeElapsed"] = q.timeElapsed;
+    j["currentObjective"] = RF(q.currentObjective);
+    j["timeElapsed"] = RF(q.timeElapsed);
     json flags = json::array();
     for (const auto& [name, complete] : q.objectiveFlags) {
         json fj;
@@ -3108,23 +3118,23 @@ ECS::QuestStateComponent DeserializeQuestStateComponent(const json& j) {
 json SerializeHUDWidgetComponent(const ECS::HUDWidgetComponent& h) {
     json j;
     j["type"] = static_cast<u8>(h.type);
-    j["visible"] = h.visible;
-    j["screenSpace"] = h.screenSpace;
-    j["anchorX"] = h.anchorX;
-    j["anchorY"] = h.anchorY;
+    j["visible"] = RF(h.visible);
+    j["screenSpace"] = RF(h.screenSpace);
+    j["anchorX"] = RF(h.anchorX);
+    j["anchorY"] = RF(h.anchorY);
     j["width"] = h.width;
     j["height"] = h.height;
     j["fillColor"] = SerializeVector3(h.fillColor);
     j["bgColor"] = SerializeVector3(h.bgColor);
     j["textColor"] = SerializeVector3(h.textColor);
-    j["fontSize"] = h.fontSize;
+    j["fontSize"] = RF(h.fontSize);
     j["text"] = h.text;
     j["sourceEntity"] = static_cast<u64>(h.sourceEntity);
     j["bindField"] = h.bindField;
-    j["currentValue"] = h.currentValue;
-    j["maxValue"] = h.maxValue;
+    j["currentValue"] = RF(h.currentValue);
+    j["maxValue"] = RF(h.maxValue);
     j["worldOffset"] = SerializeVector3(h.worldOffset);
-    j["maxRenderDistance"] = h.maxRenderDistance;
+    j["maxRenderDistance"] = RF(h.maxRenderDistance);
     return j;
 }
 
@@ -3153,10 +3163,10 @@ ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
 
 json SerializeUIElement(const GUI::UIElement& e) {
     json j;
-    j["id"] = e.id;
+    j["id"] = RF(e.id);
     j["name"] = e.name;
     j["type"] = static_cast<u8>(e.type);
-    j["visible"] = e.visible;
+    j["visible"] = RF(e.visible);
     j["enabled"] = e.enabled;
     j["parentId"] = e.parentId;
     j["childIds"] = e.childIds;
@@ -3166,10 +3176,10 @@ json SerializeUIElement(const GUI::UIElement& e) {
     anchor["anchorMin"] = SerializeVector2(e.anchor.anchorMin);
     anchor["anchorMax"] = SerializeVector2(e.anchor.anchorMax);
     anchor["pivot"] = SerializeVector2(e.anchor.pivot);
-    anchor["offsetLeft"] = e.anchor.offsetLeft;
-    anchor["offsetRight"] = e.anchor.offsetRight;
-    anchor["offsetTop"] = e.anchor.offsetTop;
-    anchor["offsetBottom"] = e.anchor.offsetBottom;
+    anchor["offsetLeft"] = RF(e.anchor.offsetLeft);
+    anchor["offsetRight"] = RF(e.anchor.offsetRight);
+    anchor["offsetTop"] = RF(e.anchor.offsetTop);
+    anchor["offsetBottom"] = RF(e.anchor.offsetBottom);
     j["anchor"] = anchor;
 
     // Style overrides
@@ -3177,17 +3187,17 @@ json SerializeUIElement(const GUI::UIElement& e) {
     style["bgColor"] = SerializeVector3(e.style.bgColor);
     style["textColor"] = SerializeVector3(e.style.textColor);
     style["borderColor"] = SerializeVector3(e.style.borderColor);
-    style["bgAlpha"] = e.style.bgAlpha;
-    style["borderRadius"] = e.style.borderRadius;
-    style["borderWidth"] = e.style.borderWidth;
-    style["fontSize"] = e.style.fontSize;
+    style["bgAlpha"] = RF(e.style.bgAlpha);
+    style["borderRadius"] = RF(e.style.borderRadius);
+    style["borderWidth"] = RF(e.style.borderWidth);
+    style["fontSize"] = RF(e.style.fontSize);
     if (e.style.nineSlice.IsActive()) {
         json ns;
         ns["texturePath"] = e.style.nineSlice.texturePath;
-        ns["borderLeft"] = e.style.nineSlice.borderLeft;
-        ns["borderRight"] = e.style.nineSlice.borderRight;
-        ns["borderTop"] = e.style.nineSlice.borderTop;
-        ns["borderBottom"] = e.style.nineSlice.borderBottom;
+        ns["borderLeft"] = RF(e.style.nineSlice.borderLeft);
+        ns["borderRight"] = RF(e.style.nineSlice.borderRight);
+        ns["borderTop"] = RF(e.style.nineSlice.borderTop);
+        ns["borderBottom"] = RF(e.style.nineSlice.borderBottom);
         style["nineSlice"] = ns;
     }
     j["style"] = style;
@@ -3195,19 +3205,19 @@ json SerializeUIElement(const GUI::UIElement& e) {
     // Widget data
     json data;
     data["text"] = e.data.text;
-    data["textAlignH"] = e.data.textAlignH;
-    data["textAlignV"] = e.data.textAlignV;
+    data["textAlignH"] = RF(e.data.textAlignH);
+    data["textAlignV"] = RF(e.data.textAlignV);
     data["imagePath"] = e.data.imagePath;
     data["imageTint"] = SerializeVector3(e.data.imageTint);
-    data["imageAlpha"] = e.data.imageAlpha;
-    data["progressValue"] = e.data.progressValue;
+    data["imageAlpha"] = RF(e.data.imageAlpha);
+    data["progressValue"] = RF(e.data.progressValue);
     data["progressFillColor"] = SerializeVector3(e.data.progressFillColor);
-    data["sliderValue"] = e.data.sliderValue;
-    data["sliderMin"] = e.data.sliderMin;
-    data["sliderMax"] = e.data.sliderMax;
-    data["checked"] = e.data.checked;
+    data["sliderValue"] = RF(e.data.sliderValue);
+    data["sliderMin"] = RF(e.data.sliderMin);
+    data["sliderMax"] = RF(e.data.sliderMax);
+    data["checked"] = RF(e.data.checked);
     if (!e.data.options.empty()) data["options"] = e.data.options;
-    data["selectedOption"] = e.data.selectedOption;
+    data["selectedOption"] = RF(e.data.selectedOption);
     data["inputText"] = e.data.inputText;
     data["placeholder"] = e.data.placeholder;
     j["data"] = data;
@@ -3317,29 +3327,29 @@ json SerializeUITheme(const GUI::UITheme& t) {
     j["toggleOffBg"] = SerializeVector3(t.toggleOffBg);
     j["toggleOnBg"] = SerializeVector3(t.toggleOnBg);
     j["toggleKnob"] = SerializeVector3(t.toggleKnob);
-    j["borderRadius"] = t.borderRadius;
-    j["borderWidth"] = t.borderWidth;
-    j["fontSizeBody"] = t.fontSizeBody;
-    j["fontSizeHeading"] = t.fontSizeHeading;
-    j["fontSizeSmall"] = t.fontSizeSmall;
-    j["spacing"] = t.spacing;
-    j["bgAlpha"] = t.bgAlpha;
+    j["borderRadius"] = RF(t.borderRadius);
+    j["borderWidth"] = RF(t.borderWidth);
+    j["fontSizeBody"] = RF(t.fontSizeBody);
+    j["fontSizeHeading"] = RF(t.fontSizeHeading);
+    j["fontSizeSmall"] = RF(t.fontSizeSmall);
+    j["spacing"] = RF(t.spacing);
+    j["bgAlpha"] = RF(t.bgAlpha);
     if (t.panelNineSlice.IsActive()) {
         json ns;
         ns["texturePath"] = t.panelNineSlice.texturePath;
-        ns["borderLeft"] = t.panelNineSlice.borderLeft;
-        ns["borderRight"] = t.panelNineSlice.borderRight;
-        ns["borderTop"] = t.panelNineSlice.borderTop;
-        ns["borderBottom"] = t.panelNineSlice.borderBottom;
+        ns["borderLeft"] = RF(t.panelNineSlice.borderLeft);
+        ns["borderRight"] = RF(t.panelNineSlice.borderRight);
+        ns["borderTop"] = RF(t.panelNineSlice.borderTop);
+        ns["borderBottom"] = RF(t.panelNineSlice.borderBottom);
         j["panelNineSlice"] = ns;
     }
     if (t.buttonNineSlice.IsActive()) {
         json ns;
         ns["texturePath"] = t.buttonNineSlice.texturePath;
-        ns["borderLeft"] = t.buttonNineSlice.borderLeft;
-        ns["borderRight"] = t.buttonNineSlice.borderRight;
-        ns["borderTop"] = t.buttonNineSlice.borderTop;
-        ns["borderBottom"] = t.buttonNineSlice.borderBottom;
+        ns["borderLeft"] = RF(t.buttonNineSlice.borderLeft);
+        ns["borderRight"] = RF(t.buttonNineSlice.borderRight);
+        ns["borderTop"] = RF(t.buttonNineSlice.borderTop);
+        ns["borderBottom"] = RF(t.buttonNineSlice.borderBottom);
         j["buttonNineSlice"] = ns;
     }
     return j;
@@ -3393,12 +3403,12 @@ GUI::UITheme DeserializeUITheme(const json& j) {
 json SerializeUICanvasComponent(const GUI::UICanvasComponent& c) {
     json j;
     j["canvasName"] = c.canvasName;
-    j["visible"] = c.visible;
-    j["sortOrder"] = c.sortOrder;
-    j["designWidth"] = c.designWidth;
-    j["designHeight"] = c.designHeight;
+    j["visible"] = RF(c.visible);
+    j["sortOrder"] = RF(c.sortOrder);
+    j["designWidth"] = RF(c.designWidth);
+    j["designHeight"] = RF(c.designHeight);
     j["scaleMode"] = static_cast<u8>(c.scaleMode);
-    j["theme"] = SerializeUITheme(c.theme);
+    j["theme"] = RF(SerializeUITheme(c.theme));
     j["nextElementId"] = c.nextElementId;
 
     json elementsArr = json::array();
@@ -3431,9 +3441,9 @@ GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
 json SerializeCinematicCameraComponent(const ECS::CinematicCameraComponent& c) {
     json j;
     j["loop"] = c.loop;
-    j["autoPlay"] = c.autoPlay;
-    j["hideHUD"] = c.hideHUD;
-    j["disableInput"] = c.disableInput;
+    j["autoPlay"] = RF(c.autoPlay);
+    j["hideHUD"] = RF(c.hideHUD);
+    j["disableInput"] = RF(c.disableInput);
     j["onCompleteNotify"] = static_cast<u64>(c.onCompleteNotify);
     j["onWaypointReachNotify"] = static_cast<u64>(c.onWaypointReachNotify);
     json wps = json::array();
@@ -3441,9 +3451,9 @@ json SerializeCinematicCameraComponent(const ECS::CinematicCameraComponent& c) {
         json wj;
         wj["position"] = SerializeVector3(wp.position);
         wj["lookAt"] = SerializeVector3(wp.lookAt);
-        wj["fov"] = wp.fov;
-        wj["duration"] = wp.duration;
-        wj["holdTime"] = wp.holdTime;
+        wj["fov"] = RF(wp.fov);
+        wj["duration"] = RF(wp.duration);
+        wj["holdTime"] = RF(wp.holdTime);
         wj["easing"] = static_cast<u8>(wp.easing);
         wps.push_back(wj);
     }
@@ -3484,11 +3494,11 @@ json SerializeDistanceJointComponent(const ECS::DistanceJointComponent& j) {
     o["entityB"] = static_cast<u64>(j.entityB);
     o["anchorA"] = SerializeVector3(j.anchorA);
     o["anchorB"] = SerializeVector3(j.anchorB);
-    o["restDistance"] = j.restDistance;
-    o["tolerance"] = j.tolerance;
-    o["stiffness"] = j.stiffness;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["restDistance"] = RF(j.restDistance);
+    o["tolerance"] = RF(j.tolerance);
+    o["stiffness"] = RF(j.stiffness);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3513,14 +3523,14 @@ json SerializeHingeJointComponent(const ECS::HingeJointComponent& j) {
     o["anchorA"] = SerializeVector3(j.anchorA);
     o["anchorB"] = SerializeVector3(j.anchorB);
     o["axis"] = SerializeVector3(j.axis);
-    o["useLimits"] = j.useLimits;
-    o["lowerLimit"] = j.lowerLimit;
-    o["upperLimit"] = j.upperLimit;
-    o["useMotor"] = j.useMotor;
-    o["motorSpeed"] = j.motorSpeed;
-    o["motorMaxForce"] = j.motorMaxForce;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["useLimits"] = RF(j.useLimits);
+    o["lowerLimit"] = RF(j.lowerLimit);
+    o["upperLimit"] = RF(j.upperLimit);
+    o["useMotor"] = RF(j.useMotor);
+    o["motorSpeed"] = RF(j.motorSpeed);
+    o["motorMaxForce"] = RF(j.motorMaxForce);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3548,13 +3558,13 @@ json SerializeBallSocketJointComponent(const ECS::BallSocketJointComponent& j) {
     o["entityB"] = static_cast<u64>(j.entityB);
     o["anchorA"] = SerializeVector3(j.anchorA);
     o["anchorB"] = SerializeVector3(j.anchorB);
-    o["useConeLimit"] = j.useConeLimit;
-    o["coneAngleLimit"] = j.coneAngleLimit;
-    o["useTwistLimit"] = j.useTwistLimit;
-    o["twistLowerLimit"] = j.twistLowerLimit;
-    o["twistUpperLimit"] = j.twistUpperLimit;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["useConeLimit"] = RF(j.useConeLimit);
+    o["coneAngleLimit"] = RF(j.coneAngleLimit);
+    o["useTwistLimit"] = RF(j.useTwistLimit);
+    o["twistLowerLimit"] = RF(j.twistLowerLimit);
+    o["twistUpperLimit"] = RF(j.twistUpperLimit);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3580,13 +3590,13 @@ json SerializeSpringJointComponent(const ECS::SpringJointComponent& j) {
     o["entityB"] = static_cast<u64>(j.entityB);
     o["anchorA"] = SerializeVector3(j.anchorA);
     o["anchorB"] = SerializeVector3(j.anchorB);
-    o["restLength"] = j.restLength;
-    o["springConstant"] = j.springConstant;
-    o["dampingCoefficient"] = j.dampingCoefficient;
-    o["minDistance"] = j.minDistance;
-    o["maxDistance"] = j.maxDistance;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["restLength"] = RF(j.restLength);
+    o["springConstant"] = RF(j.springConstant);
+    o["dampingCoefficient"] = RF(j.dampingCoefficient);
+    o["minDistance"] = RF(j.minDistance);
+    o["maxDistance"] = RF(j.maxDistance);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3614,9 +3624,9 @@ json SerializeFixedJointComponent(const ECS::FixedJointComponent& j) {
     o["anchorB"] = SerializeVector3(j.anchorB);
     o["relativePosition"] = SerializeVector3(j.relativePosition);
     o["relativeRotation"] = SerializeVector3(j.relativeRotation);
-    o["initialized"] = j.initialized;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["initialized"] = RF(j.initialized);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3641,14 +3651,14 @@ json SerializeSliderJointComponent(const ECS::SliderJointComponent& j) {
     o["anchorA"] = SerializeVector3(j.anchorA);
     o["anchorB"] = SerializeVector3(j.anchorB);
     o["slideAxis"] = SerializeVector3(j.slideAxis);
-    o["useLimits"] = j.useLimits;
-    o["lowerLimit"] = j.lowerLimit;
-    o["upperLimit"] = j.upperLimit;
-    o["useMotor"] = j.useMotor;
-    o["motorSpeed"] = j.motorSpeed;
-    o["motorMaxForce"] = j.motorMaxForce;
-    o["breakable"] = j.breakable;
-    o["breakForce"] = j.breakForce;
+    o["useLimits"] = RF(j.useLimits);
+    o["lowerLimit"] = RF(j.lowerLimit);
+    o["upperLimit"] = RF(j.upperLimit);
+    o["useMotor"] = RF(j.useMotor);
+    o["motorSpeed"] = RF(j.motorSpeed);
+    o["motorMaxForce"] = RF(j.motorMaxForce);
+    o["breakable"] = RF(j.breakable);
+    o["breakForce"] = RF(j.breakForce);
     return o;
 }
 
@@ -3673,25 +3683,25 @@ ECS::SliderJointComponent DeserializeSliderJointComponent(const json& j) {
 json SerializeRagdollComponent(const ECS::RagdollComponent& r) {
     json o;
     o["enabled"] = r.enabled;
-    o["autoDisableAfterSettle"] = r.autoDisableAfterSettle;
-    o["settleThreshold"] = r.settleThreshold;
-    o["settleTime"] = r.settleTime;
-    o["blendWeight"] = r.blendWeight;
-    o["blendSpeed"] = r.blendSpeed;
-    o["gravityScale"] = r.gravityScale;
-    o["linearDamping"] = r.linearDamping;
-    o["angularDamping"] = r.angularDamping;
+    o["autoDisableAfterSettle"] = RF(r.autoDisableAfterSettle);
+    o["settleThreshold"] = RF(r.settleThreshold);
+    o["settleTime"] = RF(r.settleTime);
+    o["blendWeight"] = RF(r.blendWeight);
+    o["blendSpeed"] = RF(r.blendSpeed);
+    o["gravityScale"] = RF(r.gravityScale);
+    o["linearDamping"] = RF(r.linearDamping);
+    o["angularDamping"] = RF(r.angularDamping);
     json joints = json::array();
     for (const auto& bj : r.boneJoints) {
         json bjJson;
         bjJson["boneName"] = bj.boneName;
-        bjJson["boneIndex"] = bj.boneIndex;
+        bjJson["boneIndex"] = RF(bj.boneIndex);
         bjJson["jointType"] = static_cast<u8>(bj.jointType);
         bjJson["jointEntity"] = static_cast<u64>(bj.jointEntity);
-        bjJson["mass"] = bj.mass;
-        bjJson["colliderRadius"] = bj.colliderRadius;
-        bjJson["coneAngleLimit"] = bj.coneAngleLimit;
-        bjJson["twistLimit"] = bj.twistLimit;
+        bjJson["mass"] = RF(bj.mass);
+        bjJson["colliderRadius"] = RF(bj.colliderRadius);
+        bjJson["coneAngleLimit"] = RF(bj.coneAngleLimit);
+        bjJson["twistLimit"] = RF(bj.twistLimit);
         joints.push_back(bjJson);
     }
     o["boneJoints"] = joints;
@@ -3845,15 +3855,15 @@ json SerializeLockComponent(const ECS::LockComponent& lk) {
     j["requiredKey"] = lk.requiredKey;
     j["isLocked"] = lk.isLocked;
     j["consumeKey"] = lk.consumeKey;
-    j["autoOpen"] = lk.autoOpen;
-    j["interactRange"] = lk.interactRange;
+    j["autoOpen"] = RF(lk.autoOpen);
+    j["interactRange"] = RF(lk.interactRange);
     j["openMode"] = static_cast<i32>(lk.openMode);
-    j["openDuration"] = lk.openDuration;
+    j["openDuration"] = RF(lk.openDuration);
     j["closedPosition"] = SerializeVector3(lk.closedPosition);
     j["openPosition"] = SerializeVector3(lk.openPosition);
     j["closedRotation"] = SerializeVector3(lk.closedRotation);
     j["openRotation"] = SerializeVector3(lk.openRotation);
-    j["openSpeed"] = lk.openSpeed;
+    j["openSpeed"] = RF(lk.openSpeed);
     j["lockedPrompt"] = lk.lockedPrompt;
     j["unlockedPrompt"] = lk.unlockedPrompt;
     return j;
@@ -3880,16 +3890,16 @@ ECS::LockComponent DeserializeLockComponent(const json& j) {
 
 json SerializePushableComponent(const ECS::PushableComponent& pb) {
     json j;
-    j["mass"] = pb.mass;
-    j["pushSpeed"] = pb.pushSpeed;
-    j["friction"] = pb.friction;
-    j["gridSnap"] = pb.gridSnap;
-    j["gridCellSize"] = pb.gridCellSize;
-    j["gridMoveSpeed"] = pb.gridMoveSpeed;
-    j["pushableX"] = pb.pushableX;
-    j["pushableY"] = pb.pushableY;
-    j["pushableZ"] = pb.pushableZ;
-    j["canBePushedOff"] = pb.canBePushedOff;
+    j["mass"] = RF(pb.mass);
+    j["pushSpeed"] = RF(pb.pushSpeed);
+    j["friction"] = RF(pb.friction);
+    j["gridSnap"] = RF(pb.gridSnap);
+    j["gridCellSize"] = RF(pb.gridCellSize);
+    j["gridMoveSpeed"] = RF(pb.gridMoveSpeed);
+    j["pushableX"] = RF(pb.pushableX);
+    j["pushableY"] = RF(pb.pushableY);
+    j["pushableZ"] = RF(pb.pushableZ);
+    j["canBePushedOff"] = RF(pb.canBePushedOff);
     return j;
 }
 
@@ -3913,10 +3923,10 @@ json SerializeSwitchComponent(const ECS::SwitchComponent& sw) {
     j["type"] = static_cast<i32>(sw.type);
     j["requireSpecificTag"] = sw.requireSpecificTag;
     j["requiredTag"] = sw.requiredTag;
-    j["activationWeight"] = sw.activationWeight;
-    j["activeDuration"] = sw.activeDuration;
-    j["sequenceIndex"] = sw.sequenceIndex;
-    j["sequenceGroup"] = sw.sequenceGroup;
+    j["activationWeight"] = RF(sw.activationWeight);
+    j["activeDuration"] = RF(sw.activeDuration);
+    j["sequenceIndex"] = RF(sw.sequenceIndex);
+    j["sequenceGroup"] = RF(sw.sequenceGroup);
     json linked = json::array();
     for (auto e : sw.linkedEntities) {
         linked.push_back(static_cast<u64>(e));
@@ -3924,7 +3934,7 @@ json SerializeSwitchComponent(const ECS::SwitchComponent& sw) {
     j["linkedEntities"] = linked;
     j["offPosition"] = SerializeVector3(sw.offPosition);
     j["onPosition"] = SerializeVector3(sw.onPosition);
-    j["transitionSpeed"] = sw.transitionSpeed;
+    j["transitionSpeed"] = RF(sw.transitionSpeed);
     j["promptText"] = sw.promptText;
     j["showPrompt"] = sw.showPrompt;
     return j;
@@ -3957,7 +3967,7 @@ json SerializeGoalZoneComponent(const ECS::GoalZoneComponent& gz) {
     j["type"] = static_cast<i32>(gz.type);
     j["requiredTag"] = gz.requiredTag;
     j["requiredItem"] = gz.requiredItem;
-    j["goalGroup"] = gz.goalGroup;
+    j["goalGroup"] = RF(gz.goalGroup);
     j["inactiveColor"] = SerializeVector3(gz.inactiveColor);
     j["activeColor"] = SerializeVector3(gz.activeColor);
     j["nextScene"] = gz.nextScene;
@@ -3979,9 +3989,9 @@ ECS::GoalZoneComponent DeserializeGoalZoneComponent(const json& j) {
 json SerializeConveyorComponent(const ECS::ConveyorComponent& cv) {
     json j;
     j["direction"] = SerializeVector3(cv.direction);
-    j["speed"] = cv.speed;
-    j["affectsPlayer"] = cv.affectsPlayer;
-    j["affectsPushables"] = cv.affectsPushables;
+    j["speed"] = RF(cv.speed);
+    j["affectsPlayer"] = RF(cv.affectsPlayer);
+    j["affectsPushables"] = RF(cv.affectsPushables);
     j["isActive"] = cv.isActive;
     return j;
 }
@@ -4001,8 +4011,8 @@ json SerializeTeleporterComponent(const ECS::TeleporterComponent& tp) {
     j["targetPosition"] = SerializeVector3(tp.targetPosition);
     j["targetRotation"] = SerializeVector3(tp.targetRotation);
     j["linkedTeleporter"] = static_cast<u64>(tp.linkedTeleporter);
-    j["cooldown"] = tp.cooldown;
-    j["preserveVelocity"] = tp.preserveVelocity;
+    j["cooldown"] = RF(tp.cooldown);
+    j["preserveVelocity"] = RF(tp.preserveVelocity);
     j["requiredTag"] = tp.requiredTag;
     return j;
 }
@@ -4020,14 +4030,14 @@ ECS::TeleporterComponent DeserializeTeleporterComponent(const json& j) {
 
 json SerializeDestructibleComponent(const ECS::DestructibleComponent& dc) {
     json j;
-    j["health"] = dc.health;
-    j["destroyOnHit"] = dc.destroyOnHit;
-    j["spawnPickup"] = dc.spawnPickup;
+    j["health"] = RF(dc.health);
+    j["destroyOnHit"] = RF(dc.destroyOnHit);
+    j["spawnPickup"] = RF(dc.spawnPickup);
     j["pickupId"] = dc.pickupId;
-    j["pickupCount"] = dc.pickupCount;
-    j["canRespawn"] = dc.canRespawn;
-    j["respawnTime"] = dc.respawnTime;
-    j["shakeOnHit"] = dc.shakeOnHit;
+    j["pickupCount"] = RF(dc.pickupCount);
+    j["canRespawn"] = RF(dc.canRespawn);
+    j["respawnTime"] = RF(dc.respawnTime);
+    j["shakeOnHit"] = RF(dc.shakeOnHit);
     return j;
 }
 
@@ -4051,10 +4061,10 @@ json SerializeMovingPlatformComponent(const ECS::MovingPlatformComponent& mp) {
         wpArr.push_back(SerializeVector3(wp));
     }
     j["waypoints"] = wpArr;
-    j["speed"] = mp.speed;
-    j["waitTime"] = mp.waitTime;
+    j["speed"] = RF(mp.speed);
+    j["waitTime"] = RF(mp.waitTime);
     j["mode"] = static_cast<i32>(mp.mode);
-    j["carryEntities"] = mp.carryEntities;
+    j["carryEntities"] = RF(mp.carryEntities);
     return j;
 }
 
@@ -4086,7 +4096,7 @@ json SerializeSkeletonComponent(const ECS::SkeletonComponent& skelComp) {
         for (const auto& bone : skelComp.skeleton->bones) {
             json bj;
             bj["name"] = bone.name;
-            bj["parentIndex"] = bone.parentIndex;
+            bj["parentIndex"] = RF(bone.parentIndex);
             bj["bindPosition"] = SerializeVector3(bone.bindPosition);
             bj["bindRotation"] = SerializeQuaternion(bone.bindRotation);
             bj["bindScale"] = SerializeVector3(bone.bindScale);
@@ -4125,22 +4135,22 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
     json j;
     const auto& animator = animComp.animator;
 
-    j["speed"] = animator.GetSpeed();
+    j["speed"] = RF(animator.GetSpeed());
     j["currentAnimation"] = animator.GetCurrentAnimationName();
 
     // Serialize all animation clips
     json animsObj = json::object();
     for (const auto& [name, anim] : animator.GetAnimations()) {
         json aj;
-        aj["duration"] = anim.duration;
-        aj["ticksPerSecond"] = anim.ticksPerSecond;
+        aj["duration"] = RF(anim.duration);
+        aj["ticksPerSecond"] = RF(anim.ticksPerSecond);
         aj["playMode"] = static_cast<i32>(anim.playMode);
 
         json tracksArr = json::array();
         for (const auto& track : anim.tracks) {
             json tj;
             tj["boneName"] = track.boneName;
-            tj["boneIndex"] = track.boneIndex;
+            tj["boneIndex"] = RF(track.boneIndex);
 
             // Position keyframes
             json posTimes = json::array();
@@ -4177,7 +4187,7 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
         json eventsArr = json::array();
         for (const auto& evt : anim.events) {
             json ej;
-            ej["time"] = evt.time;
+            ej["time"] = RF(evt.time);
             ej["name"] = evt.name;
             eventsArr.push_back(ej);
         }
@@ -4197,7 +4207,7 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
     for (const auto& [name, state] : sm.GetStates()) {
         json sj;
         sj["animationName"] = state.animationName;
-        sj["speed"] = state.speed;
+        sj["speed"] = RF(state.speed);
         sj["playMode"] = static_cast<i32>(state.playMode);
         sj["editorPosition"] = SerializeVector2(state.editorPosition);
         statesObj[name] = sj;
@@ -4210,9 +4220,9 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
         json tj;
         tj["fromState"] = trans.fromState;
         tj["toState"] = trans.toState;
-        tj["blendTime"] = trans.blendTime;
-        tj["hasExitTime"] = trans.hasExitTime;
-        tj["exitTime"] = trans.exitTime;
+        tj["blendTime"] = RF(trans.blendTime);
+        tj["hasExitTime"] = RF(trans.hasExitTime);
+        tj["exitTime"] = RF(trans.exitTime);
 
         json condArr = json::array();
         for (const auto& cond : trans.conditions) {
@@ -4223,13 +4233,13 @@ json SerializeAnimatorComponent(const ECS::AnimatorComponent& animComp) {
             switch (cond.type) {
                 case Animation::TransitionCondition::Type::Bool:
                 case Animation::TransitionCondition::Type::Trigger:
-                    cj["boolValue"] = cond.value.boolValue;
+                    cj["boolValue"] = RF(cond.value.boolValue);
                     break;
                 case Animation::TransitionCondition::Type::Float:
-                    cj["floatValue"] = cond.value.floatValue;
+                    cj["floatValue"] = RF(cond.value.floatValue);
                     break;
                 case Animation::TransitionCondition::Type::Int:
-                    cj["intValue"] = cond.value.intValue;
+                    cj["intValue"] = RF(cond.value.intValue);
                     break;
             }
             condArr.push_back(cj);
@@ -4440,7 +4450,13 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
 
         json entitiesArray = json::array();
 
-        for (ECS::Entity entity : entities) {
+        // Sort entities by ID for deterministic output
+        std::vector<ECS::Entity> sortedEntities(entities.begin(), entities.end());
+        if (options.deterministic) {
+            std::sort(sortedEntities.begin(), sortedEntities.end());
+        }
+
+        for (ECS::Entity entity : sortedEntities) {
             if (!m_World->IsValid(entity)) {
                 continue;
             }
@@ -4868,12 +4884,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
             json skyboxJson;
             skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
-            skyboxJson["topColor"] = { m_SkyboxConfig.topColor.x, m_SkyboxConfig.topColor.y, m_SkyboxConfig.topColor.z };
-            skyboxJson["bottomColor"] = { m_SkyboxConfig.bottomColor.x, m_SkyboxConfig.bottomColor.y, m_SkyboxConfig.bottomColor.z };
-            skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
-            skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
-            skyboxJson["rotation"] = m_SkyboxConfig.rotation;
-            skyboxJson["sunDirection"] = { m_SkyboxConfig.sunDirection.x, m_SkyboxConfig.sunDirection.y, m_SkyboxConfig.sunDirection.z };
+            skyboxJson["topColor"] = { RF(m_SkyboxConfig.topColor.x), RF(m_SkyboxConfig.topColor.y), RF(m_SkyboxConfig.topColor.z) };
+            skyboxJson["bottomColor"] = { RF(m_SkyboxConfig.bottomColor.x), RF(m_SkyboxConfig.bottomColor.y), RF(m_SkyboxConfig.bottomColor.z) };
+            skyboxJson["horizonColor"] = { RF(m_SkyboxConfig.horizonColor.x), RF(m_SkyboxConfig.horizonColor.y), RF(m_SkyboxConfig.horizonColor.z) };
+            skyboxJson["solidColor"] = { RF(m_SkyboxConfig.solidColor.x), RF(m_SkyboxConfig.solidColor.y), RF(m_SkyboxConfig.solidColor.z) };
+            skyboxJson["rotation"] = RF(m_SkyboxConfig.rotation);
+            skyboxJson["sunDirection"] = { RF(m_SkyboxConfig.sunDirection.x), RF(m_SkyboxConfig.sunDirection.y), RF(m_SkyboxConfig.sunDirection.z) };
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;
@@ -5499,7 +5515,13 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
 
         json entitiesArray = json::array();
 
-        for (ECS::Entity entity : entities) {
+        // Sort entities by ID for deterministic output
+        std::vector<ECS::Entity> sortedEntities(entities.begin(), entities.end());
+        if (options.deterministic) {
+            std::sort(sortedEntities.begin(), sortedEntities.end());
+        }
+
+        for (ECS::Entity entity : sortedEntities) {
             if (!m_World->IsValid(entity)) {
                 continue;
             }
@@ -5927,12 +5949,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
         if (m_SkyboxConfig.type != Renderer::SkyboxType::None) {
             json skyboxJson;
             skyboxJson["type"] = static_cast<u32>(m_SkyboxConfig.type);
-            skyboxJson["topColor"] = { m_SkyboxConfig.topColor.x, m_SkyboxConfig.topColor.y, m_SkyboxConfig.topColor.z };
-            skyboxJson["bottomColor"] = { m_SkyboxConfig.bottomColor.x, m_SkyboxConfig.bottomColor.y, m_SkyboxConfig.bottomColor.z };
-            skyboxJson["horizonColor"] = { m_SkyboxConfig.horizonColor.x, m_SkyboxConfig.horizonColor.y, m_SkyboxConfig.horizonColor.z };
-            skyboxJson["solidColor"] = { m_SkyboxConfig.solidColor.x, m_SkyboxConfig.solidColor.y, m_SkyboxConfig.solidColor.z };
-            skyboxJson["rotation"] = m_SkyboxConfig.rotation;
-            skyboxJson["sunDirection"] = { m_SkyboxConfig.sunDirection.x, m_SkyboxConfig.sunDirection.y, m_SkyboxConfig.sunDirection.z };
+            skyboxJson["topColor"] = { RF(m_SkyboxConfig.topColor.x), RF(m_SkyboxConfig.topColor.y), RF(m_SkyboxConfig.topColor.z) };
+            skyboxJson["bottomColor"] = { RF(m_SkyboxConfig.bottomColor.x), RF(m_SkyboxConfig.bottomColor.y), RF(m_SkyboxConfig.bottomColor.z) };
+            skyboxJson["horizonColor"] = { RF(m_SkyboxConfig.horizonColor.x), RF(m_SkyboxConfig.horizonColor.y), RF(m_SkyboxConfig.horizonColor.z) };
+            skyboxJson["solidColor"] = { RF(m_SkyboxConfig.solidColor.x), RF(m_SkyboxConfig.solidColor.y), RF(m_SkyboxConfig.solidColor.z) };
+            skyboxJson["rotation"] = RF(m_SkyboxConfig.rotation);
+            skyboxJson["sunDirection"] = { RF(m_SkyboxConfig.sunDirection.x), RF(m_SkyboxConfig.sunDirection.y), RF(m_SkyboxConfig.sunDirection.z) };
             json faces = json::array();
             for (const auto& p : m_SkyboxConfig.cubemapPaths) faces.push_back(p);
             skyboxJson["cubemapPaths"] = faces;

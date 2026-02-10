@@ -95,6 +95,7 @@ enum class EditorPanel : u32 {
     DataAssets = 1 << 22,
     PluginBrowser = 1 << 23,
     ProceduralGen = 1 << 24,
+    GitIntegration = 1 << 25,
     All = 0xFFFFFFFF
 };
 
@@ -109,6 +110,18 @@ inline EditorPanel operator&(EditorPanel a, EditorPanel b) {
 inline bool HasPanel(EditorPanel flags, EditorPanel panel) {
     return (static_cast<u32>(flags) & static_cast<u32>(panel)) != 0;
 }
+
+// Git file status entry
+struct GitFileStatus {
+    std::string path;
+    enum class Status : u8 { Modified, Added, Deleted, Renamed, Untracked, Staged } status;
+    bool staged = false;
+};
+
+// Git log entry
+struct GitLogEntry {
+    std::string hash, message, author, date;
+};
 
 // UI editor drag handle mode
 enum class UIEditDragMode : u8 {
@@ -234,6 +247,19 @@ private:
     void DrawDataAssetPanel();
     void DrawPluginBrowserPanel();
     void DrawProceduralGenPanel();
+    void DrawGitIntegrationPanel();
+    static std::string RunGitCommand(const std::string& args, const std::string& workingDir);
+    void DetectGitRepo();
+    void RefreshGitStatus();
+    void GitStageFile(const std::string& path);
+    void GitUnstageFile(const std::string& path);
+    void GitStageAll();
+    void GitUnstageAll();
+    void GitCommit();
+    void GitPush();
+    void GitPull();
+    void GitFetch();
+    void GitSwitchBranch(const std::string& branch);
     void DrawStatsOverlay();
     void DrawSplashScreen();
     void DrawBuildDialog();
@@ -838,6 +864,18 @@ private:
     char m_ComponentSearchBuf[256] = {};
     int m_ComponentSearchSelectedIndex = -1;
     bool m_ShowAllComponents = false;
+
+    // Git integration state
+    bool m_GitAvailable = false;
+    std::string m_GitBranch;
+    std::string m_GitRepoRoot;
+    std::vector<GitFileStatus> m_GitFiles;
+    std::vector<GitLogEntry> m_GitLog;
+    std::vector<std::string> m_GitBranches;
+    char m_GitCommitMsg[1024] = {};
+    f32 m_GitRefreshTimer = 0.0f;
+    bool m_GitNeedsRefresh = true;
+    std::string m_GitLastError;
 
     void DrawUIEditorOverlay();
     void HandleUIEditorInput();

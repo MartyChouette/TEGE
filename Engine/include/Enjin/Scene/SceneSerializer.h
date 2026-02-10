@@ -32,6 +32,7 @@ struct SerializationOptions {
     bool prettyPrint = true;        // Format JSON for readability
     bool includeVertexData = true;  // Include full mesh vertex/index data
     u32 indentSize = 2;             // JSON indent size (if prettyPrint)
+    bool deterministic = true;      // Sort entities by ID, round floats for stable diffs
 };
 
 // Scene Serializer - Saves and loads scenes to/from JSON files
