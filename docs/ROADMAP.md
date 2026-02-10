@@ -1037,6 +1037,30 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 - **Fractal Terrain and L-System Vegetation** — Fractal terrain generation (diamond-square, fBm, ridged multifractal) with erosion simulation (hydraulic, thermal). L-system vegetation beyond current implementation: parameterized grammars, stochastic branching, seasonal variation, wind animation. Goal: one-click "Generate Forest" with artistic control over density, species mix, age distribution
 
+### Simulation-Driven Geometry
+
+- **Reaction-Diffusion on Meshes** — Gray-Scott / Turing pattern simulation running on mesh UV or vertex neighborhoods. Configurable feed/kill rates, diffusion coefficients, and color mapping. Use cases: organic surface patterning (animal skin, coral, lichen), procedural texture generation without UV unwrap. Per-material component with live preview, preset patterns ("Spots", "Stripes", "Labyrinth", "Mitosis"), bake-to-texture export
+- **Cellular Automata as Geometry** — 2D/3D cellular automata (Conway, Brian's Brain, Rule 110, custom rulesets) where live cells become geometry — voxels, marching cubes isosurface, or instanced meshes. Step-through or continuous evolution with configurable tick rate. Use cases: growing crystal structures, evolving architecture, generative art installations. Inspector with rule editor, seed painter, generation history scrubber
+- **Slime Mold Simulation (Physarum)** — Agent-based Physarum polycephalum simulation: thousands of agents deposit/sense/turn on a diffusion trail map. Configurable sensor angle, sensor distance, turn speed, deposit amount, decay rate. Outputs a density field renderable as particles, mesh displacement, or luminous volume. Use cases: organic network generation, procedural road/river layouts, bioluminescent VFX
+- **Fluid Simulation as Terrain** — Use fluid sim (existing Stable Fluids solver) output as a heightmap source for terrain. Fluid velocity/density fields drive real-time terrain deformation — rising water carves valleys, lava flow builds ridges. Bidirectional: terrain slope feeds back into fluid flow direction. Configurable erosion rate, deposition, hardness. Use cases: geological time-lapse, dynamic lava landscapes, water erosion sculpting
+- **Voronoi Fracture with Persistent Physics** — Extend existing Voronoi + destructible system with persistent post-fracture physics. Fragments become independent rigidbodies that stack, settle, and interact with the scene permanently (not just debris particles that fade). Configurable fragment count, mass distribution, friction, restitution. Fragments can be re-fractured (recursive destruction). Use cases: realistic building collapse, breakable terrain, persistent battle damage
+
+### Simulation & Flow
+
+- **Curl Noise Flow Fields for Particle/Mesh Advection** — 3D curl noise flow field generator (divergence-free by construction). Drives particle systems, mesh vertex advection, ribbon/trail effects. Configurable noise octaves, frequency, amplitude, time evolution speed. Visualizer overlay shows flow direction arrows in editor. Use cases: smoke tendrils, magical energy flows, flocking/swarming, hair/cloth simulation approximation
+- **Wave Racer 64 Water** — Stylized interactive water surface inspired by Wave Race 64: grid-based height field with real-time wave propagation (spring-damper model), boat/object interaction ripples, shoreline foam, animated UV scrolling for surface detail. Configurable wave speed, damping, grid resolution, foam threshold, color gradient (deep/shallow/foam). Distinct from existing Water3D (Gerstner waves) — this is gameplay-focused interactive water with object-water collision response
+- **Mesh Audio Reactivity via FFT Vertex Displacement** — Real-time FFT analysis of audio input (microphone or audio clip) drives per-vertex mesh displacement. Frequency bands map to vertex groups (bass → large features, treble → fine detail). Configurable frequency-to-displacement mapping curve, smoothing, amplitude scale, displacement axis (normal, radial, Y-up). Use cases: music visualizers, audio-reactive environments, rhythm game VFX, concert stage visuals
+
+### Mathematical & Exotic Geometry
+
+- **Fourier Transform Meshes** — Decompose mesh silhouettes or paths into Fourier series (epicycle representation), then reconstruct with configurable harmonic count. Animate the reconstruction process (progressive detail reveal). 3D extension: spherical harmonics mesh approximation with adjustable coefficient count. Use cases: mathematical art, stylized mesh LOD transitions, educational visualizations, "drawing machine" effects
+- **Non-Euclidean Geometry Rendering** — Portal-based and space-warping rendering for impossible geometry: rooms larger inside than outside, seamless wraparound corridors, hyperbolic/spherical space tiling. Stencil-buffer portal rendering (recursive depth limit), custom projection matrices for curved spaces, navmesh-aware teleportation for physics/AI. Use cases: puzzle games, horror (endless hallways), architectural impossibilities, mathematical exploration
+- **Stereographic Projection of 4D Objects** — Render 4D polytopes (tesseract, 120-cell, 600-cell, 24-cell) via stereographic projection to 3D, then standard 3D rendering. Interactive 4D rotation (6 rotation planes: XY, XZ, XW, YZ, YW, ZW) with smooth interpolation. Wireframe, solid, and translucent render modes. Use cases: mathematical visualization, puzzle game mechanics (rotate objects in 4D to fit through 3D holes), psychedelic VFX, educational tools
+
+### Inverse & Advanced Rendering
+
+- **Inverse Rendering / Differentiable Rendering** — Given a target image, optimize scene parameters (material properties, light positions, camera pose) to match it. Differentiable rasterization pipeline that computes gradients of pixel values with respect to scene parameters. Use cases: automatic material fitting from photographs, scene reconstruction from reference images, procedural texture parameter tuning, artist-friendly "make it look like this" tool. Implementation: compute shader forward pass with parameter gradients, iterative optimizer (Adam/L-BFGS), loss function (MSE/perceptual/SSIM)
+
 ---
 
 ## Asset Libraries (Planned)
@@ -1088,4 +1112,4 @@ Goal: Ship a curated, commercially licensable library so users have beautiful as
 
 ---
 
-*Last updated: 2026-02-10 — Added Artistic Rendering & Visual Techniques, Asset Libraries*
+*Last updated: 2026-02-10 — Added Artistic Rendering & Visual Techniques, Asset Libraries, Simulation-Driven Geometry, Mathematical & Exotic Geometry, Inverse Rendering*
