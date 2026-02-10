@@ -74,6 +74,61 @@
 namespace Enjin {
 namespace Editor {
 
+// --- Text ellipsis helper for draw-list rendering ---
+// Truncates text with "..." suffix when it exceeds maxWidth pixels.
+// Returns the (possibly truncated) string to render.
+static std::string EllipsizeText(const char* text, f32 maxWidth, ImFont* font = nullptr, f32 fontSize = 0.0f) {
+    ImVec2 fullSize;
+    if (font && fontSize > 0.0f) {
+        fullSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text);
+    } else {
+        fullSize = ImGui::CalcTextSize(text);
+    }
+    if (fullSize.x <= maxWidth) return text;
+
+    // Binary search for the longest prefix that fits with "..."
+    std::string str(text);
+    const char* ellipsis = "...";
+    ImVec2 ellipsisSize;
+    if (font && fontSize > 0.0f) {
+        ellipsisSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, ellipsis);
+    } else {
+        ellipsisSize = ImGui::CalcTextSize(ellipsis);
+    }
+    f32 availWidth = maxWidth - ellipsisSize.x;
+    if (availWidth <= 0.0f) return ellipsis;
+
+    // Walk characters until we exceed the available width
+    for (usize len = str.size(); len > 0; --len) {
+        ImVec2 sz;
+        if (font && fontSize > 0.0f) {
+            sz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, str.c_str(), str.c_str() + len);
+        } else {
+            std::string sub = str.substr(0, len);
+            sz = ImGui::CalcTextSize(sub.c_str());
+        }
+        if (sz.x <= availWidth) {
+            return str.substr(0, len) + ellipsis;
+        }
+    }
+    return ellipsis;
+}
+
+// Draw centered text within a card, clipping to cardWidth with ellipsis
+static void DrawCenteredClippedText(ImDrawList* dl, const char* text, f32 cardX, f32 cardW, f32 y,
+                                     ImU32 color, f32 padding = 12.0f, ImFont* font = nullptr, f32 fontSize = 0.0f) {
+    f32 maxW = cardW - padding * 2.0f;
+    std::string clipped = EllipsizeText(text, maxW, font, fontSize);
+    ImVec2 textSize;
+    if (font && fontSize > 0.0f) {
+        textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, clipped.c_str());
+        dl->AddText(font, fontSize, ImVec2(cardX + (cardW - textSize.x) * 0.5f, y), color, clipped.c_str());
+    } else {
+        textSize = ImGui::CalcTextSize(clipped.c_str());
+        dl->AddText(ImVec2(cardX + (cardW - textSize.x) * 0.5f, y), color, clipped.c_str());
+    }
+}
+
 // --- Undo-aware component removal helper ---
 
 template<typename T>
@@ -9464,7 +9519,7 @@ void EditorLayer::DrawProjectHub() {
         const char* tabLabels[] = { "Recent", "New Project", "Open", "Demos" };
         ProjectHubTab tabValues[] = { ProjectHubTab::Recent, ProjectHubTab::New, ProjectHubTab::Open, ProjectHubTab::Demos };
 
-        // Tab pill dimensions
+        // Tab pill dimensions — shrink padding and font if tabs overflow screen width
         f32 tabPadX = 36.0f;
         f32 tabPadY = 14.0f;
         f32 tabGap = 18.0f;
@@ -9477,6 +9532,20 @@ void EditorLayer::DrawProjectHub() {
             totalTabW += tabSizes[t].x + tabPadX * 2.0f;
         }
         totalTabW += tabGap * 3.0f;
+
+        // Shrink tab layout if wider than display
+        if (totalTabW > io.DisplaySize.x - 20.0f) {
+            f32 scale = (io.DisplaySize.x - 20.0f) / totalTabW;
+            tabFontSize *= scale;
+            tabPadX *= scale;
+            tabGap *= scale;
+            totalTabW = 0.0f;
+            for (int t = 0; t < 4; ++t) {
+                tabSizes[t] = font->CalcTextSizeA(tabFontSize, FLT_MAX, 0.0f, tabLabels[t]);
+                totalTabW += tabSizes[t].x + tabPadX * 2.0f;
+            }
+            totalTabW += tabGap * 3.0f;
+        }
 
         f32 tabX = (io.DisplaySize.x - totalTabW) * 0.5f;
         for (int t = 0; t < 4; ++t) {
@@ -9803,6 +9872,21 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     }
     totalChipW -= chipPad;
 
+    // Shrink chips if wider than available area
+    if (totalChipW > area.x - 40.0f) {
+        f32 scale = (area.x - 40.0f) / totalChipW;
+        chipFontSize *= scale;
+        chipPadX *= scale;
+        chipPad *= scale;
+        chipH *= scale;
+        totalChipW = 0.0f;
+        for (int f = 0; f < 4; ++f) {
+            chipTextSizes[f] = font->CalcTextSizeA(chipFontSize, FLT_MAX, 0.0f, filterLabels[f]);
+            totalChipW += chipTextSizes[f].x + chipPadX * 2.0f + chipPad;
+        }
+        totalChipW -= chipPad;
+    }
+
     f32 chipX = (area.x - totalChipW) * 0.5f;
     for (int f = 0; f < 4; ++f) {
         f32 chipW = chipTextSizes[f].x + chipPadX * 2.0f;
@@ -9945,23 +10029,19 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
                 IM_COL32(140, 200, 140, 255), check);
         }
 
-        // Template name
-        ImVec2 nameSize = ImGui::CalcTextSize(builtinTemplates[i].name);
-        dl->AddText(
-            ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 16.0f),
-            IM_COL32(220, 225, 245, 255), builtinTemplates[i].name);
+        // Template name (clipped with ellipsis if wider than card)
+        DrawCenteredClippedText(dl, builtinTemplates[i].name, cardPos.x, cardW,
+            cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
 
-        // Description (centered, multi-line)
+        // Description (centered, multi-line, clipped per line)
         const char* desc = builtinTemplates[i].description;
         std::string descStr(desc);
         f32 lineY = cardPos.y + 42.0f;
         std::istringstream iss(descStr);
         std::string line;
         while (std::getline(iss, line, '\n')) {
-            ImVec2 lineSize = ImGui::CalcTextSize(line.c_str());
-            dl->AddText(
-                ImVec2(cardPos.x + (cardW - lineSize.x) * 0.5f, lineY),
-                IM_COL32(140, 145, 165, 200), line.c_str());
+            DrawCenteredClippedText(dl, line.c_str(), cardPos.x, cardW,
+                lineY, IM_COL32(140, 145, 165, 200));
             lineY += 18.0f;
         }
 
@@ -10016,16 +10096,12 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
                 IM_COL32(140, 200, 140, 255), check);
         }
 
-        ImVec2 nameSize = ImGui::CalcTextSize(m_CustomTemplateNames[ci].c_str());
-        dl->AddText(
-            ImVec2(cardPos.x + (cardW - nameSize.x) * 0.5f, cardPos.y + 16.0f),
-            IM_COL32(220, 225, 245, 255), m_CustomTemplateNames[ci].c_str());
+        DrawCenteredClippedText(dl, m_CustomTemplateNames[ci].c_str(), cardPos.x, cardW,
+            cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
 
         const char* customLabel = "Custom Template";
-        ImVec2 labelSize = ImGui::CalcTextSize(customLabel);
-        dl->AddText(
-            ImVec2(cardPos.x + (cardW - labelSize.x) * 0.5f, cardPos.y + 45.0f),
-            IM_COL32(0, 180, 160, 200), customLabel);
+        DrawCenteredClippedText(dl, customLabel, cardPos.x, cardW, cardPos.y + 45.0f,
+            IM_COL32(0, 180, 160, 200));
 
         if (hovered && ImGui::IsMouseClicked(0)) {
             int newSel = -(ci + 1);
@@ -10388,13 +10464,15 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
         m_DemosCacheValid = true;
     }
 
-    // Subtitle
+    // Subtitle (clipped if wider than available area)
     f32 subtitleFontSize = 18.0f;
     const char* subtitle = "Click to explore — each demo creates a scene from a built-in template.";
-    ImVec2 subSz = font->CalcTextSizeA(subtitleFontSize, FLT_MAX, 0.0f, subtitle);
+    f32 subtitleMaxW = area.x - 60.0f;
+    std::string clippedSubtitle = EllipsizeText(subtitle, subtitleMaxW, font, subtitleFontSize);
+    ImVec2 subSz = font->CalcTextSizeA(subtitleFontSize, FLT_MAX, 0.0f, clippedSubtitle.c_str());
     f32 subX = (area.x - subSz.x) * 0.5f;
     dl->AddText(nullptr, subtitleFontSize, ImVec2(subX, contentY + 8.0f),
-        IM_COL32(120, 130, 145, 200), subtitle);
+        IM_COL32(120, 130, 145, 200), clippedSubtitle.c_str());
 
     // Grid layout
     f32 gridStartY = contentY + 8.0f + subSz.y + 24.0f;
@@ -10439,24 +10517,20 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
                           (hovered ? accentCol : IM_COL32(60, 65, 80, 150));
         dl->AddRect(cPos, cEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
 
-        // Name
+        // Name (clipped with ellipsis if wider than card)
         ImU32 nameCol = available ? IM_COL32(220, 225, 245, 255) : IM_COL32(120, 125, 140, 180);
-        ImVec2 nameSize = ImGui::CalcTextSize(demos[i].name);
-        dl->AddText(
-            ImVec2(cPos.x + (cardW - nameSize.x) * 0.5f, cPos.y + 16.0f),
-            nameCol, demos[i].name);
+        DrawCenteredClippedText(dl, demos[i].name, cPos.x, cardW,
+            cPos.y + 16.0f, nameCol);
 
-        // Description (centered, multi-line)
+        // Description (centered, multi-line, clipped per line)
         f32 lineY = cPos.y + 42.0f;
         ImU32 descCol = available ? IM_COL32(140, 145, 165, 200) : IM_COL32(90, 95, 110, 140);
         std::string descStr(demos[i].description);
         std::istringstream iss(descStr);
         std::string line;
         while (std::getline(iss, line, '\n')) {
-            ImVec2 lineSize = ImGui::CalcTextSize(line.c_str());
-            dl->AddText(
-                ImVec2(cPos.x + (cardW - lineSize.x) * 0.5f, lineY),
-                descCol, line.c_str());
+            DrawCenteredClippedText(dl, line.c_str(), cPos.x, cardW,
+                lineY, descCol);
             lineY += 18.0f;
         }
 
