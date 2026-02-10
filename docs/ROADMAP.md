@@ -283,6 +283,59 @@ Ideas for "simple creation of complex games":
 | Screen Reader Announcer | Medium | Low | P2 | ✅ Complete |
 | Scene Lock UI Enhancements | Medium | Low | P2 | ✅ Complete |
 | OIDN integration | Medium | Medium | P3 | Planned |
+| **— Rendering & Camera —** | | | | |
+| Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | Planned |
+| Tilt-shift / miniature effect | Low | Medium | P3 | Planned |
+| Bokeh depth of field | Medium | High | P2 | Planned |
+| Cel shading / toon rendering | High | Medium | P2 | Planned |
+| Full-screen stippling & dither | Medium | Low | P3 | Planned |
+| **— Artistic Rendering —** | | | | |
+| Parallax occlusion mapping (advanced) | Medium | Medium | P2 | Planned |
+| Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | Planned |
+| Metaball / blob rendering | Medium | High | P3 | Planned |
+| Spherical harmonics lighting | High | High | P2 | Planned |
+| Beam tracing and cone tracing (VXGI) | High | Very High | P3 | Planned |
+| SDF ray marching | High | High | P2 | Planned |
+| SDF rendering (3D vector art) | Medium | High | P3 | Planned |
+| Order-independent transparency (depth peeling) | Medium | Medium | P2 | Planned |
+| Framebuffer feedback effects | Medium | Low | P3 | Planned |
+| Screen-space distortion as primary aesthetic | Medium | Medium | P3 | Planned |
+| IK-driven mesh deformation | Medium | High | P3 | Planned |
+| Fractal terrain & L-system vegetation (advanced) | High | High | P2 | Planned |
+| **— Simulation-Driven Geometry —** | | | | |
+| Reaction-diffusion on meshes | Medium | High | P3 | Planned |
+| Cellular automata as geometry | Medium | Medium | P3 | Planned |
+| Slime mold simulation (Physarum) | Medium | Medium | P3 | Planned |
+| Fluid simulation as terrain | Medium | Medium | P2 | Planned |
+| Voronoi fracture with persistent physics | High | Medium | P2 | Planned |
+| **— Simulation & Flow —** | | | | |
+| Curl noise flow fields | High | Medium | P2 | Planned |
+| Wave Racer 64 water | Medium | High | P3 | Planned |
+| Mesh audio reactivity via FFT | Medium | Medium | P3 | Planned |
+| **— Mathematical & Exotic Geometry —** | | | | |
+| Fourier transform meshes | Low | Medium | P4 | Planned |
+| Non-Euclidean geometry rendering | High | Very High | P3 | Planned |
+| Stereographic projection of 4D objects | Low | Medium | P4 | Planned |
+| **— Inverse & Advanced Rendering —** | | | | |
+| Inverse / differentiable rendering | Medium | Very High | P4 | Planned |
+| **— Asset Libraries —** | | | | |
+| Font library (30-50 OFL fonts) | High | Low | P2 | Planned |
+| 3D asset library (CC0) | High | High | P2 | Planned |
+| 2D asset library (CC0) | High | Medium | P2 | Planned |
+| **— Editor & Project —** | | | | |
+| Template rebuild & demo scenes | Medium | Medium | P2 | Planned |
+| Project Hub redesign (landing/sandbox) | Medium | High | P3 | Planned |
+| Template creator tool | Medium | Medium | P3 | Planned |
+| Source-app import presets | Medium | High | P3 | Planned |
+| Pre-built binary distribution | High | Medium | P2 | Planned |
+| Installer distribution | Medium | High | P3 | Planned |
+| Hub application (launcher) | Medium | Very High | P4 | Planned |
+| **— Flash Game Revival —** | | | | |
+| SWF import & conversion | Medium | Very High | P4 | Planned |
+| Flash-style timeline authoring | Medium | High | P3 | Planned |
+| AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | Planned |
+| **— Collaboration —** | | | | |
+| Collaborative editing (OT/CRDT) | Medium | Very High | P4 | Planned |
 
 ---
 
