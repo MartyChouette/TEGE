@@ -651,6 +651,12 @@ private:
     // Auto-create and configure a game camera when a character controller is added
     void SetupCameraForController(ECS::Entity controllerEntity, const std::string& controllerType);
 
+    // Creative Intelligence — Smart Suggestions & Quick Setup
+    void DrawSmartSuggestions(ECS::Entity entity);
+    void DrawQuickSetup(ECS::Entity entity);
+    bool EntityHasAnyController(ECS::Entity entity) const;
+    ECS::Entity FindPlayerEntity() const;
+
     // Console command execution
     void ExecuteConsoleCommand(const std::string& command);
 

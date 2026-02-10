@@ -4070,6 +4070,9 @@ void EditorLayer::DrawInspectorPanel() {
             DrawRagdollComponent(m_PrimarySelected);
         }
 
+        DrawSmartSuggestions(m_PrimarySelected);
+        ImGui::Separator();
+        DrawQuickSetup(m_PrimarySelected);
         ImGui::Separator();
 
         // Add component button
@@ -19594,6 +19597,16 @@ void EditorLayer::DrawDialogueComponent(ECS::Entity entity) {
         if (ImGui::InputText("Speaker Name", nameBuffer, sizeof(nameBuffer))) {
             dialogue->speakerName = nameBuffer;
         }
+        if (dialogue->speakerName.empty()) {
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+            if (nameComp && !nameComp->name.empty()) {
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Auto-fill")) {
+                    dialogue->speakerName = nameComp->name;
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Set to entity name: %s", nameComp->name.c_str());
+            }
+        }
 
         // Portrait path
         char portraitBuffer[256];
@@ -20257,6 +20270,39 @@ void EditorLayer::DrawAIControllerComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        if (ImGui::TreeNode("Target")) {
+            u64 tgtId = static_cast<u64>(ai->targetEntity);
+            std::string currentLabel = "None";
+            if (ai->targetEntity != 0 && ai->targetEntity != ECS::INVALID_ENTITY) {
+                auto* tgtName = m_World->GetComponent<ECS::NameComponent>(ai->targetEntity);
+                currentLabel = tgtName ? tgtName->name : ("Entity " + std::to_string(ai->targetEntity));
+            }
+            if (ImGui::BeginCombo("Target Entity", currentLabel.c_str())) {
+                if (ImGui::Selectable("None", ai->targetEntity == 0)) {
+                    ai->targetEntity = 0;
+                }
+                for (ECS::Entity e : m_World->GetAllEntities()) {
+                    if (e == entity) continue;
+                    auto* n = m_World->GetComponent<ECS::NameComponent>(e);
+                    std::string label = n ? n->name : ("Entity " + std::to_string(e));
+                    if (ImGui::Selectable(label.c_str(), ai->targetEntity == e)) {
+                        ai->targetEntity = e;
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (ai->targetEntity == 0 || ai->targetEntity == ECS::INVALID_ENTITY) {
+                ECS::Entity player = FindPlayerEntity();
+                if (player != ECS::INVALID_ENTITY && player != entity) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Target \"Player\"")) {
+                        ai->targetEntity = player;
+                    }
+                }
+            }
+            ImGui::TreePop();
+        }
+
         if (ImGui::TreeNode("Debug")) {
             InspectorUndo::Checkbox(m_UndoRedo, "Draw Path", &ai->debugDrawPath);
             InspectorUndo::Checkbox(m_UndoRedo, "Draw Detection", &ai->debugDrawDetection);
@@ -20514,6 +20560,15 @@ void EditorLayer::DrawCamera2DBoundsComponent(ECS::Entity entity) {
                     }
                 }
                 ImGui::EndCombo();
+            }
+            if (bounds->followTarget == 0) {
+                ECS::Entity player = FindPlayerEntity();
+                if (player != ECS::INVALID_ENTITY && player != entity) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Follow \"Player\"")) {
+                        bounds->followTarget = player;
+                    }
+                }
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Smoothing", &bounds->followSmoothing, 0.1f, 0.1f, 50.0f);
             f32 offset[2] = { bounds->followOffset.x, bounds->followOffset.y };
@@ -22504,6 +22559,13 @@ void EditorLayer::DrawDistanceJointComponent(ECS::Entity entity) {
         if (ImGui::InputScalar("Entity B##DistJoint", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
         }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##DistJoint")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
+        }
 
         ImGui::DragFloat3("Anchor A##DistJoint", &j->anchorA.x, 0.01f);
         ImGui::DragFloat3("Anchor B##DistJoint", &j->anchorB.x, 0.01f);
@@ -22542,6 +22604,13 @@ void EditorLayer::DrawHingeJointComponent(ECS::Entity entity) {
         }
         if (ImGui::InputScalar("Entity B##HingeJoint", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
+        }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##HingeJoint")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
         }
 
         ImGui::DragFloat3("Anchor A##HingeJoint", &j->anchorA.x, 0.01f);
@@ -22592,6 +22661,13 @@ void EditorLayer::DrawBallSocketJointComponent(ECS::Entity entity) {
         if (ImGui::InputScalar("Entity B##BallSocket", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
         }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##BallSocket")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
+        }
 
         ImGui::DragFloat3("Anchor A##BallSocket", &j->anchorA.x, 0.01f);
         ImGui::DragFloat3("Anchor B##BallSocket", &j->anchorB.x, 0.01f);
@@ -22638,6 +22714,13 @@ void EditorLayer::DrawSpringJointComponent(ECS::Entity entity) {
         if (ImGui::InputScalar("Entity B##SpringJoint", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
         }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##SpringJoint")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
+        }
 
         ImGui::DragFloat3("Anchor A##SpringJoint", &j->anchorA.x, 0.01f);
         ImGui::DragFloat3("Anchor B##SpringJoint", &j->anchorB.x, 0.01f);
@@ -22679,6 +22762,13 @@ void EditorLayer::DrawFixedJointComponent(ECS::Entity entity) {
         if (ImGui::InputScalar("Entity B##FixedJoint", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
         }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##FixedJoint")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
+        }
 
         ImGui::DragFloat3("Anchor A##FixedJoint", &j->anchorA.x, 0.01f);
         ImGui::DragFloat3("Anchor B##FixedJoint", &j->anchorB.x, 0.01f);
@@ -22718,6 +22808,13 @@ void EditorLayer::DrawSliderJointComponent(ECS::Entity entity) {
         }
         if (ImGui::InputScalar("Entity B##SliderJoint", ImGuiDataType_U64, &eB)) {
             j->entityB = static_cast<ECS::Entity>(eB);
+        }
+        if ((j->entityA == 0 || j->entityB == 0) && m_SelectedEntities.size() == 2) {
+            if (ImGui::SmallButton("Auto-assign from selection##SliderJoint")) {
+                ECS::Entity other = ECS::INVALID_ENTITY;
+                for (auto sel : m_SelectedEntities) { if (sel != entity) { other = sel; break; } }
+                if (other != ECS::INVALID_ENTITY) { j->entityA = entity; j->entityB = other; }
+            }
         }
 
         ImGui::DragFloat3("Anchor A##SliderJoint", &j->anchorA.x, 0.01f);
@@ -23389,6 +23486,294 @@ void EditorLayer::SetupCameraForController(ECS::Entity controllerEntity, const s
 
     // Select the camera so the user can adjust it
     m_SelectedGameCamera = cameraEntity;
+}
+
+// ============================================================================
+// Creative Intelligence — Helpers
+// ============================================================================
+
+bool EditorLayer::EntityHasAnyController(ECS::Entity entity) const {
+    if (!m_World) return false;
+    return m_World->HasComponent<ECS::Platformer2DController>(entity) ||
+           m_World->HasComponent<ECS::TopDown2DController>(entity) ||
+           m_World->HasComponent<ECS::TopDown3DController>(entity) ||
+           m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
+           m_World->HasComponent<ECS::FirstPersonController>(entity) ||
+           m_World->HasComponent<ECS::VehicleController>(entity) ||
+           m_World->HasComponent<ECS::SurfaceAlignedController>(entity);
+}
+
+ECS::Entity EditorLayer::FindPlayerEntity() const {
+    if (!m_World) return ECS::INVALID_ENTITY;
+    ECS::Entity player = m_World->FindEntityByName("Player");
+    if (player != ECS::INVALID_ENTITY) return player;
+    // Fallback: first entity with any controller
+    for (ECS::Entity e : m_World->GetAllEntities()) {
+        if (EntityHasAnyController(e)) return e;
+    }
+    return ECS::INVALID_ENTITY;
+}
+
+static bool EntityHasAnyCollider(ECS::World* world, ECS::Entity entity) {
+    return world->HasComponent<ECS::BoxColliderComponent>(entity) ||
+           world->HasComponent<ECS::SphereColliderComponent>(entity) ||
+           world->HasComponent<ECS::CapsuleColliderComponent>(entity) ||
+           world->HasComponent<ECS::PolygonCollider2DComponent>(entity) ||
+           world->HasComponent<ECS::TriggerZoneComponent>(entity);
+}
+
+// ============================================================================
+// Creative Intelligence — Smart Suggestions (Cross-System Integration)
+// ============================================================================
+
+void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
+    if (!m_World) return;
+
+    // Collect applicable suggestions
+    struct Suggestion {
+        const char* text;
+        const char* buttonId;
+        int ruleId;
+    };
+    std::vector<Suggestion> suggestions;
+
+    bool hasDialogue = m_World->HasComponent<ECS::DialogueComponent>(entity);
+    bool hasDialogueBox = m_World->HasComponent<ECS::DialogueBoxComponent>(entity);
+    bool hasAI = m_World->HasComponent<ECS::AIControllerComponent>(entity);
+    bool hasHealth = m_World->HasComponent<ECS::HealthComponent>(entity);
+    bool hasCollider = EntityHasAnyCollider(m_World, entity);
+    bool hasController = EntityHasAnyController(entity);
+    bool hasMesh = m_World->HasComponent<ECS::MeshComponent>(entity);
+    bool hasMaterial = m_World->HasComponent<ECS::MaterialComponent>(entity);
+    bool hasBT = m_World->HasComponent<ECS::BehaviorTreeComponent>(entity);
+    bool hasSprite = m_World->HasComponent<ECS::Sprite2DComponent>(entity);
+    bool hasDamage = m_World->HasComponent<ECS::DamageComponent>(entity);
+    bool hasCam2D = m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity);
+
+    // Rule 1: Dialogue but no DialogueBox
+    if (hasDialogue && !hasDialogueBox)
+        suggestions.push_back({"Add Dialogue Box for UI display", "##SugDlgBox", 1});
+
+    // Rule 2: AIController but no Health
+    if (hasAI && !hasHealth)
+        suggestions.push_back({"Add Health for combat", "##SugHealth", 2});
+
+    // Rule 3: Health but no Collider
+    if (hasHealth && !hasCollider)
+        suggestions.push_back({"Add collider for damage detection", "##SugCollider", 3});
+
+    // Rule 4: Controller but no Camera in scene
+    if (hasController) {
+        ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+        if (cam == ECS::INVALID_ENTITY)
+            suggestions.push_back({"Add camera for this controller", "##SugCamera", 4});
+    }
+
+    // Rule 5: Mesh but no Material
+    if (hasMesh && !hasMaterial)
+        suggestions.push_back({"Add material for rendering", "##SugMat", 5});
+
+    // Rule 6: BehaviorTree but no AIController
+    if (hasBT && !hasAI)
+        suggestions.push_back({"Add AI Controller for movement", "##SugAI", 6});
+
+    // Rule 7: Sprite + Controller but no Camera2DBounds
+    if (hasSprite && hasController && !hasCam2D)
+        suggestions.push_back({"Add 2D Camera for follow", "##SugCam2D", 7});
+
+    // Rule 8: Damage but no Collider
+    if (hasDamage && !hasCollider)
+        suggestions.push_back({"Add collider for damage area", "##SugDmgCol", 8});
+
+    if (suggestions.empty()) return;
+
+    ImGui::Spacing();
+    ImVec4 bgColor(0.15f, 0.25f, 0.4f, 0.3f);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, bgColor);
+    ImGui::BeginChild("SmartSuggestions", ImVec2(0, 0), ImGuiChildFlags_AutoResizeY | ImGuiChildFlags_Borders);
+
+    ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Suggestions");
+    ImGui::Separator();
+
+    for (auto& s : suggestions) {
+        ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 0.9f), "!");
+        ImGui::SameLine();
+        ImGui::TextWrapped("%s", s.text);
+        ImGui::SameLine();
+
+        std::string btnLabel = std::string("+ Add") + s.buttonId;
+        if (ImGui::SmallButton(btnLabel.c_str())) {
+            switch (s.ruleId) {
+            case 1: m_World->AddComponent<ECS::DialogueBoxComponent>(entity); break;
+            case 2: {
+                auto& h = m_World->AddComponent<ECS::HealthComponent>(entity);
+                h.maxHealth = 100.0f;
+                h.currentHealth = 100.0f;
+                break;
+            }
+            case 3: m_World->AddComponent<ECS::BoxColliderComponent>(entity); break;
+            case 4: {
+                // Determine controller type string for camera setup
+                std::string ctrlType = "ThirdPerson";
+                if (m_World->HasComponent<ECS::Platformer2DController>(entity)) ctrlType = "Platformer2D";
+                else if (m_World->HasComponent<ECS::TopDown2DController>(entity)) ctrlType = "TopDown2D";
+                else if (m_World->HasComponent<ECS::TopDown3DController>(entity)) ctrlType = "TopDown3D";
+                else if (m_World->HasComponent<ECS::FirstPersonController>(entity)) ctrlType = "FirstPerson";
+                SetupCameraForController(entity, ctrlType);
+                break;
+            }
+            case 5: m_World->AddComponent<ECS::MaterialComponent>(entity); break;
+            case 6: m_World->AddComponent<ECS::AIControllerComponent>(entity); break;
+            case 7: {
+                auto& cam2d = m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity);
+                cam2d.followTarget = entity;
+                break;
+            }
+            case 8: m_World->AddComponent<ECS::BoxColliderComponent>(entity); break;
+            }
+        }
+    }
+
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+// ============================================================================
+// Creative Intelligence — Quick Setup (One-Click Patterns)
+// ============================================================================
+
+void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
+    if (!m_World) return;
+
+    bool hasController = EntityHasAnyController(entity);
+    bool hasAI = m_World->HasComponent<ECS::AIControllerComponent>(entity);
+    bool hasBT = m_World->HasComponent<ECS::BehaviorTreeComponent>(entity);
+    bool hasDialogue = m_World->HasComponent<ECS::DialogueComponent>(entity);
+    bool hasPickup = m_World->HasComponent<ECS::PickupComponent>(entity);
+    bool hasPlatformer = m_World->HasComponent<ECS::Platformer2DController>(entity);
+
+    auto projectMode = m_SceneManager.GetProjectMode();
+    bool is2D = (projectMode == Scene::ProjectMode::Mode2D);
+
+    // Count how many buttons we'd show
+    int buttonCount = 0;
+    if (!hasController) buttonCount++;
+    if (is2D && !hasPlatformer && !hasController) buttonCount++;
+    if ((hasAI || hasBT) && !m_World->HasComponent<ECS::HealthComponent>(entity)) buttonCount++;
+    if (!hasDialogue && !hasController) buttonCount++;
+    if (!hasPickup && !hasController) buttonCount++;
+
+    if (buttonCount == 0) return;
+
+    ImGui::Spacing();
+    if (ImGui::CollapsingHeader("Quick Setup")) {
+        f32 buttonWidth = ImGui::GetContentRegionAvail().x;
+
+        // Pattern 1: Add Basic Movement
+        if (!hasController) {
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Adds controller + collider + camera");
+            if (ImGui::Button("Add Basic Movement", ImVec2(buttonWidth, 0))) {
+                if (is2D) {
+                    m_World->AddComponent<ECS::Platformer2DController>(entity);
+                    m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                    SetupCameraForController(entity, "Platformer2D");
+                } else {
+                    m_World->AddComponent<ECS::ThirdPersonController>(entity);
+                    auto& cap = m_World->AddComponent<ECS::CapsuleColliderComponent>(entity);
+                    cap.radius = 0.3f;
+                    cap.height = 1.8f;
+                    SetupCameraForController(entity, "ThirdPerson");
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(is2D ?
+                "Adds Platformer2D controller + BoxCollider + camera" :
+                "Adds ThirdPerson controller + CapsuleCollider + camera");
+        }
+
+        // Pattern 2: Setup 2D Platformer (only in 2D mode)
+        if (is2D && !hasPlatformer && !hasController) {
+            if (ImGui::Button("Setup 2D Platformer", ImVec2(buttonWidth, 0))) {
+                m_World->AddComponent<ECS::Platformer2DController>(entity);
+                m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                if (!m_World->HasComponent<ECS::Sprite2DComponent>(entity)) {
+                    m_World->AddComponent<ECS::Sprite2DComponent>(entity);
+                }
+                auto& cam2d = m_World->AddComponent<ECS::Camera2DBoundsComponent>(entity);
+                cam2d.followTarget = entity;
+                cam2d.deadZoneSize = Math::Vector2(1.0f, 1.0f);
+                cam2d.lookAheadDistance = 2.0f;
+                cam2d.lookAheadSmoothing = 3.0f;
+                SetupCameraForController(entity, "Platformer2D");
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds Platformer2D + BoxCollider + Sprite2D + Camera2D with follow/dead zone/look-ahead");
+        }
+
+        // Pattern 3: Make Patroller (has AI/BT but no Health)
+        if ((hasAI || hasBT) && !m_World->HasComponent<ECS::HealthComponent>(entity)) {
+            if (ImGui::Button("Make Patroller", ImVec2(buttonWidth, 0))) {
+                if (!hasAI) {
+                    auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(entity);
+                    ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                    ECS::Entity player = FindPlayerEntity();
+                    if (player != ECS::INVALID_ENTITY)
+                        ai.targetEntity = player;
+                }
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(entity);
+                hp.maxHealth = 50.0f;
+                hp.currentHealth = 50.0f;
+                if (!hasBT)
+                    m_World->AddComponent<ECS::BehaviorTreeComponent>(entity);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds AI Controller (Patrol) + Health (50) + Behavior Tree, auto-targets Player");
+        }
+
+        // Pattern 4: Setup NPC
+        if (!hasDialogue && !hasController) {
+            if (ImGui::Button("Setup NPC", ImVec2(buttonWidth, 0))) {
+                auto& dlg = m_World->AddComponent<ECS::DialogueComponent>(entity);
+                auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                if (nameComp && !nameComp->name.empty())
+                    dlg.speakerName = nameComp->name;
+                m_World->AddComponent<ECS::DialogueBoxComponent>(entity);
+                auto& interact = m_World->AddComponent<ECS::InteractableComponent>(entity);
+                interact.promptText = "Talk";
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds Dialogue (speaker=entity name) + DialogueBox + Interactable (\"Talk\")");
+        }
+
+        // Pattern 5: Make Collectible
+        if (!hasPickup && !hasController) {
+            if (ImGui::Button("Make Collectible", ImVec2(buttonWidth, 0))) {
+                auto& pickup = m_World->AddComponent<ECS::PickupComponent>(entity);
+                pickup.type = ECS::PickupComponent::PickupType::Coin;
+                pickup.value = 1.0f;
+                pickup.destroyOnPickup = true;
+                pickup.bobSpeed = 2.0f;
+                pickup.bobHeight = 0.2f;
+                auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(entity);
+                trigger.shape = ECS::TriggerZoneComponent::Shape::Sphere;
+                trigger.sphereRadius = 1.0f;
+                if (!m_World->HasComponent<ECS::TweenComponent>(entity)) {
+                    auto& tween = m_World->AddComponent<ECS::TweenComponent>(entity);
+                    tween.autoPlay = true;
+                    ECS::TweenEntry bob;
+                    bob.property = ECS::TweenProperty::Position;
+                    bob.easing = ECS::EasingType::EaseInOutSine;
+                    bob.mode = ECS::TweenMode::PingPong;
+                    bob.startValue = Math::Vector3(0.0f, 0.0f, 0.0f);
+                    bob.endValue = Math::Vector3(0.0f, 0.3f, 0.0f);
+                    bob.duration = 1.0f;
+                    bob.isPlaying = true;
+                    tween.tweens.push_back(bob);
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds Pickup (Coin) + TriggerZone (sphere) + Tween (bob up/down)");
+        }
+    }
 }
 
 void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
