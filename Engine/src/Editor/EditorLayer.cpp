@@ -902,6 +902,11 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // Save feedback data before shutdown
+    if (m_FeedbackLoaded) {
+        m_FeedbackManager.SaveAll();
+    }
+
     // Destroy post-processing before render targets
     if (m_PostProcessing) {
         m_PostProcessing->Shutdown();
@@ -954,6 +959,12 @@ void EditorLayer::Update(f32 deltaTime) {
             // NOTE: VSync restore disabled for now - causes swapchain sync issues
             // TODO: Properly sync renderer state after swapchain recreation
         }
+    }
+
+    // Lazy-load feedback data on first frame
+    if (!m_FeedbackLoaded) {
+        m_FeedbackManager.LoadAll();
+        m_FeedbackLoaded = true;
     }
 
     // Update input action map each frame
@@ -2152,6 +2163,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(700, 550), layoutCond);
         DrawVectorDrawingPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::FeedbackPanel)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 40), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(720, 580), layoutCond);
+        DrawFeedbackPanel();
+    }
     if (m_ShowHTML5ExportDialog) {
         DrawHTML5ExportDialog();
     }
@@ -3340,6 +3356,19 @@ void EditorLayer::DrawMenuBar() {
             bool userManual = IsPanelVisible(EditorPanel::UserManual);
             if (ImGui::MenuItem("User Manual", nullptr, &userManual)) {
                 SetPanelVisibility(EditorPanel::UserManual, userManual);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Report Bug...", "Ctrl+Shift+B")) {
+                SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+                m_FeedbackTab = FeedbackTab::NewBug;
+            }
+            if (ImGui::MenuItem("Send Feedback...")) {
+                SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+                m_FeedbackTab = FeedbackTab::NewFeedback;
+            }
+            bool feedbackVisible = IsPanelVisible(EditorPanel::FeedbackPanel);
+            if (ImGui::MenuItem("Bug Reports & Feedback", nullptr, &feedbackVisible)) {
+                SetPanelVisibility(EditorPanel::FeedbackPanel, feedbackVisible);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("About Enjin")) {
@@ -9763,9 +9792,10 @@ void EditorLayer::DrawSplashScreen() {
 
         // ========== LAYER 1: Background ==========
 
-        // 1a. Solid dark fill
+        // 1a. Solid dark fill — stays fully opaque even during fade-out
+        //     so the 3D scene never shows through
         dl->AddRectFilled(ImVec2(0, 0), ImVec2(W, H),
-            IM_COL32(13, 13, 20, static_cast<int>(255 * ga)));
+            IM_COL32(13, 13, 20, 255));
 
         // 1b. Radial vignette with subtle breathing
         f32 breath = 1.0f + 0.03f * std::sin(t * 0.8f);
@@ -9782,7 +9812,6 @@ void EditorLayer::DrawSplashScreen() {
         for (int h = 0; h < 12; h++) {
             f32 hx = hashFloat(h * 7 + 1) * W;
             f32 hy = hashFloat(h * 7 + 2) * H;
-            // Drift upward slowly, wrap
             hy = std::fmod(hy - t * (15.0f + hashFloat(h * 7 + 3) * 10.0f), H + 100.0f);
             if (hy < -50.0f) hy += H + 100.0f;
             f32 hexR = 20.0f + hashFloat(h * 7 + 4) * 30.0f;
@@ -9803,12 +9832,11 @@ void EditorLayer::DrawSplashScreen() {
 
         // ========== LAYER 2: Floating Light Orbs (24 total) ==========
 
-        // Color palette: sage, blue, warm white
         auto orbColor = [&](int idx) -> ImVec4 {
             f32 pick = hashFloat(idx * 13 + 100);
-            if (pick < 0.4f) return ImVec4(160, 200, 160, 1); // sage
-            if (pick < 0.8f) return ImVec4(100, 140, 220, 1); // blue
-            return ImVec4(220, 210, 190, 1); // warm white
+            if (pick < 0.4f) return ImVec4(160, 200, 160, 1);
+            if (pick < 0.8f) return ImVec4(100, 140, 220, 1);
+            return ImVec4(220, 210, 190, 1);
         };
 
         for (int i = 0; i < 24; i++) {
@@ -9819,7 +9847,6 @@ void EditorLayer::DrawSplashScreen() {
             f32 speed = foreground ? (0.6f + hashFloat(i * 11 + 51) * 0.4f)
                                    : (0.3f + hashFloat(i * 11 + 51) * 0.3f);
 
-            // Lissajous motion
             f32 phaseX = hashFloat(i * 11 + 52) * 6.28f;
             f32 phaseY = hashFloat(i * 11 + 53) * 6.28f;
             f32 ampX = 0.15f + hashFloat(i * 11 + 54) * 0.25f;
@@ -9830,7 +9857,6 @@ void EditorLayer::DrawSplashScreen() {
             f32 ox = center.x + std::sin(t * speed * freqRatioX + phaseX) * W * ampX;
             f32 oy = center.y + std::cos(t * speed * freqRatioY + phaseY) * H * ampY;
 
-            // Foreground orbs converge toward center at t=0.5→1.5, disperse at t=2.0→3.0
             if (foreground) {
                 f32 converge = smoothstep(timerRamp(0.5f, 1.5f));
                 f32 disperse = smoothstep(timerRamp(2.0f, 3.0f));
@@ -9839,13 +9865,11 @@ void EditorLayer::DrawSplashScreen() {
                 oy = oy + (center.y - oy) * pull * 0.6f;
             }
 
-            // Fade-in for foreground
             f32 orbAlpha = foreground ? smoothstep(timerRamp(0.3f, 0.8f)) : 1.0f;
 
             ImVec4 col = orbColor(i);
             f32 r = baseRadius * (0.9f + 0.1f * std::sin(t * 2.0f + i));
 
-            // Bloom: 3 concentric circles (outer glow -> mid -> core)
             int a3 = static_cast<int>(20 * brightness * orbAlpha * ga);
             int a2 = static_cast<int>(50 * brightness * orbAlpha * ga);
             int a1 = static_cast<int>(180 * brightness * orbAlpha * ga);
@@ -9861,7 +9885,7 @@ void EditorLayer::DrawSplashScreen() {
 
         // ========== LAYER 3: Geometric Shapes ==========
 
-        // 3a. 4 diamonds in compass formation — scale in at t=0.4→1.0, drift outward at t=1.8
+        // 3a. 4 diamonds in compass formation
         {
             f32 diamondScale = easeOutCubic(timerRamp(0.4f, 1.0f));
             f32 diamondDrift = smoothstep(timerRamp(1.8f, 3.0f)) * 40.0f;
@@ -9870,10 +9894,10 @@ void EditorLayer::DrawSplashScreen() {
             if (dAlpha > 0) {
                 f32 dist = 120.0f + diamondDrift;
                 ImVec2 dPos[4] = {
-                    ImVec2(center.x, center.y - dist),  // top
-                    ImVec2(center.x + dist, center.y),   // right
-                    ImVec2(center.x, center.y + dist),   // bottom
-                    ImVec2(center.x - dist, center.y)    // left
+                    ImVec2(center.x, center.y - dist),
+                    ImVec2(center.x + dist, center.y),
+                    ImVec2(center.x, center.y + dist),
+                    ImVec2(center.x - dist, center.y)
                 };
                 for (int d = 0; d < 4; d++) {
                     ImVec2 dp[4] = {
@@ -9889,7 +9913,7 @@ void EditorLayer::DrawSplashScreen() {
             }
         }
 
-        // 3b. 6 small triangles orbiting center — self-rotating, fade in t=0.6→1.0
+        // 3b. 6 small triangles orbiting center
         {
             f32 triAlphaF = smoothstep(timerRamp(0.6f, 1.0f));
             int triAlpha = static_cast<int>(90 * triAlphaF * ga);
@@ -9903,7 +9927,7 @@ void EditorLayer::DrawSplashScreen() {
                     f32 triR = 8.0f;
                     ImVec2 tp[3];
                     for (int v = 0; v < 3; v++) {
-                        f32 a = selfRot + v * 2.0944f; // 120 degrees
+                        f32 a = selfRot + v * 2.0944f;
                         tp[v] = ImVec2(tx + std::cos(a) * triR, ty + std::sin(a) * triR);
                     }
                     dl->AddConvexPolyFilled(tp, 3,
@@ -9925,7 +9949,7 @@ void EditorLayer::DrawSplashScreen() {
             }
         }
 
-        // 3d. 4 corner L-bracket lines — slide in from edges at t=0.8→1.5
+        // 3d. 4 corner L-bracket lines
         {
             f32 bracketT = easeOutCubic(timerRamp(0.8f, 1.5f));
             int bAlpha = static_cast<int>(80 * bracketT * ga);
@@ -9934,26 +9958,71 @@ void EditorLayer::DrawSplashScreen() {
                 f32 bLen = 40.0f;
                 f32 slideOff = (1.0f - bracketT) * 80.0f;
                 u32 bCol = IM_COL32(140, 170, 200, bAlpha);
-                // Top-left
                 dl->AddLine(ImVec2(margin - slideOff, margin - slideOff),
                             ImVec2(margin - slideOff + bLen, margin - slideOff), bCol, 1.5f);
                 dl->AddLine(ImVec2(margin - slideOff, margin - slideOff),
                             ImVec2(margin - slideOff, margin - slideOff + bLen), bCol, 1.5f);
-                // Top-right
                 dl->AddLine(ImVec2(W - margin + slideOff, margin - slideOff),
                             ImVec2(W - margin + slideOff - bLen, margin - slideOff), bCol, 1.5f);
                 dl->AddLine(ImVec2(W - margin + slideOff, margin - slideOff),
                             ImVec2(W - margin + slideOff, margin - slideOff + bLen), bCol, 1.5f);
-                // Bottom-left
                 dl->AddLine(ImVec2(margin - slideOff, H - margin + slideOff),
                             ImVec2(margin - slideOff + bLen, H - margin + slideOff), bCol, 1.5f);
                 dl->AddLine(ImVec2(margin - slideOff, H - margin + slideOff),
                             ImVec2(margin - slideOff, H - margin + slideOff - bLen), bCol, 1.5f);
-                // Bottom-right
                 dl->AddLine(ImVec2(W - margin + slideOff, H - margin + slideOff),
                             ImVec2(W - margin + slideOff - bLen, H - margin + slideOff), bCol, 1.5f);
                 dl->AddLine(ImVec2(W - margin + slideOff, H - margin + slideOff),
                             ImVec2(W - margin + slideOff, H - margin + slideOff - bLen), bCol, 1.5f);
+            }
+        }
+
+        // ========== LAYER 3.5: Mantra — "Collaborate Compromise Create" ==========
+        // Three words cycle as ghostly watermark text behind the title.
+        // Slow crossfade, multi-layer glow, positioned below title area.
+        {
+            const char* mantraWords[3] = { "Collaborate", "Compromise", "Create" };
+            // Slower timing: each word spans ~1.4s with 0.4s overlap for crossfade
+            f32 wordStart[3] = { 0.5f, 1.5f, 2.5f };
+            f32 wordEnd[3]   = { 1.9f, 2.9f, 3.9f };
+            f32 mantraFontSize = 16.0f;
+
+            for (int w = 0; w < 3; w++) {
+                f32 wt = timerRamp(wordStart[w], wordEnd[w]);
+                if (wt <= 0.0f || wt >= 1.0f) continue;
+
+                // Slow bell-curve: fade in 25%, hold 50%, fade out 25%
+                f32 wordAlpha;
+                if (wt < 0.25f) wordAlpha = smoothstep(wt / 0.25f);
+                else if (wt > 0.75f) wordAlpha = smoothstep((1.0f - wt) / 0.25f);
+                else wordAlpha = 1.0f;
+
+                // Gentle upward drift
+                f32 driftY = -8.0f * wt;
+
+                // Position: centered, well below the title
+                ImVec2 wordSz = font->CalcTextSizeA(mantraFontSize, FLT_MAX, 0.0f, mantraWords[w]);
+                f32 wordX = center.x - wordSz.x * 0.5f;
+                f32 wordY = center.y + 145.0f + driftY;
+
+                int mAlpha = static_cast<int>(38 * wordAlpha * ga);
+                if (mAlpha > 0) {
+                    // Multi-layer glow (3 passes at increasing offsets)
+                    for (int g = 3; g >= 1; g--) {
+                        f32 off = g * 2.0f;
+                        int glowA = static_cast<int>((6 + (3 - g) * 3) * wordAlpha * ga);
+                        if (glowA > 0) {
+                            u32 glowCol = IM_COL32(120, 200, 150, glowA);
+                            dl->AddText(nullptr, mantraFontSize, ImVec2(wordX + off, wordY), glowCol, mantraWords[w]);
+                            dl->AddText(nullptr, mantraFontSize, ImVec2(wordX - off, wordY), glowCol, mantraWords[w]);
+                            dl->AddText(nullptr, mantraFontSize, ImVec2(wordX, wordY + off), glowCol, mantraWords[w]);
+                            dl->AddText(nullptr, mantraFontSize, ImVec2(wordX, wordY - off), glowCol, mantraWords[w]);
+                        }
+                    }
+                    // Main text — sage green
+                    dl->AddText(nullptr, mantraFontSize, ImVec2(wordX, wordY),
+                        IM_COL32(160, 215, 170, mAlpha), mantraWords[w]);
+                }
             }
         }
 
@@ -10190,7 +10259,7 @@ void EditorLayer::DrawProjectHub() {
     // Full-screen dark background
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(io.DisplaySize);
-    ImGui::SetNextWindowBgAlpha(0.97f);
+    ImGui::SetNextWindowBgAlpha(1.0f);
 
     ImGuiWindowFlags bgFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoSavedSettings |
@@ -10632,7 +10701,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         chipX += chipW + chipPad;
     }
 
-    // === Template grid ===
+    // === Template grid (scrollable) ===
     f32 gridStartY = filterY + chipH + 15.0f;
     f32 cardW = 280.0f;
     f32 cardH = 180.0f;
@@ -10640,6 +10709,17 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     f32 maxRowWidth = area.x - 60.0f;
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
+
+    // Create a scrollable child region for the template grid
+    f32 gridBottomMargin = 100.0f; // reserve space for Create button at bottom
+    f32 gridHeight = area.y - gridStartY - gridBottomMargin;
+    if (gridHeight < 100.0f) gridHeight = 100.0f;
+    ImGui::SetCursorPos(ImVec2(0, gridStartY));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // transparent bg
+    ImGui::BeginChild("##TemplateGrid", ImVec2(area.x, gridHeight), false,
+                       ImGuiWindowFlags_NoBackground);
+    ImDrawList* gridDl = ImGui::GetWindowDrawList();
+    ImVec2 gridScreenOrigin = ImGui::GetCursorScreenPos();
 
     // Build filtered index list (category filter)
     std::vector<int> filteredIndices;
@@ -10693,6 +10773,11 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
 
     int totalVisible = static_cast<int>(filteredIndices.size()) + static_cast<int>(filteredCustomIndices.size());
 
+    // Compute total content rows for scroll sizing
+    int totalRows = totalVisible > 0 ? ((totalVisible - 1) / cardsPerRow + 1) : 0;
+    f32 totalContentH = totalRows * (cardH + cardPad);
+    if (totalContentH < 1.0f) totalContentH = 1.0f;
+
     bool templateChosen = false;
     std::string chosenTemplate;
 
@@ -10701,7 +10786,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     i32 prevHoverIdx = m_HoverTemplateIdx;
     m_HoverTemplateIdx = -1;
 
-    // Draw filtered builtin templates
+    // Draw filtered builtin templates (screen-space via gridDl)
     for (int vi = 0; vi < static_cast<int>(filteredIndices.size()); ++vi) {
         int i = filteredIndices[vi];
         int row = vi / cardsPerRow;
@@ -10712,7 +10797,8 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
         f32 rowStartX = (area.x - rowWidth) * 0.5f;
 
-        ImVec2 cardPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
+        ImVec2 cardPos(gridScreenOrigin.x + rowStartX + col * (cardW + cardPad),
+                       gridScreenOrigin.y + row * (cardH + cardPad));
         ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
 
         bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
@@ -10722,30 +10808,30 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         // Card background
         ImU32 bgCol = selected ? IM_COL32(35, 45, 70, 255) :
                       (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-        dl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
 
         // Accent bar at top
         ImVec4 accent = builtinTemplates[i].accentColor;
         ImU32 accentCol = IM_COL32(
             (int)(accent.x * 255), (int)(accent.y * 255),
             (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
-        dl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
         // Border (highlighted when selected)
         ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
                          (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
-        dl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+        gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
 
         // Checkmark for selected
         if (selected) {
             const char* check = "✓";
             ImVec2 checkSize = ImGui::CalcTextSize(check);
-            dl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
+            gridDl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
                 IM_COL32(140, 200, 140, 255), check);
         }
 
         // Template name (clipped with ellipsis if wider than card)
-        DrawCenteredClippedText(dl, builtinTemplates[i].name, cardPos.x, cardW,
+        DrawCenteredClippedText(gridDl, builtinTemplates[i].name, cardPos.x, cardW,
             cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
 
         // Description (centered, multi-line, clipped per line)
@@ -10755,7 +10841,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         std::istringstream iss(descStr);
         std::string line;
         while (std::getline(iss, line, '\n')) {
-            DrawCenteredClippedText(dl, line.c_str(), cardPos.x, cardW,
+            DrawCenteredClippedText(gridDl, line.c_str(), cardPos.x, cardW,
                 lineY, IM_COL32(140, 145, 165, 200));
             lineY += 18.0f;
         }
@@ -10785,7 +10871,8 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
         f32 rowStartX = (area.x - rowWidth) * 0.5f;
 
-        ImVec2 cardPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
+        ImVec2 cardPos(gridScreenOrigin.x + rowStartX + col * (cardW + cardPad),
+                       gridScreenOrigin.y + row * (cardH + cardPad));
         ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
 
         bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
@@ -10795,27 +10882,27 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
 
         ImU32 bgCol = selected ? IM_COL32(35, 50, 60, 255) :
                       (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-        dl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
 
         ImU32 accentCol = (hovered || selected) ? IM_COL32(0, 200, 180, 255) : IM_COL32(0, 200, 180, 150);
-        dl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
         ImU32 borderCol = selected ? IM_COL32(0, 220, 200, 255) :
                          (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
-        dl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+        gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
 
         if (selected) {
             const char* check = "✓";
             ImVec2 checkSize = ImGui::CalcTextSize(check);
-            dl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
+            gridDl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
                 IM_COL32(140, 200, 140, 255), check);
         }
 
-        DrawCenteredClippedText(dl, m_CustomTemplateNames[ci].c_str(), cardPos.x, cardW,
+        DrawCenteredClippedText(gridDl, m_CustomTemplateNames[ci].c_str(), cardPos.x, cardW,
             cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
 
         const char* customLabel = "Custom Template";
-        DrawCenteredClippedText(dl, customLabel, cardPos.x, cardW, cardPos.y + 45.0f,
+        DrawCenteredClippedText(gridDl, customLabel, cardPos.x, cardW, cardPos.y + 45.0f,
             IM_COL32(0, 180, 160, 200));
 
         if (hovered && ImGui::IsMouseClicked(0)) {
@@ -10823,6 +10910,11 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
             m_SelectedTemplate = (m_SelectedTemplate == newSel) ? -1 : newSel;
         }
     }
+
+    // Declare total content height so ImGui shows a scrollbar when needed
+    ImGui::Dummy(ImVec2(area.x, totalContentH));
+    ImGui::EndChild();
+    ImGui::PopStyleColor(); // ChildBg
 
     // === Hover preview overlay ===
     if (m_HoverTemplateIdx >= 0) {
@@ -24713,6 +24805,15 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
     auto projectMode = m_SceneManager.GetProjectMode();
     bool is2D = (projectMode == Scene::ProjectMode::Mode2D);
 
+    // Also treat as 2D if the entity has 2D-specific components (sprite, tilemap, Camera2DBounds)
+    // even if the project mode isn't explicitly set to 2D
+    if (!is2D && (m_World->HasComponent<ECS::Sprite2DComponent>(entity) ||
+                  m_World->HasComponent<ECS::AnimatedSprite2DComponent>(entity) ||
+                  m_World->HasComponent<ECS::TilemapComponent>(entity) ||
+                  m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity))) {
+        is2D = true;
+    }
+
     // Count how many buttons we'd show
     int buttonCount = 0;
     if (!hasController) buttonCount++;
@@ -30126,6 +30227,32 @@ void EditorLayer::RegisterPaletteCommands() {
         "Redo the last undone action",
         [this]() { m_UndoRedo.Redo(); }
     });
+
+    // Feedback / Bug Reporting
+    m_CommandPalette.RegisterCommand({
+        "Report Bug", "Help", "Ctrl+Shift+B",
+        "Open the bug report form",
+        [this]() {
+            SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+            m_FeedbackTab = FeedbackTab::NewBug;
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Send Feedback", "Help", "",
+        "Open the feedback form",
+        [this]() {
+            SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+            m_FeedbackTab = FeedbackTab::NewFeedback;
+        }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Browse Bug Reports", "Help", "",
+        "View all bug reports and feedback",
+        [this]() {
+            SetPanelVisibility(EditorPanel::FeedbackPanel, true);
+            m_FeedbackTab = FeedbackTab::BugReports;
+        }
+    });
 }
 
 // ============================================================================
@@ -30674,6 +30801,582 @@ void EditorLayer::DrawHTML5ExportDialog() {
     }
 
     ImGui::End();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Feedback / Bug Reporting System
+// ═══════════════════════════════════════════════════════════════════════
+
+void EditorLayer::ResetBugReportForm() {
+    m_BugTitleBuf[0] = '\0';
+    m_BugDescriptionBuf[0] = '\0';
+    m_BugStepsBuf[0] = '\0';
+    m_BugExpectedBuf[0] = '\0';
+    m_BugActualBuf[0] = '\0';
+    m_BugTypeSel = 0;
+    m_BugSeveritySel = 1;
+    m_BugIncludeScene = false;
+    m_BugIncludeLogs = true;
+}
+
+void EditorLayer::ResetFeedbackForm() {
+    m_FeedbackTitleBuf[0] = '\0';
+    m_FeedbackDescBuf[0] = '\0';
+    m_FeedbackTypeSel = 0;
+    m_FeedbackPrioritySel = 1;
+    m_FeedbackSatisfaction = 0;
+    m_FeedbackIncludeDiag = false;
+    m_FeedbackCategoryBuf[0] = '\0';
+}
+
+DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
+    f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
+    u32 entityCount = m_World ? static_cast<u32>(m_World->GetAllEntities().size()) : 0;
+    std::string sceneJson;
+    // Scene snapshot is intentionally omitted for now — serializing mid-frame
+    // is unsafe and the diagnostics already capture the scene path.
+    (void)includeScene;
+
+    return DiagnosticSnapshot::Capture(
+        m_PerfMetrics,
+        fps,
+        m_FrameTimeAvg,
+        entityCount,
+        m_CurrentScenePath,
+        m_ConsoleLog,
+        static_cast<u32>(m_SelectedEntities.size()),
+        sceneJson);
+}
+
+void EditorLayer::DrawFeedbackPanel() {
+    bool open = true;
+    ImGui::Begin("Bug Reports & Feedback", &open);
+    if (!open) {
+        SetPanelVisibility(EditorPanel::FeedbackPanel, false);
+        ImGui::End();
+        return;
+    }
+
+    // Tab bar
+    if (ImGui::BeginTabBar("FeedbackTabs")) {
+        if (ImGui::BeginTabItem("Bug Reports")) {
+            m_FeedbackTab = FeedbackTab::BugReports;
+            DrawBugReportList();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Feedback")) {
+            m_FeedbackTab = FeedbackTab::Feedback;
+            DrawFeedbackList();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("New Bug Report")) {
+            m_FeedbackTab = FeedbackTab::NewBug;
+            DrawNewBugReportForm();
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("New Feedback")) {
+            m_FeedbackTab = FeedbackTab::NewFeedback;
+            DrawNewFeedbackForm();
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
+void EditorLayer::DrawBugReportList() {
+    auto& reports = m_FeedbackManager.GetBugReports();
+    if (reports.empty()) {
+        DrawEmptyState("!", "No Bug Reports", "Reports you file will appear here.",
+                        "Report a Bug", [this]() {
+                            m_FeedbackTab = FeedbackTab::NewBug;
+                        });
+        return;
+    }
+
+    // Search and filter row
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##BugSearch", "Search...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    const char* severityOpts[] = { "All", "Low", "Medium", "High", "Critical" };
+    ImGui::Combo("Severity##BugFilter", &m_BugSeverityFilter, severityOpts, 5);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(110);
+    const char* statusOpts[] = { "All", "Draft", "Submitted", "Acknowledged", "Resolved", "Closed" };
+    ImGui::Combo("Status##BugFilter", &m_BugStatusFilter, statusOpts, 6);
+
+    // Stats row
+    usize total = m_FeedbackManager.GetTotalBugReports();
+    usize open = m_FeedbackManager.GetOpenBugReports();
+    ImGui::TextDisabled("%zu open / %zu total", open, total);
+    ImGui::Separator();
+
+    // Apply filters: -1 means "All" (first entry is "All" so actual enum starts at index 1)
+    i32 actualSeverity = m_BugSeverityFilter > 0 ? m_BugSeverityFilter - 1 : -1;
+    i32 actualStatus = m_BugStatusFilter > 0 ? m_BugStatusFilter - 1 : -1;
+    auto filtered = m_FeedbackManager.FilterBugReports(actualStatus, actualSeverity);
+
+    // Further filter by search text
+    std::string searchStr(m_FeedbackSearchBuf);
+    std::vector<BugReport*> displayList;
+    for (auto* r : filtered) {
+        if (searchStr.empty() ||
+            FeedbackManager::CaseInsensitiveContains(r->title, searchStr) ||
+            FeedbackManager::CaseInsensitiveContains(r->description, searchStr)) {
+            displayList.push_back(r);
+        }
+    }
+
+    // Scrollable list
+    ImGui::BeginChild("BugList", ImVec2(0, m_SelectedBugReportId > 0 ? 200 : 0), true);
+    for (auto* r : displayList) {
+        // Severity color indicator
+        ImVec4 sevColor(0.5f, 0.5f, 0.5f, 1.0f);
+        switch (r->severity) {
+            case ReportSeverity::Low:      sevColor = ImVec4(0.4f, 0.7f, 0.4f, 1.0f); break;
+            case ReportSeverity::Medium:   sevColor = ImVec4(0.9f, 0.8f, 0.2f, 1.0f); break;
+            case ReportSeverity::High:     sevColor = ImVec4(0.9f, 0.5f, 0.2f, 1.0f); break;
+            case ReportSeverity::Critical: sevColor = ImVec4(0.9f, 0.2f, 0.2f, 1.0f); break;
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, sevColor);
+        ImGui::Text("[%s]", ReportSeverityLabel(r->severity));
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+
+        char label[256];
+        snprintf(label, sizeof(label), "#%llu %s##bug_%llu",
+                 static_cast<unsigned long long>(r->id), r->title.c_str(),
+                 static_cast<unsigned long long>(r->id));
+        bool selected = (m_SelectedBugReportId == r->id);
+        if (ImGui::Selectable(label, selected)) {
+            m_SelectedBugReportId = r->id;
+        }
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120);
+        ImGui::TextDisabled("%s | %s", ReportTypeLabel(r->type), ReportStatusLabel(r->status));
+    }
+    ImGui::EndChild();
+
+    // Detail view for selected report
+    if (m_SelectedBugReportId > 0) {
+        BugReport* sel = m_FeedbackManager.GetBugReport(m_SelectedBugReportId);
+        if (sel) {
+            ImGui::Separator();
+            DrawBugReportDetail(*sel);
+        }
+    }
+}
+
+void EditorLayer::DrawBugReportDetail(BugReport& report) {
+    ImGui::BeginChild("BugDetail", ImVec2(0, 0), false);
+
+    ImGui::Text("Bug Report #%llu: %s", static_cast<unsigned long long>(report.id), report.title.c_str());
+    ImGui::Separator();
+
+    ImGui::TextWrapped("Type: %s | Severity: %s | Status: %s",
+                       ReportTypeLabel(report.type),
+                       ReportSeverityLabel(report.severity),
+                       ReportStatusLabel(report.status));
+    ImGui::TextDisabled("Created: %s | Updated: %s", report.createdAt.c_str(), report.updatedAt.c_str());
+    ImGui::Spacing();
+
+    if (!report.description.empty()) {
+        ImGui::Text("Description:");
+        ImGui::TextWrapped("%s", report.description.c_str());
+        ImGui::Spacing();
+    }
+    if (!report.stepsToReproduce.empty()) {
+        ImGui::Text("Steps to Reproduce:");
+        ImGui::TextWrapped("%s", report.stepsToReproduce.c_str());
+        ImGui::Spacing();
+    }
+    if (!report.expectedBehavior.empty()) {
+        ImGui::Text("Expected:");
+        ImGui::TextWrapped("%s", report.expectedBehavior.c_str());
+    }
+    if (!report.actualBehavior.empty()) {
+        ImGui::Text("Actual:");
+        ImGui::TextWrapped("%s", report.actualBehavior.c_str());
+        ImGui::Spacing();
+    }
+
+    // Diagnostics summary
+    if (ImGui::TreeNode("Diagnostics")) {
+        auto& d = report.diagnostics;
+        ImGui::Text("Engine: %s | Platform: %s", d.engineVersion.c_str(), d.platform.c_str());
+        ImGui::Text("FPS: %.1f | Frame: %.2fms | Draw Calls: %u", d.fps, d.frameTimeMs, d.drawCalls);
+        ImGui::Text("Entities: %u | Triangles: %u", d.entityCount, d.triangleCount);
+        ImGui::Text("RAM: %.1f MB used / %.1f MB total",
+                     d.ramProcess / (1024.0f * 1024.0f),
+                     d.ramTotal / (1024.0f * 1024.0f));
+        if (!d.scenePath.empty()) ImGui::Text("Scene: %s", d.scenePath.c_str());
+        ImGui::Text("Timestamp: %s", d.timestamp.c_str());
+        if (!d.consoleLogTail.empty() && ImGui::TreeNode("Console Log (last 50)")) {
+            for (const auto& line : d.consoleLogTail)
+                ImGui::TextUnformatted(line.c_str());
+            ImGui::TreePop();
+        }
+        ImGui::TreePop();
+    }
+
+    // Attachments
+    if (!report.attachmentPaths.empty() && ImGui::TreeNode("Attachments")) {
+        for (const auto& path : report.attachmentPaths)
+            ImGui::BulletText("%s", path.c_str());
+        ImGui::TreePop();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // Action buttons
+    if (ImGui::Button("Export JSON")) {
+        std::vector<FileFilter> filters = {{"JSON", "*.json"}};
+        char defaultName[64];
+        snprintf(defaultName, sizeof(defaultName), "bug_%llu.json",
+                 static_cast<unsigned long long>(report.id));
+        std::string path = FileDialog::SaveFile("Export Bug Report", filters, "", defaultName);
+        if (!path.empty()) {
+            m_FeedbackManager.ExportBugReportAsJson(report.id, path);
+            m_ConsoleLog.push_back("[Feedback] Exported bug report #" + std::to_string(report.id));
+        }
+    }
+    ImGui::SameLine();
+    if (m_FeedbackEndpointBuf[0] != '\0' && ImGui::Button("Submit")) {
+        if (m_FeedbackManager.SubmitBugReport(report.id, std::string(m_FeedbackEndpointBuf))) {
+            m_ConsoleLog.push_back("[Feedback] Bug report #" + std::to_string(report.id) + " submitted");
+        } else {
+            m_ConsoleLog.push_back("[Feedback] Failed to submit bug report #" + std::to_string(report.id));
+        }
+    }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+    if (ImGui::Button("Delete")) {
+        m_FeedbackManager.DeleteBugReport(report.id);
+        m_SelectedBugReportId = 0;
+        m_ConsoleLog.push_back("[Feedback] Deleted bug report #" + std::to_string(report.id));
+    }
+    ImGui::PopStyleColor();
+
+    // Endpoint config
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##Endpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
+
+    ImGui::EndChild();
+}
+
+void EditorLayer::DrawNewBugReportForm() {
+    ImGui::Text("Title *");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##BugTitle", m_BugTitleBuf, sizeof(m_BugTitleBuf));
+
+    // Type and severity on same row
+    ImGui::Text("Type:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    const char* typeOpts[] = { "Bug", "Crash", "Performance", "Visual", "Audio", "Other" };
+    ImGui::Combo("##BugType", &m_BugTypeSel, typeOpts, 6);
+    ImGui::SameLine();
+    ImGui::Text("Severity:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    const char* sevOpts[] = { "Low", "Medium", "High", "Critical" };
+    // Color the severity label
+    ImVec4 sevColors[] = {
+        {0.4f, 0.7f, 0.4f, 1.0f},
+        {0.9f, 0.8f, 0.2f, 1.0f},
+        {0.9f, 0.5f, 0.2f, 1.0f},
+        {0.9f, 0.2f, 0.2f, 1.0f}
+    };
+    ImGui::PushStyleColor(ImGuiCol_Text, sevColors[m_BugSeveritySel]);
+    ImGui::Combo("##BugSeverity", &m_BugSeveritySel, sevOpts, 4);
+    ImGui::PopStyleColor();
+
+    ImGui::Spacing();
+    ImGui::Text("Description:");
+    ImGui::InputTextMultiline("##BugDesc", m_BugDescriptionBuf, sizeof(m_BugDescriptionBuf),
+                               ImVec2(-1, 80));
+
+    ImGui::Text("Steps to Reproduce:");
+    ImGui::InputTextMultiline("##BugSteps", m_BugStepsBuf, sizeof(m_BugStepsBuf),
+                               ImVec2(-1, 60));
+
+    ImGui::Text("Expected Behavior:");
+    ImGui::InputTextMultiline("##BugExpected", m_BugExpectedBuf, sizeof(m_BugExpectedBuf),
+                               ImVec2(-1, 40));
+
+    ImGui::Text("Actual Behavior:");
+    ImGui::InputTextMultiline("##BugActual", m_BugActualBuf, sizeof(m_BugActualBuf),
+                               ImVec2(-1, 40));
+
+    ImGui::Spacing();
+    ImGui::Checkbox("Include console logs", &m_BugIncludeLogs);
+    ImGui::SameLine();
+    ImGui::Checkbox("Include scene snapshot", &m_BugIncludeScene);
+
+    // Live diagnostics preview
+    ImGui::Spacing();
+    if (ImGui::TreeNode("Live Diagnostics Preview")) {
+        f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
+        u32 entityCount = m_World ? static_cast<u32>(m_World->GetAllEntities().size()) : 0;
+        ImGui::Text("FPS: %.1f | Frame: %.2fms", fps, m_FrameTimeAvg);
+        ImGui::Text("Draw Calls: %u | Triangles: %u", m_PerfMetrics.drawCallCount, m_PerfMetrics.triangleCount);
+        ImGui::Text("Entities: %u | Selected: %zu", entityCount, m_SelectedEntities.size());
+        ImGui::Text("RAM: %.1f MB / %.1f MB",
+                     m_PerfMetrics.processMemoryBytes / (1024.0f * 1024.0f),
+                     m_PerfMetrics.totalPhysicalMemory / (1024.0f * 1024.0f));
+        if (!m_CurrentScenePath.empty()) ImGui::Text("Scene: %s", m_CurrentScenePath.c_str());
+        ImGui::TreePop();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    // Submit / Save Draft buttons
+    bool titleEmpty = (m_BugTitleBuf[0] == '\0');
+    if (titleEmpty) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+        ImGui::Button("Submit Report");
+        ImGui::PopStyleVar();
+        ImGui::SameLine();
+        ImGui::TextDisabled("(title required)");
+    } else {
+        if (ImGui::Button("Submit Report")) {
+            auto& report = m_FeedbackManager.CreateBugReport();
+            report.title = m_BugTitleBuf;
+            report.type = static_cast<ReportType>(m_BugTypeSel);
+            report.severity = static_cast<ReportSeverity>(m_BugSeveritySel);
+            report.description = m_BugDescriptionBuf;
+            report.stepsToReproduce = m_BugStepsBuf;
+            report.expectedBehavior = m_BugExpectedBuf;
+            report.actualBehavior = m_BugActualBuf;
+            report.diagnostics = CaptureDiagnostics(m_BugIncludeScene);
+            if (!m_BugIncludeLogs) report.diagnostics.consoleLogTail.clear();
+            report.status = ReportStatus::Draft;
+            m_FeedbackManager.SaveAll();
+            m_ConsoleLog.push_back("[Feedback] Created bug report #" + std::to_string(report.id) + ": " + report.title);
+            ResetBugReportForm();
+        }
+    }
+    ImGui::SameLine();
+    if (!titleEmpty && ImGui::Button("Save Draft")) {
+        auto& report = m_FeedbackManager.CreateBugReport();
+        report.title = m_BugTitleBuf;
+        report.type = static_cast<ReportType>(m_BugTypeSel);
+        report.severity = static_cast<ReportSeverity>(m_BugSeveritySel);
+        report.description = m_BugDescriptionBuf;
+        report.stepsToReproduce = m_BugStepsBuf;
+        report.expectedBehavior = m_BugExpectedBuf;
+        report.actualBehavior = m_BugActualBuf;
+        report.diagnostics = CaptureDiagnostics(m_BugIncludeScene);
+        if (!m_BugIncludeLogs) report.diagnostics.consoleLogTail.clear();
+        report.status = ReportStatus::Draft;
+        m_FeedbackManager.SaveAll();
+        m_ConsoleLog.push_back("[Feedback] Saved draft bug report #" + std::to_string(report.id));
+        ResetBugReportForm();
+    }
+}
+
+void EditorLayer::DrawFeedbackList() {
+    auto& entries = m_FeedbackManager.GetFeedbackEntries();
+    if (entries.empty()) {
+        DrawEmptyState("?", "No Feedback", "Feedback you submit will appear here.",
+                        "Send Feedback", [this]() {
+                            m_FeedbackTab = FeedbackTab::NewFeedback;
+                        });
+        return;
+    }
+
+    // Search
+    ImGui::SetNextItemWidth(250);
+    ImGui::InputTextWithHint("##FbSearch", "Search feedback...", m_FeedbackSearchBuf, sizeof(m_FeedbackSearchBuf));
+
+    usize total = m_FeedbackManager.GetTotalFeedback();
+    ImGui::SameLine();
+    ImGui::TextDisabled("%zu entries", total);
+    ImGui::Separator();
+
+    auto searchResults = m_FeedbackManager.SearchFeedback(std::string(m_FeedbackSearchBuf));
+
+    ImGui::BeginChild("FeedbackList", ImVec2(0, m_SelectedFeedbackId > 0 ? 200 : 0), true);
+    for (auto* f : searchResults) {
+        char label[256];
+        snprintf(label, sizeof(label), "#%llu %s##fb_%llu",
+                 static_cast<unsigned long long>(f->id), f->title.c_str(),
+                 static_cast<unsigned long long>(f->id));
+        bool selected = (m_SelectedFeedbackId == f->id);
+        if (ImGui::Selectable(label, selected)) {
+            m_SelectedFeedbackId = f->id;
+        }
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 130);
+        // Star rating display
+        i32 stars = static_cast<i32>(f->satisfaction);
+        char starBuf[16] = {};
+        for (i32 s = 0; s < 5; ++s) starBuf[s] = (s < stars) ? '*' : '-';
+        starBuf[5] = '\0';
+        ImGui::TextDisabled("%s | %s | %s", FeedbackTypeLabel(f->type),
+                            FeedbackPriorityLabel(f->priority), starBuf);
+    }
+    ImGui::EndChild();
+
+    if (m_SelectedFeedbackId > 0) {
+        FeedbackEntry* sel = m_FeedbackManager.GetFeedback(m_SelectedFeedbackId);
+        if (sel) {
+            ImGui::Separator();
+            DrawFeedbackDetail(*sel);
+        }
+    }
+}
+
+void EditorLayer::DrawFeedbackDetail(FeedbackEntry& entry) {
+    ImGui::BeginChild("FeedbackDetail", ImVec2(0, 0), false);
+
+    ImGui::Text("Feedback #%llu: %s", static_cast<unsigned long long>(entry.id), entry.title.c_str());
+    ImGui::Separator();
+
+    ImGui::Text("Type: %s | Priority: %s", FeedbackTypeLabel(entry.type), FeedbackPriorityLabel(entry.priority));
+    if (!entry.category.empty()) ImGui::Text("Category: %s", entry.category.c_str());
+
+    // Satisfaction stars
+    i32 stars = static_cast<i32>(entry.satisfaction);
+    if (stars > 0) {
+        ImGui::Text("Satisfaction: ");
+        ImGui::SameLine();
+        for (i32 s = 1; s <= 5; ++s) {
+            if (s <= stars)
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.0f, 1.0f), "*");
+            else
+                ImGui::TextDisabled("*");
+            if (s < 5) ImGui::SameLine(0, 2);
+        }
+    }
+
+    ImGui::TextDisabled("Created: %s | Updated: %s", entry.createdAt.c_str(), entry.updatedAt.c_str());
+    ImGui::Spacing();
+
+    if (!entry.description.empty()) {
+        ImGui::Text("Description:");
+        ImGui::TextWrapped("%s", entry.description.c_str());
+    }
+
+    if (entry.includeDiagnostics && ImGui::TreeNode("Diagnostics")) {
+        auto& d = entry.diagnostics;
+        ImGui::Text("Engine: %s | Platform: %s", d.engineVersion.c_str(), d.platform.c_str());
+        ImGui::Text("FPS: %.1f | Frame: %.2fms | Entities: %u", d.fps, d.frameTimeMs, d.entityCount);
+        ImGui::TreePop();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    if (m_FeedbackEndpointBuf[0] != '\0' && ImGui::Button("Submit")) {
+        if (m_FeedbackManager.SubmitFeedback(entry.id, std::string(m_FeedbackEndpointBuf))) {
+            m_ConsoleLog.push_back("[Feedback] Feedback #" + std::to_string(entry.id) + " submitted");
+        } else {
+            m_ConsoleLog.push_back("[Feedback] Failed to submit feedback #" + std::to_string(entry.id));
+        }
+    }
+    if (m_FeedbackEndpointBuf[0] != '\0') ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.2f, 0.2f, 1.0f));
+    if (ImGui::Button("Delete")) {
+        m_FeedbackManager.DeleteFeedback(entry.id);
+        m_SelectedFeedbackId = 0;
+        m_ConsoleLog.push_back("[Feedback] Deleted feedback #" + std::to_string(entry.id));
+    }
+    ImGui::PopStyleColor();
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##FbEndpoint", "Submit endpoint URL", m_FeedbackEndpointBuf, sizeof(m_FeedbackEndpointBuf));
+
+    ImGui::EndChild();
+}
+
+void EditorLayer::DrawNewFeedbackForm() {
+    ImGui::Text("Title *");
+    ImGui::SetNextItemWidth(-1);
+    ImGui::InputText("##FbTitle", m_FeedbackTitleBuf, sizeof(m_FeedbackTitleBuf));
+
+    // Type and priority
+    ImGui::Text("Type:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(140);
+    const char* typeOpts[] = { "General", "Feature Request", "Usability", "Documentation", "Praise" };
+    ImGui::Combo("##FbType", &m_FeedbackTypeSel, typeOpts, 5);
+    ImGui::SameLine();
+    ImGui::Text("Priority:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(100);
+    const char* prioOpts[] = { "Low", "Medium", "High" };
+    ImGui::Combo("##FbPriority", &m_FeedbackPrioritySel, prioOpts, 3);
+
+    ImGui::Text("Category:");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(200);
+    ImGui::InputTextWithHint("##FbCategory", "e.g. Editor, Rendering...", m_FeedbackCategoryBuf, sizeof(m_FeedbackCategoryBuf));
+
+    // Satisfaction rating (clickable stars)
+    ImGui::Text("Satisfaction:");
+    ImGui::SameLine();
+    for (i32 s = 1; s <= 5; ++s) {
+        ImGui::PushID(s);
+        bool filled = (s <= m_FeedbackSatisfaction);
+        if (filled)
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.85f, 0.0f, 1.0f));
+        else
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+
+        char starLabel[8];
+        snprintf(starLabel, sizeof(starLabel), "*##s%d", s);
+        if (ImGui::Selectable(starLabel, false, 0, ImVec2(16, 0))) {
+            m_FeedbackSatisfaction = (m_FeedbackSatisfaction == s) ? 0 : s;
+        }
+        ImGui::PopStyleColor();
+        ImGui::PopID();
+        if (s < 5) ImGui::SameLine(0, 2);
+    }
+    const char* ratingLabels[] = { "", "Very Poor", "Poor", "Average", "Good", "Excellent" };
+    if (m_FeedbackSatisfaction > 0 && m_FeedbackSatisfaction <= 5) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s)", ratingLabels[m_FeedbackSatisfaction]);
+    }
+
+    ImGui::Spacing();
+    ImGui::Text("Description:");
+    ImGui::InputTextMultiline("##FbDesc", m_FeedbackDescBuf, sizeof(m_FeedbackDescBuf),
+                               ImVec2(-1, 120));
+
+    ImGui::Checkbox("Include diagnostics", &m_FeedbackIncludeDiag);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+
+    bool titleEmpty = (m_FeedbackTitleBuf[0] == '\0');
+    if (titleEmpty) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, 0.5f);
+        ImGui::Button("Submit Feedback");
+        ImGui::PopStyleVar();
+        ImGui::SameLine();
+        ImGui::TextDisabled("(title required)");
+    } else {
+        if (ImGui::Button("Submit Feedback")) {
+            auto& entry = m_FeedbackManager.CreateFeedback();
+            entry.title = m_FeedbackTitleBuf;
+            entry.type = static_cast<FeedbackType>(m_FeedbackTypeSel);
+            entry.priority = static_cast<FeedbackPriority>(m_FeedbackPrioritySel);
+            entry.satisfaction = static_cast<SatisfactionRating>(m_FeedbackSatisfaction);
+            entry.description = m_FeedbackDescBuf;
+            entry.category = m_FeedbackCategoryBuf;
+            entry.includeDiagnostics = m_FeedbackIncludeDiag;
+            if (m_FeedbackIncludeDiag) {
+                entry.diagnostics = CaptureDiagnostics(false);
+            }
+            m_FeedbackManager.SaveAll();
+            m_ConsoleLog.push_back("[Feedback] Created feedback #" + std::to_string(entry.id) + ": " + entry.title);
+            ResetFeedbackForm();
+        }
+    }
 }
 
 } // namespace Editor

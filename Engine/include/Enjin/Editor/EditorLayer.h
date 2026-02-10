@@ -54,6 +54,7 @@
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
+#include "Enjin/Editor/FeedbackSystem.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
 #include "Enjin/Build/HTML5Exporter.h"
@@ -115,6 +116,7 @@ enum class EditorPanel : u32 {
     Collaboration = 1 << 27,
     FlashTimeline = 1 << 28,
     VectorDrawing = 1 << 29,
+    FeedbackPanel = 1 << 30,
     All = 0xFFFFFFFF
 };
 
@@ -189,6 +191,10 @@ public:
     // Set the camera for the viewport
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; InitializePlayMode(); }
     void SetCameraController(Renderer::CameraController* controller) { m_CameraController = controller; InitializePlayMode(); }
+
+    // Returns true when splash screen or project hub covers the entire screen,
+    // so the caller can skip 3D scene rendering and camera input.
+    bool IsShowingFullscreenOverlay() const { return m_ShowSplash || m_ShowProjectHub; }
 
     // Play mode controls
     void Play() { m_PlayMode.Play(); }
@@ -939,6 +945,52 @@ private:
     // Vector Drawing Editor
     VectorDrawingEditor m_VectorDrawingEditor;
     void DrawVectorDrawingPanel();
+
+    // Feedback / Bug Reporting System
+    FeedbackManager m_FeedbackManager;
+    bool m_FeedbackLoaded = false;
+
+    enum class FeedbackTab : u8 { BugReports, Feedback, NewBug, NewFeedback };
+    FeedbackTab m_FeedbackTab = FeedbackTab::BugReports;
+
+    // Bug report form buffers
+    char m_BugTitleBuf[128] = {};
+    char m_BugDescriptionBuf[4096] = {};
+    char m_BugStepsBuf[2048] = {};
+    char m_BugExpectedBuf[1024] = {};
+    char m_BugActualBuf[1024] = {};
+    i32 m_BugTypeSel = 0;
+    i32 m_BugSeveritySel = 1;
+    bool m_BugIncludeScene = false;
+    bool m_BugIncludeLogs = true;
+
+    // Feedback form buffers
+    char m_FeedbackTitleBuf[128] = {};
+    char m_FeedbackDescBuf[4096] = {};
+    i32 m_FeedbackTypeSel = 0;
+    i32 m_FeedbackPrioritySel = 1;
+    i32 m_FeedbackSatisfaction = 0;
+    bool m_FeedbackIncludeDiag = false;
+    char m_FeedbackCategoryBuf[64] = {};
+
+    // Browse / filter state
+    char m_FeedbackSearchBuf[256] = {};
+    i32 m_BugStatusFilter = -1;
+    i32 m_BugSeverityFilter = -1;
+    u64 m_SelectedBugReportId = 0;
+    u64 m_SelectedFeedbackId = 0;
+    char m_FeedbackEndpointBuf[512] = {};
+
+    void DrawFeedbackPanel();
+    void DrawBugReportList();
+    void DrawBugReportDetail(BugReport& report);
+    void DrawNewBugReportForm();
+    void DrawFeedbackList();
+    void DrawFeedbackDetail(FeedbackEntry& entry);
+    void DrawNewFeedbackForm();
+    void ResetBugReportForm();
+    void ResetFeedbackForm();
+    DiagnosticSnapshot CaptureDiagnostics(bool includeScene);
 
     // Newgrounds API
     Networking::NewgroundsAPI m_NewgroundsAPI;

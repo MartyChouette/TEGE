@@ -323,7 +323,7 @@ Ideas for "simple creation of complex games":
 
 ### Partially Complete
 
-- ~~**Project Hub & Creation Wizard**~~ ✅ — All 4 tabs (Recent/New/Open/Demos), 30 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done
+- ~~**Project Hub & Creation Wizard**~~ ✅ (v1) — All 4 tabs (Recent/New/Open/Demos), 38 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done. **v2 redesign planned** — see "Project Hub Redesign & Template Creator" section: 3-action landing (New/Open/Sandbox), template creator with panel checkboxes and auto-thumbnail capture, project name in separate popup, `TEGE_Projects` default directory, software distribution tiers
 - ~~**Undo/Redo**~~ ✅ — Entity operations, visual script node edits, inspector property edits, tilemap paint (per-stroke with cell deduplication), terrain sculpt (heightmap+splatmap snapshot), UI editor edits (move/resize/nudge/delete) all done
 - ~~**Drag and Drop**~~ ✅ — OS file drop, hierarchy reparenting, asset browser to Game View (model/prefab/image/scene/audio/script dispatch), material inspector texture fields, sprite inspector texture fields all done
 - **Asset Import Pipeline** — Import settings dialog, .enjinasset metadata, and asset browser drag-import done. Remaining: thumbnails, texture compression, source-app import presets
@@ -848,6 +848,146 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 
 ---
 
+## Project Hub Redesign & Template Creator
+
+### Terminology (Clarified Hierarchy)
+
+The engine uses four distinct save concepts — users must clearly understand each:
+
+| Concept | What It Stores | File(s) | When Saved |
+|---------|---------------|---------|------------|
+| **Scene** | Entity hierarchy, component data, world state | `.enjin` | File > Save Scene |
+| **Window Layout** | Panel visibility flags, panel sizes/positions, splitter ratios | `editor_layout.json` (per-project) | Auto-saved on close, or Layout > Save Layout |
+| **Template** | A starter scene + a window layout + metadata (name, description, category, thumbnail) | `.enjintemplate` (directory: `scene.enjin` + `layout.json` + `meta.json` + `thumbnail.png`) | Template Creator > Save |
+| **Project** | All scenes, assets, scripts, settings, templates, build config | `.enjinproject` (directory with `project.enjinproject` manifest) | File > Save All / auto-save |
+
+### Project Hub Flow Redesign
+
+Replace the current 4-tab flat layout (Recent / New / Open / Demos) with a clearer entry flow:
+
+**Splash Screen** (unchanged: logo + version fade-in, 4s)
+
+**Landing Page** (replaces current Project Hub — 3 primary actions):
+
+```
+┌──────────────────────────────────────────────────┐
+│                  TEGE Engine                     │
+│                                                  │
+│   ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│   │  New     │  │  Open    │  │  Sandbox │      │
+│   │ Project  │  │ Project  │  │          │      │
+│   └──────────┘  └──────────┘  └──────────┘      │
+│                                                  │
+│              Recent Projects (below)             │
+└──────────────────────────────────────────────────┘
+```
+
+- **New Project** → Template browser (current "New" tab grid), then a **popup dialog** for project name, location, scene name, git init. Template selection and naming are separate steps — pick template first, then configure project in a modal
+- **Open Project** → Project browser with recent project list + "Browse..." button. Shows any valid `.enjinproject` directory. Can be linked/aliased from anywhere on disk (like Unity Hub). Quick-filter search bar, sort by name/date/size
+- **Sandbox** → Starts an unnamed, unsaved session using the Template Creator. User picks which panels are visible, optionally loads a template scene, and starts working. Session is disposable by default — prompt to save on close. If saved, becomes a named project. Good for quick prototyping, testing, learning
+
+### Template Creator
+
+A dedicated tool (accessible from Sandbox flow + Tools menu) for creating and editing templates:
+
+**Template Metadata:**
+- Template name, description, category (2D/3D/Multiplayer/Custom)
+- Author name (auto-filled from system user)
+- Thumbnail image — **auto-captured from the viewport** on save (screenshot of the initial scene state at the current camera angle). Can also be manually set via file picker
+
+**Window Layout Configuration:**
+- Checklist of all `EditorPanel` flags — user checks which panels should be visible when the template is applied:
+  - [ ] Hierarchy
+  - [ ] Inspector
+  - [ ] Viewport
+  - [ ] Console
+  - [ ] Asset Browser
+  - [ ] Game View
+  - [ ] Settings
+  - [ ] Effects
+  - [ ] Profiler
+  - [ ] etc.
+- Panel size presets (Compact / Standard / Wide) or custom ratio sliders
+- Game View default size and position
+
+**Scene Content:**
+- The current scene state becomes the template's starter scene
+- Entity list preview (read-only summary of what the template will include)
+- Option to strip editor-only data (selection state, camera position) or preserve it
+
+**Save/Export:**
+- Save to `templates/` directory as `.enjintemplate` folder (scene.enjin + layout.json + meta.json + thumbnail.png)
+- Templates appear in the New Project template browser automatically
+- Export as shareable `.enjintemplate.zip` for community sharing
+
+### Template Thumbnail Capture
+
+Each built-in template should have a representative screenshot. Implementation:
+
+- On `ApplyTemplate()`, after scene setup, capture the Game View render target to a PNG
+- Store as `thumbnail.png` in the template folder
+- For built-in templates, embed thumbnails as compiled-in byte arrays (like ShaderData.h) or generate on first run and cache
+- Template browser cards display the thumbnail image instead of the current accent-bar + text layout
+- Custom templates auto-capture on save
+
+### Per-Template Window Layouts
+
+Every built-in template should ship with a thoughtfully designed default layout:
+
+| Template | Visible Panels | Layout Notes |
+|----------|---------------|-------------|
+| Blank | All defaults | Standard editor layout |
+| 2D Platformer | Hierarchy, Inspector, Viewport, Console, Game View | Wide game view (ortho), compact hierarchy |
+| 3D Third Person | Hierarchy, Inspector, Viewport, Console, Game View, Settings | Standard 3D layout |
+| Visual Novel | Hierarchy, Inspector, Game View, Dialogue | Large game view, dialogue editor prominent |
+| RPG Village | All + Effects + Skybox | Full-featured RPG development layout |
+| Racing | Viewport, Game View, Console | Maximized game view for splitscreen testing |
+| Pixel Art (2D) | Hierarchy, Inspector, Viewport, Pixel Editor, Console | Pixel editor front-and-center |
+| Horror | Hierarchy, Inspector, Game View, Effects, Settings | Dark theme auto-applied, effects panel visible |
+
+### Default Project Directory (`TEGE_Projects`)
+
+- **First-run setup**: On first launch (no `editor_settings.json` found), prompt the user to select a default project directory
+- Default suggestion: `Documents/TEGE_Projects/` (Windows: `%USERPROFILE%\Documents\TEGE_Projects`, Linux: `~/TEGE_Projects`, macOS: `~/Documents/TEGE_Projects`)
+- Stored in `editor_settings.json` as `defaultProjectPath`
+- New Project dialog pre-fills this path
+- Open Project browser shows this directory by default
+- Can be changed anytime in Project Settings > General
+
+### Software Distribution & Installation
+
+The engine is currently source-built (clone + cmake + build). Future distribution tiers:
+
+**Tier 1: Source Distribution (Current)**
+- Clone repo, install dependencies (Vulkan SDK, CMake, C++20 compiler)
+- `cmake --build` produces `EnjinEditor.exe` + `EnjinPlayer.exe`
+- No installer, no registry entries, fully portable
+- Target audience: engine developers, contributors
+
+**Tier 2: Pre-Built Binary Distribution (Planned)**
+- GitHub Releases with versioned `.zip` archives per platform
+- Extract-and-run — no installer needed (portable)
+- Includes `EnjinEditor.exe`, `EnjinPlayer.exe`, `glslangValidator`, sample templates
+- First-run wizard asks for `TEGE_Projects` directory
+- Target audience: game developers who don't need to modify the engine
+
+**Tier 3: Installer Distribution (Future)**
+- Windows: MSIX or Inno Setup installer with Start Menu shortcut, file type associations (`.enjin`, `.enjinproject`), PATH entry for CLI tools
+- Linux: AppImage or Flatpak (self-contained, no system dependencies)
+- macOS: `.dmg` with drag-to-Applications
+- Installer registers `TEGE_Projects` default directory, optionally installs Vulkan runtime
+- Auto-updater (check GitHub releases API on startup, download + replace binaries)
+- Target audience: end users, non-technical game developers
+
+**Tier 4: Hub Application (Future)**
+- Standalone launcher (like Unity Hub / Epic Games Launcher)
+- Manages multiple engine versions side-by-side
+- Project browser with create/open/recent
+- Template marketplace integration
+- Account system for license management (free/indie/pro tiers)
+
+---
+
 ## UI/UX Design Philosophy
 
 - Aesthetically accessible, clean, forward-thinking, timeless
@@ -857,4 +997,4 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 
 ---
 
-*Last updated: 2026-02-09*
+*Last updated: 2026-02-10*

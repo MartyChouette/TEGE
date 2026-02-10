@@ -145,14 +145,19 @@ public:
     }
 
     void Update(Enjin::f32 deltaTime) override {
+        // Update editor layer first (drives splash/hub state)
+        if (m_EditorLayer) {
+            m_EditorLayer->Update(deltaTime);
+        }
+
+        // Skip camera input when splash screen or project hub covers the screen
+        if (m_EditorLayer && m_EditorLayer->IsShowingFullscreenOverlay()) {
+            return;
+        }
+
         // Update camera controller
         if (m_CameraController) {
             m_CameraController->Update(deltaTime);
-        }
-
-        // Update editor layer
-        if (m_EditorLayer) {
-            m_EditorLayer->Update(deltaTime);
         }
     }
 
