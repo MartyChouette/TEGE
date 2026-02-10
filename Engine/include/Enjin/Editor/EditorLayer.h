@@ -53,7 +53,10 @@
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
 #include "Enjin/Editor/FlashTimeline.h"
+#include "Enjin/Editor/VectorDrawingEditor.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
+#include "Enjin/Networking/NewgroundsAPI.h"
+#include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Plugin/PluginRepository.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include <string>
@@ -111,6 +114,7 @@ enum class EditorPanel : u32 {
     NetworkPanel = 1 << 26,
     Collaboration = 1 << 27,
     FlashTimeline = 1 << 28,
+    VectorDrawing = 1 << 29,
     All = 0xFFFFFFFF
 };
 
@@ -931,6 +935,20 @@ private:
     char m_AS3TranspileInput[4096] = {};
     std::string m_AS3TranspileOutput;
     void DrawFlashTimelinePanel();
+
+    // Vector Drawing Editor
+    VectorDrawingEditor m_VectorDrawingEditor;
+    void DrawVectorDrawingPanel();
+
+    // Newgrounds API
+    Networking::NewgroundsAPI m_NewgroundsAPI;
+    char m_NGAppId[64] = {};
+    char m_NGEncryptionKey[128] = {};
+
+    // HTML5 Export
+    Build::HTML5ExportConfig m_HTML5Config;
+    bool m_ShowHTML5ExportDialog = false;
+    void DrawHTML5ExportDialog();
 
     // Keyboard navigation state
     enum class FocusedPanel : u8 {

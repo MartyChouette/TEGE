@@ -2147,6 +2147,14 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(800, 350), layoutCond);
         DrawFlashTimelinePanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::VectorDrawing)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 30), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700, 550), layoutCond);
+        DrawVectorDrawingPanel();
+    }
+    if (m_ShowHTML5ExportDialog) {
+        DrawHTML5ExportDialog();
+    }
 
     // Dialogue tree editor (owns its own window) - legacy, now use DrawDialoguePanel()
     // m_DialogueTreeEditor.Render();
@@ -2659,6 +2667,16 @@ void EditorLayer::DrawMenuBar() {
                     m_BuildConfig.windowTitle = m_SceneManager.GetProjectName();
                 }
             }
+            if (ImGui::MenuItem("Export HTML5...")) {
+                m_ShowHTML5ExportDialog = true;
+                if (m_HTML5Config.title.empty() || m_HTML5Config.title == "My Game") {
+                    m_HTML5Config.title = m_SceneManager.GetProjectName();
+                }
+                if (m_HTML5Config.outputDir.empty() && !m_SceneManager.GetProjectPath().empty()) {
+                    auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path();
+                    m_HTML5Config.outputDir = (projDir / "HTML5Build").string();
+                }
+            }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
                 if (m_Window) {
@@ -2834,6 +2852,10 @@ void EditorLayer::DrawMenuBar() {
                 bool flashPanel = IsPanelVisible(EditorPanel::FlashTimeline);
                 if (ImGui::MenuItem("Flash Timeline", nullptr, &flashPanel)) {
                     SetPanelVisibility(EditorPanel::FlashTimeline, flashPanel);
+                }
+                bool vectorPanel = IsPanelVisible(EditorPanel::VectorDrawing);
+                if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
+                    SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
@@ -30400,7 +30422,255 @@ void EditorLayer::DrawFlashTimelinePanel() {
             ImGui::EndTabItem();
         }
 
+        // --- Newgrounds Tab ---
+        if (ImGui::BeginTabItem("Newgrounds")) {
+            ImGui::Text("Newgrounds.io Integration");
+            ImGui::Separator();
+
+            // App credentials
+            ImGui::Text("App ID:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(200);
+            ImGui::InputText("##NGAppId", m_NGAppId, sizeof(m_NGAppId));
+
+            ImGui::Text("Encryption Key:");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(200);
+            ImGui::InputText("##NGKey", m_NGEncryptionKey, sizeof(m_NGEncryptionKey),
+                              ImGuiInputTextFlags_Password);
+
+            // Connect button
+            if (m_NewgroundsAPI.IsConnected()) {
+                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1), "Connected as: %s",
+                                   m_NewgroundsAPI.GetSession().userName.c_str());
+                ImGui::SameLine();
+                if (ImGui::Button("Refresh")) {
+                    m_NewgroundsAPI.CheckSession();
+                }
+            } else {
+                if (ImGui::Button("Connect")) {
+                    if (strlen(m_NGAppId) > 0 && strlen(m_NGEncryptionKey) > 0) {
+                        m_NewgroundsAPI.Initialize(m_NGAppId, m_NGEncryptionKey);
+                        m_NewgroundsAPI.StartSession();
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Check Session")) {
+                    m_NewgroundsAPI.CheckSession();
+                }
+
+                std::string passport = m_NewgroundsAPI.GetPassportUrl();
+                if (!passport.empty()) {
+                    ImGui::TextWrapped("Passport URL: %s", passport.c_str());
+                    ImGui::SameLine();
+                    if (ImGui::Button("Copy URL")) {
+                        ImGui::SetClipboardText(passport.c_str());
+                    }
+                }
+            }
+
+            ImGui::Separator();
+
+            // Medals section
+            if (ImGui::TreeNode("Medals")) {
+                if (ImGui::Button("Refresh Medals")) {
+                    // Medals are fetched on demand
+                }
+                static std::vector<Networking::NGMedal> cachedMedals;
+                if (ImGui::IsItemClicked()) {
+                    cachedMedals = m_NewgroundsAPI.GetMedals();
+                }
+                for (auto& medal : cachedMedals) {
+                    ImGui::BulletText("%s (%d pts) %s",
+                                      medal.name.c_str(), medal.value,
+                                      medal.unlocked ? "[Unlocked]" : "");
+                }
+                ImGui::TreePop();
+            }
+
+            // Scoreboards section
+            if (ImGui::TreeNode("Scoreboards")) {
+                static std::vector<Networking::NGScoreBoard> cachedBoards;
+                if (ImGui::Button("Refresh Boards")) {
+                    cachedBoards = m_NewgroundsAPI.GetScoreBoards();
+                }
+                for (auto& board : cachedBoards) {
+                    ImGui::BulletText("[%d] %s", board.id, board.name.c_str());
+                }
+
+                static i32 testBoardId = 0;
+                static i32 testScore = 100;
+                ImGui::SetNextItemWidth(80);
+                ImGui::InputInt("Board ID", &testBoardId);
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(80);
+                ImGui::InputInt("Score", &testScore);
+                ImGui::SameLine();
+                if (ImGui::Button("Post Test Score")) {
+                    m_NewgroundsAPI.PostScore(testBoardId, testScore);
+                }
+                ImGui::TreePop();
+            }
+
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// Vector Drawing Panel
+// ============================================================================
+
+void EditorLayer::DrawVectorDrawingPanel() {
+    if (!ImGui::Begin("Vector Drawing")) {
+        ImGui::End();
+        return;
+    }
+
+    m_VectorDrawingEditor.Render(m_EditorSettings);
+
+    // Symbol library integration with Flash Timeline
+    if (m_VectorDrawingEditor.HasDocument()) {
+        ImGui::Separator();
+        static char symbolName[128] = "MySymbol";
+        ImGui::SetNextItemWidth(150);
+        ImGui::InputText("Symbol Name", symbolName, sizeof(symbolName));
+        ImGui::SameLine();
+        if (ImGui::Button("Save as Flash Symbol")) {
+            if (m_VectorDrawingEditor.SaveAsSymbol(symbolName, ".")) {
+                std::string svgPath = std::string(symbolName) + ".svg";
+                m_FlashTimelineData.symbolLibrary[symbolName] = svgPath;
+            }
+        }
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// HTML5 Export Dialog
+// ============================================================================
+
+void EditorLayer::DrawHTML5ExportDialog() {
+    ImGui::SetNextWindowSize(ImVec2(500, 480), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Export HTML5", &m_ShowHTML5ExportDialog)) {
+        ImGui::End();
+        return;
+    }
+
+    static char titleBuf[128] = {};
+    static char outputBuf[512] = {};
+    static char bgColorBuf[16] = "#000000";
+    static char cssBuf[1024] = {};
+    static bool initialized = false;
+    static std::string lastEmbedCode;
+
+    if (!initialized || ImGui::IsWindowAppearing()) {
+        strncpy(titleBuf, m_HTML5Config.title.c_str(), sizeof(titleBuf) - 1);
+        strncpy(outputBuf, m_HTML5Config.outputDir.c_str(), sizeof(outputBuf) - 1);
+        strncpy(bgColorBuf, m_HTML5Config.backgroundColor.c_str(), sizeof(bgColorBuf) - 1);
+        initialized = true;
+    }
+
+    ImGui::Text("HTML5 Web Export");
+    ImGui::Separator();
+
+    // Title
+    ImGui::SetNextItemWidth(-1);
+    if (ImGui::InputText("Title", titleBuf, sizeof(titleBuf))) {
+        m_HTML5Config.title = titleBuf;
+    }
+
+    // Dimensions
+    i32 w = (i32)m_HTML5Config.width, h = (i32)m_HTML5Config.height;
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::InputInt("Width", &w)) m_HTML5Config.width = std::max(1, w);
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(120);
+    if (ImGui::InputInt("Height", &h)) m_HTML5Config.height = std::max(1, h);
+
+    // Presets
+    ImGui::SameLine();
+    if (ImGui::Button("550x400")) { m_HTML5Config.width = 550; m_HTML5Config.height = 400; }
+    ImGui::SameLine();
+    if (ImGui::Button("800x600")) { m_HTML5Config.width = 800; m_HTML5Config.height = 600; }
+    ImGui::SameLine();
+    if (ImGui::Button("1280x720")) { m_HTML5Config.width = 1280; m_HTML5Config.height = 720; }
+
+    // Background color
+    if (ImGui::InputText("Background", bgColorBuf, sizeof(bgColorBuf))) {
+        m_HTML5Config.backgroundColor = bgColorBuf;
+    }
+
+    // Options
+    ImGui::Checkbox("Show Preloader", &m_HTML5Config.showPreloader);
+    ImGui::SameLine();
+    ImGui::Checkbox("Fullscreen Button", &m_HTML5Config.showFullscreenButton);
+    ImGui::SameLine();
+    ImGui::Checkbox("Generate Embed Code", &m_HTML5Config.generateEmbedCode);
+
+    // Splash image
+    ImGui::Text("Splash Image: %s", m_HTML5Config.splashImagePath.empty() ? "(none)" : m_HTML5Config.splashImagePath.c_str());
+    ImGui::SameLine();
+    if (ImGui::Button("Browse##Splash")) {
+        std::vector<FileFilter> filters = {
+            { "Images", "*.png;*.jpg;*.jpeg;*.svg" },
+            { "All Files", "*.*" }
+        };
+        std::string path = FileDialog::OpenFile("Select Splash Image", filters);
+        if (!path.empty()) m_HTML5Config.splashImagePath = path;
+    }
+
+    // Output directory
+    ImGui::Separator();
+    if (ImGui::InputText("Output Dir", outputBuf, sizeof(outputBuf))) {
+        m_HTML5Config.outputDir = outputBuf;
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Browse##Output")) {
+        std::string path = FileDialog::OpenFolder("Select Output Folder");
+        if (!path.empty()) {
+            m_HTML5Config.outputDir = path;
+            strncpy(outputBuf, path.c_str(), sizeof(outputBuf) - 1);
+        }
+    }
+
+    // Custom CSS
+    if (ImGui::TreeNode("Custom CSS")) {
+        if (ImGui::InputTextMultiline("##CustomCSS", cssBuf, sizeof(cssBuf), ImVec2(-1, 80))) {
+            m_HTML5Config.customCSS = cssBuf;
+        }
+        ImGui::TreePop();
+    }
+
+    // Export button
+    ImGui::Separator();
+    if (ImGui::Button("Export", ImVec2(120, 30))) {
+        auto result = Build::HTML5Exporter::Export(m_HTML5Config, m_BuildConfig);
+        if (result.success) {
+            ENJIN_LOG_INFO(Editor, "HTML5 export complete: %zu files", result.files.size());
+            lastEmbedCode = result.embedCode;
+        } else {
+            ENJIN_LOG_ERROR(Editor, "HTML5 export failed: %s", result.error.c_str());
+        }
+    }
+
+    // Show embed code if available
+    if (!lastEmbedCode.empty()) {
+        ImGui::Separator();
+        ImGui::Text("Embed Code:");
+        ImGui::InputTextMultiline("##EmbedCode",
+                                   const_cast<char*>(lastEmbedCode.c_str()),
+                                   lastEmbedCode.size() + 1,
+                                   ImVec2(-1, 80),
+                                   ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::Button("Copy Embed Code")) {
+            ImGui::SetClipboardText(lastEmbedCode.c_str());
+        }
     }
 
     ImGui::End();

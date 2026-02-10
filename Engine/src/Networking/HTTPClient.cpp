@@ -1,0 +1,233 @@
+#include "Enjin/Networking/HTTPClient.h"
+#include "Enjin/Logging/Log.h"
+#include <sstream>
+
+#ifdef _WIN32
+#include <windows.h>
+#include <winhttp.h>
+#pragma comment(lib, "winhttp.lib")
+#endif
+
+namespace Enjin {
+namespace Networking {
+
+// ============================================================================
+// URL Parsing
+// ============================================================================
+
+HTTPClient::ParsedURL HTTPClient::ParseURL(const std::string& url) {
+    ParsedURL result;
+    std::string remaining = url;
+
+    // Protocol
+    if (remaining.find("https://") == 0) {
+        result.useSSL = true;
+        result.port = 443;
+        remaining = remaining.substr(8);
+    } else if (remaining.find("http://") == 0) {
+        result.useSSL = false;
+        result.port = 80;
+        remaining = remaining.substr(7);
+    }
+
+    // Host and path
+    auto pathStart = remaining.find('/');
+    if (pathStart != std::string::npos) {
+        result.host = remaining.substr(0, pathStart);
+        result.path = remaining.substr(pathStart);
+    } else {
+        result.host = remaining;
+        result.path = "/";
+    }
+
+    // Port in host
+    auto colonPos = result.host.find(':');
+    if (colonPos != std::string::npos) {
+        result.port = (u16)std::stoi(result.host.substr(colonPos + 1));
+        result.host = result.host.substr(0, colonPos);
+    }
+
+    return result;
+}
+
+// ============================================================================
+// Windows Implementation (WinHTTP)
+// ============================================================================
+
+#ifdef _WIN32
+
+static std::wstring ToWide(const std::string& str) {
+    if (str.empty()) return L"";
+    int size = MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), nullptr, 0);
+    std::wstring result(size, 0);
+    MultiByteToWideChar(CP_UTF8, 0, str.c_str(), (int)str.size(), &result[0], size);
+    return result;
+}
+
+static HTTPResponse DoRequest(const std::string& method, const std::string& url,
+                               const std::string& body,
+                               const std::unordered_map<std::string, std::string>& headers) {
+    HTTPResponse response;
+    auto parsed = HTTPClient::ParseURL(url);
+
+    // Open session
+    HINTERNET hSession = WinHttpOpen(L"EnjinEngine/1.0",
+                                      WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                      WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
+    if (!hSession) {
+        response.error = "WinHttpOpen failed";
+        return response;
+    }
+
+    // Connect
+    std::wstring wHost = ToWide(parsed.host);
+    HINTERNET hConnect = WinHttpConnect(hSession, wHost.c_str(), parsed.port, 0);
+    if (!hConnect) {
+        response.error = "WinHttpConnect failed";
+        WinHttpCloseHandle(hSession);
+        return response;
+    }
+
+    // Open request
+    std::wstring wPath = ToWide(parsed.path);
+    std::wstring wMethod = ToWide(method);
+    DWORD flags = parsed.useSSL ? WINHTTP_FLAG_SECURE : 0;
+    HINTERNET hRequest = WinHttpOpenRequest(hConnect, wMethod.c_str(), wPath.c_str(),
+                                             nullptr, WINHTTP_NO_REFERER,
+                                             WINHTTP_DEFAULT_ACCEPT_TYPES, flags);
+    if (!hRequest) {
+        response.error = "WinHttpOpenRequest failed";
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return response;
+    }
+
+    // Set timeout (10 seconds)
+    WinHttpSetTimeouts(hRequest, 10000, 10000, 10000, 10000);
+
+    // Add custom headers
+    for (auto& [key, value] : headers) {
+        std::wstring header = ToWide(key + ": " + value);
+        WinHttpAddRequestHeaders(hRequest, header.c_str(), (DWORD)header.size(),
+                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
+    // Add content-type for POST
+    if (method == "POST" && !body.empty() &&
+        headers.find("Content-Type") == headers.end()) {
+        WinHttpAddRequestHeaders(hRequest, L"Content-Type: application/json",
+                                  (DWORD)-1L,
+                                  WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
+    // Send request
+    LPVOID bodyData = body.empty() ? WINHTTP_NO_REQUEST_DATA : (LPVOID)body.c_str();
+    DWORD bodyLen = body.empty() ? 0 : (DWORD)body.size();
+    BOOL sent = WinHttpSendRequest(hRequest, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                                    bodyData, bodyLen, bodyLen, 0);
+    if (!sent) {
+        response.error = "WinHttpSendRequest failed: " + std::to_string(GetLastError());
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return response;
+    }
+
+    // Receive response
+    if (!WinHttpReceiveResponse(hRequest, nullptr)) {
+        response.error = "WinHttpReceiveResponse failed: " + std::to_string(GetLastError());
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return response;
+    }
+
+    // Status code
+    DWORD statusCode = 0;
+    DWORD statusCodeSize = sizeof(statusCode);
+    WinHttpQueryHeaders(hRequest,
+                         WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                         WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusCodeSize,
+                         WINHTTP_NO_HEADER_INDEX);
+    response.statusCode = (i32)statusCode;
+
+    // Read body
+    std::string responseBody;
+    DWORD bytesAvailable = 0;
+    do {
+        bytesAvailable = 0;
+        WinHttpQueryDataAvailable(hRequest, &bytesAvailable);
+        if (bytesAvailable == 0) break;
+
+        std::vector<char> buffer(bytesAvailable + 1, 0);
+        DWORD bytesRead = 0;
+        WinHttpReadData(hRequest, buffer.data(), bytesAvailable, &bytesRead);
+        responseBody.append(buffer.data(), bytesRead);
+    } while (bytesAvailable > 0);
+
+    response.body = responseBody;
+    response.success = (statusCode >= 200 && statusCode < 300);
+
+    WinHttpCloseHandle(hRequest);
+    WinHttpCloseHandle(hConnect);
+    WinHttpCloseHandle(hSession);
+
+    return response;
+}
+
+HTTPResponse HTTPClient::Get(const std::string& url,
+                              const std::unordered_map<std::string, std::string>& headers) {
+    return DoRequest("GET", url, "", headers);
+}
+
+HTTPResponse HTTPClient::Post(const std::string& url,
+                               const std::string& body,
+                               const std::unordered_map<std::string, std::string>& headers) {
+    return DoRequest("POST", url, body, headers);
+}
+
+HTTPResponse HTTPClient::PostForm(const std::string& url,
+                                   const std::unordered_map<std::string, std::string>& params,
+                                   const std::unordered_map<std::string, std::string>& headers) {
+    // Build URL-encoded form body
+    std::string body;
+    for (auto& [key, value] : params) {
+        if (!body.empty()) body += "&";
+        body += key + "=" + value;
+    }
+
+    auto h = headers;
+    h["Content-Type"] = "application/x-www-form-urlencoded";
+    return DoRequest("POST", url, body, h);
+}
+
+#else
+
+// ============================================================================
+// Stub Implementation (Non-Windows)
+// ============================================================================
+
+HTTPResponse HTTPClient::Get(const std::string& url,
+                              const std::unordered_map<std::string, std::string>& headers) {
+    (void)url; (void)headers;
+    return { false, 0, "", {}, "HTTP not available on this platform" };
+}
+
+HTTPResponse HTTPClient::Post(const std::string& url,
+                               const std::string& body,
+                               const std::unordered_map<std::string, std::string>& headers) {
+    (void)url; (void)body; (void)headers;
+    return { false, 0, "", {}, "HTTP not available on this platform" };
+}
+
+HTTPResponse HTTPClient::PostForm(const std::string& url,
+                                   const std::unordered_map<std::string, std::string>& params,
+                                   const std::unordered_map<std::string, std::string>& headers) {
+    (void)url; (void)params; (void)headers;
+    return { false, 0, "", {}, "HTTP not available on this platform" };
+}
+
+#endif // _WIN32
+
+} // namespace Networking
+} // namespace Enjin
