@@ -137,6 +137,15 @@ struct SceneRenderSettings {
     bool globalGouraudOnly = false;
     u32 globalVertexSnapResolution = 160;
 
+    // --- Cel Shading ---
+    bool celShadingEnabled = false;
+    f32 celDiffuseBands = 3.0f;
+    f32 celSpecularCutoff = 0.5f;
+    bool celOutlineEnabled = false;
+    f32 celOutlineThickness = 1.0f;
+    f32 celOutlineThreshold = 0.1f;
+    Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+
     // --- Ray Tracing ---
     bool rtEnabled = false;
     u32 rtMode = 0;                    // 0=Hybrid, 1=PathTrace

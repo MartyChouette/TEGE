@@ -29,5 +29,8 @@ struct ENJIN_API MeshComponent : public IComponent {
     }
 };
 
+// Convenience alias so ECS::Vertex works without qualifying MeshComponent::
+using Vertex = MeshComponent::Vertex;
+
 } // namespace ECS
 } // namespace Enjin

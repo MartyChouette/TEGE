@@ -68,6 +68,9 @@ struct MaterialComponent {
     f32 fresnelPower = 5.0f;      // 0.5-10: edge vs center reflection falloff
     f32 rimLightStrength = 0.0f;  // 0-3: additive rim/edge glow
 
+    // Cel shading opt-out (per-material)
+    bool excludeFromCelShading = false;
+
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
     struct TextureKey {
@@ -140,6 +143,7 @@ struct alignas(16) MaterialGPU {
         if (mat.doubleSided) gpu.flags |= 1;
         if (mat.castShadows) gpu.flags |= 2;
         if (mat.receiveShadows) gpu.flags |= 4;
+        if (mat.excludeFromCelShading) gpu.flags |= (1 << 4);
         gpu.flags |= (static_cast<i32>(mat.alphaMode) << 8);
 
         // Texture flags (bits 16-19, bit 10 for height)

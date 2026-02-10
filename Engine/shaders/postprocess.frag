@@ -121,10 +121,21 @@ layout(binding = 1) uniform PostProcessSettings {
     uint paletteColors;
     float _palPad0;
     float _palPad1;
+
+    // Cel shading outlines
+    uint celOutlineEnabled;
+    float celOutlineThickness;
+    float celOutlineThreshold;
+    float _celPad0;
+    vec3 celOutlineColor;
+    float _celPad1;
 } settings;
 
 // LUT texture (binding 2)
 layout(binding = 2) uniform sampler2D lutTexture;
+
+// Depth texture (binding 3) for cel outline edge detection
+layout(binding = 3) uniform sampler2D depthTexture;
 
 // Tone mapping mode constants
 #define TONEMAP_NONE 0
@@ -661,6 +672,35 @@ vec3 applyPaletteLock(vec3 color) {
     return clamp(color, 0.0, 1.0);
 }
 
+// Cel shading outline: Sobel edge detection on depth buffer
+vec3 applyCelOutline(vec3 color, vec2 uv) {
+    if (settings.celOutlineEnabled == 0) return color;
+
+    vec2 texelSize = vec2(1.0 / float(settings.screenWidth), 1.0 / float(settings.screenHeight));
+    float thickness = settings.celOutlineThickness;
+
+    // Sample 3x3 depth neighborhood
+    float d00 = texture(depthTexture, uv + vec2(-thickness, -thickness) * texelSize).r;
+    float d10 = texture(depthTexture, uv + vec2( 0.0,      -thickness) * texelSize).r;
+    float d20 = texture(depthTexture, uv + vec2( thickness, -thickness) * texelSize).r;
+    float d01 = texture(depthTexture, uv + vec2(-thickness,  0.0)      * texelSize).r;
+    float d21 = texture(depthTexture, uv + vec2( thickness,  0.0)      * texelSize).r;
+    float d02 = texture(depthTexture, uv + vec2(-thickness,  thickness) * texelSize).r;
+    float d12 = texture(depthTexture, uv + vec2( 0.0,       thickness) * texelSize).r;
+    float d22 = texture(depthTexture, uv + vec2( thickness,  thickness) * texelSize).r;
+
+    // Linearize depth for better edge detection (Vulkan reversed Z: 1=near, 0=far)
+    // Simple linearization: use 1/d to amplify differences at distance
+
+    // Sobel operators
+    float sobelX = (d00 + 2.0 * d01 + d02) - (d20 + 2.0 * d21 + d22);
+    float sobelY = (d00 + 2.0 * d10 + d20) - (d02 + 2.0 * d12 + d22);
+    float edgeMagnitude = sqrt(sobelX * sobelX + sobelY * sobelY);
+
+    float edge = smoothstep(settings.celOutlineThreshold * 0.5, settings.celOutlineThreshold, edgeMagnitude);
+    return mix(color, settings.celOutlineColor, edge);
+}
+
 void main() {
     vec2 uv = fragUV;
 
@@ -698,6 +738,9 @@ void main() {
 
     // Apply colorblind correction (after color grading, before vignette)
     color = applyColorblindCorrection(color);
+
+    // Apply cel outline (Sobel edge detection on depth)
+    color = applyCelOutline(color, uv);
 
     // Apply vignette
     color = applyVignette(color, uv);

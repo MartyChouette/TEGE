@@ -163,6 +163,14 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 paletteColors = 16;
     alignas(4) f32 _palPad0 = 0.0f;
     alignas(4) f32 _palPad1 = 0.0f;
+
+    // Cel shading outlines (Sobel edge detection on depth)
+    alignas(4) u32 celOutlineEnabled = 0;
+    alignas(4) f32 celOutlineThickness = 1.0f;
+    alignas(4) f32 celOutlineThreshold = 0.1f;    // Depth edge sensitivity
+    alignas(4) f32 _celPad0 = 0.0f;
+    alignas(16) Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+    alignas(4) f32 _celPad1 = 0.0f;
 };
 
 // Post-processing manager

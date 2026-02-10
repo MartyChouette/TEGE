@@ -30,6 +30,7 @@
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Editor/PerformanceStats.h"
@@ -409,6 +410,8 @@ private:
     void DrawConveyorComponent(ECS::Entity entity);
     void DrawTeleporterComponent(ECS::Entity entity);
     void DrawDestructibleComponent(ECS::Entity entity);
+    void DrawCurlNoiseFieldComponent(ECS::Entity entity);
+    void DrawFractureConfigComponent(ECS::Entity entity);
     void DrawMovingPlatformComponent(ECS::Entity entity);
     void DrawPerFrameColliderComponent(ECS::Entity entity);
     void DrawPolygonCollider2DComponent(ECS::Entity entity);
@@ -669,6 +672,9 @@ private:
 
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
+
+    // Curl noise flow field system
+    std::unique_ptr<Effects::CurlNoiseSystem> m_CurlNoiseSystem;
 
     // World time and seasonal weather
     Effects::WorldTimeSystem m_WorldTime;

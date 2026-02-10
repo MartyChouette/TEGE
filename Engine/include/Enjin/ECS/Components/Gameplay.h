@@ -1610,5 +1610,70 @@ struct NetworkTransformComponent {
     f32 correctionBlend = 0.0f;
 };
 
+// ============================================================================
+// CURL NOISE FLOW FIELD
+// ============================================================================
+
+struct CurlNoiseFieldComponent {
+    // Noise parameters
+    i32 octaves = 4;
+    f32 frequency = 1.0f;
+    f32 amplitude = 1.0f;
+    f32 lacunarity = 2.0f;
+    f32 persistence = 0.5f;
+    u32 seed = 0;
+    f32 timeScale = 0.5f;          // How fast the field evolves over time
+
+    // Volume bounds (AABB centered on entity position)
+    Math::Vector3 halfExtents = Math::Vector3(5.0f, 5.0f, 5.0f);
+
+    // Edge falloff
+    enum class Falloff : u8 { None, Linear, Smooth };
+    Falloff falloff = Falloff::Smooth;
+
+    // What to affect
+    bool affectParticles = true;
+    bool affectMeshVertices = false;
+
+    // Debug visualization
+    bool showDebugArrows = false;
+    u32 debugArrowResolution = 4;  // Arrows per axis (4 = 4x4x4 = 64 arrows)
+
+    // Runtime accumulated time (not serialized)
+    f32 accumulatedTime = 0.0f;
+};
+
+// ============================================================================
+// FRACTURE CONFIGURATION (for Voronoi persistent physics fragments)
+// ============================================================================
+
+struct FractureConfigComponent {
+    // Voronoi fracture parameters
+    u32 fragmentCount = 8;               // Number of Voronoi cells
+    f32 explosionForce = 5.0f;           // Outward impulse on fragments
+    bool persistentFragments = true;     // Fragments become physics entities
+    bool allowRefracture = true;         // Fragments can be fractured again
+    u32 maxRefractureDepth = 2;          // Max recursion depth
+    u32 currentDepth = 0;               // Current recursion depth
+
+    // Fragment entity management
+    u32 maxFragmentEntities = 256;       // Global cap on fragment entities
+    bool autoCleanup = false;            // Timer-based fragment destruction
+    f32 cleanupDelay = 10.0f;            // Seconds before auto-destroy
+
+    // Pre-fracture mode (compute fracture at init, hold with joints)
+    bool preFracture = false;
+    bool preFractureInitialized = false; // Runtime flag (not serialized)
+    f32 jointBreakForce = 100.0f;        // Force to break pre-fracture joints
+
+    // Physics properties for fragments
+    f32 fragmentDensity = 1.0f;          // Mass = volume * density
+    f32 fragmentFriction = 0.6f;
+    f32 fragmentBounciness = 0.1f;
+
+    // Impact bias (fragments cluster around impact point)
+    f32 impactBias = 0.5f;              // 0 = uniform, 1 = fully biased to impact
+};
+
 } // namespace ECS
 } // namespace Enjin

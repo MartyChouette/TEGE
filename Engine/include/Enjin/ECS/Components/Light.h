@@ -124,7 +124,8 @@ struct alignas(16) LightingUBO {
     // Point/spot shadow counts (how many UBO lights at indices 0..N-1 have shadow maps)
     i32 pointShadowCount;
     i32 spotShadowCount;
-    f32 _pointSpotPad[2];
+    f32 celDiffuseBands;       // 0 = disabled, 2-8 = number of quantized bands
+    f32 celSpecularCutoff;     // 0 = disabled, >0 = hard cutoff threshold for specular highlights
 
     // Wind data for vegetation/weather shaders
     alignas(16) Math::Vector4 windData;  // xyz = wind direction * strength, w = time

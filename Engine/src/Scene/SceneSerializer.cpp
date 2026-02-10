@@ -169,6 +169,7 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["reflectivity"] = material.reflectivity;
     j["fresnelPower"] = material.fresnelPower;
     j["rimLightStrength"] = material.rimLightStrength;
+    j["excludeFromCelShading"] = material.excludeFromCelShading;
     return j;
 }
 
@@ -325,6 +326,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
+    if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = j["excludeFromCelShading"].get<bool>();
     return material;
 }
 
@@ -4104,6 +4106,80 @@ ECS::DestructibleComponent DeserializeDestructibleComponent(const json& j) {
     return dc;
 }
 
+json SerializeCurlNoiseFieldComponent(const ECS::CurlNoiseFieldComponent& cn) {
+    json j;
+    j["octaves"] = cn.octaves;
+    j["frequency"] = RF(cn.frequency);
+    j["amplitude"] = RF(cn.amplitude);
+    j["lacunarity"] = RF(cn.lacunarity);
+    j["persistence"] = RF(cn.persistence);
+    j["seed"] = cn.seed;
+    j["timeScale"] = RF(cn.timeScale);
+    j["halfExtents"] = SerializeVector3(cn.halfExtents);
+    j["falloff"] = static_cast<i32>(cn.falloff);
+    j["affectParticles"] = cn.affectParticles;
+    j["affectMeshVertices"] = cn.affectMeshVertices;
+    j["showDebugArrows"] = cn.showDebugArrows;
+    j["debugArrowResolution"] = cn.debugArrowResolution;
+    return j;
+}
+
+ECS::CurlNoiseFieldComponent DeserializeCurlNoiseFieldComponent(const json& j) {
+    ECS::CurlNoiseFieldComponent cn;
+    if (j.contains("octaves")) cn.octaves = j["octaves"].get<i32>();
+    if (j.contains("frequency")) cn.frequency = j["frequency"].get<f32>();
+    if (j.contains("amplitude")) cn.amplitude = j["amplitude"].get<f32>();
+    if (j.contains("lacunarity")) cn.lacunarity = j["lacunarity"].get<f32>();
+    if (j.contains("persistence")) cn.persistence = j["persistence"].get<f32>();
+    if (j.contains("seed")) cn.seed = j["seed"].get<u32>();
+    if (j.contains("timeScale")) cn.timeScale = j["timeScale"].get<f32>();
+    if (j.contains("halfExtents")) cn.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("falloff")) cn.falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(j["falloff"].get<i32>());
+    if (j.contains("affectParticles")) cn.affectParticles = j["affectParticles"].get<bool>();
+    if (j.contains("affectMeshVertices")) cn.affectMeshVertices = j["affectMeshVertices"].get<bool>();
+    if (j.contains("showDebugArrows")) cn.showDebugArrows = j["showDebugArrows"].get<bool>();
+    if (j.contains("debugArrowResolution")) cn.debugArrowResolution = j["debugArrowResolution"].get<u32>();
+    return cn;
+}
+
+json SerializeFractureConfigComponent(const ECS::FractureConfigComponent& fc) {
+    json j;
+    j["fragmentCount"] = fc.fragmentCount;
+    j["explosionForce"] = RF(fc.explosionForce);
+    j["persistentFragments"] = fc.persistentFragments;
+    j["allowRefracture"] = fc.allowRefracture;
+    j["maxRefractureDepth"] = fc.maxRefractureDepth;
+    j["maxFragmentEntities"] = fc.maxFragmentEntities;
+    j["autoCleanup"] = fc.autoCleanup;
+    j["cleanupDelay"] = RF(fc.cleanupDelay);
+    j["preFracture"] = fc.preFracture;
+    j["jointBreakForce"] = RF(fc.jointBreakForce);
+    j["fragmentDensity"] = RF(fc.fragmentDensity);
+    j["fragmentFriction"] = RF(fc.fragmentFriction);
+    j["fragmentBounciness"] = RF(fc.fragmentBounciness);
+    j["impactBias"] = RF(fc.impactBias);
+    return j;
+}
+
+ECS::FractureConfigComponent DeserializeFractureConfigComponent(const json& j) {
+    ECS::FractureConfigComponent fc;
+    if (j.contains("fragmentCount")) fc.fragmentCount = j["fragmentCount"].get<u32>();
+    if (j.contains("explosionForce")) fc.explosionForce = j["explosionForce"].get<f32>();
+    if (j.contains("persistentFragments")) fc.persistentFragments = j["persistentFragments"].get<bool>();
+    if (j.contains("allowRefracture")) fc.allowRefracture = j["allowRefracture"].get<bool>();
+    if (j.contains("maxRefractureDepth")) fc.maxRefractureDepth = j["maxRefractureDepth"].get<u32>();
+    if (j.contains("maxFragmentEntities")) fc.maxFragmentEntities = j["maxFragmentEntities"].get<u32>();
+    if (j.contains("autoCleanup")) fc.autoCleanup = j["autoCleanup"].get<bool>();
+    if (j.contains("cleanupDelay")) fc.cleanupDelay = j["cleanupDelay"].get<f32>();
+    if (j.contains("preFracture")) fc.preFracture = j["preFracture"].get<bool>();
+    if (j.contains("jointBreakForce")) fc.jointBreakForce = j["jointBreakForce"].get<f32>();
+    if (j.contains("fragmentDensity")) fc.fragmentDensity = j["fragmentDensity"].get<f32>();
+    if (j.contains("fragmentFriction")) fc.fragmentFriction = j["fragmentFriction"].get<f32>();
+    if (j.contains("fragmentBounciness")) fc.fragmentBounciness = j["fragmentBounciness"].get<f32>();
+    if (j.contains("impactBias")) fc.impactBias = j["impactBias"].get<f32>();
+    return fc;
+}
+
 json SerializeMovingPlatformComponent(const ECS::MovingPlatformComponent& mp) {
     json j;
     json wpArr = json::array();
@@ -4666,6 +4742,12 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             }
             if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
                 entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::CurlNoiseFieldComponent>(entity)) {
+                entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FractureConfigComponent>(entity)) {
+                entityJson["fractureConfig"] = SerializeFractureConfigComponent(*m_World->GetComponent<ECS::FractureConfigComponent>(entity));
             }
             if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
                 entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
@@ -5250,6 +5332,12 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("destructible")) {
                 m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
             }
+            if (entityJson.contains("curlNoiseField")) {
+                m_World->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
+            }
+            if (entityJson.contains("fractureConfig")) {
+                m_World->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
+            }
             if (entityJson.contains("movingPlatform")) {
                 m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
             }
@@ -5743,6 +5831,12 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::DestructibleComponent>(entity)) {
                 entityJson["destructible"] = SerializeDestructibleComponent(*m_World->GetComponent<ECS::DestructibleComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::CurlNoiseFieldComponent>(entity)) {
+                entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::FractureConfigComponent>(entity)) {
+                entityJson["fractureConfig"] = SerializeFractureConfigComponent(*m_World->GetComponent<ECS::FractureConfigComponent>(entity));
             }
             if (m_World->HasComponent<ECS::MovingPlatformComponent>(entity)) {
                 entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*m_World->GetComponent<ECS::MovingPlatformComponent>(entity));
@@ -6282,6 +6376,12 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("destructible")) {
                 m_World->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
             }
+            if (entityJson.contains("curlNoiseField")) {
+                m_World->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
+            }
+            if (entityJson.contains("fractureConfig")) {
+                m_World->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
+            }
             if (entityJson.contains("movingPlatform")) {
                 m_World->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
             }
@@ -6684,6 +6784,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["teleporter"] = SerializeTeleporterComponent(*world->GetComponent<ECS::TeleporterComponent>(entity));
         if (world->HasComponent<ECS::DestructibleComponent>(entity))
             entityJson["destructible"] = SerializeDestructibleComponent(*world->GetComponent<ECS::DestructibleComponent>(entity));
+        if (world->HasComponent<ECS::CurlNoiseFieldComponent>(entity))
+            entityJson["curlNoiseField"] = SerializeCurlNoiseFieldComponent(*world->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
+        if (world->HasComponent<ECS::FractureConfigComponent>(entity))
+            entityJson["fractureConfig"] = SerializeFractureConfigComponent(*world->GetComponent<ECS::FractureConfigComponent>(entity));
         if (world->HasComponent<ECS::MovingPlatformComponent>(entity))
             entityJson["movingPlatform"] = SerializeMovingPlatformComponent(*world->GetComponent<ECS::MovingPlatformComponent>(entity));
         // Script
@@ -6972,6 +7076,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(entityJson["teleporter"]));
         if (entityJson.contains("destructible"))
             world->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(entityJson["destructible"]));
+        if (entityJson.contains("curlNoiseField"))
+            world->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(entityJson["curlNoiseField"]));
+        if (entityJson.contains("fractureConfig"))
+            world->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(entityJson["fractureConfig"]));
         if (entityJson.contains("movingPlatform"))
             world->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(entityJson["movingPlatform"]));
         // Script
@@ -7232,6 +7340,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTeleporterComponent(*world->GetComponent<ECS::TeleporterComponent>(entity));
         else if (key == "destructible" && world->HasComponent<ECS::DestructibleComponent>(entity))
             j = SerializeDestructibleComponent(*world->GetComponent<ECS::DestructibleComponent>(entity));
+        else if (key == "curlNoiseField" && world->HasComponent<ECS::CurlNoiseFieldComponent>(entity))
+            j = SerializeCurlNoiseFieldComponent(*world->GetComponent<ECS::CurlNoiseFieldComponent>(entity));
+        else if (key == "fractureConfig" && world->HasComponent<ECS::FractureConfigComponent>(entity))
+            j = SerializeFractureConfigComponent(*world->GetComponent<ECS::FractureConfigComponent>(entity));
         else if (key == "movingPlatform" && world->HasComponent<ECS::MovingPlatformComponent>(entity))
             j = SerializeMovingPlatformComponent(*world->GetComponent<ECS::MovingPlatformComponent>(entity));
         else if (key == "scriptComponent" && world->HasComponent<ECS::ScriptComponent>(entity))
@@ -7410,6 +7522,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "conveyor") { world->AddComponent<ECS::ConveyorComponent>(entity, DeserializeConveyorComponent(j)); return true; }
         if (key == "teleporter") { world->AddComponent<ECS::TeleporterComponent>(entity, DeserializeTeleporterComponent(j)); return true; }
         if (key == "destructible") { world->AddComponent<ECS::DestructibleComponent>(entity, DeserializeDestructibleComponent(j)); return true; }
+        if (key == "curlNoiseField") { world->AddComponent<ECS::CurlNoiseFieldComponent>(entity, DeserializeCurlNoiseFieldComponent(j)); return true; }
+        if (key == "fractureConfig") { world->AddComponent<ECS::FractureConfigComponent>(entity, DeserializeFractureConfigComponent(j)); return true; }
         if (key == "movingPlatform") { world->AddComponent<ECS::MovingPlatformComponent>(entity, DeserializeMovingPlatformComponent(j)); return true; }
         if (key == "scriptComponent") { world->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(j)); return true; }
         if (key == "audioSource") { world->AddComponent<ECS::AudioSourceComponent>(entity, DeserializeAudioSourceComponent(j)); return true; }

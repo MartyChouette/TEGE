@@ -280,6 +280,14 @@ public:
     u8 GetGlobalVertexSnapResolution() const { return m_GlobalVertexSnapResolution; }
     void SetGlobalVertexSnapResolution(u8 v) { m_GlobalVertexSnapResolution = v; }
 
+    // Cel shading (lighting quantization)
+    bool IsCelShadingEnabled() const { return m_CelShadingEnabled; }
+    void SetCelShadingEnabled(bool enabled) { m_CelShadingEnabled = enabled; }
+    f32 GetCelDiffuseBands() const { return m_CelDiffuseBands; }
+    void SetCelDiffuseBands(f32 bands) { m_CelDiffuseBands = bands; }
+    f32 GetCelSpecularCutoff() const { return m_CelSpecularCutoff; }
+    void SetCelSpecularCutoff(f32 cutoff) { m_CelSpecularCutoff = cutoff; }
+
     // Skybox
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
@@ -408,6 +416,11 @@ private:
     Math::Vector3 m_FogColor = Math::Vector3(0.5f, 0.5f, 0.6f);
     f32 m_SnowIntensity = 0.0f;
     f32 m_WorldCurvature = 0.0f;
+
+    // Cel shading parameters
+    bool m_CelShadingEnabled = false;
+    f32 m_CelDiffuseBands = 3.0f;     // Number of quantized bands (2-8)
+    f32 m_CelSpecularCutoff = 0.5f;   // Hard cutoff threshold for specular highlights
 
     // Global retro shader overrides (forced on all entities when true)
     bool m_GlobalFlatShading = false;

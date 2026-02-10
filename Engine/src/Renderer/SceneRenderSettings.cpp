@@ -48,6 +48,11 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.globalGouraudOnly          = rs->GetGlobalGouraudOnly();
         s.globalVertexSnapResolution = rs->GetGlobalVertexSnapResolution();
 
+        // Cel Shading
+        s.celShadingEnabled = rs->IsCelShadingEnabled();
+        s.celDiffuseBands = rs->GetCelDiffuseBands();
+        s.celSpecularCutoff = rs->GetCelSpecularCutoff();
+
         // Ray Tracing
         s.rtEnabled = rs->IsRayTracingEnabled();
         s.rtMode = rs->GetRTMode();
@@ -176,6 +181,12 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         // Palette lock
         s.paletteEnabled               = pp->paletteEnabled != 0;
         s.paletteColors                = pp->paletteColors;
+
+        // Cel outline
+        s.celOutlineEnabled            = pp->celOutlineEnabled != 0;
+        s.celOutlineThickness          = pp->celOutlineThickness;
+        s.celOutlineThreshold          = pp->celOutlineThreshold;
+        s.celOutlineColor              = pp->celOutlineColor;
     }
 
     return s;
@@ -209,6 +220,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         rs->SetGlobalUVQuantize(globalUVQuantize);
         rs->SetGlobalGouraudOnly(globalGouraudOnly);
         rs->SetGlobalVertexSnapResolution(static_cast<u8>(globalVertexSnapResolution));
+
+        // Cel Shading
+        rs->SetCelShadingEnabled(celShadingEnabled);
+        rs->SetCelDiffuseBands(celDiffuseBands);
+        rs->SetCelSpecularCutoff(celSpecularCutoff);
 
         // Ray Tracing
         rs->SetRayTracingEnabled(rtEnabled);
@@ -344,6 +360,12 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         // Palette lock
         pp->paletteEnabled               = paletteEnabled ? 1 : 0;
         pp->paletteColors                = paletteColors;
+
+        // Cel outline
+        pp->celOutlineEnabled            = celOutlineEnabled ? 1 : 0;
+        pp->celOutlineThickness          = celOutlineThickness;
+        pp->celOutlineThreshold          = celOutlineThreshold;
+        pp->celOutlineColor              = celOutlineColor;
 
         // Restore runtime-only fields
         pp->time = savedTime;
@@ -485,6 +507,15 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["globalUVQuantize"]           = s.globalUVQuantize;
     j["globalGouraudOnly"]          = s.globalGouraudOnly;
     j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
+
+    // Cel Shading
+    j["celShadingEnabled"]     = s.celShadingEnabled;
+    j["celDiffuseBands"]       = s.celDiffuseBands;
+    j["celSpecularCutoff"]     = s.celSpecularCutoff;
+    j["celOutlineEnabled"]     = s.celOutlineEnabled;
+    j["celOutlineThickness"]   = s.celOutlineThickness;
+    j["celOutlineThreshold"]   = s.celOutlineThreshold;
+    j["celOutlineColor"]       = SerializeVec3(s.celOutlineColor);
 
     // Ray Tracing
     j["rtEnabled"]                    = s.rtEnabled;
@@ -634,6 +665,15 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = j["globalUVQuantize"].get<bool>();
     if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = j["globalGouraudOnly"].get<bool>();
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
+
+    // Cel Shading
+    if (j.contains("celShadingEnabled"))     s.celShadingEnabled     = j["celShadingEnabled"].get<bool>();
+    if (j.contains("celDiffuseBands"))       s.celDiffuseBands       = j["celDiffuseBands"].get<f32>();
+    if (j.contains("celSpecularCutoff"))     s.celSpecularCutoff     = j["celSpecularCutoff"].get<f32>();
+    if (j.contains("celOutlineEnabled"))     s.celOutlineEnabled     = j["celOutlineEnabled"].get<bool>();
+    if (j.contains("celOutlineThickness"))   s.celOutlineThickness   = j["celOutlineThickness"].get<f32>();
+    if (j.contains("celOutlineThreshold"))   s.celOutlineThreshold   = j["celOutlineThreshold"].get<f32>();
+    if (j.contains("celOutlineColor"))       s.celOutlineColor       = DeserializeVec3(j["celOutlineColor"], s.celOutlineColor);
 
     // Ray Tracing
     if (j.contains("rtEnabled"))                      s.rtEnabled                      = j["rtEnabled"].get<bool>();

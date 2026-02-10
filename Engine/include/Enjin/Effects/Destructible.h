@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Entity.h"
 #include <vector>
 #include <string>
+#include <deque>
 #include <unordered_map>
 
 namespace Enjin {
@@ -85,7 +86,28 @@ public:
     // Get active debris count
     u32 GetActiveDebrisCount() const;
 
+    // Get active persistent fragment count
+    u32 GetPersistentFragmentCount() const;
+
 private:
+    // Create persistent fragment entities using VoronoiMeshFracture
+    void CreatePersistentFragments(const DestructionEvent& event, const struct FractureConfig& config);
+
+    // Initialize pre-fractured entity (compute fracture, create hidden joint-held fragments)
+    void InitializePreFracture(ECS::Entity entity);
+
+    // Release pre-fractured fragments (break all joints, apply impulse)
+    void ReleasePreFracture(ECS::Entity entity, const Math::Vector3& impactPoint, f32 force);
+
+    // Enforce global fragment entity limit
+    void EnforceFragmentLimit(u32 maxEntities);
+
+    // Update auto-cleanup timers on persistent fragments
+    void UpdatePersistentFragments(f32 deltaTime);
+
+    // Track a new persistent fragment entity
+    void TrackFragment(ECS::Entity fragment, f32 cleanupDelay);
+
     void ProcessDestructionQueue();
     void GenerateVoronoiFragments(const DestructionEvent& event, std::vector<DebrisFragment>& outFragments);
     void GenerateGridFragments(const DestructionEvent& event, std::vector<DebrisFragment>& outFragments);
@@ -105,6 +127,17 @@ private:
     std::vector<DestructionEvent> m_DestructionQueue;
     std::vector<DebrisFragment> m_ActiveDebris;
     u32 m_RandomState = 54321;
+
+    // Persistent fragment tracking (FIFO for limit enforcement)
+    struct TrackedFragment {
+        ECS::Entity entity;
+        f32 cleanupDelay;    // <0 means no auto-cleanup
+        f32 age = 0.0f;
+    };
+    std::deque<TrackedFragment> m_PersistentFragments;
+
+    // Pre-fracture: maps source entity -> list of hidden fragment entities held by joints
+    std::unordered_map<ECS::Entity, std::vector<ECS::Entity>> m_PreFracturedEntities;
 };
 
 } // namespace Effects

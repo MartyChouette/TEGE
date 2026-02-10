@@ -2916,6 +2916,8 @@ void RenderSystem::UpdateFrameUniforms() {
     // so indices 0..N-1 correspond to shadow slots 0..N-1
     lighting.pointShadowCount = static_cast<i32>(m_ActivePointShadowCount);
     lighting.spotShadowCount = static_cast<i32>(m_ActiveSpotShadowCount);
+    lighting.celDiffuseBands = m_CelShadingEnabled ? m_CelDiffuseBands : 0.0f;
+    lighting.celSpecularCutoff = m_CelShadingEnabled ? m_CelSpecularCutoff : 0.0f;
 
     if (m_ActivePointShadowCount > 0 && lighting.pointLightCount > 1) {
         // Move shadow-casting lights to front: swap with non-shadow lights

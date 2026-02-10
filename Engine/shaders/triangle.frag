@@ -69,7 +69,8 @@ layout(binding = 1) uniform LightingUBO {
     float shadowMaxDistance;
     int pointShadowCount;
     int spotShadowCount;
-    vec2 _pointSpotPad;
+    float celDiffuseBands;     // 0 = disabled, 2-8 = quantization bands
+    float celSpecularCutoff;   // 0 = disabled, >0 = hard specular cutoff
     vec4 windData;  // xyz = wind direction * strength, w = time (unused in frag, layout must match)
     vec4 fogParams;     // x=density, y=start, z=end, w=heightFalloff
     vec4 fogColorSnow;  // xyz=fog color, w=snow intensity
@@ -102,6 +103,7 @@ layout(push_constant) uniform PushConstants {
 #define FLAG_DOUBLE_SIDED       (1 << 0)
 #define FLAG_CAST_SHADOWS       (1 << 1)
 #define FLAG_RECEIVE_SHADOWS    (1 << 2)
+#define FLAG_EXCLUDE_CEL        (1 << 4)
 #define FLAG_HAS_BASE_COLOR_TEX (1 << 16)
 #define FLAG_HAS_NORMAL_TEX     (1 << 17)
 #define FLAG_HAS_METALLIC_TEX   (1 << 18)
@@ -376,6 +378,25 @@ vec3 calcBlinnPhong(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 n
     return diffuse * albedo * (1.0 - metallic) + specular;
 }
 
+// Cel-shaded Blinn-Phong: quantize diffuse into bands, hard-cutoff specular
+vec3 calcBlinnPhongCel(vec3 lightDir, vec3 lightColor, float lightIntensity, vec3 normal, vec3 viewDir, vec3 albedo, float metallic, float shininess) {
+    // Diffuse with band quantization
+    float diff = max(dot(normal, lightDir), 0.0);
+    float bands = lighting.celDiffuseBands;
+    diff = floor(diff * bands + 0.5) / bands;
+    vec3 diffuse = diff * lightColor * lightIntensity;
+
+    // Specular with hard cutoff
+    vec3 halfwayDir = normalize(lightDir + viewDir);
+    float spec = pow(max(dot(normal, halfwayDir), 0.0), shininess);
+    float cutoff = lighting.celSpecularCutoff;
+    spec = (cutoff > 0.0 && spec > cutoff) ? 1.0 : ((cutoff > 0.0) ? 0.0 : spec);
+    vec3 specularColor = mix(vec3(0.04), albedo, metallic);
+    vec3 specular = spec * specularColor * lightColor * lightIntensity;
+
+    return diffuse * albedo * (1.0 - metallic) + specular;
+}
+
 // Calculate attenuation for point/spot lights
 float calcAttenuation(float distance, float constant, float linear, float quadratic) {
     return 1.0 / (constant + linear * distance + quadratic * distance * distance);
@@ -631,7 +652,10 @@ void main() {
             }
         }
 
-        result += shadow * calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess);
+        bool useCel = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+        result += shadow * (useCel
+            ? calcBlinnPhongCel(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess)
+            : calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess));
     }
 
     // Process point lights
@@ -659,7 +683,10 @@ void main() {
             shadow = calcPointShadow(fragWorldPos, int(i));
         }
 
-        result += shadow * calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess);
+        bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+        result += shadow * (useCelPt
+            ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
+            : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
     }
 
     // Process spot lights
@@ -697,7 +724,10 @@ void main() {
                 shadow = calcSpotShadow(fragWorldPos, int(i));
             }
 
-            result += shadow * calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess);
+            bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+            result += shadow * (useCelSp
+                ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
+                : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
         }
     }
 

@@ -65,6 +65,8 @@
 #include "Enjin/GUI/UITemplates.h"
 #include "Enjin/GUI/DialogueImportExport.h"
 #include "Enjin/Assets/SWFLoader.h"
+#include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -612,6 +614,16 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DestructibleComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DestructibleComponent>(e); },
             "destructible"},
+        {"Curl Noise Field", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::CurlNoiseFieldComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::CurlNoiseFieldComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::CurlNoiseFieldComponent>(e); },
+            "curlNoiseField"},
+        {"Fracture Config", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FractureConfigComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FractureConfigComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FractureConfigComponent>(e); },
+            "fractureConfig"},
         {"Moving Platform", "Puzzle", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::MovingPlatformComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::MovingPlatformComponent>(e); },
@@ -846,6 +858,12 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
     // Wire fluid simulation into render system
     if (m_RenderSystem) {
         m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
+    }
+
+    // Initialize curl noise system
+    m_CurlNoiseSystem = std::make_unique<Effects::CurlNoiseSystem>();
+    if (m_World) {
+        m_CurlNoiseSystem->Initialize(m_World);
     }
 
     // Wire nine-slice texture resolver for UI system
@@ -1835,6 +1853,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Update fluid simulation
     m_FluidSimulation.Update(m_LastDeltaTime, m_World);
+
+    // Update curl noise flow fields
+    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(m_LastDeltaTime);
 
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
@@ -4279,6 +4300,12 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::DestructibleComponent>(m_PrimarySelected)) {
             DrawDestructibleComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::CurlNoiseFieldComponent>(m_PrimarySelected)) {
+            DrawCurlNoiseFieldComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::FractureConfigComponent>(m_PrimarySelected)) {
+            DrawFractureConfigComponent(m_PrimarySelected);
+        }
         if (m_World->HasComponent<ECS::MovingPlatformComponent>(m_PrimarySelected)) {
             DrawMovingPlatformComponent(m_PrimarySelected);
         }
@@ -4766,6 +4793,8 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
 
             ImGui::TreePop();
         }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Exclude From Cel Shading##Mat", &material->excludeFromCelShading);
 
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
@@ -7850,6 +7879,27 @@ void EditorLayer::DrawProjectSettingsPanel() {
         }
 
         ImGui::Separator();
+
+        // Cel Shading
+        if (m_RenderSystem) {
+            bool celEnabled = m_RenderSystem->IsCelShadingEnabled();
+            if (ImGui::Checkbox("Cel Shading##Rendering", &celEnabled)) {
+                m_RenderSystem->SetCelShadingEnabled(celEnabled);
+            }
+            if (celEnabled) {
+                f32 celBands = m_RenderSystem->GetCelDiffuseBands();
+                if (ImGui::SliderFloat("Diffuse Bands##Cel", &celBands, 2.0f, 8.0f, "%.0f")) {
+                    m_RenderSystem->SetCelDiffuseBands(celBands);
+                }
+                f32 celSpec = m_RenderSystem->GetCelSpecularCutoff();
+                if (ImGui::SliderFloat("Specular Cutoff##Cel", &celSpec, 0.0f, 1.0f)) {
+                    m_RenderSystem->SetCelSpecularCutoff(celSpec);
+                }
+            }
+        }
+
+        ImGui::Separator();
+
         ImGui::Text("Post-Processing:");
 
         if (m_PostProcessing) {
@@ -8371,6 +8421,20 @@ void EditorLayer::DrawPostProcessingPanel() {
                 settings.paletteColors = static_cast<u32>(colors);
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of color levels per channel");
+        }
+    }
+
+    // Cel outline
+    {
+        auto& s = m_PostProcessing->GetSettings();
+        bool outlineOn = s.celOutlineEnabled != 0;
+        if (ImGui::Checkbox("Cel Outline##PP", &outlineOn)) {
+            s.celOutlineEnabled = outlineOn ? 1 : 0;
+        }
+        if (outlineOn) {
+            ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
+            ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
+            ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
         }
     }
 
@@ -23070,6 +23134,114 @@ void EditorLayer::DrawDestructibleComponent(ECS::Entity entity) {
         }
 
         InspectorUndo::DragFloat(m_UndoRedo, "Shake On Hit##Dest", &dest->shakeOnHit, 0.01f, 0.0f, 2.0f);
+    }
+}
+
+void EditorLayer::DrawCurlNoiseFieldComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Curl Noise Field", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("CurlNoiseFieldCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::CurlNoiseFieldComponent>(entity, "curlNoiseField", "Curl Noise Field");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* cn = m_World->GetComponent<ECS::CurlNoiseFieldComponent>(entity);
+        if (!cn) return;
+
+        InspectorUndo::DragInt(m_UndoRedo, "Octaves##CNF", &cn->octaves, 1, 1, 8);
+        InspectorUndo::DragFloat(m_UndoRedo, "Frequency##CNF", &cn->frequency, 0.01f, 0.01f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Amplitude##CNF", &cn->amplitude, 0.1f, 0.0f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Lacunarity##CNF", &cn->lacunarity, 0.01f, 1.0f, 4.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Persistence##CNF", &cn->persistence, 0.01f, 0.0f, 1.0f);
+
+        i32 seedI = static_cast<i32>(cn->seed);
+        if (InspectorUndo::DragInt(m_UndoRedo, "Seed##CNF", &seedI, 1, 0, 100000)) {
+            cn->seed = static_cast<u32>(seedI);
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Time Scale##CNF", &cn->timeScale, 0.01f, 0.0f, 10.0f);
+        f32 he[3] = { cn->halfExtents.x, cn->halfExtents.y, cn->halfExtents.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents##CNF", he,
+                [cn](f32 x, f32 y, f32 z) { cn->halfExtents = Math::Vector3(x, y, z); },
+                0.1f, 0.1f, 100.0f)) {
+            cn->halfExtents = Math::Vector3(he[0], he[1], he[2]);
+        }
+
+        int falloffI = static_cast<int>(cn->falloff);
+        const char* falloffNames[] = { "None", "Linear", "Smooth" };
+        if (ImGui::Combo("Falloff##CNF", &falloffI, falloffNames, 3)) {
+            cn->falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(falloffI);
+        }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Affect Particles##CNF", &cn->affectParticles);
+        InspectorUndo::Checkbox(m_UndoRedo, "Affect Mesh Vertices##CNF", &cn->affectMeshVertices);
+        InspectorUndo::Checkbox(m_UndoRedo, "Show Debug Arrows##CNF", &cn->showDebugArrows);
+
+        if (cn->showDebugArrows) {
+            i32 res = static_cast<i32>(cn->debugArrowResolution);
+            if (InspectorUndo::DragInt(m_UndoRedo, "Arrow Resolution##CNF", &res, 1, 2, 8)) {
+                cn->debugArrowResolution = static_cast<u32>(res);
+            }
+        }
+    }
+}
+
+void EditorLayer::DrawFractureConfigComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Fracture Config", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("FractureConfigCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::FractureConfigComponent>(entity, "fractureConfig", "Fracture Config");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* fc = m_World->GetComponent<ECS::FractureConfigComponent>(entity);
+        if (!fc) return;
+
+        i32 fragCount = static_cast<i32>(fc->fragmentCount);
+        if (InspectorUndo::DragInt(m_UndoRedo, "Fragment Count##FC", &fragCount, 1, 2, 64)) {
+            fc->fragmentCount = static_cast<u32>(fragCount);
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Explosion Force##FC", &fc->explosionForce, 0.1f, 0.0f, 100.0f);
+        InspectorUndo::Checkbox(m_UndoRedo, "Persistent Fragments##FC", &fc->persistentFragments);
+        InspectorUndo::Checkbox(m_UndoRedo, "Allow Re-fracture##FC", &fc->allowRefracture);
+
+        if (fc->allowRefracture) {
+            i32 maxDepth = static_cast<i32>(fc->maxRefractureDepth);
+            if (InspectorUndo::DragInt(m_UndoRedo, "Max Refracture Depth##FC", &maxDepth, 1, 1, 5)) {
+                fc->maxRefractureDepth = static_cast<u32>(maxDepth);
+            }
+        }
+
+        i32 maxFrag = static_cast<i32>(fc->maxFragmentEntities);
+        if (InspectorUndo::DragInt(m_UndoRedo, "Max Fragment Entities##FC", &maxFrag, 1, 16, 1024)) {
+            fc->maxFragmentEntities = static_cast<u32>(maxFrag);
+        }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Auto Cleanup##FC", &fc->autoCleanup);
+        if (fc->autoCleanup) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Cleanup Delay##FC", &fc->cleanupDelay, 0.5f, 1.0f, 120.0f);
+        }
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Pre-fracture##FC", &fc->preFracture);
+        if (fc->preFracture) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Joint Break Force##FC", &fc->jointBreakForce, 1.0f, 1.0f, 10000.0f);
+        }
+
+        if (ImGui::TreeNode("Fragment Physics##FC")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Density##FC", &fc->fragmentDensity, 0.1f, 0.01f, 100.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Friction##FC", &fc->fragmentFriction, 0.01f, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Bounciness##FC", &fc->fragmentBounciness, 0.01f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Impact Bias##FC", &fc->impactBias, 0.01f, 0.0f, 1.0f);
     }
 }
 
