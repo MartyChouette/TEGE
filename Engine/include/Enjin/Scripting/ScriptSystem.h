@@ -78,6 +78,9 @@ private:
     CoroutineScheduler* m_Scheduler = nullptr;
     bool m_Enabled = false;
 
+    // Per-frame cached script entity list (shared between Update/FixedUpdate/LateUpdate)
+    std::vector<ECS::Entity> m_CachedScriptEntities;
+
     // Fixed timestep accumulator
     f32 m_FixedTimeAccumulator = 0.0f;
     static constexpr f32 FIXED_TIMESTEP = 1.0f / 60.0f;

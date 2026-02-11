@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <functional>
 #include <thread>
 #include <mutex>
@@ -111,6 +112,8 @@ private:
     std::vector<StreamingChunk> m_Chunks;
     std::vector<std::string> m_LoadQueue;
     std::vector<std::string> m_UnloadQueue;
+    std::unordered_set<std::string> m_LoadQueueSet;    // O(1) duplicate check
+    std::unordered_set<std::string> m_UnloadQueueSet;  // O(1) duplicate check
 
     u32 m_MaxConcurrentLoads = 2;
     bool m_Enabled = true;

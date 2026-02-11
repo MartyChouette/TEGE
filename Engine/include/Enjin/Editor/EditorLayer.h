@@ -566,6 +566,9 @@ private:
     // Camera zone override (driven by CameraTriggerComponent)
     ECS::Entity m_CameraZoneOverride = ECS::INVALID_ENTITY;
 
+    // Cached player entity for per-frame zone detection (avoid GetAllEntities scan)
+    ECS::Entity m_CachedPlayerEntity = ECS::INVALID_ENTITY;
+
     // Track whether effect pipelines have been updated for the render target's render pass
     bool m_EffectPipelinesUpdated = false;
 

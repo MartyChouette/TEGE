@@ -950,6 +950,7 @@ void EditorLayer::StartPlayMode() {
     // NOTE: VSync switching disabled for now - causes swapchain sync issues
     // TODO: Properly sync renderer state after swapchain recreation
     Scripting::SetBindingsWeather(&m_WeatherSystem);
+    m_CachedPlayerEntity = ECS::INVALID_ENTITY; // Invalidate cache for new play session
     m_PlayMode.Play();
 }
 
@@ -1597,18 +1598,26 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Camera zone detection: find the player entity and check CameraTrigger zones
     m_CameraZoneOverride = ECS::INVALID_ENTITY;
     {
-        // Find player entity (first entity with any CharacterController component)
-        ECS::Entity playerEntity = ECS::INVALID_ENTITY;
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::Platformer2DController>(entity) ||
-                m_World->HasComponent<ECS::TopDown2DController>(entity) ||
-                m_World->HasComponent<ECS::TopDown3DController>(entity) ||
-                m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
-                m_World->HasComponent<ECS::FirstPersonController>(entity)) {
-                playerEntity = entity;
-                break;
+        // Use cached player entity; re-scan only if invalid
+        if (m_CachedPlayerEntity == ECS::INVALID_ENTITY || !m_World->IsValid(m_CachedPlayerEntity) ||
+            (!m_World->HasComponent<ECS::Platformer2DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::TopDown2DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::TopDown3DController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::ThirdPersonController>(m_CachedPlayerEntity) &&
+             !m_World->HasComponent<ECS::FirstPersonController>(m_CachedPlayerEntity))) {
+            m_CachedPlayerEntity = ECS::INVALID_ENTITY;
+            for (ECS::Entity entity : m_World->GetAllEntities()) {
+                if (m_World->HasComponent<ECS::Platformer2DController>(entity) ||
+                    m_World->HasComponent<ECS::TopDown2DController>(entity) ||
+                    m_World->HasComponent<ECS::TopDown3DController>(entity) ||
+                    m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
+                    m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+                    m_CachedPlayerEntity = entity;
+                    break;
+                }
             }
         }
+        ECS::Entity playerEntity = m_CachedPlayerEntity;
 
         if (playerEntity != ECS::INVALID_ENTITY) {
             auto* playerTransform = m_World->GetComponent<ECS::TransformComponent>(playerEntity);

@@ -376,8 +376,7 @@ public:
 
         // Quest flow graphs
         if (m_World) {
-            auto qfEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>();
-            for (auto entity : qfEntities) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>()) {
                 Enjin::Gameplay::AdvanceQuestFlow(m_World.get(), entity, deltaTime);
             }
         }
@@ -391,8 +390,7 @@ public:
 
         // Resource regeneration
         if (m_World) {
-            auto resEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>();
-            for (auto entity : resEntities) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>()) {
                 auto* res = m_World->GetComponent<Enjin::ECS::ResourceComponent>(entity);
                 if (res) res->Regenerate(deltaTime);
             }

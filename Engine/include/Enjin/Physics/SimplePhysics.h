@@ -8,6 +8,8 @@
 #include <vector>
 #include <memory>
 #include <unordered_set>
+#include <unordered_map>
+#include <cmath>
 
 namespace Enjin {
 namespace Physics {
@@ -87,6 +89,58 @@ struct ColliderInfo {
     bool hasCollider = false;
 };
 
+// Spatial hash grid for broad-phase collision culling
+struct SpatialHashGrid {
+    f32 cellSize = 4.0f;
+    std::unordered_map<u64, std::vector<ECS::Entity>> cells;
+
+    void Clear() { cells.clear(); }
+
+    void Insert(ECS::Entity e, const AABB& bounds) {
+        i32 minX = static_cast<i32>(std::floor(bounds.min.x / cellSize));
+        i32 minY = static_cast<i32>(std::floor(bounds.min.y / cellSize));
+        i32 minZ = static_cast<i32>(std::floor(bounds.min.z / cellSize));
+        i32 maxX = static_cast<i32>(std::floor(bounds.max.x / cellSize));
+        i32 maxY = static_cast<i32>(std::floor(bounds.max.y / cellSize));
+        i32 maxZ = static_cast<i32>(std::floor(bounds.max.z / cellSize));
+
+        for (i32 x = minX; x <= maxX; ++x) {
+            for (i32 y = minY; y <= maxY; ++y) {
+                for (i32 z = minZ; z <= maxZ; ++z) {
+                    cells[HashCell(x, y, z)].push_back(e);
+                }
+            }
+        }
+    }
+
+    void GetPotentialPairs(std::vector<std::pair<ECS::Entity, ECS::Entity>>& pairs) {
+        std::unordered_set<u64> seen;
+        for (auto& [cellKey, entities] : cells) {
+            for (usize i = 0; i < entities.size(); ++i) {
+                for (usize j = i + 1; j < entities.size(); ++j) {
+                    ECS::Entity a = entities[i];
+                    ECS::Entity b = entities[j];
+                    u64 pairKey = (static_cast<u64>(std::min(a, b)) << 32) |
+                                  static_cast<u64>(std::max(a, b));
+                    if (seen.insert(pairKey).second) {
+                        pairs.push_back({std::min(a, b), std::max(a, b)});
+                    }
+                }
+            }
+        }
+    }
+
+private:
+    static u64 HashCell(i32 x, i32 y, i32 z) {
+        // FNV-1a style hash combining three ints
+        u64 h = 14695981039346656037ULL;
+        h ^= static_cast<u64>(static_cast<u32>(x)); h *= 1099511628211ULL;
+        h ^= static_cast<u64>(static_cast<u32>(y)); h *= 1099511628211ULL;
+        h ^= static_cast<u64>(static_cast<u32>(z)); h *= 1099511628211ULL;
+        return h;
+    }
+};
+
 class ConstraintSolver;
 
 // Simple physics world - handles basic collision detection
@@ -135,6 +189,9 @@ public:
     void ClearPendingCollisionEvents() { m_PendingCollisionEvents.clear(); }
 
 private:
+    // Rebuild the per-frame collider entity cache (call once at start of Update)
+    void RebuildColliderCache();
+
     // Detect collision enter/exit events
     void DetectCollisionEvents();
     // Get world-space AABB for an entity
@@ -149,6 +206,12 @@ private:
     ECS::World* m_World = nullptr;
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
     std::unique_ptr<ConstraintSolver> m_ConstraintSolver;
+
+    // Per-frame cached list of all entities with any collider type
+    std::vector<ECS::Entity> m_CachedColliderEntities;
+
+    // Spatial hash grid for broad-phase collision detection
+    SpatialHashGrid m_SpatialHash;
 
     // Collision pair tracking for enter/exit detection
     // Each pair is encoded as (min(a,b) << 32) | max(a,b) for consistent ordering

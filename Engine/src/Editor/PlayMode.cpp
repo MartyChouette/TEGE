@@ -328,8 +328,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Quest flow graphs
         {
-            auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
-            for (auto entity : qfEntities) {
+            for (auto entity : m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>()) {
                 Gameplay::AdvanceQuestFlow(m_World, entity, deltaTime);
             }
         }
@@ -353,8 +352,7 @@ void PlayMode::Update(f32 deltaTime) {
         }
 
         // Regenerate resources
-        auto resEntities = m_World->GetEntitiesWithComponent<ECS::ResourceComponent>();
-        for (auto entity : resEntities) {
+        for (auto entity : m_World->GetEntitiesWithComponent<ECS::ResourceComponent>()) {
             auto* res = m_World->GetComponent<ECS::ResourceComponent>(entity);
             if (res) res->Regenerate(deltaTime);
         }

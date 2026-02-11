@@ -56,6 +56,8 @@ void StreamingManager::ClearChunks()
     m_Chunks.clear();
     m_LoadQueue.clear();
     m_UnloadQueue.clear();
+    m_LoadQueueSet.clear();
+    m_UnloadQueueSet.clear();
     ENJIN_LOG_INFO(Game, "Cleared all streaming chunks");
 }
 
@@ -74,13 +76,9 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
 
         switch (chunk.state) {
             case ChunkState::Unloaded:
-                // Queue for loading if within load distance
+                // Queue for loading if within load distance (O(1) duplicate check)
                 if (distance <= chunk.loadDistance) {
-                    bool alreadyQueued = false;
-                    for (const auto& id : m_LoadQueue) {
-                        if (id == chunk.chunkId) { alreadyQueued = true; break; }
-                    }
-                    if (!alreadyQueued) {
+                    if (m_LoadQueueSet.insert(chunk.chunkId).second) {
                         m_LoadQueue.push_back(chunk.chunkId);
                         ENJIN_LOG_INFO(Game, "Queuing chunk '%s' for load (distance: %.1f)",
                             chunk.chunkId.c_str(), distance);
@@ -89,13 +87,9 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
                 break;
 
             case ChunkState::Loaded:
-                // Queue for unloading if beyond unload distance
+                // Queue for unloading if beyond unload distance (O(1) duplicate check)
                 if (distance > chunk.unloadDistance) {
-                    bool alreadyQueued = false;
-                    for (const auto& id : m_UnloadQueue) {
-                        if (id == chunk.chunkId) { alreadyQueued = true; break; }
-                    }
-                    if (!alreadyQueued) {
+                    if (m_UnloadQueueSet.insert(chunk.chunkId).second) {
                         m_UnloadQueue.push_back(chunk.chunkId);
                         ENJIN_LOG_INFO(Game, "Queuing chunk '%s' for unload (distance: %.1f)",
                             chunk.chunkId.c_str(), distance);
@@ -110,17 +104,22 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
         }
     }
 
-    // Sort load queue by priority (Critical first, then High, Normal, Low)
-    std::sort(m_LoadQueue.begin(), m_LoadQueue.end(),
-        [this](const std::string& a, const std::string& b) {
-            StreamPriority pa = StreamPriority::Normal;
-            StreamPriority pb = StreamPriority::Normal;
-            for (const auto& c : m_Chunks) {
-                if (c.chunkId == a) pa = c.priority;
-                if (c.chunkId == b) pb = c.priority;
-            }
-            return static_cast<u8>(pa) < static_cast<u8>(pb);
-        });
+    // Sort load queue by priority — pre-build priority map for O(1) lookups in comparator
+    if (m_LoadQueue.size() > 1) {
+        std::unordered_map<std::string, StreamPriority> priorityMap;
+        priorityMap.reserve(m_LoadQueue.size());
+        for (const auto& c : m_Chunks) {
+            priorityMap[c.chunkId] = c.priority;
+        }
+        std::sort(m_LoadQueue.begin(), m_LoadQueue.end(),
+            [&priorityMap](const std::string& a, const std::string& b) {
+                auto itA = priorityMap.find(a);
+                auto itB = priorityMap.find(b);
+                u8 pa = (itA != priorityMap.end()) ? static_cast<u8>(itA->second) : static_cast<u8>(StreamPriority::Normal);
+                u8 pb = (itB != priorityMap.end()) ? static_cast<u8>(itB->second) : static_cast<u8>(StreamPriority::Normal);
+                return pa < pb;
+            });
+    }
 
     ProcessLoadQueue();
     ProcessUnloadQueue();
@@ -131,6 +130,7 @@ void StreamingManager::ProcessLoadQueue()
     while (!m_LoadQueue.empty() && m_ActiveLoads.load() < m_MaxConcurrentLoads) {
         std::string chunkId = m_LoadQueue.front();
         m_LoadQueue.erase(m_LoadQueue.begin());
+        m_LoadQueueSet.erase(chunkId);
 
         // Find the chunk
         StreamingChunk* chunk = nullptr;
@@ -149,6 +149,7 @@ void StreamingManager::ProcessUnloadQueue()
     while (!m_UnloadQueue.empty()) {
         std::string chunkId = m_UnloadQueue.front();
         m_UnloadQueue.erase(m_UnloadQueue.begin());
+        m_UnloadQueueSet.erase(chunkId);
 
         // Find the chunk
         StreamingChunk* chunk = nullptr;

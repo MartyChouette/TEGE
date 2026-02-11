@@ -24,8 +24,34 @@ void SimplePhysics::SetWorld(ECS::World* world) {
     }
 }
 
+void SimplePhysics::RebuildColliderCache() {
+    m_CachedColliderEntities.clear();
+
+    // Build union of all entities with any collider type (deduplicated)
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+        m_CachedColliderEntities.push_back(entity);
+    }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>()) {
+        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
+            m_CachedColliderEntities.push_back(entity);
+        }
+    }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>()) {
+        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity) &&
+            !m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
+            m_CachedColliderEntities.push_back(entity);
+        }
+    }
+}
+
 void SimplePhysics::Update(f32 deltaTime) {
     if (!m_World) return;
+
+    // Rebuild collider cache once per frame — used by ground check, raycasts, collision detection
+    RebuildColliderCache();
+
+    // Query gravity zones once before the rigidbody loop
+    auto gravityZoneEntities = m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>();
 
     // Update rigidbodies
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::RigidbodyComponent>()) {
@@ -42,12 +68,11 @@ void SimplePhysics::Update(f32 deltaTime) {
         Math::Vector3 effectiveGravity = m_Gravity;
         {
             i32 bestPriority = INT_MIN;
-            for (ECS::Entity zoneEntity : m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>()) {
+            for (ECS::Entity zoneEntity : gravityZoneEntities) {
                 auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
                 auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
                 if (zone && zoneTransform && zone->isActive && zone->priority > bestPriority) {
                     if (zone->ContainsPoint(zoneTransform->position, transform->position)) {
-                        // Use position-aware gravity (supports both directional and point gravity)
                         effectiveGravity = zone->GetGravityAt(zoneTransform->position, transform->position);
                         bestPriority = zone->priority;
                     }
@@ -88,12 +113,12 @@ void SimplePhysics::Update(f32 deltaTime) {
             );
             groundRay.direction = Math::Vector3(0, -1, 0);
 
-            // Check against all other entities with colliders
+            // Check against cached collider entities
             ColliderInfo entityCollider = GetColliderInfo(entity);
             u32 entityCatBits = entityCollider.categoryBits;
             u32 entityColMask = entityCollider.collisionMask;
 
-            for (ECS::Entity other : m_World->GetAllEntities()) {
+            for (ECS::Entity other : m_CachedColliderEntities) {
                 if (other == entity) continue;
                 AABB otherBounds = GetEntityAABB(other);
                 if (otherBounds.GetSize().x <= 0) continue;
@@ -216,9 +241,9 @@ RaycastHit SimplePhysics::Raycast(const Ray& ray, f32 maxDistance, u32 layerMask
 
     if (!m_World) return closestHit;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
+    for (ECS::Entity entity : m_CachedColliderEntities) {
         AABB aabb = GetEntityAABB(entity);
-        if (aabb.GetSize().x <= 0) continue;  // No collider
+        if (aabb.GetSize().x <= 0) continue;
 
         // Skip entities whose category doesn't match the query mask
         if (!(GetEntityCategoryBits(entity) & layerMask)) continue;
@@ -284,7 +309,7 @@ std::vector<RaycastHit> SimplePhysics::RaycastAll(const Ray& ray, f32 maxDistanc
 
     if (!m_World) return hits;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
+    for (ECS::Entity entity : m_CachedColliderEntities) {
         AABB aabb = GetEntityAABB(entity);
         if (aabb.GetSize().x <= 0) continue;
 
@@ -347,8 +372,8 @@ Math::Vector3 SimplePhysics::MoveAndSlide(const Math::Vector3& position, const M
     Math::Vector3 newPos = position + velocity * deltaTime;
     AABB movedCollider = AABB::FromCenterSize(newPos, collider.GetSize());
 
-    // Check collisions with all other entities
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
+    // Check collisions with cached collider entities
+    for (ECS::Entity entity : m_CachedColliderEntities) {
         AABB otherAABB = GetEntityAABB(entity);
         if (otherAABB.GetSize().x <= 0) continue;
 
@@ -372,7 +397,7 @@ std::vector<ECS::Entity> SimplePhysics::GetCollidersInRadius(const Math::Vector3
 
     f32 radiusSq = radius * radius;
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
+    for (ECS::Entity entity : m_CachedColliderEntities) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
 
@@ -396,7 +421,7 @@ std::vector<ECS::Entity> SimplePhysics::OverlapBox(const Math::Vector3& center, 
 
     AABB queryBox(center - halfExtents, center + halfExtents);
 
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
+    for (ECS::Entity entity : m_CachedColliderEntities) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
 
@@ -490,58 +515,50 @@ void SimplePhysics::DetectCollisionEvents() {
     // Clear current frame pairs
     m_CurrentCollisionPairs.clear();
 
-    // Get all entities with colliders (union of three collider types)
-    std::vector<ECS::Entity> colliderEntities;
-    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
-        colliderEntities.push_back(entity);
-    }
-    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>()) {
-        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity)) {
-            colliderEntities.push_back(entity);
-        }
-    }
-    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>()) {
-        if (!m_World->HasComponent<ECS::BoxColliderComponent>(entity) &&
-            !m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
-            colliderEntities.push_back(entity);
+    // Use the cached collider entity list (already built in Update via RebuildColliderCache)
+    // Insert all collider entities into the spatial hash grid for broad-phase
+    m_SpatialHash.Clear();
+    for (ECS::Entity entity : m_CachedColliderEntities) {
+        AABB aabb = GetEntityAABB(entity);
+        if (aabb.GetSize().x > 0) {
+            m_SpatialHash.Insert(entity, aabb);
         }
     }
 
-    // Check all pairs for collisions this frame
-    for (usize i = 0; i < colliderEntities.size(); ++i) {
-        for (usize j = i + 1; j < colliderEntities.size(); ++j) {
-            ECS::Entity entityA = colliderEntities[i];
-            ECS::Entity entityB = colliderEntities[j];
+    // Get candidate pairs from spatial hash (only entities sharing adjacent cells)
+    std::vector<std::pair<ECS::Entity, ECS::Entity>> candidatePairs;
+    m_SpatialHash.GetPotentialPairs(candidatePairs);
 
-            // Get collision filtering
-            ColliderInfo infoA = GetColliderInfo(entityA);
-            ColliderInfo infoB = GetColliderInfo(entityB);
+    // Narrow-phase: test candidate pairs
+    for (auto& [entityA, entityB] : candidatePairs) {
+        // Get collision filtering
+        ColliderInfo infoA = GetColliderInfo(entityA);
+        ColliderInfo infoB = GetColliderInfo(entityB);
 
-            // Bilateral collision filter
-            if (!(infoA.categoryBits & infoB.collisionMask) || !(infoB.categoryBits & infoA.collisionMask)) continue;
+        // Bilateral collision filter
+        if (!(infoA.categoryBits & infoB.collisionMask) || !(infoB.categoryBits & infoA.collisionMask)) continue;
 
-            // Check for collision
-            AABB aabbA = GetEntityAABB(entityA);
-            AABB aabbB = GetEntityAABB(entityB);
+        // Check for collision
+        AABB aabbA = GetEntityAABB(entityA);
+        AABB aabbB = GetEntityAABB(entityB);
 
-            CollisionResult result;
-            if (CheckAABBCollision(aabbA, aabbB, result)) {
-                u64 pairKey = MakeCollisionPairKey(entityA, entityB);
-                m_CurrentCollisionPairs.insert(pairKey);
+        CollisionResult result;
+        if (CheckAABBCollision(aabbA, aabbB, result)) {
+            u64 pairKey = MakeCollisionPairKey(entityA, entityB);
+            m_CurrentCollisionPairs.insert(pairKey);
 
-                // If this pair wasn't colliding last frame, it's a new collision (Enter)
-                if (m_PreviousCollisionPairs.find(pairKey) == m_PreviousCollisionPairs.end()) {
-                    bool isTrigger = infoA.isTrigger || infoB.isTrigger;
+            // If this pair wasn't colliding last frame, it's a new collision (Enter)
+            if (m_PreviousCollisionPairs.find(pairKey) == m_PreviousCollisionPairs.end()) {
+                bool isTrigger = infoA.isTrigger || infoB.isTrigger;
 
-                    CollisionEvent evt;
-                    evt.entityA = entityA;
-                    evt.entityB = entityB;
-                    evt.contactPoint = result.point;
-                    evt.normal = result.normal;
-                    evt.type = CollisionEvent::Type::Enter;
-                    evt.isTrigger = isTrigger;
-                    m_PendingCollisionEvents.push_back(evt);
-                }
+                CollisionEvent evt;
+                evt.entityA = entityA;
+                evt.entityB = entityB;
+                evt.contactPoint = result.point;
+                evt.normal = result.normal;
+                evt.type = CollisionEvent::Type::Enter;
+                evt.isTrigger = isTrigger;
+                m_PendingCollisionEvents.push_back(evt);
             }
         }
     }
