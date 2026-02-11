@@ -659,6 +659,10 @@ private:
     bool m_GameViewVSync = false;  // Simulated VSync for game view (caps to ~60fps)
     f64 m_GameViewLastRenderTime = 0.0;  // For frame rate limiting
 
+    // Render profiling (logs avg render time every 120 frames during play)
+    f32 m_RenderProfileAccum = 0.0f;
+    u32 m_RenderProfileFrames = 0;
+
     // Post-processing (owned by editor, applied to Game View)
     std::unique_ptr<Renderer::PostProcessing> m_PostProcessing;
 

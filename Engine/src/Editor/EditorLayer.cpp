@@ -3,6 +3,7 @@
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
 #include <GLFW/glfw3.h>
+#include <chrono>
 #include "Enjin/Logging/Log.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
@@ -1523,6 +1524,8 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_GameViewLastRenderTime = currentTime;
     }
 
+    auto renderTimingStart = std::chrono::high_resolution_clock::now();
+
     // In focus mode, render at full display resolution
     if (m_FocusMode) {
         ImGuiIO& io = ImGui::GetIO();
@@ -2009,6 +2012,25 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         m_RenderSystem->SetMainPassWeather(&m_WeatherSystem, isRain);
     } else {
         m_RenderSystem->ClearMainPassWeather();
+    }
+
+    // Render profiling: log average CPU-side render time during play mode
+    if (!m_PlayMode.IsStopped()) {
+        auto renderEnd = std::chrono::high_resolution_clock::now();
+        f32 renderMs = std::chrono::duration<f32, std::milli>(renderEnd - renderTimingStart).count();
+        m_RenderProfileAccum += renderMs;
+        m_RenderProfileFrames++;
+
+        if (m_RenderProfileFrames >= 120) {
+            f32 n = static_cast<f32>(m_RenderProfileFrames);
+            ENJIN_LOG_INFO(Editor,
+                "RenderOffscreen avg (%u frames): %.2fms  (RT: %ux%u)",
+                m_RenderProfileFrames,
+                m_RenderProfileAccum / n,
+                rtWidth, rtHeight);
+            m_RenderProfileAccum = 0.0f;
+            m_RenderProfileFrames = 0;
+        }
     }
 }
 
@@ -11107,6 +11129,11 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     i32 prevHoverIdx = m_HoverTemplateIdx;
     m_HoverTemplateIdx = -1;
 
+    // Bottom action bar occupies y >= bottomY - 12; clicks there belong to
+    // Create / Back / Start Blank buttons, not to template cards underneath.
+    f32 bottomBarY = area.y - 85.0f - 12.0f;
+    bool mouseInBottomBar = (io.MousePos.y >= bottomBarY);
+
     // Draw filtered builtin templates
     for (int vi = 0; vi < static_cast<int>(filteredIndices.size()); ++vi) {
         int i = filteredIndices[vi];
@@ -11167,7 +11194,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             hoveredCardEnd = cardEnd;
         }
 
-        if (hovered && ImGui::IsMouseClicked(0)) {
+        if (hovered && !mouseInBottomBar && ImGui::IsMouseClicked(0)) {
             m_SelectedTemplate = (m_SelectedTemplate == i) ? -1 : i;
         }
     }
@@ -11217,7 +11244,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         DrawCenteredClippedText(gridDl, customLabel, cardPos.x, cardW, cardPos.y + 45.0f,
             IM_COL32(0, 180, 160, 200));
 
-        if (hovered && ImGui::IsMouseClicked(0)) {
+        if (hovered && !mouseInBottomBar && ImGui::IsMouseClicked(0)) {
             int newSel = -(ci + 1);
             m_SelectedTemplate = (m_SelectedTemplate == newSel) ? -1 : newSel;
         }

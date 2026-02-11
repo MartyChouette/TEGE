@@ -176,6 +176,14 @@ private:
     // Tiered save system
     Gameplay::TieredSaveSystem m_TieredSaveSystem;
 
+    // Frame timing profiler (logs breakdown every N frames during play)
+    f32 m_ProfileAccumPhysics = 0.0f;
+    f32 m_ProfileAccumECS = 0.0f;
+    f32 m_ProfileAccumScripting = 0.0f;
+    f32 m_ProfileAccumGameplay = 0.0f;
+    f32 m_ProfileAccumTotal = 0.0f;
+    u32 m_ProfileFrameCount = 0;
+
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;
     Math::Vector3 m_SavedCameraPos;

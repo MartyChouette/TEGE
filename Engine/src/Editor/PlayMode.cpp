@@ -278,7 +278,10 @@ void PlayMode::Update(f32 deltaTime) {
 
     // Update controller system when playing
     if (m_State == PlayState::Playing) {
+        auto frameStart = std::chrono::high_resolution_clock::now();
+
         // Physics runs first to update rigidbody positions, then controllers overlay input
+        auto t0 = std::chrono::high_resolution_clock::now();
         {
             ENJIN_PROFILE_SCOPE("Physics");
             m_Physics->Update(deltaTime);
@@ -308,12 +311,14 @@ void PlayMode::Update(f32 deltaTime) {
             }
             m_Physics->ClearPendingCollisionEvents();
         }
+        auto t1 = std::chrono::high_resolution_clock::now();
 
         {
             ENJIN_PROFILE_SCOPE("ECS");
             m_ControllerSystem.Update(deltaTime);
             m_FlowerSystem.Update(deltaTime);
         }
+        auto t2 = std::chrono::high_resolution_clock::now();
 
         // Update scripts (handles hot-reload, lifecycle dispatch, coroutines)
         {
@@ -321,6 +326,7 @@ void PlayMode::Update(f32 deltaTime) {
             m_ScriptSystem.Update(deltaTime);
             m_CoroutineScheduler.EndOfFrame();
         }
+        auto t3 = std::chrono::high_resolution_clock::now();
 
         // Gameplay systems
         m_TweenSystem.Update(m_World, deltaTime);
@@ -350,6 +356,32 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Tiered save system (auto-save timer, play time tracking)
         m_TieredSaveSystem.Update(deltaTime, m_World, m_TieredSaveSystem.GetCurrentScene());
+
+        auto t4 = std::chrono::high_resolution_clock::now();
+
+        // Accumulate frame timing for periodic profiling output
+        auto toMs = [](auto a, auto b) { return std::chrono::duration<f32, std::milli>(b - a).count(); };
+        m_ProfileAccumPhysics   += toMs(t0, t1);
+        m_ProfileAccumECS       += toMs(t1, t2);
+        m_ProfileAccumScripting += toMs(t2, t3);
+        m_ProfileAccumGameplay  += toMs(t3, t4);
+        m_ProfileAccumTotal     += toMs(frameStart, t4);
+        m_ProfileFrameCount++;
+
+        // Log every 120 frames
+        if (m_ProfileFrameCount >= 120) {
+            f32 n = static_cast<f32>(m_ProfileFrameCount);
+            ENJIN_LOG_INFO(Editor,
+                "PlayMode Update avg (%.0f frames): Total=%.2fms  Physics=%.2fms  ECS=%.2fms  Script=%.2fms  Gameplay=%.2fms",
+                n,
+                m_ProfileAccumTotal / n,
+                m_ProfileAccumPhysics / n,
+                m_ProfileAccumECS / n,
+                m_ProfileAccumScripting / n,
+                m_ProfileAccumGameplay / n);
+            m_ProfileAccumPhysics = m_ProfileAccumECS = m_ProfileAccumScripting = m_ProfileAccumGameplay = m_ProfileAccumTotal = 0.0f;
+            m_ProfileFrameCount = 0;
+        }
 
         // Update level streaming
         if (m_Camera) {
