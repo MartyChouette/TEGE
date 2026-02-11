@@ -147,6 +147,11 @@ public:
     // so the game camera frustum culls normally.
     void SetEditorMode(bool editor) { m_IsEditorMode = editor; }
 
+    // When true, skip shadow/point/spot shadow passes in the main Update() pass.
+    // Used during play mode — the game view already runs its own shadow pass via
+    // RenderShadowPassForCamera(), so the editor viewport shadows are redundant.
+    void SetSkipMainPassShadows(bool skip) { m_SkipMainPassShadows = skip; }
+
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
     void RenderToTarget(Renderer::RenderTarget* target, Renderer::Camera* camera);
@@ -485,6 +490,7 @@ private:
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
+    bool m_SkipMainPassShadows = false; // When true, skip shadow passes in Update() (play mode)
     void BuildCullableObjectList();
     void PerformGPUCulling();
     void PerformGPUCullingAsync(); // Record to compute command buffer

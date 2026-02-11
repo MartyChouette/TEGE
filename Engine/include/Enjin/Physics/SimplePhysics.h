@@ -93,8 +93,9 @@ struct ColliderInfo {
 struct SpatialHashGrid {
     f32 cellSize = 4.0f;
     std::unordered_map<u64, std::vector<ECS::Entity>> cells;
+    std::vector<ECS::Entity> oversizedEntities; // Large entities that span too many cells
 
-    void Clear() { cells.clear(); }
+    void Clear() { cells.clear(); oversizedEntities.clear(); }
 
     void Insert(ECS::Entity e, const AABB& bounds) {
         i32 minX = static_cast<i32>(std::floor(bounds.min.x / cellSize));
@@ -103,6 +104,16 @@ struct SpatialHashGrid {
         i32 maxX = static_cast<i32>(std::floor(bounds.max.x / cellSize));
         i32 maxY = static_cast<i32>(std::floor(bounds.max.y / cellSize));
         i32 maxZ = static_cast<i32>(std::floor(bounds.max.z / cellSize));
+
+        // Cap: if entity spans more than 8 cells in any dimension, treat as oversized
+        // (e.g., a 50x50 ground plane would need 13x13=169+ cells — way too expensive)
+        i32 spanX = maxX - minX + 1;
+        i32 spanY = maxY - minY + 1;
+        i32 spanZ = maxZ - minZ + 1;
+        if (spanX > 8 || spanY > 8 || spanZ > 8) {
+            oversizedEntities.push_back(e);
+            return;
+        }
 
         for (i32 x = minX; x <= maxX; ++x) {
             for (i32 y = minY; y <= maxY; ++y) {
@@ -115,6 +126,7 @@ struct SpatialHashGrid {
 
     void GetPotentialPairs(std::vector<std::pair<ECS::Entity, ECS::Entity>>& pairs) {
         std::unordered_set<u64> seen;
+        // Standard cell-based pairs
         for (auto& [cellKey, entities] : cells) {
             for (usize i = 0; i < entities.size(); ++i) {
                 for (usize j = i + 1; j < entities.size(); ++j) {
@@ -125,6 +137,33 @@ struct SpatialHashGrid {
                     if (seen.insert(pairKey).second) {
                         pairs.push_back({std::min(a, b), std::max(a, b)});
                     }
+                }
+            }
+        }
+        // Oversized entities must be tested against ALL other entities (brute force)
+        // Collect all unique entities from the grid
+        std::unordered_set<ECS::Entity> gridEntities;
+        for (auto& [cellKey, entities] : cells) {
+            for (ECS::Entity e : entities) {
+                gridEntities.insert(e);
+            }
+        }
+        for (ECS::Entity big : oversizedEntities) {
+            // Pair with every grid entity
+            for (ECS::Entity other : gridEntities) {
+                u64 pairKey = (static_cast<u64>(std::min(big, other)) << 32) |
+                              static_cast<u64>(std::max(big, other));
+                if (seen.insert(pairKey).second) {
+                    pairs.push_back({std::min(big, other), std::max(big, other)});
+                }
+            }
+            // Pair oversized entities with each other
+            for (ECS::Entity other : oversizedEntities) {
+                if (other == big) continue;
+                u64 pairKey = (static_cast<u64>(std::min(big, other)) << 32) |
+                              static_cast<u64>(std::max(big, other));
+                if (seen.insert(pairKey).second) {
+                    pairs.push_back({std::min(big, other), std::max(big, other)});
                 }
             }
         }

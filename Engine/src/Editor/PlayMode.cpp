@@ -158,6 +158,12 @@ void PlayMode::Play() {
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
     // This lets the user keep a visible cursor in the editor while play mode runs.
 
+    // Skip main-pass shadow rendering during play mode — the game view already
+    // runs its own shadow pass via RenderShadowPassForCamera()
+    if (m_RenderSystem) {
+        m_RenderSystem->SetSkipMainPassShadows(true);
+    }
+
     m_State = PlayState::Playing;
     ENJIN_LOG_INFO(Editor, "Entered Play Mode");
 }
@@ -268,6 +274,11 @@ void PlayMode::Stop() {
 
     // Restore editor state
     RestoreEditorState();
+
+    // Re-enable main-pass shadow rendering for editor mode
+    if (m_RenderSystem) {
+        m_RenderSystem->SetSkipMainPassShadows(false);
+    }
 
     m_State = PlayState::Stopped;
     ENJIN_LOG_INFO(Editor, "Exited Play Mode");

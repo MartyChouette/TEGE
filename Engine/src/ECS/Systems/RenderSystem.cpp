@@ -736,19 +736,21 @@ void RenderSystem::Update(f32 deltaTime) {
     // Shadow pass first (if enabled) - only run when 3D meshes AND shadow-casting lights exist.
     // Pure 2D scenes skip entirely since sprites never cast shadows.
     // Scenes with no shadow-casting lights also skip to avoid rendering 4 cascades for nothing.
-    if (m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline &&
+    // During play mode, the game view runs its own shadow pass via RenderShadowPassForCamera(),
+    // so we skip the main-pass shadows to avoid rendering 8 cascade passes per frame.
+    if (!m_SkipMainPassShadows && m_ShadowsEnabled && m_ShadowMap && m_ShadowPipeline &&
         m_SceneComposition.mode == SceneRenderMode::Scene3D &&
         m_SceneComposition.hasShadowCastingLights) {
         RenderShadowPass();
     }
 
     // Point light shadow pass
-    if (m_ShadowsEnabled && m_PointShadowMap && m_PointShadowPipeline && m_ActivePointShadowCount > 0) {
+    if (!m_SkipMainPassShadows && m_ShadowsEnabled && m_PointShadowMap && m_PointShadowPipeline && m_ActivePointShadowCount > 0) {
         RenderPointShadowPass();
     }
 
     // Spot light shadow pass
-    if (m_ShadowsEnabled && m_SpotShadowMap && m_SpotShadowPipeline && m_ActiveSpotShadowCount > 0) {
+    if (!m_SkipMainPassShadows && m_ShadowsEnabled && m_SpotShadowMap && m_SpotShadowPipeline && m_ActiveSpotShadowCount > 0) {
         RenderSpotShadowPass();
     }
 
