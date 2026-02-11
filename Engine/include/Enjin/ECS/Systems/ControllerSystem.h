@@ -5,7 +5,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Renderer/Camera.h"
-#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 
@@ -20,7 +20,7 @@ public:
 
     void SetWorld(World* world) { m_World = world; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
-    void SetPhysics(Physics::SimplePhysics* physics) { m_Physics = physics; }
+    void SetPhysics(Physics::IPhysicsBackend* physics) { m_Physics = physics; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
 
     // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
@@ -66,7 +66,7 @@ private:
 
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
-    Physics::SimplePhysics* m_Physics = nullptr;
+    Physics::IPhysicsBackend* m_Physics = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_Enabled = false;  // Disabled by default (editor mode)

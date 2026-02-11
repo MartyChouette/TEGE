@@ -22,7 +22,7 @@ public:
     void SetWorld(World* world) { m_World = world; }
 
     // Set physics system for physics query nodes
-    void SetPhysics(Physics::SimplePhysics* physics) { m_Executor.SetPhysics(physics); }
+    void SetPhysics(Physics::IPhysicsBackend* physics) { m_Executor.SetPhysics(physics); }
 
     // Set script engine for interop nodes
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_Executor.SetScriptEngine(engine); }

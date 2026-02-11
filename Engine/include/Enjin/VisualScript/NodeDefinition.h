@@ -16,7 +16,7 @@ namespace ECS {
     class World;
 }
 namespace Physics {
-    class SimplePhysics;
+    class IPhysicsBackend;
 }
 namespace Scripting {
     class ScriptEngine;
@@ -43,7 +43,7 @@ struct ExecutionContext {
     i32 nextFlowIndex = 0;
 
     // Physics system for query nodes
-    Physics::SimplePhysics* physics = nullptr;
+    Physics::IPhysicsBackend* physics = nullptr;
 
     // Script engine for interop nodes
     Scripting::ScriptEngine* scriptEngine = nullptr;

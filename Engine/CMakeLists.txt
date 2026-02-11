@@ -98,6 +98,40 @@ endif()
 # find_package(shaderc REQUIRED)
 # target_link_libraries(EnjinEngine PUBLIC shaderc::shaderc)
 
+# Optional: Jolt Physics backend (3D)
+option(ENJIN_PHYSICS_JOLT "Enable Jolt Physics backend for 3D physics" OFF)
+if(ENJIN_PHYSICS_JOLT)
+    set(JOLT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        JoltPhysics
+        GIT_REPOSITORY https://github.com/jrouwe/JoltPhysics.git
+        GIT_TAG v5.2.0
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR Build
+    )
+    FetchContent_MakeAvailable(JoltPhysics)
+    target_link_libraries(EnjinEngine PUBLIC Jolt)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_JOLT)
+    message(STATUS "Jolt Physics enabled")
+endif()
+
+# Optional: Box2D backend (2D)
+option(ENJIN_PHYSICS_BOX2D "Enable Box2D v3 backend for 2D physics" OFF)
+if(ENJIN_PHYSICS_BOX2D)
+    set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+    set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+        box2d
+        GIT_REPOSITORY https://github.com/erincatto/box2d.git
+        GIT_TAG v3.0.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(box2d)
+    target_link_libraries(EnjinEngine PUBLIC box2d)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_BOX2D)
+    message(STATUS "Box2D v3 enabled")
+endif()
+
 # Optional: Steam integration (cloud saves, achievements)
 option(ENJIN_STEAM "Enable Steam integration (requires Steamworks SDK)" OFF)
 if(ENJIN_STEAM)

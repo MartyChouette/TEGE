@@ -7956,7 +7956,7 @@ void EditorLayer::DrawProjectSettingsPanel() {
     }
 
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
-        Physics::SimplePhysics* physics = m_PlayMode.GetPhysics();
+        Physics::IPhysicsBackend* physics = m_PlayMode.GetPhysics();
         Math::Vector3 gravity = physics->GetGravity();
 
         f32 grav[3] = { gravity.x, gravity.y, gravity.z };

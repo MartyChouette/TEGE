@@ -5,7 +5,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Audio/SimpleAudio.h"
-#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"

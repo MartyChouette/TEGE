@@ -36,7 +36,8 @@
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
-#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
@@ -198,12 +199,13 @@ public:
         }
 
         // Initialize physics
-        m_Physics.SetWorld(m_World.get());
+        m_Physics = Enjin::Physics::CreatePhysicsBackend();
+        m_Physics->SetWorld(m_World.get());
 
         // Initialize gameplay systems
         m_ControllerSystem.SetWorld(m_World.get());
         m_ControllerSystem.SetCamera(m_Camera.get());
-        m_ControllerSystem.SetPhysics(&m_Physics);
+        m_ControllerSystem.SetPhysics(m_Physics.get());
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
 
         m_FlowerSystem.SetWorld(m_World.get());
@@ -323,10 +325,10 @@ public:
         if (m_GameMenu.IsMenuOpen()) return;
 
         // --- Physics (must run first) ---
-        m_Physics.Update(deltaTime);
+        m_Physics->Update(deltaTime);
 
         // Dispatch collision events to visual scripts
-        const auto& collisionEvents = m_Physics.GetPendingCollisionEvents();
+        const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
         for (const auto& evt : collisionEvents) {
             if (evt.isTrigger) {
                 if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
@@ -346,7 +348,7 @@ public:
                 }
             }
         }
-        m_Physics.ClearPendingCollisionEvents();
+        m_Physics->ClearPendingCollisionEvents();
 
         // --- Controllers & vegetation ---
         m_ControllerSystem.Update(deltaTime);
@@ -568,7 +570,7 @@ private:
         // Wire all script bindings so AngelScript functions work
         Enjin::Scripting::SetBindingsWorld(m_World.get());
         Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
-        Enjin::Scripting::SetBindingsPhysics(&m_Physics);
+        Enjin::Scripting::SetBindingsPhysics(m_Physics.get());
         Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
         Enjin::Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
@@ -597,7 +599,7 @@ private:
         }
 
         // Initialize visual scripts and behavior trees
-        m_VisualScriptSystem.SetPhysics(&m_Physics);
+        m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
@@ -691,8 +693,8 @@ private:
     // ImGui overlay
     std::unique_ptr<Enjin::GUI::ImGuiLayer> m_ImGuiLayer;
 
-    // Physics
-    Enjin::Physics::SimplePhysics m_Physics;
+    // Physics (created via factory)
+    std::unique_ptr<Enjin::Physics::IPhysicsBackend> m_Physics;
 
     // Gameplay systems
     Enjin::ECS::ControllerSystem m_ControllerSystem;

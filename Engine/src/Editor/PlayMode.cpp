@@ -19,11 +19,14 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_Camera = camera;
     m_CameraController = cameraController;
 
-    m_Physics.SetWorld(world);
+    m_Physics = Physics::CreatePhysicsBackend();
+    m_Physics->SetWorld(world);
+
+    m_Physics2D = Physics::CreatePhysicsBackend2D();
 
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);
-    m_ControllerSystem.SetPhysics(&m_Physics);
+    m_ControllerSystem.SetPhysics(m_Physics.get());
     m_ControllerSystem.SetEnabled(false);
 
     m_FlowerSystem.SetWorld(world);
@@ -109,6 +112,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsQuestSystem(&m_QuestSystem);
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
+    Scripting::SetBindingsPhysics(m_Physics.get());
     Scripting::SetBindingsStreaming(&m_StreamingManager);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
@@ -121,7 +125,7 @@ void PlayMode::Play() {
     ENJIN_LOG_INFO(Editor, "PlayMode: Scripts initialized");
 
     // Initialize visual script system
-    m_VisualScriptSystem.SetPhysics(&m_Physics);
+    m_VisualScriptSystem.SetPhysics(m_Physics.get());
     m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
@@ -221,6 +225,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsQuestSystem(nullptr);
     Scripting::SetBindingsCinematicSystem(nullptr);
     Scripting::SetBindingsObjectPool(nullptr);
+    Scripting::SetBindingsPhysics(nullptr);
     Scripting::SetBindingsWeather(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
 
@@ -276,12 +281,12 @@ void PlayMode::Update(f32 deltaTime) {
         // Physics runs first to update rigidbody positions, then controllers overlay input
         {
             ENJIN_PROFILE_SCOPE("Physics");
-            m_Physics.Update(deltaTime);
+            m_Physics->Update(deltaTime);
         }
 
         // Dispatch collision events to visual scripts
         {
-            const auto& collisionEvents = m_Physics.GetPendingCollisionEvents();
+            const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
             for (const auto& evt : collisionEvents) {
                 if (evt.isTrigger) {
                     if (evt.type == Physics::CollisionEvent::Type::Enter) {
@@ -301,7 +306,7 @@ void PlayMode::Update(f32 deltaTime) {
                     }
                 }
             }
-            m_Physics.ClearPendingCollisionEvents();
+            m_Physics->ClearPendingCollisionEvents();
         }
 
         {

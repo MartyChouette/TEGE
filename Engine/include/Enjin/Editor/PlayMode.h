@@ -12,7 +12,9 @@
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
-#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Physics/IPhysicsBackend2D.h"
+#include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
@@ -72,8 +74,9 @@ public:
     // Get flower system
     ECS::FlowerSystem* GetFlowerSystem() { return &m_FlowerSystem; }
 
-    // Get physics system
-    Physics::SimplePhysics* GetPhysics() { return &m_Physics; }
+    // Get physics systems
+    Physics::IPhysicsBackend* GetPhysics() { return m_Physics.get(); }
+    Physics::IPhysicsBackend2D* GetPhysics2D() { return m_Physics2D.get(); }
 
     // Get script systems
     Scripting::ScriptEngine* GetScriptEngine() { return &m_ScriptEngine; }
@@ -124,8 +127,9 @@ private:
     // Flower system for runtime
     ECS::FlowerSystem m_FlowerSystem;
 
-    // Physics system
-    Physics::SimplePhysics m_Physics;
+    // Physics systems (created via factory)
+    std::unique_ptr<Physics::IPhysicsBackend> m_Physics;
+    std::unique_ptr<Physics::IPhysicsBackend2D> m_Physics2D;
 
     // Scripting
     Scripting::ScriptEngine m_ScriptEngine;

@@ -5,7 +5,7 @@
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
-#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/Physics/IPhysicsBackend.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -18,11 +18,11 @@ using namespace Enjin::ECS;
 
 extern ECS::World* s_BindingsWorld;
 
-static Physics::SimplePhysics* s_BindingsPhysics = nullptr;
+static Physics::IPhysicsBackend* s_BindingsPhysics = nullptr;
 
 namespace Enjin {
 namespace Scripting {
-void SetBindingsPhysics(Physics::SimplePhysics* physics) { s_BindingsPhysics = physics; }
+void SetBindingsPhysics(Physics::IPhysicsBackend* physics) { s_BindingsPhysics = physics; }
 } // namespace Scripting
 } // namespace Enjin
 
