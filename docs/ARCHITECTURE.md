@@ -229,10 +229,12 @@ enjin/
 
 **SimplePhysics** (collision queries and character movement):
 - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
-- Raycasting (single hit and multi-hit)
+- **Spatial hash grid** broad-phase for collision events — O(N) typical vs O(N²) brute-force. FNV-1a cell hashing, 4m default cell size
+- **Per-frame collider cache** — all entities with Box/Sphere/Capsule colliders queried once per `Update()`, reused by ground check, raycasts, MoveAndSlide, overlap queries, and collision event detection
+- Raycasting (single hit and multi-hit) against cached collider list
 - Move-and-slide for character controllers
 - Ground detection (raycast downward)
-- Configurable gravity
+- Configurable gravity (zone query hoisted outside rigidbody loop)
 
 **PhysicsWorld** (impulse-based rigid body dynamics):
 - RigidBody objects with mass, velocity, restitution, friction

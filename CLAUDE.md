@@ -385,6 +385,7 @@ Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for rema
 - **P0 (all resolved):** ~~`vkDeviceWaitIdle()` GPU stalls~~ (replaced with per-frame fences), ~~`GetAllEntities()` + filter~~ (replaced with `GetEntitiesWithComponent<T>()`), ~~shadow pass iteration~~ (shadow caster caching)
 - **P1 (all resolved):** ~~Per-entity texture lookups~~ (cached texture pointers on MaterialComponent), ~~per-entity descriptor writes~~ (last-bound tracking + material sort)
 - **P2 (all resolved):** ~~Redundant per-entity `GetComponent()` calls~~ (multi-component query + `GetColliderInfo()` helper + Has+Get merged to single Get+null-check), ~~string-based entity lookups in scripts~~ (name cache on World with lazy rebuild), ~~vector allocations without `reserve()` in FlowerSystem~~ (reserve before spawn loops), ~~`std::map` in DialogueTree/Gameplay~~ (switched to `unordered_map`)
+- **P3 (all resolved):** ~~O(N²) collision detection~~ (spatial hash grid broad-phase), ~~`GetAllEntities()` in physics hot paths~~ (per-frame collider cache for ground check/raycast/overlap), ~~gravity zone query per rigidbody~~ (hoisted outside loop), ~~6 redundant ScriptComponent queries per frame~~ (single cached query shared by Update/FixedUpdate/LateUpdate), ~~player entity scan every frame~~ (cached with invalidation), ~~O(N) streaming queue duplicate checks~~ (hash set)
 
 ## Roadmap
 

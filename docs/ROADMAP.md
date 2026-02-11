@@ -36,6 +36,32 @@ Added `m_NameCache` (`unordered_map<string, Entity>`) to World with lazy rebuild
 
 Added `reserve()` calls before all particle spawn loops in FlowerSystem: `SpawnBreakParticles()`, `SpawnGroundSplash()`, `SpawnTensionDrip()`.
 
+### Physics & Scripting Optimization Pass ✅ RESOLVED (2026-02-11)
+
+#### 8. ~~Physics O(N²) Collision Detection~~ ✅ RESOLVED
+
+Added `SpatialHashGrid` broad-phase to `DetectCollisionEvents()`. Entities inserted into hash cells (FNV-1a, 4m cell size), only entities sharing adjacent cells are tested. 100 colliders: 4,950 brute-force pairs → typically <200 candidate pairs.
+
+#### 9. ~~Physics GetAllEntities() in Hot Paths~~ ✅ RESOLVED
+
+Added `RebuildColliderCache()` — builds deduplicated list of all Box/Sphere/Capsule collider entities once per `Update()`. Replaced 6 `GetAllEntities()` scans (ground check, Raycast, RaycastAll, MoveAndSlide, GetCollidersInRadius, OverlapBox) with `m_CachedColliderEntities`. Scenes with 500 entities but 50 colliders now check 50 instead of 500.
+
+#### 10. ~~Physics Gravity Zone Query Per Rigidbody~~ ✅ RESOLVED
+
+`GetEntitiesWithComponent<GravityZoneComponent>()` hoisted outside the rigidbody loop — 1 query per frame instead of N (one per rigidbody).
+
+#### 11. ~~ScriptSystem Redundant Entity Queries~~ ✅ RESOLVED
+
+Merged 6 `GetEntitiesWithComponent<ScriptComponent>()` calls (4 in Update + 1 FixedUpdate + 1 LateUpdate) into a single per-frame cached query (`m_CachedScriptEntities`). Init + OnStart merged into one pass.
+
+#### 12. ~~EditorLayer GetAllEntities() for Player Lookup~~ ✅ RESOLVED
+
+Cached `m_CachedPlayerEntity` for CharacterController zone detection. Full entity scan only runs on cache miss (play mode start, entity destroyed). Re-scan avoided during steady-state play.
+
+#### 13. ~~LevelStreaming O(N) Duplicate Checks~~ ✅ RESOLVED
+
+Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplicate detection. Pre-built `unordered_map` priority lookup before sorting (sort comparator O(1) instead of O(M) per comparison).
+
 ### Data Structure Improvements
 
 | Current | Recommended | Location | Status |
