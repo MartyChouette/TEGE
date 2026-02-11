@@ -10501,39 +10501,37 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         return;
     }
 
-    // Scrollable project rows via ImGui child
-    ImGui::SetCursorPos(ImVec2(0, listStartY));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
-    f32 listH = area.y - listStartY - 10.0f;
-    if (listH < 60.0f) listH = 60.0f;
-    ImGui::BeginChild("##RecentSidebar", ImVec2(sidebarW - 1.0f, listH), false,
-                       ImGuiWindowFlags_NoBackground);
-    ImDrawList* listDl = ImGui::GetWindowDrawList();
-    ImVec2 listOrigin = ImGui::GetCursorScreenPos();
-
+    // Project rows drawn directly on parent draw list (no child window)
     f32 rowH = 60.0f;
     f32 rowPad = 4.0f;
     f32 rowW = sidebarW - 24.0f;
     f32 rowX = 8.0f;
+    f32 listBottomY = area.y - 10.0f;
 
-    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 20);
+    // Clip to sidebar area
+    dl->PushClipRect(ImVec2(0, listStartY), ImVec2(sidebarW, listBottomY), true);
+
+    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 12);
     for (int pi = 0; pi < maxShow; ++pi) {
         int i = projectIndices[pi];
-        ImVec2 rPos(listOrigin.x + rowX, listOrigin.y + pi * (rowH + rowPad));
+        f32 rY = listStartY + pi * (rowH + rowPad);
+        if (rY + rowH > listBottomY) break; // Don't draw past sidebar bottom
+
+        ImVec2 rPos(rowX, rY);
         ImVec2 rEnd(rPos.x + rowW, rPos.y + rowH);
 
         bool hovered = (io.MousePos.x >= rPos.x && io.MousePos.x <= rEnd.x &&
                        io.MousePos.y >= rPos.y && io.MousePos.y <= rEnd.y);
 
-        listDl->AddRectFilled(rPos, rEnd,
+        dl->AddRectFilled(rPos, rEnd,
             hovered ? IM_COL32(35, 40, 55, 255) : IM_COL32(22, 24, 32, 255), 6.0f);
 
         // Accent bar (left edge)
         ImU32 accentCol = hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 150);
-        listDl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
+        dl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
 
         if (hovered)
-            listDl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
+            dl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
 
         // Display name (truncated for sidebar width)
         std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
@@ -10541,7 +10539,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         if (displayName.length() > 28) {
             displayName = displayName.substr(0, 25) + "...";
         }
-        listDl->AddText(ImVec2(rPos.x + 12.0f, rPos.y + 8.0f),
+        dl->AddText(ImVec2(rPos.x + 12.0f, rPos.y + 8.0f),
             IM_COL32(210, 215, 235, 255), displayName.c_str());
 
         // Path (truncated)
@@ -10550,7 +10548,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
             pathStr = "..." + pathStr.substr(pathStr.length() - 29);
         }
         f32 pathFontSize = 12.0f;
-        listDl->AddText(nullptr, pathFontSize,
+        dl->AddText(nullptr, pathFontSize,
             ImVec2(rPos.x + 12.0f, rPos.y + 28.0f),
             IM_COL32(100, 105, 125, 160), pathStr.c_str());
 
@@ -10560,7 +10558,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         ImU32 statusCol = exists ? IM_COL32(80, 200, 120, 180) : IM_COL32(200, 80, 80, 180);
         f32 statusFontSize = 11.0f;
         ImVec2 statusSize = font->CalcTextSizeA(statusFontSize, FLT_MAX, 0.0f, statusText);
-        listDl->AddText(nullptr, statusFontSize,
+        dl->AddText(nullptr, statusFontSize,
             ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
             statusCol, statusText);
 
@@ -10578,9 +10576,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         }
     }
 
-    ImGui::Dummy(ImVec2(rowW, maxShow * (rowH + rowPad)));
-    ImGui::EndChild();
-    ImGui::PopStyleColor();
+    dl->PopClipRect();
 }
 
 // --------------------------------------------------
