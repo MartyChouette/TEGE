@@ -386,7 +386,7 @@ Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for rema
 - **P1 (all resolved):** ~~Per-entity texture lookups~~ (cached texture pointers on MaterialComponent), ~~per-entity descriptor writes~~ (last-bound tracking + material sort)
 - **P2 (all resolved):** ~~Redundant per-entity `GetComponent()` calls~~ (multi-component query + `GetColliderInfo()` helper + Has+Get merged to single Get+null-check), ~~string-based entity lookups in scripts~~ (name cache on World with lazy rebuild), ~~vector allocations without `reserve()` in FlowerSystem~~ (reserve before spawn loops), ~~`std::map` in DialogueTree/Gameplay~~ (switched to `unordered_map`)
 - **P3 (all resolved):** ~~O(N²) collision detection~~ (spatial hash grid broad-phase), ~~`GetAllEntities()` in physics hot paths~~ (per-frame collider cache for ground check/raycast/overlap), ~~gravity zone query per rigidbody~~ (hoisted outside loop), ~~6 redundant ScriptComponent queries per frame~~ (single cached query shared by Update/FixedUpdate/LateUpdate), ~~player entity scan every frame~~ (cached with invalidation), ~~O(N) streaming queue duplicate checks~~ (hash set)
-- **P4 (planned):** Physics scalability beyond 1000 colliders — dirty flag collider cache, spatial hash ground check, cached AABBs, unified ColliderComponent, incremental spatial hash, parallel broad/narrow phase, sleep system, SIMD AABB tests. See `docs/ROADMAP.md` "Physics Scalability Roadmap" for 3-phase plan (items 14-24).
+- **P4 (planned):** Jolt + Box2D integration (5-phase plan, replaces SimplePhysics entirely). Jolt Physics (MIT) for 3D/mixed, Box2D v3 (MIT) for pure 2D, behind `IPhysicsBackend` interface. See `docs/ROADMAP.md` "Physics: Jolt + Box2D Integration" for full plan.
 
 ## Roadmap
 
@@ -395,7 +395,7 @@ See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, a
 **Key categories of planned work:**
 - **Editor Tools:** ~~Accent color theming~~ (done), project hub, template rebuild, ~~extended model formats (PLY/VOX)~~ (done), drag-and-drop improvements, ~~micro-interactions~~ (done — spring easing, hover transitions)
 - **Runtime Systems:** ~~Improved physics (2D, CCD)~~ (done — PhysicsWorld2D), networking, ~~destructible environments~~ (done — DestructibleSystem), fluid simulation, ~~SVG import~~ (done), ~~dialogue assets + localization~~ (done — .enjdlg files, LocalizationManager)
-- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done), ~~ray tracing pipeline~~ (done — RT shadows/reflections/AO/GI, path tracing, SVGF denoiser, awaiting compiled SPIR-V), physics scalability (3-phase plan for 1000+ colliders, see P4)
+- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done), ~~ray tracing pipeline~~ (done — RT shadows/reflections/AO/GI, path tracing, SVGF denoiser, awaiting compiled SPIR-V), Jolt + Box2D physics integration (replaces SimplePhysics, see P4)
 - **Procedural Generation:** ~~All algorithms~~ (done — 9 algorithms + editor panel), ~~custom flora assets~~ (done)
 - **Scripting:** ~~Plugin DLL repositories~~ (done), ~~documentation generator~~ (done), ~~ScriptableObject/DataAsset system~~ (done)
 - **Graph Systems:** ~~Shader Graph, Audio Event Graph, Particle Graph~~ (done — skeleton node types + editor shells)

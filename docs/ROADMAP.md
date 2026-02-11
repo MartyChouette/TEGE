@@ -70,96 +70,82 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 | ~~`unordered_map<Entity, RenderData>`~~ | ~~Dense vector indexed by entity~~ | ~~RenderSystem.h~~ | ✅ RESOLVED — `std::vector<EntityRenderData>` indexed by entity ID with `valid` flag, O(1) direct lookup |
 | ~~String-keyed texture cache~~ | ~~Integer-keyed or pointer cache~~ | ~~RenderSystem.h~~ | ✅ RESOLVED — `m_TexturePathToId` (path→u32 ID, only on first load) + `m_TextureById` (dense vector), eliminates per-frame string hashing |
 
-### Physics Scalability Roadmap
+### Physics: Jolt + Box2D Integration
 
-**Context:** Stress test (2026-02-11) showed physics `Update()` at 0.26ms for 100 colliders (excellent), 4.6ms at 500, and 18.8ms at 1000 — exceeding 16ms frame budget. Root cause: single-threaded CPU physics with per-frame full rebuilds of caches and spatial hash, plus O(R×C) ground check (each rigidbody tests every collider). Target: 1000+ colliders within 4ms budget (leaving 12ms for rendering).
+**Context:** Stress test (2026-02-11) showed SimplePhysics hits 18ms at 1000 colliders (single-threaded, no sleep, no CCD). Rather than incrementally optimizing SimplePhysics, replace it entirely with battle-tested libraries: **Jolt Physics** (3D, MIT) and **Box2D v3** (2D, MIT). SimplePhysics is retired — Jolt handles 3D+mixed, Box2D handles pure 2D. Both are permissive-licensed, zero royalty, full Enjin ownership retained.
 
-**Stress test baseline (1000 colliders + 200 rigidbodies + 1000 inert):**
+#### Phase 1: IPhysicsBackend Interface + CMake Setup
 
-| Metric | Current | Phase 1 Target | Phase 2 Target | Phase 3 Target |
-|--------|---------|----------------|----------------|----------------|
-| Physics Update avg | 18.8ms | ~7-9ms | ~4-5ms | ~2-3ms |
-| p95 | 21.0ms | ~12ms | ~7ms | ~4ms |
+- Define `IPhysicsBackend` abstract interface matching current API surface:
+  - `SetWorld`, `Update`, `SetGravity`/`GetGravity`
+  - `Raycast`, `RaycastAll`, `CheckGround`
+  - `GetCollidersInRadius`, `OverlapBox`
+  - `MoveAndSlide`
+  - `GetPendingCollisionEvents`, `ClearPendingCollisionEvents`
+  - `GetConstraintSolver`
+- Define `IPhysicsBackend2D` for 2D-specific API:
+  - `Initialize`, `Update`, `Shutdown`
+  - `SetGravity`/`GetGravity` (Vector2)
+  - `Raycast`, `RaycastAll` (2D variants)
+  - `OverlapCircle`, `OverlapBox` (2D variants)
+  - Collision callbacks (Enter/Exit/SensorEnter/SensorExit)
+  - `SetCCDEnabled`
+- `PhysicsBackendType` enum: `Jolt`, `Box2D`
+- Auto-selection: `ProjectMode::Mode2D` → Box2D, `Mode3D`/`Mixed` → Jolt (Jolt's 2D DOF lock for mixed)
+- Manual override in Project Settings panel
+- FetchContent for Jolt (MIT, header-only-capable) and Box2D v3 (MIT, pure C)
+- CMake options: `ENJIN_PHYSICS_JOLT=ON`, `ENJIN_PHYSICS_BOX2D=ON`
+- **Files:** `Engine/include/Enjin/Physics/IPhysicsBackend.h`, `IPhysicsBackend2D.h`, `Engine/CMakeLists.txt`
 
-#### Phase 1: Cache Elimination (Quick Wins)
+#### Phase 2: Jolt Backend (3D)
 
-**14. Dirty flag for collider cache rebuild**
-- **Problem:** `RebuildColliderCache()` reconstructs the entire Box/Sphere/Capsule entity list every frame (3 `GetEntitiesWithComponent` + dedup loop), even when no entities changed.
-- **Fix:** Add `m_ColliderCacheDirty` flag. Set on entity create/destroy, component add/remove. Skip rebuild when clean.
-- **Impact:** ~10-15% reduction. Eliminates 3000+ hash operations in steady-state frames.
-- **Files:** `SimplePhysics.h`, `SimplePhysics.cpp`
+- `JoltBackend : IPhysicsBackend`
+- Map ECS components to Jolt bodies:
+  - `RigidbodyComponent` → `Body` (dynamic)
+  - `BoxColliderComponent` → `BoxShape`
+  - `SphereColliderComponent` → `SphereShape`
+  - `CapsuleColliderComponent` → `CapsuleShape`
+  - `categoryBits`/`collisionMask` → Jolt `ObjectLayer` + `BroadPhaseLayer`
+- Jolt job system integration (uses std::thread pool, configurable core count)
+- Sync loop: ECS Transform → Jolt body position (dirty flag), Jolt simulation → ECS Transform
+- Collision event bridge: Jolt `ContactListener` → `CollisionEvent` vector
+- Constraint solver: Map 6 joint types to Jolt constraints (Hinge, Slider, Point, Fixed, Cone, Distance)
+- Gravity zones: Jolt per-body gravity override
+- Sleep system: automatic via Jolt (bodies deactivate when at rest)
+- **Files:** `Engine/include/Enjin/Physics/JoltBackend.h`, `Engine/src/Physics/JoltBackend.cpp`
 
-**15. Spatial hash for ground check**
-- **Problem:** `IsGrounded()` tests each rigidbody against ALL colliders in `m_CachedColliderEntities` — O(R×C). With 200 rigidbodies × 1000 colliders = 200K AABB overlap checks per frame.
-- **Fix:** Query spatial hash for cells below the entity's feet (1-cell radius at ground check height) instead of full list. Only test nearby colliders.
-- **Impact:** ~30-40% reduction. 200K checks → ~2-5K checks.
-- **Files:** `SimplePhysics.cpp` (IsGrounded loop), `SimplePhysics.h` (add `QueryRegion()` to SpatialHashGrid)
+#### Phase 3: Box2D Backend (2D)
 
-**16. Cache world-space AABBs on collider components**
-- **Problem:** `GetEntityAABB()` does 2-4 `GetComponent()` hash lookups per call (Transform + collider type discrimination). Called in every hot path: ground check, collision detection, raycasts.
-- **Fix:** Add `AABB cachedWorldAABB` + `bool aabbDirty` to each collider component. Recompute only when transform or collider properties change.
-- **Impact:** ~15-20% reduction. Eliminates thousands of per-frame hash map lookups.
-- **Files:** `Components/Physics.h` (add fields), `SimplePhysics.cpp` (lazy AABB update)
+- `Box2DBackend : IPhysicsBackend2D`
+- Map ECS 2D components to Box2D bodies:
+  - `Rigidbody2DComponent` → `b2BodyDef`
+  - `BoxCollider2DComponent` → `b2Polygon`
+  - `CircleCollider2DComponent` → `b2Circle`
+  - `PolygonCollider2DComponent` → `b2Polygon`
+  - 2D joints → Box2D joint types
+- Box2D v3 multithreaded solver (built-in, uses `b2Enqueue` task system)
+- CCD: Box2D native continuous collision
+- Physics materials (friction, restitution, density)
+- **Files:** `Engine/include/Enjin/Physics/Box2DBackend.h`, `Engine/src/Physics/Box2DBackend.cpp`
 
-**Phase 1 combined estimate: 18ms → ~7-9ms**
+#### Phase 4: Wiring + Migration
 
-#### Phase 2: Architectural Improvements
+- PlayMode: swap `m_Physics` from `SimplePhysics` to `IPhysicsBackend*` (created from project settings)
+- ControllerSystem: `SetPhysics(IPhysicsBackend*)` — same API, no controller changes
+- ScriptBindings: `SetBindingsPhysics(IPhysicsBackend*)` — all bound functions go through interface
+- VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)` — raycast/overlap nodes unchanged
+- EditorLayer: Physics debug draw via Jolt `DebugRenderer` / Box2D debug draw
+- Project Settings UI: Physics Backend dropdown (Auto / Jolt / Box2D)
+- Scene serialization: `physicsBackend` field in `.enjinproject`
+- **Files:** `PlayMode.h/.cpp`, `ControllerSystem.h/.cpp`, `ScriptBindings.cpp`, `VisualScriptExecutor.cpp`, `EditorLayer.cpp`, `SceneSerializer.cpp`
 
-**17. Unified ColliderComponent with type enum**
-- **Problem:** Three separate components (`BoxColliderComponent`, `SphereColliderComponent`, `CapsuleColliderComponent`) require 3 `GetComponent()` calls to determine collider type. `GetColliderInfo()` and `GetEntityAABB()` do this thousands of times per frame.
-- **Fix:** Single `ColliderComponent` with `ColliderType` enum and tagged union for shape data. Retains `categoryBits`/`collisionMask`. Migrate existing 3 components at serialization layer.
-- **Impact:** ~10-15% reduction. Single component lookup instead of triple.
-- **Files:** `Components/Physics.h`, `SimplePhysics.cpp`, `SceneSerializer.cpp` (migration)
+#### Phase 5: Retire SimplePhysics
 
-**18. Persistent spatial hash with incremental updates**
-- **Problem:** `DetectCollisionEvents()` calls `m_SpatialHash.Clear()` + full re-insert every frame. 1000 entities = 1000 hash insertions + allocations per frame.
-- **Fix:** Track moved entities via transform dirty flag. Only remove/re-insert entities whose AABB changed. Static colliders (walls, floors) never re-inserted.
-- **Impact:** ~10-15% reduction for scenes with mostly static geometry (typical game levels).
-- **Files:** `SimplePhysics.h` (SpatialHashGrid incremental API), `SimplePhysics.cpp`
-
-**19. Parallel broad-phase with `std::execution::par`**
-- **Problem:** Spatial hash insertion and AABB computation are sequential.
-- **Fix:** Use C++17 parallel execution policies for spatial hash insertion and candidate pair generation. Each entity is independent — embarrassingly parallel.
-- **Impact:** ~2-3x speedup on multi-core (4+ cores).
-- **Files:** `SimplePhysics.cpp`, `CMakeLists.txt` (link TBB on Linux)
-
-**Phase 2 combined estimate: 18ms → ~4-5ms**
-
-#### Phase 3: Advanced Optimizations
-
-**20. Multithreaded narrow-phase collision testing**
-- Partition candidate pairs across worker threads. Each pair test is independent (read-only on components, write to thread-local result vector). Merge results after join.
-- **Impact:** Near-linear speedup with core count for narrow-phase portion.
-
-**21. Sleep system for static/resting bodies**
-- Bodies that haven't moved beyond a velocity threshold for N frames are put to sleep. Sleeping bodies skip integration, ground check, and collision pair generation. Wake on external force or contact with awake body.
-- **Impact:** Massive reduction in real-world scenes where most objects are at rest (furniture, walls, terrain).
-
-**22. SIMD AABB intersection tests**
-- Use SSE/AVX to test 4 AABB pairs simultaneously. Requires 16-byte aligned min/max vectors (already compatible with `Vector3` + padding).
-- **Impact:** ~5-10% on narrow-phase hot loop.
-
-**23. Bounding Volume Hierarchy (BVH) alternative**
-- For sparse scenes with clustered entities, a BVH (top-down SAH build) outperforms spatial hash. Auto-select based on entity distribution variance.
-- **Impact:** Better worst-case performance in non-uniform distributions.
-
-**24. Physics LOD / distance culling**
-- Entities beyond a configurable distance from any active camera skip collision detection entirely. Configurable per-collider `physicsLODRadius`.
-- **Impact:** Open-world scenes with 1000s of entities but only ~100-200 nearby.
-
-**Phase 3 combined estimate: 18ms → ~2-3ms**
-
-#### Alternative: Third-Party Physics Integration
-
-If AAA-grade physics scale is needed (10K+ rigidbodies, GPU acceleration):
-
-| Library | License | Multithreaded | GPU | Notes |
-|---------|---------|---------------|-----|-------|
-| Jolt Physics | MIT | Yes (job system) | No | Modern C++17, used in Horizon Forbidden West. Best fit for Enjin's architecture |
-| PhysX 5.4 | BSD-3 | Yes | CUDA | Nvidia, mature, GPU-accelerated |
-| Bullet 3 | Zlib | Yes | OpenCL | Widely used, large community |
-
-Integration approach: abstract behind `IPhysicsBackend` interface (similar to `ISaveBackend`). Keep SimplePhysics as lightweight fallback for 2D/small scenes. Estimated integration: 6-8 weeks.
+- Remove `SimplePhysics.h/.cpp`, `PhysicsWorld.h/.cpp`, `Physics2D.h/.cpp`
+- Remove `SpatialHashGrid`, `ConstraintSolver` (Jolt replaces both)
+- Clean up cmake, includes, forward declarations
+- Update stress test to benchmark Jolt/Box2D backends
+- **Files:** Remove from `Engine/include/Enjin/Physics/`, `Engine/src/Physics/`, update `Engine/CMakeLists.txt`
 
 ---
 
