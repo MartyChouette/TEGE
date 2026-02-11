@@ -67,7 +67,7 @@ enjin/
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, ObjectPool, CinematicSystem
 │   │   ├── Networking/     # HTTPClient, LANMultiplayer, NewgroundsAPI, NewgroundsSaveBackend, SteamSaveBackend
-│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
+│   │   ├── Physics/        # IPhysicsBackend, SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
 │   │   ├── Renderer/       # Vulkan renderer, RenderBackend abstraction
@@ -125,6 +125,10 @@ See `docs/ARCHITECTURE.md` for detailed system architecture.
 ### Collision Filtering
 
 Bitmask system: `categoryBits` (which groups it belongs to) and `collisionMask` (which groups it collides with). Bilateral rule: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.collisionMask)`. Defaults: `categoryBits = 1`, `collisionMask = 0xFFFFFFFF`. Up to 32 named groups stored in `SceneManager::m_CollisionGroupNames`. Old `layer` field migrated to `categoryBits` in deserialization.
+
+### Physics Backend Abstraction
+
+`IPhysicsBackend` (3D) and `IPhysicsBackend2D` (2D) are abstract interfaces for physics implementations. `SimplePhysicsBackend` and `SimplePhysicsBackend2D` wrap the existing engines. `PhysicsBackendFactory` creates backends via `CreatePhysicsBackend(type, mode)` / `CreatePhysicsBackend2D(type, mode)`. `PhysicsBackendType` enum: `Auto`, `Jolt`, `Box2D`. PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`. All consumers (ControllerSystem, ScriptBindings, VisualScriptExecutor, NodeRegistry) accept `IPhysicsBackend*`. CMake options: `ENJIN_PHYSICS_JOLT`, `ENJIN_PHYSICS_BOX2D` (both OFF by default, FetchContent for Jolt v5.2.0, Box2D v3.0.0).
 
 ### Project Mode (2D/3D)
 
@@ -367,7 +371,7 @@ The engine has 120+ completed features across these categories. See `docs/USER_M
 - **ECS & Editor:** 70+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 38 startup templates, entity visibility toggle, bug reporting & feedback system (auto-diagnostics, JSON persistence, remote submission), vector drawing editor (7 shapes, layers, SVG export), splash screen with animated mantra
 - **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
 - **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
-- **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
+- **Physics:** `IPhysicsBackend` abstraction layer (Jolt/Box2D-ready), collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
 - **Scripting:** AngelScript (~185 bindings), visual scripting (46+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
 - **Gameplay:** Tiered save system (20 slots, 3-tier persistence: SceneState/RunState/MetaProgression, auto-save, checkpoints, pluggable backends — Local/Newgrounds/Steam), play mode diff dialog (cherry-pick entity changes on Stop), in-game save/load menu component, quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro), Newgrounds.io API (medals, scoreboards, cloud saves)
@@ -386,7 +390,7 @@ Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for rema
 - **P1 (all resolved):** ~~Per-entity texture lookups~~ (cached texture pointers on MaterialComponent), ~~per-entity descriptor writes~~ (last-bound tracking + material sort)
 - **P2 (all resolved):** ~~Redundant per-entity `GetComponent()` calls~~ (multi-component query + `GetColliderInfo()` helper + Has+Get merged to single Get+null-check), ~~string-based entity lookups in scripts~~ (name cache on World with lazy rebuild), ~~vector allocations without `reserve()` in FlowerSystem~~ (reserve before spawn loops), ~~`std::map` in DialogueTree/Gameplay~~ (switched to `unordered_map`)
 - **P3 (all resolved):** ~~O(N²) collision detection~~ (spatial hash grid broad-phase), ~~`GetAllEntities()` in physics hot paths~~ (per-frame collider cache for ground check/raycast/overlap), ~~gravity zone query per rigidbody~~ (hoisted outside loop), ~~6 redundant ScriptComponent queries per frame~~ (single cached query shared by Update/FixedUpdate/LateUpdate), ~~player entity scan every frame~~ (cached with invalidation), ~~O(N) streaming queue duplicate checks~~ (hash set)
-- **P4 (planned):** Jolt + Box2D integration (5-phase plan, replaces SimplePhysics entirely). Jolt Physics (MIT) for 3D/mixed, Box2D v3 (MIT) for pure 2D, behind `IPhysicsBackend` interface. See `docs/ROADMAP.md` "Physics: Jolt + Box2D Integration" for full plan.
+- **P4 (Phase 1 done, Phases 2-5 planned):** Jolt + Box2D integration (5-phase plan, replaces SimplePhysics entirely). Phase 1 complete: `IPhysicsBackend`/`IPhysicsBackend2D` interfaces, `SimplePhysicsBackend` adapters, `PhysicsBackendFactory`, all consumers rewired (`PlayMode`, `ControllerSystem`, `ScriptBindings`, `VisualScriptExecutor`, `Player`), CMake FetchContent for Jolt v5.2.0 + Box2D v3.0.0. Phases 2-3: Jolt/Box2D backend implementations. See `docs/ROADMAP.md`.
 
 ## Roadmap
 
@@ -395,7 +399,7 @@ See `docs/ROADMAP.md` for detailed technical plans, implementation priorities, a
 **Key categories of planned work:**
 - **Editor Tools:** ~~Accent color theming~~ (done), project hub, template rebuild, ~~extended model formats (PLY/VOX)~~ (done), drag-and-drop improvements, ~~micro-interactions~~ (done — spring easing, hover transitions)
 - **Runtime Systems:** ~~Improved physics (2D, CCD)~~ (done — PhysicsWorld2D), networking, ~~destructible environments~~ (done — DestructibleSystem), fluid simulation, ~~SVG import~~ (done), ~~dialogue assets + localization~~ (done — .enjdlg files, LocalizationManager)
-- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done), ~~ray tracing pipeline~~ (done — RT shadows/reflections/AO/GI, path tracing, SVGF denoiser, awaiting compiled SPIR-V), Jolt + Box2D physics integration (replaces SimplePhysics, see P4)
+- **Rendering & Performance:** ~~Sprite batching~~ (done), ~~pipeline optimization~~ (done), ~~soft shadows~~ (done), ~~ray tracing pipeline~~ (done — RT shadows/reflections/AO/GI, path tracing, SVGF denoiser, awaiting compiled SPIR-V), Jolt + Box2D physics integration (Phase 1 done — IPhysicsBackend abstraction; Phases 2-5 pending — Jolt/Box2D backends, migration, SimplePhysics retirement)
 - **Procedural Generation:** ~~All algorithms~~ (done — 9 algorithms + editor panel), ~~custom flora assets~~ (done)
 - **Scripting:** ~~Plugin DLL repositories~~ (done), ~~documentation generator~~ (done), ~~ScriptableObject/DataAsset system~~ (done)
 - **Graph Systems:** ~~Shader Graph, Audio Event Graph, Particle Graph~~ (done — skeleton node types + editor shells)

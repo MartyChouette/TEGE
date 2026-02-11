@@ -74,28 +74,17 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 
 **Context:** Stress test (2026-02-11) showed SimplePhysics hits 18ms at 1000 colliders (single-threaded, no sleep, no CCD). Rather than incrementally optimizing SimplePhysics, replace it entirely with battle-tested libraries: **Jolt Physics** (3D, MIT) and **Box2D v3** (2D, MIT). SimplePhysics is retired — Jolt handles 3D+mixed, Box2D handles pure 2D. Both are permissive-licensed, zero royalty, full Enjin ownership retained.
 
-#### Phase 1: IPhysicsBackend Interface + CMake Setup
+#### Phase 1: IPhysicsBackend Interface + CMake Setup ✅ COMPLETE
 
-- Define `IPhysicsBackend` abstract interface matching current API surface:
-  - `SetWorld`, `Update`, `SetGravity`/`GetGravity`
-  - `Raycast`, `RaycastAll`, `CheckGround`
-  - `GetCollidersInRadius`, `OverlapBox`
-  - `MoveAndSlide`
-  - `GetPendingCollisionEvents`, `ClearPendingCollisionEvents`
-  - `GetConstraintSolver`
-- Define `IPhysicsBackend2D` for 2D-specific API:
-  - `Initialize`, `Update`, `Shutdown`
-  - `SetGravity`/`GetGravity` (Vector2)
-  - `Raycast`, `RaycastAll` (2D variants)
-  - `OverlapCircle`, `OverlapBox` (2D variants)
-  - Collision callbacks (Enter/Exit/SensorEnter/SensorExit)
-  - `SetCCDEnabled`
-- `PhysicsBackendType` enum: `Jolt`, `Box2D`
-- Auto-selection: `ProjectMode::Mode2D` → Box2D, `Mode3D`/`Mixed` → Jolt (Jolt's 2D DOF lock for mixed)
-- Manual override in Project Settings panel
-- FetchContent for Jolt (MIT, header-only-capable) and Box2D v3 (MIT, pure C)
-- CMake options: `ENJIN_PHYSICS_JOLT=ON`, `ENJIN_PHYSICS_BOX2D=ON`
-- **Files:** `Engine/include/Enjin/Physics/IPhysicsBackend.h`, `IPhysicsBackend2D.h`, `Engine/CMakeLists.txt`
+- `IPhysicsBackend` abstract 3D interface: `SetWorld`, `Update`, `SetGravity`/`GetGravity`, `Raycast`, `RaycastAll`, `CheckGround`, `GetCollidersInRadius`, `OverlapBox`, `MoveAndSlide`, `CheckAABBCollision`, `CheckSphereCollision`, `GetPendingCollisionEvents`, `ClearPendingCollisionEvents`, `GetConstraintSolver`, `GetName`
+- `IPhysicsBackend2D` abstract 2D interface: `Initialize`, `Update`, `Shutdown`, `SetGravity`/`GetGravity` (Vector2), `Raycast`, `RaycastAll` (2D), `OverlapCircle`, `OverlapBox` (2D), collision callbacks (Enter/Exit/SensorEnter/SensorExit), `SetCCDEnabled`, `SetVelocityIterations`, `SetPositionIterations`, `GetName`
+- `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapter wrappers delegating 1:1 to existing SimplePhysics / PhysicsWorld2D
+- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` / `CreatePhysicsBackend2D(type, mode)` (currently always returns SimplePhysics adapters)
+- `PhysicsBackendType` enum: `Auto`, `Jolt`, `Box2D`
+- All consumers rewired: PlayMode (`unique_ptr<IPhysicsBackend>` + `unique_ptr<IPhysicsBackend2D>`), ControllerSystem, ScriptBindings, VisualScriptExecutor, NodeDefinition (ExecutionContext), NodeRegistry, EditorLayer, Player app
+- Fixed orphaned `SetBindingsPhysics()` — now properly wired in PlayMode::Play()/Stop()
+- CMake: `ENJIN_PHYSICS_JOLT` (FetchContent Jolt v5.2.0) and `ENJIN_PHYSICS_BOX2D` (FetchContent Box2D v3.0.0), both OFF by default
+- **Files:** `IPhysicsBackend.h`, `IPhysicsBackend2D.h`, `PhysicsBackendType.h`, `SimplePhysicsBackend.h/.cpp`, `SimplePhysicsBackend2D.h/.cpp`, `PhysicsBackendFactory.h/.cpp`, plus 9 modified consumer files
 
 #### Phase 2: Jolt Backend (3D)
 
@@ -128,16 +117,17 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - Physics materials (friction, restitution, density)
 - **Files:** `Engine/include/Enjin/Physics/Box2DBackend.h`, `Engine/src/Physics/Box2DBackend.cpp`
 
-#### Phase 4: Wiring + Migration
+#### Phase 4: Wiring + Migration (mostly done in Phase 1)
 
-- PlayMode: swap `m_Physics` from `SimplePhysics` to `IPhysicsBackend*` (created from project settings)
-- ControllerSystem: `SetPhysics(IPhysicsBackend*)` — same API, no controller changes
-- ScriptBindings: `SetBindingsPhysics(IPhysicsBackend*)` — all bound functions go through interface
-- VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)` — raycast/overlap nodes unchanged
+- ~~PlayMode: swap `m_Physics` from `SimplePhysics` to `IPhysicsBackend*`~~ ✅ done (Phase 1)
+- ~~ControllerSystem: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
+- ~~ScriptBindings: `SetBindingsPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
+- ~~VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
+- ~~Player app: `unique_ptr<IPhysicsBackend>` via factory~~ ✅ done (Phase 1)
 - EditorLayer: Physics debug draw via Jolt `DebugRenderer` / Box2D debug draw
 - Project Settings UI: Physics Backend dropdown (Auto / Jolt / Box2D)
 - Scene serialization: `physicsBackend` field in `.enjinproject`
-- **Files:** `PlayMode.h/.cpp`, `ControllerSystem.h/.cpp`, `ScriptBindings.cpp`, `VisualScriptExecutor.cpp`, `EditorLayer.cpp`, `SceneSerializer.cpp`
+- **Remaining files:** `EditorLayer.cpp` (debug draw), `SceneSerializer.cpp` (backend field)
 
 #### Phase 5: Retire SimplePhysics
 
@@ -342,7 +332,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 
 | # | System | Issue | Fix |
 |---|--------|-------|-----|
-| 1 | **Player App — Physics** | Player doesn't create/update PhysicsWorld or PhysicsWorld2D. Exported games have no physics | Wire SimplePhysics + PhysicsWorld2D in Player main.cpp |
+| 1 | **Player App — Physics** | ~~Player doesn't create/update PhysicsWorld or PhysicsWorld2D~~ ✅ Fixed | Player now uses `IPhysicsBackend` via `PhysicsBackendFactory` |
 | 2 | **Player App — Weather/Water** | No WeatherSystem or Water3D init in Player | Create and update in Player loop |
 | 3 | **Player App — Particles** | ParticleSystem not created in Player | Add to Player init/update/render |
 | 4 | **Player App — Post-Processing** | No bloom/vignette/FXAA/film grain/color grading/retro effects | Wire PostProcessing pass in Player render |
@@ -458,7 +448,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | One-Button / Switch Access for UICanvas | Low | Medium | P3 | Planned |
 | Security & Robustness Audit | High | Low | P1 | ✅ Complete |
 | **— Feature Accessibility (Walled-Off Systems) —** | | | | |
-| Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | Planned |
+| Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | ✅ Complete (physics via IPhysicsBackend) |
 | Build Pipeline: Pack scripts/audio/dialogue/prefabs/data assets | Critical | Medium | P0 | Planned |
 | Wire ScriptEngine subsystem pointers in Player | Critical | Medium | P0 | Planned |
 | Register Newgrounds script bindings (dead code) | High | Low | P0 | Planned |

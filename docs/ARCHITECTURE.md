@@ -84,7 +84,7 @@ enjin/
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
-│   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
+│   │   ├── Physics/        # IPhysicsBackend, SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
@@ -227,7 +227,15 @@ enjin/
 
 ### Physics System
 
-**SimplePhysics** (collision queries and character movement):
+**Backend Abstraction** (pluggable physics engines):
+- `IPhysicsBackend` — abstract 3D interface (SetWorld, Update, Raycast, MoveAndSlide, collision events, etc.)
+- `IPhysicsBackend2D` — abstract 2D interface (Initialize, Update, Raycast2D, OverlapCircle, collision callbacks, CCD)
+- `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapters wrapping existing engines behind the interfaces
+- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`
+- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both OFF by default
+- PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`; all consumers accept `IPhysicsBackend*`
+
+**SimplePhysics** (current default 3D backend — collision queries and character movement):
 - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB)
 - **Spatial hash grid** broad-phase for collision events — O(N) typical vs O(N²) brute-force. FNV-1a cell hashing, 4m default cell size
 - **Per-frame collider cache** — all entities with Box/Sphere/Capsule colliders queried once per `Update()`, reused by ground check, raycasts, MoveAndSlide, overlap queries, and collision event detection
@@ -268,7 +276,7 @@ enjin/
 
 ### 2D Physics System
 
-**PhysicsWorld2D** (2D impulse-based dynamics):
+**PhysicsWorld2D** (current default 2D backend — impulse-based dynamics):
 - Circle, Box, Polygon collision shapes
 - SAT (Separating Axis Theorem) collision detection
 - 5 joint types (Distance, Revolute, Prismatic, Weld, Wheel)

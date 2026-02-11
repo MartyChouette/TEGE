@@ -210,6 +210,9 @@ cmake .. \
 | `ENJIN_BUILD_PLAYER` | ON | Build the standalone game player |
 | `ENJIN_BUILD_TESTS` | OFF | Build unit tests |
 | `ENJIN_BUILD_EXAMPLES` | OFF | Build example projects |
+| `ENJIN_PHYSICS_JOLT` | OFF | Enable Jolt Physics backend for 3D (FetchContent v5.2.0) |
+| `ENJIN_PHYSICS_BOX2D` | OFF | Enable Box2D v3 backend for 2D (FetchContent v3.0.0) |
+| `ENJIN_STEAM` | OFF | Enable Steam integration (requires Steamworks SDK) |
 | `CMAKE_BUILD_TYPE` | -- | Debug, Release, RelWithDebInfo, MinSizeRel |
 
 ## 5. Running

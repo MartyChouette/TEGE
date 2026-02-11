@@ -23,7 +23,7 @@
 | System | Header | Description |
 |--------|--------|-------------|
 | Scripting | `Enjin/Scripting/` | AngelScript VM, TegeBehavior, bindings, coroutines, events |
-| Physics | `Enjin/Physics/` | SimplePhysics (queries), PhysicsWorld (dynamics), ConstraintSolver (joints) |
+| Physics | `Enjin/Physics/` | IPhysicsBackend abstraction, SimplePhysics (queries), PhysicsWorld (dynamics), ConstraintSolver (joints) |
 | Profiler | `Enjin/Debug/Profiler.h` | Frame profiling, scope timers, ImGui overlay |
 | Plugins | `Enjin/Plugin/PluginSystem.h` | Dynamic library loading, manifest system |
 | Timeline | `Enjin/Animation/Timeline.h` | Property/event/animation tracks, keyframe sequencing |
