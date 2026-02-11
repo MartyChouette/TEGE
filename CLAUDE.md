@@ -227,7 +227,9 @@ struct PushConstants {
 
 - **`EditorLayer`** - Main editor class with ImGui panels
 - **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
-- **View menu:** Sub-menus for Panels, Settings, Effects, Tools. Game View and Scene List are top-level.
+- **View menu:** Sub-menus for Panels, Settings (Editor Settings, Project Settings), Rendering (Rendering, Post Processing, Retro Effects), Tools. Game View and Scene List are top-level.
+- **Panel names:** `EditorSettings` (bit 5), `PostProcessing` (bit 6), `RetroEffects` (bit 7), `Rendering` (bit 10 — skybox + shadows/ambient/cel/RT/display). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
+- **Project Settings panel:** Project mode, Window icon, Physics, Frame rate, Collision Groups, Build Config, Environment (weather/wind/world time/curvature).
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select, marquee rect-pick)
 - **`PlayMode`** - Play/Pause/Stop game preview controls
 - **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo. Methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `SelectRange()`, `SelectEntitiesInRect()`

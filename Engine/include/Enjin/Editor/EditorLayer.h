@@ -92,12 +92,12 @@ enum class EditorPanel : u32 {
     Viewport = 1 << 2,
     Console = 1 << 3,
     AssetBrowser = 1 << 4,
-    Settings = 1 << 5,
+    EditorSettings = 1 << 5,
     PostProcessing = 1 << 6,
-    Effects = 1 << 7,
+    RetroEffects = 1 << 7,
     GameView = 1 << 8,
     SceneList = 1 << 9,
-    Skybox = 1 << 10,
+    Rendering = 1 << 10,
     Profiler = 1 << 11,
     ProjectSettings = 1 << 12,
     ParticleEditor = 1 << 13,
@@ -254,12 +254,13 @@ private:
     void DrawViewportPanel();
     void DrawConsolePanel();
     void DrawAssetBrowserPanel();
-    void DrawSettingsPanel();
+    void DrawEditorSettingsPanel();
     void DrawPostProcessingPanel();
-    void DrawEffectsPanel();
+    void DrawRetroEffectsPanel();
     void DrawGameViewPanel();
     void DrawSceneListPanel();
-    void DrawSkyboxPanel();
+    void DrawRenderingPanel();
+    void DrawBuildConfigSection();
     void DrawProjectSettingsPanel();
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();

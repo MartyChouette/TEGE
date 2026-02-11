@@ -2051,10 +2051,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * m_Layout.inspectorSplit), layoutCond);
         DrawInspectorPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Settings)) {
+    if (HasPanel(m_VisiblePanels, EditorPanel::EditorSettings)) {
         ImGui::SetNextWindowPos(ImVec2(rightX, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * (1.0f - m_Layout.inspectorSplit)), layoutCond);
-        DrawSettingsPanel();
+        DrawEditorSettingsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings)) {
         ImGui::SetNextWindowPos(ImVec2(rightX - 310, menuBarH + 50), layoutCond);
@@ -2076,10 +2076,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(280, 400), layoutCond);
         DrawPostProcessingPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Effects)) {
+    if (HasPanel(m_VisiblePanels, EditorPanel::RetroEffects)) {
         ImGui::SetNextWindowPos(ImVec2(rightX - 300, menuBarH + 100), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(280, 450), layoutCond);
-        DrawEffectsPanel();
+        DrawRetroEffectsPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
         ImGui::SetNextWindowPos(ImVec2(gvX, gvY), layoutCond);
@@ -2091,10 +2091,10 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), layoutCond);
         DrawSceneListPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Skybox)) {
+    if (HasPanel(m_VisiblePanels, EditorPanel::Rendering)) {
         ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 440), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(300, 400), layoutCond);
-        DrawSkyboxPanel();
+        DrawRenderingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
         ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
@@ -2802,28 +2802,28 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Settings")) {
-                bool settings = IsPanelVisible(EditorPanel::Settings);
+                bool editorSettings = IsPanelVisible(EditorPanel::EditorSettings);
                 bool projectSettings = IsPanelVisible(EditorPanel::ProjectSettings);
-                if (ImGui::MenuItem("Settings", nullptr, &settings)) {
-                    SetPanelVisibility(EditorPanel::Settings, settings);
+                if (ImGui::MenuItem("Editor Settings", nullptr, &editorSettings)) {
+                    SetPanelVisibility(EditorPanel::EditorSettings, editorSettings);
                 }
                 if (ImGui::MenuItem("Project Settings", nullptr, &projectSettings)) {
                     SetPanelVisibility(EditorPanel::ProjectSettings, projectSettings);
                 }
                 ImGui::EndMenu();
             }
-            if (ImGui::BeginMenu("Effects")) {
+            if (ImGui::BeginMenu("Rendering")) {
+                bool rendering = IsPanelVisible(EditorPanel::Rendering);
                 bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
-                bool effects = IsPanelVisible(EditorPanel::Effects);
-                bool skybox = IsPanelVisible(EditorPanel::Skybox);
+                bool retroEffects = IsPanelVisible(EditorPanel::RetroEffects);
+                if (ImGui::MenuItem("Rendering", nullptr, &rendering)) {
+                    SetPanelVisibility(EditorPanel::Rendering, rendering);
+                }
                 if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
                     SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
                 }
-                if (ImGui::MenuItem("Effects (Retro)", nullptr, &effects)) {
-                    SetPanelVisibility(EditorPanel::Effects, effects);
-                }
-                if (ImGui::MenuItem("Skybox", nullptr, &skybox)) {
-                    SetPanelVisibility(EditorPanel::Skybox, skybox);
+                if (ImGui::MenuItem("Retro Effects", nullptr, &retroEffects)) {
+                    SetPanelVisibility(EditorPanel::RetroEffects, retroEffects);
                 }
                 ImGui::EndMenu();
             }
@@ -6612,8 +6612,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
     ImGui::End();
 }
 
-void EditorLayer::DrawSettingsPanel() {
-    ImGui::Begin("Settings");
+void EditorLayer::DrawEditorSettingsPanel() {
+    ImGui::Begin("Editor Settings");
 
     if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_CameraController) {
@@ -7789,381 +7789,6 @@ void EditorLayer::DrawProjectSettingsPanel() {
         }
     }
 
-    if (ImGui::CollapsingHeader("Rendering", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // Per-scene override toggle
-        if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
-            if (m_CurrentSceneUsesProjectDefaults) {
-                // Switching back to project defaults — apply them
-                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            }
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "When checked, this scene uses the project's default rendering settings.\n"
-            "Uncheck to override settings per-scene.");
-
-        if (m_CurrentSceneUsesProjectDefaults) {
-            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "This scene uses project default rendering settings");
-        }
-
-        ImGui::Spacing();
-
-        if (m_RenderSystem) {
-            // Shadows
-            bool shadows = m_RenderSystem->IsShadowsEnabled();
-            if (ImGui::Checkbox("Shadows", &shadows)) {
-                m_RenderSystem->SetShadowsEnabled(shadows);
-            }
-
-            if (shadows) {
-                // Shadow resolution
-                const char* resOptions[] = { "512", "1024", "2048", "4096" };
-                const u32 resValues[] = { 512, 1024, 2048, 4096 };
-                u32 currentRes = m_RenderSystem->GetShadowResolution();
-                int resIdx = 2; // default to 2048
-                for (int i = 0; i < 4; ++i) {
-                    if (resValues[i] == currentRes) { resIdx = i; break; }
-                }
-                if (ImGui::Combo("Shadow Resolution", &resIdx, resOptions, 4)) {
-                    m_RenderSystem->SetShadowResolution(resValues[resIdx]);
-                }
-
-                // Shadow distance
-                f32 shadowDist = m_RenderSystem->GetShadowDistance();
-                if (ImGui::SliderFloat("Shadow Distance", &shadowDist, 10.0f, 500.0f, "%.0f")) {
-                    m_RenderSystem->SetShadowDistance(shadowDist);
-                }
-
-                // Shadow strength
-                f32 shadowStr = m_RenderSystem->GetShadowStrength();
-                if (ImGui::SliderFloat("Shadow Strength", &shadowStr, 0.0f, 1.0f)) {
-                    m_RenderSystem->SetShadowStrength(shadowStr);
-                }
-
-                // Shadow softness
-                f32 shadowSoft = m_RenderSystem->GetShadowSoftness();
-                if (ImGui::SliderFloat("Shadow Softness", &shadowSoft, 0.0f, 5.0f, "%.1f")) {
-                    m_RenderSystem->SetShadowSoftness(shadowSoft);
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = hard edges, 1-5 = soft penumbra radius");
-            }
-
-            // Backface culling
-            bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
-            if (ImGui::Checkbox("Backface Culling", &culling)) {
-                m_RenderSystem->SetBackfaceCullingEnabled(culling);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
-
-            // Wireframe
-            bool wireframe = m_RenderSystem->IsWireframeEnabled();
-            if (ImGui::Checkbox("Wireframe", &wireframe)) {
-                m_RenderSystem->SetWireframeEnabled(wireframe);
-            }
-
-            ImGui::Separator();
-
-            // Ambient lighting
-            Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
-            f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
-            if (ImGui::ColorEdit3("Ambient Color", ambient)) {
-                m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
-            }
-
-            f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
-            if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
-                m_RenderSystem->SetAmbientIntensity(ambientIntensity);
-            }
-        } else {
-            ImGui::TextDisabled("RenderSystem not available");
-        }
-
-        ImGui::Separator();
-
-        // Cel Shading
-        if (m_RenderSystem) {
-            bool celEnabled = m_RenderSystem->IsCelShadingEnabled();
-            if (ImGui::Checkbox("Cel Shading##Rendering", &celEnabled)) {
-                m_RenderSystem->SetCelShadingEnabled(celEnabled);
-            }
-            if (celEnabled) {
-                f32 celBands = m_RenderSystem->GetCelDiffuseBands();
-                if (ImGui::SliderFloat("Diffuse Bands##Cel", &celBands, 2.0f, 8.0f, "%.0f")) {
-                    m_RenderSystem->SetCelDiffuseBands(celBands);
-                }
-                f32 celSpec = m_RenderSystem->GetCelSpecularCutoff();
-                if (ImGui::SliderFloat("Specular Cutoff##Cel", &celSpec, 0.0f, 1.0f)) {
-                    m_RenderSystem->SetCelSpecularCutoff(celSpec);
-                }
-            }
-        }
-
-        ImGui::Separator();
-
-        ImGui::Text("Post-Processing:");
-
-        if (m_PostProcessing) {
-            auto& settings = m_PostProcessing->GetSettings();
-
-            // Tone mapping
-            const char* toneModes[] = { "None", "Reinhard", "Reinhard Ext", "ACES", "Uncharted 2", "AgX" };
-            int toneMode = static_cast<int>(settings.toneMappingMode);
-            if (ImGui::Combo("Tone Mapping", &toneMode, toneModes, 6)) {
-                settings.toneMappingMode = static_cast<u32>(toneMode);
-            }
-
-            ImGui::DragFloat("Exposure", &settings.exposure, 0.05f, 0.1f, 10.0f);
-            ImGui::DragFloat("Gamma", &settings.gamma, 0.05f, 0.5f, 3.0f);
-
-            // FXAA
-            bool fxaa = settings.fxaaEnabled != 0;
-            if (ImGui::Checkbox("FXAA", &fxaa)) {
-                settings.fxaaEnabled = fxaa ? 1 : 0;
-            }
-
-            // Bloom
-            bool bloom = settings.bloomEnabled != 0;
-            if (ImGui::Checkbox("Bloom", &bloom)) {
-                settings.bloomEnabled = bloom ? 1 : 0;
-            }
-            if (bloom) {
-                ImGui::DragFloat("Bloom Threshold", &settings.bloomThreshold, 0.05f, 0.0f, 5.0f);
-                ImGui::DragFloat("Bloom Intensity", &settings.bloomIntensity, 0.05f, 0.0f, 5.0f);
-            }
-
-            // Vignette
-            bool vignette = settings.vignetteEnabled != 0;
-            if (ImGui::Checkbox("Vignette", &vignette)) {
-                settings.vignetteEnabled = vignette ? 1 : 0;
-            }
-            if (vignette) {
-                ImGui::DragFloat("Vignette Intensity", &settings.vignetteIntensity, 0.05f, 0.0f, 3.0f);
-            }
-
-            // Film Grain
-            bool grain = settings.filmGrainEnabled != 0;
-            if (ImGui::Checkbox("Film Grain", &grain)) {
-                settings.filmGrainEnabled = grain ? 1 : 0;
-            }
-            if (grain) {
-                ImGui::DragFloat("Grain Intensity", &settings.filmGrainIntensity, 0.005f, 0.0f, 0.5f);
-            }
-
-            // Chromatic Aberration
-            bool chrAb = settings.chromaticAberrationEnabled != 0;
-            if (ImGui::Checkbox("Chromatic Aberration", &chrAb)) {
-                settings.chromaticAberrationEnabled = chrAb ? 1 : 0;
-            }
-            if (chrAb) {
-                ImGui::DragFloat("CA Intensity", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.1f);
-            }
-
-            ImGui::Separator();
-            ImGui::Text("Color Grading:");
-            ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
-            ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.0f, 3.0f);
-            ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 3.0f);
-            f32 filter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
-            if (ImGui::ColorEdit3("Color Filter", filter)) {
-                settings.colorFilter = Math::Vector3(filter[0], filter[1], filter[2]);
-            }
-        } else {
-            ImGui::TextDisabled("PostProcessing not available");
-        }
-
-        // === RAY TRACING ===
-        ImGui::Separator();
-        ImGui::Spacing();
-        if (m_RenderSystem) {
-            bool rtSupported = m_RenderSystem->IsRayTracingSupported();
-            if (ImGui::TreeNode("Ray Tracing")) {
-                if (rtSupported) {
-                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
-                } else {
-                    ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Not Supported");
-                    ImGui::TextDisabled("GPU does not support VK_KHR_ray_tracing_pipeline");
-                    ImGui::TreePop();
-                }
-
-                if (rtSupported) {
-                    bool rtEnabled = m_RenderSystem->IsRayTracingEnabled();
-                    if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled)) {
-                        m_RenderSystem->SetRayTracingEnabled(rtEnabled);
-                    }
-
-                    if (rtEnabled) {
-                        // Mode selection
-                        const char* modeNames[] = { "Hybrid", "Path Trace" };
-                        int rtMode = static_cast<int>(m_RenderSystem->GetRTMode());
-                        if (ImGui::Combo("RT Mode", &rtMode, modeNames, 2)) {
-                            m_RenderSystem->SetRTMode(static_cast<u32>(rtMode));
-                        }
-                        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                            "Hybrid: RT shadows/reflections/AO/GI composited with raster.\n"
-                            "Path Trace: Progressive offline-quality renderer.");
-
-                        if (rtMode == 0) {
-                            // --- Hybrid mode sub-sections ---
-
-                            // RT Shadows
-                            if (auto* rtShadows = m_RenderSystem->GetRTShadows()) {
-                                auto& cfg = rtShadows->GetConfig();
-                                if (ImGui::TreeNode("RT Shadows")) {
-                                    ImGui::Checkbox("Enabled##RTShadow", &cfg.enabled);
-                                    if (cfg.enabled) {
-                                        ImGui::DragFloat("Max Distance##RTShadow", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
-                                        ImGui::DragFloat("Soft Radius##RTShadow", &cfg.radius, 0.001f, 0.0f, 0.5f, "%.3f");
-                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Penumbra radius for soft shadows (0 = hard)");
-                                    }
-                                    ImGui::TreePop();
-                                }
-                            }
-
-                            // RT Reflections
-                            if (auto* rtReflect = m_RenderSystem->GetRTReflections()) {
-                                auto& cfg = rtReflect->GetConfig();
-                                if (ImGui::TreeNode("RT Reflections")) {
-                                    ImGui::Checkbox("Enabled##RTReflect", &cfg.enabled);
-                                    if (cfg.enabled) {
-                                        ImGui::DragFloat("Max Distance##RTReflect", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
-                                        ImGui::SliderFloat("Roughness Threshold", &cfg.roughnessThreshold, 0.0f, 1.0f);
-                                        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Skip reflections for surfaces rougher than this");
-                                    }
-                                    ImGui::TreePop();
-                                }
-                            }
-
-                            // RT Ambient Occlusion
-                            if (auto* rtAO = m_RenderSystem->GetRTAO()) {
-                                auto& cfg = rtAO->GetConfig();
-                                if (ImGui::TreeNode("RT Ambient Occlusion")) {
-                                    ImGui::Checkbox("Enabled##RTAO", &cfg.enabled);
-                                    if (cfg.enabled) {
-                                        ImGui::DragFloat("AO Radius", &cfg.radius, 0.1f, 0.1f, 20.0f);
-                                        ImGui::DragFloat("AO Power", &cfg.power, 0.1f, 0.1f, 5.0f);
-                                    }
-                                    ImGui::TreePop();
-                                }
-                            }
-
-                            // RT Global Illumination
-                            if (auto* rtGI = m_RenderSystem->GetRTGI()) {
-                                auto& cfg = rtGI->GetConfig();
-                                if (ImGui::TreeNode("RT Global Illumination")) {
-                                    ImGui::Checkbox("Enabled##RTGI", &cfg.enabled);
-                                    if (cfg.enabled) {
-                                        ImGui::DragFloat("Max Distance##RTGI", &cfg.maxDistance, 1.0f, 1.0f, 200.0f);
-                                        ImGui::DragFloat("GI Intensity", &cfg.intensity, 0.1f, 0.0f, 5.0f);
-                                        int bounces = static_cast<int>(cfg.bounces);
-                                        if (ImGui::SliderInt("Bounces", &bounces, 1, 4)) {
-                                            cfg.bounces = static_cast<u32>(bounces);
-                                        }
-                                    }
-                                    ImGui::TreePop();
-                                }
-                            }
-
-                            // Composite strengths
-                            if (auto* compositor = m_RenderSystem->GetRTCompositor()) {
-                                auto& cfg = compositor->GetConfig();
-                                if (ImGui::TreeNode("Composite Strengths")) {
-                                    ImGui::SliderFloat("Shadow##RTComp", &cfg.shadowStrength, 0.0f, 1.0f);
-                                    ImGui::SliderFloat("Reflection##RTComp", &cfg.reflectionStrength, 0.0f, 1.0f);
-                                    ImGui::SliderFloat("AO##RTComp", &cfg.aoStrength, 0.0f, 1.0f);
-                                    ImGui::SliderFloat("GI##RTComp", &cfg.giStrength, 0.0f, 1.0f);
-                                    ImGui::TreePop();
-                                }
-                            }
-                        } else {
-                            // --- Path Trace mode ---
-                            if (auto* pathTracer = m_RenderSystem->GetPathTracer()) {
-                                auto& cfg = pathTracer->GetConfig();
-                                int maxBounces = static_cast<int>(cfg.maxBounces);
-                                if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 16)) {
-                                    cfg.maxBounces = static_cast<u32>(maxBounces);
-                                }
-                                int targetSPP = static_cast<int>(cfg.targetSPP);
-                                if (ImGui::DragInt("Target SPP", &targetSPP, 16, 1, 65536)) {
-                                    cfg.targetSPP = static_cast<u32>(targetSPP);
-                                }
-
-                                // Progress
-                                u32 accumulated = pathTracer->GetAccumulatedSamples();
-                                f32 progress = (cfg.targetSPP > 0)
-                                    ? static_cast<f32>(accumulated) / static_cast<f32>(cfg.targetSPP)
-                                    : 0.0f;
-                                char overlay[64];
-                                snprintf(overlay, sizeof(overlay), "%u / %u SPP", accumulated, cfg.targetSPP);
-                                ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
-
-                                if (pathTracer->IsConverged()) {
-                                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Converged");
-                                }
-
-                                if (ImGui::Button("Reset Accumulation")) {
-                                    pathTracer->ResetAccumulation();
-                                }
-                            }
-                        }
-
-                        // Denoiser settings
-                        if (auto* denoiser = m_RenderSystem->GetSVGFDenoiser()) {
-                            auto& cfg = denoiser->GetConfig();
-                            if (ImGui::TreeNode("SVGF Denoiser")) {
-                                ImGui::SliderFloat("Temporal Alpha", &cfg.temporalAlpha, 0.01f, 0.5f, "%.3f");
-                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more temporal history (smoother but more ghosting)");
-                                int iterations = static_cast<int>(cfg.atrousIterations);
-                                if (ImGui::SliderInt("A-Trous Iterations", &iterations, 1, 8)) {
-                                    cfg.atrousIterations = static_cast<u32>(iterations);
-                                }
-                                if (ImGui::Button("Reset History##SVGF")) {
-                                    denoiser->ResetHistory();
-                                }
-                                ImGui::TreePop();
-                            }
-                        }
-                    }
-
-                    // Stats
-                    if (auto* asManager = m_RenderSystem->GetASManager()) {
-                        ImGui::Separator();
-                        ImGui::Text("BLAS Count: %u", asManager->GetBLASCount());
-                        ImGui::Text("Instance Count: %u", asManager->GetInstanceCount());
-                    }
-
-                    ImGui::TreePop();
-                }
-            }
-        }
-
-        ImGui::Separator();
-        ImGui::Spacing();
-
-        // Project default management buttons
-        if (ImGui::Button("Set Current as Project Default")) {
-            auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
-                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            m_SceneManager.SetDefaultRenderSettings(current);
-            if (!m_SceneManager.GetProjectPath().empty()) {
-                m_SceneManager.SaveProject();
-            }
-            ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Save the current rendering settings as the project-level default.\n"
-            "New scenes and scenes using project defaults will use these settings.");
-
-        if (!m_CurrentSceneUsesProjectDefaults) {
-            ImGui::SameLine();
-            if (ImGui::Button("Reset to Project Default")) {
-                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Reset this scene's rendering settings to the project default values.");
-        }
-    }
-
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
         Physics::SimplePhysics* physics = m_PlayMode.GetPhysics();
         Math::Vector3 gravity = physics->GetGravity();
@@ -8268,7 +7893,246 @@ void EditorLayer::DrawProjectSettingsPanel() {
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1.0f), "These settings apply to Play Mode and exported builds");
     }
 
+    if (ImGui::CollapsingHeader("Collision Groups")) {
+        auto& groupNames = m_SceneManager.GetCollisionGroupNames();
+
+        // Determine visible count: all named groups + 2 blank slots
+        int visibleCount = 1;
+        for (int i = 1; i < 32; ++i) {
+            if (!groupNames[i].empty()) visibleCount = i + 1;
+        }
+        visibleCount = std::min(visibleCount + 2, 32);
+
+        for (int i = 0; i < visibleCount; ++i) {
+            ImGui::PushID(i);
+            char label[32];
+            snprintf(label, sizeof(label), "Group %d", i);
+
+            if (i == 0) {
+                // Group 0 "Default" is read-only
+                ImGui::TextDisabled("%s", label);
+                ImGui::SameLine();
+                ImGui::TextDisabled("Default");
+            } else {
+                ImGui::Text("%s", label);
+                ImGui::SameLine();
+                char buf[64];
+                strncpy(buf, groupNames[i].c_str(), sizeof(buf) - 1);
+                buf[sizeof(buf) - 1] = '\0';
+                ImGui::SetNextItemWidth(150.0f);
+                if (ImGui::InputText("##name", buf, sizeof(buf))) {
+                    groupNames[i] = buf;
+                }
+            }
+            ImGui::PopID();
+        }
+
+        ImGui::TextDisabled("Named groups appear as checkboxes on collider components.");
+    }
+
+    DrawBuildConfigSection();
+
+    if (ImGui::CollapsingHeader("Environment")) {
+        // === WORLD TIME / DAY-NIGHT CYCLE ===
+        if (ImGui::TreeNode("World Time / Day-Night")) {
+            ImGui::Checkbox("Enable World Time", &m_WorldTimeEnabled);
+
+            if (m_WorldTimeEnabled) {
+                auto& state = const_cast<Effects::WorldTimeState&>(m_WorldTime.GetState());
+                auto& calConfig = m_WorldTime.GetCalendarConfig();
+                auto& dayConfig = m_WorldTime.GetDaylightConfig();
+
+                ImGui::Checkbox("Paused", &calConfig.paused);
+
+                f32 timeOfDay = state.timeOfDay;
+                if (ImGui::SliderFloat("Time of Day", &timeOfDay, 0.0f, 23.99f, "%.2f h")) {
+                    m_WorldTime.SetTime(timeOfDay, state.day, state.month, state.year);
+                }
+
+                int day = static_cast<int>(state.day);
+                int month = static_cast<int>(state.month);
+                int year = static_cast<int>(state.year);
+                bool changed = false;
+                changed |= ImGui::DragInt("Day", &day, 1, 1, static_cast<int>(calConfig.daysPerMonth));
+                changed |= ImGui::DragInt("Month", &month, 1, 1, static_cast<int>(calConfig.monthsPerYear));
+                changed |= ImGui::DragInt("Year", &year, 1, 1, 9999);
+                if (changed) {
+                    m_WorldTime.SetTime(state.timeOfDay, static_cast<u32>(day),
+                                       static_cast<u32>(month), static_cast<u32>(year));
+                }
+
+                ImGui::DragFloat("Seconds/Game Hour", &calConfig.secondsPerGameHour, 1.0f, 1.0f, 600.0f);
+
+                const char* seasonNames[] = { "Spring", "Summer", "Fall", "Winter" };
+                ImGui::Text("Season: %s (%.0f%%)", seasonNames[static_cast<int>(state.season)],
+                           m_WorldTime.GetSeasonProgress() * 100.0f);
+                ImGui::Text("Daylight: %.1f hours  %s", state.daylightHours, state.isNight ? "[Night]" : "[Day]");
+                ImGui::Text("Sun Elevation: %.2f", state.sunElevation);
+
+                ImGui::Separator();
+                ImGui::Text("Daylight Config");
+                ImGui::DragFloat("Spring Daylight", &dayConfig.springDaylight, 0.1f, 6.0f, 20.0f);
+                ImGui::DragFloat("Summer Daylight", &dayConfig.summerDaylight, 0.1f, 6.0f, 22.0f);
+                ImGui::DragFloat("Fall Daylight", &dayConfig.fallDaylight, 0.1f, 6.0f, 18.0f);
+                ImGui::DragFloat("Winter Daylight", &dayConfig.winterDaylight, 0.1f, 4.0f, 16.0f);
+
+                ImGui::Separator();
+                ImGui::Checkbox("Seasonal Weather", &m_SeasonalWeatherEnabled);
+                if (m_SeasonalWeatherEnabled) {
+                    auto& sConfig = m_SeasonalWeather.GetConfig();
+                    ImGui::Text("Temperature: %.1f C", m_SeasonalWeather.GetCurrentTemperature());
+                    ImGui::DragFloat("Weather Interval (s)", &sConfig.weatherChangeInterval, 10.0f, 10.0f, 3600.0f);
+
+                    if (ImGui::TreeNode("Temperature Ranges")) {
+                        ImGui::DragFloatRange2("Spring", &sConfig.spring.minTemp, &sConfig.spring.maxTemp, 0.5f, -30.0f, 50.0f);
+                        ImGui::DragFloatRange2("Summer", &sConfig.summer.minTemp, &sConfig.summer.maxTemp, 0.5f, -30.0f, 50.0f);
+                        ImGui::DragFloatRange2("Fall", &sConfig.fall.minTemp, &sConfig.fall.maxTemp, 0.5f, -30.0f, 50.0f);
+                        ImGui::DragFloatRange2("Winter", &sConfig.winter.minTemp, &sConfig.winter.maxTemp, 0.5f, -30.0f, 50.0f);
+                        ImGui::TreePop();
+                    }
+                }
+            }
+            ImGui::TreePop();
+        }
+
+        // === WORLD CURVATURE ===
+        if (ImGui::TreeNode("World Curvature")) {
+            ImGui::Checkbox("Enable Curvature", &m_WorldCurvatureEnabled);
+            if (m_WorldCurvatureEnabled) {
+                ImGui::DragFloat("Curvature Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
+                ImGui::TextDisabled("Bends distant geometry downward. Try 0.0001-0.001.");
+            }
+            ImGui::TreePop();
+        }
+
+        // === WEATHER & WATER (Entity-Based Zones) ===
+        if (ImGui::TreeNode("Weather & Water")) {
+            ImGui::TextWrapped("Weather and Water are entity-based game objects with bounding boxes.");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Create via Entity > Effects menu, or add components to existing entities.");
+            ImGui::Spacing();
+
+            // List weather zones
+            const char* weatherTypeNames[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
+            u32 weatherZoneCount = 0;
+            u32 waterVolumeCount = 0;
+            if (m_World) {
+                if (ImGui::TreeNode("Weather Zones")) {
+                    for (ECS::Entity entity : m_World->GetAllEntities()) {
+                        if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
+                            weatherZoneCount++;
+                            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                            auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                            const char* label = name ? name->name.c_str() : "Unnamed";
+                            const char* typeName = (zone->weatherType < 7) ? weatherTypeNames[zone->weatherType] : "Unknown";
+
+                            ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
+                            if (ImGui::IsItemClicked()) {
+                                SelectEntity(entity);
+                            }
+                        }
+                    }
+                    if (weatherZoneCount == 0) {
+                        ImGui::TextDisabled("No weather zones in scene");
+                    }
+                    ImGui::TreePop();
+                }
+
+                if (ImGui::TreeNode("Water Volumes")) {
+                    for (ECS::Entity entity : m_World->GetAllEntities()) {
+                        if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
+                            waterVolumeCount++;
+                            auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                            auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                            const char* label = name ? name->name.c_str() : "Unnamed";
+                            f32 surfaceY = transform ? transform->position.y : 0.0f;
+
+                            ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
+                            if (ImGui::IsItemClicked()) {
+                                SelectEntity(entity);
+                            }
+                        }
+                    }
+                    if (waterVolumeCount == 0) {
+                        ImGui::TextDisabled("No water volumes in scene");
+                    }
+                    ImGui::TreePop();
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Text("Active Particles: %u / 8000", m_WeatherSystem.GetActiveParticleCount());
+            if (m_WeatherSystem.IsLightningActive()) {
+                ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "LIGHTNING ACTIVE!");
+            }
+            ImGui::TreePop();
+        }
+
+        // === WIND ===
+        if (ImGui::TreeNode("Wind")) {
+            ImGui::TextWrapped("Global wind affects weather particles, vegetation sway, and grass.");
+            ImGui::Spacing();
+
+            Effects::WindParams params = m_WindSystem.GetGlobalParams();
+            bool changed = false;
+
+            float dir[3] = { params.direction.x, params.direction.y, params.direction.z };
+            if (ImGui::DragFloat3("Direction", dir, 0.01f, -1.0f, 1.0f)) {
+                params.direction = Math::Vector3(dir[0], dir[1], dir[2]);
+                // Normalize if non-zero
+                f32 len = params.direction.Length();
+                if (len > 0.001f) params.direction = params.direction * (1.0f / len);
+                changed = true;
+            }
+            if (ImGui::DragFloat("Wind Strength", &params.strength, 0.05f, 0.0f, 10.0f)) changed = true;
+            if (ImGui::DragFloat("Gust Strength", &params.gustStrength, 0.05f, 0.0f, 5.0f)) changed = true;
+            if (ImGui::DragFloat("Gust Frequency", &params.gustFrequency, 0.01f, 0.0f, 2.0f, "%.2f Hz")) changed = true;
+            if (ImGui::DragFloat("Turbulence", &params.turbulence, 0.01f, 0.0f, 2.0f)) changed = true;
+
+            if (changed) {
+                m_WindSystem.SetGlobalWind(params);
+            }
+
+            if (m_WindSystem.HasZoneOverride()) {
+                ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.3f, 1.0f), "Zone override active");
+            }
+            ImGui::TreePop();
+        }
+    }
+
     ImGui::End();
+}
+
+void EditorLayer::DrawBuildConfigSection() {
+    if (ImGui::CollapsingHeader("Build Config")) {
+        char titleBuf[256];
+        strncpy(titleBuf, m_BuildConfig.windowTitle.c_str(), sizeof(titleBuf) - 1);
+        titleBuf[sizeof(titleBuf) - 1] = '\0';
+        if (ImGui::InputText("Window Title", titleBuf, sizeof(titleBuf))) {
+            m_BuildConfig.windowTitle = titleBuf;
+        }
+
+        int w = static_cast<int>(m_BuildConfig.windowWidth);
+        int h = static_cast<int>(m_BuildConfig.windowHeight);
+        if (ImGui::DragInt("Window Width", &w, 1, 320, 3840)) {
+            m_BuildConfig.windowWidth = static_cast<u32>(w);
+        }
+        if (ImGui::DragInt("Window Height", &h, 1, 240, 2160)) {
+            m_BuildConfig.windowHeight = static_cast<u32>(h);
+        }
+        ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
+
+        char outputBuf[512];
+        strncpy(outputBuf, m_BuildConfig.outputDir.c_str(), sizeof(outputBuf) - 1);
+        outputBuf[sizeof(outputBuf) - 1] = '\0';
+        if (ImGui::InputText("Output Directory", outputBuf, sizeof(outputBuf))) {
+            m_BuildConfig.outputDir = outputBuf;
+        }
+
+        ImGui::Spacing();
+        ImGui::TextDisabled("Use File > Build Game to export with these settings.");
+    }
 }
 
 void EditorLayer::DrawPostProcessingPanel() {
@@ -8438,49 +8302,11 @@ void EditorLayer::DrawPostProcessingPanel() {
         }
     }
 
-    // Collision Groups
-    if (ImGui::CollapsingHeader("Collision Groups")) {
-        auto& groupNames = m_SceneManager.GetCollisionGroupNames();
-
-        // Determine visible count: all named groups + 2 blank slots
-        int visibleCount = 1;
-        for (int i = 1; i < 32; ++i) {
-            if (!groupNames[i].empty()) visibleCount = i + 1;
-        }
-        visibleCount = std::min(visibleCount + 2, 32);
-
-        for (int i = 0; i < visibleCount; ++i) {
-            ImGui::PushID(i);
-            char label[32];
-            snprintf(label, sizeof(label), "Group %d", i);
-
-            if (i == 0) {
-                // Group 0 "Default" is read-only
-                ImGui::TextDisabled("%s", label);
-                ImGui::SameLine();
-                ImGui::TextDisabled("Default");
-            } else {
-                ImGui::Text("%s", label);
-                ImGui::SameLine();
-                char buf[64];
-                strncpy(buf, groupNames[i].c_str(), sizeof(buf) - 1);
-                buf[sizeof(buf) - 1] = '\0';
-                ImGui::SetNextItemWidth(150.0f);
-                if (ImGui::InputText("##name", buf, sizeof(buf))) {
-                    groupNames[i] = buf;
-                }
-            }
-            ImGui::PopID();
-        }
-
-        ImGui::TextDisabled("Named groups appear as checkboxes on collider components.");
-    }
-
     ImGui::End();
 }
 
-void EditorLayer::DrawEffectsPanel() {
-    ImGui::Begin("Effects (Retro)");
+void EditorLayer::DrawRetroEffectsPanel() {
+    ImGui::Begin("Retro Effects");
 
     // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
     if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -8682,169 +8508,6 @@ void EditorLayer::DrawEffectsPanel() {
                 }
                 ImGui::TreePop();
             }
-        }
-    }
-
-    // === WORLD TIME / DAY-NIGHT CYCLE ===
-    if (ImGui::CollapsingHeader("World Time / Day-Night")) {
-        ImGui::Checkbox("Enable World Time", &m_WorldTimeEnabled);
-
-        if (m_WorldTimeEnabled) {
-            auto& state = const_cast<Effects::WorldTimeState&>(m_WorldTime.GetState());
-            auto& calConfig = m_WorldTime.GetCalendarConfig();
-            auto& dayConfig = m_WorldTime.GetDaylightConfig();
-
-            ImGui::Checkbox("Paused", &calConfig.paused);
-
-            f32 timeOfDay = state.timeOfDay;
-            if (ImGui::SliderFloat("Time of Day", &timeOfDay, 0.0f, 23.99f, "%.2f h")) {
-                m_WorldTime.SetTime(timeOfDay, state.day, state.month, state.year);
-            }
-
-            int day = static_cast<int>(state.day);
-            int month = static_cast<int>(state.month);
-            int year = static_cast<int>(state.year);
-            bool changed = false;
-            changed |= ImGui::DragInt("Day", &day, 1, 1, static_cast<int>(calConfig.daysPerMonth));
-            changed |= ImGui::DragInt("Month", &month, 1, 1, static_cast<int>(calConfig.monthsPerYear));
-            changed |= ImGui::DragInt("Year", &year, 1, 1, 9999);
-            if (changed) {
-                m_WorldTime.SetTime(state.timeOfDay, static_cast<u32>(day),
-                                   static_cast<u32>(month), static_cast<u32>(year));
-            }
-
-            ImGui::DragFloat("Seconds/Game Hour", &calConfig.secondsPerGameHour, 1.0f, 1.0f, 600.0f);
-
-            const char* seasonNames[] = { "Spring", "Summer", "Fall", "Winter" };
-            ImGui::Text("Season: %s (%.0f%%)", seasonNames[static_cast<int>(state.season)],
-                       m_WorldTime.GetSeasonProgress() * 100.0f);
-            ImGui::Text("Daylight: %.1f hours  %s", state.daylightHours, state.isNight ? "[Night]" : "[Day]");
-            ImGui::Text("Sun Elevation: %.2f", state.sunElevation);
-
-            ImGui::Separator();
-            ImGui::Text("Daylight Config");
-            ImGui::DragFloat("Spring Daylight", &dayConfig.springDaylight, 0.1f, 6.0f, 20.0f);
-            ImGui::DragFloat("Summer Daylight", &dayConfig.summerDaylight, 0.1f, 6.0f, 22.0f);
-            ImGui::DragFloat("Fall Daylight", &dayConfig.fallDaylight, 0.1f, 6.0f, 18.0f);
-            ImGui::DragFloat("Winter Daylight", &dayConfig.winterDaylight, 0.1f, 4.0f, 16.0f);
-
-            ImGui::Separator();
-            ImGui::Checkbox("Seasonal Weather", &m_SeasonalWeatherEnabled);
-            if (m_SeasonalWeatherEnabled) {
-                auto& sConfig = m_SeasonalWeather.GetConfig();
-                ImGui::Text("Temperature: %.1f C", m_SeasonalWeather.GetCurrentTemperature());
-                ImGui::DragFloat("Weather Interval (s)", &sConfig.weatherChangeInterval, 10.0f, 10.0f, 3600.0f);
-
-                if (ImGui::TreeNode("Temperature Ranges")) {
-                    ImGui::DragFloatRange2("Spring", &sConfig.spring.minTemp, &sConfig.spring.maxTemp, 0.5f, -30.0f, 50.0f);
-                    ImGui::DragFloatRange2("Summer", &sConfig.summer.minTemp, &sConfig.summer.maxTemp, 0.5f, -30.0f, 50.0f);
-                    ImGui::DragFloatRange2("Fall", &sConfig.fall.minTemp, &sConfig.fall.maxTemp, 0.5f, -30.0f, 50.0f);
-                    ImGui::DragFloatRange2("Winter", &sConfig.winter.minTemp, &sConfig.winter.maxTemp, 0.5f, -30.0f, 50.0f);
-                    ImGui::TreePop();
-                }
-            }
-        }
-    }
-
-    // === WORLD CURVATURE ===
-    if (ImGui::CollapsingHeader("World Curvature")) {
-        ImGui::Checkbox("Enable Curvature", &m_WorldCurvatureEnabled);
-        if (m_WorldCurvatureEnabled) {
-            ImGui::DragFloat("Curvature Strength", &m_WorldCurvature, 0.00001f, 0.0f, 0.01f, "%.5f");
-            ImGui::TextDisabled("Bends distant geometry downward. Try 0.0001-0.001.");
-        }
-    }
-
-    // === WEATHER & WATER (Entity-Based Zones) ===
-    if (ImGui::CollapsingHeader("Weather & Water")) {
-        ImGui::TextWrapped("Weather and Water are entity-based game objects with bounding boxes.");
-        ImGui::Spacing();
-        ImGui::TextWrapped("Create via Entity > Effects menu, or add components to existing entities.");
-        ImGui::Spacing();
-
-        // List weather zones
-        const char* weatherTypeNames[] = { "Clear", "Cloudy", "Rain", "Heavy Rain", "Snow", "Fog", "Storm" };
-        u32 weatherZoneCount = 0;
-        u32 waterVolumeCount = 0;
-        if (m_World) {
-            if (ImGui::TreeNode("Weather Zones")) {
-                for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                        weatherZoneCount++;
-                        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                        const char* label = name ? name->name.c_str() : "Unnamed";
-                        const char* typeName = (zone->weatherType < 7) ? weatherTypeNames[zone->weatherType] : "Unknown";
-
-                        ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
-                        if (ImGui::IsItemClicked()) {
-                            SelectEntity(entity);
-                        }
-                    }
-                }
-                if (weatherZoneCount == 0) {
-                    ImGui::TextDisabled("No weather zones in scene");
-                }
-                ImGui::TreePop();
-            }
-
-            if (ImGui::TreeNode("Water Volumes")) {
-                for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                        waterVolumeCount++;
-                        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                        const char* label = name ? name->name.c_str() : "Unnamed";
-                        f32 surfaceY = transform ? transform->position.y : 0.0f;
-
-                        ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
-                        if (ImGui::IsItemClicked()) {
-                            SelectEntity(entity);
-                        }
-                    }
-                }
-                if (waterVolumeCount == 0) {
-                    ImGui::TextDisabled("No water volumes in scene");
-                }
-                ImGui::TreePop();
-            }
-        }
-
-        ImGui::Spacing();
-        ImGui::Text("Active Particles: %u / 8000", m_WeatherSystem.GetActiveParticleCount());
-        if (m_WeatherSystem.IsLightningActive()) {
-            ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.5f, 1.0f), "LIGHTNING ACTIVE!");
-        }
-    }
-
-    // === WIND ===
-    if (ImGui::CollapsingHeader("Wind")) {
-        ImGui::TextWrapped("Global wind affects weather particles, vegetation sway, and grass.");
-        ImGui::Spacing();
-
-        Effects::WindParams params = m_WindSystem.GetGlobalParams();
-        bool changed = false;
-
-        float dir[3] = { params.direction.x, params.direction.y, params.direction.z };
-        if (ImGui::DragFloat3("Direction", dir, 0.01f, -1.0f, 1.0f)) {
-            params.direction = Math::Vector3(dir[0], dir[1], dir[2]);
-            // Normalize if non-zero
-            f32 len = params.direction.Length();
-            if (len > 0.001f) params.direction = params.direction * (1.0f / len);
-            changed = true;
-        }
-        if (ImGui::DragFloat("Wind Strength", &params.strength, 0.05f, 0.0f, 10.0f)) changed = true;
-        if (ImGui::DragFloat("Gust Strength", &params.gustStrength, 0.05f, 0.0f, 5.0f)) changed = true;
-        if (ImGui::DragFloat("Gust Frequency", &params.gustFrequency, 0.01f, 0.0f, 2.0f, "%.2f Hz")) changed = true;
-        if (ImGui::DragFloat("Turbulence", &params.turbulence, 0.01f, 0.0f, 2.0f)) changed = true;
-
-        if (changed) {
-            m_WindSystem.SetGlobalWind(params);
-        }
-
-        if (m_WindSystem.HasZoneOverride()) {
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.3f, 1.0f), "Zone override active");
         }
     }
 
@@ -9346,8 +9009,8 @@ void EditorLayer::DrawGameViewPanel() {
     ImGui::End();
 }
 
-void EditorLayer::DrawSkyboxPanel() {
-    ImGui::Begin("Skybox", nullptr, ImGuiWindowFlags_None);
+void EditorLayer::DrawRenderingPanel() {
+    ImGui::Begin("Rendering", nullptr, ImGuiWindowFlags_None);
 
     if (!m_RenderSystem) {
         ImGui::TextDisabled("No render system available");
@@ -9355,100 +9018,394 @@ void EditorLayer::DrawSkyboxPanel() {
         return;
     }
 
-    Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
-    bool changed = false;
+    // === SKYBOX ===
+    if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
+        Renderer::SkyboxConfig config = m_RenderSystem->GetSkyboxConfig();
+        bool changed = false;
 
-    // Type combo
-    int typeIdx = static_cast<int>(config.type);
-    const char* skyboxTypes[] = { "None", "Cubemap", "Procedural", "Solid Color" };
-    if (ImGui::Combo("Type", &typeIdx, skyboxTypes, 4)) {
-        config.type = static_cast<Renderer::SkyboxType>(typeIdx);
-        changed = true;
-    }
-
-    ImGui::Separator();
-
-    // Procedural sky controls
-    if (config.type == Renderer::SkyboxType::Procedural) {
-        // Presets
-        ImGui::Text("Presets:");
-        if (ImGui::Button("Midday")) {
-            config.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
-            config.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
-            config.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
-            config.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
-            changed = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Sunset")) {
-            config.topColor = Math::Vector3(0.1f, 0.1f, 0.4f);
-            config.horizonColor = Math::Vector3(0.9f, 0.4f, 0.1f);
-            config.bottomColor = Math::Vector3(0.95f, 0.6f, 0.2f);
-            config.sunDirection = Math::Vector3(0.8f, 0.1f, 0.3f);
-            changed = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Dawn")) {
-            config.topColor = Math::Vector3(0.15f, 0.15f, 0.5f);
-            config.horizonColor = Math::Vector3(0.8f, 0.5f, 0.3f);
-            config.bottomColor = Math::Vector3(0.6f, 0.4f, 0.3f);
-            config.sunDirection = Math::Vector3(-0.8f, 0.15f, 0.2f);
-            changed = true;
-        }
-        if (ImGui::Button("Night")) {
-            config.topColor = Math::Vector3(0.01f, 0.01f, 0.05f);
-            config.horizonColor = Math::Vector3(0.05f, 0.05f, 0.15f);
-            config.bottomColor = Math::Vector3(0.02f, 0.02f, 0.08f);
-            config.sunDirection = Math::Vector3(0.0f, -1.0f, 0.0f);
-            changed = true;
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Overcast")) {
-            config.topColor = Math::Vector3(0.5f, 0.5f, 0.55f);
-            config.horizonColor = Math::Vector3(0.6f, 0.6f, 0.63f);
-            config.bottomColor = Math::Vector3(0.55f, 0.55f, 0.58f);
-            config.sunDirection = Math::Vector3(0.3f, 0.7f, 0.2f);
+        // Type combo
+        int typeIdx = static_cast<int>(config.type);
+        const char* skyboxTypes[] = { "None", "Cubemap", "Procedural", "Solid Color" };
+        if (ImGui::Combo("Type", &typeIdx, skyboxTypes, 4)) {
+            config.type = static_cast<Renderer::SkyboxType>(typeIdx);
             changed = true;
         }
 
         ImGui::Separator();
-        ImGui::Text("Colors:");
-        changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
-        changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
-        changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
 
-        ImGui::Separator();
-        changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
-    }
-
-    // Solid color controls
-    if (config.type == Renderer::SkyboxType::SolidColor) {
-        changed |= ImGui::ColorEdit3("Sky Color", &config.solidColor.x);
-    }
-
-    // Cubemap controls
-    if (config.type == Renderer::SkyboxType::Cubemap) {
-        ImGui::Text("Cubemap Faces:");
-        const char* faceLabels[] = { "Right (+X)", "Left (-X)", "Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)" };
-        for (int i = 0; i < 6; ++i) {
-            char buf[256];
-            strncpy(buf, config.cubemapPaths[i].c_str(), sizeof(buf) - 1);
-            buf[sizeof(buf) - 1] = '\0';
-            if (ImGui::InputText(faceLabels[i], buf, sizeof(buf))) {
-                config.cubemapPaths[i] = buf;
+        // Procedural sky controls
+        if (config.type == Renderer::SkyboxType::Procedural) {
+            // Presets
+            ImGui::Text("Presets:");
+            if (ImGui::Button("Midday")) {
+                config.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+                config.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+                config.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+                config.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
                 changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Sunset")) {
+                config.topColor = Math::Vector3(0.1f, 0.1f, 0.4f);
+                config.horizonColor = Math::Vector3(0.9f, 0.4f, 0.1f);
+                config.bottomColor = Math::Vector3(0.95f, 0.6f, 0.2f);
+                config.sunDirection = Math::Vector3(0.8f, 0.1f, 0.3f);
+                changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Dawn")) {
+                config.topColor = Math::Vector3(0.15f, 0.15f, 0.5f);
+                config.horizonColor = Math::Vector3(0.8f, 0.5f, 0.3f);
+                config.bottomColor = Math::Vector3(0.6f, 0.4f, 0.3f);
+                config.sunDirection = Math::Vector3(-0.8f, 0.15f, 0.2f);
+                changed = true;
+            }
+            if (ImGui::Button("Night")) {
+                config.topColor = Math::Vector3(0.01f, 0.01f, 0.05f);
+                config.horizonColor = Math::Vector3(0.05f, 0.05f, 0.15f);
+                config.bottomColor = Math::Vector3(0.02f, 0.02f, 0.08f);
+                config.sunDirection = Math::Vector3(0.0f, -1.0f, 0.0f);
+                changed = true;
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Overcast")) {
+                config.topColor = Math::Vector3(0.5f, 0.5f, 0.55f);
+                config.horizonColor = Math::Vector3(0.6f, 0.6f, 0.63f);
+                config.bottomColor = Math::Vector3(0.55f, 0.55f, 0.58f);
+                config.sunDirection = Math::Vector3(0.3f, 0.7f, 0.2f);
+                changed = true;
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Colors:");
+            changed |= ImGui::ColorEdit3("Top Color", &config.topColor.x);
+            changed |= ImGui::ColorEdit3("Horizon Color", &config.horizonColor.x);
+            changed |= ImGui::ColorEdit3("Bottom Color", &config.bottomColor.x);
+
+            ImGui::Separator();
+            changed |= ImGui::DragFloat3("Sun Direction", &config.sunDirection.x, 0.01f, -1.0f, 1.0f);
+        }
+
+        // Solid color controls
+        if (config.type == Renderer::SkyboxType::SolidColor) {
+            changed |= ImGui::ColorEdit3("Sky Color", &config.solidColor.x);
+        }
+
+        // Cubemap controls
+        if (config.type == Renderer::SkyboxType::Cubemap) {
+            ImGui::Text("Cubemap Faces:");
+            const char* faceLabels[] = { "Right (+X)", "Left (-X)", "Top (+Y)", "Bottom (-Y)", "Front (+Z)", "Back (-Z)" };
+            for (int i = 0; i < 6; ++i) {
+                char buf[256];
+                strncpy(buf, config.cubemapPaths[i].c_str(), sizeof(buf) - 1);
+                buf[sizeof(buf) - 1] = '\0';
+                if (ImGui::InputText(faceLabels[i], buf, sizeof(buf))) {
+                    config.cubemapPaths[i] = buf;
+                    changed = true;
+                }
+            }
+        }
+
+        // Rotation slider for all non-None types
+        if (config.type != Renderer::SkyboxType::None) {
+            ImGui::Separator();
+            changed |= ImGui::SliderFloat("Rotation", &config.rotation, 0.0f, 360.0f, "%.1f deg");
+        }
+
+        if (changed) {
+            m_RenderSystem->SetSkybox(config);
+        }
+    }
+
+    // === SHADOWS ===
+    if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool shadows = m_RenderSystem->IsShadowsEnabled();
+        if (ImGui::Checkbox("Shadows", &shadows)) {
+            m_RenderSystem->SetShadowsEnabled(shadows);
+        }
+
+        if (shadows) {
+            // Shadow resolution
+            const char* resOptions[] = { "512", "1024", "2048", "4096" };
+            const u32 resValues[] = { 512, 1024, 2048, 4096 };
+            u32 currentRes = m_RenderSystem->GetShadowResolution();
+            int resIdx = 2; // default to 2048
+            for (int i = 0; i < 4; ++i) {
+                if (resValues[i] == currentRes) { resIdx = i; break; }
+            }
+            if (ImGui::Combo("Shadow Resolution", &resIdx, resOptions, 4)) {
+                m_RenderSystem->SetShadowResolution(resValues[resIdx]);
+            }
+
+            // Shadow distance
+            f32 shadowDist = m_RenderSystem->GetShadowDistance();
+            if (ImGui::SliderFloat("Shadow Distance", &shadowDist, 10.0f, 500.0f, "%.0f")) {
+                m_RenderSystem->SetShadowDistance(shadowDist);
+            }
+
+            // Shadow strength
+            f32 shadowStr = m_RenderSystem->GetShadowStrength();
+            if (ImGui::SliderFloat("Shadow Strength", &shadowStr, 0.0f, 1.0f)) {
+                m_RenderSystem->SetShadowStrength(shadowStr);
+            }
+
+            // Shadow softness
+            f32 shadowSoft = m_RenderSystem->GetShadowSoftness();
+            if (ImGui::SliderFloat("Shadow Softness", &shadowSoft, 0.0f, 5.0f, "%.1f")) {
+                m_RenderSystem->SetShadowSoftness(shadowSoft);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = hard edges, 1-5 = soft penumbra radius");
+        }
+    }
+
+    // === AMBIENT LIGHTING ===
+    if (ImGui::CollapsingHeader("Ambient Lighting")) {
+        Math::Vector3 ambientColor = m_RenderSystem->GetAmbientColor();
+        f32 ambient[3] = { ambientColor.x, ambientColor.y, ambientColor.z };
+        if (ImGui::ColorEdit3("Ambient Color", ambient)) {
+            m_RenderSystem->SetAmbientColor(Math::Vector3(ambient[0], ambient[1], ambient[2]));
+        }
+
+        f32 ambientIntensity = m_RenderSystem->GetAmbientIntensity();
+        if (ImGui::DragFloat("Ambient Intensity", &ambientIntensity, 0.05f, 0.0f, 5.0f)) {
+            m_RenderSystem->SetAmbientIntensity(ambientIntensity);
+        }
+    }
+
+    // === CEL SHADING ===
+    if (ImGui::CollapsingHeader("Cel Shading")) {
+        bool celEnabled = m_RenderSystem->IsCelShadingEnabled();
+        if (ImGui::Checkbox("Cel Shading##Rendering", &celEnabled)) {
+            m_RenderSystem->SetCelShadingEnabled(celEnabled);
+        }
+        if (celEnabled) {
+            f32 celBands = m_RenderSystem->GetCelDiffuseBands();
+            if (ImGui::SliderFloat("Diffuse Bands##Cel", &celBands, 2.0f, 8.0f, "%.0f")) {
+                m_RenderSystem->SetCelDiffuseBands(celBands);
+            }
+            f32 celSpec = m_RenderSystem->GetCelSpecularCutoff();
+            if (ImGui::SliderFloat("Specular Cutoff##Cel", &celSpec, 0.0f, 1.0f)) {
+                m_RenderSystem->SetCelSpecularCutoff(celSpec);
             }
         }
     }
 
-    // Rotation slider for all non-None types
-    if (config.type != Renderer::SkyboxType::None) {
-        ImGui::Separator();
-        changed |= ImGui::SliderFloat("Rotation", &config.rotation, 0.0f, 360.0f, "%.1f deg");
+    // === DISPLAY OPTIONS ===
+    if (ImGui::CollapsingHeader("Display Options")) {
+        // Backface culling
+        bool culling = m_RenderSystem->IsBackfaceCullingEnabled();
+        if (ImGui::Checkbox("Backface Culling", &culling)) {
+            m_RenderSystem->SetBackfaceCullingEnabled(culling);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cull back-facing triangles for better performance");
+
+        // Wireframe
+        bool wireframe = m_RenderSystem->IsWireframeEnabled();
+        if (ImGui::Checkbox("Wireframe", &wireframe)) {
+            m_RenderSystem->SetWireframeEnabled(wireframe);
+        }
     }
 
-    if (changed) {
-        m_RenderSystem->SetSkybox(config);
+    // === RAY TRACING ===
+    {
+        bool rtSupported = m_RenderSystem->IsRayTracingSupported();
+        if (ImGui::CollapsingHeader("Ray Tracing")) {
+            if (rtSupported) {
+                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Supported");
+            } else {
+                ImGui::TextColored(ImVec4(0.9f, 0.3f, 0.3f, 1.0f), "Not Supported");
+                ImGui::TextDisabled("GPU does not support VK_KHR_ray_tracing_pipeline");
+            }
+
+            if (rtSupported) {
+                bool rtEnabled = m_RenderSystem->IsRayTracingEnabled();
+                if (ImGui::Checkbox("Enable Ray Tracing", &rtEnabled)) {
+                    m_RenderSystem->SetRayTracingEnabled(rtEnabled);
+                }
+
+                if (rtEnabled) {
+                    // Mode selection
+                    const char* modeNames[] = { "Hybrid", "Path Trace" };
+                    int rtMode = static_cast<int>(m_RenderSystem->GetRTMode());
+                    if (ImGui::Combo("RT Mode", &rtMode, modeNames, 2)) {
+                        m_RenderSystem->SetRTMode(static_cast<u32>(rtMode));
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                        "Hybrid: RT shadows/reflections/AO/GI composited with raster.\n"
+                        "Path Trace: Progressive offline-quality renderer.");
+
+                    if (rtMode == 0) {
+                        // --- Hybrid mode sub-sections ---
+
+                        // RT Shadows
+                        if (auto* rtShadows = m_RenderSystem->GetRTShadows()) {
+                            auto& cfg = rtShadows->GetConfig();
+                            if (ImGui::TreeNode("RT Shadows")) {
+                                ImGui::Checkbox("Enabled##RTShadow", &cfg.enabled);
+                                if (cfg.enabled) {
+                                    ImGui::DragFloat("Max Distance##RTShadow", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
+                                    ImGui::DragFloat("Soft Radius##RTShadow", &cfg.radius, 0.001f, 0.0f, 0.5f, "%.3f");
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Penumbra radius for soft shadows (0 = hard)");
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // RT Reflections
+                        if (auto* rtReflect = m_RenderSystem->GetRTReflections()) {
+                            auto& cfg = rtReflect->GetConfig();
+                            if (ImGui::TreeNode("RT Reflections")) {
+                                ImGui::Checkbox("Enabled##RTReflect", &cfg.enabled);
+                                if (cfg.enabled) {
+                                    ImGui::DragFloat("Max Distance##RTReflect", &cfg.maxDistance, 1.0f, 1.0f, 500.0f);
+                                    ImGui::SliderFloat("Roughness Threshold", &cfg.roughnessThreshold, 0.0f, 1.0f);
+                                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Skip reflections for surfaces rougher than this");
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // RT Ambient Occlusion
+                        if (auto* rtAO = m_RenderSystem->GetRTAO()) {
+                            auto& cfg = rtAO->GetConfig();
+                            if (ImGui::TreeNode("RT Ambient Occlusion")) {
+                                ImGui::Checkbox("Enabled##RTAO", &cfg.enabled);
+                                if (cfg.enabled) {
+                                    ImGui::DragFloat("AO Radius", &cfg.radius, 0.1f, 0.1f, 20.0f);
+                                    ImGui::DragFloat("AO Power", &cfg.power, 0.1f, 0.1f, 5.0f);
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // RT Global Illumination
+                        if (auto* rtGI = m_RenderSystem->GetRTGI()) {
+                            auto& cfg = rtGI->GetConfig();
+                            if (ImGui::TreeNode("RT Global Illumination")) {
+                                ImGui::Checkbox("Enabled##RTGI", &cfg.enabled);
+                                if (cfg.enabled) {
+                                    ImGui::DragFloat("Max Distance##RTGI", &cfg.maxDistance, 1.0f, 1.0f, 200.0f);
+                                    ImGui::DragFloat("GI Intensity", &cfg.intensity, 0.1f, 0.0f, 5.0f);
+                                    int bounces = static_cast<int>(cfg.bounces);
+                                    if (ImGui::SliderInt("Bounces", &bounces, 1, 4)) {
+                                        cfg.bounces = static_cast<u32>(bounces);
+                                    }
+                                }
+                                ImGui::TreePop();
+                            }
+                        }
+
+                        // Composite strengths
+                        if (auto* compositor = m_RenderSystem->GetRTCompositor()) {
+                            auto& cfg = compositor->GetConfig();
+                            if (ImGui::TreeNode("Composite Strengths")) {
+                                ImGui::SliderFloat("Shadow##RTComp", &cfg.shadowStrength, 0.0f, 1.0f);
+                                ImGui::SliderFloat("Reflection##RTComp", &cfg.reflectionStrength, 0.0f, 1.0f);
+                                ImGui::SliderFloat("AO##RTComp", &cfg.aoStrength, 0.0f, 1.0f);
+                                ImGui::SliderFloat("GI##RTComp", &cfg.giStrength, 0.0f, 1.0f);
+                                ImGui::TreePop();
+                            }
+                        }
+                    } else {
+                        // --- Path Trace mode ---
+                        if (auto* pathTracer = m_RenderSystem->GetPathTracer()) {
+                            auto& cfg = pathTracer->GetConfig();
+                            int maxBounces = static_cast<int>(cfg.maxBounces);
+                            if (ImGui::SliderInt("Max Bounces", &maxBounces, 1, 16)) {
+                                cfg.maxBounces = static_cast<u32>(maxBounces);
+                            }
+                            int targetSPP = static_cast<int>(cfg.targetSPP);
+                            if (ImGui::DragInt("Target SPP", &targetSPP, 16, 1, 65536)) {
+                                cfg.targetSPP = static_cast<u32>(targetSPP);
+                            }
+
+                            // Progress
+                            u32 accumulated = pathTracer->GetAccumulatedSamples();
+                            f32 progress = (cfg.targetSPP > 0)
+                                ? static_cast<f32>(accumulated) / static_cast<f32>(cfg.targetSPP)
+                                : 0.0f;
+                            char overlay[64];
+                            snprintf(overlay, sizeof(overlay), "%u / %u SPP", accumulated, cfg.targetSPP);
+                            ImGui::ProgressBar(progress, ImVec2(-1, 0), overlay);
+
+                            if (pathTracer->IsConverged()) {
+                                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "Converged");
+                            }
+
+                            if (ImGui::Button("Reset Accumulation")) {
+                                pathTracer->ResetAccumulation();
+                            }
+                        }
+                    }
+
+                    // Denoiser settings
+                    if (auto* denoiser = m_RenderSystem->GetSVGFDenoiser()) {
+                        auto& cfg = denoiser->GetConfig();
+                        if (ImGui::TreeNode("SVGF Denoiser")) {
+                            ImGui::SliderFloat("Temporal Alpha", &cfg.temporalAlpha, 0.01f, 0.5f, "%.3f");
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more temporal history (smoother but more ghosting)");
+                            int iterations = static_cast<int>(cfg.atrousIterations);
+                            if (ImGui::SliderInt("A-Trous Iterations", &iterations, 1, 8)) {
+                                cfg.atrousIterations = static_cast<u32>(iterations);
+                            }
+                            if (ImGui::Button("Reset History##SVGF")) {
+                                denoiser->ResetHistory();
+                            }
+                            ImGui::TreePop();
+                        }
+                    }
+                }
+
+                // Stats
+                if (auto* asManager = m_RenderSystem->GetASManager()) {
+                    ImGui::Separator();
+                    ImGui::Text("BLAS Count: %u", asManager->GetBLASCount());
+                    ImGui::Text("Instance Count: %u", asManager->GetInstanceCount());
+                }
+            }
+        }
+    }
+
+    // === PER-SCENE OVERRIDE & PROJECT DEFAULTS ===
+    if (ImGui::CollapsingHeader("Scene Overrides")) {
+        if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
+            if (m_CurrentSceneUsesProjectDefaults) {
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "When checked, this scene uses the project's default rendering settings.\n"
+            "Uncheck to override settings per-scene.");
+
+        if (m_CurrentSceneUsesProjectDefaults) {
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "This scene uses project default rendering settings");
+        }
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("Set Current as Project Default")) {
+            auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_SceneManager.SetDefaultRenderSettings(current);
+            if (!m_SceneManager.GetProjectPath().empty()) {
+                m_SceneManager.SaveProject();
+            }
+            ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "Save the current rendering settings as the project-level default.\n"
+            "New scenes and scenes using project defaults will use these settings.");
+
+        if (!m_CurrentSceneUsesProjectDefaults) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset to Project Default")) {
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Reset this scene's rendering settings to the project default values.");
+        }
     }
 
     ImGui::End();
@@ -11568,16 +11525,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     // --- Configure editor layout per template ---
     // Reset to defaults first
     m_Layout = LayoutConfig{};
+    // All templates use minimal panel set: Hierarchy, Inspector, Viewport, Console, AssetBrowser
     EditorPanel corePanels = EditorPanel::Hierarchy | EditorPanel::Inspector |
-                             EditorPanel::Console | EditorPanel::AssetBrowser;
+                             EditorPanel::Viewport | EditorPanel::Console | EditorPanel::AssetBrowser;
+    m_Layout.panels = corePanels;
 
-    if (templateId == "blank") {
-        // Full editor: everything visible for exploration
-        m_Layout.panels = EditorPanel::All;
-    }
-    else if (templateId == "platformer" || templateId == "topdown2d") {
-        // 2D: compact hierarchy, wide game view, no 3D-specific panels
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
+    if (templateId == "platformer" || templateId == "topdown2d") {
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
@@ -11585,17 +11538,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 450.0f;
     }
     else if (templateId == "isometric" || templateId == "citybuilder" || templateId == "towerdefense") {
-        // Top-down 3D: standard layout with scene list + skybox, moderate game view
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox |
-                          EditorPanel::SceneList | EditorPanel::Settings;
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 650.0f;
         m_Layout.gameViewH = 420.0f;
     }
     else if (templateId == "planetgravity") {
-        // Planet gravity: game view, inspector for controller tuning, skybox
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -11603,16 +11551,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 440.0f;
     }
     else if (templateId == "shadowtest") {
-        // Shadow test: simple layout, focus on scene viewport
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 650.0f;
         m_Layout.gameViewH = 420.0f;
     }
     else if (templateId == "thirdperson" || templateId == "arena" || templateId == "teamsports") {
-        // Standard 3D action: game view, inspector for controller tuning, skybox
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.16f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -11620,8 +11564,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 440.0f;
     }
     else if (templateId == "firstperson" || templateId == "fpsarena") {
-        // FPS: large immersive game view, narrow hierarchy, inspector for mouse look tuning
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
         m_Layout.leftWidth = 0.13f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
@@ -11629,8 +11571,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 500.0f;
     }
     else if (templateId == "visualnovel" || templateId == "narrative") {
-        // Story-driven: large game view for dialogue display, inspector for editing
-        m_Layout.panels = corePanels | EditorPanel::GameView;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.24f;
         m_Layout.bottomHeight = 0.15f;
@@ -11639,9 +11579,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 480.0f;
     }
     else if (templateId == "rpg_village") {
-        // Full RPG: all panels including scene list, effects for weather/time
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
-                          EditorPanel::SceneList | EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.17f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.inspectorSplit = 0.55f;
@@ -11649,26 +11586,19 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 400.0f;
     }
     else if (templateId == "survival") {
-        // Exploration: large game view, effects for weather, console for debug
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
-                          EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 720.0f;
         m_Layout.gameViewH = 450.0f;
     }
     else if (templateId == "gamemanager") {
-        // System design: console prominent, hierarchy/inspector standard, no game view emphasis
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::SceneList | EditorPanel::Settings;
         m_Layout.leftWidth = 0.18f;
         m_Layout.rightWidth = 0.22f;
-        m_Layout.bottomHeight = 0.28f;  // Larger console area
+        m_Layout.bottomHeight = 0.28f;
         m_Layout.gameViewW = 500.0f;
         m_Layout.gameViewH = 350.0f;
     }
     else if (templateId == "racing") {
-        // Splitscreen: game view as large as possible for viewport subdivision
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
         m_Layout.leftWidth = 0.12f;
         m_Layout.rightWidth = 0.18f;
         m_Layout.bottomHeight = 0.16f;
@@ -11676,18 +11606,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 550.0f;
     }
     else if (templateId == "ps1rpg") {
-        // Retro: post-processing + effects visible for retro tuning, game view centered
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::PostProcessing |
-                          EditorPanel::Effects | EditorPanel::Settings;
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 640.0f;
         m_Layout.gameViewH = 420.0f;
     }
     else if (templateId == "horror") {
-        // Atmospheric: large immersive game view, effects + post-processing for mood
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
-                          EditorPanel::PostProcessing | EditorPanel::Skybox;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.21f;
         m_Layout.bottomHeight = 0.18f;
@@ -11695,8 +11619,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 500.0f;
     }
     else if (templateId == "puzzle") {
-        // Puzzle: game view prominent, inspector for puzzle editing, minimal panels
-        m_Layout.panels = corePanels | EditorPanel::GameView;
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.bottomHeight = 0.18f;
@@ -11704,18 +11626,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 450.0f;
     }
     else if (templateId == "runner") {
-        // Endless runner: wide game view (horizontal gameplay), compact panels
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox;
         m_Layout.leftWidth = 0.13f;
         m_Layout.rightWidth = 0.19f;
         m_Layout.bottomHeight = 0.16f;
         m_Layout.gameViewW = 850.0f;
-        m_Layout.gameViewH = 400.0f;  // Wide aspect for runner
+        m_Layout.gameViewH = 400.0f;
     }
     else if (templateId == "flower") {
-        // Interactive art: large centered game view, effects for wind/weather, inspector for physics
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Effects |
-                          EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.23f;
         m_Layout.inspectorSplit = 0.65f;
@@ -11723,16 +11640,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 480.0f;
     }
     else if (templateId == "fixedcam") {
-        // Fixed camera: large game view (camera framing is key), inspector for zones
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 750.0f;
         m_Layout.gameViewH = 480.0f;
     }
     else if (templateId == "dungeon") {
-        // SMT dungeon: large first-person game view, console for game messages, compact hierarchy
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.21f;
         m_Layout.bottomHeight = 0.20f;
@@ -11740,8 +11653,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 520.0f;
     }
     else if (templateId == "metroidvania") {
-        // 2D side-scroller: wide game view, compact side panels
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
@@ -11749,16 +11660,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 450.0f;
     }
     else if (templateId == "soulslike") {
-        // 3D action: big game view for combat readability, skybox panel
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.15f;
         m_Layout.rightWidth = 0.22f;
         m_Layout.gameViewW = 800.0f;
         m_Layout.gameViewH = 500.0f;
     }
     else if (templateId == "vampsurvivor") {
-        // Top-down overhead: wide game view, small panels
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.16f;
@@ -11766,8 +11673,6 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 700.0f;
     }
     else if (templateId == "roguelike") {
-        // 2D top-down grid: square-ish game view
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.bottomHeight = 0.18f;
@@ -11775,25 +11680,17 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewH = 650.0f;
     }
     else if (templateId == "couchcoop") {
-        // 2-player splitscreen: large game view for split viewports
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::Skybox | EditorPanel::Settings;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.gameViewW = 850.0f;
         m_Layout.gameViewH = 480.0f;
     }
     else if (templateId.substr(0, 6) == "flash_") {
-        // Flash templates: 2D with timeline panel, wide game view for Flash stage
-        m_Layout.panels = corePanels | EditorPanel::GameView | EditorPanel::FlashTimeline;
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
-        m_Layout.bottomHeight = 0.30f;  // Taller bottom for timeline
+        m_Layout.bottomHeight = 0.30f;
         m_Layout.gameViewW = 550.0f;
-        m_Layout.gameViewH = 400.0f;  // Flash default stage
-    }
-    else {
-        // Fallback: standard layout
-        m_Layout.panels = EditorPanel::All;
+        m_Layout.gameViewH = 400.0f;
     }
 
     m_VisiblePanels = m_Layout.panels;

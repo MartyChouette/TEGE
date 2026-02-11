@@ -287,7 +287,7 @@ Ideas for "simple creation of complex games":
 | Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | Planned |
 | Tilt-shift / miniature effect | Low | Medium | P3 | Planned |
 | Bokeh depth of field | Medium | High | P2 | Planned |
-| Cel shading / toon rendering | High | Medium | P2 | Planned |
+| Cel shading / toon rendering | High | Medium | P2 | ✅ Complete |
 | Full-screen stippling & dither | Medium | Low | P3 | Planned |
 | **— Artistic Rendering —** | | | | |
 | Parallax occlusion mapping (advanced) | Medium | Medium | P2 | Planned |
@@ -307,9 +307,9 @@ Ideas for "simple creation of complex games":
 | Cellular automata as geometry | Medium | Medium | P3 | Planned |
 | Slime mold simulation (Physarum) | Medium | Medium | P3 | Planned |
 | Fluid simulation as terrain | Medium | Medium | P2 | Planned |
-| Voronoi fracture with persistent physics | High | Medium | P2 | Planned |
+| Voronoi fracture with persistent physics | High | Medium | P2 | ✅ Complete |
 | **— Simulation & Flow —** | | | | |
-| Curl noise flow fields | High | Medium | P2 | Planned |
+| Curl noise flow fields | High | Medium | P2 | ✅ Complete |
 | Wave Racer 64 water | Medium | High | P3 | Planned |
 | Mesh audio reactivity via FFT | Medium | Medium | P3 | Planned |
 | **— Mathematical & Exotic Geometry —** | | | | |
@@ -409,7 +409,7 @@ Import dialog enhancements:
 
 - ~~**Improved Physics**~~ ✅ — 2D physics (Box2D-style): PhysicsWorld2D with circle/box/polygon shapes, 5 joint types (revolute, prismatic, distance, rope, weld), CCD, physics materials (friction, restitution, density), 2D raycasts/overlap queries, impulse-based collision resolution with SAT, collision enter/exit callbacks, bitmask filtering
 - ~~**Basic Networking**~~ ✅ — Host-authoritative UDP networking with client-side prediction: `NetworkSystem` (connections, heartbeats, timeouts), `NetworkTransport` (cross-platform non-blocking UDP sockets — Winsock2/BSD), `NetworkSerializer` (binary read/write), `NetworkIdentityComponent` + `NetworkTransformComponent`, entity ownership + transfer, 20Hz state sync with delta compression (field bitmask), interpolation buffer (4-state ring with configurable delay), RPC system (FNV-1a hashed names, reliable/unreliable), lobby (player list, ready state, host migration stubs), reliable delivery (sequence numbers, ack bitfield, retransmission), editor Network Panel (host/join/disconnect, player list table, ping/loss/bandwidth stats), full scene serialization
-- ~~**Destructible Environments**~~ ✅ — DestructibleSystem with 4 fracture patterns (Voronoi, Grid, Radial, Shatter), debris spawning with physics (velocity, gravity, angular velocity, lifetime), chain destruction propagation with radius/delay/falloff, per-entity FractureConfig, health-based damage triggers
+- ~~**Destructible Environments**~~ ✅ — DestructibleSystem with 4 fracture patterns (Voronoi, Grid, Radial, Shatter), debris spawning with physics (velocity, gravity, angular velocity, lifetime), chain destruction propagation with radius/delay/falloff, per-entity FractureConfig, health-based damage triggers. Extended with persistent Voronoi fracture (VoronoiMeshFracture + FractureConfigComponent): real ECS fragment entities with rigidbodies, pre-fracture with breakable joints, recursive re-fracture, fragment entity limit, auto-cleanup
 - **Simple Fluid Simulation** — ~~Grid-based Eulerian fluid (water, lava, gas). FluidVolumeComponent with preset configs. Target: 64x64 2D / 32x32x32 3D at 60fps~~ ✅ Stable Fluids solver (Jos Stam), 5 presets (Water/Lava/Gas/Smoke/Steam), GPU instanced cell renderer, full editor integration
 - **SVG Support** — ~~nanosvg parsing, rasterize-to-texture via SVGLoader, GetOrLoadTexture routing for .svg files~~ ✅. ~~SDF vector rendering~~ ✅. ~~UIElement Image widget integration~~ ✅ (RenderImage uses TextureResolver, SVG routes automatically)
 - ~~**Dialogue System Future Work**~~ ✅ (partial) — .enjdlg asset files (DialogueAsset save/load with versioned JSON), LocalizationManager singleton (string key → locale tables, CSV/JSON import/export, parameterized strings with {key} substitution, runtime locale switching, LOC() macro). ~~UICanvas dialogue box~~ ✅ (DialogueBoxComponent auto-builds UICanvas elements with speaker name, typewriter text, portrait, choice buttons, continue indicator). Remaining: Yarn Spinner/Twine import/export
@@ -444,7 +444,7 @@ All pipeline optimization items resolved: multi-threaded command buffer recordin
 - **Camera Presets** — Built-in ortho and perspective presets (isometric 45/30, side-scroller, top-down, first-person, third-person, cinematic widescreen, security cam, bird's eye). Quick-switch buttons in inspector and viewport toolbar. Per-preset FOV, near/far, aspect, rotation
 - **Tilt-Shift / Miniature Effect** — Post-process blur with configurable focus band position, width, falloff curve, and blur strength. Horizontal/vertical/radial modes. Gives a "toy model" look to scenes
 - **Bokeh Depth of Field** — Physically-based DoF with aperture shape (circle, hexagon, octagon), bokeh size, focal distance, focal range, and highlight threshold for bright-spot bokeh. Separate near/far blur. CoC (circle of confusion) visualization debug mode
-- **Cel Shading / Toon Rendering** — Configurable color quantization steps (2-8 bands), outline edge detection (Sobel on depth+normals), adjustable line weights (thin 1px, medium 2px, thick 3px, variable by depth), ink color, specular band with hard cutoff. Per-material opt-in/out
+- ~~**Cel Shading / Toon Rendering**~~ ✅ — Configurable diffuse band quantization (2-8 bands) and hard specular cutoff in LightingUBO, per-material opt-out (`excludeFromCelShading`), post-process Sobel edge detection outlines on depth (configurable thickness, threshold, color), full editor UI in Rendering + Post-Processing settings, scene render settings serialization
 - **Full-Screen Stippling & Dither** — Post-process stipple/dither effect with pattern selection (Bayer 2x2/4x4/8x8, blue noise, halftone dots, cross-hatch, ordered, Floyd-Steinberg error diffusion). Configurable density, scale, and color mode (mono/duo-tone/full color). Combines with existing retro effects pipeline
 
 ### Artistic Surface Materials ✅ COMPLETE
@@ -1096,11 +1096,11 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 - **Cellular Automata as Geometry** — 2D/3D cellular automata (Conway, Brian's Brain, Rule 110, custom rulesets) where live cells become geometry — voxels, marching cubes isosurface, or instanced meshes. Step-through or continuous evolution with configurable tick rate. Use cases: growing crystal structures, evolving architecture, generative art installations. Inspector with rule editor, seed painter, generation history scrubber
 - **Slime Mold Simulation (Physarum)** — Agent-based Physarum polycephalum simulation: thousands of agents deposit/sense/turn on a diffusion trail map. Configurable sensor angle, sensor distance, turn speed, deposit amount, decay rate. Outputs a density field renderable as particles, mesh displacement, or luminous volume. Use cases: organic network generation, procedural road/river layouts, bioluminescent VFX
 - **Fluid Simulation as Terrain** — Use fluid sim (existing Stable Fluids solver) output as a heightmap source for terrain. Fluid velocity/density fields drive real-time terrain deformation — rising water carves valleys, lava flow builds ridges. Bidirectional: terrain slope feeds back into fluid flow direction. Configurable erosion rate, deposition, hardness. Use cases: geological time-lapse, dynamic lava landscapes, water erosion sculpting
-- **Voronoi Fracture with Persistent Physics** — Extend existing Voronoi + destructible system with persistent post-fracture physics. Fragments become independent rigidbodies that stack, settle, and interact with the scene permanently (not just debris particles that fade). Configurable fragment count, mass distribution, friction, restitution. Fragments can be re-fractured (recursive destruction). Use cases: realistic building collapse, breakable terrain, persistent battle damage
+- ~~**Voronoi Fracture with Persistent Physics**~~ ✅ — VoronoiMeshFracture (Sutherland-Hodgman mesh clipping) produces real mesh fragments. FractureConfigComponent for per-entity config (fragment count, explosion force, persistence, re-fracture depth, pre-fracture with breakable joints, auto-cleanup). DestructibleSystem extended with `CreatePersistentFragments()` — fragments become full ECS entities (Transform+Mesh+Material+Rigidbody+BoxCollider). FIFO fragment entity limit, recursive re-fracture with reduced count per depth level. Editor inspector UI and full serialization
 
 ### Simulation & Flow
 
-- **Curl Noise Flow Fields for Particle/Mesh Advection** — 3D curl noise flow field generator (divergence-free by construction). Drives particle systems, mesh vertex advection, ribbon/trail effects. Configurable noise octaves, frequency, amplitude, time evolution speed. Visualizer overlay shows flow direction arrows in editor. Use cases: smoke tendrils, magical energy flows, flocking/swarming, hair/cloth simulation approximation
+- ~~**Curl Noise Flow Fields for Particle/Mesh Advection**~~ ✅ — Header-only CurlNoise3D math (finite differences of FBM3D, 12 FBM calls per sample). CurlNoiseFieldComponent with AABB volume, falloff (None/Linear/Smooth), configurable octaves/frequency/amplitude/seed/timeScale. CurlNoiseSystem applies divergence-free forces to particles within volume. Editor inspector with debug arrow visualization and full serialization
 - **Wave Racer 64 Water** — Stylized interactive water surface inspired by Wave Race 64: grid-based height field with real-time wave propagation (spring-damper model), boat/object interaction ripples, shoreline foam, animated UV scrolling for surface detail. Configurable wave speed, damping, grid resolution, foam threshold, color gradient (deep/shallow/foam). Distinct from existing Water3D (Gerstner waves) — this is gameplay-focused interactive water with object-water collision response
 - **Mesh Audio Reactivity via FFT Vertex Displacement** — Real-time FFT analysis of audio input (microphone or audio clip) drives per-vertex mesh displacement. Frequency bands map to vertex groups (bass → large features, treble → fine detail). Configurable frequency-to-displacement mapping curve, smoothing, amplitude scale, displacement axis (normal, radial, Y-up). Use cases: music visualizers, audio-reactive environments, rhythm game VFX, concert stage visuals
 
