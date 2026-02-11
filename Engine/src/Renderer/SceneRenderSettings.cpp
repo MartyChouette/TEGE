@@ -9,6 +9,7 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include <nlohmann/json.hpp>
+#include <cmath>
 
 using json = nlohmann::json;
 
@@ -379,8 +380,17 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
 // ---------------------------------------------------------------------------
 // JSON helpers
 // ---------------------------------------------------------------------------
+
+// Round float to 6 decimal places for deterministic serialization
+static f32 RF(f32 val) {
+    if (std::isnan(val) || std::isinf(val)) return val;
+    if (std::fabs(val) < 1e-6f) return 0.0f;
+    constexpr f32 mult = 1000000.0f;
+    return std::round(val * mult) / mult;
+}
+
 static json SerializeVec3(const Math::Vector3& v) {
-    return json::array({v.x, v.y, v.z});
+    return json::array({RF(v.x), RF(v.y), RF(v.z)});
 }
 
 static Math::Vector3 DeserializeVec3(const json& j, const Math::Vector3& def = Math::Vector3(0, 0, 0)) {
@@ -396,63 +406,63 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     // RenderSystem
     j["shadowsEnabled"]    = s.shadowsEnabled;
     j["shadowResolution"]  = s.shadowResolution;
-    j["shadowDistance"]    = s.shadowDistance;
-    j["shadowStrength"]    = s.shadowStrength;
-    j["shadowSoftness"]    = s.shadowSoftness;
+    j["shadowDistance"]    = RF(s.shadowDistance);
+    j["shadowStrength"]    = RF(s.shadowStrength);
+    j["shadowSoftness"]    = RF(s.shadowSoftness);
     j["backfaceCulling"]   = s.backfaceCulling;
     j["wireframe"]         = s.wireframe;
-    j["ambientIntensity"]  = s.ambientIntensity;
+    j["ambientIntensity"]  = RF(s.ambientIntensity);
     j["ambientColor"]      = SerializeVec3(s.ambientColor);
-    j["fogDensity"]        = s.fogDensity;
-    j["fogStart"]          = s.fogStart;
-    j["fogEnd"]            = s.fogEnd;
-    j["fogHeightFalloff"]  = s.fogHeightFalloff;
+    j["fogDensity"]        = RF(s.fogDensity);
+    j["fogStart"]          = RF(s.fogStart);
+    j["fogEnd"]            = RF(s.fogEnd);
+    j["fogHeightFalloff"]  = RF(s.fogHeightFalloff);
     j["fogColor"]          = SerializeVec3(s.fogColor);
-    j["snowIntensity"]     = s.snowIntensity;
-    j["worldCurvature"]    = s.worldCurvature;
+    j["snowIntensity"]     = RF(s.snowIntensity);
+    j["worldCurvature"]    = RF(s.worldCurvature);
     j["rainActive"]        = s.rainActive;
 
     // Tone mapping
     j["toneMappingMode"]   = s.toneMappingMode;
-    j["exposure"]          = s.exposure;
-    j["gamma"]             = s.gamma;
-    j["whitePoint"]        = s.whitePoint;
+    j["exposure"]          = RF(s.exposure);
+    j["gamma"]             = RF(s.gamma);
+    j["whitePoint"]        = RF(s.whitePoint);
 
     // Bloom
     j["bloomEnabled"]      = s.bloomEnabled;
-    j["bloomThreshold"]    = s.bloomThreshold;
-    j["bloomIntensity"]    = s.bloomIntensity;
-    j["bloomRadius"]       = s.bloomRadius;
+    j["bloomThreshold"]    = RF(s.bloomThreshold);
+    j["bloomIntensity"]    = RF(s.bloomIntensity);
+    j["bloomRadius"]       = RF(s.bloomRadius);
 
     // Vignette
     j["vignetteEnabled"]     = s.vignetteEnabled;
-    j["vignetteIntensity"]   = s.vignetteIntensity;
-    j["vignetteSmoothness"]  = s.vignetteSmoothness;
+    j["vignetteIntensity"]   = RF(s.vignetteIntensity);
+    j["vignetteSmoothness"]  = RF(s.vignetteSmoothness);
 
     // Chromatic aberration
     j["chromaticAberrationEnabled"]   = s.chromaticAberrationEnabled;
-    j["chromaticAberrationIntensity"] = s.chromaticAberrationIntensity;
+    j["chromaticAberrationIntensity"] = RF(s.chromaticAberrationIntensity);
 
     // Color grading
     j["colorFilter"]       = SerializeVec3(s.colorFilter);
-    j["saturation"]        = s.saturation;
-    j["contrast"]          = s.contrast;
-    j["brightness"]        = s.brightness;
+    j["saturation"]        = RF(s.saturation);
+    j["contrast"]          = RF(s.contrast);
+    j["brightness"]        = RF(s.brightness);
 
     // Film grain
     j["filmGrainEnabled"]    = s.filmGrainEnabled;
-    j["filmGrainIntensity"]  = s.filmGrainIntensity;
+    j["filmGrainIntensity"]  = RF(s.filmGrainIntensity);
 
     // FXAA
     j["fxaaEnabled"]       = s.fxaaEnabled;
-    j["fxaaSpanMax"]       = s.fxaaSpanMax;
-    j["fxaaReduceMin"]     = s.fxaaReduceMin;
-    j["fxaaReduceMul"]     = s.fxaaReduceMul;
+    j["fxaaSpanMax"]       = RF(s.fxaaSpanMax);
+    j["fxaaReduceMin"]     = RF(s.fxaaReduceMin);
+    j["fxaaReduceMul"]     = RF(s.fxaaReduceMul);
 
     // Retro: Dithering
     j["ditherEnabled"]     = s.ditherEnabled;
     j["ditherPattern"]     = s.ditherPattern;
-    j["ditherStrength"]    = s.ditherStrength;
+    j["ditherStrength"]    = RF(s.ditherStrength);
 
     // Retro: Color quantization
     j["colorQuantEnabled"] = s.colorQuantEnabled;
@@ -466,34 +476,34 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // CRT scanlines
     j["crtEnabled"]          = s.crtEnabled;
-    j["scanlineIntensity"]   = s.scanlineIntensity;
-    j["scanlineWidth"]       = s.scanlineWidth;
-    j["crtCurvature"]        = s.crtCurvature;
+    j["scanlineIntensity"]   = RF(s.scanlineIntensity);
+    j["scanlineWidth"]       = RF(s.scanlineWidth);
+    j["crtCurvature"]        = RF(s.crtCurvature);
 
     // LUT
     j["lutEnabled"]        = s.lutEnabled;
-    j["lutStrength"]       = s.lutStrength;
+    j["lutStrength"]       = RF(s.lutStrength);
     j["lutSize"]           = s.lutSize;
 
     // CRT Phosphor
     j["crtPhosphorEnabled"]  = s.crtPhosphorEnabled;
     j["crtMaskType"]         = s.crtMaskType;
-    j["crtMaskPitch"]        = s.crtMaskPitch;
-    j["crtBloomRadius"]      = s.crtBloomRadius;
-    j["crtBloomStrength"]    = s.crtBloomStrength;
+    j["crtMaskPitch"]        = RF(s.crtMaskPitch);
+    j["crtBloomRadius"]      = RF(s.crtBloomRadius);
+    j["crtBloomStrength"]    = RF(s.crtBloomStrength);
 
     // VHS
     j["vhsEnabled"]            = s.vhsEnabled;
-    j["vhsTrackingIntensity"]  = s.vhsTrackingIntensity;
-    j["vhsTrackingSpeed"]      = s.vhsTrackingSpeed;
-    j["vhsWobbleIntensity"]    = s.vhsWobbleIntensity;
-    j["vhsWobbleSpeed"]        = s.vhsWobbleSpeed;
-    j["vhsColorBleed"]         = s.vhsColorBleed;
-    j["vhsNoiseIntensity"]     = s.vhsNoiseIntensity;
-    j["vhsBlueShift"]          = s.vhsBlueShift;
-    j["vhsScreenTear"]         = s.vhsScreenTear;
-    j["vhsTearOffset"]         = s.vhsTearOffset;
-    j["vhsInterlacing"]        = s.vhsInterlacing;
+    j["vhsTrackingIntensity"]  = RF(s.vhsTrackingIntensity);
+    j["vhsTrackingSpeed"]      = RF(s.vhsTrackingSpeed);
+    j["vhsWobbleIntensity"]    = RF(s.vhsWobbleIntensity);
+    j["vhsWobbleSpeed"]        = RF(s.vhsWobbleSpeed);
+    j["vhsColorBleed"]         = RF(s.vhsColorBleed);
+    j["vhsNoiseIntensity"]     = RF(s.vhsNoiseIntensity);
+    j["vhsBlueShift"]          = RF(s.vhsBlueShift);
+    j["vhsScreenTear"]         = RF(s.vhsScreenTear);
+    j["vhsTearOffset"]         = RF(s.vhsTearOffset);
+    j["vhsInterlacing"]        = RF(s.vhsInterlacing);
 
     // Palette lock
     j["paletteEnabled"]    = s.paletteEnabled;
@@ -511,37 +521,37 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     // Cel Shading
     j["celShadingEnabled"]     = s.celShadingEnabled;
     j["celDiffuseBands"]       = s.celDiffuseBands;
-    j["celSpecularCutoff"]     = s.celSpecularCutoff;
+    j["celSpecularCutoff"]     = RF(s.celSpecularCutoff);
     j["celOutlineEnabled"]     = s.celOutlineEnabled;
-    j["celOutlineThickness"]   = s.celOutlineThickness;
-    j["celOutlineThreshold"]   = s.celOutlineThreshold;
+    j["celOutlineThickness"]   = RF(s.celOutlineThickness);
+    j["celOutlineThreshold"]   = RF(s.celOutlineThreshold);
     j["celOutlineColor"]       = SerializeVec3(s.celOutlineColor);
 
     // Ray Tracing
     j["rtEnabled"]                    = s.rtEnabled;
     j["rtMode"]                       = s.rtMode;
     j["rtShadowsEnabled"]             = s.rtShadowsEnabled;
-    j["rtShadowMaxDistance"]           = s.rtShadowMaxDistance;
-    j["rtShadowRadius"]               = s.rtShadowRadius;
+    j["rtShadowMaxDistance"]           = RF(s.rtShadowMaxDistance);
+    j["rtShadowRadius"]               = RF(s.rtShadowRadius);
     j["rtReflectionsEnabled"]          = s.rtReflectionsEnabled;
-    j["rtReflectionMaxDistance"]       = s.rtReflectionMaxDistance;
-    j["rtReflectionRoughnessThreshold"] = s.rtReflectionRoughnessThreshold;
+    j["rtReflectionMaxDistance"]       = RF(s.rtReflectionMaxDistance);
+    j["rtReflectionRoughnessThreshold"] = RF(s.rtReflectionRoughnessThreshold);
     j["rtAOEnabled"]                   = s.rtAOEnabled;
-    j["rtAORadius"]                    = s.rtAORadius;
-    j["rtAOPower"]                     = s.rtAOPower;
+    j["rtAORadius"]                    = RF(s.rtAORadius);
+    j["rtAOPower"]                     = RF(s.rtAOPower);
     j["rtGIEnabled"]                   = s.rtGIEnabled;
-    j["rtGIMaxDistance"]               = s.rtGIMaxDistance;
-    j["rtGIIntensity"]                 = s.rtGIIntensity;
+    j["rtGIMaxDistance"]               = RF(s.rtGIMaxDistance);
+    j["rtGIIntensity"]                 = RF(s.rtGIIntensity);
     j["rtGIBounces"]                   = s.rtGIBounces;
     j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
     j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
     j["rtDenoiserEnabled"]             = s.rtDenoiserEnabled;
     j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
-    j["rtDenoiserTemporalAlpha"]       = s.rtDenoiserTemporalAlpha;
-    j["rtShadowStrength"]              = s.rtShadowStrength;
-    j["rtReflectionStrength"]          = s.rtReflectionStrength;
-    j["rtAOStrength"]                  = s.rtAOStrength;
-    j["rtGIStrength"]                  = s.rtGIStrength;
+    j["rtDenoiserTemporalAlpha"]       = RF(s.rtDenoiserTemporalAlpha);
+    j["rtShadowStrength"]              = RF(s.rtShadowStrength);
+    j["rtReflectionStrength"]          = RF(s.rtReflectionStrength);
+    j["rtAOStrength"]                  = RF(s.rtAOStrength);
+    j["rtGIStrength"]                  = RF(s.rtGIStrength);
 
     return j;
 }

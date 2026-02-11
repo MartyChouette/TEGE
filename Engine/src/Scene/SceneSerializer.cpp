@@ -261,7 +261,7 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
     j["viewportY"] = RF(camera.viewportY);
     j["viewportWidth"] = RF(camera.viewportWidth);
     j["viewportHeight"] = RF(camera.viewportHeight);
-    j["cullingMask"] = RF(camera.cullingMask);
+    j["cullingMask"] = camera.cullingMask;
     return j;
 }
 
@@ -1213,8 +1213,8 @@ json SerializeBoxColliderComponent(const ECS::BoxColliderComponent& col) {
     j["isTrigger"] = col.isTrigger;
     j["friction"] = RF(col.friction);
     j["bounciness"] = RF(col.bounciness);
-    j["categoryBits"] = RF(col.categoryBits);
-    j["collisionMask"] = RF(col.collisionMask);
+    j["categoryBits"] = col.categoryBits;
+    j["collisionMask"] = col.collisionMask;
     return j;
 }
 
@@ -1242,7 +1242,7 @@ ECS::BoxColliderComponent DeserializeBoxColliderComponent(const json& j) {
 
 json SerializePerFrameColliderComponent(const ECS::PerFrameColliderComponent& pfc) {
     json j;
-    j["autoApply"] = RF(pfc.autoApply);
+    j["autoApply"] = pfc.autoApply;
     json frames = json::array();
     for (const auto& fc : pfc.frameColliders) {
         json f;
@@ -1288,8 +1288,8 @@ json SerializePolygonCollider2DComponent(const ECS::PolygonCollider2DComponent& 
     j["isTrigger"] = poly.isTrigger;
     j["friction"] = RF(poly.friction);
     j["bounciness"] = RF(poly.bounciness);
-    j["categoryBits"] = RF(poly.categoryBits);
-    j["collisionMask"] = RF(poly.collisionMask);
+    j["categoryBits"] = poly.categoryBits;
+    j["collisionMask"] = poly.collisionMask;
     return j;
 }
 
@@ -1354,8 +1354,8 @@ json SerializeSphereColliderComponent(const ECS::SphereColliderComponent& col) {
     j["isTrigger"] = col.isTrigger;
     j["friction"] = RF(col.friction);
     j["bounciness"] = RF(col.bounciness);
-    j["categoryBits"] = RF(col.categoryBits);
-    j["collisionMask"] = RF(col.collisionMask);
+    j["categoryBits"] = col.categoryBits;
+    j["collisionMask"] = col.collisionMask;
     return j;
 }
 
@@ -1385,8 +1385,8 @@ json SerializeCapsuleColliderComponent(const ECS::CapsuleColliderComponent& col)
     j["isTrigger"] = col.isTrigger;
     j["friction"] = RF(col.friction);
     j["bounciness"] = RF(col.bounciness);
-    j["categoryBits"] = RF(col.categoryBits);
-    j["collisionMask"] = RF(col.collisionMask);
+    j["categoryBits"] = col.categoryBits;
+    j["collisionMask"] = col.collisionMask;
     return j;
 }
 
@@ -1567,7 +1567,7 @@ ECS::TagComponent DeserializeTagComponent(const json& j) {
 
 json SerializeLayerComponent(const ECS::LayerComponent& l) {
     json j;
-    j["layer"] = RF(l.layer);
+    j["layer"] = l.layer;
     j["layerName"] = l.layerName;
     return j;
 }

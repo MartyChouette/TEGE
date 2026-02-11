@@ -84,7 +84,7 @@ enjin/
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
 │   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
 │   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
-│   │   ├── Physics/        # IPhysicsBackend, SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
+│   │   ├── Physics/        # IPhysicsBackend, JoltBackend, SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
@@ -231,9 +231,24 @@ enjin/
 - `IPhysicsBackend` — abstract 3D interface (SetWorld, Update, Raycast, MoveAndSlide, collision events, etc.)
 - `IPhysicsBackend2D` — abstract 2D interface (Initialize, Update, Raycast2D, OverlapCircle, collision callbacks, CCD)
 - `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapters wrapping existing engines behind the interfaces
-- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`
+- `JoltBackend` — Jolt Physics v5.2.0 backend (see below)
+- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
 - CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both OFF by default
 - PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`; all consumers accept `IPhysicsBackend*`
+
+**JoltBackend** (production-grade 3D physics via Jolt v5.2.0):
+- Full ECS↔Jolt body synchronization: per-frame reconciliation creates/destroys/updates Jolt bodies from ECS state
+- Body creation: Box/Sphere/Capsule shapes from collider components, center offset via `RotatedTranslatedShape`, capsule X/Z rotation
+- RigidbodyComponent mapping: mass, drag/angular drag → damping, gravity scale, freeze axes → `AllowedDOFs`, CCD → `LinearCast`
+- Thread-safe contact events: `JoltContactListener` buffers contacts from Jolt worker threads behind a mutex; main thread drains during `Update()`
+- Bilateral collision filtering: performed in `OnContactValidate` using per-body `categoryBits`/`collisionMask` (32-bit, same rule as SimplePhysics)
+- 6 joint types: Distance, Hinge, BallSocket (Point+Cone), Spring, Fixed, Slider — created via `BodyLockWrite` for body access
+- Gravity zones: per-body `SetGravityFactor(0)` + `AddForce(customGravity * mass)` for non-standard gravity
+- Raycasting: single/multi-hit via `NarrowPhaseQuery`, layer mask filtering via custom `BodyFilter`
+- Spatial queries: `GetCollidersInRadius`, `OverlapBox` via shape casts
+- Broad phase: 2 layers (NonMoving/Moving), fine-grained filtering in contact listener
+- Entity ID stored in Jolt `mUserData` for O(1) reverse lookup
+- Update loop: SyncECSToJolt → SyncJointsToJolt → ApplyGravityZones → PhysicsSystem::Update → SyncJoltToECS → ProcessContactEvents
 
 **SimplePhysics** (current default 3D backend — collision queries and character movement):
 - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB)

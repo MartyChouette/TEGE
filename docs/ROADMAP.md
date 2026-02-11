@@ -86,22 +86,34 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - CMake: `ENJIN_PHYSICS_JOLT` (FetchContent Jolt v5.2.0) and `ENJIN_PHYSICS_BOX2D` (FetchContent Box2D v3.0.0), both OFF by default
 - **Files:** `IPhysicsBackend.h`, `IPhysicsBackend2D.h`, `PhysicsBackendType.h`, `SimplePhysicsBackend.h/.cpp`, `SimplePhysicsBackend2D.h/.cpp`, `PhysicsBackendFactory.h/.cpp`, plus 9 modified consumer files
 
-#### Phase 2: Jolt Backend (3D)
+#### Phase 2: Jolt Backend (3D) ✅ COMPLETE
 
-- `JoltBackend : IPhysicsBackend`
-- Map ECS components to Jolt bodies:
-  - `RigidbodyComponent` → `Body` (dynamic)
-  - `BoxColliderComponent` → `BoxShape`
-  - `SphereColliderComponent` → `SphereShape`
-  - `CapsuleColliderComponent` → `CapsuleShape`
-  - `categoryBits`/`collisionMask` → Jolt `ObjectLayer` + `BroadPhaseLayer`
-- Jolt job system integration (uses std::thread pool, configurable core count)
-- Sync loop: ECS Transform → Jolt body position (dirty flag), Jolt simulation → ECS Transform
-- Collision event bridge: Jolt `ContactListener` → `CollisionEvent` vector
-- Constraint solver: Map 6 joint types to Jolt constraints (Hinge, Slider, Point, Fixed, Cone, Distance)
-- Gravity zones: Jolt per-body gravity override
-- Sleep system: automatic via Jolt (bodies deactivate when at rest)
-- **Files:** `Engine/include/Enjin/Physics/JoltBackend.h`, `Engine/src/Physics/JoltBackend.cpp`
+- `JoltBackend : IPhysicsBackend` — full Jolt v5.2.0 wrapper (1273 lines)
+- `JoltContactListener` — thread-safe contact buffer + bilateral collision filtering in `OnContactValidate`
+- Body creation: `BoxColliderComponent` → `BoxShape`, `SphereColliderComponent` → `SphereShape`, `CapsuleColliderComponent` → `CapsuleShape` (with X/Z rotation via `RotatedTranslatedShape`)
+- Collider center offset via `RotatedTranslatedShape`, scale applied at creation, min size clamped to 0.01
+- `RigidbodyComponent` mapping: `BodyType` → `EMotionType`, mass override, linear/angular damping, gravity factor, DOF freezing via `mAllowedDOFs`, CCD via `mMotionQuality::LinearCast`, initial velocity
+- Entity ID stored in `mUserData` for O(1) reverse lookup from Jolt body to ECS entity
+- Jolt `JobSystemThreadPool` (hardware_concurrency - 1 threads), 16 MB `TempAllocatorImpl`
+- ECS↔Jolt sync: full per-frame reconciliation (create new bodies, destroy removed, update kinematic via `MoveKinematic`, static position sync)
+- Jolt → ECS writeback: position, rotation, velocity, angular velocity, sleep state, ground check (short downward raycast)
+- Collision filtering: bilateral rule in `JoltContactListener::OnContactValidate` using per-body `categoryBits`/`collisionMask` (Jolt's `ObjectLayerPairFilter` only sees ObjectLayers 0/1, not BodyIDs — filtering must happen in contact listener)
+- Broad phase: 2 layers (NonMoving/Moving), all-pass `ObjectVsBroadPhaseLayerFilter` and `ObjectLayerPairFilter`
+- Collision events: Enter/Exit detection via previous/current pair tracking (same pattern as SimplePhysics)
+- Raycasting: `NarrowPhaseQuery::CastRay` with `EnjinBodyFilter` for layer mask, surface normal via `BodyLockRead` + `GetWorldSpaceSurfaceNormal`. `RaycastAll` via `AllHitCollisionCollector`
+- MoveAndSlide: iterative AABB slide resolution (3 iterations, same API as SimplePhysics)
+- Joint mapping (body locking via `BodyLockWrite` for constraint creation):
+  - `DistanceJointComponent` → `DistanceConstraint` (spring settings for stiffness < 1)
+  - `HingeJointComponent` → `HingeConstraint` (limits, velocity motor)
+  - `BallSocketJointComponent` → `PointConstraint` + optional `ConeConstraint`
+  - `SpringJointComponent` → `DistanceConstraint` with spring stiffness/damping
+  - `FixedJointComponent` → `FixedConstraint` (auto-detect point)
+  - `SliderJointComponent` → `SliderConstraint` (axis, limits, velocity motor)
+- Breakable joints: stress checked per frame, constraint destroyed if > breakForce
+- Gravity zones: per-body `SetGravityFactor(0)` + `AddForce(customGravity * gravityScale * mass)`, highest-priority zone wins
+- Sleep: automatic via Jolt (reported as `rb->isSleeping = !bodyInterface.IsActive()`)
+- Factory: `PhysicsBackendFactory` returns `JoltBackend` when `ENJIN_PHYSICS_JOLT=ON` and (type==Jolt or Auto with 3D/Mixed mode)
+- **Files:** `JoltBackend.h`, `JoltContactListener.h`, `JoltBackend.cpp`, modified `PhysicsBackendFactory.cpp`
 
 #### Phase 3: Box2D Backend (2D)
 
