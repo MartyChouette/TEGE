@@ -8,6 +8,7 @@
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Core/JobSystemThreadPool.h>
+#include <Jolt/Math/Math.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -20,14 +21,11 @@
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
-#include <Jolt/Physics/Collision/RayCastSettings.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayer.h>
 #include <Jolt/Physics/Collision/ObjectLayer.h>
-#include <Jolt/Physics/Collision/ObjectLayerPairFilter.h>
-#include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilter.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
@@ -402,10 +400,10 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
         // Rotate for X or Z direction
         if (capsule->direction == ECS::CapsuleColliderComponent::Direction::X) {
             shape = new JPH::RotatedTranslatedShape(
-                JPH::Vec3::sZero(), JPH::Quat::sRotation(JPH::Vec3::sAxisZ(), JPH_PI * 0.5f), capsuleShape);
+                JPH::Vec3::sZero(), JPH::Quat::sRotation(JPH::Vec3::sAxisZ(), JPH::JPH_PI * 0.5f), capsuleShape);
         } else if (capsule->direction == ECS::CapsuleColliderComponent::Direction::Z) {
             shape = new JPH::RotatedTranslatedShape(
-                JPH::Vec3::sZero(), JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH_PI * 0.5f), capsuleShape);
+                JPH::Vec3::sZero(), JPH::Quat::sRotation(JPH::Vec3::sAxisX(), JPH::JPH_PI * 0.5f), capsuleShape);
         } else {
             shape = capsuleShape;
         }
