@@ -2606,7 +2606,10 @@ void EditorLayer::DrawMenuBar() {
                     m_World->Clear();
                     ClearSelection();
                     m_CurrentScenePath.clear();
-                    m_HubTab = ProjectHubTab::New;
+                    m_HubPage = HubPage::WizardSetup;
+                    m_SelectedTemplate = -1;
+                    m_TemplateFilter = TMPL_ALL;
+                    m_TemplateSearchBuffer[0] = '\0';
                     m_ShowProjectHub = true;
                     // Reset rendering to project defaults
                     m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
@@ -2665,7 +2668,10 @@ void EditorLayer::DrawMenuBar() {
                     ClearSelection();
                     m_CurrentScenePath.clear();
                 }
-                m_HubTab = ProjectHubTab::New;
+                m_HubPage = HubPage::WizardSetup;
+                m_SelectedTemplate = -1;
+                m_TemplateFilter = TMPL_ALL;
+                m_TemplateSearchBuffer[0] = '\0';
                 m_ShowProjectHub = true;
                 ENJIN_LOG_INFO(Editor, "Opened new project wizard");
             }
@@ -10428,90 +10434,20 @@ void EditorLayer::DrawProjectHub() {
             ImVec2(cx - subSz.x * 0.5f, titlePos.y + titleSz.y + 2.0f),
             IM_COL32(140, 160, 140, 160), subtitle);
 
-        // --- Tab bar ---
-        f32 tabY = titlePos.y + titleSz.y + subSz.y + 14.0f;
-        f32 tabFontSize = 28.0f;
-        const char* tabLabels[] = { "Recent", "New Project", "Open", "Demos" };
-        ProjectHubTab tabValues[] = { ProjectHubTab::Recent, ProjectHubTab::New, ProjectHubTab::Open, ProjectHubTab::Demos };
-
-        // Tab pill dimensions — shrink padding and font if tabs overflow screen width
-        f32 tabPadX = 36.0f;
-        f32 tabPadY = 14.0f;
-        f32 tabGap = 18.0f;
-
-        // Measure for centering using exact font metrics
-        f32 totalTabW = 0.0f;
-        ImVec2 tabSizes[4];
-        for (int t = 0; t < 4; ++t) {
-            tabSizes[t] = font->CalcTextSizeA(tabFontSize, FLT_MAX, 0.0f, tabLabels[t]);
-            totalTabW += tabSizes[t].x + tabPadX * 2.0f;
-        }
-        totalTabW += tabGap * 3.0f;
-
-        // Shrink tab layout if wider than display
-        if (totalTabW > io.DisplaySize.x - 20.0f) {
-            f32 scale = (io.DisplaySize.x - 20.0f) / totalTabW;
-            tabFontSize *= scale;
-            tabPadX *= scale;
-            tabGap *= scale;
-            totalTabW = 0.0f;
-            for (int t = 0; t < 4; ++t) {
-                tabSizes[t] = font->CalcTextSizeA(tabFontSize, FLT_MAX, 0.0f, tabLabels[t]);
-                totalTabW += tabSizes[t].x + tabPadX * 2.0f;
-            }
-            totalTabW += tabGap * 3.0f;
-        }
-
-        f32 tabX = (io.DisplaySize.x - totalTabW) * 0.5f;
-        for (int t = 0; t < 4; ++t) {
-            f32 pillW = tabSizes[t].x + tabPadX * 2.0f;
-            f32 pillH = tabSizes[t].y + tabPadY * 2.0f;
-            ImVec2 pillPos(tabX, tabY);
-            ImVec2 pillEnd(tabX + pillW, tabY + pillH);
-
-            bool isActive = (m_HubTab == tabValues[t]);
-            bool hovered = (io.MousePos.x >= pillPos.x && io.MousePos.x <= pillEnd.x &&
-                           io.MousePos.y >= pillPos.y && io.MousePos.y <= pillEnd.y);
-
-            // Pill background
-            if (isActive) {
-                drawList->AddRectFilled(pillPos, pillEnd, IM_COL32(50, 65, 55, 255), pillH * 0.5f);
-                drawList->AddRect(pillPos, pillEnd, IM_COL32(140, 180, 140, 120), pillH * 0.5f);
-            } else if (hovered) {
-                drawList->AddRectFilled(pillPos, pillEnd, IM_COL32(35, 40, 50, 255), pillH * 0.5f);
-            }
-
-            // Label — centered using exact text size
-            ImU32 textCol = isActive ? IM_COL32(199, 218, 196, 255) :
-                           (hovered  ? IM_COL32(180, 190, 180, 255) :
-                                       IM_COL32(120, 130, 145, 200));
-            f32 textX = pillPos.x + (pillW - tabSizes[t].x) * 0.5f;
-            f32 textY = pillPos.y + (pillH - tabSizes[t].y) * 0.5f;
-            drawList->AddText(nullptr, tabFontSize, ImVec2(textX, textY), textCol, tabLabels[t]);
-
-            if (hovered && ImGui::IsMouseClicked(0)) {
-                m_HubTab = tabValues[t];
-                if (tabValues[t] == ProjectHubTab::Demos)
-                    m_DemosCacheValid = false;
-            }
-
-            tabX += pillW + tabGap;
-        }
-
-        // Divider below tabs
-        f32 contentY = tabY + tabSizes[0].y + tabPadY * 2.0f + 20.0f;
-        drawList->AddLine(
-            ImVec2(80, contentY - 5.0f),
-            ImVec2(io.DisplaySize.x - 80, contentY - 5.0f),
-            IM_COL32(60, 65, 80, 100), 1.0f);
-
-        // Dispatch to active tab
+        // --- Layout constants ---
+        f32 contentY = titlePos.y + titleSz.y + subSz.y + 24.0f;
+        f32 sidebarW = 300.0f;
         ImVec2 area = io.DisplaySize;
-        switch (m_HubTab) {
-            case ProjectHubTab::Recent: DrawHubRecentTab(drawList, area, contentY); break;
-            case ProjectHubTab::New:    DrawHubNewTab(drawList, area, contentY);    break;
-            case ProjectHubTab::Open:   DrawHubOpenTab(drawList, area);             break;
-            case ProjectHubTab::Demos:  DrawHubDemosTab(drawList, area, contentY);  break;
+
+        // Always draw recent sidebar on the left
+        DrawHubRecentSidebar(drawList, area, contentY, sidebarW);
+
+        // Dispatch to active page (content area is right of sidebar)
+        switch (m_HubPage) {
+            case HubPage::Landing:        DrawHubLandingPage(drawList, area, contentY, sidebarW);    break;
+            case HubPage::WizardSetup:    DrawHubWizardSetup(drawList, area, contentY, sidebarW);    break;
+            case HubPage::WizardTemplate: DrawHubWizardTemplate(drawList, area, contentY, sidebarW); break;
+            case HubPage::Demos:          DrawHubDemosTab(drawList, area, contentY, sidebarW);       break;
         }
     }
     ImGui::End();
@@ -10521,12 +10457,30 @@ void EditorLayer::DrawProjectHub() {
 }
 
 // --------------------------------------------------
-// Recent tab: list of recent projects
+// Recent sidebar: always-visible left panel
 // --------------------------------------------------
-void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 contentY) {
+void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
     ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = ImGui::GetFont();
 
-    // Filter to only show .enjinproject files (not .enjin scene files)
+    // Darker background panel
+    ImVec2 sbMin(0, contentY);
+    ImVec2 sbMax(sidebarW, area.y);
+    dl->AddRectFilled(sbMin, sbMax, IM_COL32(16, 18, 24, 255));
+
+    // Vertical divider on right edge
+    dl->AddLine(ImVec2(sidebarW, contentY), ImVec2(sidebarW, area.y),
+        IM_COL32(60, 65, 80, 150), 1.0f);
+
+    // Header
+    f32 headerFontSize = 20.0f;
+    const char* header = "Recent Projects";
+    ImVec2 headerSz = font->CalcTextSizeA(headerFontSize, FLT_MAX, 0.0f, header);
+    dl->AddText(nullptr, headerFontSize,
+        ImVec2(16.0f, contentY + 10.0f),
+        IM_COL32(160, 165, 185, 220), header);
+
+    // Filter to only show .enjinproject files
     std::vector<int> projectIndices;
     for (int i = 0; i < static_cast<int>(m_EditorSettings.recentProjects.size()); ++i) {
         std::filesystem::path p(m_EditorSettings.recentProjects[i]);
@@ -10535,96 +10489,82 @@ void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 conte
         }
     }
 
+    f32 listStartY = contentY + 10.0f + headerSz.y + 16.0f;
+
     if (projectIndices.empty()) {
-        // Empty state
-        ImFont* font = ImGui::GetFont();
-        f32 msgFontSize = 22.0f;
         const char* emptyMsg = "No recent projects";
-        ImVec2 msgSz = font->CalcTextSizeA(msgFontSize, FLT_MAX, 0.0f, emptyMsg);
-        dl->AddText(nullptr, msgFontSize,
-            ImVec2((area.x - msgSz.x) * 0.5f, area.y * 0.4f),
-            IM_COL32(120, 130, 160, 200), emptyMsg);
-
-        // "Create New Project" button
-        f32 btnFontSize = 24.0f;
-        f32 btnW = 360.0f, btnH = 64.0f;
-        ImVec2 btnPos((area.x - btnW) * 0.5f, area.y * 0.4f + msgSz.y + 20.0f);
-        ImVec2 btnEnd(btnPos.x + btnW, btnPos.y + btnH);
-        bool hovered = (io.MousePos.x >= btnPos.x && io.MousePos.x <= btnEnd.x &&
-                       io.MousePos.y >= btnPos.y && io.MousePos.y <= btnEnd.y);
-
-        dl->AddRectFilled(btnPos, btnEnd,
-            hovered ? IM_COL32(60, 80, 140, 255) : IM_COL32(45, 55, 100, 255), 10.0f);
-        const char* btnText = "Create New Project";
-        ImVec2 btnSz = font->CalcTextSizeA(btnFontSize, FLT_MAX, 0.0f, btnText);
-        dl->AddText(nullptr, btnFontSize,
-            ImVec2(btnPos.x + (btnW - btnSz.x) * 0.5f,
-                   btnPos.y + (btnH - btnSz.y) * 0.5f),
-            IM_COL32(220, 225, 245, 255), btnText);
-
-        if (hovered && ImGui::IsMouseClicked(0)) {
-            m_HubTab = ProjectHubTab::New;
-        }
+        f32 emptyFontSize = 15.0f;
+        ImVec2 emptySz = font->CalcTextSizeA(emptyFontSize, FLT_MAX, 0.0f, emptyMsg);
+        dl->AddText(nullptr, emptyFontSize,
+            ImVec2((sidebarW - emptySz.x) * 0.5f, listStartY + 20.0f),
+            IM_COL32(100, 105, 125, 160), emptyMsg);
         return;
     }
 
-    // Project list as full-width rows
-    f32 rowH = 72.0f;
-    f32 rowPad = 8.0f;
-    f32 listW = (std::min)(area.x - 120.0f, 700.0f);
-    f32 listX = (area.x - listW) * 0.5f;
-    f32 y = contentY + 15.0f;
+    // Scrollable project rows via ImGui child
+    ImGui::SetCursorPos(ImVec2(0, listStartY));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    f32 listH = area.y - listStartY - 10.0f;
+    if (listH < 60.0f) listH = 60.0f;
+    ImGui::BeginChild("##RecentSidebar", ImVec2(sidebarW - 1.0f, listH), false,
+                       ImGuiWindowFlags_NoBackground);
+    ImDrawList* listDl = ImGui::GetWindowDrawList();
+    ImVec2 listOrigin = ImGui::GetCursorScreenPos();
 
-    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 8);
+    f32 rowH = 60.0f;
+    f32 rowPad = 4.0f;
+    f32 rowW = sidebarW - 24.0f;
+    f32 rowX = 8.0f;
 
+    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 20);
     for (int pi = 0; pi < maxShow; ++pi) {
         int i = projectIndices[pi];
-        ImVec2 rPos(listX, y);
-        ImVec2 rEnd(listX + listW, y + rowH);
+        ImVec2 rPos(listOrigin.x + rowX, listOrigin.y + pi * (rowH + rowPad));
+        ImVec2 rEnd(rPos.x + rowW, rPos.y + rowH);
 
         bool hovered = (io.MousePos.x >= rPos.x && io.MousePos.x <= rEnd.x &&
                        io.MousePos.y >= rPos.y && io.MousePos.y <= rEnd.y);
 
-        dl->AddRectFilled(rPos, rEnd,
-            hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255), 8.0f);
+        listDl->AddRectFilled(rPos, rEnd,
+            hovered ? IM_COL32(35, 40, 55, 255) : IM_COL32(22, 24, 32, 255), 6.0f);
 
         // Accent bar (left edge)
-        ImU32 accentCol = hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 180);
-        dl->AddRectFilled(rPos, ImVec2(rPos.x + 4.0f, rEnd.y), accentCol, 8.0f, ImDrawFlags_RoundCornersLeft);
+        ImU32 accentCol = hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 150);
+        listDl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
 
-        ImU32 borderCol = hovered ? accentCol : IM_COL32(60, 65, 80, 150);
-        dl->AddRect(rPos, rEnd, borderCol, 8.0f, 0, hovered ? 2.0f : 1.0f);
+        if (hovered)
+            listDl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
 
-        // Extract display name
+        // Display name (truncated for sidebar width)
         std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
         std::string displayName = fsPath.stem().string();
-        if (displayName.length() > 40) {
-            displayName = displayName.substr(0, 37) + "...";
+        if (displayName.length() > 28) {
+            displayName = displayName.substr(0, 25) + "...";
         }
+        listDl->AddText(ImVec2(rPos.x + 12.0f, rPos.y + 8.0f),
+            IM_COL32(210, 215, 235, 255), displayName.c_str());
 
-        // Project name
-        dl->AddText(ImVec2(rPos.x + 18.0f, rPos.y + 12.0f),
-            IM_COL32(220, 225, 245, 255), displayName.c_str());
-
-        // Full path (truncated)
-        std::string pathStr = m_EditorSettings.recentProjects[i];
-        f32 maxPathPx = listW - 140.0f;
-        ImVec2 fullPathSize = ImGui::CalcTextSize(pathStr.c_str());
-        if (fullPathSize.x > maxPathPx && pathStr.length() > 60) {
-            pathStr = "..." + pathStr.substr(pathStr.length() - 57);
+        // Path (truncated)
+        std::string pathStr = fsPath.parent_path().string();
+        if (pathStr.length() > 32) {
+            pathStr = "..." + pathStr.substr(pathStr.length() - 29);
         }
-        dl->AddText(ImVec2(rPos.x + 18.0f, rPos.y + 34.0f),
-            IM_COL32(120, 125, 145, 180), pathStr.c_str());
+        f32 pathFontSize = 12.0f;
+        listDl->AddText(nullptr, pathFontSize,
+            ImVec2(rPos.x + 12.0f, rPos.y + 28.0f),
+            IM_COL32(100, 105, 125, 160), pathStr.c_str());
 
         // Status badge
         bool exists = std::filesystem::exists(m_EditorSettings.recentProjects[i]);
         const char* statusText = exists ? "Ready" : "Missing";
-        ImU32 statusCol = exists ? IM_COL32(80, 200, 120, 200) : IM_COL32(200, 80, 80, 200);
-        ImVec2 statusSize = ImGui::CalcTextSize(statusText);
-        dl->AddText(ImVec2(rEnd.x - statusSize.x - 16.0f, rPos.y + 28.0f),
+        ImU32 statusCol = exists ? IM_COL32(80, 200, 120, 180) : IM_COL32(200, 80, 80, 180);
+        f32 statusFontSize = 11.0f;
+        ImVec2 statusSize = font->CalcTextSizeA(statusFontSize, FLT_MAX, 0.0f, statusText);
+        listDl->AddText(nullptr, statusFontSize,
+            ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
             statusCol, statusText);
 
-        // Click to open — load project manifest then open first scene
+        // Click to open
         if (hovered && exists && ImGui::IsMouseClicked(0)) {
             if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
                 auto& scenes = m_SceneManager.GetScenes();
@@ -10636,73 +10576,144 @@ void EditorLayer::DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 conte
             }
             m_ShowProjectHub = false;
         }
+    }
 
-        y += rowH + rowPad;
+    ImGui::Dummy(ImVec2(rowW, maxShow * (rowH + rowPad)));
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+}
+
+// --------------------------------------------------
+// Landing page: 3 action buttons centered
+// --------------------------------------------------
+void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = ImGui::GetFont();
+
+    // Center area is right of sidebar
+    f32 contentW = area.x - sidebarW;
+    f32 centerX = sidebarW + contentW * 0.5f;
+    f32 centerY = (contentY + area.y) * 0.5f;
+
+    f32 btnW = 400.0f, btnH = 72.0f;
+    f32 btnGap = 18.0f;
+    f32 totalH = 3.0f * btnH + 2.0f * btnGap;
+    f32 startY = centerY - totalH * 0.5f;
+
+    struct BtnInfo { const char* label; ImU32 bgNormal; ImU32 bgHover; ImU32 border; };
+    BtnInfo buttons[] = {
+        { "New Project",  IM_COL32(50, 70, 130, 255), IM_COL32(60, 90, 160, 255), IM_COL32(80, 110, 180, 200) },
+        { "Open Project", IM_COL32(30, 35, 50, 255),  IM_COL32(45, 55, 80, 255),  IM_COL32(60, 70, 100, 200) },
+        { "Demos",        IM_COL32(30, 35, 50, 255),  IM_COL32(45, 55, 80, 255),  IM_COL32(60, 70, 100, 200) },
+    };
+
+    f32 btnFontSize = 24.0f;
+    for (int b = 0; b < 3; ++b) {
+        f32 btnX = centerX - btnW * 0.5f;
+        f32 btnY = startY + b * (btnH + btnGap);
+        ImVec2 bPos(btnX, btnY);
+        ImVec2 bEnd(btnX + btnW, btnY + btnH);
+
+        bool hovered = (io.MousePos.x >= bPos.x && io.MousePos.x <= bEnd.x &&
+                       io.MousePos.y >= bPos.y && io.MousePos.y <= bEnd.y);
+
+        dl->AddRectFilled(bPos, bEnd, hovered ? buttons[b].bgHover : buttons[b].bgNormal, 10.0f);
+        dl->AddRect(bPos, bEnd, buttons[b].border, 10.0f);
+
+        ImVec2 textSz = font->CalcTextSizeA(btnFontSize, FLT_MAX, 0.0f, buttons[b].label);
+        dl->AddText(nullptr, btnFontSize,
+            ImVec2(bPos.x + (btnW - textSz.x) * 0.5f, bPos.y + (btnH - textSz.y) * 0.5f),
+            hovered ? IM_COL32(220, 225, 245, 255) : IM_COL32(180, 185, 205, 230),
+            buttons[b].label);
+
+        if (hovered && ImGui::IsMouseClicked(0)) {
+            if (b == 0) {
+                // New Project → wizard step 1
+                m_SelectedTemplate = -1;
+                m_TemplateFilter = TMPL_ALL;
+                m_TemplateSearchBuffer[0] = '\0';
+                m_HubPage = HubPage::WizardSetup;
+            } else if (b == 1) {
+                // Open Project
+                std::vector<FileFilter> filters = {{ "Enjin Project", "*.enjinproject" }, { "All Files", "*.*" }};
+                std::string path = FileDialog::OpenFile("Open Project", filters);
+                if (!path.empty()) {
+                    if (m_SceneManager.LoadProject(path)) {
+                        m_EditorSettings.AddRecentProject(path);
+                        m_EditorSettings.Save();
+                        auto& scenes = m_SceneManager.GetScenes();
+                        if (!scenes.empty()) {
+                            auto projDir = std::filesystem::path(path).parent_path();
+                            std::string scenePath = (projDir / scenes[0].path).string();
+                            OpenScene(scenePath);
+                        }
+                        m_ShowProjectHub = false;
+                    }
+                }
+            } else {
+                // Demos
+                m_DemosCacheValid = false;
+                m_HubPage = HubPage::Demos;
+            }
+        }
+    }
+
+    // "Open Scene File" link below Open button
+    f32 linkFontSize = 16.0f;
+    const char* sceneLink = "Open Scene File (.enjin)";
+    ImVec2 linkSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, sceneLink);
+    f32 linkX = centerX - linkSz.x * 0.5f;
+    f32 linkY = startY + 1 * (btnH + btnGap) + btnH + 6.0f;
+    ImVec2 linkPos(linkX, linkY);
+    bool linkHovered = (io.MousePos.x >= linkPos.x && io.MousePos.x <= linkPos.x + linkSz.x &&
+                       io.MousePos.y >= linkPos.y && io.MousePos.y <= linkPos.y + linkSz.y);
+    dl->AddText(nullptr, linkFontSize, linkPos,
+        linkHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(100, 105, 125, 180), sceneLink);
+    if (linkHovered && ImGui::IsMouseClicked(0)) {
+        std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
+        std::string path = FileDialog::OpenFile("Open Scene", filters);
+        if (!path.empty()) {
+            m_ShowProjectHub = false;
+            OpenScene(path);
+        }
+    }
+
+    // "Skip (Empty Scene)" link at bottom-right
+    f32 skipFontSize = 16.0f;
+    const char* skipText = "Skip (Empty Scene)";
+    ImVec2 skipSz = font->CalcTextSizeA(skipFontSize, FLT_MAX, 0.0f, skipText);
+    ImVec2 skipPos(area.x - skipSz.x - 30.0f, area.y - skipSz.y - 20.0f);
+    bool skipHovered = (io.MousePos.x >= skipPos.x && io.MousePos.x <= skipPos.x + skipSz.x &&
+                       io.MousePos.y >= skipPos.y && io.MousePos.y <= skipPos.y + skipSz.y);
+    dl->AddText(nullptr, skipFontSize, skipPos,
+        skipHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(100, 105, 125, 180), skipText);
+    if (skipHovered && ImGui::IsMouseClicked(0)) {
+        m_ShowProjectHub = false;
     }
 }
 
 // --------------------------------------------------
-// New Project tab: creation wizard + template grid
+// Wizard Step 1: project setup (name, location, scene, git)
 // --------------------------------------------------
-void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY) {
+void EditorLayer::DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
     ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = ImGui::GetFont();
 
-    // --- Template data with category flags ---
-    struct TemplateInfo {
-        const char* id;
-        const char* name;
-        const char* description;
-        ImVec4 accentColor;
-        u32 categoryFlags;
-    };
+    f32 contentW = area.x - sidebarW;
+    f32 formW = (std::min)(600.0f, contentW - 80.0f);
+    f32 formX = sidebarW + (contentW - formW) * 0.5f;
 
-    TemplateInfo builtinTemplates[] = {
-        { "blank",       "Blank",           "Empty scene\nStart from scratch",                    ImVec4(0.5f, 0.5f, 0.5f, 1.0f), TMPL_ALL },
-        { "platformer",  "2D Platformer",   "Side-scrolling\nOrtho camera + player",              ImVec4(0.3f, 0.8f, 0.3f, 1.0f), TMPL_2D },
-        { "topdown2d",   "2D Top-Down",     "Top-down view\nOrtho camera + player",               ImVec4(0.3f, 0.6f, 0.9f, 1.0f), TMPL_2D },
-        { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), TMPL_3D },
-        { "thirdperson", "3D Third Person",  "Over-the-shoulder\nPerspective + player",            ImVec4(0.8f, 0.3f, 0.3f, 1.0f), TMPL_3D },
-        { "firstperson", "3D First Person",  "Eye-level FPS\nPerspective + player",                ImVec4(0.7f, 0.3f, 0.8f, 1.0f), TMPL_3D },
-        { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), TMPL_ALL },
-        { "rpg_village", "RPG Village",     "3D RPG scene\nNPC + pickups + enemy",                 ImVec4(0.4f, 0.7f, 0.4f, 1.0f), TMPL_3D },
-        { "survival",    "Survival",        "3D Survival\nHazards + temp zones",                   ImVec4(0.7f, 0.5f, 0.2f, 1.0f), TMPL_3D },
-        { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), TMPL_ALL },
-        { "narrative",   "3D Narrative",    "Dialogue sequencing\nCondition-based branching",      ImVec4(0.8f, 0.6f, 0.9f, 1.0f), TMPL_3D },
-        { "racing",      "4P Racing",       "4-player splitscreen\nRace track + vehicles",         ImVec4(0.9f, 0.3f, 0.1f, 1.0f), TMPL_MULTI },
-        { "arena",       "Arena Fighter",   "Smash-style 4-8 players\nSide-view + dynamic camera", ImVec4(1.0f, 0.5f, 0.0f, 1.0f), TMPL_MULTI },
-        { "ps1rpg",      "PS1 RPG",         "Classic 3D turn-based\nOverworld + battle system",    ImVec4(0.3f, 0.3f, 0.9f, 1.0f), TMPL_3D },
-        { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), TMPL_3D },
-        { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), TMPL_3D },
-        { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), TMPL_3D },
-        { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), TMPL_3D },
-        { "puzzle",      "Puzzle Plat.",   "Pushable blocks\nPlates + doors + switches",           ImVec4(0.5f, 0.8f, 0.9f, 1.0f), TMPL_MULTI },
-        { "horror",      "Horror",         "Walking sim\nFlashlight + notes + dark",               ImVec4(0.3f, 0.1f, 0.3f, 1.0f), TMPL_3D },
-        { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), TMPL_2D },
-        { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), TMPL_3D },
-        { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), TMPL_3D },
-        { "dungeon",     "SMT Dungeon",   "First-person crawler\nGrid dungeon + encounters",          ImVec4(0.15f, 0.6f, 0.15f, 1.0f), TMPL_3D },
-        { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), TMPL_2D },
-        { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), TMPL_3D },
-        { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), TMPL_2D },
-        { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), TMPL_2D },
-        { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), TMPL_MULTI },
-        { "planetgravity","Planet Gravity","Spherical gravity\nWalk on a planet surface",              ImVec4(0.2f, 0.5f, 0.9f, 1.0f), TMPL_3D },
-        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), TMPL_3D },
-        { "flash_pnc",   "Point & Click", "Flash-style adventure\nClick hotspots + inventory",       ImVec4(1.0f, 0.5f, 0.2f, 1.0f), TMPL_2D },
-        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), TMPL_2D },
-        { "flash_bullet","Bullet Hell",   "Danmaku shmup\nPatterns + bullets + score",               ImVec4(0.9f, 0.2f, 0.4f, 1.0f), TMPL_2D },
-        { "flash_idle",  "Idle/Clicker",  "Incremental game\nClick + upgrades + prestige",           ImVec4(0.4f, 0.8f, 0.4f, 1.0f), TMPL_2D },
-        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), TMPL_2D },
-        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), TMPL_2D },
-        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), TMPL_2D },
-    };
-    constexpr int builtinCount = 38;
+    // Step indicator
+    f32 stepFontSize = 18.0f;
+    const char* stepText = "Step 1 of 2 -- Setup";
+    ImVec2 stepSz = font->CalcTextSizeA(stepFontSize, FLT_MAX, 0.0f, stepText);
+    f32 stepX = sidebarW + (contentW - stepSz.x) * 0.5f;
+    dl->AddText(nullptr, stepFontSize, ImVec2(stepX, contentY + 10.0f),
+        IM_COL32(140, 150, 170, 200), stepText);
 
-    // === Project info section ===
-    f32 formX = (std::max)(area.x * 0.5f - 300.0f, 60.0f);
-    f32 formW = (std::min)(600.0f, area.x - 120.0f);
-    f32 y = contentY + 10.0f;
+    f32 y = contentY + 10.0f + stepSz.y + 30.0f;
 
+    // Form fields
     ImGui::SetCursorPos(ImVec2(formX, y));
     ImGui::PushItemWidth(formW - 110.0f);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.14f, 0.15f, 0.19f, 1.0f));
@@ -10763,9 +10774,129 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     ImGui::PopItemWidth();
     ImGui::PopStyleColor(3); // FrameBg, Text, TextDisabled
 
+    // --- Bottom bar: Back + Next ---
+    f32 bottomY = area.y - 85.0f;
+    dl->AddLine(ImVec2(sidebarW + 30.0f, bottomY - 12.0f), ImVec2(area.x - 30.0f, bottomY - 12.0f),
+        IM_COL32(60, 65, 80, 150), 1.0f);
+
+    bool canNext = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
+                   std::strlen(m_NewSceneName) > 0);
+
+    // "< Back" link
+    f32 backFontSize = 20.0f;
+    const char* backText = "< Back";
+    ImVec2 backSz = font->CalcTextSizeA(backFontSize, FLT_MAX, 0.0f, backText);
+    ImVec2 backPos(sidebarW + 40.0f, bottomY + 20.0f);
+    bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
+                       io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
+    dl->AddText(nullptr, backFontSize, backPos,
+        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
+    if (backHovered && ImGui::IsMouseClicked(0)) {
+        m_HubPage = HubPage::Landing;
+    }
+
+    // "Next >" button
+    f32 nextFontSize = 24.0f;
+    f32 nextBtnW = 200.0f, nextBtnH = 56.0f;
+    ImVec2 nextPos(area.x - nextBtnW - 40.0f, bottomY);
+    ImVec2 nextEnd(nextPos.x + nextBtnW, nextPos.y + nextBtnH);
+    bool nextHovered = canNext && (io.MousePos.x >= nextPos.x && io.MousePos.x <= nextEnd.x &&
+                                   io.MousePos.y >= nextPos.y && io.MousePos.y <= nextEnd.y);
+
+    ImU32 nextBg = !canNext ? IM_COL32(35, 38, 48, 200) :
+                   (nextHovered ? IM_COL32(60, 90, 160, 255) : IM_COL32(50, 70, 130, 255));
+    dl->AddRectFilled(nextPos, nextEnd, nextBg, 10.0f);
+    if (canNext) {
+        dl->AddRect(nextPos, nextEnd, IM_COL32(80, 110, 180, 200), 10.0f);
+    }
+
+    const char* nextText = "Next >";
+    ImVec2 nextSz = font->CalcTextSizeA(nextFontSize, FLT_MAX, 0.0f, nextText);
+    ImU32 nextTextCol = canNext ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 150);
+    dl->AddText(nullptr, nextFontSize,
+        ImVec2(nextPos.x + (nextBtnW - nextSz.x) * 0.5f, nextPos.y + (nextBtnH - nextSz.y) * 0.5f),
+        nextTextCol, nextText);
+
+    if (nextHovered && ImGui::IsMouseClicked(0)) {
+        m_HubPage = HubPage::WizardTemplate;
+    }
+}
+
+// --------------------------------------------------
+// Wizard Step 2: template selection
+// --------------------------------------------------
+void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
+    ImGuiIO& io = ImGui::GetIO();
+    ImFont* font = ImGui::GetFont();
+
+    // --- Template data with category flags ---
+    struct TemplateInfo {
+        const char* id;
+        const char* name;
+        const char* description;
+        ImVec4 accentColor;
+        u32 categoryFlags;
+    };
+
+    TemplateInfo builtinTemplates[] = {
+        { "blank",       "Blank",           "Empty scene\nStart from scratch",                    ImVec4(0.5f, 0.5f, 0.5f, 1.0f), TMPL_ALL },
+        { "platformer",  "2D Platformer",   "Side-scrolling\nOrtho camera + player",              ImVec4(0.3f, 0.8f, 0.3f, 1.0f), TMPL_2D },
+        { "topdown2d",   "2D Top-Down",     "Top-down view\nOrtho camera + player",               ImVec4(0.3f, 0.6f, 0.9f, 1.0f), TMPL_2D },
+        { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), TMPL_3D },
+        { "thirdperson", "3D Third Person",  "Over-the-shoulder\nPerspective + player",            ImVec4(0.8f, 0.3f, 0.3f, 1.0f), TMPL_3D },
+        { "firstperson", "3D First Person",  "Eye-level FPS\nPerspective + player",                ImVec4(0.7f, 0.3f, 0.8f, 1.0f), TMPL_3D },
+        { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), TMPL_ALL },
+        { "rpg_village", "RPG Village",     "3D RPG scene\nNPC + pickups + enemy",                 ImVec4(0.4f, 0.7f, 0.4f, 1.0f), TMPL_3D },
+        { "survival",    "Survival",        "3D Survival\nHazards + temp zones",                   ImVec4(0.7f, 0.5f, 0.2f, 1.0f), TMPL_3D },
+        { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), TMPL_ALL },
+        { "narrative",   "3D Narrative",    "Dialogue sequencing\nCondition-based branching",      ImVec4(0.8f, 0.6f, 0.9f, 1.0f), TMPL_3D },
+        { "racing",      "4P Racing",       "4-player splitscreen\nRace track + vehicles",         ImVec4(0.9f, 0.3f, 0.1f, 1.0f), TMPL_MULTI },
+        { "arena",       "Arena Fighter",   "Smash-style 4-8 players\nSide-view + dynamic camera", ImVec4(1.0f, 0.5f, 0.0f, 1.0f), TMPL_MULTI },
+        { "ps1rpg",      "PS1 RPG",         "Classic 3D turn-based\nOverworld + battle system",    ImVec4(0.3f, 0.3f, 0.9f, 1.0f), TMPL_3D },
+        { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), TMPL_3D },
+        { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), TMPL_3D },
+        { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), TMPL_3D },
+        { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), TMPL_3D },
+        { "puzzle",      "Puzzle Plat.",   "Pushable blocks\nPlates + doors + switches",           ImVec4(0.5f, 0.8f, 0.9f, 1.0f), TMPL_MULTI },
+        { "horror",      "Horror",         "Walking sim\nFlashlight + notes + dark",               ImVec4(0.3f, 0.1f, 0.3f, 1.0f), TMPL_3D },
+        { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), TMPL_2D },
+        { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), TMPL_3D },
+        { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), TMPL_3D },
+        { "dungeon",     "SMT Dungeon",   "First-person crawler\nGrid dungeon + encounters",          ImVec4(0.15f, 0.6f, 0.15f, 1.0f), TMPL_3D },
+        { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), TMPL_2D },
+        { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), TMPL_3D },
+        { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), TMPL_2D },
+        { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), TMPL_2D },
+        { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), TMPL_MULTI },
+        { "planetgravity","Planet Gravity","Spherical gravity\nWalk on a planet surface",              ImVec4(0.2f, 0.5f, 0.9f, 1.0f), TMPL_3D },
+        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), TMPL_3D },
+        { "flash_pnc",   "Point & Click", "Flash-style adventure\nClick hotspots + inventory",       ImVec4(1.0f, 0.5f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_bullet","Bullet Hell",   "Danmaku shmup\nPatterns + bullets + score",               ImVec4(0.9f, 0.2f, 0.4f, 1.0f), TMPL_2D },
+        { "flash_idle",  "Idle/Clicker",  "Incremental game\nClick + upgrades + prestige",           ImVec4(0.4f, 0.8f, 0.4f, 1.0f), TMPL_2D },
+        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), TMPL_2D },
+        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), TMPL_2D },
+        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), TMPL_2D },
+    };
+    constexpr int builtinCount = 38;
+
+    f32 contentW = area.x - sidebarW;
+
+    // Step indicator
+    f32 stepFontSize = 18.0f;
+    const char* stepText = "Step 2 of 2 -- Choose Template";
+    ImVec2 stepSz = font->CalcTextSizeA(stepFontSize, FLT_MAX, 0.0f, stepText);
+    f32 stepX = sidebarW + (contentW - stepSz.x) * 0.5f;
+    dl->AddText(nullptr, stepFontSize, ImVec2(stepX, contentY + 10.0f),
+        IM_COL32(140, 150, 170, 200), stepText);
+
+    f32 gridAreaStartY = contentY + 10.0f + stepSz.y + 16.0f;
+
     // === Template search bar ===
-    f32 searchY = ImGui::GetCursorPosY() + 8.0f;
-    ImGui::SetCursorPos(ImVec2(formX, searchY));
+    f32 formW = (std::min)(600.0f, contentW - 80.0f);
+    f32 formX = sidebarW + (contentW - formW) * 0.5f;
+
+    ImGui::SetCursorPos(ImVec2(formX, gridAreaStartY));
     ImGui::TextColored(ImVec4(0.55f, 0.58f, 0.68f, 1.0f), "Search Templates");
     ImGui::SetCursorPosX(formX);
     ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.14f, 0.15f, 0.19f, 1.0f));
@@ -10775,17 +10906,15 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     ImGui::PopItemWidth();
     ImGui::PopStyleColor(2);
 
-    // === Category filter bar ===
+    // === Category filter chips ===
     f32 filterY = ImGui::GetCursorPosY() + 8.0f;
     const char* filterLabels[] = { "All", "2D", "3D", "Multiplayer" };
     u32 filterValues[] = { TMPL_ALL, TMPL_2D, TMPL_3D, TMPL_MULTI };
 
-    ImFont* font = ImGui::GetFont();
     f32 chipFontSize = 22.0f;
     f32 chipPad = 12.0f;
     f32 chipH = 48.0f;
     f32 chipPadX = 28.0f;
-    // Measure total width using exact font metrics
     ImVec2 chipTextSizes[4];
     f32 totalChipW = 0.0f;
     for (int f = 0; f < 4; ++f) {
@@ -10794,9 +10923,10 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     }
     totalChipW -= chipPad;
 
-    // Shrink chips if wider than available area
-    if (totalChipW > area.x - 40.0f) {
-        f32 scale = (area.x - 40.0f) / totalChipW;
+    // Shrink chips if wider than content area
+    f32 chipAvailW = contentW - 40.0f;
+    if (totalChipW > chipAvailW) {
+        f32 scale = chipAvailW / totalChipW;
         chipFontSize *= scale;
         chipPadX *= scale;
         chipPad *= scale;
@@ -10809,7 +10939,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         totalChipW -= chipPad;
     }
 
-    f32 chipX = (area.x - totalChipW) * 0.5f;
+    f32 chipX = sidebarW + (contentW - totalChipW) * 0.5f;
     for (int f = 0; f < 4; ++f) {
         f32 chipW = chipTextSizes[f].x + chipPadX * 2.0f;
         ImVec2 cPos(chipX, filterY);
@@ -10844,22 +10974,21 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     f32 cardW = 280.0f;
     f32 cardH = 180.0f;
     f32 cardPad = 16.0f;
-    f32 maxRowWidth = area.x - 60.0f;
+    f32 maxRowWidth = contentW - 60.0f;
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
 
-    // Create a scrollable child region for the template grid
-    f32 gridBottomMargin = 100.0f; // reserve space for Create button at bottom
+    f32 gridBottomMargin = 100.0f;
     f32 gridHeight = area.y - gridStartY - gridBottomMargin;
     if (gridHeight < 100.0f) gridHeight = 100.0f;
-    ImGui::SetCursorPos(ImVec2(0, gridStartY));
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0)); // transparent bg
-    ImGui::BeginChild("##TemplateGrid", ImVec2(area.x, gridHeight), false,
+    ImGui::SetCursorPos(ImVec2(sidebarW, gridStartY));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    ImGui::BeginChild("##TemplateGrid", ImVec2(contentW, gridHeight), false,
                        ImGuiWindowFlags_NoBackground);
     ImDrawList* gridDl = ImGui::GetWindowDrawList();
     ImVec2 gridScreenOrigin = ImGui::GetCursorScreenPos();
 
-    // Build filtered index list (category filter)
+    // Build filtered index list
     std::vector<int> filteredIndices;
     for (int i = 0; i < builtinCount; ++i) {
         if (m_TemplateFilter == TMPL_ALL || (builtinTemplates[i].categoryFlags & m_TemplateFilter)) {
@@ -10867,7 +10996,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         }
     }
 
-    // Apply search filter (case-insensitive substring match)
+    // Apply search filter
     if (m_TemplateSearchBuffer[0] != '\0') {
         std::string searchLower = m_TemplateSearchBuffer;
         std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(),
@@ -10885,14 +11014,11 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         filteredIndices = std::move(searchFiltered);
     }
 
-    // Add custom templates (always shown, or filtered as "All")
     int customStart = static_cast<int>(filteredIndices.size());
 
-    // Build filtered custom template indices
     std::vector<int> filteredCustomIndices;
     if (m_TemplateFilter == TMPL_ALL) {
         for (int ci = 0; ci < static_cast<int>(m_CustomTemplateNames.size()); ++ci) {
-            // Apply search filter to custom templates too
             if (m_TemplateSearchBuffer[0] != '\0') {
                 std::string searchLower = m_TemplateSearchBuffer;
                 std::transform(searchLower.begin(), searchLower.end(), searchLower.begin(),
@@ -10910,21 +11036,16 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
     }
 
     int totalVisible = static_cast<int>(filteredIndices.size()) + static_cast<int>(filteredCustomIndices.size());
-
-    // Compute total content rows for scroll sizing
     int totalRows = totalVisible > 0 ? ((totalVisible - 1) / cardsPerRow + 1) : 0;
     f32 totalContentH = totalRows * (cardH + cardPad);
     if (totalContentH < 1.0f) totalContentH = 1.0f;
-
-    bool templateChosen = false;
-    std::string chosenTemplate;
 
     // Hover preview tracking
     ImVec2 hoveredCardPos(0, 0), hoveredCardEnd(0, 0);
     i32 prevHoverIdx = m_HoverTemplateIdx;
     m_HoverTemplateIdx = -1;
 
-    // Draw filtered builtin templates (screen-space via gridDl)
+    // Draw filtered builtin templates
     for (int vi = 0; vi < static_cast<int>(filteredIndices.size()); ++vi) {
         int i = filteredIndices[vi];
         int row = vi / cardsPerRow;
@@ -10933,7 +11054,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
 
         f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
-        f32 rowStartX = (area.x - rowWidth) * 0.5f;
+        f32 rowStartX = (contentW - rowWidth) * 0.5f;
 
         ImVec2 cardPos(gridScreenOrigin.x + rowStartX + col * (cardW + cardPad),
                        gridScreenOrigin.y + row * (cardH + cardPad));
@@ -10943,24 +11064,20 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
                        io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
         bool selected = (m_SelectedTemplate == i);
 
-        // Card background
         ImU32 bgCol = selected ? IM_COL32(35, 45, 70, 255) :
                       (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
         gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
 
-        // Accent bar at top
         ImVec4 accent = builtinTemplates[i].accentColor;
         ImU32 accentCol = IM_COL32(
             (int)(accent.x * 255), (int)(accent.y * 255),
             (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
         gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
-        // Border (highlighted when selected)
         ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
                          (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
         gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
 
-        // Checkmark for selected
         if (selected) {
             const char* check = "✓";
             ImVec2 checkSize = ImGui::CalcTextSize(check);
@@ -10968,11 +11085,9 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
                 IM_COL32(140, 200, 140, 255), check);
         }
 
-        // Template name (clipped with ellipsis if wider than card)
         DrawCenteredClippedText(gridDl, builtinTemplates[i].name, cardPos.x, cardW,
             cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
 
-        // Description (centered, multi-line, clipped per line)
         const char* desc = builtinTemplates[i].description;
         std::string descStr(desc);
         f32 lineY = cardPos.y + 42.0f;
@@ -10984,20 +11099,18 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
             lineY += 18.0f;
         }
 
-        // Track hover for preview popup
         if (hovered) {
             m_HoverTemplateIdx = i;
             hoveredCardPos = cardPos;
             hoveredCardEnd = cardEnd;
         }
 
-        // Click to select/deselect
         if (hovered && ImGui::IsMouseClicked(0)) {
             m_SelectedTemplate = (m_SelectedTemplate == i) ? -1 : i;
         }
     }
 
-    // Draw custom templates (when showing All, filtered by search)
+    // Draw custom templates
     for (int fci = 0; fci < static_cast<int>(filteredCustomIndices.size()); ++fci) {
         int ci = filteredCustomIndices[fci];
         int vi = customStart + fci;
@@ -11007,7 +11120,7 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
 
         f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
-        f32 rowStartX = (area.x - rowWidth) * 0.5f;
+        f32 rowStartX = (contentW - rowWidth) * 0.5f;
 
         ImVec2 cardPos(gridScreenOrigin.x + rowStartX + col * (cardW + cardPad),
                        gridScreenOrigin.y + row * (cardH + cardPad));
@@ -11015,7 +11128,6 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
 
         bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
                        io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
-        // Custom templates use negative indices: -(ci+1)
         bool selected = (m_SelectedTemplate == -(ci + 1));
 
         ImU32 bgCol = selected ? IM_COL32(35, 50, 60, 255) :
@@ -11049,12 +11161,11 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         }
     }
 
-    // Declare total content height so ImGui shows a scrollbar when needed
-    ImGui::Dummy(ImVec2(area.x, totalContentH));
+    ImGui::Dummy(ImVec2(contentW, totalContentH));
     ImGui::EndChild();
     ImGui::PopStyleColor(); // ChildBg
 
-    // === Hover preview overlay ===
+    // Hover preview overlay
     if (m_HoverTemplateIdx >= 0) {
         if (m_HoverTemplateIdx != prevHoverIdx) {
             m_HoverTimer = 0.0f;
@@ -11064,17 +11175,32 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         DrawTemplateHoverPreview(dl, m_HoverTemplateIdx, hoveredCardPos, hoveredCardEnd);
     }
 
-    // === Create Project button (bottom) ===
+    // === Bottom bar: Back | Create | Start Blank ===
     f32 bottomY = area.y - 85.0f;
-    dl->AddLine(ImVec2(60, bottomY - 12.0f), ImVec2(area.x - 60, bottomY - 12.0f),
+    dl->AddLine(ImVec2(sidebarW + 30.0f, bottomY - 12.0f), ImVec2(area.x - 30.0f, bottomY - 12.0f),
         IM_COL32(60, 65, 80, 150), 1.0f);
 
     bool canCreate = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
                      std::strlen(m_NewSceneName) > 0);
 
+    // "< Back" link
+    f32 backFontSize = 20.0f;
+    const char* backText = "< Back";
+    ImVec2 backSz = font->CalcTextSizeA(backFontSize, FLT_MAX, 0.0f, backText);
+    ImVec2 backPos(sidebarW + 40.0f, bottomY + 20.0f);
+    bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
+                       io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
+    dl->AddText(nullptr, backFontSize, backPos,
+        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
+    if (backHovered && ImGui::IsMouseClicked(0)) {
+        m_HubPage = HubPage::WizardSetup;
+    }
+
+    // "Create" button (centered)
     f32 createFontSize = 24.0f;
-    f32 createBtnW = 360.0f, createBtnH = 64.0f;
-    ImVec2 createPos((area.x - createBtnW) * 0.5f, bottomY);
+    f32 createBtnW = 280.0f, createBtnH = 56.0f;
+    f32 createCenterX = sidebarW + contentW * 0.5f;
+    ImVec2 createPos(createCenterX - createBtnW * 0.5f, bottomY);
     ImVec2 createEnd(createPos.x + createBtnW, createPos.y + createBtnH);
     bool createHovered = canCreate && (io.MousePos.x >= createPos.x && io.MousePos.x <= createEnd.x &&
                                        io.MousePos.y >= createPos.y && io.MousePos.y <= createEnd.y);
@@ -11095,12 +11221,10 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         createTextCol, createText);
 
     if (createHovered && ImGui::IsMouseClicked(0)) {
-        // Determine template ID
         std::string templateId = "blank";
         if (m_SelectedTemplate >= 0 && m_SelectedTemplate < builtinCount) {
             templateId = builtinTemplates[m_SelectedTemplate].id;
         } else if (m_SelectedTemplate < -0) {
-            // Custom template
             int ci = -(m_SelectedTemplate + 1);
             if (ci >= 0 && ci < static_cast<int>(m_CustomTemplateNames.size())) {
                 templateId = "custom:" + std::to_string(ci);
@@ -11108,96 +11232,34 @@ void EditorLayer::DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY
         }
 
         if (CreateProjectOnDisk(m_NewProjectPath, m_NewProjectName, m_NewSceneName, templateId)) {
-            // Reset wizard state for next time
             std::strncpy(m_NewProjectName, "MyGame", sizeof(m_NewProjectName));
             std::strncpy(m_NewSceneName, "Main", sizeof(m_NewSceneName));
             m_SelectedTemplate = -1;
             m_TemplateFilter = TMPL_ALL;
-            m_TemplateSearchBuffer[0] = '\0';  // Clear search
+            m_TemplateSearchBuffer[0] = '\0';
+            m_HubPage = HubPage::Landing;
         }
     }
 
-    // "Skip" link at bottom-right
-    f32 skipFontSize = 20.0f;
-    const char* skipText = "Skip (Empty Scene)";
-    ImVec2 skipSz = font->CalcTextSizeA(skipFontSize, FLT_MAX, 0.0f, skipText);
-    ImVec2 skipPos(area.x - skipSz.x - 40.0f, bottomY + (createBtnH - skipSz.y) * 0.5f);
-    bool skipHovered = (io.MousePos.x >= skipPos.x && io.MousePos.x <= skipPos.x + skipSz.x &&
-                       io.MousePos.y >= skipPos.y && io.MousePos.y <= skipPos.y + skipSz.y);
-    dl->AddText(nullptr, skipFontSize, skipPos,
-        skipHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(100, 105, 125, 180), skipText);
-    if (skipHovered && ImGui::IsMouseClicked(0)) {
-        m_ShowProjectHub = false;
-    }
-}
+    // "Start Blank" link
+    f32 blankFontSize = 18.0f;
+    const char* blankText = "Start Blank";
+    ImVec2 blankSz = font->CalcTextSizeA(blankFontSize, FLT_MAX, 0.0f, blankText);
+    ImVec2 blankPos(area.x - blankSz.x - 40.0f, bottomY + (createBtnH - blankSz.y) * 0.5f);
+    bool blankHovered = canCreate && (io.MousePos.x >= blankPos.x && io.MousePos.x <= blankPos.x + blankSz.x &&
+                       io.MousePos.y >= blankPos.y && io.MousePos.y <= blankPos.y + blankSz.y);
+    dl->AddText(nullptr, blankFontSize, blankPos,
+        blankHovered ? IM_COL32(180, 185, 205, 255) :
+        (canCreate ? IM_COL32(120, 125, 145, 200) : IM_COL32(70, 75, 85, 120)), blankText);
 
-// --------------------------------------------------
-// Open tab: open project / scene / skip
-// --------------------------------------------------
-void EditorLayer::DrawHubOpenTab(ImDrawList* dl, const ImVec2& area) {
-    ImGuiIO& io = ImGui::GetIO();
-
-    ImFont* font = ImGui::GetFont();
-    f32 openFontSize = 24.0f;
-    f32 centerY = area.y * 0.35f;
-    f32 btnW = 480.0f, btnH = 72.0f;
-    f32 btnGap = 20.0f;
-    f32 btnX = (area.x - btnW) * 0.5f;
-
-    struct BtnInfo { const char* label; };
-    BtnInfo buttons[] = {
-        { "Open Project (.enjinproject)" },
-        { "Open Scene (.enjin)" },
-        { "Skip (Empty Scene)" },
-    };
-
-    for (int b = 0; b < 3; ++b) {
-        ImVec2 bPos(btnX, centerY + b * (btnH + btnGap));
-        ImVec2 bEnd(bPos.x + btnW, bPos.y + btnH);
-        bool hovered = (io.MousePos.x >= bPos.x && io.MousePos.x <= bEnd.x &&
-                       io.MousePos.y >= bPos.y && io.MousePos.y <= bEnd.y);
-
-        ImU32 bg = hovered ? IM_COL32(50, 60, 90, 255) : IM_COL32(30, 35, 50, 255);
-        dl->AddRectFilled(bPos, bEnd, bg, 12.0f);
-        dl->AddRect(bPos, bEnd,
-            hovered ? IM_COL32(100, 130, 200, 200) : IM_COL32(60, 65, 80, 150), 12.0f);
-
-        ImVec2 btnTextSz = font->CalcTextSizeA(openFontSize, FLT_MAX, 0.0f, buttons[b].label);
-        dl->AddText(nullptr, openFontSize,
-            ImVec2(bPos.x + (btnW - btnTextSz.x) * 0.5f, bPos.y + (btnH - btnTextSz.y) * 0.5f),
-            hovered ? IM_COL32(220, 225, 245, 255) : IM_COL32(170, 175, 195, 220),
-            buttons[b].label);
-
-        if (hovered && ImGui::IsMouseClicked(0)) {
-            if (b == 0) {
-                // Open Project
-                std::vector<FileFilter> filters = {{ "Enjin Project", "*.enjinproject" }, { "All Files", "*.*" }};
-                std::string path = FileDialog::OpenFile("Open Project", filters);
-                if (!path.empty()) {
-                    if (m_SceneManager.LoadProject(path)) {
-                        m_EditorSettings.AddRecentProject(path);
-                        m_EditorSettings.Save();
-                        auto& scenes = m_SceneManager.GetScenes();
-                        if (!scenes.empty()) {
-                            auto projDir = std::filesystem::path(path).parent_path();
-                            std::string scenePath = (projDir / scenes[0].path).string();
-                            OpenScene(scenePath);
-                        }
-                        m_ShowProjectHub = false;
-                    }
-                }
-            } else if (b == 1) {
-                // Open Scene
-                std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
-                std::string path = FileDialog::OpenFile("Open Scene", filters);
-                if (!path.empty()) {
-                    m_ShowProjectHub = false;
-                    OpenScene(path);
-                }
-            } else {
-                // Skip
-                m_ShowProjectHub = false;
-            }
+    if (blankHovered && ImGui::IsMouseClicked(0)) {
+        if (CreateProjectOnDisk(m_NewProjectPath, m_NewProjectName, m_NewSceneName, "blank")) {
+            std::strncpy(m_NewProjectName, "MyGame", sizeof(m_NewProjectName));
+            std::strncpy(m_NewSceneName, "Main", sizeof(m_NewSceneName));
+            m_SelectedTemplate = -1;
+            m_TemplateFilter = TMPL_ALL;
+            m_TemplateSearchBuffer[0] = '\0';
+            m_HubPage = HubPage::Landing;
         }
     }
 }
@@ -11206,7 +11268,7 @@ void EditorLayer::DrawHubOpenTab(ImDrawList* dl, const ImVec2& area) {
 // Template hover preview overlay
 // --------------------------------------------------
 void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd) {
-    // Template data (mirrors DrawHubNewTab builtinTemplates)
+    // Template data (mirrors DrawHubWizardTemplate builtinTemplates)
     struct TemplateInfo {
         const char* id;
         const char* name;
@@ -11377,9 +11439,11 @@ void EditorLayer::DrawTemplateHoverPreview(ImDrawList* /*dl*/, i32 templateIdx, 
 // --------------------------------------------------
 // Demos tab: showcase demo scenes
 // --------------------------------------------------
-void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY) {
+void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
     ImGuiIO& io = ImGui::GetIO();
     ImFont* font = ImGui::GetFont();
+
+    f32 contentW = area.x - sidebarW;
 
     struct DemoInfo {
         const char* name;
@@ -11403,28 +11467,40 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
     if (!m_DemosCacheValid) {
         m_DemoAvailability.resize(demoCount);
         for (int i = 0; i < demoCount; ++i) {
-            // Scene file on disk, or fallback to template (always available)
             m_DemoAvailability[i] = true;
         }
         m_DemosCacheValid = true;
     }
 
-    // Subtitle (clipped if wider than available area)
+    // "< Back" link at top
+    f32 backFontSize = 20.0f;
+    const char* backText = "< Back";
+    ImVec2 backSz = font->CalcTextSizeA(backFontSize, FLT_MAX, 0.0f, backText);
+    ImVec2 backPos(sidebarW + 30.0f, contentY + 8.0f);
+    bool backHovered = (io.MousePos.x >= backPos.x && io.MousePos.x <= backPos.x + backSz.x &&
+                       io.MousePos.y >= backPos.y && io.MousePos.y <= backPos.y + backSz.y);
+    dl->AddText(nullptr, backFontSize, backPos,
+        backHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(120, 125, 145, 200), backText);
+    if (backHovered && ImGui::IsMouseClicked(0)) {
+        m_HubPage = HubPage::Landing;
+    }
+
+    // Subtitle (clipped if wider than content area)
     f32 subtitleFontSize = 18.0f;
-    const char* subtitle = "Click to explore — each demo creates a scene from a built-in template.";
-    f32 subtitleMaxW = area.x - 60.0f;
+    const char* subtitle = "Click to explore -- each demo creates a scene from a built-in template.";
+    f32 subtitleMaxW = contentW - 60.0f;
     std::string clippedSubtitle = EllipsizeText(subtitle, subtitleMaxW, font, subtitleFontSize);
     ImVec2 subSz = font->CalcTextSizeA(subtitleFontSize, FLT_MAX, 0.0f, clippedSubtitle.c_str());
-    f32 subX = (area.x - subSz.x) * 0.5f;
-    dl->AddText(nullptr, subtitleFontSize, ImVec2(subX, contentY + 8.0f),
+    f32 subX = sidebarW + (contentW - subSz.x) * 0.5f;
+    dl->AddText(nullptr, subtitleFontSize, ImVec2(subX, contentY + 8.0f + backSz.y + 12.0f),
         IM_COL32(120, 130, 145, 200), clippedSubtitle.c_str());
 
-    // Grid layout
-    f32 gridStartY = contentY + 8.0f + subSz.y + 24.0f;
+    // Grid layout (offset by sidebar)
+    f32 gridStartY = contentY + 8.0f + backSz.y + 12.0f + subSz.y + 24.0f;
     f32 cardW = 280.0f;
     f32 cardH = 180.0f;
     f32 cardPad = 16.0f;
-    f32 maxRowWidth = area.x - 60.0f;
+    f32 maxRowWidth = contentW - 60.0f;
     int cardsPerRow = static_cast<int>((maxRowWidth + cardPad) / (cardW + cardPad));
     if (cardsPerRow < 1) cardsPerRow = 1;
 
@@ -11435,7 +11511,7 @@ void EditorLayer::DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 conten
         if (itemsInRow > cardsPerRow) itemsInRow = cardsPerRow;
 
         f32 rowWidth = itemsInRow * (cardW + cardPad) - cardPad;
-        f32 rowStartX = (area.x - rowWidth) * 0.5f;
+        f32 rowStartX = sidebarW + (contentW - rowWidth) * 0.5f;
 
         ImVec2 cPos(rowStartX + col * (cardW + cardPad), gridStartY + row * (cardH + cardPad));
         ImVec2 cEnd(cPos.x + cardW, cPos.y + cardH);

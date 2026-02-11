@@ -577,9 +577,9 @@ private:
     f32 m_EditorFadeIn = 0.0f;     // Editor fade-in progress (0 to 1)
 
     // Project Hub (shown after splash)
-    enum class ProjectHubTab : u8 { Recent = 0, New, Open, Demos };
+    enum class HubPage : u8 { Landing = 0, WizardSetup, WizardTemplate, Demos };
     bool m_ShowProjectHub = true;
-    ProjectHubTab m_HubTab = ProjectHubTab::Recent;
+    HubPage m_HubPage = HubPage::Landing;
 
     // New Project wizard state
     char m_NewProjectName[128] = "MyGame";
@@ -615,10 +615,11 @@ private:
 
     // Project Hub methods
     void DrawProjectHub();
-    void DrawHubRecentTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
-    void DrawHubNewTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
-    void DrawHubOpenTab(ImDrawList* dl, const ImVec2& area);
-    void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY);
+    void DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
+    void DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
+    void DrawHubWizardSetup(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
+    void DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
+    void DrawHubDemosTab(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW);
     void DrawTemplateHoverPreview(ImDrawList* dl, i32 templateIdx, const ImVec2& cardPos, const ImVec2& cardEnd);
     void ApplyTemplate(const std::string& templateId);
     void SaveCustomTemplate(const std::string& name);
