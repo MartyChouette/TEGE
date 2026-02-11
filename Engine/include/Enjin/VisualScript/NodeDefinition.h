@@ -86,6 +86,7 @@ enum class NodeCategory : u8 {
     Audio,         // Play/Stop sound
     Debug,         // Print, DrawLine, etc.
     Utility,       // Delay, Random, etc.
+    Gameplay,      // Save/Load, Checkpoint, Meta-progression
     Custom         // User-defined nodes
 };
 
@@ -104,6 +105,7 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Audio:       return "Audio";
         case NodeCategory::Debug:       return "Debug";
         case NodeCategory::Utility:     return "Utility";
+        case NodeCategory::Gameplay:    return "Gameplay";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
     }

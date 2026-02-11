@@ -187,6 +187,14 @@ constexpr const char* DataAssetLoad      = "DataAsset_Load";
 constexpr const char* DataAssetGetFloat  = "DataAsset_GetFloat";
 constexpr const char* DataAssetGetString = "DataAsset_GetString";
 
+// Save System
+constexpr const char* SaveToSlot         = "Gameplay_SaveToSlot";
+constexpr const char* LoadFromSlot       = "Gameplay_LoadFromSlot";
+constexpr const char* DeleteSlot         = "Gameplay_DeleteSlot";
+constexpr const char* Checkpoint         = "Gameplay_Checkpoint";
+constexpr const char* MetaSetFloat       = "Meta_SetFloat";
+constexpr const char* MetaGetFloat       = "Meta_GetFloat";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

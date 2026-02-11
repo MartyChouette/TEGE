@@ -9,6 +9,7 @@ namespace Physics { class SimplePhysics; }
 namespace Audio { class SimpleAudio; }
 namespace Scene { class SceneManager; }
 namespace Renderer { class PostProcessing; }
+namespace Gameplay { class TieredSaveSystem; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -35,6 +36,7 @@ void RegisterStateMachineBindings(asIScriptEngine* engine);
 void RegisterDialogueBindings(asIScriptEngine* engine);
 void RegisterRenderBindings(asIScriptEngine* engine);
 void RegisterNoiseBindings(asIScriptEngine* engine);
+void RegisterSaveBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -47,6 +49,7 @@ void SetBindingsScriptEngine(ScriptEngine* engine);
 void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);
 void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
+void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
 
 } // namespace Scripting
 } // namespace Enjin

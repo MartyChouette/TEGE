@@ -16,6 +16,8 @@
 #include "Enjin/ECS/Components/VisualScript.h"
 #include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Gameplay/QuestFlow.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -386,6 +388,16 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::DialogueBoxComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::DialogueBoxComponent>(e); },
             "dialogueBox"},
+        {"Save Data", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SaveDataComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveDataComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveDataComponent>(e); },
+            "saveData"},
+        {"Save/Load Menu", "Gameplay", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SaveLoadMenuComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SaveLoadMenuComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SaveLoadMenuComponent>(e); },
+            "saveLoadMenu"},
         {"Visual Script", "Scripting", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::VisualScriptComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::VisualScriptComponent>(e); },
@@ -2191,6 +2203,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(720, 580), layoutCond);
         DrawFeedbackPanel();
     }
+    if (HasPanel(m_VisiblePanels, EditorPanel::SaveDebug)) {
+        ImGui::SetNextWindowPos(ImVec2(centerX - 300, menuBarH + 40), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(620, 500), layoutCond);
+        DrawSaveDebugPanel();
+    }
     if (m_ShowHTML5ExportDialog) {
         DrawHTML5ExportDialog();
     }
@@ -2915,6 +2932,10 @@ void EditorLayer::DrawMenuBar() {
                 if (ImGui::MenuItem("Vector Drawing", nullptr, &vectorPanel)) {
                     SetPanelVisibility(EditorPanel::VectorDrawing, vectorPanel);
                 }
+                bool saveDebug = IsPanelVisible(EditorPanel::SaveDebug);
+                if (ImGui::MenuItem("Save Debug", nullptr, &saveDebug)) {
+                    SetPanelVisibility(EditorPanel::SaveDebug, saveDebug);
+                }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
                     m_DocGenerator.SetOutputDirectory("docs/generated");
@@ -3476,6 +3497,11 @@ void EditorLayer::DrawMenuBar() {
         }
 
         ImGui::EndMainMenuBar();
+    }
+
+    // Play mode diff dialog
+    if (m_PlayMode.HasPendingDiff()) {
+        DrawPlayModeDiffDialog();
     }
 
     // About dialog
@@ -4263,6 +4289,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::SaveDataComponent>(m_PrimarySelected)) {
             DrawSaveDataComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<ECS::SaveLoadMenuComponent>(m_PrimarySelected)) {
+            DrawSaveLoadMenuComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::SkeletonComponent>(m_PrimarySelected)) {
             DrawSkeletonComponent(m_PrimarySelected);
@@ -21965,11 +21994,53 @@ void EditorLayer::DrawSaveDataComponent(ECS::Entity entity) {
         auto* save = m_World->GetComponent<ECS::SaveDataComponent>(entity);
         if (!save) return;
 
+        // Persistence tier dropdown
+        const char* tierNames[] = { "Scene State", "Run State", "Meta Progression" };
+        int tierIdx = static_cast<int>(save->tier);
+        ImGui::SetNextItemWidth(-1.0f);
+        if (ImGui::Combo("Persistence Tier", &tierIdx, tierNames, 3)) {
+            save->tier = static_cast<ECS::PersistenceTier>(tierIdx);
+        }
+        if (ImGui::IsItemHovered()) {
+            const char* tierTooltips[] = {
+                "Per-scene within a run. Resets on new game.",
+                "Per-run (inventory, quest progress). Resets on new game.",
+                "Permanent (unlocks, achievements). Survives across runs."
+            };
+            ImGui::SetTooltip("%s", tierTooltips[tierIdx]);
+        }
+
+        ImGui::Separator();
         InspectorUndo::Checkbox(m_UndoRedo, "Save Position", &save->savePosition);
         InspectorUndo::Checkbox(m_UndoRedo, "Save Rotation", &save->saveRotation);
         InspectorUndo::Checkbox(m_UndoRedo, "Save Scale", &save->saveScale);
         InspectorUndo::Checkbox(m_UndoRedo, "Save Enabled", &save->saveEnabled);
 
+        // Tags
+        ImGui::Separator();
+        ImGui::Text("Tags (%zu)", save->tags.size());
+        for (usize i = 0; i < save->tags.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i) + 10000);
+            char tagBuf[128];
+            strncpy(tagBuf, save->tags[i].c_str(), sizeof(tagBuf) - 1);
+            tagBuf[sizeof(tagBuf) - 1] = '\0';
+            ImGui::SetNextItemWidth(-50.0f);
+            if (ImGui::InputText("##tag", tagBuf, sizeof(tagBuf))) {
+                save->tags[i] = tagBuf;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("X")) {
+                save->tags.erase(save->tags.begin() + i);
+                ImGui::PopID();
+                break;
+            }
+            ImGui::PopID();
+        }
+        if (ImGui::SmallButton("Add Tag")) {
+            save->tags.push_back("tag");
+        }
+
+        // Custom data
         ImGui::Separator();
         ImGui::Text("Custom Data (%zu entries)", save->customData.size());
 
@@ -22006,6 +22077,34 @@ void EditorLayer::DrawSaveDataComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("SaveDataContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<ECS::SaveDataComponent>(entity, "saveData", "Save Data");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawSaveLoadMenuComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Save/Load Menu", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* menu = m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity);
+        if (!menu) return;
+
+        ImGui::Checkbox("Show on Pause", &menu->showOnPause);
+        ImGui::Checkbox("Allow Manual Save", &menu->allowManualSave);
+        ImGui::Checkbox("Allow Manual Load", &menu->allowManualLoad);
+        ImGui::Checkbox("Allow Delete", &menu->allowDelete);
+        ImGui::Checkbox("Show Auto-Saves", &menu->showAutoSaves);
+        ImGui::SliderInt("Columns Per Row", &menu->columnsPerRow, 1, 6);
+
+        char headerBuf[128];
+        strncpy(headerBuf, menu->headerText.c_str(), sizeof(headerBuf) - 1);
+        headerBuf[sizeof(headerBuf) - 1] = '\0';
+        if (ImGui::InputText("Header Text", headerBuf, sizeof(headerBuf))) {
+            menu->headerText = headerBuf;
+        }
+
+        if (ImGui::BeginPopupContextItem("SaveLoadMenuContext")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<ECS::SaveLoadMenuComponent>(entity, "saveLoadMenu", "Save/Load Menu");
             }
             ImGui::EndPopup();
         }
@@ -31009,6 +31108,317 @@ DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
         m_ConsoleLog,
         static_cast<u32>(m_SelectedEntities.size()),
         sceneJson);
+}
+
+void EditorLayer::DrawPlayModeDiffDialog() {
+    auto& diff = m_PlayMode.GetDiff();
+    if (!diff.HasChanges()) {
+        m_PlayMode.DismissDiff();
+        return;
+    }
+
+    ImGui::SetNextWindowSize(ImVec2(650, 500), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
+                            ImVec2(0.5f, 0.5f));
+
+    bool open = true;
+    if (ImGui::Begin("Play Mode Changes", &open, ImGuiWindowFlags_NoCollapse)) {
+        // Header summary
+        ImGui::Text("%u modified, %u created, %u deleted",
+                    diff.CountModified(), diff.CountCreated(), diff.CountDeleted());
+        ImGui::Separator();
+
+        // Select All / Deselect All
+        if (ImGui::SmallButton("Select All")) {
+            for (auto& ed : diff.entities) {
+                ed.selected = true;
+                for (auto& cd : ed.components) {
+                    cd.selected = true;
+                    for (auto& pd : cd.properties) pd.selected = true;
+                }
+            }
+        }
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Deselect All")) {
+            for (auto& ed : diff.entities) {
+                ed.selected = false;
+                for (auto& cd : ed.components) {
+                    cd.selected = false;
+                    for (auto& pd : cd.properties) pd.selected = false;
+                }
+            }
+        }
+        ImGui::Separator();
+
+        // Entity diff tree
+        ImGui::BeginChild("DiffList", ImVec2(0, -35), true);
+        for (auto& ed : diff.entities) {
+            ImGui::PushID(&ed);
+
+            // Color by action
+            ImVec4 color;
+            const char* actionStr;
+            switch (ed.action) {
+                case DiffAction::Created:  color = ImVec4(0.3f, 0.9f, 0.3f, 1); actionStr = "[+]"; break;
+                case DiffAction::Deleted:  color = ImVec4(0.9f, 0.3f, 0.3f, 1); actionStr = "[-]"; break;
+                case DiffAction::Modified: color = ImVec4(0.9f, 0.8f, 0.3f, 1); actionStr = "[~]"; break;
+            }
+
+            ImGui::Checkbox("##sel", &ed.selected);
+            ImGui::SameLine();
+            ImGui::TextColored(color, "%s", actionStr);
+            ImGui::SameLine();
+
+            bool nodeOpen = ImGui::TreeNode("##entity", "%s", ed.entityName.c_str());
+
+            // Prefab badge
+            if (ed.isPrefabInstance) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("[Prefab: %s]", ed.prefabPath.c_str());
+            }
+
+            if (nodeOpen) {
+                // Component diffs
+                for (auto& cd : ed.components) {
+                    ImGui::PushID(&cd);
+                    ImGui::Checkbox("##csel", &cd.selected);
+                    ImGui::SameLine();
+
+                    const char* cActionStr = cd.action == DiffAction::Created ? "[+]" :
+                                             cd.action == DiffAction::Deleted ? "[-]" : "[~]";
+                    ImGui::TextColored(color, "%s", cActionStr);
+                    ImGui::SameLine();
+
+                    bool compOpen = ImGui::TreeNode("##comp", "%s", cd.componentType.c_str());
+                    if (compOpen) {
+                        // Property diffs
+                        for (auto& pd : cd.properties) {
+                            ImGui::PushID(&pd);
+                            ImGui::Checkbox("##psel", &pd.selected);
+                            ImGui::SameLine();
+                            ImGui::Text("%s:", pd.name.c_str());
+                            ImGui::SameLine();
+                            if (!pd.oldValue.empty()) {
+                                ImGui::TextColored(ImVec4(0.8f, 0.4f, 0.4f, 1), "%s",
+                                                   pd.oldValue.c_str());
+                            }
+                            if (!pd.oldValue.empty() && !pd.newValue.empty()) {
+                                ImGui::SameLine();
+                                ImGui::TextDisabled("->");
+                                ImGui::SameLine();
+                            }
+                            if (!pd.newValue.empty()) {
+                                ImGui::TextColored(ImVec4(0.4f, 0.8f, 0.4f, 1), "%s",
+                                                   pd.newValue.c_str());
+                            }
+                            ImGui::PopID();
+                        }
+                        ImGui::TreePop();
+                    }
+                    ImGui::PopID();
+                }
+
+                // Prefab options
+                if (ed.isPrefabInstance && ed.action == DiffAction::Modified) {
+                    ImGui::Separator();
+                    if (ImGui::SmallButton("Apply to Prefab")) {
+                        // Apply modified components back to the prefab file
+                        ENJIN_LOG_INFO(Editor, "Apply to Prefab: %s (TODO: implement prefab write)",
+                                       ed.prefabPath.c_str());
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Unpack as New Object")) {
+                        ed.isPrefabInstance = false;
+                        ed.prefabPath.clear();
+                        ENJIN_LOG_INFO(Editor, "Unpacked prefab instance '%s'",
+                                       ed.entityName.c_str());
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+
+        // Action buttons
+        if (ImGui::Button("Apply Selected", ImVec2(120, 0))) {
+            ApplySelectedDiffs(m_World, diff, m_PlayMode.GetPlayedSceneJson());
+            m_PlayMode.DismissDiff();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Discard All", ImVec2(100, 0))) {
+            m_PlayMode.DismissDiff();
+        }
+    }
+
+    if (!open) {
+        m_PlayMode.DismissDiff();
+    }
+    ImGui::End();
+}
+
+void EditorLayer::DrawSaveDebugPanel() {
+    bool open = true;
+    ImGui::Begin("Save Debug", &open);
+    if (!open) {
+        SetPanelVisibility(EditorPanel::SaveDebug, false);
+        ImGui::End();
+        return;
+    }
+
+    auto* saveSystem = m_PlayMode.GetTieredSaveSystem();
+    if (!saveSystem) {
+        ImGui::Text("Save system not available.");
+        ImGui::End();
+        return;
+    }
+
+    // Session info
+    ImGui::Text("Session Play Time: %.1f s", saveSystem->GetSessionPlayTime());
+    ImGui::Text("Current Scene: %s", saveSystem->GetCurrentScene().empty()
+        ? "(none)" : saveSystem->GetCurrentScene().c_str());
+    ImGui::Separator();
+
+    // Auto-save config
+    if (ImGui::CollapsingHeader("Auto-Save Config")) {
+        auto& cfg = saveSystem->GetAutoSaveConfig();
+        ImGui::Checkbox("Enabled", &cfg.enabled);
+        ImGui::Checkbox("On Scene Transition", &cfg.onSceneTransition);
+        ImGui::Checkbox("On Timed Interval", &cfg.onTimedInterval);
+        if (cfg.onTimedInterval) {
+            ImGui::SliderFloat("Interval (seconds)", &cfg.intervalSeconds, 30.0f, 900.0f, "%.0f");
+        }
+        ImGui::Checkbox("On Checkpoint", &cfg.onCheckpoint);
+    }
+
+    // Save slots grid
+    if (ImGui::CollapsingHeader("Save Slots", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto slots = saveSystem->GetAllSlots();
+
+        if (ImGui::BeginTable("SaveSlots", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                              ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("Slot", ImGuiTableColumnFlags_WidthFixed, 40.0f);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Scene");
+            ImGui::TableSetupColumn("Time");
+            ImGui::TableSetupColumn("Date");
+            ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 150.0f);
+            ImGui::TableHeadersRow();
+
+            for (const auto& slot : slots) {
+                ImGui::TableNextRow();
+                ImGui::PushID(static_cast<int>(slot.slotIndex));
+
+                ImGui::TableNextColumn();
+                if (slot.isAutoSave) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "A%u",
+                                       slot.slotIndex - Gameplay::TieredSaveSystem::AUTO_SAVE_SLOT_START + 1);
+                } else {
+                    ImGui::Text("%u", slot.slotIndex);
+                }
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", slot.isEmpty ? "(empty)" : slot.displayName.c_str());
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", slot.sceneName.c_str());
+
+                ImGui::TableNextColumn();
+                if (!slot.isEmpty) {
+                    i32 mins = static_cast<i32>(slot.playTime) / 60;
+                    i32 secs = static_cast<i32>(slot.playTime) % 60;
+                    ImGui::Text("%d:%02d", mins, secs);
+                }
+
+                ImGui::TableNextColumn();
+                ImGui::Text("%s", slot.timestamp.c_str());
+
+                ImGui::TableNextColumn();
+                if (m_PlayMode.IsPlaying() || m_PlayMode.IsPaused()) {
+                    if (ImGui::SmallButton("Save")) {
+                        saveSystem->SaveToSlot(slot.slotIndex, m_World,
+                            saveSystem->GetCurrentScene());
+                    }
+                    ImGui::SameLine();
+                    if (!slot.isEmpty && ImGui::SmallButton("Load")) {
+                        saveSystem->LoadFromSlot(slot.slotIndex, m_World);
+                    }
+                    ImGui::SameLine();
+                }
+                if (!slot.isEmpty && ImGui::SmallButton("Del")) {
+                    saveSystem->DeleteSlot(slot.slotIndex);
+                }
+
+                ImGui::PopID();
+            }
+            ImGui::EndTable();
+        }
+    }
+
+    // Meta-progression viewer
+    if (ImGui::CollapsingHeader("Meta-Progression")) {
+        const auto& floats = saveSystem->GetMetaFloats();
+        const auto& ints = saveSystem->GetMetaInts();
+        const auto& bools = saveSystem->GetMetaBools();
+        const auto& strings = saveSystem->GetMetaStrings();
+
+        bool hasAny = !floats.empty() || !ints.empty() || !bools.empty() || !strings.empty();
+        if (!hasAny) {
+            ImGui::TextDisabled("No meta-progression data");
+        } else {
+            if (!floats.empty() && ImGui::TreeNode("Floats")) {
+                for (const auto& [k, v] : floats) {
+                    ImGui::Text("%s: %.3f", k.c_str(), v);
+                }
+                ImGui::TreePop();
+            }
+            if (!ints.empty() && ImGui::TreeNode("Ints")) {
+                for (const auto& [k, v] : ints) {
+                    ImGui::Text("%s: %d", k.c_str(), v);
+                }
+                ImGui::TreePop();
+            }
+            if (!bools.empty() && ImGui::TreeNode("Bools")) {
+                for (const auto& [k, v] : bools) {
+                    ImGui::Text("%s: %s", k.c_str(), v ? "true" : "false");
+                }
+                ImGui::TreePop();
+            }
+            if (!strings.empty() && ImGui::TreeNode("Strings")) {
+                for (const auto& [k, v] : strings) {
+                    ImGui::Text("%s: %s", k.c_str(), v.c_str());
+                }
+                ImGui::TreePop();
+            }
+        }
+
+        ImGui::Separator();
+        if (ImGui::Button("Save Meta")) {
+            saveSystem->SaveMeta();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reload Meta")) {
+            saveSystem->LoadMeta();
+        }
+    }
+
+    // Cloud sync
+    if (saveSystem->GetCloudBackend()) {
+        if (ImGui::CollapsingHeader("Cloud Sync")) {
+            ImGui::Text("Backend: %s", saveSystem->GetCloudBackend()->GetName().c_str());
+            if (ImGui::Button("Sync To Cloud")) {
+                saveSystem->SyncToCloud();
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Sync From Cloud")) {
+                saveSystem->SyncFromCloud();
+            }
+        }
+    }
+
+    ImGui::End();
 }
 
 void EditorLayer::DrawFeedbackPanel() {

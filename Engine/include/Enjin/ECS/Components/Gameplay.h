@@ -973,12 +973,22 @@ struct DialogueBoxComponent {
 // SAVE DATA (for game progress)
 // ============================================================================
 
+// How long data survives across game sessions
+enum class PersistenceTier : u8 {
+    SceneState = 0,     // Per-scene within a run (enemies dead, doors opened). Resets on new run.
+    RunState,           // Per-run (player health, inventory, quest progress). Resets on new game.
+    MetaProgression,    // Permanent (unlocks, achievements, meta-currencies). Survives across runs.
+    COUNT
+};
+
 // Save data component (marks what to save about this entity)
 struct SaveDataComponent {
     bool savePosition = true;
     bool saveRotation = true;
     bool saveScale = false;
     bool saveEnabled = true;
+    PersistenceTier tier = PersistenceTier::RunState;
+    std::vector<std::string> tags;   // Custom tags for filtering
 
     // Custom data to save
     std::vector<std::pair<std::string, std::string>> customData;
@@ -996,6 +1006,31 @@ struct SaveDataComponent {
         }
         return defaultValue;
     }
+
+    bool HasTag(const std::string& tag) const {
+        for (const auto& t : tags) {
+            if (t == tag) return true;
+        }
+        return false;
+    }
+};
+
+// In-game save/load menu overlay
+struct SaveLoadMenuComponent {
+    bool showOnPause = true;
+    bool allowManualSave = true;
+    bool allowManualLoad = true;
+    bool allowDelete = true;
+    bool showAutoSaves = true;
+    i32 columnsPerRow = 4;
+    std::string headerText = "Save / Load Game";
+
+    // Runtime state (not serialized)
+    bool isOpen = false;
+    i32 selectedSlot = -1;
+    bool confirmOverwrite = false;
+    bool confirmDelete = false;
+    enum class Mode : u8 { Save, Load } mode = Mode::Save;
 };
 
 // ============================================================================

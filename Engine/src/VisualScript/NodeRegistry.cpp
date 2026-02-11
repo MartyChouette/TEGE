@@ -8,10 +8,14 @@
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Assets/DataAsset.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
 #include <random>
+
+// Global pointer for visual script save system access (set by PlayMode)
+Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -3337,6 +3341,190 @@ void NodeRegistry::RegisterBuiltinNodes() {
             std::string field = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
                 ? std::get<std::string>(inputs[1]) : "";
             return Assets::DataAssetRegistry::Get().GetString(assetName, field);
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // GAMEPLAY — SAVE SYSTEM
+    // ========================================================================
+
+    // Save to Slot (flow node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SaveToSlot;
+        def.displayName = "Save To Slot";
+        def.description = "Save current game state to a numbered slot (0-19)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            Int("Slot", PK::Input, 0)
+        };
+        def.outputs = {
+            {PinDefinition{"Success", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}},
+            {PinDefinition{"Failed", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}}
+        };
+        def.keywords = {"save", "slot", "persist", "game"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            // Access save system via script engine bindings
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            bool ok = false;
+            if (s_VisualScriptSaveSystem && ctx.world) {
+                ok = s_VisualScriptSaveSystem->SaveToSlot(static_cast<u32>(slot), ctx.world,
+                    s_VisualScriptSaveSystem->GetCurrentScene());
+            }
+            ctx.nextFlowIndex = ok ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Load from Slot (flow node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::LoadFromSlot;
+        def.displayName = "Load From Slot";
+        def.description = "Load game state from a numbered save slot";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            Int("Slot", PK::Input, 0)
+        };
+        def.outputs = {
+            {PinDefinition{"Success", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}},
+            {PinDefinition{"Failed", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}}
+        };
+        def.keywords = {"load", "slot", "restore", "game"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            bool ok = false;
+            if (s_VisualScriptSaveSystem && ctx.world) {
+                ok = s_VisualScriptSaveSystem->LoadFromSlot(static_cast<u32>(slot), ctx.world);
+            }
+            ctx.nextFlowIndex = ok ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Delete Slot (flow node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DeleteSlot;
+        def.displayName = "Delete Save Slot";
+        def.description = "Delete save data in the specified slot";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.3f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            Int("Slot", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"delete", "slot", "erase", "save"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 slot = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem) {
+                s_VisualScriptSaveSystem->DeleteSlot(static_cast<u32>(slot));
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Checkpoint (flow node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::Checkpoint;
+        def.displayName = "Checkpoint";
+        def.description = "Save a checkpoint to rotating auto-save slots";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.inputs = {FlowIn()};
+        def.outputs = {FlowOut()};
+        def.keywords = {"checkpoint", "autosave", "save"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && ctx.world) {
+                s_VisualScriptSaveSystem->Checkpoint(ctx.world,
+                    s_VisualScriptSaveSystem->GetCurrentScene());
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Meta Set Float (flow node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaSetFloat;
+        def.displayName = "Set Meta Float";
+        def.description = "Set a permanent meta-progression float value";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            String("Key", PK::Input, ""),
+            Float("Value", PK::Input, 0.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"meta", "progression", "set", "float", "permanent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string key = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            f32 val = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 0.0f;
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty()) {
+                s_VisualScriptSaveSystem->SetMetaFloat(key, val);
+                s_VisualScriptSaveSystem->SaveMeta();
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Meta Get Float (pure node)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MetaGetFloat;
+        def.displayName = "Get Meta Float";
+        def.description = "Get a permanent meta-progression float value";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            String("Key", PK::Input, ""),
+            Float("Fallback", PK::Input, 0.0f)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"meta", "progression", "get", "float", "permanent"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string key = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            f32 fallback = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
+                ? std::get<f32>(inputs[1]) : 0.0f;
+            extern Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            if (s_VisualScriptSaveSystem && !key.empty()) {
+                return s_VisualScriptSaveSystem->GetMetaFloat(key, fallback);
+            }
+            return fallback;
         };
         RegisterNode(def);
     }

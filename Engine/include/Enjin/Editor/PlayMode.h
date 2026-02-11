@@ -24,6 +24,8 @@
 #include "Enjin/Gameplay/FootstepSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Editor/PlayModeDiff.h"
 #include <string>
 
 namespace Enjin {
@@ -85,6 +87,7 @@ public:
     Gameplay::FootstepSystem* GetFootstepSystem() { return &m_FootstepSystem; }
     Gameplay::ObjectPool* GetObjectPool() { return &m_ObjectPool; }
     Gameplay::CinematicSystem* GetCinematicSystem() { return &m_CinematicSystem; }
+    Gameplay::TieredSaveSystem* GetTieredSaveSystem() { return &m_TieredSaveSystem; }
     ECS::TweenSystem* GetTweenSystem() { return &m_TweenSystem; }
     ECS::StateMachineSystem* GetStateMachineSystem() { return &m_StateMachineSystem; }
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
@@ -96,6 +99,12 @@ public:
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
+
+    // Play mode diff dialog
+    bool HasPendingDiff() const { return m_ShowDiffDialog; }
+    PlayModeDiff& GetDiff() { return m_PlayModeDiff; }
+    void DismissDiff() { m_ShowDiffDialog = false; }
+    const std::string& GetPlayedSceneJson() const { return m_PlayedSceneJson; }
 
 private:
     void SaveEditorState();
@@ -155,11 +164,19 @@ private:
     Renderer::PostProcessing* m_PostProcessing = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
 
+    // Tiered save system
+    Gameplay::TieredSaveSystem m_TieredSaveSystem;
+
     // Saved editor state (to restore when stopping)
     std::string m_SavedSceneJson;
     Math::Vector3 m_SavedCameraPos;
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;
+
+    // Play mode diff
+    PlayModeDiff m_PlayModeDiff;
+    bool m_ShowDiffDialog = false;
+    std::string m_PlayedSceneJson;  // Scene JSON captured at stop, before restore
 };
 
 } // namespace Editor

@@ -118,6 +118,7 @@ enum class EditorPanel : u32 {
     FlashTimeline = 1 << 28,
     VectorDrawing = 1 << 29,
     FeedbackPanel = 1 << 30,
+    SaveDebug = 1u << 31,
     All = 0xFFFFFFFF
 };
 
@@ -364,6 +365,7 @@ private:
     void DrawSpawnPointComponent(ECS::Entity entity);
     void DrawLayerComponent(ECS::Entity entity);
     void DrawSaveDataComponent(ECS::Entity entity);
+    void DrawSaveLoadMenuComponent(ECS::Entity entity);
     void DrawSkeletonComponent(ECS::Entity entity);
 
     // Flower components
@@ -989,6 +991,8 @@ private:
     char m_FeedbackEndpointBuf[512] = {};
 
     void DrawFeedbackPanel();
+    void DrawSaveDebugPanel();
+    void DrawPlayModeDiffDialog();
     void DrawBugReportList();
     void DrawBugReportDetail(BugReport& report);
     void DrawNewBugReportForm();

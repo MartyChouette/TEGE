@@ -7,6 +7,9 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Debug/Profiler.h"
 
+// Extern for visual script node access to save system
+extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+
 namespace Enjin {
 namespace Editor {
 
@@ -57,6 +60,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         ENJIN_LOG_WARN(Editor, "Failed to initialize script engine");
     }
 
+    // Initialize tiered save system — load meta-progression on startup
+    m_TieredSaveSystem.LoadMeta();
+
     ENJIN_LOG_INFO(Editor, "PlayMode initialized");
 }
 
@@ -94,6 +100,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
     Scripting::SetBindingsRenderSystem(m_RenderSystem);
     Scripting::SetBindingsPostProcessing(m_PostProcessing);
+    Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
+    s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
@@ -198,6 +206,10 @@ void PlayMode::Stop() {
     m_EventBus.Clear();
     m_EntityEventBus.Clear();
 
+    // Clear save system bindings
+    s_VisualScriptSaveSystem = nullptr;
+    Scripting::SetBindingsSaveSystem(nullptr);
+
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);
 
@@ -219,6 +231,19 @@ void PlayMode::Stop() {
 
     // Release mouse
     Input::SetMouseCaptured(false);
+
+    // Capture current (played) scene state before restoring
+    {
+        Scene::SceneSerializer serializer(m_World);
+        if (m_RenderSystem) {
+            serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+        }
+        m_PlayedSceneJson = serializer.SaveToString();
+
+        // Compute diff between saved and played states
+        m_PlayModeDiff = ComputePlayModeDiff(m_SavedSceneJson, m_PlayedSceneJson);
+        m_ShowDiffDialog = m_PlayModeDiff.HasChanges();
+    }
 
     // Restore editor state
     RestoreEditorState();
@@ -302,6 +327,9 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("Networking");
             m_NetworkSystem.Update(deltaTime);
         }
+
+        // Tiered save system (auto-save timer, play time tracking)
+        m_TieredSaveSystem.Update(deltaTime, m_World, m_TieredSaveSystem.GetCurrentScene());
 
         // Regenerate resources
         auto resEntities = m_World->GetEntitiesWithComponent<ECS::ResourceComponent>();

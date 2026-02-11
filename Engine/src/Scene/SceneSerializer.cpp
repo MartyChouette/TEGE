@@ -2767,6 +2767,12 @@ json SerializeSaveDataComponent(const ECS::SaveDataComponent& sd) {
     j["saveRotation"] = RF(sd.saveRotation);
     j["saveScale"] = RF(sd.saveScale);
     j["saveEnabled"] = RF(sd.saveEnabled);
+    j["tier"] = static_cast<u8>(sd.tier);
+    if (!sd.tags.empty()) {
+        json tagsArr = json::array();
+        for (const auto& t : sd.tags) tagsArr.push_back(t);
+        j["tags"] = tagsArr;
+    }
     json dataArr = json::array();
     for (const auto& p : sd.customData) {
         dataArr.push_back(json::array({p.first, p.second}));
@@ -2781,12 +2787,46 @@ ECS::SaveDataComponent DeserializeSaveDataComponent(const json& j) {
     if (j.contains("saveRotation")) sd.saveRotation = j["saveRotation"].get<bool>();
     if (j.contains("saveScale")) sd.saveScale = j["saveScale"].get<bool>();
     if (j.contains("saveEnabled")) sd.saveEnabled = j["saveEnabled"].get<bool>();
+    if (j.contains("tier")) {
+        u8 t = j["tier"].get<u8>();
+        if (t < static_cast<u8>(ECS::PersistenceTier::COUNT))
+            sd.tier = static_cast<ECS::PersistenceTier>(t);
+    }
+    if (j.contains("tags") && j["tags"].is_array()) {
+        for (const auto& t : j["tags"]) {
+            sd.tags.push_back(t.get<std::string>());
+        }
+    }
     if (j.contains("customData") && j["customData"].is_array()) {
         for (const auto& p : j["customData"]) {
             sd.customData.push_back({p[0].get<std::string>(), p[1].get<std::string>()});
         }
     }
     return sd;
+}
+
+json SerializeSaveLoadMenuComponent(const ECS::SaveLoadMenuComponent& m) {
+    json j;
+    j["showOnPause"] = m.showOnPause;
+    j["allowManualSave"] = m.allowManualSave;
+    j["allowManualLoad"] = m.allowManualLoad;
+    j["allowDelete"] = m.allowDelete;
+    j["showAutoSaves"] = m.showAutoSaves;
+    j["columnsPerRow"] = m.columnsPerRow;
+    j["headerText"] = m.headerText;
+    return j;
+}
+
+ECS::SaveLoadMenuComponent DeserializeSaveLoadMenuComponent(const json& j) {
+    ECS::SaveLoadMenuComponent m;
+    if (j.contains("showOnPause")) m.showOnPause = j["showOnPause"].get<bool>();
+    if (j.contains("allowManualSave")) m.allowManualSave = j["allowManualSave"].get<bool>();
+    if (j.contains("allowManualLoad")) m.allowManualLoad = j["allowManualLoad"].get<bool>();
+    if (j.contains("allowDelete")) m.allowDelete = j["allowDelete"].get<bool>();
+    if (j.contains("showAutoSaves")) m.showAutoSaves = j["showAutoSaves"].get<bool>();
+    if (j.contains("columnsPerRow")) m.columnsPerRow = j["columnsPerRow"].get<i32>();
+    if (j.contains("headerText")) m.headerText = j["headerText"].get<std::string>();
+    return m;
 }
 
 // ============================================================================
@@ -4933,6 +4973,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
                 entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
             }
+            if (m_World->HasComponent<ECS::SaveLoadMenuComponent>(entity)) {
+                entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity));
+            }
 
             // New Gameplay Components
             if (m_World->HasComponent<ECS::ResourceComponent>(entity)) {
@@ -5521,6 +5564,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("saveData")) {
                 m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
             }
+            if (entityJson.contains("saveLoadMenu")) {
+                m_World->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
+            }
 
             // New Gameplay Components
             if (entityJson.contains("resource")) {
@@ -6021,6 +6067,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::SaveDataComponent>(entity)) {
                 entityJson["saveData"] = SerializeSaveDataComponent(*m_World->GetComponent<ECS::SaveDataComponent>(entity));
+            }
+            if (m_World->HasComponent<ECS::SaveLoadMenuComponent>(entity)) {
+                entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*m_World->GetComponent<ECS::SaveLoadMenuComponent>(entity));
             }
 
             // New Gameplay Components
@@ -6565,6 +6614,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("saveData")) {
                 m_World->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
             }
+            if (entityJson.contains("saveLoadMenu")) {
+                m_World->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
+            }
 
             // New Gameplay Components
             if (entityJson.contains("resource")) {
@@ -6911,6 +6963,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["inventory"] = SerializeInventoryComponent(*world->GetComponent<ECS::InventoryComponent>(entity));
         if (world->HasComponent<ECS::SaveDataComponent>(entity))
             entityJson["saveData"] = SerializeSaveDataComponent(*world->GetComponent<ECS::SaveDataComponent>(entity));
+        if (world->HasComponent<ECS::SaveLoadMenuComponent>(entity))
+            entityJson["saveLoadMenu"] = SerializeSaveLoadMenuComponent(*world->GetComponent<ECS::SaveLoadMenuComponent>(entity));
         if (world->HasComponent<ECS::ResourceComponent>(entity))
             entityJson["resource"] = SerializeResourceComponent(*world->GetComponent<ECS::ResourceComponent>(entity));
         if (world->HasComponent<ECS::FootstepComponent>(entity))
@@ -7200,6 +7254,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
         if (entityJson.contains("saveData"))
             world->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(entityJson["saveData"]));
+        if (entityJson.contains("saveLoadMenu"))
+            world->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(entityJson["saveLoadMenu"]));
         if (entityJson.contains("resource"))
             world->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(entityJson["resource"]));
         if (entityJson.contains("footstep"))
@@ -7416,6 +7472,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeInventoryComponent(*world->GetComponent<ECS::InventoryComponent>(entity));
         else if (key == "saveData" && world->HasComponent<ECS::SaveDataComponent>(entity))
             j = SerializeSaveDataComponent(*world->GetComponent<ECS::SaveDataComponent>(entity));
+        else if (key == "saveLoadMenu" && world->HasComponent<ECS::SaveLoadMenuComponent>(entity))
+            j = SerializeSaveLoadMenuComponent(*world->GetComponent<ECS::SaveLoadMenuComponent>(entity));
         else if (key == "resource" && world->HasComponent<ECS::ResourceComponent>(entity))
             j = SerializeResourceComponent(*world->GetComponent<ECS::ResourceComponent>(entity));
         else if (key == "footstep" && world->HasComponent<ECS::FootstepComponent>(entity))
@@ -7562,6 +7620,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "timer") { world->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(j)); return true; }
         if (key == "inventory") { world->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(j)); return true; }
         if (key == "saveData") { world->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(j)); return true; }
+        if (key == "saveLoadMenu") { world->AddComponent<ECS::SaveLoadMenuComponent>(entity, DeserializeSaveLoadMenuComponent(j)); return true; }
         if (key == "resource") { world->AddComponent<ECS::ResourceComponent>(entity, DeserializeResourceComponent(j)); return true; }
         if (key == "footstep") { world->AddComponent<ECS::FootstepComponent>(entity, DeserializeFootstepComponent(j)); return true; }
         if (key == "poolable") { world->AddComponent<ECS::PoolableComponent>(entity, DeserializePoolableComponent(j)); return true; }

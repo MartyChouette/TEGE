@@ -97,3 +97,25 @@ endif()
 # Optional: Find shaderc for shader compilation
 # find_package(shaderc REQUIRED)
 # target_link_libraries(EnjinEngine PUBLIC shaderc::shaderc)
+
+# Optional: Steam integration (cloud saves, achievements)
+option(ENJIN_STEAM "Enable Steam integration (requires Steamworks SDK)" OFF)
+if(ENJIN_STEAM)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_STEAM)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/steamworks/sdk/public/steam")
+        target_include_directories(EnjinEngine PUBLIC
+            "${CMAKE_SOURCE_DIR}/third_party/steamworks/sdk/public")
+        if(WIN32)
+            target_link_libraries(EnjinEngine PUBLIC
+                "${CMAKE_SOURCE_DIR}/third_party/steamworks/sdk/redistributable_bin/win64/steam_api64.lib")
+        elseif(APPLE)
+            target_link_libraries(EnjinEngine PUBLIC
+                "${CMAKE_SOURCE_DIR}/third_party/steamworks/sdk/redistributable_bin/osx/libsteam_api.dylib")
+        else()
+            target_link_libraries(EnjinEngine PUBLIC
+                "${CMAKE_SOURCE_DIR}/third_party/steamworks/sdk/redistributable_bin/linux64/libsteam_api.so")
+        endif()
+    else()
+        message(WARNING "ENJIN_STEAM enabled but Steamworks SDK not found at third_party/steamworks/")
+    endif()
+endif()

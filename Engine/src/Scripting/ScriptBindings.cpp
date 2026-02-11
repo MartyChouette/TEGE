@@ -1073,6 +1073,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterNoiseBindings(engine);
     RegisterVisualScriptBindings(engine);
     RegisterDataAssetBindings(engine);
+    RegisterSaveBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }
