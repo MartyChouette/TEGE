@@ -58,7 +58,15 @@ static void DiffJsonObject(const json& oldObj, const json& newObj,
 // Get entity name from a parsed entity JSON
 static std::string GetEntityNameFromJson(const json& entityJson) {
     if (entityJson.contains("name")) {
-        return entityJson["name"].get<std::string>();
+        const auto& nameField = entityJson["name"];
+        // "name" is a serialized NameComponent object: {"name": "ActualName"}
+        if (nameField.is_object() && nameField.contains("name")) {
+            return nameField["name"].get<std::string>();
+        }
+        // Fallback: raw string (shouldn't happen, but be safe)
+        if (nameField.is_string()) {
+            return nameField.get<std::string>();
+        }
     }
     return "Entity";
 }
