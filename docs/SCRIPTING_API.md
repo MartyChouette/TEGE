@@ -1,6 +1,6 @@
 # AngelScript API Reference
 
-Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~170 functions across all categories.
+Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~250 functions across all categories.
 
 ---
 
@@ -139,3 +139,118 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 - `Dialogue_SetVariable(uint64, string, string)`, `Dialogue_GetVariable(uint64, string)`
 - `Dialogue_IsActive(uint64)`, `Dialogue_GetCurrentText(uint64)`, `Dialogue_GetCurrentSpeaker(uint64)`
 - `Dialogue_GetChoiceCount(uint64)`, `Dialogue_GetChoiceText(uint64, int)`
+
+## Save System
+
+- `SaveGame_ToSlot(int slot)` — Save current game state to the specified slot (0-19). Returns `bool` success.
+- `SaveGame_FromSlot(int slot)` — Load game state from the specified slot. Returns `bool` success.
+- `SaveGame_DeleteSlot(int slot)` — Delete the save data in the specified slot. Returns `bool` success.
+- `SaveGame_Checkpoint()` — Create a checkpoint save (writes to the next rotating auto-save slot).
+
+### Meta-Progression
+
+Permanent key-value storage that survives across runs and save slot deletion.
+
+- `Meta_SetFloat(const string& key, float value)`, `Meta_GetFloat(const string& key, float fallback)` — float values
+- `Meta_SetInt(const string& key, int value)`, `Meta_GetInt(const string& key, int fallback)` — integer values
+- `Meta_SetBool(const string& key, bool value)`, `Meta_GetBool(const string& key, bool fallback)` — boolean values
+- `Meta_SetString(const string& key, const string& value)`, `Meta_GetString(const string& key, const string& fallback)` — string values
+- `Meta_Save()` — Force-write meta-progression to disk immediately.
+
+### Auto-Save Configuration
+
+- `AutoSave_Enable(bool enabled)` — Enable or disable timed auto-save.
+- `AutoSave_SetInterval(float seconds)` — Set auto-save interval in seconds (default: 300).
+
+## Weather System
+
+- `Weather_Set(int type, float transitionTime = 2.0)` — Change weather. Types: 0=Clear, 1=Cloudy, 2=Rain, 3=HeavyRain, 4=Snow, 5=Fog, 6=Storm.
+- `Weather_Get()` — Returns current `WeatherType` as int.
+- `Weather_SetRainIntensity(float)`, `Weather_GetRainIntensity()` — Rain intensity (0-1).
+- `Weather_SetSnowIntensity(float)`, `Weather_GetSnowIntensity()` — Snow intensity (0-1).
+- `Weather_SetFogDensity(float)`, `Weather_GetFogDensity()` — Fog density (0-1).
+- `Weather_SetFogColor(float r, float g, float b)` — Fog color RGB.
+- `Weather_SetFogRange(float start, float end)` — Fog start/end distances.
+- `Weather_SetWind(float dirX, float dirY, float dirZ, float strength)` — Wind direction and strength.
+- `Weather_IsLightning()` — True if lightning is currently active.
+- `Weather_LightningJustFired()` — True for one frame when a lightning bolt triggers (use for SFX).
+- `Weather_SetLightningInterval(float minSec, float maxSec)` — Set random lightning interval range.
+
+## Particle System
+
+- `Particle_Play(uint64)`, `Particle_Stop(uint64)` — Start/stop a particle emitter entity.
+- `Particle_IsPlaying(uint64)` — Check if an emitter is playing.
+- `Particle_SetEmissionRate(uint64, float)`, `Particle_GetEmissionRate(uint64)` — Particles per second.
+- `Particle_Burst(uint64, int count)` — Emit a burst of particles instantly.
+- `Particle_SetLifetime(uint64, float)` — Particle lifetime in seconds.
+- `Particle_SetSpeed(uint64, float)` — Particle start speed.
+- `Particle_SetSize(uint64, float startSize, float endSize)` — Particle size over lifetime.
+- `Particle_SetColor(uint64, float sr, sg, sb, float er, eg, eb)` — Start/end color RGB.
+- `Particle_SetAlpha(uint64, float startAlpha, float endAlpha)` — Fade over lifetime.
+- `Particle_SetLoop(uint64, bool)` — Enable/disable looping.
+- `Particle_SetGravity(uint64, float gx, float gy, float gz)` — Particle gravity vector.
+
+## Quest System
+
+- `Quest_Start(const string& questId)` — Start a quest by ID.
+- `Quest_CompleteObjective(const string& questId, int objectiveIndex)` — Complete a specific quest objective.
+- `Quest_Fail(const string& questId)` — Fail a quest.
+- `Quest_IsActive(const string& questId)` — Check if a quest is currently active.
+- `Quest_IsComplete(const string& questId)` — Check if a quest is fully complete.
+
+## Cinematic System
+
+- `Cinematic_Play(uint64 entity)` — Start a cinematic camera on an entity with `CinematicCameraComponent`.
+- `Cinematic_Stop(uint64 entity)` — Stop a playing cinematic.
+- `Cinematic_IsPlaying()` — Check if any cinematic is currently playing.
+
+## Object Pool
+
+- `Pool_Acquire(const string& poolId)` — Get an entity from a pool (returns entity ID or 0).
+- `Pool_Release(const string& poolId, uint64 entity)` — Return an entity to a pool.
+
+## Destructible System
+
+- `Destructible_Destroy(uint64, float dirX, dirY, dirZ, float force)` — Trigger destruction of an entity.
+- `Destructible_ApplyDamage(uint64, float damage)` — Apply damage (destroys if health depleted).
+- `Destructible_ApplyDamageAt(uint64, float damage, float px, py, pz)` — Apply damage at a specific point.
+
+## UI Canvas
+
+- `UI_SetCanvasVisible(uint64, bool)`, `UI_IsCanvasVisible(uint64)` — Show/hide a canvas.
+- `UI_SetCanvasSortOrder(uint64, int)` — Set canvas render order.
+- `UI_SetText(uint64, int elementId, const string&)`, `UI_GetText(uint64, int)` — Set/get text on a label or button.
+- `UI_SetElementVisible(uint64, int, bool)`, `UI_IsElementVisible(uint64, int)` — Show/hide an element.
+- `UI_SetElementEnabled(uint64, int, bool)` — Enable/disable an element.
+- `UI_SetProgress(uint64, int, float)`, `UI_GetProgress(uint64, int)` — Progress bar value (0-1).
+- `UI_SetSliderValue(uint64, int, float)`, `UI_GetSliderValue(uint64, int)` — Slider value.
+- `UI_SetChecked(uint64, int, bool)`, `UI_IsChecked(uint64, int)` — Checkbox/toggle state.
+- `UI_SetImagePath(uint64, int, const string&)` — Change an image element's texture.
+- `UI_SetImageAlpha(uint64, int, float)` — Image transparency (0-1).
+- `UI_SetBgColor(uint64, int, float r, g, b, float a)` — Element background color.
+- `UI_SetTextColor(uint64, int, float r, g, b)` — Text color.
+- `UI_IsHovered(uint64, int)`, `UI_IsPressed(uint64, int)` — Interaction state queries.
+
+## Localization
+
+- `Loc_Get(const string& key)` — Look up a localized string by key for the current locale.
+- `Loc_GetWithFallback(const string& key, const string& fallback)` — Look up with a fallback if key is missing.
+- `Loc_SetLocale(const string& localeCode)` — Switch the active locale (e.g. "en", "fr", "ja").
+- `Loc_GetLocale()` — Get the current locale code.
+- `Loc_HasString(const string& key)` — Check if a key exists in the current locale.
+
+## Prefab System
+
+- `Prefab_Instantiate(const string& path, float x, y, z)` — Load and instantiate a `.enjprefab` at a position. Returns the root entity ID.
+- `Prefab_InstantiateEx(const string& path, float px, py, pz, float rx, ry, rz, float sx, sy, sz)` — Instantiate with position, rotation, and scale.
+- `Prefab_IsPrefabInstance(uint64)` — Check if an entity is a prefab instance root.
+- `Prefab_Unpack(uint64)` — Disconnect a prefab instance from its source prefab.
+
+## Level Streaming
+
+- `Streaming_ForceLoad(const string& chunkId)` — Synchronously load a streaming chunk by ID.
+- `Streaming_ForceUnload(const string& chunkId)` — Unload a streaming chunk.
+- `Streaming_GetState(const string& chunkId)` — Get chunk state as int (0=Unloaded, 1=Loading, 2=Loaded, 3=Unloading).
+- `Streaming_IsLoaded(const string& chunkId)` — Check if a chunk is currently loaded.
+- `Streaming_GetLoadedCount()` — Get the number of currently loaded chunks.
+- `Streaming_SetEnabled(bool)` — Enable or disable the streaming system.

@@ -79,11 +79,11 @@ enjin/
 │   │   │   │   ├── Controllers/  # 5 character controller types
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
-│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, FeedbackSystem, PerformanceStats, VectorDrawingEditor
+│   │   ├── Editor/         # EditorLayer, PlayMode, PlayModeDiff, EditorSettings, FeedbackSystem, PerformanceStats, VectorDrawingEditor
 │   │   ├── Effects/        # Weather, Water, Wind, RetroEffects, Destructible, SpriteTextureAtlas, SpriteContourTracer
 │   │   ├── GUI/            # ImGui integration, Localization, DialogueTree, UICanvas, UISystem
-│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
-│   │   ├── Networking/     # LANMultiplayer, NetworkPanel
+│   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, FootstepSystem, ObjectPool, CinematicSystem, DialogueAsset
+│   │   ├── Networking/     # LANMultiplayer, NetworkPanel, NewgroundsSaveBackend, SteamSaveBackend
 │   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Platform/       # FileDialog
 │   │   ├── Plugin/         # PluginSystem, HotReload
@@ -173,7 +173,7 @@ enjin/
   - Joints (DistanceJoint, HingeJoint, BallSocketJoint, SpringJoint, FixedJoint, SliderJoint, Ragdoll)
   - Environment (WeatherZone, WaterVolume, GrassVolume, Vegetation, Temperature, Gravity, CameraTrigger)
   - Combat (Health, Damage, DamageResistance, Resource)
-  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent)
+  - Gameplay (QuestState, HUDWidget, CinematicCamera, Footstep, Poolable, SaveData [with PersistenceTier + tags], SaveLoadMenu, Interactable, Pickup, Inventory, Timer, Audio, Tag, SpawnPoint, Script, LOD, DialogueBoxComponent, PerFrameColliderComponent, PolygonCollider2DComponent)
   - AI (AIController, FollowTarget, LookAtTarget, Waypoint, BehaviorTreeComponent)
   - Visual (Billboard, ParticleEmitter, Sprite2D, AnimatedSprite2D, Tilemap, Camera2DBounds)
   - Streaming (StreamingVolume, StreamingPortal)
@@ -282,7 +282,9 @@ enjin/
 
 ### Gameplay Systems
 
-- `SaveSystem` - 10-slot save/load with disk persistence
+- `TieredSaveSystem` - 20-slot tiered save/load (17 manual + 3 rotating auto-save) with 3-tier persistence (SceneState/RunState/MetaProgression), meta-progression key-value store, auto-save, checkpoints, pluggable backends (`ISaveBackend`: `LocalSaveBackend`, `NewgroundsSaveBackend`, `SteamSaveBackend`)
+- `PlayModeDiff` - JSON diff of pre/post play mode scene states with cherry-pick apply dialog (created/deleted/modified entities, component-level diffs)
+- `SaveLoadMenuComponent` - In-game save/load grid overlay (ImGui) with slot cards, confirmation dialogs, save/load/delete per slot
 - `HUDSystem` - Runtime health bars, resource bars, labels, crosshair
 - `QuestSystem` - Quest state tracking and progression
 - `FootstepSystem` - Surface-based footstep audio

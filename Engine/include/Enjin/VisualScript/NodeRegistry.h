@@ -195,6 +195,38 @@ constexpr const char* Checkpoint         = "Gameplay_Checkpoint";
 constexpr const char* MetaSetFloat       = "Meta_SetFloat";
 constexpr const char* MetaGetFloat       = "Meta_GetFloat";
 
+// Weather
+constexpr const char* WeatherSet           = "Weather_Set";
+constexpr const char* WeatherSetFog        = "Weather_SetFog";
+
+// Quests
+constexpr const char* QuestStart           = "Quest_Start";
+constexpr const char* QuestComplete        = "Quest_CompleteObjective";
+constexpr const char* QuestIsActive        = "Quest_IsActive";
+
+// Cinematics
+constexpr const char* CinematicPlay        = "Cinematic_Play";
+constexpr const char* CinematicStop        = "Cinematic_Stop";
+
+// Particles
+constexpr const char* ParticlePlay         = "Particle_Play";
+constexpr const char* ParticleStop         = "Particle_Stop";
+constexpr const char* ParticleBurst        = "Particle_Burst";
+
+// Destructible
+constexpr const char* DestructibleDamage   = "Destructible_Damage";
+
+// Prefab
+constexpr const char* PrefabInstantiate    = "Prefab_Instantiate";
+
+// UI
+constexpr const char* UISetText            = "UI_SetText";
+constexpr const char* UISetProgress        = "UI_SetProgress";
+constexpr const char* UISetVisible         = "UI_SetElementVisible";
+
+// Localization
+constexpr const char* LocGetString         = "Loc_Get";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

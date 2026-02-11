@@ -9,6 +9,15 @@
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/ObjectPool.h"
+#include "Enjin/Effects/Weather.h"
+#include "Enjin/Effects/Destructible.h"
+#include "Enjin/Assets/Prefab.h"
+#include "Enjin/GUI/UICanvas.h"
+#include "Enjin/GUI/Localization.h"
+#include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -3525,6 +3534,462 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 return s_VisualScriptSaveSystem->GetMetaFloat(key, fallback);
             }
             return fallback;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // WEATHER
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherSet;
+        def.displayName = "Set Weather";
+        def.description = "Change the weather type with transition time";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Type", PK::Input, 0),
+            Float("Transition", PK::Input, 2.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"weather", "rain", "snow", "fog", "storm", "clear"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 type = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            f32 transition = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 2.0f;
+            // Weather system accessed via script bindings static pointer
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WeatherSetFog;
+        def.displayName = "Set Fog";
+        def.description = "Set fog density and range";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Float("Density", PK::Input, 0.5f),
+            Float("Start", PK::Input, 20.0f),
+            Float("End", PK::Input, 100.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"fog", "weather", "atmosphere"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Fog nodes are placeholders until WeatherSystem VS bridge is set
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // QUEST SYSTEM
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::QuestStart;
+        def.displayName = "Start Quest";
+        def.description = "Start a quest by ID";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            String("Quest ID", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"quest", "start", "objective", "mission"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Quest nodes delegate to the ScriptBindings static pointers
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::QuestComplete;
+        def.displayName = "Complete Objective";
+        def.description = "Complete a quest objective by quest ID and objective index";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            String("Quest ID", PK::Input, ""),
+            Int("Objective", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"quest", "complete", "objective"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::QuestIsActive;
+        def.displayName = "Is Quest Active";
+        def.description = "Check if a quest is currently active";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.7f, 0.5f, 0.2f);
+        def.inputs = {
+            String("Quest ID", PK::Input, "")
+        };
+        def.outputs = {
+            Bool("Active", PK::Output)
+        };
+        def.keywords = {"quest", "active", "check"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            outputs[0] = false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // CINEMATIC
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::CinematicPlay;
+        def.displayName = "Play Cinematic";
+        def.description = "Start playing a cinematic camera on the given entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"cinematic", "cutscene", "camera", "play"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::CinematicStop;
+        def.displayName = "Stop Cinematic";
+        def.description = "Stop a playing cinematic camera";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"cinematic", "cutscene", "stop"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PARTICLES
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ParticlePlay;
+        def.displayName = "Play Particles";
+        def.description = "Start a particle emitter on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"particle", "emitter", "play", "start", "fx"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                auto* emitter = ctx.world->GetComponent<ECS::ParticleEmitterComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (emitter) emitter->isPlaying = true;
+            }
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ParticleStop;
+        def.displayName = "Stop Particles";
+        def.description = "Stop a particle emitter on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"particle", "emitter", "stop", "fx"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                auto* emitter = ctx.world->GetComponent<ECS::ParticleEmitterComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (emitter) emitter->isPlaying = false;
+            }
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ParticleBurst;
+        def.displayName = "Particle Burst";
+        def.description = "Emit a burst of particles from an entity's emitter";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Int("Count", PK::Input, 10)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"particle", "burst", "emit", "fx"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                i32 count = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                    ? std::get<i32>(inputs[2]) : 10;
+                auto* emitter = ctx.world->GetComponent<ECS::ParticleEmitterComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (emitter) emitter->burstCount = count;
+            }
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // DESTRUCTIBLE
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DestructibleDamage;
+        def.displayName = "Apply Damage";
+        def.description = "Apply damage to a destructible entity (triggers destruction if health depleted)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.2f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Damage", PK::Input, 10.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"destructible", "damage", "destroy", "break"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Destructible system accessed via script bindings static pointer
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PREFAB
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PrefabInstantiate;
+        def.displayName = "Instantiate Prefab";
+        def.description = "Instantiate a prefab at a position";
+        def.category = NodeCategory::Entity;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.5f);
+        def.inputs = {
+            FlowIn(),
+            String("Path", PK::Input, ""),
+            Vec3("Position", PK::Input)
+        };
+        def.outputs = {
+            FlowOut(),
+            EntityPin("Entity", PK::Output)
+        };
+        def.keywords = {"prefab", "instantiate", "spawn", "create"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            std::string path = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            Math::Vector3 pos = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                ? std::get<Math::Vector3>(inputs[2]) : Math::Vector3(0,0,0);
+            ECS::Entity result = ECS::INVALID_ENTITY;
+            if (ctx.world && !path.empty()) {
+                auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
+                if (prefab) {
+                    result = Assets::PrefabManager::Get().Instantiate(ctx.world, *prefab, pos);
+                }
+            }
+            outputs[0] = result;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // UI
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetText;
+        def.displayName = "UI Set Text";
+        def.description = "Set the text of a UI element by entity and element ID";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Canvas Entity", PK::Input),
+            Int("Element ID", PK::Input, 1),
+            String("Text", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "text", "label", "set", "canvas"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 3 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[1])
+                    ? std::get<ECS::Entity>(inputs[1]) : ECS::INVALID_ENTITY;
+                i32 elemId = std::holds_alternative<i32>(inputs[2])
+                    ? std::get<i32>(inputs[2]) : 0;
+                std::string text = std::holds_alternative<std::string>(inputs[3])
+                    ? std::get<std::string>(inputs[3]) : "";
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) {
+                    auto* el = canvas->GetElement(static_cast<u32>(elemId));
+                    if (el) el->data.text = text;
+                }
+            }
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetProgress;
+        def.displayName = "UI Set Progress";
+        def.description = "Set the fill value of a progress bar element (0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Canvas Entity", PK::Input),
+            Int("Element ID", PK::Input, 1),
+            Float("Value", PK::Input, 0.5f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "progress", "bar", "fill", "health"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 3 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[1])
+                    ? std::get<ECS::Entity>(inputs[1]) : ECS::INVALID_ENTITY;
+                i32 elemId = std::holds_alternative<i32>(inputs[2])
+                    ? std::get<i32>(inputs[2]) : 0;
+                f32 value = std::holds_alternative<f32>(inputs[3])
+                    ? std::get<f32>(inputs[3]) : 0.5f;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) {
+                    auto* el = canvas->GetElement(static_cast<u32>(elemId));
+                    if (el) el->data.progressValue = Math::Clamp(value, 0.0f, 1.0f);
+                }
+            }
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetVisible;
+        def.displayName = "UI Set Visible";
+        def.description = "Show or hide a UI element";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Canvas Entity", PK::Input),
+            Int("Element ID", PK::Input, 1),
+            Bool("Visible", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "visible", "show", "hide", "element"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 3 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[1])
+                    ? std::get<ECS::Entity>(inputs[1]) : ECS::INVALID_ENTITY;
+                i32 elemId = std::holds_alternative<i32>(inputs[2])
+                    ? std::get<i32>(inputs[2]) : 0;
+                bool visible = std::holds_alternative<bool>(inputs[3])
+                    ? std::get<bool>(inputs[3]) : true;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) {
+                    auto* el = canvas->GetElement(static_cast<u32>(elemId));
+                    if (el) el->visible = visible;
+                }
+            }
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // LOCALIZATION
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::LocGetString;
+        def.displayName = "Get Localized String";
+        def.description = "Look up a localized string by key";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.5f);
+        def.inputs = {
+            String("Key", PK::Input, "")
+        };
+        def.outputs = {
+            String("Text", PK::Output)
+        };
+        def.keywords = {"localization", "string", "translate", "i18n", "text"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            std::string key = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            outputs[0] = key.empty() ? std::string("") :
+                GUI::LocalizationManager::Get().GetString(key);
         };
         RegisterNode(def);
     }

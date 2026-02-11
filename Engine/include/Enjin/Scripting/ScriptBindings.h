@@ -7,9 +7,10 @@ namespace Enjin {
 namespace ECS { class World; class DialogueSystem; class RenderSystem; }
 namespace Physics { class SimplePhysics; }
 namespace Audio { class SimpleAudio; }
-namespace Scene { class SceneManager; }
+namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
-namespace Gameplay { class TieredSaveSystem; }
+namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; }
+namespace Effects { class WeatherSystem; class DestructibleSystem; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -37,6 +38,12 @@ void RegisterDialogueBindings(asIScriptEngine* engine);
 void RegisterRenderBindings(asIScriptEngine* engine);
 void RegisterNoiseBindings(asIScriptEngine* engine);
 void RegisterSaveBindings(asIScriptEngine* engine);
+void RegisterWeatherBindings(asIScriptEngine* engine);
+void RegisterGameplayBindings(asIScriptEngine* engine);
+void RegisterUIBindings(asIScriptEngine* engine);
+void RegisterParticleBindings(asIScriptEngine* engine);
+void RegisterPrefabBindings(asIScriptEngine* engine);
+void RegisterStreamingBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -50,6 +57,12 @@ void SetBindingsDialogueSystem(ECS::DialogueSystem* system);
 void SetBindingsRenderSystem(ECS::RenderSystem* renderSystem);
 void SetBindingsPostProcessing(Renderer::PostProcessing* postProcessing);
 void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys);
+void SetBindingsWeather(Effects::WeatherSystem* weather);
+void SetBindingsQuestSystem(Gameplay::QuestSystem* quest);
+void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
+void SetBindingsObjectPool(Gameplay::ObjectPool* pool);
+void SetBindingsDestructible(Effects::DestructibleSystem* destructible);
+void SetBindingsStreaming(Scene::StreamingManager* mgr);
 
 } // namespace Scripting
 } // namespace Enjin

@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/NewgroundsBindings.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/Scripting/ScriptEngine.h"
@@ -1074,6 +1075,13 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterVisualScriptBindings(engine);
     RegisterDataAssetBindings(engine);
     RegisterSaveBindings(engine);
+    RegisterNewgroundsBindings(engine);
+    RegisterWeatherBindings(engine);
+    RegisterGameplayBindings(engine);
+    RegisterUIBindings(engine);
+    RegisterParticleBindings(engine);
+    RegisterPrefabBindings(engine);
+    RegisterStreamingBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

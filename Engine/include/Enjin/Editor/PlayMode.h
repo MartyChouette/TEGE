@@ -26,6 +26,7 @@
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
+#include "Enjin/Scene/LevelStreaming.h"
 #include <string>
 
 namespace Enjin {
@@ -95,6 +96,7 @@ public:
     ECS::BehaviorTreeSystem* GetBehaviorTreeSystem() { return &m_BehaviorTreeSystem; }
 
     Networking::NetworkSystem* GetNetworkSystem() { return &m_NetworkSystem; }
+    Scene::StreamingManager* GetStreamingManager() { return &m_StreamingManager; }
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
@@ -163,6 +165,9 @@ private:
     ECS::RenderSystem* m_RenderSystem = nullptr;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
+
+    // Level streaming
+    Scene::StreamingManager m_StreamingManager;
 
     // Tiered save system
     Gameplay::TieredSaveSystem m_TieredSaveSystem;

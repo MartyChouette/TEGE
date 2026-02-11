@@ -122,28 +122,23 @@ std::string FileDialog::OpenFolder(
     const std::string& title,
     const std::string& defaultPath
 ) {
-    // Use modern IFileOpenDialog with FOS_PICKFOLDERS (Vista+)
-    // This matches the dialog style of GetOpenFileNameA and avoids
-    // the SHBrowseForFolder COM/re-entrancy issues.
+    // Use IFileOpenDialog with FOS_PICKFOLDERS for a proper native folder picker.
+    // Pass NULL as owner window to avoid modal freeze with GLFW+Vulkan.
+    // COM is already initialized by GLFW (OleInitialize) — do NOT call
+    // CoInitializeEx/CoUninitialize here.
     std::string result;
 
-    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
-    bool comInitialized = SUCCEEDED(hr) || hr == S_FALSE; // S_FALSE = already initialized
-    if (!comInitialized && hr != RPC_E_CHANGED_MODE) return "";
-
     IFileOpenDialog* pDialog = nullptr;
-    hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
-                          IID_IFileOpenDialog, reinterpret_cast<void**>(&pDialog));
+    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_ALL,
+                                  IID_IFileOpenDialog, reinterpret_cast<void**>(&pDialog));
     if (SUCCEEDED(hr)) {
         DWORD options = 0;
         pDialog->GetOptions(&options);
         pDialog->SetOptions(options | FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM);
 
-        // Set title
         std::wstring wTitle(title.begin(), title.end());
         pDialog->SetTitle(wTitle.c_str());
 
-        // Set default folder if provided
         if (!defaultPath.empty()) {
             std::wstring wPath(defaultPath.begin(), defaultPath.end());
             IShellItem* pFolder = nullptr;
@@ -154,7 +149,8 @@ std::string FileDialog::OpenFolder(
             }
         }
 
-        hr = pDialog->Show(static_cast<HWND>(s_OwnerWindow));
+        // NULL owner — avoids modal deadlock with GLFW/Vulkan window
+        hr = pDialog->Show(NULL);
         if (SUCCEEDED(hr)) {
             IShellItem* pItem = nullptr;
             if (SUCCEEDED(pDialog->GetResult(&pItem))) {
@@ -173,7 +169,6 @@ std::string FileDialog::OpenFolder(
         pDialog->Release();
     }
 
-    if (comInitialized) CoUninitialize();
     return result;
 }
 

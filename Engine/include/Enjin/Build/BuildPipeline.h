@@ -36,6 +36,8 @@ private:
     // Phase 6: Verify — read back .enjpak, check CRC32s
     bool VerifyBuild(const std::string& pakPath, const std::string& key);
 
+    // Scan project directory for script, audio, dialogue, prefab, and data asset files
+    void ScanProjectDirectory();
     void AddMessage(MessageSeverity severity, const std::string& text, const std::string& file = "");
     void ReportProgress(const std::string& phase, float progress);
 
@@ -55,6 +57,11 @@ private:
     std::vector<SceneInfo> m_Scenes;
     std::set<std::string> m_TexturePaths;   // absolute paths on disk
     std::set<std::string> m_ModelPaths;
+    std::set<std::string> m_ScriptPaths;    // .as AngelScript files
+    std::set<std::string> m_AudioPaths;     // .wav/.mp3/.ogg/.flac audio files
+    std::set<std::string> m_DialoguePaths;  // .enjdlg dialogue assets
+    std::set<std::string> m_PrefabPaths;    // .enjprefab prefab files
+    std::set<std::string> m_DataAssetPaths; // .enjdata/.enjschema data assets
 
     // Game frame settings (read from project, written to manifest)
     u32 m_TargetFrameRate = 60;      // 0 = uncapped

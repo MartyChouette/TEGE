@@ -68,6 +68,8 @@
 #include "Enjin/GUI/DialogueImportExport.h"
 #include "Enjin/Assets/SWFLoader.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/VoronoiMeshFracture.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
@@ -642,6 +644,60 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::MovingPlatformComponent>(e); },
             "movingPlatform"},
 
+        // -- 3D / Animation --
+        {"Skeleton", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::SkeletonComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SkeletonComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SkeletonComponent>(e); },
+            "skeleton", DimensionTag::Only3D},
+        {"Animator", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::AnimatorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::AnimatorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::AnimatorComponent>(e); },
+            "animator", DimensionTag::Only3D},
+        {"Terrain", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TerrainComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TerrainComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::TerrainComponent>(e); },
+            "terrain", DimensionTag::Only3D},
+        {"Terrain 2D", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Terrain2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Terrain2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Terrain2DComponent>(e); },
+            "terrain2D", DimensionTag::Only2D},
+        {"Look-At IK", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LookAtIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LookAtIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LookAtIKComponent>(e); },
+            "lookAtIK", DimensionTag::Only3D},
+        {"Interaction IK", "3D / Animation", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::InteractionIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::InteractionIKComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::InteractionIKComponent>(e); },
+            "interactionIK", DimensionTag::Only3D},
+        {"Flower Stem", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FlowerStemComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FlowerStemComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FlowerStemComponent>(e); },
+            "flowerStem"},
+        {"Flower Particle Config", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::FlowerParticleConfigComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FlowerParticleConfigComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FlowerParticleConfigComponent>(e); },
+            "flowerParticleConfig"},
+
+        // -- Scene --
+        {"Streaming Volume", "Scene", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Scene::StreamingVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Scene::StreamingVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Scene::StreamingVolumeComponent>(e); },
+            "streamingVolume", DimensionTag::Only3D},
+        {"Streaming Portal", "Scene", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Scene::StreamingPortalComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Scene::StreamingPortalComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Scene::StreamingPortalComponent>(e); },
+            "streamingPortal", DimensionTag::Only3D},
+
         // -- Other --
         {"Tags", "Other", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TagComponent>(e); },
@@ -893,6 +949,7 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
 void EditorLayer::StartPlayMode() {
     // NOTE: VSync switching disabled for now - causes swapchain sync issues
     // TODO: Properly sync renderer state after swapchain recreation
+    Scripting::SetBindingsWeather(&m_WeatherSystem);
     m_PlayMode.Play();
 }
 

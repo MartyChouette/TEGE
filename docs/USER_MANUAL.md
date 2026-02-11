@@ -1241,7 +1241,7 @@ Auto-regeneration happens automatically each frame. Controllers check `TryConsum
 
 #### SaveDataComponent
 
-Marks an entity for persistence in the save system. Controls which transform fields are saved and supports custom key-value data.
+Marks an entity for persistence in the tiered save system. Controls which transform fields are saved, the persistence tier, custom tags for filtering, and key-value data.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
@@ -1249,9 +1249,45 @@ Marks an entity for persistence in the save system. Controls which transform fie
 | `saveRotation` | bool | true | Save entity rotation. |
 | `saveScale` | bool | false | Save entity scale. |
 | `saveEnabled` | bool | true | Whether saving is enabled for this entity. |
+| `tier` | PersistenceTier | RunState | **SceneState** (per-scene, resets on new run), **RunState** (per-run, resets on new game), or **MetaProgression** (permanent across runs). |
+| `tags` | list | [] | Custom string tags for filtering entities during save/load. |
 | `customData` | list | [] | Key-value string pairs for game-specific data. |
 
-Methods: `SetData(key, value)`, `GetData(key, defaultValue)`.
+Methods: `SetData(key, value)`, `GetData(key, defaultValue)`, `HasTag(tag)`.
+
+#### SaveLoadMenuComponent
+
+In-game save/load grid overlay. Add to any entity to enable a pause-menu-style save/load UI during play mode.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `showOnPause` | bool | true | Auto-show when game is paused. |
+| `allowManualSave` | bool | true | Show "Save" buttons on slots. |
+| `allowManualLoad` | bool | true | Show "Load" buttons on slots. |
+| `allowDelete` | bool | true | Show "Delete" buttons on occupied slots. |
+| `showAutoSaves` | bool | true | Show auto-save slots (17-19). |
+| `columnsPerRow` | i32 | 4 | Number of columns in the slot grid. |
+| `headerText` | string | "Save / Load Game" | Header text above the grid. |
+
+#### TieredSaveSystem
+
+The engine provides a 20-slot tiered save system with 3 persistence tiers:
+
+| Tier | Lifetime | Example Data |
+|------|----------|-------------|
+| **SceneState** | Per-scene within a run. Resets on new run. | Enemies dead, doors opened, chests looted. |
+| **RunState** | Per-run. Resets on new game. | Player health, inventory, quest progress. |
+| **MetaProgression** | Permanent across all runs. | Unlocks, achievements, meta-currencies. |
+
+**Slot layout:** 17 manual save slots (0-16) + 3 rotating auto-save slots (17-19).
+
+**Auto-save:** Configurable timed interval (default 5 minutes), on scene transition, and on checkpoint calls.
+
+**Meta-progression:** Separate `meta.enjsave` file stores permanent key-value data (float, int, bool, string) that survives across runs and save slot deletion.
+
+**Cloud sync:** Pluggable backends via `ISaveBackend` interface. Built-in: `LocalSaveBackend` (filesystem), `NewgroundsSaveBackend` (wraps NG.io cloud saves), `SteamSaveBackend` (Steam Cloud via ISteamRemoteStorage, requires `ENJIN_STEAM` CMake flag).
+
+**Save Debug Panel:** Open from **View > Tools > Save Debug** to inspect all 20 save slots, view meta-progression key-value tables, configure auto-save, and trigger manual cloud sync.
 
 #### QuestStateComponent
 
@@ -1525,7 +1561,7 @@ The **Game View** panel contains three buttons for controlling play mode:
 |--------|--------|
 | **Play** | Enter play mode. Activates controllers, physics, and gameplay systems. Saves the current editor state for restoration. |
 | **Pause** | Freeze game simulation. The scene remains in play mode but time stops advancing. |
-| **Stop** | Exit play mode and restore the editor state to exactly what it was before Play was pressed. |
+| **Stop** | Exit play mode, compute a diff of all entity changes, and restore the editor state. If changes were made, a **Play Mode Changes** dialog appears allowing you to cherry-pick which changes to keep. |
 
 ### Behavior During Play
 
@@ -1553,6 +1589,20 @@ The following systems are updated each frame during play mode:
 - **ScriptEventBus** -- script-to-script event communication.
 - **Resource regeneration** -- ResourceComponent auto-regen each frame.
 - **FlowerSystem** -- flower/vegetation animation.
+- **TieredSaveSystem** -- auto-save timer, play time tracking, checkpoint management.
+- **VisualScriptSystem** -- visual script graph execution (includes save/load/checkpoint/meta nodes).
+- **BehaviorTreeSystem** -- AI behavior tree tick execution.
+- **NetworkSystem** -- LAN multiplayer state sync (if connected).
+
+### Play Mode Diff Dialog
+
+When you press **Stop**, the engine compares the scene state before and after play. If any entities were created, deleted, or modified, a **Play Mode Changes** dialog appears:
+
+- **Tree view** of all changed entities, expandable to component and property level
+- **Color-coded** actions: green (Created), red (Deleted), yellow (Modified)
+- **Checkboxes** at entity, component, and property level for selective apply
+- **Apply Selected** — re-applies checked changes to the restored scene
+- **Discard All** — closes dialog, no changes kept
 
 ---
 
@@ -2436,6 +2486,7 @@ The visual script system provides 80+ built-in nodes organized into these catego
 | **Debug** | Print String, Print Warning, Print Error | Console output for debugging. |
 | **Functions** | Function Entry, Function Return, Call Function | Reusable subgraph functions. |
 | **Script** | Call Script | Call AngelScript functions from visual scripts. |
+| **Gameplay** | Save To Slot, Load From Slot, Delete Slot, Checkpoint, Meta Set Float, Meta Get Float | Save system operations: save/load/delete slots, create checkpoints, read/write meta-progression values. |
 
 ### Debugger
 

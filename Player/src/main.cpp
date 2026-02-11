@@ -36,6 +36,21 @@
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
+#include "Enjin/Physics/SimplePhysics.h"
+#include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/ECS/Systems/FlowerSystem.h"
+#include "Enjin/ECS/Systems/TweenSystem.h"
+#include "Enjin/ECS/Systems/StateMachineSystem.h"
+#include "Enjin/ECS/Systems/VisualScriptSystem.h"
+#include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
+#include "Enjin/ECS/EntityEventBus.h"
+#include "Enjin/Gameplay/HUDSystem.h"
+#include "Enjin/Gameplay/QuestSystem.h"
+#include "Enjin/Gameplay/FootstepSystem.h"
+#include "Enjin/Gameplay/CinematicSystem.h"
+#include "Enjin/Gameplay/ObjectPool.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Gameplay/QuestFlow.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -182,6 +197,29 @@ public:
             ENJIN_LOG_WARN(Player, "Failed to initialize script engine");
         }
 
+        // Initialize physics
+        m_Physics.SetWorld(m_World.get());
+
+        // Initialize gameplay systems
+        m_ControllerSystem.SetWorld(m_World.get());
+        m_ControllerSystem.SetCamera(m_Camera.get());
+        m_ControllerSystem.SetPhysics(&m_Physics);
+        m_ControllerSystem.SetInputActionMap(&m_InputMap);
+
+        m_FlowerSystem.SetWorld(m_World.get());
+        m_FlowerSystem.SetCamera(m_Camera.get());
+
+        m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
+        m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
+
+        m_VisualScriptSystem.SetWorld(m_World.get());
+        m_BehaviorTreeSystem.SetWorld(m_World.get());
+
+        // Initialize save system with local backend
+        m_TieredSaveSystem.LoadMeta();
+
+        ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
+
         // Show splash screen before loading game
         SetupSplashScreen();
 
@@ -192,12 +230,24 @@ public:
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
 
-        // Shutdown scripts before world is destroyed
+        // Shutdown gameplay systems before world is destroyed
+        m_VisualScriptSystem.Shutdown();
+        m_BehaviorTreeSystem.Shutdown();
+        m_ControllerSystem.SetEnabled(false);
+        m_FlowerSystem.SetEnabled(false);
+        m_HUDSystem.SetEnabled(false);
+        m_QuestSystem.SetEnabled(false);
+        m_FootstepSystem.SetEnabled(false);
+
+        // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
         m_ScriptSystem.SetEnabled(false);
         m_CoroutineScheduler.Clear();
         m_ScriptEventBus.Clear();
         m_ScriptEngine.Shutdown();
+
+        // Save meta-progression before exit
+        m_TieredSaveSystem.SaveMeta();
 
         Enjin::Audio::AudioManager::Get().Shutdown();
 
@@ -260,11 +310,6 @@ public:
         // Update input
         m_InputMap.Update(deltaTime);
 
-        // Update camera
-        if (m_CameraController) {
-            m_CameraController->Update(deltaTime);
-        }
-
         // ESC to toggle pause menu
         if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
             if (m_GameMenu.IsMenuOpen()) {
@@ -274,15 +319,83 @@ public:
             }
         }
 
-        // Update active dialogue typewriter
-        if (!m_GameMenu.IsMenuOpen()) {
-            UpdateDialogue(deltaTime);
+        // Skip gameplay updates when paused
+        if (m_GameMenu.IsMenuOpen()) return;
+
+        // --- Physics (must run first) ---
+        m_Physics.Update(deltaTime);
+
+        // Dispatch collision events to visual scripts
+        const auto& collisionEvents = m_Physics.GetPendingCollisionEvents();
+        for (const auto& evt : collisionEvents) {
+            if (evt.isTrigger) {
+                if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
+                    m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
+                    m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+                } else {
+                    m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
+                    m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
+                }
+            } else {
+                if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
+                    m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
+                    m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
+                } else {
+                    m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
+                    m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
+                }
+            }
+        }
+        m_Physics.ClearPendingCollisionEvents();
+
+        // --- Controllers & vegetation ---
+        m_ControllerSystem.Update(deltaTime);
+        m_FlowerSystem.Update(deltaTime);
+
+        // --- Camera (after controllers, which may drive it) ---
+        if (m_CameraController) {
+            m_CameraController->Update(deltaTime);
         }
 
-        // Update scripts
-        if (!m_GameMenu.IsMenuOpen()) {
-            m_ScriptSystem.Update(deltaTime);
-            m_CoroutineScheduler.EndOfFrame();
+        // --- AngelScript ---
+        m_ScriptSystem.Update(deltaTime);
+        m_CoroutineScheduler.EndOfFrame();
+
+        // --- Gameplay systems ---
+        m_TweenSystem.Update(m_World.get(), deltaTime);
+        m_StateMachineSystem.Update(m_World.get(), deltaTime);
+        m_VisualScriptSystem.Update(deltaTime);
+        m_BehaviorTreeSystem.Update(deltaTime);
+
+        // Dialogue
+        UpdateDialogue(deltaTime);
+
+        // Cinematic, quests, footsteps, object pool, events
+        m_CinematicSystem.Update(m_World.get(), m_Camera.get(), deltaTime);
+        m_QuestSystem.Update(m_World.get(), deltaTime);
+
+        // Quest flow graphs
+        if (m_World) {
+            auto qfEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>();
+            for (auto entity : qfEntities) {
+                Enjin::Gameplay::AdvanceQuestFlow(m_World.get(), entity, deltaTime);
+            }
+        }
+
+        m_FootstepSystem.Update(m_World.get(), deltaTime);
+        m_ObjectPool.Update(m_World.get(), deltaTime);
+        m_EntityEventBus.ProcessDeferred();
+
+        // Save system (auto-save timer)
+        m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
+
+        // Resource regeneration
+        if (m_World) {
+            auto resEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>();
+            for (auto entity : resEntities) {
+                auto* res = m_World->GetComponent<Enjin::ECS::ResourceComponent>(entity);
+                if (res) res->Regenerate(deltaTime);
+            }
         }
     }
 
@@ -454,11 +567,49 @@ private:
             LoadSceneFromPack(m_StartScene);
         }
 
-        // Start scripts on loaded entities
+        // Wire all script bindings so AngelScript functions work
+        Enjin::Scripting::SetBindingsWorld(m_World.get());
+        Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
+        Enjin::Scripting::SetBindingsPhysics(&m_Physics);
+        Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
+        Enjin::Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
+        Enjin::Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
+        Enjin::Scripting::SetBindingsEventBus(&m_ScriptEventBus);
+        Enjin::Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
+        Enjin::Scripting::SetBindingsQuestSystem(&m_QuestSystem);
+        Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
+        Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
+
+        // Wire dialogue system event bus
+        m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+
+        // Enable all gameplay systems
+        m_ControllerSystem.SetEnabled(true);
+        m_FlowerSystem.SetEnabled(true);
+        m_HUDSystem.SetEnabled(true);
+        m_QuestSystem.SetEnabled(true);
+        m_FootstepSystem.SetEnabled(true);
+
+        // Find game camera entity for controller system
+        if (m_World) {
+            auto cameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
+            if (!cameras.empty()) {
+                m_ControllerSystem.SetGameCameraEntity(cameras[0]);
+            }
+        }
+
+        // Initialize visual scripts and behavior trees
+        m_VisualScriptSystem.SetPhysics(&m_Physics);
+        m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        m_VisualScriptSystem.Initialize();
+        m_BehaviorTreeSystem.Initialize();
+
+        // Start auto-play tweens
+        m_TweenSystem.PlayAll(m_World.get());
+
+        // Start AngelScript lifecycle
         if (m_ScriptEngine.GetASEngine()) {
             m_ScriptSystem.SetEnabled(true);
-            Enjin::Scripting::SetBindingsWorld(m_World.get());
-            Enjin::Scripting::SetBindingsRenderSystem(m_RenderSystem);
             m_ScriptSystem.InitializeAllScripts();
         }
 
@@ -542,9 +693,25 @@ private:
     // ImGui overlay
     std::unique_ptr<Enjin::GUI::ImGuiLayer> m_ImGuiLayer;
 
-    // Dialogue system
+    // Physics
+    Enjin::Physics::SimplePhysics m_Physics;
+
+    // Gameplay systems
+    Enjin::ECS::ControllerSystem m_ControllerSystem;
+    Enjin::ECS::FlowerSystem m_FlowerSystem;
+    Enjin::ECS::TweenSystem m_TweenSystem;
+    Enjin::ECS::StateMachineSystem m_StateMachineSystem;
+    Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
+    Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
+    Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
+    Enjin::Gameplay::HUDSystem m_HUDSystem;
+    Enjin::Gameplay::QuestSystem m_QuestSystem;
+    Enjin::Gameplay::FootstepSystem m_FootstepSystem;
+    Enjin::Gameplay::ObjectPool m_ObjectPool;
+    Enjin::Gameplay::CinematicSystem m_CinematicSystem;
+    Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
         m_DialogueSystem.Update(m_World.get(), deltaTime);

@@ -43,6 +43,9 @@
 | Procedural Gen | `Enjin/Procedural/ProceduralAlgorithms.h` | 9 algorithms, visual node graph editor, preview canvas |
 | Destructible | `Enjin/Effects/Destructible.h` | 4 fracture patterns, debris physics, chain destruction |
 | Networking | `Enjin/Networking/LANMultiplayer.h` | Host-authoritative UDP, prediction, interpolation, RPC, lobby |
+| Save System | `Enjin/Gameplay/TieredSaveSystem.h` | 20-slot tiered saves (SceneState/RunState/MetaProgression), auto-save, checkpoints, cloud backends |
+| Save Backends | `Enjin/Gameplay/SaveBackend.h` | ISaveBackend interface + Local/Newgrounds/Steam implementations |
+| Play Mode Diff | `Enjin/Editor/PlayModeDiff.h` | JSON diff of pre/post play scene states, cherry-pick apply dialog |
 
 ---
 

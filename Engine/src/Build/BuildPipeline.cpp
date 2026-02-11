@@ -18,6 +18,11 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
     m_Scenes.clear();
     m_TexturePaths.clear();
     m_ModelPaths.clear();
+    m_ScriptPaths.clear();
+    m_AudioPaths.clear();
+    m_DialoguePaths.clear();
+    m_PrefabPaths.clear();
+    m_DataAssetPaths.clear();
 
     AddMessage(MessageSeverity::Info, "Starting build...");
 
@@ -28,6 +33,10 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         AddMessage(MessageSeverity::Error, "Build failed: project scan failed");
         return m_Result;
     }
+
+    // Phase 1b: Scan project directory for all asset files
+    ReportProgress("Scanning assets", 0.1f);
+    ScanProjectDirectory();
 
     // Phase 2: Validate assets
     ReportProgress("Validating assets", 0.15f);
@@ -247,6 +256,50 @@ bool BuildPipeline::ValidateAssets() {
                         checkTexture("baseColorTexturePath");
                         checkTexture("normalTexturePath");
                         checkTexture("heightTexturePath");
+                        checkTexture("metallicRoughnessTexturePath");
+                        checkTexture("emissiveTexturePath");
+                    }
+
+                    // Sprite2D texture path
+                    if (comps.contains("sprite2d")) {
+                        const auto& sprite = comps["sprite2d"];
+                        if (sprite.contains("texturePath")) {
+                            std::string texPath = sprite["texturePath"].get<std::string>();
+                            if (!texPath.empty()) {
+                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
+                                if (fs::exists(absPath)) {
+                                    m_TexturePaths.insert(absPath);
+                                }
+                            }
+                        }
+                    }
+
+                    // Audio source file paths
+                    if (comps.contains("audioSource")) {
+                        const auto& audio = comps["audioSource"];
+                        if (audio.contains("filePath")) {
+                            std::string audioPath = audio["filePath"].get<std::string>();
+                            if (!audioPath.empty()) {
+                                std::string absPath = (fs::path(m_ProjectDir) / audioPath).string();
+                                if (fs::exists(absPath)) {
+                                    m_AudioPaths.insert(absPath);
+                                }
+                            }
+                        }
+                    }
+
+                    // Script component paths
+                    if (comps.contains("script")) {
+                        const auto& script = comps["script"];
+                        if (script.contains("scriptPath")) {
+                            std::string scriptPath = script["scriptPath"].get<std::string>();
+                            if (!scriptPath.empty()) {
+                                std::string absPath = (fs::path(m_ProjectDir) / scriptPath).string();
+                                if (fs::exists(absPath)) {
+                                    m_ScriptPaths.insert(absPath);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -318,6 +371,46 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
 
         if (!packer.AddFile(virtualPath, texPath)) {
             AddMessage(MessageSeverity::Warning, "Failed to pack texture: " + texPath);
+        }
+    }
+
+    // Pack scripts
+    for (const auto& path : m_ScriptPaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack script: " + path);
+        }
+    }
+
+    // Pack audio files
+    for (const auto& path : m_AudioPaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack audio: " + path);
+        }
+    }
+
+    // Pack dialogue files
+    for (const auto& path : m_DialoguePaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack dialogue: " + path);
+        }
+    }
+
+    // Pack prefab files
+    for (const auto& path : m_PrefabPaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack prefab: " + path);
+        }
+    }
+
+    // Pack data asset files (.enjdata, .enjschema)
+    for (const auto& path : m_DataAssetPaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack data asset: " + path);
         }
     }
 
@@ -460,6 +553,57 @@ bool BuildPipeline::VerifyBuild(const std::string& pakPath, const std::string& k
                std::to_string(reader.GetFileCount()) + " files verified)");
     reader.Close();
     return true;
+}
+
+void BuildPipeline::ScanProjectDirectory() {
+    if (m_ProjectDir.empty()) return;
+
+    // File extension to asset set mapping
+    struct ExtMapping {
+        const char* ext;
+        std::set<std::string>* target;
+    };
+
+    ExtMapping mappings[] = {
+        { ".as",         &m_ScriptPaths },
+        { ".wav",        &m_AudioPaths },
+        { ".mp3",        &m_AudioPaths },
+        { ".ogg",        &m_AudioPaths },
+        { ".flac",       &m_AudioPaths },
+        { ".enjdlg",     &m_DialoguePaths },
+        { ".enjprefab",  &m_PrefabPaths },
+        { ".enjdata",    &m_DataAssetPaths },
+        { ".enjschema",  &m_DataAssetPaths },
+    };
+
+    try {
+        for (auto& entry : fs::recursive_directory_iterator(m_ProjectDir,
+                 fs::directory_options::skip_permission_denied)) {
+            if (!entry.is_regular_file()) continue;
+
+            std::string ext = entry.path().extension().string();
+            // Lowercase the extension for comparison
+            for (auto& c : ext) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+            for (const auto& mapping : mappings) {
+                if (ext == mapping.ext) {
+                    mapping.target->insert(entry.path().string());
+                    break;
+                }
+            }
+        }
+    } catch (const std::exception& e) {
+        AddMessage(MessageSeverity::Warning,
+                   std::string("Error scanning project directory: ") + e.what());
+    }
+
+    AddMessage(MessageSeverity::Info,
+               "Directory scan: " +
+               std::to_string(m_ScriptPaths.size()) + " scripts, " +
+               std::to_string(m_AudioPaths.size()) + " audio, " +
+               std::to_string(m_DialoguePaths.size()) + " dialogues, " +
+               std::to_string(m_PrefabPaths.size()) + " prefabs, " +
+               std::to_string(m_DataAssetPaths.size()) + " data assets");
 }
 
 void BuildPipeline::AddMessage(MessageSeverity severity, const std::string& text, const std::string& file) {

@@ -60,13 +60,13 @@ enjin/
 │   │   │   │   └── ...
 │   │   │   └── Systems/    # RenderSystem, ControllerSystem
 │   │   ├── Accessibility/  # ColorblindFilter, SubtitleSystem, ContentWarning
-│   │   ├── Editor/         # EditorLayer, PlayMode, EditorSettings, FeedbackSystem, VectorDrawingEditor, PerformanceStats
+│   │   ├── Editor/         # EditorLayer, PlayMode, PlayModeDiff, EditorSettings, FeedbackSystem, VectorDrawingEditor, PerformanceStats
 │   │   ├── Effects/        # Weather, Water, RetroEffects, WorldTime, Particles
 │   │   ├── Input/          # InputAction (remappable input action map)
 │   │   ├── GUI/            # ImGui integration, UICanvas, UISystem, DialogueTree
 │   │   ├── Build/          # BuildPipeline, AssetPacker, AssetReader
-│   │   ├── Gameplay/       # SaveSystem, HUDSystem, QuestSystem, ObjectPool, CinematicSystem
-│   │   ├── Networking/     # HTTPClient, LANMultiplayer, NewgroundsAPI
+│   │   ├── Gameplay/       # TieredSaveSystem, SaveBackend, SaveLoadMenu, HUDSystem, QuestSystem, ObjectPool, CinematicSystem
+│   │   ├── Networking/     # HTTPClient, LANMultiplayer, NewgroundsAPI, NewgroundsSaveBackend, SteamSaveBackend
 │   │   ├── Physics/        # SimplePhysics, PhysicsWorld, ConstraintSolver, Physics2D
 │   │   ├── Plugin/         # PluginSystem, HotReload
 │   │   ├── Procedural/     # LevelGenerator
@@ -119,6 +119,8 @@ See `docs/ARCHITECTURE.md` for detailed system architecture.
   - `AnimatorComponent` - Skeletal animation playback
   - `CharacterController` - Movement controllers (Platformer2D, TopDown2D/3D, FPS, TPS)
   - `BoxColliderComponent` / `SphereColliderComponent` / `CapsuleColliderComponent` - Colliders with `categoryBits`/`collisionMask` bitmask filtering
+  - `SaveDataComponent` - Persistence marker with `PersistenceTier` (SceneState/RunState/MetaProgression), custom tags, and key-value data
+  - `SaveLoadMenuComponent` - In-game save/load grid overlay with configurable columns, mode (Save/Load), and slot display
 
 ### Collision Filtering
 
@@ -228,10 +230,10 @@ struct PushConstants {
 - **`EditorLayer`** - Main editor class with ImGui panels
 - **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
 - **View menu:** Sub-menus for Panels, Settings (Editor Settings, Project Settings), Rendering (Rendering, Post Processing, Retro Effects), Tools. Game View and Scene List are top-level.
-- **Panel names:** `EditorSettings` (bit 5), `PostProcessing` (bit 6), `RetroEffects` (bit 7), `Rendering` (bit 10 — skybox + shadows/ambient/cel/RT/display). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
+- **Panel names:** `EditorSettings` (bit 5), `PostProcessing` (bit 6), `RetroEffects` (bit 7), `Rendering` (bit 10 — skybox + shadows/ambient/cel/RT/display), `SaveDebug` (bit 31 — View > Tools > Save Debug). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
 - **Project Settings panel:** Project mode, Window icon, Physics, Frame rate, Collision Groups, Build Config, Environment (weather/wind/world time/curvature).
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select, marquee rect-pick)
-- **`PlayMode`** - Play/Pause/Stop game preview controls
+- **`PlayMode`** - Play/Pause/Stop game preview controls. Integrates `TieredSaveSystem` for save/load during play. On Stop, computes a `PlayModeDiff` showing entity changes with cherry-pick apply dialog
 - **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo. Methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `SelectRange()`, `SelectEntitiesInRect()`
 - **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+click` toggle select, `Shift+click` range select, viewport drag for marquee
 - **Entity icons:** `GetEntityIcon()` prefixes hierarchy labels with bracket-tags by primary component type (`[C]` Camera, `[L]` Light, `[M]` Mesh, `[S]` Sprite, `[T]` Tilemap, `[P]` Particle, `[A]` Audio, `[R]` Rigidbody, `[D]` Dialogue, `[V]` Visual Script, `[U]` UI Canvas, `[AI]` AI, `[BT]` Behavior Tree)
@@ -273,9 +275,9 @@ struct PushConstants {
 ### Scripting
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload
-- ~170 bound functions across math, entity, scene, input, physics, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue
+- ~250 bound functions across math, entity, scene, input, physics, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, Newgrounds
 - See `docs/SCRIPTING_API.md` for the complete API reference
-- **Visual scripting** (Blueprint-style) with 40+ built-in nodes, debugger with breakpoints/step-through, execution timeline profiler
+- **Visual scripting** (Blueprint-style) with 62+ built-in nodes (including 22 Gameplay nodes: save/load/checkpoint/meta, weather, quests, cinematics, particles, destructibles, prefabs, UI, localization), debugger with breakpoints/step-through, execution timeline profiler
 
 ### Window Icon
 
@@ -367,8 +369,8 @@ The engine has 120+ completed features across these categories. See `docs/USER_M
 - **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
 - **Physics:** Collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
-- **Scripting:** AngelScript (~170 bindings), visual scripting (40+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
-- **Gameplay:** Save/load (10 slots), quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro), Newgrounds.io API (medals, scoreboards, cloud saves)
+- **Scripting:** AngelScript (~185 bindings), visual scripting (46+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
+- **Gameplay:** Tiered save system (20 slots, 3-tier persistence: SceneState/RunState/MetaProgression, auto-save, checkpoints, pluggable backends — Local/Newgrounds/Steam), play mode diff dialog (cherry-pick entity changes on Stop), in-game save/load menu component, quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro), Newgrounds.io API (medals, scoreboards, cloud saves)
 - **Networking:** LAN multiplayer (host-authoritative UDP, client-side prediction, 20Hz state sync, interpolation buffer, entity ownership, RPC system, lobby, reliable delivery, editor Network Panel)
 - **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
 - **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview

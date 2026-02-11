@@ -30,6 +30,10 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_FlowerSystem.SetCamera(camera);
     m_FlowerSystem.SetEnabled(false);
 
+    // Initialize level streaming
+    m_StreamingManager.SetWorld(world);
+    m_StreamingManager.SetEnabled(false);
+
     // Initialize scripting engine
     if (m_ScriptEngine.Init()) {
         Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
@@ -94,6 +98,7 @@ void PlayMode::Play() {
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
+    m_StreamingManager.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
@@ -101,6 +106,10 @@ void PlayMode::Play() {
     Scripting::SetBindingsRenderSystem(m_RenderSystem);
     Scripting::SetBindingsPostProcessing(m_PostProcessing);
     Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
+    Scripting::SetBindingsQuestSystem(&m_QuestSystem);
+    Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
+    Scripting::SetBindingsObjectPool(&m_ObjectPool);
+    Scripting::SetBindingsStreaming(&m_StreamingManager);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
@@ -206,9 +215,14 @@ void PlayMode::Stop() {
     m_EventBus.Clear();
     m_EntityEventBus.Clear();
 
-    // Clear save system bindings
+    // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
     Scripting::SetBindingsSaveSystem(nullptr);
+    Scripting::SetBindingsQuestSystem(nullptr);
+    Scripting::SetBindingsCinematicSystem(nullptr);
+    Scripting::SetBindingsObjectPool(nullptr);
+    Scripting::SetBindingsWeather(nullptr);
+    Scripting::SetBindingsStreaming(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);
@@ -221,6 +235,8 @@ void PlayMode::Stop() {
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
+    m_StreamingManager.SetEnabled(false);
+    m_StreamingManager.ClearChunks();
     m_DialogueSystem.Clear();
     m_ObjectPool.DestroyAll(m_World);
 
@@ -330,6 +346,11 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Tiered save system (auto-save timer, play time tracking)
         m_TieredSaveSystem.Update(deltaTime, m_World, m_TieredSaveSystem.GetCurrentScene());
+
+        // Update level streaming
+        if (m_Camera) {
+            m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
+        }
 
         // Regenerate resources
         auto resEntities = m_World->GetEntitiesWithComponent<ECS::ResourceComponent>();

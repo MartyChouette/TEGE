@@ -231,6 +231,63 @@ Ideas for "simple creation of complex games":
 
 ---
 
+## Feature Accessibility Audit — Walled-Off Systems
+
+Comprehensive audit (2026-02-10) of all engine features to identify systems that are built but unreachable by game developers. **31 gaps found** across 12 categories.
+
+### CRITICAL — Features Built But Broken/Unreachable
+
+| # | System | Issue | Fix |
+|---|--------|-------|-----|
+| 1 | **Player App — Physics** | Player doesn't create/update PhysicsWorld or PhysicsWorld2D. Exported games have no physics | Wire SimplePhysics + PhysicsWorld2D in Player main.cpp |
+| 2 | **Player App — Weather/Water** | No WeatherSystem or Water3D init in Player | Create and update in Player loop |
+| 3 | **Player App — Particles** | ParticleSystem not created in Player | Add to Player init/update/render |
+| 4 | **Player App — Post-Processing** | No bloom/vignette/FXAA/film grain/color grading/retro effects | Wire PostProcessing pass in Player render |
+| 5 | **Player App — Save System** | TieredSaveSystem not initialized in Player. Save/load silently fails | Init TieredSaveSystem + LocalSaveBackend in Player |
+| 6 | **Build Pipeline — Asset Packing** | BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files | Add glob patterns for all asset types in scan phase |
+| 7 | **Script Engine in Player** | ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player | Wire all SetXxx() calls after system creation |
+| 8 | **UI System — No Script Bindings** | UICanvas/UISystem have zero AngelScript or Visual Script bindings | Add ~20 UI script functions |
+| 9 | **Level Streaming** | Fully implemented but no trigger volumes, no editor UI, no script bindings | Add StreamingVolume component + editor + bindings |
+| 10 | **Localization System** | LocalizationManager complete but no editor panel, no runtime script bindings | Add Localization editor panel + script bindings |
+| 11 | **Newgrounds Bindings** | RegisterNewgroundsBindings() fully written but never called | Add call in ScriptEngine::Initialize() |
+
+### HIGH — Systems Partially Walled Off (No Script Bindings)
+
+| # | System | Missing |
+|---|--------|---------|
+| 12 | Weather | No AS/VS bindings — can't start/stop rain/snow/storms from game code |
+| 13 | Water | No AS/VS bindings — can't configure water planes from scripts |
+| 14 | Particles | No AS/VS bindings — can't spawn/stop particle effects from code |
+| 15 | Networking | No AS/VS bindings — can't host/join/send RPCs from scripts |
+| 16 | Quest System | No AS/VS bindings — can't start/complete/query quests from scripts |
+| 17 | HUD System | No AS/VS bindings — can't show/hide/update HUD from scripts |
+| 18 | Cinematic System | No AS/VS bindings — can't trigger camera sequences from code |
+| 19 | Destructible System | No AS/VS bindings — can't trigger destruction from scripts |
+| 20 | Physics 2D | No AS/VS bindings — only 3D physics is partially bound |
+| 21 | Prefab System | No AS/VS bindings — can't instantiate prefabs at runtime |
+| 22 | Procedural Generation | No AS/VS bindings — 9 algorithms exist but can't be invoked from code |
+
+### MEDIUM — Missing Editor Exposure
+
+| # | System | Issue |
+|---|--------|-------|
+| 23 | IKComponent | Not in Add Component menu |
+| 24 | TerrainComponent | Not in Add Component menu (only via terrain editor) |
+| 25 | SkeletonComponent | Not in Add Component menu |
+| 26 | FlowerComponent | Not in Add Component menu (only via vegetation system) |
+| 27 | Shader Graph | Editor shell exists but generates no actual shader code |
+| 28 | Audio Event Graph | Editor shell exists but doesn't connect to AudioSystem |
+| 29 | Particle Graph | Editor shell exists but doesn't connect to ParticleSystem |
+| 30 | Animation Graph | Editor shell exists but doesn't drive AnimatorComponent |
+
+### LOW
+
+| # | System | Issue |
+|---|--------|-------|
+| 31 | Visual Script Nodes | No nodes for weather/water/networking/quest/HUD/cinematic/destructible/physics2D/prefabs/procedural gen (mirrors script binding gaps) |
+
+---
+
 ## Implementation Priority Matrix
 
 | Task | Impact | Effort | Priority | Status |
@@ -283,8 +340,42 @@ Ideas for "simple creation of complex games":
 | Screen Reader Announcer | Medium | Low | P2 | ✅ Complete |
 | Scene Lock UI Enhancements | Medium | Low | P2 | ✅ Complete |
 | Panel Reorganization | Medium | Medium | P2 | ✅ Complete |
+| **— Runtime Accessibility —** | | | | |
+| UICanvas Keyboard/Gamepad Navigation | High | Medium | P1 | Planned |
+| In-Game Accessibility Menu Template | High | Medium | P1 | Planned |
+| Focus Indicators for UICanvas | Medium | Low | P1 | Planned |
+| Wire AlternativeInput to Player/UISystem | Medium | Medium | P2 | Planned |
+| Wire Announcer to UISystem (screen reader) | Medium | Medium | P2 | Planned |
+| Accessible Labels on UIElement | Medium | Low | P2 | Planned |
+| High Contrast UI Theme | Medium | Low | P2 | Planned |
+| Player Font Scaling | Medium | Low | P2 | Planned |
+| Reduced Motion for UI | Medium | Low | P2 | Planned |
+| Dyslexia-Friendly Font/Spacing | Low | Low | P3 | Planned |
+| Colorblind-Safe UI Palettes | Low | Low | P3 | Planned |
+| One-Button / Switch Access for UICanvas | Low | Medium | P3 | Planned |
 | Security & Robustness Audit | High | Low | P1 | ✅ Complete |
+| **— Feature Accessibility (Walled-Off Systems) —** | | | | |
+| Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | Planned |
+| Build Pipeline: Pack scripts/audio/dialogue/prefabs/data assets | Critical | Medium | P0 | Planned |
+| Wire ScriptEngine subsystem pointers in Player | Critical | Medium | P0 | Planned |
+| Register Newgrounds script bindings (dead code) | High | Low | P0 | Planned |
+| Add UI System script bindings (AS + VS) | Critical | High | P1 | Planned |
+| Add Weather/Water/Particles script bindings | High | Medium | P1 | Planned |
+| Add Physics 2D script bindings | High | Medium | P1 | Planned |
+| Add Quest/HUD/Cinematic/Destructible script bindings | High | Medium | P1 | Planned |
+| Add Networking script bindings | High | High | P1 | Planned |
+| Add Prefab/Procedural Gen script bindings | Medium | Medium | P2 | Planned |
+| Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | Planned |
+| Wire Localization (editor panel + script bindings) | High | Medium | P1 | Planned |
+| Add IK/Terrain/Skeleton/Flower to Add Component menu | Medium | Low | P2 | Planned |
+| Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | Planned |
+| Connect graph editor shells (shader/audio/particle/anim) | Low | Very High | P3 | Planned |
 | Default 60 FPS Frame Rate Limit | Low | Low | P1 | ✅ Complete |
+| Tiered Save System (20 slots, 3 tiers) | High | High | P1 | ✅ Complete |
+| Play Mode Diff Dialog | High | Medium | P1 | ✅ Complete |
+| Save/Load UI (Editor + In-Game) | Medium | Medium | P2 | ✅ Complete |
+| Cloud Save Backends (NG/Steam) | Medium | Medium | P2 | ✅ Complete |
+| Save System Script Bindings (AS + VS) | Medium | Medium | P2 | ✅ Complete |
 | OIDN integration | Medium | Medium | P3 | Planned |
 | **— Rendering & Camera —** | | | | |
 | Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | Planned |
@@ -327,7 +418,7 @@ Ideas for "simple creation of complex games":
 | 2D asset library (CC0) | High | Medium | P2 | Planned |
 | **— Editor & Project —** | | | | |
 | Template rebuild & demo scenes | Medium | Medium | P2 | Planned |
-| Project Hub redesign (landing/sandbox) | Medium | High | P3 | Planned |
+| Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | Planned |
 | Source-app import presets | Medium | High | P3 | Planned |
 | Pre-built binary distribution | High | Medium | P2 | Planned |
@@ -408,7 +499,7 @@ Import dialog enhancements:
 
 ---
 
-## Runtime Systems (Planned)
+## Runtime Systems
 
 - ~~**Improved Physics**~~ ✅ — 2D physics (Box2D-style): PhysicsWorld2D with circle/box/polygon shapes, 5 joint types (revolute, prismatic, distance, rope, weld), CCD, physics materials (friction, restitution, density), 2D raycasts/overlap queries, impulse-based collision resolution with SAT, collision enter/exit callbacks, bitmask filtering
 - ~~**Basic Networking**~~ ✅ — Host-authoritative UDP networking with client-side prediction: `NetworkSystem` (connections, heartbeats, timeouts), `NetworkTransport` (cross-platform non-blocking UDP sockets — Winsock2/BSD), `NetworkSerializer` (binary read/write), `NetworkIdentityComponent` + `NetworkTransformComponent`, entity ownership + transfer, 20Hz state sync with delta compression (field bitmask), interpolation buffer (4-state ring with configurable delay), RPC system (FNV-1a hashed names, reliable/unreliable), lobby (player list, ready state, host migration stubs), reliable delivery (sequence numbers, ack bitfield, retransmission), editor Network Panel (host/join/disconnect, player list table, ping/loss/bandwidth stats), full scene serialization
@@ -416,6 +507,7 @@ Import dialog enhancements:
 - **Simple Fluid Simulation** — ~~Grid-based Eulerian fluid (water, lava, gas). FluidVolumeComponent with preset configs. Target: 64x64 2D / 32x32x32 3D at 60fps~~ ✅ Stable Fluids solver (Jos Stam), 5 presets (Water/Lava/Gas/Smoke/Steam), GPU instanced cell renderer, full editor integration
 - **SVG Support** — ~~nanosvg parsing, rasterize-to-texture via SVGLoader, GetOrLoadTexture routing for .svg files~~ ✅. ~~SDF vector rendering~~ ✅. ~~UIElement Image widget integration~~ ✅ (RenderImage uses TextureResolver, SVG routes automatically)
 - ~~**Dialogue System Future Work**~~ ✅ (partial) — .enjdlg asset files (DialogueAsset save/load with versioned JSON), LocalizationManager singleton (string key → locale tables, CSV/JSON import/export, parameterized strings with {key} substitution, runtime locale switching, LOC() macro). ~~UICanvas dialogue box~~ ✅ (DialogueBoxComponent auto-builds UICanvas elements with speaker name, typewriter text, portrait, choice buttons, continue indicator). Remaining: Yarn Spinner/Twine import/export
+- ~~**Tiered Save System**~~ ✅ — 20-slot save system (17 manual + 3 rotating auto-save) with 3-tier persistence (`PersistenceTier`: SceneState/RunState/MetaProgression). `TieredSaveSystem` class with slot operations, meta-progression key-value store (float/int/bool/string), auto-save timer (configurable interval + on scene transition + on checkpoint), `ISaveBackend` interface with pluggable backends (`LocalSaveBackend`, `NewgroundsSaveBackend`, `SteamSaveBackend` via `ENJIN_STEAM` CMake flag). 15 AngelScript bindings (SaveGame_ToSlot/FromSlot/DeleteSlot/Checkpoint, Meta_Set/Get Float/Int/Bool/String, Meta_Save, AutoSave_Enable/SetInterval). 6 visual script nodes (Gameplay category: SaveToSlot, LoadFromSlot, DeleteSlot, Checkpoint, MetaSetFloat, MetaGetFloat). `SaveLoadMenuComponent` for in-game save/load grid UI. Save Debug editor panel (bit 31). `PlayModeDiff` for cherry-pick entity changes on play mode Stop
 
 ---
 
@@ -865,7 +957,9 @@ Only runs for `SceneRenderMode::Scene3D`. 2D/2.5D scenes skip the RT pipeline en
 
 ## Accessibility (Engine-Level)
 
-The editor itself must be fully accessible:
+### Editor Accessibility ✅ Complete
+
+The editor itself is fully accessible:
 
 - ~~**Screen Reader Support**~~ ✅ (partial) — AccessibilityAnnouncer with priority-queued text status bar (Low/Normal/High/Critical), visual bottom-bar overlay with color-coded priority, console logging option, configurable display duration. Groundwork for future OS accessibility API integration (UI Automation, AT-SPI, NSAccessibility)
 - ~~**Keyboard-Only Navigation**~~ ✅ — Panel focus shortcuts (Ctrl+1-5 for Hierarchy/Inspector/Viewport/Console/Assets), focus ring indicators (blue border on active panel), keyboard gizmo nudge (Arrow keys: translate/rotate/scale, Ctrl+Arrow: fine nudge, PageUp/PageDown: Y axis), configurable nudge amounts
@@ -874,6 +968,41 @@ The editor itself must be fully accessible:
 - ~~**Visual Accessibility**~~ ✅ — Configurable font sizes, UI scale (0.75-2.0x), custom accent colors (11 elements), 8 colorblind modes, brightness/contrast, 11 themes including 4 high-contrast
 - ~~**Audio Accessibility**~~ ✅ — AudioVisualIndicatorSystem: colored dot overlays for audio events (one-shot fade-out + continuous pulse), configurable size/position/labels. Test buttons in editor settings
 - ~~**Blind-Accessible Workflow**~~ ✅ — Command palette (Ctrl+P) with fuzzy search over 25+ registered commands for entity CRUD, scene operations, view panel toggles, gizmo modes, play mode, and accessibility settings. Keyboard-only navigation (Up/Down/Enter/Esc), category tags, shortcut hints. Announcer integration announces executed commands for screen reader workflows
+
+### Runtime Game Accessibility — Gaps & Planned Work
+
+The following accessibility features exist as infrastructure/settings structs but are **not yet wired to the runtime Player app or UICanvas system**. Games built with the engine currently lack user-facing accessibility unless developers manually implement it.
+
+#### Working at Runtime
+- ~~**Subtitles**~~ ✅ — SubtitleSystem integrated with DialogueSystem, configurable font size (16-48px), background opacity, direction indicators, speaker names, position control
+- ~~**Colorblind Filter**~~ ✅ — 8 colorblind modes applied globally to GPU rendering pipeline via PostProcessing, configurable strength
+- **RuntimeAccessibilitySettings struct** ✅ — Defined with reducedMotion, disableScreenShake, disableFlashingLights, disableFOVEffects, brightness/contrast, subtitle config, input toggle modes. `ApplyToPostProcessing()` method exists
+
+#### Not Yet Runtime-Ready (Infrastructure Exists, Not Wired)
+
+| Feature | Problem | Planned Fix |
+|---------|---------|-------------|
+| **Screen Reader for Game UI** | Announcer only fires for editor actions, not UICanvas interactions | Integrate Announcer into UISystem — announce on focus change, button activation, slider value change |
+| **Alternative Input for Game UI** | AlternativeInputManager defined but Player app doesn't use it | Wire AlternativeInputManager into Player main loop, connect to UISystem input processing |
+| **Audio Visual Indicators at Runtime** | AudioVisualIndicatorSystem only used in editor | Expose to PlayMode and Player, auto-generate indicators for game audio events |
+| **Content Warnings** | ContentWarning system defined but not in Player startup | Add pre-scene content warning overlay in Player, driven by per-scene flags |
+| **Motor Accessibility at Runtime** | Dwell-click, sticky drag only work on editor ImGui widgets | Apply motor settings to UISystem input processing (dwell-click on UICanvas buttons, sticky drag on sliders) |
+
+#### Missing Entirely (Needs Implementation)
+
+| Feature | Priority | Effort | Description |
+|---------|----------|--------|-------------|
+| **UICanvas Keyboard Navigation** | P1 | Medium | Tab/Shift+Tab between focusable UIElements, Enter/Space activation, arrow key menu navigation. Add `tabIndex` field to UIElement, focus state machine in UISystem |
+| **UICanvas Gamepad Navigation** | P1 | Medium | D-pad/analog stick navigation between UIElements, A/B button activation/cancel. Spatial navigation algorithm (find nearest element in direction) |
+| **Focus Indicators** | P1 | Low | Visible focus ring rendering on active UIElement (configurable color/width in UITheme). Render in UISystem when element has keyboard/gamepad focus |
+| **Accessible Labels** | P2 | Low | Add `accessibleLabel` and `accessibleDescription` fields to UIElement for screen reader text. Fall back to widget text if not set |
+| **In-Game Accessibility Menu** | P1 | Medium | UICanvas template (like existing MainMenu/PauseMenu/OptionsMenu templates) with subtitle toggle, colorblind mode dropdown, font size slider, reduced motion toggle, input rebinding. Wired to RuntimeAccessibilitySettings |
+| **High Contrast UI Theme** | P2 | Low | Add `HighContrast` preset to UIThemePreset with WCAG AAA-compliant contrast ratios, bold borders, no transparency |
+| **Font Scaling for Players** | P2 | Low | Player-controlled font size multiplier in RuntimeAccessibilitySettings, applied to UITheme font sizes at runtime |
+| **Dyslexia-Friendly Options** | P3 | Low | Dyslexic-friendly font option in UITheme (OpenDyslexic or similar OFL font), increased letter/word spacing controls |
+| **Reduced Motion for UI** | P2 | Low | Honor RuntimeAccessibilitySettings.reducedMotion in UISystem — skip animations, instant transitions, no scroll inertia |
+| **Colorblind-Safe UI Palettes** | P3 | Low | UITheme variants that avoid red/green reliance, use patterns/icons alongside color to convey state (error, success, warning) |
+| **One-Button Mode** | P3 | Medium | Single-input game interaction mode via switch access scanning over UICanvas elements. Auto-cycle focus with configurable scan speed |
 
 ---
 
@@ -1168,4 +1297,4 @@ Goal: Ship a curated, commercially licensable library so users have beautiful as
 
 ---
 
-*Last updated: 2026-02-10 — Added Artistic Rendering & Visual Techniques, Asset Libraries, Simulation-Driven Geometry, Mathematical & Exotic Geometry, Inverse Rendering*
+*Last updated: 2026-02-10 — Added Feature Accessibility Audit (31 walled-off systems: Player app missing 5 runtime systems, build pipeline not packing 5 asset types, 12 systems lacking script bindings, Level Streaming + Localization disconnected, Newgrounds bindings dead code, 4 components missing from menu, graph shells not connected). Prioritized all items in Implementation Priority Matrix. Added Runtime Game Accessibility audit. Added Tiered Save System, Play Mode Diff Dialog, Save UI, save system AS/VS bindings. Project Hub v2 complete.*
