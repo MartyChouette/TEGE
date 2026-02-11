@@ -36,6 +36,7 @@
 #include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
 #include "Enjin/Assets/FileWatcher.h"
 #include "Enjin/Renderer/RayTracing/RTCapabilities.h"
+#include "Enjin/Editor/FlashTimeline.h"
 #include <vulkan/vulkan.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -310,6 +311,10 @@ public:
     Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
 
+    // Onion skin ghost rendering (editor viewport only)
+    void SetOnionSkinGhosts(const std::vector<Editor::OnionSkinGhost>& ghosts) { m_OnionSkinGhosts = ghosts; }
+    void ClearOnionSkinGhosts() { m_OnionSkinGhosts.clear(); }
+
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
 
@@ -327,6 +332,9 @@ public:
 private:
     void RenderEntity(Entity entity);
     void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
+    void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
+                           const Math::Vector3& tint, f32 opacity);
+    void RenderOnionSkinGhosts();
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
     void CreateDefaultMesh();
@@ -657,6 +665,9 @@ private:
     void* m_RTLightUBOMapped[RT_FRAMES_IN_FLIGHT] = {};
 
     bool m_RTDescriptorsWritten = false;
+
+    // Onion skin ghosts (set by editor, rendered in main pass only)
+    std::vector<Editor::OnionSkinGhost> m_OnionSkinGhosts;
 
     void CreateRTDummyResources();
     void DestroyRTDummyResources();

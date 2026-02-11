@@ -1030,6 +1030,9 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Render onion skin ghosts (editor viewport only, before sprites)
+    RenderOnionSkinGhosts();
+
     // Sorted 2D sprite rendering pass (after 3D geometry)
     RenderSprites();
 
@@ -3631,6 +3634,81 @@ void RenderSystem::RenderEntity(Entity entity) {
     }
     m_DrawCallCount++;
     m_TriangleCount += renderData.indexCount / 3;
+}
+
+void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
+                                      const Math::Vector3& tint, f32 opacity) {
+    if (!m_Pipeline || !m_Renderer) return;
+
+    MeshComponent* mesh = m_World->GetComponent<MeshComponent>(entity);
+    if (!mesh || !mesh->IsValid()) return;
+
+    EntityRenderData* pRD = (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid)
+        ? &m_EntityRenderData[static_cast<usize>(entity)] : SetupEntityBuffers(entity);
+    if (!pRD) return;
+    EntityRenderData& renderData = *pRD;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    // Build ghost push constants — override baseColor with tint, set opacity for transparency
+    Renderer::PushConstants pushConstants{};
+    pushConstants.model = modelMatrix;
+    pushConstants.baseColor = tint;
+    pushConstants.metallic = 0.0f;
+    pushConstants.emissiveColor = Math::Vector3(0, 0, 0);
+    pushConstants.roughness = 1.0f;
+    pushConstants.emissiveStrength = 0.0f;
+    pushConstants.opacity = opacity;
+    pushConstants.alphaCutoff = 0.0f;
+    // Set alpha blend flag (bit 9 = ALPHA_MODE_BLEND)
+    pushConstants.flags = (2 << 8);
+    pushConstants.parallaxScale = 0.0f;
+
+    // Bind default white texture for ghost (no texture lookups needed)
+    if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+        UpdateEntityTextureDescriptors(m_DefaultWhiteTexture.get(), nullptr, nullptr, nullptr, nullptr);
+    }
+
+    // Bind default bone buffer
+    if (m_DefaultBoneBuffer) {
+        UpdateBoneDescriptor(m_DefaultBoneBuffer.get());
+    }
+
+    vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
+
+    // Bind and draw
+    if (renderData.poolAlloc.valid && m_GeometryPool) {
+        m_GeometryPool->BindBuffers(commandBuffer);
+        vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
+                         renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
+    } else if (renderData.vertexBuffer && renderData.indexBuffer) {
+        VkBuffer vertexBuffers[] = { renderData.vertexBuffer->GetBuffer() };
+        VkDeviceSize offsets[] = { 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+        vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+    }
+    m_DrawCallCount++;
+    m_TriangleCount += renderData.indexCount / 3;
+}
+
+void RenderSystem::RenderOnionSkinGhosts() {
+    if (m_OnionSkinGhosts.empty() || !m_IsEditorMode) return;
+
+    m_LastBound.Reset();  // Reset descriptor cache for ghost pass
+
+    for (const auto& ghost : m_OnionSkinGhosts) {
+        // Build model matrix from ghost transform
+        TransformComponent ghostTransform;
+        ghostTransform.position = ghost.position;
+        ghostTransform.rotation = Math::Quaternion::FromEuler(ghost.rotation);
+        ghostTransform.scale = ghost.scale;
+        Math::Matrix4 modelMatrix = ghostTransform.ToMatrix();
+
+        RenderEntityGhost(ghost.entity, modelMatrix, ghost.tint, ghost.ghostOpacity * ghost.alpha);
+    }
 }
 
 void RenderSystem::RenderSprites() {

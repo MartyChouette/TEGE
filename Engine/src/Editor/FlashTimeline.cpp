@@ -1,6 +1,7 @@
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/Logging/Log.h"
 #include <imgui.h>
@@ -112,20 +113,8 @@ void FlashTimelineLayer::GetInterpolatedTransform(u32 frame, Math::Vector3& pos,
     f32 t = (range > 0) ? static_cast<f32>(frame - prev->frameIndex) / range : 0.0f;
     t = std::clamp(t, 0.0f, 1.0f);
 
-    // Apply easing
-    switch (prev->tweenEasing) {
-        case 1: // EaseIn (quadratic)
-            t = t * t;
-            break;
-        case 2: // EaseOut
-            t = t * (2.0f - t);
-            break;
-        case 3: // EaseInOut
-            t = (t < 0.5f) ? 2.0f * t * t : -1.0f + (4.0f - 2.0f * t) * t;
-            break;
-        default: // Linear
-            break;
-    }
+    // Apply easing (25 easing functions via TweenComponent library)
+    t = ECS::ApplyEasing(t, prev->tweenEasing);
 
     // Lerp
     pos = prev->position + (next->position - prev->position) * t;
@@ -302,6 +291,22 @@ void FlashTimelineEditor::Render(ECS::World* world, const EditorSettings& /*sett
 }
 
 void FlashTimelineEditor::DrawToolbar() {
+    // Record mode button (red circle, blinking)
+    {
+        m_RecordBlinkTimer += ImGui::GetIO().DeltaTime;
+        if (m_RecordMode) {
+            bool blink = std::fmod(m_RecordBlinkTimer, 1.0f) < 0.6f;
+            ImGui::PushStyleColor(ImGuiCol_Button, blink ? ImVec4(0.8f, 0.1f, 0.1f, 1.0f) : ImVec4(0.5f, 0.1f, 0.1f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.9f, 0.2f, 0.2f, 1.0f));
+            if (ImGui::Button("(R) REC")) { m_RecordMode = false; }
+            ImGui::PopStyleColor(2);
+        } else {
+            if (ImGui::Button("(R)")) { m_RecordMode = true; m_RecordBlinkTimer = 0; }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Record Mode — gizmo moves create keyframes");
+        }
+    }
+    ImGui::SameLine();
+
     // Transport controls
     if (ImGui::Button("|<")) Stop();
     ImGui::SameLine();
@@ -350,7 +355,7 @@ void FlashTimelineEditor::DrawToolbar() {
     ImGui::SameLine();
 
     // Onion skin toggle
-    ImGui::Checkbox("Onion Skin", &m_OnionSkinEnabled);
+    ImGui::Checkbox("Onion Skin", &m_OnionSkin.enabled);
 
     ImGui::SameLine();
     ImGui::Spacing();
@@ -371,6 +376,19 @@ void FlashTimelineEditor::DrawToolbar() {
     if (ImGui::Button("+ Layer")) {
         std::string name = "Layer " + std::to_string(m_Timeline->layers.size() + 1);
         m_Timeline->AddLayer(name);
+    }
+
+    // Onion skin settings (collapsible, shown when enabled)
+    if (m_OnionSkin.enabled) {
+        if (ImGui::TreeNode("Onion Skin Settings")) {
+            ImGui::SliderInt("Frames Before", &m_OnionSkin.framesBefore, 0, 10);
+            ImGui::SliderInt("Frames After", &m_OnionSkin.framesAfter, 0, 10);
+            ImGui::SliderFloat("Opacity", &m_OnionSkin.opacity, 0.05f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Falloff", &m_OnionSkin.opacityFalloff, 0.1f, 1.0f, "%.2f");
+            ImGui::ColorEdit3("Before Tint", &m_OnionSkin.beforeTint.x);
+            ImGui::ColorEdit3("After Tint", &m_OnionSkin.afterTint.x);
+            ImGui::TreePop();
+        }
     }
 }
 
@@ -667,10 +685,20 @@ void FlashTimelineEditor::DrawFrameGrid() {
                     kf->type = tween ? FlashFrameType::MotionTween : FlashFrameType::Keyframe;
                 }
                 if (tween) {
-                    const char* easings[] = { "Linear", "Ease In", "Ease Out", "Ease In-Out" };
-                    i32 easing = kf->tweenEasing;
-                    if (ImGui::Combo("Easing", &easing, easings, 4)) {
-                        kf->tweenEasing = static_cast<u8>(easing);
+                    static const char* easingNames[] = {
+                        "Linear",
+                        "Ease In Quad", "Ease Out Quad", "Ease In-Out Quad",
+                        "Ease In Cubic", "Ease Out Cubic", "Ease In-Out Cubic",
+                        "Ease In Quart", "Ease Out Quart", "Ease In-Out Quart",
+                        "Ease In Sine", "Ease Out Sine", "Ease In-Out Sine",
+                        "Ease In Expo", "Ease Out Expo", "Ease In-Out Expo",
+                        "Ease In Back", "Ease Out Back", "Ease In-Out Back",
+                        "Ease In Elastic", "Ease Out Elastic", "Ease In-Out Elastic",
+                        "Ease In Bounce", "Ease Out Bounce", "Ease In-Out Bounce"
+                    };
+                    i32 easing = static_cast<i32>(kf->tweenEasing);
+                    if (ImGui::Combo("Easing", &easing, easingNames, static_cast<i32>(ECS::EasingType::COUNT))) {
+                        kf->tweenEasing = static_cast<ECS::EasingType>(easing);
                     }
                 }
             }
@@ -776,11 +804,37 @@ void FlashTimelineEditor::ConvertToTimeline(ECS::World* world) {
             Animation::PropertyKeyframe pk;
             pk.time = static_cast<f32>(kf.frameIndex) / m_Timeline->frameRate;
             pk.value = kf.position;
+            // Map EasingType to TimelineEasing (best-effort for the 4 Timeline easing types)
             switch (kf.tweenEasing) {
-                case 1: pk.easing = Animation::TimelineEasing::EaseIn; break;
-                case 2: pk.easing = Animation::TimelineEasing::EaseOut; break;
-                case 3: pk.easing = Animation::TimelineEasing::EaseInOut; break;
-                default: pk.easing = Animation::TimelineEasing::Linear; break;
+                case ECS::EasingType::EaseInQuad:
+                case ECS::EasingType::EaseInCubic:
+                case ECS::EasingType::EaseInQuart:
+                case ECS::EasingType::EaseInSine:
+                case ECS::EasingType::EaseInExpo:
+                case ECS::EasingType::EaseInBack:
+                case ECS::EasingType::EaseInElastic:
+                case ECS::EasingType::EaseInBounce:
+                    pk.easing = Animation::TimelineEasing::EaseIn; break;
+                case ECS::EasingType::EaseOutQuad:
+                case ECS::EasingType::EaseOutCubic:
+                case ECS::EasingType::EaseOutQuart:
+                case ECS::EasingType::EaseOutSine:
+                case ECS::EasingType::EaseOutExpo:
+                case ECS::EasingType::EaseOutBack:
+                case ECS::EasingType::EaseOutElastic:
+                case ECS::EasingType::EaseOutBounce:
+                    pk.easing = Animation::TimelineEasing::EaseOut; break;
+                case ECS::EasingType::EaseInOutQuad:
+                case ECS::EasingType::EaseInOutCubic:
+                case ECS::EasingType::EaseInOutQuart:
+                case ECS::EasingType::EaseInOutSine:
+                case ECS::EasingType::EaseInOutExpo:
+                case ECS::EasingType::EaseInOutBack:
+                case ECS::EasingType::EaseInOutElastic:
+                case ECS::EasingType::EaseInOutBounce:
+                    pk.easing = Animation::TimelineEasing::EaseInOut; break;
+                default:
+                    pk.easing = Animation::TimelineEasing::Linear; break;
             }
             posTrack.keyframes.push_back(pk);
         }
@@ -789,6 +843,107 @@ void FlashTimelineEditor::ConvertToTimeline(ECS::World* world) {
 
     ENJIN_LOG_INFO(Editor, "Converted Flash timeline to %zu TimelineComponents",
                    m_Timeline->layers.size());
+}
+
+std::vector<OnionSkinGhost> FlashTimelineEditor::ComputeOnionSkinGhosts() const {
+    std::vector<OnionSkinGhost> ghosts;
+    if (!m_Timeline || !m_OnionSkin.enabled) return ghosts;
+
+    u32 currentFrame = m_Timeline->currentFrame;
+
+    for (const auto& layer : m_Timeline->layers) {
+        if (!layer.visible || layer.entity == 0 || layer.keyframes.empty()) continue;
+
+        // Ghost frames before current
+        for (i32 i = 1; i <= m_OnionSkin.framesBefore; ++i) {
+            i32 ghostFrame = static_cast<i32>(currentFrame) - i;
+            if (ghostFrame < 0) continue;
+
+            Math::Vector3 pos, rot, scl;
+            f32 alpha;
+            layer.GetInterpolatedTransform(static_cast<u32>(ghostFrame), pos, rot, scl, alpha);
+
+            f32 falloff = std::pow(m_OnionSkin.opacityFalloff, static_cast<f32>(i - 1));
+            OnionSkinGhost ghost;
+            ghost.entity = layer.entity;
+            ghost.position = pos;
+            ghost.rotation = rot;
+            ghost.scale = scl;
+            ghost.alpha = alpha;
+            ghost.tint = m_OnionSkin.beforeTint;
+            ghost.ghostOpacity = m_OnionSkin.opacity * falloff;
+            ghosts.push_back(ghost);
+        }
+
+        // Ghost frames after current
+        for (i32 i = 1; i <= m_OnionSkin.framesAfter; ++i) {
+            u32 ghostFrame = currentFrame + static_cast<u32>(i);
+            if (ghostFrame >= m_Timeline->totalFrames) continue;
+
+            Math::Vector3 pos, rot, scl;
+            f32 alpha;
+            layer.GetInterpolatedTransform(ghostFrame, pos, rot, scl, alpha);
+
+            f32 falloff = std::pow(m_OnionSkin.opacityFalloff, static_cast<f32>(i - 1));
+            OnionSkinGhost ghost;
+            ghost.entity = layer.entity;
+            ghost.position = pos;
+            ghost.rotation = rot;
+            ghost.scale = scl;
+            ghost.alpha = alpha;
+            ghost.tint = m_OnionSkin.afterTint;
+            ghost.ghostOpacity = m_OnionSkin.opacity * falloff;
+            ghosts.push_back(ghost);
+        }
+    }
+
+    return ghosts;
+}
+
+void FlashTimelineEditor::CaptureKeyframe(ECS::World* world, ECS::Entity entity) {
+    if (!m_Timeline || !world || entity == 0) return;
+
+    // Find the layer for this entity
+    FlashTimelineLayer* targetLayer = nullptr;
+    for (auto& layer : m_Timeline->layers) {
+        if (layer.entity == entity) {
+            targetLayer = &layer;
+            break;
+        }
+    }
+    if (!targetLayer) return;
+
+    // Read current transform from entity
+    auto* tf = world->GetComponent<ECS::TransformComponent>(entity);
+    if (!tf) return;
+
+    // Create or update keyframe at current frame
+    FlashKeyframe& kf = targetLayer->GetOrCreateKeyframe(m_Timeline->currentFrame);
+    kf.position = tf->position;
+    kf.rotation = tf->rotation.ToEuler();
+    kf.scale = tf->scale;
+    kf.type = FlashFrameType::Keyframe;
+
+    // Auto-enable motion tween if there's a previous keyframe
+    if (targetLayer->keyframes.size() > 1) {
+        // Find the previous keyframe and enable motion tween on it
+        for (auto& prevKf : targetLayer->keyframes) {
+            if (prevKf.frameIndex < kf.frameIndex) {
+                prevKf.tweenMotion = true;
+                if (prevKf.type == FlashFrameType::Keyframe)
+                    prevKf.type = FlashFrameType::MotionTween;
+            }
+        }
+    }
+
+    // Read sprite alpha if available
+    auto* sprite = world->GetComponent<ECS::Sprite2DComponent>(entity);
+    if (sprite) {
+        kf.alpha = sprite->alpha;
+    }
+
+    ENJIN_LOG_INFO(Editor, "Captured keyframe at frame %u for entity %llu",
+                   m_Timeline->currentFrame, (unsigned long long)entity);
 }
 
 void FlashTimelineEditor::ImportFromSWFSprite(const std::string& /*swfPath*/) {

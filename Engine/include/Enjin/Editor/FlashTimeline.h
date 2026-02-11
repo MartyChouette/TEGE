@@ -5,6 +5,7 @@
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include <imgui.h>
 #include <string>
@@ -32,6 +33,30 @@ enum class FlashFrameType : u8 {
     ShapeTween      // Interpolated shape morph (not fully supported)
 };
 
+// --- Onion skinning settings ---
+
+struct OnionSkinSettings {
+    bool enabled = false;
+    i32 framesBefore = 2;
+    i32 framesAfter = 1;
+    f32 opacity = 0.3f;
+    f32 opacityFalloff = 0.5f;
+    Math::Vector3 beforeTint{1.0f, 0.4f, 0.4f};  // Red
+    Math::Vector3 afterTint{0.4f, 1.0f, 0.4f};    // Green
+};
+
+// --- Onion skin ghost (render data for a single ghost frame) ---
+
+struct OnionSkinGhost {
+    ECS::Entity entity;
+    Math::Vector3 position;
+    Math::Vector3 rotation;
+    Math::Vector3 scale;
+    f32 alpha;
+    Math::Vector3 tint;
+    f32 ghostOpacity;
+};
+
 // --- Keyframe data ---
 
 struct FlashKeyframe {
@@ -47,7 +72,7 @@ struct FlashKeyframe {
 
     // Tween settings (applies from this keyframe to the next)
     bool tweenMotion = false;
-    u8 tweenEasing = 0;       // 0=Linear, 1=EaseIn, 2=EaseOut, 3=EaseInOut
+    ECS::EasingType tweenEasing = ECS::EasingType::Linear;  // 25 easing functions
 
     // Frame label (like Flash frame labels for gotoAndPlay)
     std::string label;
@@ -154,6 +179,15 @@ public:
     // Import from SWF sprite data
     void ImportFromSWFSprite(const std::string& swfPath);
 
+    // Onion skinning — compute ghost frames for rendering
+    std::vector<OnionSkinGhost> ComputeOnionSkinGhosts() const;
+    const OnionSkinSettings& GetOnionSkinSettings() const { return m_OnionSkin; }
+
+    // Record mode — capture entity transform as keyframe
+    void CaptureKeyframe(ECS::World* world, ECS::Entity entity);
+    bool IsRecordMode() const { return m_RecordMode; }
+    void SetRecordMode(bool record) { m_RecordMode = record; }
+
 private:
     FlashTimelineData* m_Timeline = nullptr;
 
@@ -169,9 +203,11 @@ private:
     f32 m_PlaybackTimer = 0;
 
     // Onion skinning
-    bool m_OnionSkinEnabled = false;
-    i32 m_OnionSkinBefore = 2;
-    i32 m_OnionSkinAfter = 1;
+    OnionSkinSettings m_OnionSkin;
+
+    // Record mode — captures keyframes on gizmo drag end
+    bool m_RecordMode = false;
+    f32 m_RecordBlinkTimer = 0.0f;
 
     // Rendering sub-functions
     void DrawToolbar();

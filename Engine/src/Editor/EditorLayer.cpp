@@ -2201,6 +2201,25 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
 
+    // Submit onion skin ghosts to RenderSystem for editor viewport rendering
+    if (m_RenderSystem && m_FlashTimelineEditor.GetTimeline()) {
+        auto ghosts = m_FlashTimelineEditor.ComputeOnionSkinGhosts();
+        if (!ghosts.empty()) {
+            m_RenderSystem->SetOnionSkinGhosts(ghosts);
+        } else {
+            m_RenderSystem->ClearOnionSkinGhosts();
+        }
+    }
+
+    // Record mode: draw red border around viewport
+    if (m_FlashTimelineEditor.IsRecordMode()) {
+        ImDrawList* fgDL = ImGui::GetForegroundDrawList();
+        f32 blink = std::fmod(static_cast<f32>(ImGui::GetTime()), 1.0f);
+        u8 alpha = static_cast<u8>(150 + 105 * (blink < 0.5f ? blink * 2.0f : 2.0f - blink * 2.0f));
+        fgDL->AddRect(ImVec2(0, 0), io.DisplaySize,
+                       IM_COL32(255, 40, 40, alpha), 0.0f, 0, 3.0f);
+    }
+
     // Draw scene transition overlay (fade to/from black/white)
     if (m_SceneManager.IsTransitioning()) {
         f32 alpha = m_SceneManager.GetTransitionAlpha();
@@ -4376,6 +4395,52 @@ void EditorLayer::DrawInspectorPanel() {
         DrawSmartSuggestions(m_PrimarySelected);
         ImGui::Separator();
         DrawQuickSetup(m_PrimarySelected);
+        ImGui::Separator();
+
+        // Animate button — opens Flash Timeline and sets up recording
+        if (ImGui::Button("Animate")) {
+            // Open FlashTimeline panel if not visible
+            SetPanelVisibility(EditorPanel::FlashTimeline, true);
+
+            // Initialize timeline data if needed
+            if (m_FlashTimelineEditor.GetTimeline() == nullptr) {
+                m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
+            }
+
+            // Find or create a layer for the selected entity
+            bool hasLayer = false;
+            for (auto& layer : m_FlashTimelineData.layers) {
+                if (layer.entity == m_PrimarySelected) {
+                    hasLayer = true;
+                    break;
+                }
+            }
+            if (!hasLayer) {
+                auto* nameComp = m_World->GetComponent<ECS::NameComponent>(m_PrimarySelected);
+                std::string layerName = nameComp ? nameComp->name : "Entity " + std::to_string(m_PrimarySelected);
+                m_FlashTimelineData.AddLayer(layerName, m_PrimarySelected);
+
+                // Create initial keyframe at frame 0 from current transform
+                auto& newLayer = m_FlashTimelineData.layers.back();
+                auto* tf = m_World->GetComponent<ECS::TransformComponent>(m_PrimarySelected);
+                if (tf) {
+                    Editor::FlashKeyframe& kf = newLayer.GetOrCreateKeyframe(0);
+                    kf.position = tf->position;
+                    kf.rotation = tf->rotation.ToEuler();
+                    kf.scale = tf->scale;
+                }
+            }
+
+            // Enable record mode
+            m_FlashTimelineEditor.SetRecordMode(true);
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("?");
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Open animation timeline for this entity.\n"
+                              "Pose the entity with gizmos and keyframes\n"
+                              "are captured automatically in record mode.");
+        }
         ImGui::Separator();
 
         // Add component button
@@ -18847,6 +18912,11 @@ void EditorLayer::DrawGizmos() {
 
                 auto cmd = std::make_unique<TransformCommand>(m_World, m_PrimarySelected, oldTransform, *transform);
                 m_UndoRedo.Execute(std::move(cmd));
+
+                // Record mode: capture keyframe on gizmo drag end
+                if (m_FlashTimelineEditor.IsRecordMode() && m_FlashTimelineEditor.GetTimeline()) {
+                    m_FlashTimelineEditor.CaptureKeyframe(m_World, m_PrimarySelected);
+                }
             }
         }
         // Note: multi-entity undo is not tracked per-entity to keep complexity manageable
