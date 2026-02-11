@@ -282,6 +282,9 @@ Ideas for "simple creation of complex games":
 | Audio Visual Indicators | Medium | Low | P2 | ✅ Complete |
 | Screen Reader Announcer | Medium | Low | P2 | ✅ Complete |
 | Scene Lock UI Enhancements | Medium | Low | P2 | ✅ Complete |
+| Panel Reorganization | Medium | Medium | P2 | ✅ Complete |
+| Security & Robustness Audit | High | Low | P1 | ✅ Complete |
+| Default 60 FPS Frame Rate Limit | Low | Low | P1 | ✅ Complete |
 | OIDN integration | Medium | Medium | P3 | Planned |
 | **— Rendering & Camera —** | | | | |
 | Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | Planned |
@@ -367,7 +370,7 @@ Ideas for "simple creation of complex games":
 ### Pending
 
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
-- **Template Rebuild & Demo Scenes** — Update all 30 templates to latest features, add demo scene per template with "Demo" button
+- **Template Rebuild & Demo Scenes** — Update all 38 templates to latest features, add demo scene per template with "Demo" button
 - **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
 - **Editor Accent Color & Theming** — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added

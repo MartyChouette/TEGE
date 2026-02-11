@@ -108,7 +108,7 @@ struct EditorSettings {
     bool lockCursorOnPlay = true; // Lock/capture cursor when entering play mode
 
     // Performance / Frame Rate
-    FrameRateLimit editorFrameRateLimit = FrameRateLimit::Uncapped;
+    FrameRateLimit editorFrameRateLimit = FrameRateLimit::FPS60;
     bool editorVSync = false;
     bool reduceFrameRateWhenUnfocused = true;
     u32 unfocusedFrameRate = 15;

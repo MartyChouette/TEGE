@@ -11,6 +11,7 @@
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** - System architecture overview (rendering, ECS, physics, scripting, plugins, streaming)
 - **[CODING_STANDARDS.md](CODING_STANDARDS.md)** - Coding style and documentation standards
 - **[ROADMAP.md](ROADMAP.md)** - Technical roadmap, performance findings, node graph expansion, GUI modernization plans
+- **[SECURITY_AUDIT.md](SECURITY_AUDIT.md)** - Security & robustness audit report (35 findings across serialization, networking, renderer, future-proofing)
 
 ## API Reference
 

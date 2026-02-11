@@ -115,7 +115,7 @@ When you launch the editor for the first time:
 
 To set a custom window icon, place an `icon.png` file next to the editor executable. The engine will load it automatically on startup.
 
-You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon**. Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in editor settings and auto-applied on startup. Use **Clear** to revert to the OS default.
+You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon** (or via the Build Config section in Project Settings). Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in editor settings and auto-applied on startup. Use **Clear** to revert to the OS default.
 
 ---
 
@@ -131,12 +131,12 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Inspector** | Component editor for the selected entity. Displays and edits all attached components (50+ component types). Includes an "Add Component" button. |
 | **Console** | Log output for engine messages, warnings, and errors. |
 | **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
-| **Settings** | Grid display, gizmo settings, accent colors, and editor preferences. |
+| **Editor Settings** | Grid display, gizmo settings, accent colors, and editor preferences. |
 | **Post Processing** | Configure bloom, vignette, color grading, FXAA, and film grain. |
-| **Effects (Retro)** | CRT scanlines, pixelation, dithering, and color quantization post-processing. |
+| **Retro Effects** | CRT scanlines, pixelation, dithering, and color quantization post-processing. |
 | **Game View** | Rendered game camera output with Play/Pause/Stop controls. |
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
-| **Skybox** | Skybox configuration: procedural presets, cubemap paths, solid color, and Y-axis rotation. |
+| **Rendering** | Skybox configuration, shadow settings, ambient lighting, cel shading, ray tracing, and fog. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
 | **Visual Script** | Blueprint-style visual scripting editor with 40+ node types and debugger. |
 | **Behavior Tree** | AI behavior tree editor with 20 node types, blackboard editor, and play-mode visualization. |
@@ -248,25 +248,48 @@ Import options include a configurable scale factor.
 
 ## 4. Templates
 
-Enjin provides 15 built-in startup templates. When you create a new project or scene, the template selector offers these options:
+Enjin provides 38 built-in startup templates. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
 
 | Template | Description |
 |----------|-------------|
-| **Blank** | Empty scene with only a directional light. |
+| **Blank** | Empty scene with only a directional light. Start from scratch. |
+| **Game Manager** | Singleton pattern with state machine, score, and timer components. |
 | **2D Platformer** | Side-scrolling setup with a Platformer2D controller, ground plane, and camera. |
 | **2D Top-Down** | Overhead 2D setup with a TopDown2D controller. |
-| **3D Isometric** | Isometric 3D view with a TopDown3D controller and angled camera. |
+| **Endless Runner** | Auto-scrolling runner with lanes, obstacles, and score tracking. |
+| **2D Metroidvania** | Interconnected map with abilities and locked doors. |
+| **Survivor-like** | Top-down auto-attack with waves, XP, and level-up mechanics. |
+| **2D Rogue-like** | Grid-based dungeon with random rooms and permadeath. |
+| **3D Isometric** | 45-degree CRPG view with a TopDown3D controller and angled camera. |
 | **3D Third Person** | Over-the-shoulder camera with a ThirdPerson controller. |
-| **3D First Person** | FPS camera with a FirstPerson controller. |
-| **Visual Novel** | Dialogue-focused setup with text and portrait support. |
-| **RPG Village** | Village scene template with NPCs, interactables, and quest framework. |
-| **Survival** | Survival game template with health, inventory, and resource systems. |
-| **Game Manager** | Minimal template with state machine and timer components for global game logic. |
-| **3D Narrative** | Cinematic camera setup with waypoints for story-driven scenes. |
-| **4P Racing** | 4-player splitscreen racing setup with vehicle controllers. |
-| **Arena Fighter** | Combat arena with health, damage, and AI controllers. |
+| **3D First Person** | FPS camera with a FirstPerson controller and mouse look. |
+| **RPG Village** | 3D RPG scene with NPCs, pickups, enemies, and quest framework. |
+| **3D Narrative** | Dialogue sequencing with condition-based branching and cinematic cameras. |
+| **Survival** | 3D survival with hazards, temperature zones, and resource management. |
 | **PS1 RPG** | Retro-styled RPG with flat shading, vertex snapping, and affine texturing. |
-| **City Builder** | Top-down city building template with grid-based placement. |
+| **City Builder** | Isometric city sim with grid-based placement. |
+| **FPS Arena** | First-person shooter with weapons, respawn, and ammo pickups. |
+| **Team Sports** | 3D soccer/basketball with 2 teams, ball, and goals. |
+| **Tower Defense** | Isometric TD with paths, turrets, and enemy waves. |
+| **Horror** | Walking sim with flashlight, collectible notes, and dark atmosphere. |
+| **Flower Garden** | Procedural flower scene with pluckable petals and scoring. |
+| **Fixed Camera** | Fixed-angle third person (classic RE / God of War style). |
+| **SMT Dungeon** | First-person dungeon crawler with grid movement and encounters. |
+| **3D Souls-like** | Challenging melee combat with bonfires, stamina, and fog gates. |
+| **Planet Gravity** | Spherical gravity — walk on a planet surface. |
+| **Shadow Test** | Shadow debug scene with ground, objects, and configurable light. |
+| **4P Racing** | 4-player splitscreen racing with vehicle controllers. |
+| **Arena Fighter** | Smash-style arena for 4-8 players with dynamic camera. |
+| **Puzzle Platformer** | Pushable blocks with pressure plates, doors, and switches. |
+| **2P Couch Co-op** | Splitscreen co-op for 2 players in a shared world. |
+| **Visual Novel** | Story-driven dialogue with sprites and portrait support. |
+| **Point & Click** | Flash-style adventure with click hotspots and inventory. |
+| **Flash TD** | Classic Flash tower defense with path, towers, and waves. |
+| **Bullet Hell** | Danmaku shmup with bullet patterns and score tracking. |
+| **Idle/Clicker** | Incremental game with click, upgrades, and prestige mechanics. |
+| **Dress Up** | Character dress-up with draggable items, layers, and save. |
+| **Escape Room** | Room escape puzzle with inventory, clues, and combinations. |
+| **Rhythm Game** | Music game with notes, timing windows, and combo system. |
 
 Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre.
 
@@ -591,8 +614,8 @@ Axis-aligned box collision shape.
 | `isTrigger` | bool | false | If true, does not block movement (fires events only). |
 | `friction` | f32 | 0.5 | Surface friction. |
 | `bounciness` | f32 | 0.0 | Restitution (0 = no bounce, 1 = full bounce). |
-| `layer` | u32 | 0 | Collision layer this object belongs to. |
-| `collisionMask` | u32 | 0xFFFFFFFF | Bitmask of layers this object collides with. |
+| `categoryBits` | u32 | 1 | Bitmask of collision groups this object belongs to. |
+| `collisionMask` | u32 | 0xFFFFFFFF | Bitmask of groups this object collides with. |
 
 #### SphereColliderComponent
 
@@ -605,7 +628,7 @@ Spherical collision shape.
 | `isTrigger` | bool | false | Trigger mode. |
 | `friction` | f32 | 0.5 | Surface friction. |
 | `bounciness` | f32 | 0.0 | Restitution. |
-| `layer` | u32 | 0 | Collision layer. |
+| `categoryBits` | u32 | 1 | Collision group bitmask. |
 | `collisionMask` | u32 | 0xFFFFFFFF | Collision mask. |
 
 #### CapsuleColliderComponent
@@ -621,7 +644,7 @@ Capsule collision shape, commonly used for characters.
 | `isTrigger` | bool | false | Trigger mode. |
 | `friction` | f32 | 0.5 | Surface friction. |
 | `bounciness` | f32 | 0.0 | Restitution. |
-| `layer` | u32 | 0 | Collision layer. |
+| `categoryBits` | u32 | 1 | Collision group bitmask. |
 | `collisionMask` | u32 | 0xFFFFFFFF | Collision mask. |
 
 #### TriggerZoneComponent
@@ -1537,7 +1560,7 @@ The following systems are updated each frame during play mode:
 
 ### Skybox
 
-Configure the skybox from the **Skybox** panel (View > Skybox).
+Configure the skybox from the **Rendering** panel (View > Rendering > Rendering).
 
 #### Skybox Types
 
@@ -1579,7 +1602,7 @@ All skybox types support a **Y-axis rotation** slider (0-360 degrees) to orient 
 
 ### Weather
 
-Configure weather effects from the **Effects** panel.
+Configure weather effects from the **Project Settings** panel (View > Settings > Project Settings > Environment).
 
 | Effect | Description |
 |--------|-------------|
@@ -1624,7 +1647,7 @@ These are set on individual `MaterialComponent` instances:
 
 #### Post-Process
 
-These are global effects from the **Effects (Retro)** panel:
+These are global effects from the **Retro Effects** panel (View > Rendering > Retro Effects):
 
 - **CRT scanlines** -- horizontal scanline overlay.
 - **Dithering** -- ordered dithering pattern.
@@ -1633,7 +1656,7 @@ These are global effects from the **Effects (Retro)** panel:
 
 ### World Time
 
-A day/night cycle system with configurable speed. As time advances, the sun position and sky colors change accordingly. Configure from the Effects panel.
+A day/night cycle system with configurable speed. As time advances, the sun position and sky colors change accordingly. Configure from Project Settings > Environment.
 
 ### Wind
 
@@ -1647,7 +1670,7 @@ A global wind system that affects:
 
 ## 9. Accessibility
 
-Enjin includes comprehensive accessibility features, configurable from the **Settings** panel. Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
+Enjin includes comprehensive accessibility features, configurable from the **Editor Settings** panel (View > Settings > Editor Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
 
 ### Editor Themes
 
@@ -1669,7 +1692,7 @@ Eleven themes are available, including four standard themes and seven retro cons
 
 ### Customizable Accent Colors
 
-Beyond the built-in themes, you can fully customize the editor's accent colors from **Settings > Accent Colors**:
+Beyond the built-in themes, you can fully customize the editor's accent colors from **Editor Settings > Accent Colors**:
 
 - **Enable Custom Colors** checkbox activates per-color overrides.
 - 11 accent color fields are available: Button, Button Hover, Button Active, Check Mark, Slider Grab, Slider Grab Active, Resize Grip, Text Selected, Drag Drop Target, Tab Active, Tab Hovered.
@@ -2795,7 +2818,7 @@ Enjin includes a full Vulkan ray tracing pipeline for hybrid raster+RT rendering
 
 ### Editor Panel
 
-The Ray Tracing settings panel is located in the Rendering section of the editor settings:
+The Ray Tracing settings are located in the **Rendering** panel (View > Rendering > Rendering):
 
 - **Supported indicator** — Green "Supported" or red "Not Supported" text based on GPU capabilities
 - **Enable toggle** — Master on/off for the RT pipeline

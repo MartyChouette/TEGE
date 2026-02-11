@@ -190,12 +190,12 @@ enjin/
 - Template Selector - Startup project templates
 
 **Features**:
-- 20+ editor panels (Hierarchy, Inspector, Console, Asset Browser, Settings, Post Processing, Effects, Game View, Scene List, Skybox, Stats Overlay, Profiler, Pixel Editor, Vector Drawing, Behavior Tree, Procedural Generation, Sprite Sheet Importer, Bug Reports & Feedback, Network, Animation Timeline)
+- 20+ editor panels (Hierarchy, Inspector, Console, Asset Browser, Editor Settings, Project Settings, Post Processing, Retro Effects, Rendering, Game View, Scene List, Stats Overlay, Profiler, Pixel Editor, Vector Drawing, Behavior Tree, Procedural Generation, Sprite Sheet Importer, Bug Reports & Feedback, Network, Animation Timeline, Visual Script, Quest Flow)
 - Transform gizmos (translate, rotate, scale) via ImGuizmo
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
 - Scene management with project manifests and scene transitions
-- Startup template selector with 31 built-in templates + custom templates
+- Startup template selector with 38 built-in templates + custom templates
 - Terrain sculpting brushes (raise, lower, flatten, smooth, paint) with viewport ray-heightmap intersection
 - 2D terrain control point drag-to-edit in viewport
 - Bug reporting and feedback system with auto-captured diagnostics
@@ -208,7 +208,7 @@ enjin/
 - `SceneManager` - Project manifests, scene lists, runtime loading, transitions
 
 **Features**:
-- Full serialization of all 60+ component types (including joints and ragdoll)
+- Full serialization of all 70+ component types (including joints, ragdoll, and networking)
 - Project manifest format (.enjinproject)
 - Scene build indices and start scene designation
 - Scene transitions (Instant, Fade Black, Fade White, Cross Fade)
