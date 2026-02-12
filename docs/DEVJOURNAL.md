@@ -4,6 +4,20 @@
 
 ## 2026-02-12
 
+### Comprehensive Audit — 46 Fixes Applied
+Full codebase audit (96 findings documented in `docs/AUDIT_2026_02_12.md`), 46 fixes applied across 24 files covering security, stability, performance, and feature gaps.
+
+**Security (15 fixes):** Replaced std::system with CreateProcessA in shader compiler (command injection), validated NaN/Inf in network entity snapshots, HTML-escaped config fields in HTML5 export (XSS), fixed PlayerId u8 overflow, capped lobby player count, dropped malformed RPC packets, validated Newgrounds API parameters, added contains() checks for save file JSON, capped HTTP response at 16MB, replaced std::stoi with strtol, validated streaming paths against traversal, thread-safe CRC32 init via std::call_once, capped reliable outbox, fixed sequence wraparound arithmetic, replaced inet_addr with inet_pton.
+
+**Stability (10 fixes):** Initialized Physics2D with World in PlayMode+Player, deferred entity destruction during script iteration, clear coroutines before hot-reload, per-entity baseOrthoSize (was static), null-guard physics after factory, index-based coroutine loop, vector division epsilon guard, Sequence node recursion limit, zero-length raycast guard, pure node evaluation depth limit, atomic reference counts.
+
+**Feature gaps (9 fixes):** Wired coroutine scheduler/event bus/script engine bindings in PlayMode, Physics2D updated every frame in PlayMode+Player, localization .csv/.gltf/.glb/.fbx/.obj/.svg files packed in build pipeline, wired VS SetPhysics2D in Player, FlowerSystem SetRenderSystem in PlayMode.
+
+**Performance (6 fixes):** Component queries replace GetAllEntities in FindEntityByTag and ScenePicker, LevelStreaming O(N*M)→O(N+M), GetChildren/GetParent return by reference.
+
+### Play Mode Entity Fix
+Fixed child entities disappearing after stopping play mode. Root cause: ChildrenComponent was never serialized or rebuilt during scene deserialization. After LoadFromString restored a scene, ParentComponent was restored but ChildrenComponent on parents was never created, making child entities invisible in the hierarchy panel.
+
 ### Full-Screen Stipple / Dither Post-Process
 Added a full-screen stipple/dither post-process effect as a primary aesthetic tool. 8 patterns selectable via bitmask — any combination can be enabled simultaneously with thresholds averaged: Bayer 4x4, Bayer 8x8, Blue Noise (interleaved gradient noise), Halftone (circular dot grid), Crosshatch (diagonal lines), Overlook (hex geometric), Ordered 2x2 (coarse retro), and Floyd-Steinberg approximation (pseudo error diffusion). 3 color modes: Monochrome (fg/bg ink/paper), Duo-Tone (two configurable colors), Full Color (pattern applied to luminance, preserving hue). Controls: scale (0.5-8x), density (threshold bias), strength (blend with original), and foreground/background color pickers. Editor shows a 2-column checkbox grid for pattern multi-select. Applied in the post-process chain after palette lock and before gamma correction. Full scene render settings persistence with JSON serialization and auto-migration from old single-pattern format.
 
