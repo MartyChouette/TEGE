@@ -627,7 +627,7 @@ Import dialog enhancements:
 
 - **GPU Frustum Culling** — Integrated into render pipeline, skips off-screen entities before draw calls
 - **Shadow Pipeline Overhaul** — Back-face culling in shadow pass with pipeline depth bias (CSM 0.75/0.75, point 0.5/0.5, spot 0.5/0.5), removed shader-side bias. Fixes ring-of-light under curved objects. Correct cascade frustum computation with world-space ray interpolation
-- **Per-Entity Shadow Dither** — 3 modes (by darkness, distance, angle) using Bayer 4x4 matrix, packed in flag bits 14-15
+- **Per-Entity Shadow Dither** — 3 modes (by darkness, distance, angle) with 6 built-in dither patterns (Bayer 4x4, Bayer 8x8, Blue Noise, Halftone, Crosshatch, Overlook). Mode in flag bits 14-15, pattern in bits 29-31
 - **receiveShadows Flag** — Now checked in shader; entities can opt out of receiving shadows
 - **Shadow Caster Caching** — Pre-filtered shadow caster list avoids redundant iteration per cascade
 

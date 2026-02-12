@@ -62,6 +62,8 @@ struct MaterialComponent {
 
     // Shadow dither mode: 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
     u8 shadowDitherMode = 0;
+    // Shadow dither pattern: 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
+    u8 shadowDitherPattern = 0;
 
     // Artistic surface controls (reuse water push constant slots for non-water entities)
     f32 reflectivity = 0.0f;      // 0-1: environment reflection strength
@@ -162,8 +164,10 @@ struct alignas(16) MaterialGPU {
         if (mat.gouraudOnly) gpu.flags |= (1 << 13);
         // Shadow dither mode packed into bits 14-15
         gpu.flags |= (static_cast<i32>(mat.shadowDitherMode & 0x3) << 14);
-        // Vertex snap resolution packed into bits 24-31
-        gpu.flags |= (static_cast<i32>(mat.vertexSnapResolution) << 24);
+        // Vertex snap resolution packed into bits 24-28 (5 bits, value/8)
+        gpu.flags |= (static_cast<i32>((mat.vertexSnapResolution / 8) & 0x1F) << 24);
+        // Shadow dither pattern packed into bits 29-31 (3 bits)
+        gpu.flags |= (static_cast<i32>(mat.shadowDitherPattern & 0x7) << 29);
 
         return gpu;
     }

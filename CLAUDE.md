@@ -226,7 +226,8 @@ struct PushConstants {
     f32 parallaxScale;      // + padding = 16 bytes
 };
 // flags layout: bits 0-2 render, 3 skinned, 8-9 alpha mode, 10 height tex,
-//   16-19 texture flags, 20-23 retro flags, 24-31 snap resolution
+//   14-15 shadow dither mode, 16-19 texture flags, 20-23 retro flags,
+//   24-28 snap resolution (/8), 29-31 shadow dither pattern
 ```
 
 ### Editor

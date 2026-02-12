@@ -6,7 +6,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
-- **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle)
+- **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
 - **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping, receiveShadows toggle
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
@@ -38,7 +38,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 31 templates (Blank, 2D Platformer, 2D Top-Down, 3D Isometric, 3D Third/First Person, Visual Novel, RPG Village, Survival, Game Manager, 3D Narrative, Racing, Arena Fighter, PS1 RPG, City Builder, Survivor-like, Rogue-like, Shadow Test, Planet Gravity, and more)
+- **Startup Templates** - 22 templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced)
 - **Custom Templates** - Save/load from templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count

@@ -129,6 +129,9 @@ layout(push_constant) uniform PushConstants {
 // Shadow dither mode (bits 14-15): 0=None, 1=By Darkness, 2=By Distance, 3=By Angle
 #define FLAG_SHADOW_DITHER_SHIFT 14
 #define FLAG_SHADOW_DITHER_MASK  (3 << FLAG_SHADOW_DITHER_SHIFT)
+// Shadow dither pattern (bits 29-31): 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
+#define FLAG_SHADOW_DITHER_PATTERN_SHIFT 29
+#define FLAG_SHADOW_DITHER_PATTERN_MASK  (7 << FLAG_SHADOW_DITHER_PATTERN_SHIFT)
 
 // Base color texture sampler (binding 3)
 layout(binding = 3) uniform sampler2D baseColorTexture;
@@ -447,6 +450,60 @@ float bayerDither4x4(ivec2 pos) {
     return float(pattern[idx]) / 16.0;
 }
 
+// 8x8 Bayer dither matrix — finer grain than 4x4
+float bayerDither8x8(ivec2 pos) {
+    const int pattern[64] = int[64](
+         0, 32,  8, 40,  2, 34, 10, 42,
+        48, 16, 56, 24, 50, 18, 58, 26,
+        12, 44,  4, 36, 14, 46,  6, 38,
+        60, 28, 52, 20, 62, 30, 54, 22,
+         3, 35, 11, 43,  1, 33,  9, 41,
+        51, 19, 59, 27, 49, 17, 57, 25,
+        15, 47,  7, 39, 13, 45,  5, 37,
+        63, 31, 55, 23, 61, 29, 53, 21
+    );
+    int idx = (pos.x % 8) + (pos.y % 8) * 8;
+    return float(pattern[idx]) / 64.0;
+}
+
+// Interleaved gradient noise — blue-noise-like spatial distribution
+float blueNoiseDither(ivec2 pos) {
+    return fract(52.9829189 * fract(0.06711056 * float(pos.x) + 0.00583715 * float(pos.y)));
+}
+
+// Halftone — circular dot pattern on a grid
+float halftoneDither(ivec2 pos) {
+    float scale = 6.0;
+    vec2 p = mod(vec2(pos), scale) / scale - 0.5;
+    return length(p) * 1.414;
+}
+
+// Crosshatch — diagonal line pattern
+float crosshatchDither(ivec2 pos) {
+    float s1 = mod(float(pos.x + pos.y), 8.0) / 8.0;
+    float s2 = mod(float(pos.x - pos.y), 6.0) / 6.0;
+    return min(s1, s2);
+}
+
+// Overlook — hexagonal geometric pattern inspired by The Shining carpet
+float overlookDither(ivec2 pos) {
+    vec2 p = vec2(pos) / 10.0;
+    float a = mod(floor(p.x) + floor(p.y), 2.0);
+    vec2 f = fract(p) - 0.5;
+    float d = abs(f.x) + abs(f.y); // diamond distance
+    return mix(d * 1.5, 1.0 - d * 1.5, a);
+}
+
+// Select dither threshold based on pattern index
+float getDitherThreshold(ivec2 pos, int pattern) {
+    if (pattern == 1) return bayerDither8x8(pos);
+    if (pattern == 2) return blueNoiseDither(pos);
+    if (pattern == 3) return halftoneDither(pos);
+    if (pattern == 4) return crosshatchDither(pos);
+    if (pattern == 5) return overlookDither(pos);
+    return bayerDither4x4(pos); // default (pattern 0)
+}
+
 void main() {
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
@@ -634,7 +691,8 @@ void main() {
             // Shadow dither: replace smooth shadow with binary dither pattern
             int shadowDitherMode = (material.flags & FLAG_SHADOW_DITHER_MASK) >> FLAG_SHADOW_DITHER_SHIFT;
             if (shadowDitherMode > 0 && shadow < 1.0) {
-                float ditherThreshold = bayerDither4x4(ivec2(gl_FragCoord.xy));
+                int ditherPattern = (material.flags & FLAG_SHADOW_DITHER_PATTERN_MASK) >> FLAG_SHADOW_DITHER_PATTERN_SHIFT;
+                float ditherThreshold = getDitherThreshold(ivec2(gl_FragCoord.xy), ditherPattern);
                 float ditherFactor;
 
                 if (shadowDitherMode == 1) {

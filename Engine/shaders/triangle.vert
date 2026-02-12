@@ -196,10 +196,10 @@ void main() {
 
     // Vertex snapping (PS1-style): snap clip-space XY to a low-res grid
     if ((pushConstants.flags & FLAG_VERTEX_SNAPPING) != 0) {
-        // Extract snap resolution from bits 24-31 (u8, 0 = disabled)
-        int snapRes = (pushConstants.flags >> 24) & 0xFF;
+        // Extract snap resolution from bits 24-28 (5 bits, value*8 = actual resolution)
+        int snapRes = (pushConstants.flags >> 24) & 0x1F;
         if (snapRes > 0) {
-            float grid = float(snapRes);
+            float grid = float(snapRes) * 8.0;
             // Snap in clip space (after perspective divide)
             vec2 snapped = clipPos.xy / clipPos.w;           // NDC
             snapped = floor(snapped * grid + 0.5) / grid;    // snap to grid

@@ -5008,6 +5008,17 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         }
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("Apply dither pattern to shadows instead of smooth darkening");
 
+        // Shadow dither pattern (only shown when dither mode is active)
+        if (material->shadowDitherMode > 0) {
+            const char* shadowDitherPatterns[] = { "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone", "Crosshatch", "Overlook" };
+            int currentPattern = static_cast<int>(material->shadowDitherPattern);
+            if (currentPattern > 5) currentPattern = 0;
+            if (InspectorUndo::Combo(m_UndoRedo, "Dither Pattern", &currentPattern, shadowDitherPatterns, 6)) {
+                material->shadowDitherPattern = static_cast<u8>(currentPattern);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Bayer: ordered grid | Blue Noise: organic scatter | Halftone: comic dots | Crosshatch: pen strokes | Overlook: geometric hex");
+        }
+
         // Artistic surface controls
         if (ImGui::TreeNode("Artistic Surface")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Reflectivity", &material->reflectivity, 0.005f, 0.0f, 1.0f);

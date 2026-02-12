@@ -1237,7 +1237,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-                pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+                pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
+                pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
                 pushConstants.parallaxScale = material->parallaxScale;
                 // Artistic surface params (reused push constant slots)
                 pushConstants.surfaceParam1 = material->reflectivity;
@@ -1263,7 +1264,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
             if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
             if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
-                pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
+                pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
 
             // Set wind sway flag for vegetation entities
@@ -1584,7 +1585,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 if (material->uvQuantize) pushConstants.flags |= (1 << 12);
                 if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
                 pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-                pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+                pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
+                pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
                 pushConstants.parallaxScale = material->parallaxScale;
                 // Artistic surface params (reused push constant slots)
                 pushConstants.surfaceParam1 = material->reflectivity;
@@ -1610,7 +1612,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
             if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
             if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
-                pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
+                pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
             }
 
             VegetationComponent* vegComp = m_World->GetComponent<VegetationComponent>(entity);
@@ -2039,7 +2041,8 @@ void RenderSystem::UploadObjectData() {
             if (material->uvQuantize) flags |= (1 << 12);
             if (material->gouraudOnly) flags |= (1 << 13);
             flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-            flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+            flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
+            flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
             obj.flags = flags;
             obj.parallaxScale = material->parallaxScale;
         } else {
@@ -3510,7 +3513,7 @@ void RenderSystem::RenderEntity(Entity entity) {
     if (m_GlobalUVQuantize) pushConstants.flags |= (1 << 12);
     if (m_GlobalGouraudOnly) pushConstants.flags |= (1 << 13);
     if (m_GlobalVertexSnapping && m_GlobalVertexSnapResolution > 0) {
-        pushConstants.flags = (pushConstants.flags & 0x00FFFFFF) | (static_cast<i32>(m_GlobalVertexSnapResolution) << 24);
+        pushConstants.flags = (pushConstants.flags & ~(0x1F << 24)) | (static_cast<i32>((m_GlobalVertexSnapResolution / 8) & 0x1F) << 24);
     }
 
     // Sprite texture override — use sprite's texturePath instead of material's
