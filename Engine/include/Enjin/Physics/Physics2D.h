@@ -208,6 +208,10 @@ private:
     u32 m_PositionIterations = 3;
     bool m_CCDEnabled = false;
 
+    // Reusable per-frame buffers (avoid heap allocation every frame)
+    std::vector<std::pair<ECS::Entity, ECS::Entity>> m_CachedPairs;
+    std::vector<Manifold2D> m_CachedManifolds;
+
     // Contact tracking for enter/exit callbacks
     std::unordered_set<u64> m_ActiveContacts;  // Pack entity pair into u64
 

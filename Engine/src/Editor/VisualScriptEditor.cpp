@@ -556,9 +556,7 @@ void VisualScriptEditor::DrawEntitySidebar() {
     }
 
     // List all entities with VisualScriptComponent
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (!m_World->HasComponent<ECS::VisualScriptComponent>(entity)) continue;
-
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::VisualScriptComponent>()) {
         // Get name
         std::string name = "Entity " + std::to_string(entity);
         auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);

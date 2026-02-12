@@ -252,6 +252,9 @@ private:
     // Spatial hash grid for broad-phase collision detection
     SpatialHashGrid m_SpatialHash;
 
+    // Reusable per-frame buffer for candidate pairs (avoid per-frame allocation)
+    std::vector<std::pair<ECS::Entity, ECS::Entity>> m_CandidatePairs;
+
     // Collision pair tracking for enter/exit detection
     // Each pair is encoded as (min(a,b) << 32) | max(a,b) for consistent ordering
     std::unordered_set<u64> m_PreviousCollisionPairs;

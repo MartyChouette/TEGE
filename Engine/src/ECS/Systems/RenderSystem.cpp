@@ -1760,23 +1760,9 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
     // Invalidate shadow caster cache (removed entity may have been a shadow caster)
     m_ShadowCastersDirty = true;
 
-    // Invalidate cached player entity and search for a replacement
+    // Invalidate cached player entity — will be re-discovered lazily
     if (entity == m_CachedPlayerEntity) {
         m_CachedPlayerEntity = INVALID_ENTITY;
-        if (m_World) {
-            for (Entity e : m_World->GetAllEntities()) {
-                if (e == entity) continue;
-                bool hasController = m_World->HasComponent<ThirdPersonController>(e) ||
-                                     m_World->HasComponent<FirstPersonController>(e) ||
-                                     m_World->HasComponent<Platformer2DController>(e) ||
-                                     m_World->HasComponent<TopDown2DController>(e) ||
-                                     m_World->HasComponent<TopDown3DController>(e);
-                if (hasController) {
-                    m_CachedPlayerEntity = e;
-                    break;
-                }
-            }
-        }
     }
 }
 

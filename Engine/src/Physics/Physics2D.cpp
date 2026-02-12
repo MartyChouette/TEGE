@@ -232,16 +232,16 @@ void PhysicsWorld2D::Update(f32 deltaTime) {
     IntegrateVelocities(deltaTime);
 
     // 2. Broad phase: generate candidate pairs
-    std::vector<std::pair<ECS::Entity, ECS::Entity>> pairs;
-    BroadPhase(pairs);
+    m_CachedPairs.clear();
+    BroadPhase(m_CachedPairs);
 
     // 3. Narrow phase: generate manifolds
-    std::vector<Manifold2D> manifolds;
-    NarrowPhase(pairs, manifolds);
+    m_CachedManifolds.clear();
+    NarrowPhase(m_CachedPairs, m_CachedManifolds);
 
     // 4. Resolve collisions (impulse solver, iterated)
     for (u32 iter = 0; iter < m_VelocityIterations; ++iter) {
-        ResolveCollisions(manifolds, deltaTime);
+        ResolveCollisions(m_CachedManifolds, deltaTime);
     }
 
     // 5. Solve joints
@@ -254,7 +254,7 @@ void PhysicsWorld2D::Update(f32 deltaTime) {
 
     // 7. Position correction (Baumgarte stabilization) for remaining penetration
     for (u32 iter = 0; iter < m_PositionIterations; ++iter) {
-        for (auto& m : manifolds) {
+        for (auto& m : m_CachedManifolds) {
             auto* bodyA = m_World->GetComponent<Body2DComponent>(m.entityA);
             auto* bodyB = m_World->GetComponent<Body2DComponent>(m.entityB);
             auto* tA = m_World->GetComponent<ECS::TransformComponent>(m.entityA);
@@ -284,7 +284,7 @@ void PhysicsWorld2D::Update(f32 deltaTime) {
 
     // 9. Contact tracking for enter/exit callbacks
     std::unordered_set<u64> newContacts;
-    for (const auto& m : manifolds) {
+    for (const auto& m : m_CachedManifolds) {
         u64 key = MakePairKey(m.entityA, m.entityB);
         newContacts.insert(key);
 
@@ -390,11 +390,7 @@ void PhysicsWorld2D::BroadPhase(std::vector<std::pair<ECS::Entity, ECS::Entity>>
     pairs.clear();
 
     // Gather all entities with Body2D
-    std::vector<ECS::Entity> entities;
-    for (ECS::Entity e : m_World->GetEntitiesWithComponent<Body2DComponent>()) {
-        entities.push_back(e);
-    }
-
+    const auto& entities = m_World->GetEntitiesWithComponent<Body2DComponent>();
     if (entities.size() < 2) return;
 
     // Precompute AABBs

@@ -180,6 +180,42 @@ static void Animator_SetSpeed(u64 id, f32 speed) {
     }
 }
 
+static void Animator_Stop(u64 id) {
+    if (!s_BindingsWorld) return;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    if (ac) ac->animator.Stop();
+}
+
+static void Animator_Pause(u64 id) {
+    if (!s_BindingsWorld) return;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    if (ac) ac->animator.Pause();
+}
+
+static void Animator_Resume(u64 id) {
+    if (!s_BindingsWorld) return;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    if (ac) ac->animator.Resume();
+}
+
+static bool Animator_IsPlaying(u64 id) {
+    if (!s_BindingsWorld) return false;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    return ac ? ac->animator.IsPlaying() : false;
+}
+
+static std::string Animator_GetCurrentAnimation(u64 id) {
+    if (!s_BindingsWorld) return "";
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    return ac ? ac->animator.GetCurrentAnimationName() : "";
+}
+
+static f32 Animator_GetSpeed(u64 id) {
+    if (!s_BindingsWorld) return 1.0f;
+    auto* ac = s_BindingsWorld->GetComponent<AnimatorComponent>(static_cast<Entity>(id));
+    return ac ? ac->animator.GetSpeed() : 1.0f;
+}
+
 // ============================================================================
 // CharacterController component access
 // ============================================================================
@@ -370,6 +406,12 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     // Animator
     AS_CHECK(engine->RegisterGlobalFunction("void Animator_Play(uint64, const string &in)", asFUNCTION(Animator_Play), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Animator_SetSpeed(uint64, float)", asFUNCTION(Animator_SetSpeed), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Stop(uint64)", asFUNCTION(Animator_Stop), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Pause(uint64)", asFUNCTION(Animator_Pause), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Animator_Resume(uint64)", asFUNCTION(Animator_Resume), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Animator_IsPlaying(uint64)", asFUNCTION(Animator_IsPlaying), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Animator_GetCurrentAnimation(uint64)", asFUNCTION(Animator_GetCurrentAnimation), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Animator_GetSpeed(uint64)", asFUNCTION(Animator_GetSpeed), asCALL_CDECL));
 
     // CharacterController
     AS_CHECK(engine->RegisterGlobalFunction("void Controller_SetMoveSpeed(uint64, float)", asFUNCTION(Controller_SetMoveSpeed), asCALL_CDECL));

@@ -342,12 +342,12 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     };
 
     std::vector<SpriteEntry> sortedSprites;
+    sortedSprites.reserve(world->GetEntitiesWithComponent<ECS::Sprite2DComponent>().size());
 
     for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::Sprite2DComponent>()) {
-        if (!world->HasComponent<ECS::TransformComponent>(entity)) continue;
         // Skip invisible entities
         auto* xformBatch = world->GetComponent<ECS::TransformComponent>(entity);
-        if (xformBatch && !xformBatch->visible) continue;
+        if (!xformBatch || !xformBatch->visible) continue;
         // Skip entities that also have TilemapComponent (those are rendered separately)
         if (world->HasComponent<ECS::TilemapComponent>(entity)) continue;
 

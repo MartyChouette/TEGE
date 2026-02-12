@@ -977,6 +977,7 @@ void EditorLayer::StartPlayMode() {
     // NOTE: VSync switching disabled for now - causes swapchain sync issues
     // TODO: Properly sync renderer state after swapchain recreation
     Scripting::SetBindingsWeather(&m_WeatherSystem);
+    Scripting::SetBindingsSceneManager(&m_SceneManager);
     m_CachedPlayerEntity = ECS::INVALID_ENTITY; // Invalidate cache for new play session
     m_PlayMode.Play();
 }
@@ -3731,12 +3732,11 @@ void EditorLayer::DrawHierarchyPanel() {
             if (ECS::HasParent(m_World, entity)) continue;
 
             std::string name;
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+            if (nameComp) {
+                name = nameComp->name;
             } else {
-                std::stringstream ss;
-                ss << "Entity " << entity;
-                name = ss.str();
+                name = "Entity " + std::to_string(entity);
             }
 
             DrawEntityNode(entity, name);
@@ -3997,8 +3997,8 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
         ImGui::Separator();
         if (ImGui::MenuItem("Save as Prefab...")) {
             std::string defaultName = "prefab.enjprefab";
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                defaultName = m_World->GetComponent<ECS::NameComponent>(entity)->name + ".enjprefab";
+            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+                defaultName = nc->name + ".enjprefab";
             }
             std::vector<FileFilter> filters = {{ "Prefab Files", "*.enjprefab" }};
             std::string path = FileDialog::SaveFile("Save as Prefab", filters, "", defaultName);
@@ -4074,12 +4074,11 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     if (hasChildren && opened) {
         for (ECS::Entity child : childEntities) {
             std::string childName;
-            if (m_World->HasComponent<ECS::NameComponent>(child)) {
-                childName = m_World->GetComponent<ECS::NameComponent>(child)->name;
+            auto* childNameComp = m_World->GetComponent<ECS::NameComponent>(child);
+            if (childNameComp) {
+                childName = childNameComp->name;
             } else {
-                std::stringstream ss;
-                ss << "Entity " << child;
-                childName = ss.str();
+                childName = "Entity " + std::to_string(child);
             }
             DrawEntityNode(child, childName);
         }
@@ -15266,8 +15265,7 @@ void EditorLayer::FocusOnEntity(ECS::Entity entity) {
         Math::Vector3 globalMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
         bool foundChild = false;
 
-        for (ECS::Entity child : m_World->GetAllEntities()) {
-            if (child == entity) continue;
+        for (ECS::Entity child : ECS::GetChildren(m_World, entity)) {
             auto* childTransform = m_World->GetComponent<ECS::TransformComponent>(child);
             if (!childTransform) continue;
 
@@ -21382,8 +21380,8 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
         m_ConsoleLog.push_back("Entities (" + std::to_string(entities.size()) + "):");
         for (ECS::Entity entity : entities) {
             std::string name = "Entity " + std::to_string(entity);
-            if (m_World->HasComponent<ECS::NameComponent>(entity)) {
-                name = m_World->GetComponent<ECS::NameComponent>(entity)->name;
+            if (auto* nc = m_World->GetComponent<ECS::NameComponent>(entity)) {
+                name = nc->name;
             }
             std::string line = "  [" + std::to_string(entity) + "] " + name;
             if (IsSelected(entity)) line += " (selected)";
@@ -25685,20 +25683,49 @@ void EditorLayer::DrawProceduralGenPanel() {
 std::string EditorLayer::RunGitCommand(const std::string& args, const std::string& workingDir) {
     std::string result;
 #ifdef _WIN32
-    std::string cmd = "cd /d \"" + workingDir + "\" && git " + args + " 2>&1";
-    FILE* pipe = _popen(cmd.c_str(), "r");
+    // Use CreateProcessA to avoid shell command injection via workingDir/args
+    SECURITY_ATTRIBUTES sa = {};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    HANDLE hReadPipe = NULL, hWritePipe = NULL;
+    if (!CreatePipe(&hReadPipe, &hWritePipe, &sa, 0)) return "";
+    SetHandleInformation(hReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOA si = {};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdOutput = hWritePipe;
+    si.hStdError = hWritePipe;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi = {};
+
+    std::string cmdLine = "git " + args;
+    if (!CreateProcessA(NULL, cmdLine.data(), NULL, NULL, TRUE,
+                        CREATE_NO_WINDOW, NULL, workingDir.c_str(), &si, &pi)) {
+        CloseHandle(hReadPipe);
+        CloseHandle(hWritePipe);
+        return "";
+    }
+    CloseHandle(hWritePipe);
+
+    char buffer[4096];
+    DWORD bytesRead = 0;
+    while (ReadFile(hReadPipe, buffer, sizeof(buffer) - 1, &bytesRead, NULL) && bytesRead > 0) {
+        buffer[bytesRead] = '\0';
+        result += buffer;
+    }
+    CloseHandle(hReadPipe);
+    WaitForSingleObject(pi.hProcess, 5000);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
 #else
     std::string cmd = "cd \"" + workingDir + "\" && git " + args + " 2>&1";
     FILE* pipe = popen(cmd.c_str(), "r");
-#endif
     if (!pipe) return "";
     char buffer[4096];
     while (fgets(buffer, sizeof(buffer), pipe)) {
         result += buffer;
     }
-#ifdef _WIN32
-    _pclose(pipe);
-#else
     pclose(pipe);
 #endif
     // Trim trailing newline

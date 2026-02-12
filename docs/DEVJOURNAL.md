@@ -4,6 +4,17 @@
 
 ## 2026-02-12
 
+### Comprehensive Audit — Round 2: 28 More Fixes
+Second round of audit fixes across 18 files.
+
+**Security (1 fix):** Replaced popen() with CreateProcessA+pipe in Git integration (N2 — command injection via project path).
+
+**Performance (16 fixes):** FindEntityByName VS node O(N)→O(1) via World::FindEntityByName (P1). HasComponent+GetComponent merged to single GetComponent in PhysicsWorld SyncFromECS (6 collider lookups, P6-P10), EditorLayer hierarchy (3 NameComponent lookups), SpriteBatchRenderer (1 TransformComponent), ControllerSystem FPS grid (1 BoxCollider). GetAllEntities→component query in VisualScriptEditor (P22), RenderSystem OnEntityRemoved (P23), EditorLayer FocusOnSelection uses GetChildren instead of full scan (P24). Per-frame allocation elimination: Physics2D pairs+manifolds→member vectors (P11), SimplePhysics candidatePairs→member vector (P12), PhysicsWorld aliveEntities map→unordered_set (P13). SpriteBatchRenderer reserve() (P20). Physics2D BroadPhase avoids entity copy (P11).
+
+**Feature (9 fixes):** EditorLayer wires SetBindingsWeather+SetBindingsSceneManager before PlayMode::Play() (F1). Player wires UISystem TextureResolver stub (F9). 6 new Animator script bindings: Stop, Pause, Resume, IsPlaying, GetCurrentAnimation, GetSpeed (F13). 10 new VS nodes: Tween Position, Tween Scale, Dialogue Start/Advance/IsActive, Animator Stop/IsPlaying (F14/F15), plus extended Animator node type IDs.
+
+**Stability (1 fix):** RenderSystem OnEntityRemoved no longer scans all entities to find replacement player (deferred to lazy lookup).
+
 ### Comprehensive Audit — 46 Fixes Applied
 Full codebase audit (96 findings documented in `docs/AUDIT_2026_02_12.md`), 46 fixes applied across 24 files covering security, stability, performance, and feature gaps.
 

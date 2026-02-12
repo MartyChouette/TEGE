@@ -254,6 +254,21 @@ constexpr const char* UISetFocus           = "UI_SetFocus";
 constexpr const char* UIClearFocus         = "UI_ClearFocus";
 constexpr const char* UIGetFocusedElement  = "UI_GetFocusedElement";
 
+// Tween
+constexpr const char* TweenPosition        = "Tween_Position";
+constexpr const char* TweenRotation        = "Tween_Rotation";
+constexpr const char* TweenScale           = "Tween_Scale";
+constexpr const char* TweenFloat           = "Tween_Float";
+
+// Dialogue
+constexpr const char* DialogueStart        = "Dialogue_Start";
+constexpr const char* DialogueAdvance      = "Dialogue_Advance";
+constexpr const char* DialogueIsActive     = "Dialogue_IsActive";
+
+// Animator (extended)
+constexpr const char* AnimatorStop         = "Animator_Stop";
+constexpr const char* AnimatorIsPlaying    = "Animator_IsPlaying";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

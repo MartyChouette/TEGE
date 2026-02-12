@@ -526,11 +526,11 @@ void SimplePhysics::DetectCollisionEvents() {
     }
 
     // Get candidate pairs from spatial hash (only entities sharing adjacent cells)
-    std::vector<std::pair<ECS::Entity, ECS::Entity>> candidatePairs;
-    m_SpatialHash.GetPotentialPairs(candidatePairs);
+    m_CandidatePairs.clear();
+    m_SpatialHash.GetPotentialPairs(m_CandidatePairs);
 
     // Narrow-phase: test candidate pairs
-    for (auto& [entityA, entityB] : candidatePairs) {
+    for (auto& [entityA, entityB] : m_CandidatePairs) {
         // Get collision filtering
         ColliderInfo infoA = GetColliderInfo(entityA);
         ColliderInfo infoB = GetColliderInfo(entityB);

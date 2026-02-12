@@ -1146,10 +1146,10 @@ void ControllerSystem::UpdateFirstPerson(Entity entity, FirstPersonController& c
                 bool blocked = false;
                 if (m_World) {
                     for (ECS::Entity other : m_World->GetEntitiesWithComponent<BoxColliderComponent>()) {
-                        if (!m_World->HasComponent<TransformComponent>(other)) continue;
                         auto* col = m_World->GetComponent<BoxColliderComponent>(other);
-                        if (col->isTrigger) continue;  // Triggers don't block
+                        if (!col || col->isTrigger) continue;  // Triggers don't block
                         auto* otherT = m_World->GetComponent<TransformComponent>(other);
+                        if (!otherT) continue;
                         // AABB in world space
                         f32 colCX = otherT->position.x + col->center.x;
                         f32 colCZ = otherT->position.z + col->center.z;

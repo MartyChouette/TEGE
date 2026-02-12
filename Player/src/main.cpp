@@ -657,6 +657,12 @@ private:
         // Wire dialogue system event bus
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
 
+        // Wire UISystem texture resolver (basic — images without ImGui descriptor support will be skipped)
+        m_UISystem.SetTextureResolver([](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
+            (void)path; outW = 0; outH = 0;
+            return nullptr; // TODO: Wire through Vulkan ImGui texture descriptor for full image support
+        });
+
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);

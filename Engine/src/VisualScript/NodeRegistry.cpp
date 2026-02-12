@@ -20,6 +20,7 @@
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/Localization.h"
 #include "Enjin/ECS/Components/Flower.h"
+#include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
@@ -1920,14 +1921,7 @@ void NodeRegistry::RegisterBuiltinNodes() {
             std::string name = std::holds_alternative<std::string>(inputs[0]) ?
                                std::get<std::string>(inputs[0]) : "";
             if (name.empty()) return ECS::INVALID_ENTITY;
-
-            for (auto entity : ctx.world->GetAllEntities()) {
-                if (ctx.world->HasComponent<ECS::NameComponent>(entity)) {
-                    auto* nameComp = ctx.world->GetComponent<ECS::NameComponent>(entity);
-                    if (nameComp && nameComp->name == name) return entity;
-                }
-            }
-            return ECS::INVALID_ENTITY;
+            return ctx.world->FindEntityByName(name);
         };
         RegisterNode(def);
     }
@@ -4546,6 +4540,236 @@ void NodeRegistry::RegisterBuiltinNodes() {
                     reinterpret_cast<const u8*>(data.data()), static_cast<u32>(data.size()));
             }
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // TWEEN NODES
+    // ========================================================================
+
+    // Tween Position
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenPosition;
+        def.displayName = "Tween Position";
+        def.description = "Start a position tween on an entity's TweenComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Target", PK::Input),
+            Float("Duration", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "position", "move", "animate", "lerp"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* tc = ctx.world->GetComponent<ECS::TweenComponent>(target);
+            if (tc && !tc->tweens.empty()) {
+                auto& entry = tc->tweens[0];
+                entry.property = ECS::TweenProperty::Position;
+                if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                    entry.endValue = std::get<Math::Vector3>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    entry.duration = std::get<f32>(inputs[3]);
+                entry.useCurrentAsStart = true;
+                entry.elapsed = 0.0f;
+                entry.isPlaying = true;
+                entry.isComplete = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Tween Scale
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenScale;
+        def.displayName = "Tween Scale";
+        def.description = "Start a scale tween on an entity's TweenComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Target Scale", PK::Input),
+            Float("Duration", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "scale", "resize", "animate"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* tc = ctx.world->GetComponent<ECS::TweenComponent>(target);
+            if (tc && !tc->tweens.empty()) {
+                auto& entry = tc->tweens[0];
+                entry.property = ECS::TweenProperty::Scale;
+                if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                    entry.endValue = std::get<Math::Vector3>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    entry.duration = std::get<f32>(inputs[3]);
+                entry.useCurrentAsStart = true;
+                entry.elapsed = 0.0f;
+                entry.isPlaying = true;
+                entry.isComplete = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // DIALOGUE NODES
+    // ========================================================================
+
+    // Dialogue Start
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueStart;
+        def.displayName = "Start Dialogue";
+        def.description = "Begin dialogue playback on an entity with DialogueComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"dialogue", "talk", "conversation", "start", "npc"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* dlg = ctx.world->GetComponent<ECS::DialogueComponent>(target);
+            if (dlg) {
+                dlg->currentLine = 0;
+                dlg->currentChar = 0;
+                dlg->isTyping = true;
+                dlg->waitingForInput = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Dialogue Advance
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueAdvance;
+        def.displayName = "Advance Dialogue";
+        def.description = "Advance to next line or finish typing in active dialogue";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"dialogue", "advance", "next", "continue"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* dlg = ctx.world->GetComponent<ECS::DialogueComponent>(target);
+            if (dlg && dlg->waitingForInput) {
+                dlg->currentLine++;
+                dlg->currentChar = 0;
+                dlg->isTyping = true;
+                dlg->waitingForInput = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Dialogue Is Active (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::DialogueIsActive;
+        def.displayName = "Is Dialogue Active";
+        def.description = "Check if an entity has active dialogue in progress";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.9f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Active", PK::Output)};
+        def.keywords = {"dialogue", "active", "talking", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* dlg = ctx.world->GetComponent<ECS::DialogueComponent>(target);
+            if (!dlg) return false;
+            return !dlg->IsComplete();
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // ANIMATOR NODES (extended — Play/SetSpeed/GetSpeed already registered above)
+    // ========================================================================
+
+    // Animator Stop
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnimatorStop;
+        def.displayName = "Stop Animation";
+        def.description = "Stop the currently playing animation on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"animator", "animation", "stop"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* ac = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
+            if (ac) ac->animator.Stop();
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Animator Is Playing (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnimatorIsPlaying;
+        def.displayName = "Is Animation Playing";
+        def.description = "Check if an animation is currently playing on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Playing", PK::Output)};
+        def.keywords = {"animator", "animation", "playing", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ac = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
+            return ac ? ac->animator.IsPlaying() : false;
         };
         RegisterNode(def);
     }

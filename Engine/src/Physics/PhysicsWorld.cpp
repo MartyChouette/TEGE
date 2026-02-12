@@ -2,6 +2,7 @@
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 #include <algorithm>
+#include <unordered_set>
 
 namespace Enjin {
 namespace Physics {
@@ -300,11 +301,11 @@ void PhysicsWorld::SyncFromECS() {
     auto entities = m_ECSWorld->GetEntitiesWithComponent<ECS::RigidbodyComponent>();
 
     // Track which entities are still alive so we can prune stale bodies
-    std::unordered_map<ECS::Entity, bool> aliveEntities;
+    std::unordered_set<ECS::Entity> aliveEntities;
     aliveEntities.reserve(entities.size());
 
     for (auto entity : entities) {
-        aliveEntities[entity] = true;
+        aliveEntities.insert(entity);
 
         auto* rb = m_ECSWorld->GetComponent<ECS::RigidbodyComponent>(entity);
         auto* transform = m_ECSWorld->GetComponent<ECS::TransformComponent>(entity);
@@ -325,8 +326,7 @@ void PhysicsWorld::SyncFromECS() {
         // Determine collider center offset and configure shape
         Math::Vector3 colliderOffset(0.0f, 0.0f, 0.0f);
 
-        if (m_ECSWorld->HasComponent<ECS::BoxColliderComponent>(entity)) {
-            auto* box = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity);
+        if (auto* box = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity)) {
             body->SetShape(RigidBody::Shape::Box);
             colliderOffset = box->center;
 
@@ -341,8 +341,7 @@ void PhysicsWorld::SyncFromECS() {
             body->SetRestitution(box->bounciness);
             body->SetCategoryBits(box->categoryBits);
             body->SetCollisionMask(box->collisionMask);
-        } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
-            auto* sphere = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity);
+        } else if (auto* sphere = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity)) {
             body->SetShape(RigidBody::Shape::Sphere);
             colliderOffset = sphere->center;
 
@@ -353,8 +352,7 @@ void PhysicsWorld::SyncFromECS() {
             body->SetRestitution(sphere->bounciness);
             body->SetCategoryBits(sphere->categoryBits);
             body->SetCollisionMask(sphere->collisionMask);
-        } else if (m_ECSWorld->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
-            auto* capsule = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity);
+        } else if (auto* capsule = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
             body->SetShape(RigidBody::Shape::Sphere);  // Approximate capsule as sphere
             colliderOffset = capsule->center;
 
@@ -404,12 +402,12 @@ void PhysicsWorld::SyncToECS() {
 
         // Determine collider center offset to subtract when writing back
         Math::Vector3 colliderOffset(0.0f, 0.0f, 0.0f);
-        if (m_ECSWorld->HasComponent<ECS::BoxColliderComponent>(entity)) {
-            colliderOffset = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity)->center;
-        } else if (m_ECSWorld->HasComponent<ECS::SphereColliderComponent>(entity)) {
-            colliderOffset = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity)->center;
-        } else if (m_ECSWorld->HasComponent<ECS::CapsuleColliderComponent>(entity)) {
-            colliderOffset = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity)->center;
+        if (auto* box = m_ECSWorld->GetComponent<ECS::BoxColliderComponent>(entity)) {
+            colliderOffset = box->center;
+        } else if (auto* sphere = m_ECSWorld->GetComponent<ECS::SphereColliderComponent>(entity)) {
+            colliderOffset = sphere->center;
+        } else if (auto* capsule = m_ECSWorld->GetComponent<ECS::CapsuleColliderComponent>(entity)) {
+            colliderOffset = capsule->center;
         }
 
         // Write position back (subtract collider offset)

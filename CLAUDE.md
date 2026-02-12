@@ -280,7 +280,7 @@ struct PushConstants {
 ### Scripting
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload
-- ~290 bound functions across math, entity, scene, input, physics, physics 2D, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas (including focus management), localization, prefabs, networking, Newgrounds
+- ~296 bound functions across math, entity, scene, input, physics, physics 2D, audio, components (incl. full animator: play/stop/pause/resume/isPlaying/getAnimation/speed), coroutines, events, tweening, noise, rendering, post-processing, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas (including focus management), localization, prefabs, networking, Newgrounds
 - See `docs/SCRIPTING_API.md` for the complete API reference
 - **Visual scripting** (Blueprint-style) with 76+ built-in nodes (including 25 Gameplay nodes: save/load/checkpoint/meta, weather, quests, cinematics, particles, destructibles, prefabs, UI focus, localization; 5 Physics 2D nodes; 6 Networking nodes), debugger with breakpoints/step-through, execution timeline profiler
 
