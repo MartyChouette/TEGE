@@ -5,6 +5,9 @@
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 namespace Enjin {
 namespace Renderer {
@@ -95,26 +98,44 @@ bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::ve
         srcFile << source;
     }
 
+    // N1: Use CreateProcessA instead of std::system to prevent command injection
+    int result = -1;
+#ifdef _WIN32
+    auto runProcess = [](const std::string& cmdLine) -> int {
+        STARTUPINFOA si = {};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESHOWWINDOW;
+        si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi = {};
+        std::string cmd = cmdLine; // CreateProcessA needs mutable buffer
+        if (!CreateProcessA(NULL, cmd.data(), NULL, NULL, FALSE,
+                           CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+            return -1;
+        }
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        DWORD exitCode = 1;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        return static_cast<int>(exitCode);
+    };
+
     // Try glslangValidator first, then glslc
-    std::string command;
-#ifdef _WIN32
-    // Suppress console window and redirect stderr
-    command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
-#else
-    command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
-#endif
-
-    int result = std::system(command.c_str());
-
-    // Fallback to glslc if glslangValidator failed
+    std::string cmdLine = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\"";
+    result = runProcess(cmdLine);
     if (result != 0) {
-#ifdef _WIN32
-        command = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+        cmdLine = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\"";
+        result = runProcess(cmdLine);
+    }
 #else
+    // Unix: use std::system (paths from temp dir, not user-controlled)
+    std::string command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
+    result = std::system(command.c_str());
+    if (result != 0) {
         command = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
-#endif
         result = std::system(command.c_str());
     }
+#endif
 
     // Clean up source file
     std::error_code ec;

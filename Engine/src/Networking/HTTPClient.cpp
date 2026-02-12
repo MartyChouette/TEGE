@@ -156,7 +156,8 @@ static HTTPResponse DoRequest(const std::string& method, const std::string& url,
                          WINHTTP_NO_HEADER_INDEX);
     response.statusCode = (i32)statusCode;
 
-    // Read body
+    // Read body (N14: cap at 16MB to prevent OOM from malicious server)
+    static constexpr size_t MAX_RESPONSE_SIZE = 16 * 1024 * 1024;
     std::string responseBody;
     DWORD bytesAvailable = 0;
     do {
@@ -168,6 +169,10 @@ static HTTPResponse DoRequest(const std::string& method, const std::string& url,
         DWORD bytesRead = 0;
         WinHttpReadData(hRequest, buffer.data(), bytesAvailable, &bytesRead);
         responseBody.append(buffer.data(), bytesRead);
+        if (responseBody.size() > MAX_RESPONSE_SIZE) {
+            ENJIN_LOG_WARN(Network, "HTTP response exceeds 16MB limit, truncating");
+            break;
+        }
     } while (bytesAvailable > 0);
 
     response.body = responseBody;

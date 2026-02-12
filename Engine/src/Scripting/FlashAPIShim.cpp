@@ -17,6 +17,7 @@ namespace Scripting {
 // Global state for shim
 // ============================================================================
 
+// NOTE: Separate from s_BindingsWorld — cleared via SetFlashShimWorld(nullptr) in PlayMode::Stop()
 static ECS::World* g_FlashWorld = nullptr;
 static Audio::SimpleAudio* g_FlashAudio = nullptr;
 

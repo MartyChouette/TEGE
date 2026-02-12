@@ -57,7 +57,12 @@ void CoroutineScheduler::StopAllForEntity(u64 entityId) {
 void CoroutineScheduler::Update(f32 deltaTime) {
     s_Current = this;
 
-    for (auto& co : m_Coroutines) {
+    // Use index-based loop with pre-captured count because ResumeCoroutine
+    // may cause scripts to call StartCoroutine, appending to m_Coroutines
+    // and potentially invalidating range-based iterators.
+    usize count = m_Coroutines.size();
+    for (usize i = 0; i < count; ++i) {
+        auto& co = m_Coroutines[i];
         if (co.finished) continue;
 
         switch (co.yieldType) {
@@ -97,7 +102,11 @@ void CoroutineScheduler::EndOfFrame() {
     s_Current = this;
     m_InEndOfFrame = true;
 
-    for (auto& co : m_Coroutines) {
+    // Use index-based loop with pre-captured count for the same reason
+    // as Update() — ResumeCoroutine may append new coroutines.
+    usize count = m_Coroutines.size();
+    for (usize i = 0; i < count; ++i) {
+        auto& co = m_Coroutines[i];
         if (co.finished) continue;
         if (co.yieldType == YieldType::WaitForEndOfFrame) {
             ResumeCoroutine(co);

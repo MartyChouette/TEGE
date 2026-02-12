@@ -94,8 +94,26 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
 // HTML Generation
 // ============================================================================
 
+// N5: HTML escape to prevent XSS via config fields
+static std::string HtmlEscape(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        switch (c) {
+            case '&': out += "&amp;"; break;
+            case '<': out += "&lt;"; break;
+            case '>': out += "&gt;"; break;
+            case '"': out += "&quot;"; break;
+            case '\'': out += "&#39;"; break;
+            default: out += c;
+        }
+    }
+    return out;
+}
+
 std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
                                          const BuildConfig& buildConfig) {
+    std::string safeTitle = HtmlEscape(config.title);
     std::ostringstream html;
 
     html << "<!DOCTYPE html>\n"
@@ -103,10 +121,10 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
          << "<head>\n"
          << "  <meta charset=\"utf-8\">\n"
          << "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no\">\n"
-         << "  <title>" << config.title << "</title>\n";
+         << "  <title>" << safeTitle << "</title>\n";
 
     // OG meta tags
-    html << "  <meta property=\"og:title\" content=\"" << config.title << "\">\n"
+    html << "  <meta property=\"og:title\" content=\"" << safeTitle << "\">\n"
          << "  <meta property=\"og:type\" content=\"game\">\n";
 
     // Favicon
@@ -165,7 +183,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
          << "    var Module = {\n"
          << "      canvas: document.getElementById('game-canvas'),\n"
          << "      onRuntimeInitialized: function() {\n"
-         << "        console.log('" << config.title << " - Engine initialized');\n";
+         << "        console.log('" << safeTitle << " - Engine initialized');\n";
     if (config.showPreloader) {
         html << "        if (typeof hidePreloader === 'function') hidePreloader();\n";
     }

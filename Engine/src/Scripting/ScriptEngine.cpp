@@ -1,4 +1,5 @@
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
 #include <scriptbuilder/scriptbuilder.h>
 #include <scriptstdstring/scriptstdstring.h>
@@ -12,6 +13,9 @@
 #include <sstream>
 #include <cassert>
 #include <cstring>
+
+// Defined in ScriptBindings.cpp — accessor for the coroutine scheduler
+extern Enjin::Scripting::CoroutineScheduler* GetBindingsCoroutineScheduler();
 
 namespace Enjin {
 namespace Scripting {
@@ -592,6 +596,14 @@ bool ScriptEngine::ProcessHotReload()
 
         ENJIN_LOG_INFO(Script, "Hot-reloading module '%s' from '%s'",
                        modName.c_str(), info.filePath.c_str());
+
+        // Clear all coroutines before discarding the module — coroutine
+        // contexts hold references to script functions that will be
+        // invalidated by DiscardModule, leading to use-after-free crashes.
+        CoroutineScheduler* coroutineScheduler = GetBindingsCoroutineScheduler();
+        if (coroutineScheduler) {
+            coroutineScheduler->Clear();
+        }
 
         // Discard the old module
         m_Engine->DiscardModule(modName.c_str());

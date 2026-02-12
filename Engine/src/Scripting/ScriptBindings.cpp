@@ -17,6 +17,7 @@
 #include <angelscript.h>
 #include <scriptstdstring/scriptstdstring.h>
 #include <scriptarray/scriptarray.h>
+#include <atomic>
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
@@ -34,6 +35,11 @@ using namespace Enjin::ECS;
 ECS::World* s_BindingsWorld = nullptr;
 
 static Scripting::CoroutineScheduler* s_BindingsCoroutineScheduler = nullptr;
+
+// Accessor for other translation units (e.g. ScriptEngine hot-reload)
+Scripting::CoroutineScheduler* GetBindingsCoroutineScheduler() {
+    return s_BindingsCoroutineScheduler;
+}
 Scripting::ScriptEventBus* s_BindingsEventBus = nullptr;
 static Scripting::ScriptEngine* s_BindingsScriptEngine = nullptr;
 
@@ -94,6 +100,7 @@ static Vector2 Vector2_opMulF(const Vector2& a, f32 s) {
 }
 
 static Vector2 Vector2_opDivF(const Vector2& a, f32 s) {
+    if (std::abs(s) < 1e-7f) return Vector2(0.0f, 0.0f);
     return a / s;
 }
 
@@ -142,6 +149,7 @@ static Vector3 Vector3_opMulF(const Vector3& a, f32 s) {
 }
 
 static Vector3 Vector3_opDivF(const Vector3& a, f32 s) {
+    if (std::abs(s) < 1e-7f) return Vector3(0.0f, 0.0f, 0.0f);
     return a / s;
 }
 
@@ -242,9 +250,9 @@ public:
     EntityHandle() : m_Entity(INVALID_ENTITY), m_RefCount(1) {}
     EntityHandle(Entity e) : m_Entity(e), m_RefCount(1) {}
 
-    void AddRef() { ++m_RefCount; }
+    void AddRef() { m_RefCount.fetch_add(1, std::memory_order_relaxed); }
     void Release() {
-        if (--m_RefCount == 0)
+        if (m_RefCount.fetch_sub(1, std::memory_order_acq_rel) == 1)
             delete this;
     }
 
@@ -310,7 +318,7 @@ public:
 
 private:
     Entity m_Entity;
-    int m_RefCount;
+    std::atomic<int> m_RefCount;
 };
 
 static EntityHandle* EntityHandle_Factory() {
@@ -544,10 +552,10 @@ static void Script_YieldEndOfFrame() {
 
 struct ScriptEventData {
     Scripting::EventData data;
-    int refCount = 1;
+    std::atomic<int> refCount{1};
 
-    void AddRef() { refCount++; }
-    void Release() { if (--refCount == 0) delete this; }
+    void AddRef() { refCount.fetch_add(1, std::memory_order_relaxed); }
+    void Release() { if (refCount.fetch_sub(1, std::memory_order_acq_rel) == 1) delete this; }
 };
 
 static ScriptEventData* EventData_Factory() {

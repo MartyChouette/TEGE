@@ -54,6 +54,7 @@ static void RaycastHit_CopyConstruct(const RaycastHit& other, RaycastHit* self) 
 
 static bool Physics_Raycast(const Vector3& origin, const Vector3& direction, f32 maxDistance) {
     if (!s_BindingsPhysics) return false;
+    if (direction.LengthSquared() < 1e-12f) return false; // zero-length direction
 
     Physics::Ray ray;
     ray.origin = origin;
@@ -68,6 +69,10 @@ static bool Physics_RaycastHit(const Vector3& origin, const Vector3& direction,
     if (!s_BindingsPhysics) {
         outHit = RaycastHit();
         return false;
+    }
+    if (direction.LengthSquared() < 1e-12f) {
+        outHit = RaycastHit();
+        return false; // zero-length direction
     }
 
     Physics::Ray ray;
@@ -118,6 +123,7 @@ static bool Physics_CheckBox(const Vector3& center, const Vector3& halfExtents) 
 // Masked overloads — filter by collision layer mask
 static bool Physics_Raycast_Masked(const Vector3& origin, const Vector3& direction, f32 maxDistance, u32 layerMask) {
     if (!s_BindingsPhysics) return false;
+    if (direction.LengthSquared() < 1e-12f) return false; // zero-length direction
 
     Physics::Ray ray;
     ray.origin = origin;
@@ -132,6 +138,10 @@ static bool Physics_RaycastHit_Masked(const Vector3& origin, const Vector3& dire
     if (!s_BindingsPhysics) {
         outHit = RaycastHit();
         return false;
+    }
+    if (direction.LengthSquared() < 1e-12f) {
+        outHit = RaycastHit();
+        return false; // zero-length direction
     }
 
     Physics::Ray ray;

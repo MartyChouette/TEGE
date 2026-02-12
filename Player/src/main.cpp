@@ -213,8 +213,9 @@ public:
         auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
             m_ProjectMode <= 2 ? m_ProjectMode : 1);
         m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
-        m_Physics->SetWorld(m_World.get());
+        if (m_Physics) m_Physics->SetWorld(m_World.get());
         m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
+        if (m_Physics2D) m_Physics2D->Initialize(m_World.get());
 
         // Initialize gameplay systems
         m_ControllerSystem.SetWorld(m_World.get());
@@ -367,9 +368,11 @@ public:
         if (m_GameMenu.IsMenuOpen()) return;
 
         // --- Physics (must run first) ---
-        m_Physics->Update(deltaTime);
+        if (m_Physics) m_Physics->Update(deltaTime);
+        if (m_Physics2D) m_Physics2D->Update(deltaTime);
 
         // Dispatch collision events to visual scripts
+        if (!m_Physics) return;
         const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
         for (const auto& evt : collisionEvents) {
             if (evt.isTrigger) {
@@ -673,6 +676,7 @@ private:
 
         // Initialize visual scripts and behavior trees
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
+        m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();

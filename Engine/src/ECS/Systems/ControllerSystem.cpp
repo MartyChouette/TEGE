@@ -379,10 +379,12 @@ void ControllerSystem::Update(f32 deltaTime) {
         // Apply zoom to camera ortho size (only if zoom != 1.0)
         auto* camComp = m_World->GetComponent<CameraComponent>(entity);
         if (camComp && camComp->projectionType == ProjectionType::Orthographic) {
-            // Store base ortho size on first frame if needed
-            static f32 baseOrthoSize = camComp->orthoSize;
+            // S4: Per-entity base ortho size (not static — would be shared across all cameras)
+            if (cam2d->baseOrthoSize <= 0.0f) {
+                cam2d->baseOrthoSize = camComp->orthoSize;
+            }
             if (cam2d->currentZoom > 0.01f) {
-                camComp->orthoSize = baseOrthoSize / cam2d->currentZoom;
+                camComp->orthoSize = cam2d->baseOrthoSize / cam2d->currentZoom;
             }
         }
     }

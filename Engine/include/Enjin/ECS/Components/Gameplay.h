@@ -720,6 +720,7 @@ struct Camera2DBoundsComponent {
     f32 currentZoom = 1.0f;
     f32 targetZoom = 1.0f;
     f32 zoomSmoothing = 5.0f;
+    f32 baseOrthoSize = 0.0f;  // S4: Per-entity base (0 = not yet captured)
 
     // Dead zone - camera doesn't move until target exits this region
     Math::Vector2 deadZoneSize;  // Width/height in world units

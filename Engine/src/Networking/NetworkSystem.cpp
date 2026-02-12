@@ -385,9 +385,8 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
         conn->lastRecvTime = m_Time;
         conn->packetsReceived++;
 
-        // Update remote sequence tracking
-        if (header.sequence > conn->remoteSequence ||
-            (conn->remoteSequence > 0xFF00 && header.sequence < 0x00FF)) {
+        // Update remote sequence tracking (modular arithmetic for wraparound)
+        if (static_cast<i16>(header.sequence - conn->remoteSequence) > 0) {
             // Shift ack bitfield
             u16 diff = header.sequence - conn->remoteSequence;
             if (diff <= 32) {
@@ -476,6 +475,14 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
     if (m_Connections.size() >= m_Config.maxPlayers - 1) {
         std::vector<u8> rejectPayload;
         WriteString(rejectPayload, "Server full");
+        SendPacket(sender, MessageType::ConnectionReject, rejectPayload);
+        return;
+    }
+
+    // N6: Reject if PlayerId space exhausted (u8 wraps at 255 → 0 = host ID)
+    if (m_NextPlayerId >= 254) {
+        std::vector<u8> rejectPayload;
+        WriteString(rejectPayload, "Player ID space exhausted");
         SendPacket(sender, MessageType::ConnectionReject, rejectPayload);
         return;
     }
@@ -645,6 +652,18 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
         if (snap.fieldMask & SnapScale) snap.scale = ReadVector3(payload, offset, size);
         if (snap.fieldMask & SnapVelocity) snap.velocity = ReadVector3(payload, offset, size);
 
+        // N4: Validate all floats are finite (reject NaN/Inf injection)
+        auto isFiniteVec3 = [](const Math::Vector3& v) {
+            return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+        };
+        auto isFiniteQuat = [](const Math::Quaternion& q) {
+            return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w);
+        };
+        if (!isFiniteVec3(snap.position) || !isFiniteQuat(snap.rotation) ||
+            !isFiniteVec3(snap.scale) || !isFiniteVec3(snap.velocity)) {
+            continue; // Discard malformed snapshot
+        }
+
         // Find entity
         auto it = m_NetworkToEntity.find(snap.networkId);
         if (it == m_NetworkToEntity.end()) continue;
@@ -802,11 +821,16 @@ void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size
         return;
     }
 
+    // N9: Drop RPC if declared data size exceeds remaining bytes
+    if (dataSize > size - offset) {
+        ENJIN_LOG_WARN(Network, "RPC data size mismatch (declared %u, remaining %u)", dataSize, size - offset);
+        return;
+    }
+
     auto it = m_RPCRegistry.find(nameHash);
     if (it != m_RPCRegistry.end()) {
-        const u8* rpcData = (offset < size) ? payload + offset : nullptr;
-        u32 rpcSize = (offset < size) ? std::min(static_cast<u32>(dataSize), size - offset) : 0;
-        it->second.callback(senderId, rpcData, rpcSize);
+        const u8* rpcData = payload + offset;
+        it->second.callback(senderId, rpcData, static_cast<u32>(dataSize));
     }
 
     // If host and broadcast target, forward to all other clients
@@ -868,6 +892,11 @@ void NetworkSystem::SendReliable(const NetworkAddress& addr, MessageType type, c
     rm.retryCount = 0;
     rm.data = innerPacket;
     rm.target = addr;
+    // N18: Cap outbox to prevent unbounded growth
+    if (m_ReliableOutbox.size() >= 1024) {
+        ENJIN_LOG_WARN(Network, "Reliable outbox full (1024), dropping message");
+        return;
+    }
     m_ReliableOutbox.push_back(rm);
 
     // Send wrapped
@@ -1115,8 +1144,11 @@ void NetworkSystem::ProcessAck(ConnectionInfo& conn, u16 ackSeq, u32 ackBits) {
 
 void NetworkSystem::BroadcastLobbyState() {
     std::vector<u8> payload;
-    WriteU8(payload, static_cast<u8>(m_LobbyPlayers.size()));
-    for (const auto& lp : m_LobbyPlayers) {
+    // N7: Cap to 255 to prevent u8 truncation
+    u8 count = static_cast<u8>(std::min<size_t>(m_LobbyPlayers.size(), 255));
+    WriteU8(payload, count);
+    for (u8 i = 0; i < count; i++) {
+        const auto& lp = m_LobbyPlayers[i];
         WriteU8(payload, lp.id);
         WriteString(payload, lp.name);
         WriteU8(payload, lp.ready ? 1 : 0);

@@ -30,11 +30,10 @@ namespace Networking {
 
 u32 NetworkAddress::ParseIP(const std::string& ipStr) {
     struct in_addr addr;
-#ifdef _WIN32
-    addr.s_addr = inet_addr(ipStr.c_str());
-#else
-    inet_pton(AF_INET, ipStr.c_str(), &addr);
-#endif
+    // N22: Use inet_pton on all platforms (inet_addr returns broadcast on error)
+    if (inet_pton(AF_INET, ipStr.c_str(), &addr) != 1) {
+        addr.s_addr = 0;
+    }
     return addr.s_addr;
 }
 

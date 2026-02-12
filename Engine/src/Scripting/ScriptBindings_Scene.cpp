@@ -10,6 +10,7 @@
 #include "Enjin/Scene/SceneManager.h"
 #include <angelscript.h>
 #include <string>
+#include <vector>
 #include <cassert>
 
 using namespace Enjin;
@@ -25,9 +26,23 @@ extern Enjin::ECS::World* s_BindingsWorld;
 // Scene manager pointer for scene loading from scripts
 static Enjin::Scene::SceneManager* s_BindingsSceneManager = nullptr;
 
+// Deferred entity destruction queue — entities are queued during script
+// execution and destroyed after the script update completes, preventing
+// invalidation of iterators and component pointers mid-frame.
+static std::vector<ECS::Entity> s_DeferredDestroys;
+
 namespace Enjin {
 namespace Scripting {
 void SetBindingsSceneManager(Scene::SceneManager* mgr) { s_BindingsSceneManager = mgr; }
+
+void FlushDeferredEntityDestroys() {
+    for (ECS::Entity e : s_DeferredDestroys) {
+        if (s_BindingsWorld && s_BindingsWorld->IsValid(e)) {
+            s_BindingsWorld->DestroyEntity(e);
+        }
+    }
+    s_DeferredDestroys.clear();
+}
 } // namespace Scripting
 } // namespace Enjin
 
@@ -113,8 +128,7 @@ static u64 Scene_FindEntityByTag(const std::string& tag) {
         return INVALID_ENTITY;
     }
 
-    const auto& entities = s_BindingsWorld->GetAllEntities();
-    for (Entity e : entities) {
+    for (Entity e : s_BindingsWorld->GetEntitiesWithComponent<TagComponent>()) {
         auto* tc = s_BindingsWorld->GetComponent<TagComponent>(e);
         if (tc && tc->HasTag(tag)) {
             return static_cast<u64>(e);
@@ -136,7 +150,9 @@ static void Scene_DestroyEntity(u64 id) {
         return;
     }
 
-    s_BindingsWorld->DestroyEntity(entity);
+    // Defer destruction until after script iteration completes to avoid
+    // invalidating iterators and component pointers mid-frame.
+    s_DeferredDestroys.push_back(entity);
 }
 
 static u64 Scene_Instantiate() {

@@ -30,9 +30,10 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     }
 
     m_Physics = Physics::CreatePhysicsBackend(backendType, projectMode);
-    m_Physics->SetWorld(world);
+    if (m_Physics) m_Physics->SetWorld(world);
 
     m_Physics2D = Physics::CreatePhysicsBackend2D(backendType, projectMode);
+    if (m_Physics2D) m_Physics2D->Initialize(world);
 
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);
@@ -102,6 +103,7 @@ void PlayMode::Play() {
     // Enable controller system, flower system, scripting, and gameplay systems
     m_ControllerSystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: ControllerSystem enabled");
+    m_FlowerSystem.SetRenderSystem(m_RenderSystem);
     m_FlowerSystem.Reset();
     m_FlowerSystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: FlowerSystem enabled");
@@ -127,6 +129,9 @@ void PlayMode::Play() {
     Scripting::SetBindingsNetworking(&m_NetworkSystem);
     Scripting::SetBindingsStreaming(&m_StreamingManager);
     Scripting::SetBindingsFlower(m_World);
+    Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
+    Scripting::SetBindingsEventBus(&m_EventBus);
+    Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
@@ -314,6 +319,7 @@ void PlayMode::Update(f32 deltaTime) {
         {
             ENJIN_PROFILE_SCOPE("Physics");
             if (m_Physics) m_Physics->Update(deltaTime);
+            if (m_Physics2D) m_Physics2D->Update(deltaTime);
         }
 
         // Dispatch collision events to visual scripts

@@ -582,6 +582,12 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".enjprefab",  &m_PrefabPaths },
         { ".enjdata",    &m_DataAssetPaths },
         { ".enjschema",  &m_DataAssetPaths },
+        { ".csv",        &m_DataAssetPaths },     // F7: Localization files
+        { ".gltf",       &m_ModelPaths },          // F17: 3D model files
+        { ".glb",        &m_ModelPaths },
+        { ".fbx",        &m_ModelPaths },
+        { ".obj",        &m_ModelPaths },
+        { ".svg",        &m_TexturePaths },        // F23: SVG files
     };
 
     try {

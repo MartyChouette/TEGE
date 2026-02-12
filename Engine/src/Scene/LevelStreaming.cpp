@@ -4,6 +4,8 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <unordered_set>
 
 namespace Enjin {
 namespace Scene {
@@ -193,25 +195,33 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
         return;
     }
 
+    // N16: Validate path to prevent directory traversal
+    if (!chunk.scenePath.empty()) {
+        auto normalPath = std::filesystem::path(chunk.scenePath).lexically_normal().string();
+        if (normalPath.find("..") != std::string::npos) {
+            ENJIN_LOG_ERROR(Game, "Path traversal in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
+            chunk.state = ChunkState::Unloaded;
+            m_ActiveLoads.fetch_sub(1);
+            return;
+        }
+    }
+
     // Use SceneSerializer to load the scene file additively
     if (!chunk.scenePath.empty()) {
         SceneSerializer serializer(m_World);
 
         // Track entities before load to identify new ones
+        // P5: Use unordered_set for O(1) lookup instead of O(N*M) nested loop
         auto entitiesBefore = m_World->GetAllEntities();
+        std::unordered_set<ECS::Entity> beforeSet(entitiesBefore.begin(), entitiesBefore.end());
 
         auto result = serializer.LoadAdditive(chunk.scenePath);
 
         if (result.success) {
-            // Find newly created entities by comparing before/after
             chunk.entities.clear();
             auto entitiesAfter = m_World->GetAllEntities();
             for (auto e : entitiesAfter) {
-                bool isNew = true;
-                for (auto existing : entitiesBefore) {
-                    if (existing == e) { isNew = false; break; }
-                }
-                if (isNew) {
+                if (beforeSet.find(e) == beforeSet.end()) {
                     chunk.entities.push_back(e);
                 }
             }

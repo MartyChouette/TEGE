@@ -73,16 +73,19 @@ inline void RemoveParent(World* world, Entity child) {
     SetParent(world, child, INVALID_ENTITY);
 }
 
-inline std::vector<Entity> GetChildren(World* world, Entity parent) {
-    if (!world || parent == INVALID_ENTITY) return {};
-    if (!world->HasComponent<ChildrenComponent>(parent)) return {};
-    return world->GetComponent<ChildrenComponent>(parent)->children;
+inline const std::vector<Entity>& GetChildren(World* world, Entity parent) {
+    static const std::vector<Entity> empty;
+    if (!world || parent == INVALID_ENTITY) return empty;
+    auto* cc = world->GetComponent<ChildrenComponent>(parent);
+    if (!cc) return empty;
+    return cc->children;
 }
 
 inline Entity GetParent(World* world, Entity child) {
     if (!world || child == INVALID_ENTITY) return INVALID_ENTITY;
-    if (!world->HasComponent<ParentComponent>(child)) return INVALID_ENTITY;
-    return world->GetComponent<ParentComponent>(child)->parent;
+    auto* pc = world->GetComponent<ParentComponent>(child);
+    if (!pc) return INVALID_ENTITY;
+    return pc->parent;
 }
 
 inline bool HasParent(World* world, Entity child) {

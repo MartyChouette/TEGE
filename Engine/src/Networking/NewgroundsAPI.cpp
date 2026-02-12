@@ -158,6 +158,11 @@ std::vector<NGScoreEntry> NewgroundsAPI::GetScores(i32 boardId, i32 limit,
     std::vector<NGScoreEntry> scores;
     if (!m_Initialized) return scores;
 
+    // N12: Validate period against known values to prevent JSON injection
+    if (period != "D" && period != "W" && period != "M" && period != "Y" && period != "A") {
+        ENJIN_LOG_WARN(Network, "Invalid scoreboard period: %s", period.c_str());
+        return scores;
+    }
     std::string params = "{\"id\":" + std::to_string(boardId) +
                          ",\"limit\":" + std::to_string(limit) +
                          ",\"period\":\"" + period + "\"}";
@@ -309,7 +314,11 @@ i32 NewgroundsAPI::ExtractInt(const std::string& json, const std::string& key) {
         numStr += json[pos++];
     }
     if (numStr.empty()) return 0;
-    return std::stoi(numStr);
+    // N15: Use strtol instead of stoi to avoid uncaught out_of_range exception
+    char* endPtr = nullptr;
+    long val = std::strtol(numStr.c_str(), &endPtr, 10);
+    if (endPtr == numStr.c_str() || val > INT_MAX || val < INT_MIN) return 0;
+    return static_cast<i32>(val);
 }
 
 bool NewgroundsAPI::ExtractBool(const std::string& json, const std::string& key) {

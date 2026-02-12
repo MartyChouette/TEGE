@@ -129,13 +129,8 @@ ECS::Entity ScenePicker::PickEntity(ECS::World* world, const Renderer::Camera* c
     ECS::Entity closestEntity = ECS::INVALID_ENTITY;
     f32 closestDistance = FLT_MAX;
 
-    const auto& entities = world->GetAllEntities();
-    for (ECS::Entity entity : entities) {
-        // Only pick entities with meshes
-        if (!world->HasComponent<ECS::MeshComponent>(entity)) {
-            continue;
-        }
-
+    // P3: Use component query instead of GetAllEntities
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::MeshComponent>()) {
         AABB aabb = CalculateEntityAABB(world, entity);
         f32 distance = RayAABBIntersect(ray, aabb);
 
@@ -164,10 +159,9 @@ std::vector<ECS::Entity> ScenePicker::PickEntitiesInScreenRect(
 
     Math::Matrix4 viewProj = camera->GetViewProjectionMatrix();
 
-    const auto& entities = world->GetAllEntities();
-    for (ECS::Entity entity : entities) {
+    // P4: Use component query instead of GetAllEntities
+    for (ECS::Entity entity : world->GetEntitiesWithComponent<ECS::TransformComponent>()) {
         auto* transform = world->GetComponent<ECS::TransformComponent>(entity);
-        if (!transform) continue;
 
         // Project entity center to screen space
         Math::Vector4 clipPos = viewProj * Math::Vector4(

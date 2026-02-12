@@ -156,10 +156,12 @@ namespace Enjin::Scene
         if (j.contains("saveTimestamp"))
             data.saveTimestamp = j["saveTimestamp"].get<std::string>();
 
+        // N13: Validate entry fields before access to prevent exceptions on malformed saves
         if (j.contains("floatVars") && j["floatVars"].is_array())
         {
             for (const auto& entry : j["floatVars"])
             {
+                if (!entry.contains("name") || !entry.contains("value")) continue;
                 data.floatVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<f32>()
@@ -171,6 +173,7 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["intVars"])
             {
+                if (!entry.contains("name") || !entry.contains("value")) continue;
                 data.intVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<i32>()
@@ -182,6 +185,7 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["boolVars"])
             {
+                if (!entry.contains("name") || !entry.contains("value")) continue;
                 data.boolVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<bool>()
@@ -193,6 +197,7 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["stringVars"])
             {
+                if (!entry.contains("name") || !entry.contains("value")) continue;
                 data.stringVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<std::string>()

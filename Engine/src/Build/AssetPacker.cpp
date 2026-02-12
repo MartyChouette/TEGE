@@ -3,23 +3,24 @@
 #include <cstring>
 #include <fstream>
 #include <filesystem>
+#include <mutex>
 
 namespace Enjin::Build {
 
 // CRC32 lookup table (standard polynomial 0xEDB88320)
 static u32 s_CRC32Table[256] = {0};
-static bool s_CRC32Initialized = false;
 
 static void InitCRC32Table() {
-    if (s_CRC32Initialized) return;
-    for (u32 i = 0; i < 256; i++) {
-        u32 crc = i;
-        for (u32 j = 0; j < 8; j++) {
-            crc = (crc >> 1) ^ (0xEDB88320 & (~(crc & 1) + 1));
+    static std::once_flag flag;
+    std::call_once(flag, []() {
+        for (u32 i = 0; i < 256; i++) {
+            u32 crc = i;
+            for (u32 j = 0; j < 8; j++) {
+                crc = (crc >> 1) ^ (0xEDB88320 & (~(crc & 1) + 1));
+            }
+            s_CRC32Table[i] = crc;
         }
-        s_CRC32Table[i] = crc;
-    }
-    s_CRC32Initialized = true;
+    });
 }
 
 AssetPacker::~AssetPacker() {

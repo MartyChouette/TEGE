@@ -13,6 +13,7 @@ using namespace Enjin;
 #define AS_CHECK(expr) \
     do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
 
+// NOTE: Separate from s_BindingsWorld — cleared via SetBindingsFlower(nullptr) in PlayMode::Stop()
 static ECS::World* s_World = nullptr;
 
 namespace Enjin {

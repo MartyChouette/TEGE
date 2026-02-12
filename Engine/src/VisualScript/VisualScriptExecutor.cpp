@@ -321,7 +321,13 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
 
         // Handle special nodes
         if (nodeType == NodeTypes::Sequence) {
+            // S8: Apply same depth limit to Sequence recursion
+            if (m_FunctionCallDepth >= MAX_CALL_DEPTH) {
+                ENJIN_LOG_WARN(Script, "VisualScript: Sequence recursion depth limit reached (%u)", MAX_CALL_DEPTH);
+                break;
+            }
             // Sequence node: execute all flow outputs in order
+            m_FunctionCallDepth++;
             for (usize i = 0; i < graphNode->outputs.size(); i++) {
                 if (graphNode->outputs[i].type == Editor::PinType::Flow) {
                     Editor::NodeId nextNode = FollowFlowLink(ctx.script, graphNode->outputs[i].id);
@@ -330,6 +336,7 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
                     }
                 }
             }
+            m_FunctionCallDepth--;
             // All outputs executed, done with this branch
             break;
         }
@@ -541,6 +548,15 @@ void VisualScriptExecutor::UpdateLatentNodes(ECS::World* world, ECS::Entity enti
 ECS::VariableValue VisualScriptExecutor::EvaluatePureNode(const ExecutionContext& ctx,
                                                            const ECS::VisualScriptComponent* script,
                                                            Editor::NodeId nodeId) {
+    // S12: Recursion depth limit to catch cyclic graphs
+    static thread_local int s_PureEvalDepth = 0;
+    if (++s_PureEvalDepth > 256) {
+        --s_PureEvalDepth;
+        ENJIN_LOG_WARN(Script, "VisualScript: Pure node evaluation depth exceeded (cyclic graph?)");
+        return false;
+    }
+    struct DepthGuard { ~DepthGuard() { s_PureEvalDepth--; } } guard;
+
     // Check cache first
     auto cacheIt = script->pureNodeCache.find(nodeId);
     if (cacheIt != script->pureNodeCache.end()) {
