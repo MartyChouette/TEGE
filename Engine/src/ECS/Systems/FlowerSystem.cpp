@@ -289,6 +289,12 @@ void FlowerSystem::ProcessGrabForces(f32 dt) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
 
+        // Detect joints removed this frame (before UpdateJointTracking sets isBroken)
+        if (tether->hadJoint && !m_World->HasComponent<SpringJointComponent>(entity)) {
+            tether->isBroken = true;
+            continue;
+        }
+
         auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
         auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -352,8 +358,14 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
         // Skip broken entities — jelly deformation on a teleporting petal
         // causes meshDirty every frame, forcing GPU buffer recreation that
         // can race with the in-flight render and crash the driver.
+        // Also detect joints that were just removed this frame (isBroken is set
+        // later in UpdateJointTracking, but the spring component is already gone).
         auto* tetherCheck = m_World->GetComponent<TetherComponent>(entity);
-        if (tetherCheck && tetherCheck->isBroken) continue;
+        if (tetherCheck && (tetherCheck->isBroken ||
+            (tetherCheck->hadJoint && !m_World->HasComponent<SpringJointComponent>(entity)))) {
+            tetherCheck->isBroken = true;  // Mark early so subsequent phases skip it too
+            continue;
+        }
 
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || mesh->vertices.empty()) continue;
