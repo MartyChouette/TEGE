@@ -151,14 +151,14 @@ void Box2DBackend::SyncECSToBox2D() {
         }
     }
 
-    // Destroy bodies for removed entities
-    std::vector<ECS::Entity> toRemove;
+    // Destroy bodies for removed entities (reuse member to avoid per-frame alloc)
+    m_ToRemoveCache.clear();
     for (auto& [entity, bodyId] : m_EntityToBody) {
         if (currentEntities.find(entity) == currentEntities.end()) {
-            toRemove.push_back(entity);
+            m_ToRemoveCache.push_back(entity);
         }
     }
-    for (ECS::Entity entity : toRemove) {
+    for (ECS::Entity entity : m_ToRemoveCache) {
         DestroyBodyForEntity(entity);
     }
 
@@ -612,14 +612,14 @@ void Box2DBackend::SyncJointsToBox2D() {
         }
     }
 
-    // Remove joints for deleted entities
-    std::vector<ECS::Entity> toRemove;
+    // Remove joints for deleted entities (reuse member to avoid per-frame alloc)
+    m_JointToRemoveCache.clear();
     for (auto& [entity, jointId] : m_EntityToJoint) {
         if (currentJointEntities.find(entity) == currentJointEntities.end()) {
-            toRemove.push_back(entity);
+            m_JointToRemoveCache.push_back(entity);
         }
     }
-    for (ECS::Entity e : toRemove) {
+    for (ECS::Entity e : m_JointToRemoveCache) {
         DestroyJointForEntity(e);
     }
 }

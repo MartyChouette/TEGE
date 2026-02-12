@@ -38,6 +38,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);
     m_ControllerSystem.SetPhysics(m_Physics.get());
+    m_ControllerSystem.SetInputActionMap(&m_InputMap);
     m_ControllerSystem.SetEnabled(false);
 
     m_FlowerSystem.SetWorld(world);
@@ -128,6 +129,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsPhysics2D(m_Physics2D.get());
     Scripting::SetBindingsNetworking(&m_NetworkSystem);
     Scripting::SetBindingsStreaming(&m_StreamingManager);
+    Scripting::SetBindingsAudio(&m_SimpleAudio);
+    Scripting::SetBindingsDestructible(&m_DestructibleSystem);
     Scripting::SetBindingsFlower(m_World);
     Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
     Scripting::SetBindingsEventBus(&m_EventBus);
@@ -229,6 +232,9 @@ void PlayMode::Stop() {
         return;
     }
 
+    // Destroy pooled objects before shutting down scripts (scripts may reference pooled entities)
+    m_ObjectPool.DestroyAll(m_World);
+
     // Shutdown quest flows, behavior trees, visual scripts, and scripts first (before scene restore destroys entities)
     {
         auto qfEntities = m_World->GetEntitiesWithComponent<ECS::QuestFlowComponent>();
@@ -256,6 +262,8 @@ void PlayMode::Stop() {
     Scripting::SetBindingsNetworking(nullptr);
     Scripting::SetBindingsWeather(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
+    Scripting::SetBindingsAudio(nullptr);
+    Scripting::SetBindingsDestructible(nullptr);
     Scripting::SetBindingsFlower(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
@@ -272,7 +280,6 @@ void PlayMode::Stop() {
     m_StreamingManager.SetEnabled(false);
     m_StreamingManager.ClearChunks();
     m_DialogueSystem.Clear();
-    m_ObjectPool.DestroyAll(m_World);
 
     // Re-enable editor camera controller
     if (m_CameraController) {

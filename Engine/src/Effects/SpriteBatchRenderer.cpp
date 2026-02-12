@@ -394,6 +394,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Build instance data and batch by texture path
     m_InstanceDataCache.clear();
+    m_InstanceDataCache.reserve(sortedSprites.size());
     std::string currentTexture;
     u32 batchStart = 0;
 

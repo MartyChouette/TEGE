@@ -30,18 +30,24 @@ inline void SetParent(World* world, Entity child, Entity parent) {
         u32 depth = 0;
         while (check != INVALID_ENTITY && depth < 1000) {
             if (check == child) return;  // Would create cycle
-            if (!world->HasComponent<ParentComponent>(check)) break;
-            check = world->GetComponent<ParentComponent>(check)->parent;
+            auto* pc = world->GetComponent<ParentComponent>(check);
+            if (!pc) break;
+            check = pc->parent;
             ++depth;
         }
     }
 
     // Remove from old parent
-    if (world->HasComponent<ParentComponent>(child)) {
-        Entity oldParent = world->GetComponent<ParentComponent>(child)->parent;
-        if (oldParent != INVALID_ENTITY && world->HasComponent<ChildrenComponent>(oldParent)) {
-            auto& children = world->GetComponent<ChildrenComponent>(oldParent)->children;
-            children.erase(std::remove(children.begin(), children.end(), child), children.end());
+    {
+        auto* oldPc = world->GetComponent<ParentComponent>(child);
+        if (oldPc) {
+            Entity oldParent = oldPc->parent;
+            if (oldParent != INVALID_ENTITY) {
+                auto* oldCc = world->GetComponent<ChildrenComponent>(oldParent);
+                if (oldCc) {
+                    oldCc->children.erase(std::remove(oldCc->children.begin(), oldCc->children.end(), child), oldCc->children.end());
+                }
+            }
         }
     }
 
@@ -54,16 +60,20 @@ inline void SetParent(World* world, Entity child, Entity parent) {
     }
 
     // Set new parent
-    if (!world->HasComponent<ParentComponent>(child)) {
+    auto* childPc = world->GetComponent<ParentComponent>(child);
+    if (!childPc) {
         world->AddComponent<ParentComponent>(child);
+        childPc = world->GetComponent<ParentComponent>(child);
     }
-    world->GetComponent<ParentComponent>(child)->parent = parent;
+    childPc->parent = parent;
 
     // Add to new parent's children
-    if (!world->HasComponent<ChildrenComponent>(parent)) {
+    auto* parentCc = world->GetComponent<ChildrenComponent>(parent);
+    if (!parentCc) {
         world->AddComponent<ChildrenComponent>(parent);
+        parentCc = world->GetComponent<ChildrenComponent>(parent);
     }
-    auto& children = world->GetComponent<ChildrenComponent>(parent)->children;
+    auto& children = parentCc->children;
     if (std::find(children.begin(), children.end(), child) == children.end()) {
         children.push_back(child);
     }

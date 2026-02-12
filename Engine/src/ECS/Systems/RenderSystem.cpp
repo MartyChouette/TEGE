@@ -4365,6 +4365,8 @@ void RenderSystem::EnsureWaterMeshes() {
 
         const u32 segsX = 20;
         const u32 segsZ = 20;
+        mesh.vertices.reserve((segsX + 1) * (segsZ + 1));
+        mesh.indices.reserve(segsX * segsZ * 6);
 
         for (u32 zi = 0; zi <= segsZ; ++zi) {
             for (u32 xi = 0; xi <= segsX; ++xi) {

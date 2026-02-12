@@ -139,7 +139,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~170 API bindings, hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~350 API bindings (incl. AI/BT, accessibility, physics 2D, networking), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface, DLL/SO loading, manifest JSON, editor panel
@@ -150,7 +150,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **50+ Built-in Nodes** - Events, flow control, math, logic, transform, components, audio, debug
+- **90+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through

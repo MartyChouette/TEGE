@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/AI/BehaviorTree.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
@@ -4770,6 +4771,393 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
             auto* ac = ctx.world->GetComponent<ECS::AnimatorComponent>(target);
             return ac ? ac->animator.IsPlaying() : false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // AI NODES
+    // ========================================================================
+
+    // AI Set Target
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AISetTarget;
+        def.displayName = "AI Set Target";
+        def.description = "Set the target entity for an AI controller";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.5f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            EntityPin("Target", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ai", "target", "enemy", "chase", "controller"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            ECS::Entity targetEntity = ECS::INVALID_ENTITY;
+            if (inputs.size() > 2 && std::holds_alternative<u64>(inputs[2]))
+                targetEntity = static_cast<ECS::Entity>(std::get<u64>(inputs[2]));
+            auto* ai = ctx.world->GetComponent<ECS::AIControllerComponent>(target);
+            if (ai) ai->targetEntity = targetEntity;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // AI Get Target (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AIGetTarget;
+        def.displayName = "AI Get Target";
+        def.description = "Get the current target entity of an AI controller";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.5f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {EntityPin("Target", PK::Output)};
+        def.keywords = {"ai", "target", "enemy", "get", "controller"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ai = ctx.world->GetComponent<ECS::AIControllerComponent>(target);
+            return ai ? static_cast<u64>(ai->targetEntity) : static_cast<u64>(ECS::INVALID_ENTITY);
+        };
+        RegisterNode(def);
+    }
+
+    // AI Set State
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AISetState;
+        def.displayName = "AI Set State";
+        def.description = "Set the AI controller state (Idle=0, Patrol=1, Chase=2, Attack=3, Flee=4, Dead=5)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.5f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Int("State", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ai", "state", "idle", "patrol", "chase", "attack", "flee"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            i32 state = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? std::get<i32>(inputs[2]) : 0;
+            if (state < 0 || state > 5) state = 0;
+            auto* ai = ctx.world->GetComponent<ECS::AIControllerComponent>(target);
+            if (ai) ai->currentState = static_cast<ECS::AIControllerComponent::AIState>(state);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // AI Get State (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AIGetState;
+        def.displayName = "AI Get State";
+        def.description = "Get the current AI controller state as integer";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.5f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Int("State", PK::Output)};
+        def.keywords = {"ai", "state", "get", "controller"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* ai = ctx.world->GetComponent<ECS::AIControllerComponent>(target);
+            return ai ? static_cast<i32>(ai->currentState) : 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // BEHAVIOR TREE NODES
+    // ========================================================================
+
+    // BT Enable
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTEnable;
+        def.displayName = "BT Enable";
+        def.description = "Enable a behavior tree component on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"behavior", "tree", "enable", "activate", "bt"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* bt = ctx.world->GetComponent<ECS::BehaviorTreeComponent>(target);
+            if (bt) bt->enabled = true;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // BT Disable
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTDisable;
+        def.displayName = "BT Disable";
+        def.description = "Disable a behavior tree component on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"behavior", "tree", "disable", "deactivate", "bt"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* bt = ctx.world->GetComponent<ECS::BehaviorTreeComponent>(target);
+            if (bt) bt->enabled = false;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // BT Reset
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTReset;
+        def.displayName = "BT Reset";
+        def.description = "Reset a behavior tree to its initial state";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"behavior", "tree", "reset", "restart", "bt"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* bt = ctx.world->GetComponent<ECS::BehaviorTreeComponent>(target);
+            if (bt) bt->ResetRuntimeState();
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // BT Get Enabled (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::BTGetEnabled;
+        def.displayName = "BT Is Enabled";
+        def.description = "Check if a behavior tree is currently enabled";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Enabled", PK::Output)};
+        def.keywords = {"behavior", "tree", "enabled", "active", "bt", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* bt = ctx.world->GetComponent<ECS::BehaviorTreeComponent>(target);
+            return bt ? bt->enabled : false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // NAVMESH NODES
+    // ========================================================================
+
+    // Navmesh Is Point On (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NavmeshIsPointOn;
+        def.displayName = "Is Point On Navmesh";
+        def.description = "Check if a world position is on the navigation mesh";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.6f, 0.5f);
+        def.inputs = {Vec3("Position", PK::Input)};
+        def.outputs = {Bool("On Navmesh", PK::Output)};
+        def.keywords = {"navmesh", "navigation", "point", "walkable", "pathfinding"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            // Navmesh query depends on runtime navmesh pointer; returns false if unavailable
+            (void)ctx;
+            (void)inputs;
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // STATE MACHINE NODES (F19)
+    // ========================================================================
+
+    // StateMachine Set State
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SMSetState;
+        def.displayName = "Set State Machine State";
+        def.description = "Transition a state machine to a new state by name";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("State", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"state", "machine", "set", "transition", "fsm"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            std::string stateName;
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                stateName = std::get<std::string>(inputs[2]);
+            if (!stateName.empty()) {
+                auto* sm = ctx.world->GetComponent<ECS::StateMachineComponent>(target);
+                if (sm) sm->SetState(stateName);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // StateMachine Get State (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SMGetState;
+        def.displayName = "Get State Machine State";
+        def.description = "Get the current state name of a state machine";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.3f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {String("State", PK::Output)};
+        def.keywords = {"state", "machine", "get", "current", "fsm"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* sm = ctx.world->GetComponent<ECS::StateMachineComponent>(target);
+            return sm ? sm->currentState : std::string("");
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // ACCESSIBILITY NODES (F20)
+    // ========================================================================
+
+    // Subtitle Show
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SubtitleShow;
+        def.displayName = "Show Subtitle";
+        def.description = "Display a subtitle or closed caption on screen";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            String("Text", PK::Input, ""),
+            String("Speaker", PK::Input, ""),
+            Float("Duration", PK::Input, 3.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"subtitle", "caption", "text", "accessibility", "display"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Subtitle display requires SubtitleSystem pointer; placeholder execution
+            (void)ctx;
+            (void)inputs;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Announcer Announce
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AnnouncerAnnounce;
+        def.displayName = "Announce";
+        def.description = "Queue an accessibility announcement for screen readers";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            String("Text", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"announce", "screen reader", "accessibility", "tts"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Announcer requires AccessibilityAnnouncer pointer; placeholder execution
+            (void)ctx;
+            (void)inputs;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Colorblind Set Mode
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ColorblindSetMode;
+        def.displayName = "Set Colorblind Mode";
+        def.description = "Set the colorblind filter mode (0=Off, 1=Protanopia, 2=Deuteranopia, 3=Tritanopia, 4-6=anomaly, 7=Achromatopsia)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            Int("Mode", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"colorblind", "accessibility", "filter", "vision", "color"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Colorblind mode requires RuntimeAccessibilitySettings pointer; placeholder
+            (void)ctx;
+            (void)inputs;
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }

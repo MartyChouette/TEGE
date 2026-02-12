@@ -418,6 +418,23 @@ bool BuildPipeline::PackAssets(const std::string& outputDir, const std::string& 
         }
     }
 
+    // Pack 3D model files (.gltf, .glb, .fbx, .obj, .dae, .3ds, .ply, .vox)
+    for (const auto& path : m_ModelPaths) {
+        auto relPath = fs::relative(fs::path(path), fs::path(m_ProjectDir));
+        if (!packer.AddFile(relPath.generic_string(), path)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack model: " + path);
+        }
+    }
+
+    // Pack window icon if present in project directory
+    // Check for icon.png next to the project file (standard convention)
+    std::string iconPath = (fs::path(m_ProjectDir) / "icon.png").string();
+    if (fs::exists(iconPath)) {
+        if (!packer.AddFile("icon.png", iconPath)) {
+            AddMessage(MessageSeverity::Warning, "Failed to pack window icon: " + iconPath);
+        }
+    }
+
     // Write build manifest
     if (!WriteBuildManifest(m_Config, packer)) {
         AddMessage(MessageSeverity::Error, "Failed to write build manifest");
@@ -587,6 +604,10 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".glb",        &m_ModelPaths },
         { ".fbx",        &m_ModelPaths },
         { ".obj",        &m_ModelPaths },
+        { ".dae",        &m_ModelPaths },
+        { ".3ds",        &m_ModelPaths },
+        { ".ply",        &m_ModelPaths },
+        { ".vox",        &m_ModelPaths },
         { ".svg",        &m_TexturePaths },        // F23: SVG files
     };
 
@@ -617,7 +638,8 @@ void BuildPipeline::ScanProjectDirectory() {
                std::to_string(m_AudioPaths.size()) + " audio, " +
                std::to_string(m_DialoguePaths.size()) + " dialogues, " +
                std::to_string(m_PrefabPaths.size()) + " prefabs, " +
-               std::to_string(m_DataAssetPaths.size()) + " data assets");
+               std::to_string(m_DataAssetPaths.size()) + " data assets, " +
+               std::to_string(m_ModelPaths.size()) + " models");
 }
 
 void BuildPipeline::AddMessage(MessageSeverity severity, const std::string& text, const std::string& file) {

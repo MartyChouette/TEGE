@@ -29,6 +29,9 @@
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Effects/Destructible.h"
+#include "Enjin/Input/InputAction.h"
 #include <string>
 
 namespace Enjin {
@@ -103,6 +106,10 @@ public:
     Networking::NetworkSystem* GetNetworkSystem() { return &m_NetworkSystem; }
     Scene::StreamingManager* GetStreamingManager() { return &m_StreamingManager; }
 
+    Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
+    Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
+    InputSystem::InputActionMap* GetInputActionMap() { return &m_InputMap; }
+
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
@@ -171,6 +178,15 @@ private:
     ECS::RenderSystem* m_RenderSystem = nullptr;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
+
+    // Audio system (owned by PlayMode for script bindings)
+    Audio::SimpleAudio m_SimpleAudio;
+
+    // Destructible system (owned by PlayMode for script bindings)
+    Effects::DestructibleSystem m_DestructibleSystem;
+
+    // Input action map for remappable input
+    InputSystem::InputActionMap m_InputMap;
 
     // Level streaming
     Scene::StreamingManager m_StreamingManager;

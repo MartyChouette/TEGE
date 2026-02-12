@@ -10,6 +10,9 @@
 // AngelScript forward declarations
 class asIScriptEngine;
 
+// Use shared world pointer from ScriptBindings.cpp (at global scope with 'using namespace Enjin')
+extern Enjin::ECS::World* s_BindingsWorld;
+
 namespace Enjin {
 namespace Scripting {
 
@@ -17,11 +20,12 @@ namespace Scripting {
 // Global state for shim
 // ============================================================================
 
-// NOTE: Separate from s_BindingsWorld — cleared via SetFlashShimWorld(nullptr) in PlayMode::Stop()
-static ECS::World* g_FlashWorld = nullptr;
+static ECS::World*& g_FlashWorld = s_BindingsWorld;
 static Audio::SimpleAudio* g_FlashAudio = nullptr;
 
-void SetFlashShimWorld(ECS::World* world) { g_FlashWorld = world; }
+void SetFlashShimWorld(ECS::World* /*world*/) {
+    // World pointer is now shared via s_BindingsWorld (set by SetBindingsWorld)
+}
 void SetFlashShimAudio(Audio::SimpleAudio* audio) { g_FlashAudio = audio; }
 
 // ============================================================================

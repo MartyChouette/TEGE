@@ -13,14 +13,15 @@ using namespace Enjin;
 #define AS_CHECK(expr) \
     do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
 
-// NOTE: Separate from s_BindingsWorld — cleared via SetBindingsFlower(nullptr) in PlayMode::Stop()
-static ECS::World* s_World = nullptr;
+// Use shared world pointer from ScriptBindings.cpp (at global scope, uses 'using namespace Enjin')
+extern ECS::World* s_BindingsWorld;
+static ECS::World*& s_World = s_BindingsWorld;
 
 namespace Enjin {
 namespace Scripting {
 
-void SetBindingsFlower(ECS::World* world) {
-    s_World = world;
+void SetBindingsFlower(ECS::World* /*world*/) {
+    // World pointer is now shared via s_BindingsWorld (set by SetBindingsWorld)
 }
 
 } // namespace Scripting

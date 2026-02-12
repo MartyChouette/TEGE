@@ -99,6 +99,10 @@ private:
     CollisionCallback m_OnCollisionExit;
     CollisionCallback m_OnSensorEnter;
     CollisionCallback m_OnSensorExit;
+
+    // Reusable per-frame temporaries (avoid per-frame heap allocation)
+    std::vector<ECS::Entity> m_ToRemoveCache;
+    std::vector<ECS::Entity> m_JointToRemoveCache;
 };
 
 } // namespace Physics

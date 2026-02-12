@@ -1053,6 +1053,10 @@ static void RegisterVisualScriptBindings(asIScriptEngine* engine) {
         asFUNCTION(VisualScript_GetVariable), asCALL_CDECL));
 }
 
+// Forward declarations for binding registration functions defined in other TUs
+void RegisterAIBindings(asIScriptEngine* engine);
+void RegisterAccessibilityBindings(asIScriptEngine* engine);
+
 // ---------------------------------------------------------------------------
 // RegisterAllBindings
 // ---------------------------------------------------------------------------
@@ -1093,6 +1097,8 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterFlowerBindings(engine);
     RegisterPhysics2DBindings(engine);
     RegisterNetworkBindings(engine);
+    RegisterAIBindings(engine);
+    RegisterAccessibilityBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

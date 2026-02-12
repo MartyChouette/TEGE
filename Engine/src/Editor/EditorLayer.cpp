@@ -4436,6 +4436,94 @@ void EditorLayer::DrawInspectorPanel() {
         if (m_World->HasComponent<ECS::SkeletonComponent>(m_PrimarySelected)) {
             DrawSkeletonComponent(m_PrimarySelected);
         }
+        if (m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
+            // Animator component inspector (inline)
+            bool animOpen = ImGui::CollapsingHeader("[>] Animator", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("AnimatorCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<ECS::AnimatorComponent>(m_PrimarySelected, "animator", "Animator");
+                    ImGui::EndPopup();
+                } else {
+                    ImGui::EndPopup();
+                }
+            }
+            if (animOpen) {
+                auto* animComp = m_World->GetComponent<ECS::AnimatorComponent>(m_PrimarySelected);
+                if (animComp) {
+                    auto& animator = animComp->animator;
+                    const auto& animations = animator.GetAnimations();
+
+                    // Current animation name (read-only)
+                    const auto& currentName = animator.GetCurrentAnimationName();
+                    ImGui::Text("Current: %s", currentName.empty() ? "(none)" : currentName.c_str());
+
+                    // Playing state indicator
+                    bool isPlaying = animator.IsPlaying();
+                    ImGui::Text("State: %s", isPlaying ? "Playing" : "Stopped");
+                    if (animator.IsBlending()) {
+                        ImGui::SameLine();
+                        ImGui::TextDisabled("(blending)");
+                    }
+
+                    // Normalized time progress bar
+                    f32 normalizedTime = animator.GetNormalizedTime();
+                    ImGui::ProgressBar(normalizedTime, ImVec2(-1, 0));
+
+                    // Speed
+                    f32 speed = animator.GetSpeed();
+                    if (ImGui::DragFloat("Speed##Animator", &speed, 0.01f, 0.0f, 10.0f, "%.2f")) {
+                        animator.SetSpeed(speed);
+                    }
+
+                    // Play / Stop buttons
+                    if (isPlaying) {
+                        if (ImGui::Button("Stop##Animator")) {
+                            animator.Stop();
+                        }
+                    } else {
+                        if (!currentName.empty()) {
+                            if (ImGui::Button("Play##Animator")) {
+                                animator.Play(currentName, 0.0f);
+                            }
+                        }
+                    }
+
+                    // Available animations list
+                    if (!animations.empty() && ImGui::TreeNode("Animations")) {
+                        for (const auto& [name, anim] : animations) {
+                            bool isCurrent = (name == currentName);
+                            if (isCurrent) {
+                                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 0.9f, 0.3f, 1.0f));
+                            }
+                            ImGui::Text("%s (%.2fs, %zu tracks)", name.c_str(),
+                                        anim.duration, anim.tracks.size());
+                            if (isCurrent) {
+                                ImGui::PopStyleColor();
+                            }
+                            ImGui::SameLine();
+                            std::string playLabel = "Play##" + name;
+                            if (ImGui::SmallButton(playLabel.c_str())) {
+                                animator.Play(name, 0.2f);
+                            }
+                        }
+                        ImGui::TreePop();
+                    } else if (animations.empty()) {
+                        ImGui::TextDisabled("No animations loaded");
+                    }
+
+                    // State machine info
+                    const auto& stateMachine = animComp->stateMachine;
+                    const auto& currentState = stateMachine.GetCurrentState();
+                    if (!stateMachine.GetStates().empty() && ImGui::TreeNode("State Machine")) {
+                        ImGui::Text("Current State: %s", currentState.empty() ? "(none)" : currentState.c_str());
+                        ImGui::Text("Default State: %s", stateMachine.GetDefaultState().empty() ? "(none)" : stateMachine.GetDefaultState().c_str());
+                        ImGui::Text("States: %zu", stateMachine.GetStates().size());
+                        ImGui::Text("Transitions: %zu", stateMachine.GetTransitions().size());
+                        ImGui::TreePop();
+                    }
+                }
+            }
+        }
 
         // Flower components
         if (m_World->HasComponent<ECS::JellyMeshComponent>(m_PrimarySelected)) {

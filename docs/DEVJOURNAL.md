@@ -4,6 +4,15 @@
 
 ## 2026-02-12
 
+### Comprehensive Audit — Round 3: 30+ More Fixes
+Third round of audit fixes across 19 files + 2 new files.
+
+**Feature (F1, F5, F6, F10, F12, F16, F17, F19, F20, F23, F24):** PlayMode now owns SimpleAudio, DestructibleSystem, and InputActionMap — wired in Play()/Stop() so audio, destructible, and remappable input work in editor play mode. New `ScriptBindings_AI.cpp` with 34 bindings (15 AI controller, 13 behavior tree blackboard, 2 navmesh). New `ScriptBindings_Accessibility.cpp` with 20 bindings (8 subtitle, 5 announcer, 4 colorblind, 3 general). 13 new VS nodes (4 AI, 4 BT, 1 Navmesh, 2 StateMachine, 3 Accessibility). Animator inspector UI with playback controls, speed, animation list. Build pipeline now packs 3D models (.gltf/.glb/.fbx/.obj/.dae/.3ds/.ply/.vox), SVG files, and window icons.
+
+**Performance (P14-P16, P21, P28, P30-P32):** JoltBackend per-frame sync vectors → member caches (4 vectors: currentEntities, toRemove, jointEntities, jointToRemove). Box2DBackend per-frame toRemove → member caches (2 vectors). SpriteBatchRenderer instance data reserve(). Physics2D BroadPhase reserve(). Water mesh vertices/indices reserve(). Hierarchy.h SetParent() HasComponent+GetComponent → single GetComponent.
+
+**Stability (S10, S14):** Flower/Flash bindings use shared s_BindingsWorld instead of separate pointers. ObjectPool.DestroyAll moved before ShutdownAllScripts in PlayMode::Stop().
+
 ### Comprehensive Audit — Round 2: 28 More Fixes
 Second round of audit fixes across 18 files.
 

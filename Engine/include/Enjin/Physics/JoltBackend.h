@@ -120,6 +120,12 @@ private:
 
     // Track which entities had bodies last frame for reconciliation
     std::unordered_set<ECS::Entity> m_PreviousBodyEntities;
+
+    // Reusable per-frame temporaries (avoid per-frame heap allocation)
+    std::unordered_set<ECS::Entity> m_CurrentEntitiesCache;
+    std::vector<ECS::Entity> m_ToRemoveCache;
+    std::unordered_set<ECS::Entity> m_CurrentJointEntitiesCache;
+    std::vector<ECS::Entity> m_JointToRemoveCache;
 };
 
 } // namespace Physics

@@ -296,12 +296,12 @@ void JoltBackend::Update(f32 deltaTime) {
 // ============================================================================
 
 void JoltBackend::SyncECSToJolt() {
-    // Build set of entities that currently have colliders
-    std::unordered_set<ECS::Entity> currentEntities;
+    // Build set of entities that currently have colliders (reuse member to avoid per-frame alloc)
+    m_CurrentEntitiesCache.clear();
 
     auto addEntities = [&](const auto& entities) {
         for (ECS::Entity e : entities) {
-            currentEntities.insert(e);
+            m_CurrentEntitiesCache.insert(e);
         }
     };
 
@@ -312,20 +312,20 @@ void JoltBackend::SyncECSToJolt() {
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
     // Create bodies for new entities
-    for (ECS::Entity entity : currentEntities) {
+    for (ECS::Entity entity : m_CurrentEntitiesCache) {
         if (m_EntityToBodyIndex.find(entity) == m_EntityToBodyIndex.end()) {
             CreateBodyForEntity(entity);
         }
     }
 
-    // Destroy bodies for removed entities
-    std::vector<ECS::Entity> toRemove;
+    // Destroy bodies for removed entities (reuse member to avoid per-frame alloc)
+    m_ToRemoveCache.clear();
     for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
-        if (currentEntities.find(entity) == currentEntities.end()) {
-            toRemove.push_back(entity);
+        if (m_CurrentEntitiesCache.find(entity) == m_CurrentEntitiesCache.end()) {
+            m_ToRemoveCache.push_back(entity);
         }
     }
-    for (ECS::Entity entity : toRemove) {
+    for (ECS::Entity entity : m_ToRemoveCache) {
         DestroyBodyForEntity(entity);
     }
 
@@ -350,6 +350,8 @@ void JoltBackend::SyncECSToJolt() {
         ColliderInfo info = GetColliderInfo(entity);
         m_BodyFilterData[bodyIndex] = {info.categoryBits, info.collisionMask};
     }
+
+    m_CurrentEntitiesCache.clear();  // Release references after use
 }
 
 void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
@@ -669,12 +671,12 @@ void JoltBackend::ApplyGravityZones() {
 // ============================================================================
 
 void JoltBackend::SyncJointsToJolt() {
-    // Track which joint entities currently exist
-    std::unordered_set<ECS::Entity> currentJointEntities;
+    // Track which joint entities currently exist (reuse member to avoid per-frame alloc)
+    m_CurrentJointEntitiesCache.clear();
 
     auto processJoints = [&](const auto& entities, u8 jointType) {
         for (ECS::Entity e : entities) {
-            currentJointEntities.insert(e);
+            m_CurrentJointEntitiesCache.insert(e);
             if (m_EntityToConstraint.find(e) == m_EntityToConstraint.end()) {
                 CreateJointForEntity(e, jointType);
             }
@@ -688,14 +690,14 @@ void JoltBackend::SyncJointsToJolt() {
     processJoints(m_World->GetEntitiesWithComponent<ECS::FixedJointComponent>(), 4);
     processJoints(m_World->GetEntitiesWithComponent<ECS::SliderJointComponent>(), 5);
 
-    // Remove constraints for deleted joint entities
-    std::vector<ECS::Entity> toRemove;
+    // Remove constraints for deleted joint entities (reuse member to avoid per-frame alloc)
+    m_JointToRemoveCache.clear();
     for (auto& [entity, constraint] : m_EntityToConstraint) {
-        if (currentJointEntities.find(entity) == currentJointEntities.end()) {
-            toRemove.push_back(entity);
+        if (m_CurrentJointEntitiesCache.find(entity) == m_CurrentJointEntitiesCache.end()) {
+            m_JointToRemoveCache.push_back(entity);
         }
     }
-    for (ECS::Entity e : toRemove) {
+    for (ECS::Entity e : m_JointToRemoveCache) {
         DestroyJointForEntity(e);
     }
 

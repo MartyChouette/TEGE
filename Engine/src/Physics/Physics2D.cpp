@@ -393,6 +393,9 @@ void PhysicsWorld2D::BroadPhase(std::vector<std::pair<ECS::Entity, ECS::Entity>>
     const auto& entities = m_World->GetEntitiesWithComponent<Body2DComponent>();
     if (entities.size() < 2) return;
 
+    // Reserve a reasonable estimate for output pairs (N entities rarely produce more than N pairs)
+    pairs.reserve(entities.size());
+
     // Precompute AABBs
     struct EntityAABB {
         ECS::Entity entity;

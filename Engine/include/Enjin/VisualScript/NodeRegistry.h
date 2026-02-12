@@ -269,6 +269,30 @@ constexpr const char* DialogueIsActive     = "Dialogue_IsActive";
 constexpr const char* AnimatorStop         = "Animator_Stop";
 constexpr const char* AnimatorIsPlaying    = "Animator_IsPlaying";
 
+// AI
+constexpr const char* AISetTarget          = "AI_SetTarget";
+constexpr const char* AIGetTarget          = "AI_GetTarget";
+constexpr const char* AISetState           = "AI_SetState";
+constexpr const char* AIGetState           = "AI_GetState";
+
+// Behavior Tree
+constexpr const char* BTEnable             = "BT_Enable";
+constexpr const char* BTDisable            = "BT_Disable";
+constexpr const char* BTReset              = "BT_Reset";
+constexpr const char* BTGetEnabled         = "BT_GetEnabled";
+
+// Navmesh
+constexpr const char* NavmeshIsPointOn     = "Navmesh_IsPointOnNavmesh";
+
+// State Machine
+constexpr const char* SMSetState           = "StateMachine_SetState";
+constexpr const char* SMGetState           = "StateMachine_GetState";
+
+// Accessibility
+constexpr const char* SubtitleShow         = "Subtitle_Show";
+constexpr const char* AnnouncerAnnounce    = "Announcer_Announce";
+constexpr const char* ColorblindSetMode    = "Colorblind_SetMode";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript
