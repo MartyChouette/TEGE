@@ -137,6 +137,16 @@ struct SceneRenderSettings {
     bool globalGouraudOnly = false;
     u32 globalVertexSnapResolution = 160;
 
+    // Full-screen stipple / dither
+    bool stippleEnabled = false;
+    u32 stipplePattern = 0;       // 0=Bayer4x4..7=FloydSteinberg
+    u32 stippleColorMode = 0;     // 0=Mono, 1=DuoTone, 2=FullColor
+    f32 stippleScale = 1.0f;
+    f32 stippleDensity = 0.5f;
+    f32 stippleStrength = 1.0f;
+    Math::Vector3 stippleFgColor = Math::Vector3(0.0f, 0.0f, 0.0f);
+    Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+
     // --- Cel Shading ---
     bool celShadingEnabled = false;
     f32 celDiffuseBands = 3.0f;

@@ -4,6 +4,9 @@
 
 ## 2026-02-12
 
+### Full-Screen Stipple / Dither Post-Process
+Added a full-screen stipple/dither post-process effect as a primary aesthetic tool. 8 pattern modes: Bayer 4x4, Bayer 8x8, Blue Noise (interleaved gradient noise), Halftone (circular dot grid), Crosshatch (diagonal lines), Overlook (hex geometric), Ordered 2x2 (coarse retro), and Floyd-Steinberg approximation (pseudo error diffusion). 3 color modes: Monochrome (fg/bg ink/paper), Duo-Tone (two configurable colors), Full Color (pattern applied to luminance, preserving hue). Controls: scale (0.5-8x), density (threshold bias), strength (blend with original), and foreground/background color pickers. Applied in the post-process chain after palette lock and before gamma correction. Full editor UI in Post Processing panel with tooltips, scene render settings persistence, and JSON serialization.
+
 ### Shadow Dither Patterns
 Added 6 built-in shadow dither patterns selectable per-material: Bayer 4x4 (default), Bayer 8x8, Blue Noise (interleaved gradient noise), Halftone (circular dots), Crosshatch (diagonal lines), and Overlook (hexagonal geometric pattern inspired by The Shining's Overlook Hotel carpet). Pattern stored in flag bits 29-31 (freed by compressing vertex snap resolution from 8 bits to 5 bits, packed as value/8). Inspector shows pattern dropdown only when a dither mode is active.
 

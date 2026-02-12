@@ -171,6 +171,20 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _celPad0 = 0.0f;
     alignas(16) Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
     alignas(4) f32 _celPad1 = 0.0f;
+
+    // Full-screen stipple / dither
+    alignas(4) u32 stippleEnabled = 0;
+    alignas(4) u32 stipplePattern = 0;       // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook, 6=Ordered2x2, 7=FloydSteinberg
+    alignas(4) u32 stippleColorMode = 0;     // 0=Monochrome, 1=DuoTone, 2=FullColor
+    alignas(4) f32 stippleScale = 1.0f;      // Pattern pixel scale (1.0=native, 2.0=bigger)
+    alignas(4) f32 stippleDensity = 0.5f;    // Threshold bias 0.0-1.0
+    alignas(4) f32 stippleStrength = 1.0f;   // Blend 0.0-1.0 with original
+    alignas(4) f32 _stipplePad0 = 0.0f;
+    alignas(4) f32 _stipplePad1 = 0.0f;
+    alignas(16) Math::Vector3 stippleFgColor = Math::Vector3(0.0f, 0.0f, 0.0f);  // Foreground/ink (black)
+    alignas(4) f32 _stipplePad2 = 0.0f;
+    alignas(16) Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);  // Background/paper (white)
+    alignas(4) f32 _stipplePad3 = 0.0f;
 };
 
 // Post-processing manager

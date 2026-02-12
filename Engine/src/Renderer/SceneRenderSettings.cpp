@@ -188,6 +188,16 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.celOutlineThickness          = pp->celOutlineThickness;
         s.celOutlineThreshold          = pp->celOutlineThreshold;
         s.celOutlineColor              = pp->celOutlineColor;
+
+        // Stipple
+        s.stippleEnabled               = pp->stippleEnabled != 0;
+        s.stipplePattern               = pp->stipplePattern;
+        s.stippleColorMode             = pp->stippleColorMode;
+        s.stippleScale                 = pp->stippleScale;
+        s.stippleDensity               = pp->stippleDensity;
+        s.stippleStrength              = pp->stippleStrength;
+        s.stippleFgColor               = pp->stippleFgColor;
+        s.stippleBgColor               = pp->stippleBgColor;
     }
 
     return s;
@@ -368,6 +378,16 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->celOutlineThreshold          = celOutlineThreshold;
         pp->celOutlineColor              = celOutlineColor;
 
+        // Stipple
+        pp->stippleEnabled               = stippleEnabled ? 1 : 0;
+        pp->stipplePattern               = stipplePattern;
+        pp->stippleColorMode             = stippleColorMode;
+        pp->stippleScale                 = stippleScale;
+        pp->stippleDensity               = stippleDensity;
+        pp->stippleStrength              = stippleStrength;
+        pp->stippleFgColor               = stippleFgColor;
+        pp->stippleBgColor               = stippleBgColor;
+
         // Restore runtime-only fields
         pp->time = savedTime;
         pp->screenWidth = savedScreenW;
@@ -508,6 +528,16 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     // Palette lock
     j["paletteEnabled"]    = s.paletteEnabled;
     j["paletteColors"]     = s.paletteColors;
+
+    // Stipple
+    j["stippleEnabled"]    = s.stippleEnabled;
+    j["stipplePattern"]    = s.stipplePattern;
+    j["stippleColorMode"]  = s.stippleColorMode;
+    j["stippleScale"]      = RF(s.stippleScale);
+    j["stippleDensity"]    = RF(s.stippleDensity);
+    j["stippleStrength"]   = RF(s.stippleStrength);
+    j["stippleFgColor"]    = SerializeVec3(s.stippleFgColor);
+    j["stippleBgColor"]    = SerializeVec3(s.stippleBgColor);
 
     // Global retro overrides
     j["globalFlatShading"]          = s.globalFlatShading;
@@ -666,6 +696,16 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     // Palette lock
     if (j.contains("paletteEnabled"))    s.paletteEnabled    = j["paletteEnabled"].get<bool>();
     if (j.contains("paletteColors"))     s.paletteColors     = j["paletteColors"].get<u32>();
+
+    // Stipple
+    if (j.contains("stippleEnabled"))    s.stippleEnabled    = j["stippleEnabled"].get<bool>();
+    if (j.contains("stipplePattern"))    s.stipplePattern    = j["stipplePattern"].get<u32>();
+    if (j.contains("stippleColorMode"))  s.stippleColorMode  = j["stippleColorMode"].get<u32>();
+    if (j.contains("stippleScale"))      s.stippleScale      = j["stippleScale"].get<f32>();
+    if (j.contains("stippleDensity"))    s.stippleDensity    = j["stippleDensity"].get<f32>();
+    if (j.contains("stippleStrength"))   s.stippleStrength   = j["stippleStrength"].get<f32>();
+    if (j.contains("stippleFgColor"))    s.stippleFgColor    = DeserializeVec3(j["stippleFgColor"], s.stippleFgColor);
+    if (j.contains("stippleBgColor"))    s.stippleBgColor    = DeserializeVec3(j["stippleBgColor"], s.stippleBgColor);
 
     // Global retro overrides
     if (j.contains("globalFlatShading"))          s.globalFlatShading          = j["globalFlatShading"].get<bool>();

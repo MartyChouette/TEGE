@@ -466,19 +466,20 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Security & Robustness Audit | High | Low | P1 | ✅ Complete |
 | **— Feature Accessibility (Walled-Off Systems) —** | | | | |
 | Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | ✅ Complete (physics via IPhysicsBackend) |
-| Build Pipeline: Pack scripts/audio/dialogue/prefabs/data assets | Critical | Medium | P0 | Planned |
-| Wire ScriptEngine subsystem pointers in Player | Critical | Medium | P0 | Planned |
-| Register Newgrounds script bindings (dead code) | High | Low | P0 | Planned |
-| Add UI System script bindings (AS + VS) | Critical | High | P1 | Planned |
-| Add Weather/Water/Particles script bindings | High | Medium | P1 | Planned |
+| Build Pipeline: Pack scripts/audio/dialogue/prefabs/data assets | Critical | Medium | P0 | ✅ Complete |
+| Wire ScriptEngine subsystem pointers in Player | Critical | Medium | P0 | ✅ Complete |
+| Register Newgrounds script bindings (dead code) | High | Low | P0 | ✅ Complete |
+| Add UI System script bindings (AS + VS) | Critical | High | P1 | ✅ Complete |
+| Add Weather/Water/Particles script bindings | High | Medium | P1 | ✅ Complete |
 | Add Physics 2D script bindings | High | Medium | P1 | Planned |
-| Add Quest/HUD/Cinematic/Destructible script bindings | High | Medium | P1 | Planned |
+| Add Quest/HUD/Cinematic/Destructible script bindings | High | Medium | P1 | ✅ Complete |
 | Add Networking script bindings | High | High | P1 | Planned |
-| Add Prefab/Procedural Gen script bindings | Medium | Medium | P2 | Planned |
-| Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | Planned |
-| Wire Localization (editor panel + script bindings) | High | Medium | P1 | Planned |
-| Add IK/Terrain/Skeleton/Flower to Add Component menu | Medium | Low | P2 | Planned |
-| Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | Planned |
+| Add Prefab script bindings | Medium | Medium | P2 | ✅ Complete |
+| Add Procedural Gen script bindings | Medium | Medium | P2 | Planned |
+| Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | ✅ Complete |
+| Wire Localization (editor panel + script bindings) | High | Medium | P1 | ✅ Complete |
+| Add IK/Terrain/Skeleton/Flower to Add Component menu | Medium | Low | P2 | ✅ Complete |
+| Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | ✅ Complete (22 Gameplay nodes) |
 | Connect graph editor shells (shader/audio/particle/anim) | Low | Very High | P3 | Planned |
 | Default 60 FPS Frame Rate Limit | Low | Low | P1 | ✅ Complete |
 | Tiered Save System (20 slots, 3 tiers) | High | High | P1 | ✅ Complete |
@@ -492,7 +493,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Tilt-shift / miniature effect | Low | Medium | P3 | Planned |
 | Bokeh depth of field | Medium | High | P2 | Planned |
 | Cel shading / toon rendering | High | Medium | P2 | ✅ Complete |
-| Full-screen stippling & dither | Medium | Low | P3 | Planned |
+| Full-screen stippling & dither | Medium | Low | P3 | ✅ Complete |
 | **— Artistic Rendering —** | | | | |
 | Parallax occlusion mapping (advanced) | Medium | Medium | P2 | Planned |
 | Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | Planned |
@@ -527,7 +528,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 3D asset library (CC0) | High | High | P2 | Planned |
 | 2D asset library (CC0) | High | Medium | P2 | Planned |
 | **— Editor & Project —** | | | | |
-| Template rebuild & demo scenes | Medium | Medium | P2 | Planned |
+| Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22 templates) |
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | Planned |
 | Source-app import presets | Medium | High | P3 | Planned |
@@ -650,7 +651,7 @@ All pipeline optimization items resolved: multi-threaded command buffer recordin
 - **Tilt-Shift / Miniature Effect** — Post-process blur with configurable focus band position, width, falloff curve, and blur strength. Horizontal/vertical/radial modes. Gives a "toy model" look to scenes
 - **Bokeh Depth of Field** — Physically-based DoF with aperture shape (circle, hexagon, octagon), bokeh size, focal distance, focal range, and highlight threshold for bright-spot bokeh. Separate near/far blur. CoC (circle of confusion) visualization debug mode
 - ~~**Cel Shading / Toon Rendering**~~ ✅ — Configurable diffuse band quantization (2-8 bands) and hard specular cutoff in LightingUBO, per-material opt-out (`excludeFromCelShading`), post-process Sobel edge detection outlines on depth (configurable thickness, threshold, color), full editor UI in Rendering + Post-Processing settings, scene render settings serialization
-- **Full-Screen Stippling & Dither** — Post-process stipple/dither effect with pattern selection (Bayer 2x2/4x4/8x8, blue noise, halftone dots, cross-hatch, ordered, Floyd-Steinberg error diffusion). Configurable density, scale, and color mode (mono/duo-tone/full color). Combines with existing retro effects pipeline
+- ~~**Full-Screen Stippling & Dither**~~ ✅ — Post-process stipple/dither effect with 8 patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook, Ordered 2x2, Floyd-Steinberg), 3 color modes (Monochrome, Duo-Tone, Full Color), configurable scale/density/strength, foreground/background color pickers, full editor UI in Post Processing panel, scene render settings serialization
 
 ### Artistic Surface Materials ✅ COMPLETE
 

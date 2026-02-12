@@ -129,6 +129,20 @@ layout(binding = 1) uniform PostProcessSettings {
     float _celPad0;
     vec3 celOutlineColor;
     float _celPad1;
+
+    // Full-screen stipple / dither
+    uint stippleEnabled;
+    uint stipplePattern;        // 0-7
+    uint stippleColorMode;      // 0=mono, 1=duo-tone, 2=full color
+    float stippleScale;
+    float stippleDensity;
+    float stippleStrength;
+    float _stipplePad0;
+    float _stipplePad1;
+    vec3 stippleFgColor;
+    float _stipplePad2;
+    vec3 stippleBgColor;
+    float _stipplePad3;
 } settings;
 
 // LUT texture (binding 2)
@@ -672,6 +686,119 @@ vec3 applyPaletteLock(vec3 color) {
     return clamp(color, 0.0, 1.0);
 }
 
+// ============================================================
+// Full-Screen Stipple / Dither
+// ============================================================
+
+// Stipple pattern threshold generators (return 0..1)
+float stippleBayer4x4(ivec2 pos) {
+    const float bayer4[16] = float[16](
+         0.0,  8.0,  2.0, 10.0,
+        12.0,  4.0, 14.0,  6.0,
+         3.0, 11.0,  1.0,  9.0,
+        15.0,  7.0, 13.0,  5.0
+    );
+    int idx = (pos.x % 4) + (pos.y % 4) * 4;
+    return bayer4[idx] / 16.0;
+}
+
+float stippleBayer8x8(ivec2 pos) {
+    const float bayer8[64] = float[64](
+         0.0, 32.0,  8.0, 40.0,  2.0, 34.0, 10.0, 42.0,
+        48.0, 16.0, 56.0, 24.0, 50.0, 18.0, 58.0, 26.0,
+        12.0, 44.0,  4.0, 36.0, 14.0, 46.0,  6.0, 38.0,
+        60.0, 28.0, 52.0, 20.0, 62.0, 30.0, 54.0, 22.0,
+         3.0, 35.0, 11.0, 43.0,  1.0, 33.0,  9.0, 41.0,
+        51.0, 19.0, 59.0, 27.0, 49.0, 17.0, 57.0, 25.0,
+        15.0, 47.0,  7.0, 39.0, 13.0, 45.0,  5.0, 37.0,
+        63.0, 31.0, 55.0, 23.0, 61.0, 29.0, 53.0, 21.0
+    );
+    int idx = (pos.x % 8) + (pos.y % 8) * 8;
+    return bayer8[idx] / 64.0;
+}
+
+float stippleBlueNoise(ivec2 pos) {
+    // Interleaved gradient noise (Jimenez 2014)
+    vec2 p = vec2(pos);
+    return fract(52.9829189 * fract(0.06711056 * p.x + 0.00583715 * p.y));
+}
+
+float stippleHalftone(ivec2 pos) {
+    vec2 center = mod(vec2(pos), 8.0) - 3.5;
+    return length(center) / 5.0;
+}
+
+float stippleCrosshatch(ivec2 pos) {
+    float d1 = mod(float(pos.x + pos.y), 8.0) / 8.0;
+    float d2 = mod(float(pos.x - pos.y + 800), 8.0) / 8.0;
+    return min(d1, d2);
+}
+
+float stippleOverlook(ivec2 pos) {
+    // Hex geometric pattern
+    vec2 p = vec2(pos);
+    float hexY = mod(p.y, 6.0);
+    float offset = (hexY < 3.0) ? 0.0 : 3.0;
+    float hexX = mod(p.x + offset, 6.0);
+    vec2 center = vec2(3.0, 3.0);
+    float dist = length(vec2(hexX, mod(hexY, 3.0) * 2.0) - center);
+    return clamp(dist / 4.0, 0.0, 1.0);
+}
+
+float stippleOrdered2x2(ivec2 pos) {
+    const float bayer2[4] = float[4](0.0, 2.0, 3.0, 1.0);
+    int idx = (pos.x % 2) + (pos.y % 2) * 2;
+    return bayer2[idx] / 4.0;
+}
+
+float stippleFloydSteinberg(ivec2 pos, float luma) {
+    // Pseudo error-diffusion: compare luminance against a local average approximation
+    // using neighboring pixel noise to simulate diffused error
+    float noise = fract(sin(dot(vec2(pos), vec2(12.9898, 78.233))) * 43758.5453);
+    return mix(luma, noise, 0.5);
+}
+
+vec3 applyStipple(vec3 color, vec2 screenPos) {
+    if (settings.stippleEnabled == 0) return color;
+
+    float scale = max(settings.stippleScale, 0.5);
+    ivec2 pos = ivec2(floor(screenPos / scale));
+
+    float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
+
+    // Get pattern threshold
+    float threshold = 0.5;
+    uint pat = settings.stipplePattern;
+    if (pat == 0)      threshold = stippleBayer4x4(pos);
+    else if (pat == 1) threshold = stippleBayer8x8(pos);
+    else if (pat == 2) threshold = stippleBlueNoise(pos);
+    else if (pat == 3) threshold = stippleHalftone(pos);
+    else if (pat == 4) threshold = stippleCrosshatch(pos);
+    else if (pat == 5) threshold = stippleOverlook(pos);
+    else if (pat == 6) threshold = stippleOrdered2x2(pos);
+    else               threshold = stippleFloydSteinberg(pos, luma);
+
+    // Apply density bias: shift threshold so more/fewer dots appear
+    float biasedLuma = luma + (settings.stippleDensity - 0.5);
+
+    // Determine stippled output
+    vec3 stippled;
+    if (settings.stippleColorMode == 0) {
+        // Monochrome: fg/bg based on luma vs threshold
+        stippled = (biasedLuma > threshold) ? settings.stippleFgColor : settings.stippleBgColor;
+    } else if (settings.stippleColorMode == 1) {
+        // Duo-tone: two configurable colors mapped to dark/light
+        stippled = (biasedLuma > threshold) ? settings.stippleFgColor : settings.stippleBgColor;
+    } else {
+        // Full color: apply pattern to luminance, preserve hue
+        float factor = (biasedLuma > threshold) ? 1.0 : 0.0;
+        stippled = color * factor;
+    }
+
+    // Blend with original based on strength
+    return mix(color, stippled, settings.stippleStrength);
+}
+
 // Cel shading outline: Sobel edge detection on depth buffer
 vec3 applyCelOutline(vec3 color, vec2 uv) {
     if (settings.celOutlineEnabled == 0) return color;
@@ -757,6 +884,9 @@ void main() {
 
     // Color palette lock (after quantization)
     color = applyPaletteLock(color);
+
+    // Full-screen stipple / dither (after palette lock, before gamma)
+    color = applyStipple(color, screenPos);
 
     // Gamma correction
     color = pow(color, vec3(1.0 / settings.gamma));

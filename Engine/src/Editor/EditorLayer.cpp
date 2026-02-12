@@ -8590,6 +8590,55 @@ void EditorLayer::DrawPostProcessingPanel() {
         }
     }
 
+    // Stipple / Dither
+    if (ImGui::CollapsingHeader("Stipple / Dither")) {
+        bool stippleEnabled = settings.stippleEnabled != 0;
+        if (ImGui::Checkbox("Enabled##Stipple", &stippleEnabled)) {
+            settings.stippleEnabled = stippleEnabled ? 1 : 0;
+        }
+
+        if (settings.stippleEnabled) {
+            const char* stipplePatterns[] = {
+                "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone",
+                "Crosshatch", "Overlook", "Ordered 2x2", "Floyd-Steinberg"
+            };
+            int currentPattern = static_cast<int>(settings.stipplePattern);
+            if (ImGui::Combo("Pattern##Stipple", &currentPattern, stipplePatterns, 8)) {
+                settings.stipplePattern = static_cast<u32>(currentPattern);
+            }
+
+            const char* colorModes[] = { "Monochrome", "Duo-Tone", "Full Color" };
+            int currentColorMode = static_cast<int>(settings.stippleColorMode);
+            if (ImGui::Combo("Color Mode##Stipple", &currentColorMode, colorModes, 3)) {
+                settings.stippleColorMode = static_cast<u32>(currentColorMode);
+            }
+
+            ImGui::DragFloat("Scale##Stipple", &settings.stippleScale, 0.1f, 0.5f, 8.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pattern pixel scale (1.0 = native resolution)");
+
+            ImGui::DragFloat("Density##Stipple", &settings.stippleDensity, 0.01f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Threshold bias — lower = more dots, higher = fewer dots");
+
+            ImGui::DragFloat("Strength##Stipple", &settings.stippleStrength, 0.01f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Blend with original image (0 = no effect, 1 = full stipple)");
+
+            // Show color pickers for mono and duo-tone modes
+            if (settings.stippleColorMode <= 1) {
+                f32 fg[3] = { settings.stippleFgColor.x, settings.stippleFgColor.y, settings.stippleFgColor.z };
+                if (ImGui::ColorEdit3("Foreground##Stipple", fg)) {
+                    settings.stippleFgColor = Math::Vector3(fg[0], fg[1], fg[2]);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ink / dot color");
+
+                f32 bg[3] = { settings.stippleBgColor.x, settings.stippleBgColor.y, settings.stippleBgColor.z };
+                if (ImGui::ColorEdit3("Background##Stipple", bg)) {
+                    settings.stippleBgColor = Math::Vector3(bg[0], bg[1], bg[2]);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Paper / gap color");
+            }
+        }
+    }
+
     // Cel outline
     {
         auto& s = m_PostProcessing->GetSettings();
