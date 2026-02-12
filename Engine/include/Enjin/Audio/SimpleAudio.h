@@ -32,8 +32,12 @@ struct SoundInstance {
     f32 playbackPosition = 0.0f;
 };
 
+// SoundHandle may already be defined by AudioSystem.h — guard against redefinition
+#ifndef ENJIN_SOUND_HANDLE_DEFINED
+#define ENJIN_SOUND_HANDLE_DEFINED
 using SoundHandle = u32;
 constexpr SoundHandle INVALID_SOUND = 0;
+#endif
 
 // Simple audio manager
 // Note: This is a stub that can be extended with actual audio playback

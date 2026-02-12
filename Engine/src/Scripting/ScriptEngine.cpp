@@ -1075,6 +1075,22 @@ int ScriptEngine::IncludeCallback(const char* include,
         return -1;
     }
 
+    // Helper lambda: verify that a resolved path stays within the script directory
+    auto isPathSafe = [&](const std::filesystem::path& resolved) -> bool {
+        if (self->m_ScriptDirectory.empty()) return true; // No restriction if no directory set
+        std::error_code ec2;
+        auto baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2);
+        if (ec2) return false;
+        auto resolvedAbs = std::filesystem::absolute(resolved, ec2);
+        if (ec2) return false;
+        auto relPath = resolvedAbs.lexically_relative(baseDir);
+        if (relPath.empty() || relPath.string().find("..") == 0) {
+            ENJIN_LOG_ERROR(Script, "Script #include path escapes script directory: %s", include);
+            return false;
+        }
+        return true;
+    };
+
     // Strategy 1: resolve relative to the file doing the including
     if (from && from[0] != '\0') {
         std::filesystem::path fromPath(from);
@@ -1082,6 +1098,10 @@ int ScriptEngine::IncludeCallback(const char* include,
         std::error_code ec;
         if (std::filesystem::exists(resolved, ec)) {
             std::string resolvedStr = resolved.lexically_normal().string();
+            // Restrict includes to script directory
+            if (!isPathSafe(resolved)) {
+                return -1;
+            }
             i32 r = builder->AddSectionFromFile(resolvedStr.c_str());
             if (r >= 0) {
                 ENJIN_LOG_INFO(Script, "Included '%s' (relative to source)", resolvedStr.c_str());
@@ -1096,6 +1116,10 @@ int ScriptEngine::IncludeCallback(const char* include,
         std::error_code ec;
         if (std::filesystem::exists(resolved, ec)) {
             std::string resolvedStr = resolved.lexically_normal().string();
+            // Restrict includes to script directory
+            if (!isPathSafe(resolved)) {
+                return -1;
+            }
             i32 r = builder->AddSectionFromFile(resolvedStr.c_str());
             if (r >= 0) {
                 ENJIN_LOG_INFO(Script, "Included '%s' (script directory)", resolvedStr.c_str());
@@ -1112,6 +1136,10 @@ int ScriptEngine::IncludeCallback(const char* include,
         std::error_code ec;
         if (std::filesystem::exists(apiPath, ec)) {
             std::string apiPathStr = apiPath.lexically_normal().string();
+            // Restrict includes to script directory
+            if (!isPathSafe(apiPath)) {
+                return -1;
+            }
             i32 r = builder->AddSectionFromFile(apiPathStr.c_str());
             if (r >= 0) {
                 ENJIN_LOG_INFO(Script, "Included '%s' (enjin_api directory)", apiPathStr.c_str());

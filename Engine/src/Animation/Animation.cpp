@@ -120,7 +120,8 @@ void SpriteAnimator::Update(f32 deltaTime) {
                         break;
                     case PlayMode::PingPong:
                         m_IsReversing = true;
-                        m_CurrentFrameIndex = static_cast<u32>(m_CurrentAnim->frames.size()) - 2;
+                        m_CurrentFrameIndex = m_CurrentAnim->frames.size() > 2 ?
+                            static_cast<u32>(m_CurrentAnim->frames.size()) - 2 : 0;
                         break;
                     case PlayMode::ClampForever:
                         m_CurrentFrameIndex = static_cast<u32>(m_CurrentAnim->frames.size()) - 1;

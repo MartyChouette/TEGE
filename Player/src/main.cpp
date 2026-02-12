@@ -16,6 +16,7 @@
 #include "Enjin/Renderer/CameraController.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
+#include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
@@ -24,11 +25,13 @@
 #include <imgui.h>
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/RetroEffects.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Audio/AudioSystem.h"
+#include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
@@ -232,6 +235,14 @@ public:
         // Initialize save system with local backend
         m_TieredSaveSystem.LoadMeta();
 
+        // Initialize systems needed for script bindings
+        m_SimpleAudio.Initialize();
+        m_SimpleAudio.SetWorld(m_World.get());
+        m_WeatherSystem.Initialize();
+        m_DestructibleSystem.Initialize(m_World.get());
+        m_StreamingManager.SetWorld(m_World.get());
+        m_SceneManager.SetWorld(m_World.get());
+
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
 
         // Show splash screen before loading game
@@ -252,6 +263,21 @@ public:
         m_HUDSystem.SetEnabled(false);
         m_QuestSystem.SetEnabled(false);
         m_FootstepSystem.SetEnabled(false);
+
+        // Shutdown script-bound systems
+        m_DestructibleSystem.Shutdown();
+        m_WeatherSystem.Shutdown();
+        m_SimpleAudio.Shutdown();
+        m_StreamingManager.SetEnabled(false);
+        m_StreamingManager.ClearChunks();
+
+        // Clear script bindings
+        Enjin::Scripting::SetBindingsAudio(nullptr);
+        Enjin::Scripting::SetBindingsWeather(nullptr);
+        Enjin::Scripting::SetBindingsDestructible(nullptr);
+        Enjin::Scripting::SetBindingsStreaming(nullptr);
+        Enjin::Scripting::SetBindingsSceneManager(nullptr);
+        Enjin::Scripting::SetBindingsPostProcessing(nullptr);
 
         // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
@@ -320,6 +346,8 @@ public:
 
         // Update audio
         Enjin::Audio::AudioManager::Get().Update();
+        m_SimpleAudio.Update(deltaTime);
+        m_SimpleAudio.UpdateAudioSources(deltaTime);
 
         // Update input
         m_InputMap.Update(deltaTime);
@@ -406,6 +434,13 @@ public:
         m_ObjectPool.Update(m_World.get(), deltaTime);
         m_EntityEventBus.ProcessDeferred();
 
+        // Weather, destructible, and streaming
+        if (m_Camera) {
+            m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
+            m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
+        }
+        m_DestructibleSystem.Update(deltaTime);
+
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
 
@@ -421,7 +456,13 @@ public:
     void Render() override {
         if (!m_Initialized || !m_Renderer) return;
 
-        if (!m_Renderer->BeginFrame()) return;
+        if (!m_Renderer->BeginFrame()) {
+            if (m_Renderer->IsDeviceLost()) {
+                ENJIN_LOG_FATAL(Player, "GPU device lost — shutting down.");
+                RequestShutdown();
+            }
+            return;
+        }
 
         // Update camera aspect ratio
         auto extent = m_Renderer->GetSwapchainExtent();
@@ -599,6 +640,12 @@ private:
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsFlower(m_World.get());
+        Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
+        Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
+        Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
+        Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
+        Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
+        Enjin::Scripting::SetBindingsPostProcessing(nullptr); // No post-processing in standalone player
 
         // Wire dialogue system event bus
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -609,6 +656,7 @@ private:
         m_HUDSystem.SetEnabled(true);
         m_QuestSystem.SetEnabled(true);
         m_FootstepSystem.SetEnabled(true);
+        m_StreamingManager.SetEnabled(true);
 
         // Find game camera entity for controller system
         if (m_World) {
@@ -738,6 +786,13 @@ private:
     Enjin::Gameplay::ObjectPool m_ObjectPool;
     Enjin::Gameplay::CinematicSystem m_CinematicSystem;
     Enjin::Gameplay::TieredSaveSystem m_TieredSaveSystem;
+
+    // Systems for script bindings
+    Enjin::Audio::SimpleAudio m_SimpleAudio;
+    Enjin::Effects::WeatherSystem m_WeatherSystem;
+    Enjin::Effects::DestructibleSystem m_DestructibleSystem;
+    Enjin::Scene::StreamingManager m_StreamingManager;
+    Enjin::Scene::SceneManager m_SceneManager;
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
         m_DialogueSystem.Update(m_World.get(), deltaTime);

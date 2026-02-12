@@ -179,7 +179,28 @@ bool HotReloadSystem::Compile()
     m_IsCompiling = true;
     ENJIN_LOG_INFO(Script, "Compiling gameplay module: %s", m_CompileCommand.c_str());
 
+#ifdef _WIN32
+    // Use CreateProcess to avoid shell injection
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    std::string cmdCopy = m_CompileCommand; // CreateProcess may modify the string
+    BOOL ok = CreateProcessA(nullptr, cmdCopy.data(), nullptr, nullptr, FALSE,
+                             CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    int result = -1;
+    if (ok) {
+        WaitForSingleObject(pi.hProcess, INFINITE);
+        DWORD exitCode = 0;
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+        result = static_cast<int>(exitCode);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+#else
     int result = std::system(m_CompileCommand.c_str());
+#endif
 
     m_IsCompiling = false;
 

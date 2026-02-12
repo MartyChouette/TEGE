@@ -83,6 +83,8 @@ PlayModeDiff ComputePlayModeDiff(const std::string& savedJson,
                                   const std::string& currentJson) {
     PlayModeDiff diff;
 
+    try {
+
     json savedParsed = json::parse(savedJson, nullptr, false);
     json currentParsed = json::parse(currentJson, nullptr, false);
 
@@ -100,10 +102,12 @@ PlayModeDiff ComputePlayModeDiff(const std::string& savedJson,
     std::unordered_map<std::string, json> currentByName;
 
     for (const auto& e : savedEntities) {
+        if (!e.is_object()) continue;
         std::string name = GetEntityNameFromJson(e);
         savedByName[name] = e;
     }
     for (const auto& e : currentEntities) {
+        if (!e.is_object()) continue;
         std::string name = GetEntityNameFromJson(e);
         currentByName[name] = e;
     }
@@ -215,6 +219,10 @@ PlayModeDiff ComputePlayModeDiff(const std::string& savedJson,
 
             diff.entities.push_back(ed);
         }
+    }
+
+    } catch (const std::exception& ex) {
+        ENJIN_LOG_WARN(Editor, "PlayModeDiff: JSON exception during diff computation: %s", ex.what());
     }
 
     return diff;

@@ -307,11 +307,11 @@ void PlayMode::Update(f32 deltaTime) {
         auto t0 = std::chrono::high_resolution_clock::now();
         {
             ENJIN_PROFILE_SCOPE("Physics");
-            m_Physics->Update(deltaTime);
+            if (m_Physics) m_Physics->Update(deltaTime);
         }
 
         // Dispatch collision events to visual scripts
-        {
+        if (m_Physics) {
             const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
             for (const auto& evt : collisionEvents) {
                 if (evt.isTrigger) {
@@ -333,7 +333,7 @@ void PlayMode::Update(f32 deltaTime) {
                 }
             }
             m_Physics->ClearPendingCollisionEvents();
-        }
+        } // if m_Physics
         auto t1 = std::chrono::high_resolution_clock::now();
 
         {

@@ -17,9 +17,12 @@ namespace Audio {
 // ============================================================================
 
 // Handle to a loaded sound
+#ifndef ENJIN_SOUND_HANDLE_DEFINED
+#define ENJIN_SOUND_HANDLE_DEFINED
 using SoundHandle = u32;
-using ChannelHandle = u32;
 constexpr SoundHandle INVALID_SOUND = 0;
+#endif
+using ChannelHandle = u32;
 constexpr ChannelHandle INVALID_CHANNEL = 0;
 
 // Sound type

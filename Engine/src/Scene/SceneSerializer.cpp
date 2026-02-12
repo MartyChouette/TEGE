@@ -309,7 +309,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.doubleSided = j.value("doubleSided", false);
     material.castShadows = j.value("castShadows", true);
     material.receiveShadows = j.value("receiveShadows", true);
-    if (j.contains("alphaMode")) material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(j["alphaMode"].get<i32>());
+    if (j.contains("alphaMode")) { i32 v = j["alphaMode"].get<i32>(); if (v >= 0 && v <= 2) material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(v); }
     material.alphaCutoff = j.value("alphaCutoff", 0.5f);
     // Height/parallax mapping (optional, added in later versions)
     if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
@@ -367,7 +367,7 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
 
 ECS::LightComponent DeserializeLightComponent(const json& j) {
     ECS::LightComponent light;
-    if (j.contains("type")) light.type = static_cast<ECS::LightType>(j["type"].get<i32>());
+    if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v <= 2) light.type = static_cast<ECS::LightType>(v); }
     if (j.contains("color")) light.color = DeserializeVector3(j["color"]);
     light.intensity = j.value("intensity", 1.0f);
     light.range = j.value("range", 10.0f);
@@ -399,7 +399,7 @@ ECS::TextComponent DeserializeTextComponent(const json& j) {
     if (j.contains("bgColor")) text.bgColor = DeserializeVector3(j["bgColor"]);
     text.bgOpacity = j.value("bgOpacity", 1.0f);
     if (j.contains("horizontalAlign")) {
-        text.horizontalAlign = static_cast<ECS::TextAlign>(j["horizontalAlign"].get<i32>());
+        i32 v = j["horizontalAlign"].get<i32>(); if (v >= 0 && v <= 2) text.horizontalAlign = static_cast<ECS::TextAlign>(v);
     }
     text.paddingX = j.value("paddingX", 16.0f);
     text.paddingY = j.value("paddingY", 16.0f);
@@ -409,7 +409,7 @@ ECS::TextComponent DeserializeTextComponent(const json& j) {
 
 ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     ECS::CameraComponent camera;
-    if (j.contains("projectionType")) camera.projectionType = static_cast<ECS::ProjectionType>(j["projectionType"].get<i32>());
+    if (j.contains("projectionType")) { i32 v = j["projectionType"].get<i32>(); if (v >= 0 && v <= 1) camera.projectionType = static_cast<ECS::ProjectionType>(v); }
     camera.fieldOfView = j.value("fieldOfView", 60.0f);
     camera.nearPlane = j.value("nearPlane", 0.1f);
     camera.farPlane = j.value("farPlane", 1000.0f);
@@ -489,7 +489,7 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
 ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     ECS::WaterVolumeComponent volume;
     volume.halfExtents = DeserializeVector3(j["halfExtents"]);
-    if (j.contains("waterType")) volume.waterType = static_cast<ECS::WaterType>(j["waterType"].get<u32>());
+    if (j.contains("waterType")) { u32 v = j["waterType"].get<u32>(); if (v <= 3) volume.waterType = static_cast<ECS::WaterType>(v); }
     volume.waterColor = DeserializeVector3(j["waterColor"]);
     volume.opacity = j["opacity"].get<f32>();
     volume.waveSpeed = j["waveSpeed"].get<f32>();
@@ -576,7 +576,7 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
     if (j.contains("canopyQuads")) tree.canopyQuads = j["canopyQuads"].get<u32>();
     if (j.contains("minHeightScale")) tree.minHeightScale = j["minHeightScale"].get<f32>();
     if (j.contains("maxHeightScale")) tree.maxHeightScale = j["maxHeightScale"].get<f32>();
-    if (j.contains("treeType")) tree.treeType = static_cast<ECS::TreeType>(j["treeType"].get<u32>());
+    if (j.contains("treeType")) { u32 v = j["treeType"].get<u32>(); if (v <= 1) tree.treeType = static_cast<ECS::TreeType>(v); }
     if (j.contains("springCanopyColor")) tree.springCanopyColor = DeserializeVector3(j["springCanopyColor"]);
     if (j.contains("summerCanopyColor")) tree.summerCanopyColor = DeserializeVector3(j["summerCanopyColor"]);
     if (j.contains("fallCanopyColor")) tree.fallCanopyColor = DeserializeVector3(j["fallCanopyColor"]);
@@ -704,8 +704,8 @@ json SerializeGravityZoneComponent(const ECS::GravityZoneComponent& zone) {
 
 ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     ECS::GravityZoneComponent zone;
-    if (j.contains("shape")) zone.shape = static_cast<ECS::GravityZoneShape>(j["shape"].get<u32>());
-    if (j.contains("mode")) zone.mode = static_cast<ECS::GravityZoneMode>(j["mode"].get<u32>());
+    if (j.contains("shape")) { u32 v = j["shape"].get<u32>(); if (v <= 1) zone.shape = static_cast<ECS::GravityZoneShape>(v); }
+    if (j.contains("mode")) { u32 v = j["mode"].get<u32>(); if (v <= 1) zone.mode = static_cast<ECS::GravityZoneMode>(v); }
     zone.halfExtents = DeserializeVector3(j["halfExtents"]);
     zone.gravityDirection = DeserializeVector3(j["gravityDirection"]);
     zone.gravityStrength = j["gravityStrength"].get<f32>();
@@ -741,8 +741,8 @@ json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
 ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
     ECS::FluidVolumeComponent vol;
     if (j.contains("halfExtents")) vol.halfExtents = DeserializeVector3(j["halfExtents"]);
-    if (j.contains("fluidType")) vol.fluidType = static_cast<ECS::FluidType>(j["fluidType"].get<u32>());
-    if (j.contains("dimension")) vol.dimension = static_cast<ECS::FluidDimension>(j["dimension"].get<u32>());
+    if (j.contains("fluidType")) { u32 v = j["fluidType"].get<u32>(); if (v <= 4) vol.fluidType = static_cast<ECS::FluidType>(v); }
+    if (j.contains("dimension")) { u32 v = j["dimension"].get<u32>(); if (v <= 1) vol.dimension = static_cast<ECS::FluidDimension>(v); }
     if (j.contains("gridSize")) vol.gridSize = j["gridSize"].get<u32>();
     if (j.contains("viscosity")) vol.viscosity = j["viscosity"].get<f32>();
     if (j.contains("diffusion")) vol.diffusion = j["diffusion"].get<f32>();
@@ -1111,7 +1111,7 @@ json SerializeContentFlags(const Accessibility::SceneContentFlags& flags) {
 
 Accessibility::SceneContentFlags DeserializeContentFlags(const json& j) {
     Accessibility::SceneContentFlags flags;
-    if (j.contains("flags")) flags.flags = static_cast<Accessibility::ContentWarningType>(j["flags"].get<u32>());
+    if (j.contains("flags")) { u32 v = j["flags"].get<u32>(); if (v <= 0xFF) flags.flags = static_cast<Accessibility::ContentWarningType>(v); }
     if (j.contains("customWarnings")) {
         for (const auto& w : j["customWarnings"]) {
             flags.customWarnings.push_back(w.get<std::string>());
@@ -1147,7 +1147,7 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("loop")) audio.loop = j["loop"].get<bool>();
     if (j.contains("is3D")) audio.is3D = j["is3D"].get<bool>();
     if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
-    if (j.contains("rolloff")) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(j["rolloff"].get<u8>());
+    if (j.contains("rolloff")) { u8 v = j["rolloff"].get<u8>(); if (v <= 2) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(v); }
     if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
     return audio;
 }
@@ -1201,8 +1201,8 @@ ECS::RigidbodyComponent DeserializeRigidbodyComponent(const json& j) {
     if (j.contains("freezeRotationX")) rb.freezeRotationX = j["freezeRotationX"].get<bool>();
     if (j.contains("freezeRotationY")) rb.freezeRotationY = j["freezeRotationY"].get<bool>();
     if (j.contains("freezeRotationZ")) rb.freezeRotationZ = j["freezeRotationZ"].get<bool>();
-    if (j.contains("bodyType")) rb.bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(j["bodyType"].get<u8>());
-    if (j.contains("collisionMode")) rb.collisionMode = static_cast<ECS::RigidbodyComponent::CollisionMode>(j["collisionMode"].get<u8>());
+    if (j.contains("bodyType")) { u8 v = j["bodyType"].get<u8>(); if (v <= 2) rb.bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(v); }
+    if (j.contains("collisionMode")) { u8 v = j["collisionMode"].get<u8>(); if (v <= 2) rb.collisionMode = static_cast<ECS::RigidbodyComponent::CollisionMode>(v); }
     return rb;
 }
 
@@ -1395,7 +1395,7 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
     if (j.contains("center")) col.center = DeserializeVector3(j["center"]);
     if (j.contains("radius")) col.radius = j["radius"].get<f32>();
     if (j.contains("height")) col.height = j["height"].get<f32>();
-    if (j.contains("direction")) col.direction = static_cast<ECS::CapsuleColliderComponent::Direction>(j["direction"].get<u8>());
+    if (j.contains("direction")) { u8 v = j["direction"].get<u8>(); if (v <= 2) col.direction = static_cast<ECS::CapsuleColliderComponent::Direction>(v); }
     if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
@@ -1459,7 +1459,7 @@ ECS::DamageComponent DeserializeDamageComponent(const json& j) {
     if (j.contains("destroyOnHit")) d.destroyOnHit = j["destroyOnHit"].get<bool>();
     if (j.contains("damageOnce")) d.damageOnce = j["damageOnce"].get<bool>();
     if (j.contains("damageInterval")) d.damageInterval = j["damageInterval"].get<f32>();
-    if (j.contains("type")) d.type = static_cast<ECS::DamageComponent::DamageType>(j["type"].get<u8>());
+    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) d.type = static_cast<ECS::DamageComponent::DamageType>(v); }
     return d;
 }
 
@@ -1479,7 +1479,7 @@ json SerializeTriggerZoneComponent(const ECS::TriggerZoneComponent& tz) {
 
 ECS::TriggerZoneComponent DeserializeTriggerZoneComponent(const json& j) {
     ECS::TriggerZoneComponent tz;
-    if (j.contains("shape")) tz.shape = static_cast<ECS::TriggerZoneComponent::Shape>(j["shape"].get<u8>());
+    if (j.contains("shape")) { u8 v = j["shape"].get<u8>(); if (v <= 1) tz.shape = static_cast<ECS::TriggerZoneComponent::Shape>(v); }
     if (j.contains("boxSize")) tz.boxSize = DeserializeVector3(j["boxSize"]);
     if (j.contains("sphereRadius")) tz.sphereRadius = j["sphereRadius"].get<f32>();
     if (j.contains("triggerMask")) tz.triggerMask = j["triggerMask"].get<u32>();
@@ -1533,7 +1533,7 @@ json SerializePickupComponent(const ECS::PickupComponent& p) {
 
 ECS::PickupComponent DeserializePickupComponent(const json& j) {
     ECS::PickupComponent p;
-    if (j.contains("type")) p.type = static_cast<ECS::PickupComponent::PickupType>(j["type"].get<u8>());
+    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) p.type = static_cast<ECS::PickupComponent::PickupType>(v); }
     if (j.contains("value")) p.value = j["value"].get<f32>();
     if (j.contains("customId")) p.customId = j["customId"].get<std::string>();
     if (j.contains("pickupRange")) p.pickupRange = j["pickupRange"].get<f32>();
@@ -1655,7 +1655,7 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("endColor")) pe.endColor = DeserializeVector3(j["endColor"]);
     if (j.contains("startAlpha")) pe.startAlpha = j["startAlpha"].get<f32>();
     if (j.contains("endAlpha")) pe.endAlpha = j["endAlpha"].get<f32>();
-    if (j.contains("shape")) pe.shape = static_cast<ECS::ParticleEmitterComponent::EmitterShape>(j["shape"].get<u8>());
+    if (j.contains("shape")) { u8 v = j["shape"].get<u8>(); if (v <= 4) pe.shape = static_cast<ECS::ParticleEmitterComponent::EmitterShape>(v); }
     if (j.contains("shapeRadius")) pe.shapeRadius = j["shapeRadius"].get<f32>();
     if (j.contains("coneAngle")) pe.coneAngle = j["coneAngle"].get<f32>();
     if (j.contains("gravity")) pe.gravity = DeserializeVector3(j["gravity"]);
@@ -1671,7 +1671,7 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("rotationSpeed")) pe.rotationSpeed = j["rotationSpeed"].get<f32>();
     if (j.contains("rotationSpeedVariance")) pe.rotationSpeedVariance = j["rotationSpeedVariance"].get<f32>();
     if (j.contains("maxParticles")) pe.maxParticles = j["maxParticles"].get<u32>();
-    if (j.contains("simulationSpace")) pe.simulationSpace = static_cast<ECS::ParticleEmitterComponent::SimulationSpace>(j["simulationSpace"].get<u8>());
+    if (j.contains("simulationSpace")) { u8 v = j["simulationSpace"].get<u8>(); if (v <= 1) pe.simulationSpace = static_cast<ECS::ParticleEmitterComponent::SimulationSpace>(v); }
     if (j.contains("renderMode")) {
         u8 rm = j["renderMode"].get<u8>();
         if (rm <= 1) pe.renderMode = static_cast<ECS::ParticleEmitterComponent::RenderMode>(rm);
@@ -2159,7 +2159,7 @@ json SerializeVisualScriptVariable(const ECS::VisualScriptVariable& var) {
 ECS::VisualScriptVariable DeserializeVisualScriptVariable(const json& j) {
     ECS::VisualScriptVariable var;
     if (j.contains("name")) var.name = j["name"].get<std::string>();
-    if (j.contains("type")) var.type = static_cast<Editor::PinType>(j["type"].get<i32>());
+    if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v < static_cast<i32>(Editor::PinType::COUNT)) var.type = static_cast<Editor::PinType>(v); }
     if (j.contains("exposed")) var.exposed = j["exposed"].get<bool>();
 
     if (j.contains("value")) {
@@ -2328,9 +2328,9 @@ json SerializeTweenEntry(const ECS::TweenEntry& te) {
 
 ECS::TweenEntry DeserializeTweenEntry(const json& j) {
     ECS::TweenEntry te;
-    if (j.contains("property")) te.property = static_cast<ECS::TweenProperty>(j["property"].get<i32>());
-    if (j.contains("easing")) te.easing = static_cast<ECS::EasingType>(j["easing"].get<i32>());
-    if (j.contains("mode")) te.mode = static_cast<ECS::TweenMode>(j["mode"].get<i32>());
+    if (j.contains("property")) { i32 v = j["property"].get<i32>(); if (v >= 0 && v < static_cast<i32>(ECS::TweenProperty::COUNT)) te.property = static_cast<ECS::TweenProperty>(v); }
+    if (j.contains("easing")) { i32 v = j["easing"].get<i32>(); if (v >= 0 && v < static_cast<i32>(ECS::EasingType::COUNT)) te.easing = static_cast<ECS::EasingType>(v); }
+    if (j.contains("mode")) { i32 v = j["mode"].get<i32>(); if (v >= 0 && v < static_cast<i32>(ECS::TweenMode::COUNT)) te.mode = static_cast<ECS::TweenMode>(v); }
     if (j.contains("startValue")) te.startValue = DeserializeVector3(j["startValue"]);
     if (j.contains("endValue")) te.endValue = DeserializeVector3(j["endValue"]);
     if (j.contains("duration")) te.duration = j["duration"].get<f32>();
@@ -2507,7 +2507,7 @@ ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
         for (const auto& m : j["nodeMeta"]) {
             Editor::NodeId nodeId = m.value("nodeId", (Editor::NodeId)0);
             AI::BTNodeMeta meta;
-            meta.nodeType = static_cast<AI::BTNodeType>(m.value("nodeType", (u8)0));
+            u8 nt = m.value("nodeType", (u8)0); meta.nodeType = (nt < static_cast<u8>(AI::BTNodeType::COUNT)) ? static_cast<AI::BTNodeType>(nt) : AI::BTNodeType::Root;
             if (m.contains("properties") && m["properties"].is_object()) {
                 for (auto& [k, v] : m["properties"].items()) {
                     meta.properties[k] = v.get<std::string>();
@@ -2578,7 +2578,7 @@ ECS::QuestFlowComponent DeserializeQuestFlowComponent(const json& j) {
         for (const auto& m : j["nodeMeta"]) {
             Editor::NodeId nodeId = m.value("nodeId", (Editor::NodeId)0);
             Gameplay::QuestNodeMeta meta;
-            meta.nodeType = static_cast<Gameplay::QuestNodeType>(m.value("nodeType", (u8)0));
+            u8 nt = m.value("nodeType", (u8)0); meta.nodeType = (nt < static_cast<u8>(Gameplay::QuestNodeType::COUNT)) ? static_cast<Gameplay::QuestNodeType>(nt) : Gameplay::QuestNodeType::Start;
             if (m.contains("properties") && m["properties"].is_object()) {
                 for (auto& [k, v] : m["properties"].items()) {
                     meta.properties[k] = v.get<std::string>();
@@ -3194,7 +3194,7 @@ json SerializeQuestStateComponent(const ECS::QuestStateComponent& q) {
 ECS::QuestStateComponent DeserializeQuestStateComponent(const json& j) {
     ECS::QuestStateComponent q;
     if (j.contains("questId")) q.questId = j["questId"].get<std::string>();
-    if (j.contains("status")) q.status = static_cast<ECS::QuestStateComponent::Status>(j["status"].get<u8>());
+    if (j.contains("status")) { u8 v = j["status"].get<u8>(); if (v <= 3) q.status = static_cast<ECS::QuestStateComponent::Status>(v); }
     if (j.contains("currentObjective")) q.currentObjective = j["currentObjective"].get<i32>();
     if (j.contains("timeElapsed")) q.timeElapsed = j["timeElapsed"].get<f32>();
     if (j.contains("objectiveFlags") && j["objectiveFlags"].is_array()) {
@@ -3232,7 +3232,7 @@ json SerializeHUDWidgetComponent(const ECS::HUDWidgetComponent& h) {
 
 ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
     ECS::HUDWidgetComponent h;
-    if (j.contains("type")) h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(j["type"].get<u8>());
+    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(v); }
     if (j.contains("visible")) h.visible = j["visible"].get<bool>();
     if (j.contains("screenSpace")) h.screenSpace = j["screenSpace"].get<bool>();
     if (j.contains("anchorX")) h.anchorX = j["anchorX"].get<f32>();
@@ -3326,7 +3326,7 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     GUI::UIElement e;
     if (j.contains("id")) e.id = j["id"].get<u32>();
     if (j.contains("name")) e.name = j["name"].get<std::string>();
-    if (j.contains("type")) e.type = static_cast<GUI::UIWidgetType>(j["type"].get<u8>());
+    if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v < static_cast<u8>(GUI::UIWidgetType::Count)) e.type = static_cast<GUI::UIWidgetType>(v); }
     if (j.contains("visible")) e.visible = j["visible"].get<bool>();
     if (j.contains("enabled")) e.enabled = j["enabled"].get<bool>();
     if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
@@ -3518,7 +3518,7 @@ GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
     if (j.contains("sortOrder")) c.sortOrder = j["sortOrder"].get<i32>();
     if (j.contains("designWidth")) c.designWidth = j["designWidth"].get<f32>();
     if (j.contains("designHeight")) c.designHeight = j["designHeight"].get<f32>();
-    if (j.contains("scaleMode")) c.scaleMode = static_cast<GUI::UIScaleMode>(j["scaleMode"].get<u8>());
+    if (j.contains("scaleMode")) { u8 v = j["scaleMode"].get<u8>(); if (v <= 2) c.scaleMode = static_cast<GUI::UIScaleMode>(v); }
     if (j.contains("theme")) c.theme = DeserializeUITheme(j["theme"]);
     if (j.contains("nextElementId")) c.nextElementId = j["nextElementId"].get<u32>();
 
@@ -3569,7 +3569,7 @@ ECS::CinematicCameraComponent DeserializeCinematicCameraComponent(const json& j)
             if (wj.contains("fov")) wp.fov = wj["fov"].get<f32>();
             if (wj.contains("duration")) wp.duration = wj["duration"].get<f32>();
             if (wj.contains("holdTime")) wp.holdTime = wj["holdTime"].get<f32>();
-            if (wj.contains("easing")) wp.easing = static_cast<ECS::CinematicCameraComponent::Waypoint::Easing>(wj["easing"].get<u8>());
+            if (wj.contains("easing")) { u8 v = wj["easing"].get<u8>(); if (v <= 4) wp.easing = static_cast<ECS::CinematicCameraComponent::Waypoint::Easing>(v); }
             c.waypoints.push_back(wp);
         }
     }
@@ -3816,7 +3816,7 @@ ECS::RagdollComponent DeserializeRagdollComponent(const json& j) {
             ECS::RagdollComponent::BoneJoint bj;
             if (bjJson.contains("boneName")) bj.boneName = bjJson["boneName"].get<std::string>();
             if (bjJson.contains("boneIndex")) bj.boneIndex = bjJson["boneIndex"].get<i32>();
-            if (bjJson.contains("jointType")) bj.jointType = static_cast<ECS::JointType>(bjJson["jointType"].get<u8>());
+            if (bjJson.contains("jointType")) { u8 v = bjJson["jointType"].get<u8>(); if (v <= 5) bj.jointType = static_cast<ECS::JointType>(v); }
             if (bjJson.contains("jointEntity")) bj.jointEntity = static_cast<ECS::Entity>(bjJson["jointEntity"].get<u64>());
             if (bjJson.contains("mass")) bj.mass = bjJson["mass"].get<f32>();
             if (bjJson.contains("colliderRadius")) bj.colliderRadius = bjJson["colliderRadius"].get<f32>();
@@ -3924,7 +3924,8 @@ ECS::ScriptComponent DeserializeScriptComponent(const json& j) {
                     prop.name = it.key();
                     prop.isOverridden = true;
                     if (it.value().contains("type")) {
-                        prop.type = static_cast<ECS::ScriptPropertyType>(it.value()["type"].get<int>());
+                        int v = it.value()["type"].get<int>();
+                        if (v >= 0 && v <= 8) prop.type = static_cast<ECS::ScriptPropertyType>(v);
                     }
                     if (it.value().contains("value")) {
                         prop.instanceValue = DeserializeScriptPropertyValue(it.value()["value"], prop.type);
@@ -3968,7 +3969,7 @@ ECS::LockComponent DeserializeLockComponent(const json& j) {
     if (j.contains("consumeKey")) lk.consumeKey = j["consumeKey"].get<bool>();
     if (j.contains("autoOpen")) lk.autoOpen = j["autoOpen"].get<bool>();
     if (j.contains("interactRange")) lk.interactRange = j["interactRange"].get<f32>();
-    if (j.contains("openMode")) lk.openMode = static_cast<ECS::LockComponent::OpenMode>(j["openMode"].get<i32>());
+    if (j.contains("openMode")) { i32 v = j["openMode"].get<i32>(); if (v >= 0 && v <= 2) lk.openMode = static_cast<ECS::LockComponent::OpenMode>(v); }
     if (j.contains("openDuration")) lk.openDuration = j["openDuration"].get<f32>();
     if (j.contains("closedPosition")) lk.closedPosition = DeserializeVector3(j["closedPosition"]);
     if (j.contains("openPosition")) lk.openPosition = DeserializeVector3(j["openPosition"]);
@@ -4034,7 +4035,7 @@ json SerializeSwitchComponent(const ECS::SwitchComponent& sw) {
 
 ECS::SwitchComponent DeserializeSwitchComponent(const json& j) {
     ECS::SwitchComponent sw;
-    if (j.contains("type")) sw.type = static_cast<ECS::SwitchComponent::SwitchType>(j["type"].get<i32>());
+    if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v <= 4) sw.type = static_cast<ECS::SwitchComponent::SwitchType>(v); }
     if (j.contains("requireSpecificTag")) sw.requireSpecificTag = j["requireSpecificTag"].get<bool>();
     if (j.contains("requiredTag")) sw.requiredTag = j["requiredTag"].get<std::string>();
     if (j.contains("activationWeight")) sw.activationWeight = j["activationWeight"].get<f32>();
@@ -4068,7 +4069,7 @@ json SerializeGoalZoneComponent(const ECS::GoalZoneComponent& gz) {
 
 ECS::GoalZoneComponent DeserializeGoalZoneComponent(const json& j) {
     ECS::GoalZoneComponent gz;
-    if (j.contains("type")) gz.type = static_cast<ECS::GoalZoneComponent::GoalType>(j["type"].get<i32>());
+    if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v <= 4) gz.type = static_cast<ECS::GoalZoneComponent::GoalType>(v); }
     if (j.contains("requiredTag")) gz.requiredTag = j["requiredTag"].get<std::string>();
     if (j.contains("requiredItem")) gz.requiredItem = j["requiredItem"].get<std::string>();
     if (j.contains("goalGroup")) gz.goalGroup = j["goalGroup"].get<i32>();
@@ -4174,7 +4175,7 @@ ECS::CurlNoiseFieldComponent DeserializeCurlNoiseFieldComponent(const json& j) {
     if (j.contains("seed")) cn.seed = j["seed"].get<u32>();
     if (j.contains("timeScale")) cn.timeScale = j["timeScale"].get<f32>();
     if (j.contains("halfExtents")) cn.halfExtents = DeserializeVector3(j["halfExtents"]);
-    if (j.contains("falloff")) cn.falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(j["falloff"].get<i32>());
+    if (j.contains("falloff")) { i32 v = j["falloff"].get<i32>(); if (v >= 0 && v <= 2) cn.falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(v); }
     if (j.contains("affectParticles")) cn.affectParticles = j["affectParticles"].get<bool>();
     if (j.contains("affectMeshVertices")) cn.affectMeshVertices = j["affectMeshVertices"].get<bool>();
     if (j.contains("showDebugArrows")) cn.showDebugArrows = j["showDebugArrows"].get<bool>();
@@ -4243,7 +4244,7 @@ ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
     }
     if (j.contains("speed")) mp.speed = j["speed"].get<f32>();
     if (j.contains("waitTime")) mp.waitTime = j["waitTime"].get<f32>();
-    if (j.contains("mode")) mp.mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(j["mode"].get<i32>());
+    if (j.contains("mode")) { i32 v = j["mode"].get<i32>(); if (v >= 0 && v <= 3) mp.mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(v); }
     if (j.contains("carryEntities")) mp.carryEntities = j["carryEntities"].get<bool>();
     return mp;
 }
@@ -4450,7 +4451,7 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
             anim.name = name;
             if (aj.contains("duration")) anim.duration = aj["duration"].get<f32>();
             if (aj.contains("ticksPerSecond")) anim.ticksPerSecond = aj["ticksPerSecond"].get<f32>();
-            if (aj.contains("playMode")) anim.playMode = static_cast<Animation::PlayMode>(aj["playMode"].get<i32>());
+            if (aj.contains("playMode")) { i32 v = aj["playMode"].get<i32>(); if (v >= 0 && v <= 3) anim.playMode = static_cast<Animation::PlayMode>(v); }
 
             if (aj.contains("tracks") && aj["tracks"].is_array()) {
                 for (const auto& tj : aj["tracks"]) {
@@ -4514,7 +4515,7 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
                 state.name = name;
                 if (sj.contains("animationName")) state.animationName = sj["animationName"].get<std::string>();
                 if (sj.contains("speed")) state.speed = sj["speed"].get<f32>();
-                if (sj.contains("playMode")) state.playMode = static_cast<Animation::PlayMode>(sj["playMode"].get<i32>());
+                if (sj.contains("playMode")) { i32 v = sj["playMode"].get<i32>(); if (v >= 0 && v <= 3) state.playMode = static_cast<Animation::PlayMode>(v); }
                 if (sj.contains("editorPosition")) state.editorPosition = DeserializeVector2(sj["editorPosition"]);
                 animComp.stateMachine.AddState(state);
             }
@@ -4534,8 +4535,8 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
                     for (const auto& cj : tj["conditions"]) {
                         Animation::TransitionCondition cond;
                         if (cj.contains("parameterName")) cond.parameterName = cj["parameterName"].get<std::string>();
-                        if (cj.contains("type")) cond.type = static_cast<Animation::TransitionCondition::Type>(cj["type"].get<i32>());
-                        if (cj.contains("comparison")) cond.comparison = static_cast<Animation::TransitionCondition::Comparison>(cj["comparison"].get<i32>());
+                        if (cj.contains("type")) { i32 v = cj["type"].get<i32>(); if (v >= 0 && v <= 3) cond.type = static_cast<Animation::TransitionCondition::Type>(v); }
+                        if (cj.contains("comparison")) { i32 v = cj["comparison"].get<i32>(); if (v >= 0 && v <= 5) cond.comparison = static_cast<Animation::TransitionCondition::Comparison>(v); }
 
                         switch (cond.type) {
                             case Animation::TransitionCondition::Type::Bool:
@@ -5157,13 +5158,13 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
         if (sceneJson.contains("skybox")) {
             const auto& sj = sceneJson["skybox"];
             m_SkyboxConfig = Renderer::SkyboxConfig{};
-            if (sj.contains("type")) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(sj["type"].get<u32>());
-            if (sj.contains("topColor")) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("bottomColor")) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("type")) { u32 v = sj["type"].get<u32>(); if (v <= static_cast<u32>(Renderer::SkyboxType::SolidColor)) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(v); }
+            if (sj.contains("topColor") && sj["topColor"].is_array() && sj["topColor"].size() >= 3) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("bottomColor") && sj["bottomColor"].is_array() && sj["bottomColor"].size() >= 3) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("horizonColor") && sj["horizonColor"].is_array() && sj["horizonColor"].size() >= 3) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("solidColor") && sj["solidColor"].is_array() && sj["solidColor"].size() >= 3) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
-            if (sj.contains("sunDirection")) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
@@ -5409,8 +5410,8 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
                 if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
                 if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("targetPos")) {
-                    auto arr = ikJson["targetPos"];
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& arr = ikJson["targetPos"];
                     ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
                 }
                 if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
@@ -6211,13 +6212,13 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
         if (sceneJson.contains("skybox")) {
             const auto& sj = sceneJson["skybox"];
             m_SkyboxConfig = Renderer::SkyboxConfig{};
-            if (sj.contains("type")) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(sj["type"].get<u32>());
-            if (sj.contains("topColor")) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("bottomColor")) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("horizonColor")) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (sj.contains("solidColor")) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("type")) { u32 v = sj["type"].get<u32>(); if (v <= static_cast<u32>(Renderer::SkyboxType::SolidColor)) m_SkyboxConfig.type = static_cast<Renderer::SkyboxType>(v); }
+            if (sj.contains("topColor") && sj["topColor"].is_array() && sj["topColor"].size() >= 3) { auto& a = sj["topColor"]; m_SkyboxConfig.topColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("bottomColor") && sj["bottomColor"].is_array() && sj["bottomColor"].size() >= 3) { auto& a = sj["bottomColor"]; m_SkyboxConfig.bottomColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("horizonColor") && sj["horizonColor"].is_array() && sj["horizonColor"].size() >= 3) { auto& a = sj["horizonColor"]; m_SkyboxConfig.horizonColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("solidColor") && sj["solidColor"].is_array() && sj["solidColor"].size() >= 3) { auto& a = sj["solidColor"]; m_SkyboxConfig.solidColor = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("rotation")) m_SkyboxConfig.rotation = sj["rotation"].get<f32>();
-            if (sj.contains("sunDirection")) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
                     m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
@@ -6459,8 +6460,8 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
                 if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
                 if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-                if (ikJson.contains("targetPos")) {
-                    auto arr = ikJson["targetPos"];
+                if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) {
+                    auto& arr = ikJson["targetPos"];
                     ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
                 }
                 if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
@@ -7158,7 +7159,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             if (ikJson.contains("headBone")) ik.headBoneName = ikJson["headBone"].get<std::string>();
             if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
             if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
-            if (ikJson.contains("targetPos")) { auto& a = ikJson["targetPos"]; ik.targetWorldPos = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
+            if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) { auto& a = ikJson["targetPos"]; ik.targetWorldPos = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
             if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
             if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();

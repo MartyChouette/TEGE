@@ -168,6 +168,11 @@ public:
 
         if (!m_Renderer->BeginFrame()) {
             m_FrameFailCount++;
+            if (m_Renderer->IsDeviceLost()) {
+                ENJIN_LOG_FATAL(Editor, "GPU device lost — shutting down. Please restart the application.");
+                RequestShutdown();
+                return;
+            }
             if (m_FrameFailCount % 60 == 1) {
                 ENJIN_LOG_WARN(Editor, "BeginFrame failed (total failures: %u)", m_FrameFailCount);
             }

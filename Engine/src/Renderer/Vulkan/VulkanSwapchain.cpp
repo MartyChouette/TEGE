@@ -367,6 +367,13 @@ bool VulkanSwapchain::CreateDepthResources() {
         VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT
     );
 
+    if (allocInfo.memoryTypeIndex == UINT32_MAX) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to find suitable memory type for depth buffer");
+        vkDestroyImage(m_Context->GetDevice(), m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+        return false;
+    }
+
     result = vkAllocateMemory(m_Context->GetDevice(), &allocInfo, nullptr, &m_DepthImageMemory);
     if (result != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate depth image memory: %d", result);

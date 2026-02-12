@@ -1,6 +1,7 @@
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Math/Math.h"
 #include <cstdlib>
+#include <cmath>
 
 namespace Enjin {
 namespace Effects {
@@ -34,6 +35,7 @@ void WeatherSystem::SetWeather(WeatherType type, f32 transitionTime) {
 
 void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
     if (!m_Initialized) return;
+    if (!std::isfinite(cameraPos.x) || !std::isfinite(cameraPos.y) || !std::isfinite(cameraPos.z)) return;
 
     // Update weather transition
     if (m_TransitionProgress < 1.0f) {

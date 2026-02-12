@@ -115,7 +115,7 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
 
         // Cap path length to prevent overflow and excessive allocation
         static constexpr u32 MAX_PATH_LEN = 4096u;
-        if (pathLen > MAX_PATH_LEN || pos + pathLen > indexBuf.size()) break;
+        if (pathLen > MAX_PATH_LEN || pathLen > indexBuf.size() - pos) break;
         std::string vpath(reinterpret_cast<const char*>(indexBuf.data() + pos), pathLen);
         pos += pathLen;
 

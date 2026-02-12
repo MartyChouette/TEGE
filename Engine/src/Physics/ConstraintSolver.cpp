@@ -123,6 +123,9 @@ void ConstraintSolver::SolveJointConstraints(f32 deltaTime) {
 
 void ConstraintSolver::SolveContactConstraints(f32 deltaTime) {
     for (auto& contact : m_Contacts) {
+        // Re-fetch components each iteration — entities may have been destroyed by
+        // broken joint removal earlier in the same solve pass. Each individual access
+        // below is guarded (rbA && ...) / (rbB && ...) so one-sided contacts are safe.
         auto* rbA = m_World->GetComponent<ECS::RigidbodyComponent>(contact.entityA);
         auto* rbB = m_World->GetComponent<ECS::RigidbodyComponent>(contact.entityB);
         if (!rbA && !rbB) continue;
@@ -214,8 +217,10 @@ void ConstraintSolver::ApplyBaumgarteStabilization(f32 deltaTime) {
     for (auto& contact : m_Contacts) {
         if (contact.penetration <= 0.0f) continue;
 
+        // Re-fetch all components fresh — entities may have been invalidated during solving
         auto* transformA = m_World->GetComponent<ECS::TransformComponent>(contact.entityA);
         auto* transformB = m_World->GetComponent<ECS::TransformComponent>(contact.entityB);
+        if (!transformA && !transformB) continue;
         auto* rbA = m_World->GetComponent<ECS::RigidbodyComponent>(contact.entityA);
         auto* rbB = m_World->GetComponent<ECS::RigidbodyComponent>(contact.entityB);
 

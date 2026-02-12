@@ -884,9 +884,9 @@ void RenderSystem::Update(f32 deltaTime) {
             m_LastBound.Reset();
 
             for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-                if (!m_World->HasComponent<TransformComponent>(entity)) continue;
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
-                if (xform && !xform->visible) continue;
+                if (!xform) continue;
+                if (!xform->visible) continue;
                 // Skip GPU-culled entities (frustum culling — disabled in editor mode)
                 if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
                     usize entityIdx = static_cast<usize>(entity);
@@ -965,12 +965,10 @@ void RenderSystem::Update(f32 deltaTime) {
         // Collect visible, non-sprite entities and sort by material for descriptor caching
         m_SortedRenderList.clear();
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-
-            // Skip invisible entities
+            // Skip invisible entities or entities without transform
             {
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
-                if (xform && !xform->visible) continue;
+                if (!xform || !xform->visible) continue;
             }
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
@@ -1113,11 +1111,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (m_World->HasComponent<TransformComponent>(entity)) {
-
-            // Skip invisible entities
+        {
+            // Skip invisible entities or entities without transform
             auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
-            if (xformRT && !xformRT->visible) continue;
+            if (!xformRT || !xformRT->visible) continue;
 
             // Skip GPU-culled entities (frustum culling — disabled in editor mode)
             if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
@@ -1474,12 +1471,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
         // Render all entities (skip sprites — drawn in sorted pass)
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-
-            // Skip invisible entities
+            // Skip invisible entities or entities without transform
             {
                 auto* xformSS = m_World->GetComponent<TransformComponent>(entity);
-                if (xformSS && !xformSS->visible) continue;
+                if (!xformSS || !xformSS->visible) continue;
             }
 
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
@@ -1805,8 +1800,8 @@ void RenderSystem::ClassifySceneComposition() {
 
     // Count 3D meshes (MeshComponent WITHOUT Sprite2DComponent and WITHOUT TilemapComponent)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
         m_SceneComposition.mesh3DCount++;
     }
 
@@ -1862,17 +1857,17 @@ void RenderSystem::RebuildShadowCasterCache() {
     // Iterate only entities with MeshComponent
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         // Skip entities without transform
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
+        auto* xform = m_World->GetComponent<TransformComponent>(entity);
+        if (!xform) continue;
 
         // Skip 2D sprites — they never cast shadows
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
 
         // Skip tilemaps
-        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
+        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
 
         // Skip invisible entities
-        auto* xform = m_World->GetComponent<TransformComponent>(entity);
-        if (xform && !xform->visible) continue;
+        if (!xform->visible) continue;
 
         // Check if material casts shadows (default: yes)
         auto* material = m_World->GetComponent<MaterialComponent>(entity);
@@ -1900,12 +1895,10 @@ void RenderSystem::BuildCullableObjectList() {
     u32 cullIndex = 0;
 
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
-
         auto* xform = m_World->GetComponent<TransformComponent>(entity);
         if (!xform || !xform->visible) continue;
+        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
 
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || !mesh->IsValid()) continue;
@@ -2006,12 +1999,10 @@ void RenderSystem::UploadObjectData() {
 
     u32 idx = 0;
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
-
         auto* xform = m_World->GetComponent<TransformComponent>(entity);
         if (!xform || !xform->visible) continue;
+        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
 
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || !mesh->IsValid()) continue;
@@ -3728,11 +3719,11 @@ void RenderSystem::RenderSprites() {
             Entity entity;
         };
         std::vector<TilemapEntry> tilemaps;
+        tilemaps.reserve(32);
         for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
-            if (!m_World->HasComponent<MeshComponent>(entity)) continue;
             auto* xformTM = m_World->GetComponent<TransformComponent>(entity);
-            if (xformTM && !xformTM->visible) continue;
+            if (!xformTM || !xformTM->visible) continue;
+            if (!m_World->GetComponent<MeshComponent>(entity)) continue;
             tilemaps.push_back({ entity });
         }
         for (const auto& entry : tilemaps) {
@@ -3788,13 +3779,13 @@ void RenderSystem::RenderSprites() {
         };
 
         std::vector<SpriteEntry> sprites;
+        sprites.reserve(64);
         for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
             auto* sprite = m_World->GetComponent<Sprite2DComponent>(entity);
             if (!sprite || !sprite->visible) continue;
-            if (!m_World->HasComponent<TransformComponent>(entity)) continue;
             auto* xformSprite = m_World->GetComponent<TransformComponent>(entity);
-            if (xformSprite && !xformSprite->visible) continue;
-            if (!m_World->HasComponent<MeshComponent>(entity)) continue;
+            if (!xformSprite || !xformSprite->visible) continue;
+            if (!m_World->GetComponent<MeshComponent>(entity)) continue;
 
             sprites.push_back({ entity, sprite->sortingLayer, sprite->orderInLayer });
         }
@@ -4376,7 +4367,7 @@ void RenderSystem::EnsureWaterMeshes() {
     for (Entity entity : m_World->GetEntitiesWithComponent<WaterVolumeComponent>()) {
         auto* waterVol = m_World->GetComponent<WaterVolumeComponent>(entity);
         if (!waterVol) continue;
-        if (waterVol->meshCreated && m_World->HasComponent<MeshComponent>(entity)) continue;
+        if (waterVol->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
 
         // Create a subdivided plane mesh for the water surface
         MeshComponent mesh;

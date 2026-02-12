@@ -263,8 +263,14 @@ void ImGuiLayer::LoadFonts(const EditorFontConfig& fontConfig) {
     if (!fontConfig.headingFontPath.empty()) {
         m_HeadingFont = io.Fonts->AddFontFromFileTTF(fontConfig.headingFontPath.c_str(), fontConfig.headingFontSize);
         if (!m_HeadingFont) {
-            ENJIN_LOG_WARN(Editor, "Failed to load heading font: %s", fontConfig.headingFontPath.c_str());
+            ENJIN_LOG_WARN(Editor, "Failed to load heading font: %s, falling back to body font", fontConfig.headingFontPath.c_str());
+            m_HeadingFont = m_BodyFont;
         }
+    }
+
+    // Fallback: if heading font is still null, use body font
+    if (!m_HeadingFont) {
+        m_HeadingFont = m_BodyFont;
     }
 
     // Load H2 font (section titles — uses heading font at smaller size)

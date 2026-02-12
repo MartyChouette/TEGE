@@ -129,7 +129,11 @@ bool VulkanImage::CreateFromData(
     m_Format = format;
     
     // Calculate mip levels
-    m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
+    if (width == 0 || height == 0) {
+        m_MipLevels = 1;
+    } else {
+        m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
+    }
     
     // Create staging buffer
     VkDeviceSize imageSize = width * height * channels;
@@ -264,7 +268,11 @@ void VulkanImage::TransitionLayout(VkImageLayout oldLayout, VkImageLayout newLay
         VkCommandBufferBeginInfo beginInfo{};
         beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-        vkBeginCommandBuffer(cmd, &beginInfo);
+        if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to begin command buffer for layout transition");
+            vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+            return;
+        }
     }
 
     VkImageMemoryBarrier barrier{};
@@ -323,7 +331,9 @@ void VulkanImage::TransitionLayout(VkImageLayout oldLayout, VkImageLayout newLay
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &cmd;
 
-        vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+        if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to submit layout transition command buffer");
+        }
         vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
         vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
@@ -366,7 +376,11 @@ void VulkanImage::GenerateMipmaps() {
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    vkBeginCommandBuffer(cmd, &beginInfo);
+    if (vkBeginCommandBuffer(cmd, &beginInfo) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to begin command buffer for mipmaps");
+        vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);
+        return;
+    }
 
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -442,7 +456,9 @@ void VulkanImage::GenerateMipmaps() {
     submitInfo.commandBufferCount = 1;
     submitInfo.pCommandBuffers = &cmd;
 
-    vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE);
+    if (vkQueueSubmit(m_Context->GetGraphicsQueue(), 1, &submitInfo, VK_NULL_HANDLE) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit mipmap generation command buffer");
+    }
     vkQueueWaitIdle(m_Context->GetGraphicsQueue());
 
     vkDestroyCommandPool(m_Context->GetDevice(), tempPool, nullptr);

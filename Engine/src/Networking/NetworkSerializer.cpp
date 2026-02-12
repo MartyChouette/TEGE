@@ -1,4 +1,5 @@
 #include "Enjin/Networking/NetworkSerializer.h"
+#include "Enjin/Logging/Log.h"
 #include <cstring>
 
 namespace Enjin {
@@ -39,7 +40,10 @@ void WriteF32(std::vector<u8>& buf, f32 val) {
 
 void WriteString(std::vector<u8>& buf, const std::string& str) {
     u16 len = static_cast<u16>(str.size());
-    if (len > 255) len = 255;  // Cap string length for safety
+    if (len > 255) {
+        ENJIN_LOG_WARN(Network, "WriteString truncating string from %u to 255 bytes", static_cast<u32>(str.size()));
+        len = 255;
+    }
     WriteU8(buf, static_cast<u8>(len));
     for (u16 i = 0; i < len; i++) {
         buf.push_back(static_cast<u8>(str[i]));

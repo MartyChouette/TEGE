@@ -59,6 +59,11 @@ public:
 
 protected:
     /**
+     * @brief Request application shutdown (sets m_Running = false)
+     */
+    void RequestShutdown() { m_Running = false; }
+
+    /**
      * @brief Get the application window
      * @return Pointer to Window
      */

@@ -1,15 +1,18 @@
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Logging/Log.h"
 #include <cmath>
-#include <cstdlib>
 #include <algorithm>
 
 namespace Enjin {
 namespace Effects {
 
-// Simple random float in [0, 1]
+// Fast xorshift32 random float in [0, 1]
+static u32 s_RandState = 2463534242u;
 static f32 RandFloat() {
-    return static_cast<f32>(std::rand()) / static_cast<f32>(RAND_MAX);
+    s_RandState ^= s_RandState << 13;
+    s_RandState ^= s_RandState >> 17;
+    s_RandState ^= s_RandState << 5;
+    return static_cast<f32>(s_RandState & 0x7FFFFFFF) * (1.0f / 2147483647.0f);
 }
 
 // Random float in [-1, 1]
@@ -257,6 +260,12 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
 
         // Resize pool if maxParticles changed
         if (emitter->pool.maxParticles != emitter->maxParticles) {
+            // Gracefully expire particles beyond new limit before resizing
+            if (emitter->maxParticles < emitter->pool.activeCount) {
+                for (u32 j = emitter->maxParticles; j < emitter->pool.activeCount; ++j) {
+                    emitter->pool.particles[j].lifetime = 0.0f;
+                }
+            }
             emitter->pool.maxParticles = emitter->maxParticles;
             emitter->pool.particles.resize(emitter->pool.maxParticles);
             if (emitter->pool.activeCount > emitter->pool.maxParticles) {

@@ -85,6 +85,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
+// Undefine Windows macros that collide with engine methods
+#undef LoadImage
+#undef CreateWindow
+#undef min
+#undef max
+#endif
 #include <climits>
 #include <cmath>
 #include <algorithm>
@@ -1625,16 +1635,21 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
              !m_World->HasComponent<ECS::ThirdPersonController>(m_CachedPlayerEntity) &&
              !m_World->HasComponent<ECS::FirstPersonController>(m_CachedPlayerEntity))) {
             m_CachedPlayerEntity = ECS::INVALID_ENTITY;
-            for (ECS::Entity entity : m_World->GetAllEntities()) {
-                if (m_World->HasComponent<ECS::Platformer2DController>(entity) ||
-                    m_World->HasComponent<ECS::TopDown2DController>(entity) ||
-                    m_World->HasComponent<ECS::TopDown3DController>(entity) ||
-                    m_World->HasComponent<ECS::ThirdPersonController>(entity) ||
-                    m_World->HasComponent<ECS::FirstPersonController>(entity)) {
+            auto tryFindController = [&](auto entities) {
+                for (ECS::Entity entity : entities) {
                     m_CachedPlayerEntity = entity;
-                    break;
+                    return;
                 }
-            }
+            };
+            tryFindController(m_World->GetEntitiesWithComponent<ECS::Platformer2DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown2DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::TopDown3DController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>());
+            if (m_CachedPlayerEntity == ECS::INVALID_ENTITY)
+                tryFindController(m_World->GetEntitiesWithComponent<ECS::FirstPersonController>());
         }
         ECS::Entity playerEntity = m_CachedPlayerEntity;
 
@@ -2425,61 +2440,59 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
 
             ImDrawList* bgDrawList = ImGui::GetBackgroundDrawList();
 
-            for (ECS::Entity entity : m_World->GetAllEntities()) {
-                // Weather zone wireframe (light blue)
-                if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                    auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (zone && transform) {
-                        bool isSelected = IsSelected(entity);
-                        ImU32 color = isSelected ? IM_COL32(100, 180, 255, 200) : IM_COL32(100, 180, 255, 80);
-                        f32 thickness = isSelected ? 2.0f : 1.0f;
-                        drawWireBox(bgDrawList, transform->position, zone->halfExtents, color, thickness);
-                    }
+            // Weather zone wireframe (light blue)
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+                auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                if (zone && transform) {
+                    bool isSelected = IsSelected(entity);
+                    ImU32 color = isSelected ? IM_COL32(100, 180, 255, 200) : IM_COL32(100, 180, 255, 80);
+                    f32 thickness = isSelected ? 2.0f : 1.0f;
+                    drawWireBox(bgDrawList, transform->position, zone->halfExtents, color, thickness);
                 }
-                // Water volume wireframe (cyan/teal)
-                if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                    auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (volume && transform) {
-                        bool isSelected = IsSelected(entity);
-                        ImU32 color = isSelected ? IM_COL32(50, 220, 200, 200) : IM_COL32(50, 220, 200, 80);
-                        f32 thickness = isSelected ? 2.0f : 1.0f;
-                        drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
-                    }
+            }
+            // Water volume wireframe (cyan/teal)
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
+                auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                if (volume && transform) {
+                    bool isSelected = IsSelected(entity);
+                    ImU32 color = isSelected ? IM_COL32(50, 220, 200, 200) : IM_COL32(50, 220, 200, 80);
+                    f32 thickness = isSelected ? 2.0f : 1.0f;
+                    drawWireBox(bgDrawList, transform->position, volume->halfExtents, color, thickness);
                 }
-                // Grass volume wireframe (green)
-                if (m_World->HasComponent<ECS::GrassVolumeComponent>(entity)) {
-                    auto* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
-                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (grass && transform) {
-                        bool isSelected = IsSelected(entity);
-                        ImU32 color = isSelected ? IM_COL32(80, 200, 80, 200) : IM_COL32(80, 200, 80, 60);
-                        f32 thickness = isSelected ? 2.0f : 1.0f;
-                        drawWireBox(bgDrawList, transform->position, grass->halfExtents, color, thickness);
-                    }
+            }
+            // Grass volume wireframe (green)
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::GrassVolumeComponent>()) {
+                auto* grass = m_World->GetComponent<ECS::GrassVolumeComponent>(entity);
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                if (grass && transform) {
+                    bool isSelected = IsSelected(entity);
+                    ImU32 color = isSelected ? IM_COL32(80, 200, 80, 200) : IM_COL32(80, 200, 80, 60);
+                    f32 thickness = isSelected ? 2.0f : 1.0f;
+                    drawWireBox(bgDrawList, transform->position, grass->halfExtents, color, thickness);
                 }
-                // Shrub volume wireframe (yellow-green)
-                if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
-                    auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
-                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (shrub && transform) {
-                        bool isSelected = IsSelected(entity);
-                        ImU32 color = isSelected ? IM_COL32(160, 200, 60, 200) : IM_COL32(160, 200, 60, 60);
-                        f32 thickness = isSelected ? 2.0f : 1.0f;
-                        drawWireBox(bgDrawList, transform->position, shrub->halfExtents, color, thickness);
-                    }
+            }
+            // Shrub volume wireframe (yellow-green)
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ShrubVolumeComponent>()) {
+                auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                if (shrub && transform) {
+                    bool isSelected = IsSelected(entity);
+                    ImU32 color = isSelected ? IM_COL32(160, 200, 60, 200) : IM_COL32(160, 200, 60, 60);
+                    f32 thickness = isSelected ? 2.0f : 1.0f;
+                    drawWireBox(bgDrawList, transform->position, shrub->halfExtents, color, thickness);
                 }
-                // Tree volume wireframe (dark green)
-                if (m_World->HasComponent<ECS::TreeVolumeComponent>(entity)) {
-                    auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
-                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                    if (tree && transform) {
-                        bool isSelected = IsSelected(entity);
-                        ImU32 color = isSelected ? IM_COL32(40, 160, 40, 200) : IM_COL32(40, 160, 40, 60);
-                        f32 thickness = isSelected ? 2.0f : 1.0f;
-                        drawWireBox(bgDrawList, transform->position, tree->halfExtents, color, thickness);
-                    }
+            }
+            // Tree volume wireframe (dark green)
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TreeVolumeComponent>()) {
+                auto* tree = m_World->GetComponent<ECS::TreeVolumeComponent>(entity);
+                auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                if (tree && transform) {
+                    bool isSelected = IsSelected(entity);
+                    ImU32 color = isSelected ? IM_COL32(40, 160, 40, 200) : IM_COL32(40, 160, 40, 60);
+                    f32 thickness = isSelected ? 2.0f : 1.0f;
+                    drawWireBox(bgDrawList, transform->position, tree->halfExtents, color, thickness);
                 }
             }
         }
@@ -7248,51 +7261,74 @@ void EditorLayer::DrawEditorSettingsPanel() {
     if (ImGui::CollapsingHeader("Controls")) {
         if (ImGui::TreeNode("Active Controllers")) {
             bool foundAny = false;
-            for (ECS::Entity entity : m_World->GetAllEntities()) {
+            auto getEntName = [this](ECS::Entity entity) -> std::string {
                 auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
-                std::string entName = nameComp ? nameComp->name : "Entity " + std::to_string(entity);
-
-                if (auto* fps = m_World->GetComponent<ECS::FirstPersonController>(entity)) {
+                return nameComp ? nameComp->name : "Entity " + std::to_string(entity);
+            };
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::FirstPersonController>()) {
+                auto* fps = m_World->GetComponent<ECS::FirstPersonController>(entity);
+                if (fps) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [First Person]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Grounded: %s  Pitch: %.1f  Yaw: %.1f",
                         fps->velocity.Length(), fps->isGrounded ? "Y" : "N", fps->pitch, fps->yaw);
                     ImGui::Unindent();
                 }
-                if (auto* tps = m_World->GetComponent<ECS::ThirdPersonController>(entity)) {
+            }
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>()) {
+                auto* tps = m_World->GetComponent<ECS::ThirdPersonController>(entity);
+                if (tps) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [Third Person]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Grounded: %s  Pitch: %.1f  Yaw: %.1f",
                         tps->velocity.Length(), tps->isGrounded ? "Y" : "N", tps->cameraPitch, tps->cameraYaw);
                     ImGui::Unindent();
                 }
-                if (auto* td3 = m_World->GetComponent<ECS::TopDown3DController>(entity)) {
+            }
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TopDown3DController>()) {
+                auto* td3 = m_World->GetComponent<ECS::TopDown3DController>(entity);
+                if (td3) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [Top-Down 3D]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Grounded: %s", td3->velocity.Length(), td3->isGrounded ? "Y" : "N");
                     ImGui::Unindent();
                 }
-                if (auto* veh = m_World->GetComponent<ECS::VehicleController>(entity)) {
+            }
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::VehicleController>()) {
+                auto* veh = m_World->GetComponent<ECS::VehicleController>(entity);
+                if (veh) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [Vehicle]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Steer: %.1f  Heading: %.1f  Drifting: %s",
                         veh->currentSpeed, veh->currentSteerAngle, veh->heading, veh->isDrifting ? "Y" : "N");
                     ImGui::Unindent();
                 }
-                if (auto* p2d = m_World->GetComponent<ECS::Platformer2DController>(entity)) {
+            }
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::Platformer2DController>()) {
+                auto* p2d = m_World->GetComponent<ECS::Platformer2DController>(entity);
+                if (p2d) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [Platformer 2D]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Grounded: %s  Jumps: %d/%d",
                         p2d->velocity.Length(), p2d->isGrounded ? "Y" : "N", p2d->currentJumps, p2d->maxJumps);
                     ImGui::Unindent();
                 }
-                if (auto* td2 = m_World->GetComponent<ECS::TopDown2DController>(entity)) {
+            }
+            for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::TopDown2DController>()) {
+                auto* td2 = m_World->GetComponent<ECS::TopDown2DController>(entity);
+                if (td2) {
                     foundAny = true;
+                    std::string entName = getEntName(entity);
                     ImGui::BulletText("%s [Top-Down 2D]", entName.c_str());
                     ImGui::Indent();
                     ImGui::Text("Speed: %.1f  Facing: %.1f deg", td2->velocity.Length(), td2->facingAngle);
@@ -8259,18 +8295,16 @@ void EditorLayer::DrawProjectSettingsPanel() {
             u32 waterVolumeCount = 0;
             if (m_World) {
                 if (ImGui::TreeNode("Weather Zones")) {
-                    for (ECS::Entity entity : m_World->GetAllEntities()) {
-                        if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                            weatherZoneCount++;
-                            auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                            auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                            const char* label = name ? name->name.c_str() : "Unnamed";
-                            const char* typeName = (zone->weatherType < 7) ? weatherTypeNames[zone->weatherType] : "Unknown";
+                    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+                        weatherZoneCount++;
+                        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                        const char* label = name ? name->name.c_str() : "Unnamed";
+                        const char* typeName = (zone->weatherType < 7) ? weatherTypeNames[zone->weatherType] : "Unknown";
 
-                            ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
-                            if (ImGui::IsItemClicked()) {
-                                SelectEntity(entity);
-                            }
+                        ImGui::BulletText("%s [%s] (priority: %d)", label, typeName, zone->priority);
+                        if (ImGui::IsItemClicked()) {
+                            SelectEntity(entity);
                         }
                     }
                     if (weatherZoneCount == 0) {
@@ -8280,19 +8314,17 @@ void EditorLayer::DrawProjectSettingsPanel() {
                 }
 
                 if (ImGui::TreeNode("Water Volumes")) {
-                    for (ECS::Entity entity : m_World->GetAllEntities()) {
-                        if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
-                            waterVolumeCount++;
-                            auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
-                            auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
-                            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                            const char* label = name ? name->name.c_str() : "Unnamed";
-                            f32 surfaceY = transform ? transform->position.y : 0.0f;
+                    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WaterVolumeComponent>()) {
+                        waterVolumeCount++;
+                        auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
+                        auto* name = m_World->GetComponent<ECS::NameComponent>(entity);
+                        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                        const char* label = name ? name->name.c_str() : "Unnamed";
+                        f32 surfaceY = transform ? transform->position.y : 0.0f;
 
-                            ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
-                            if (ImGui::IsItemClicked()) {
-                                SelectEntity(entity);
-                            }
+                        ImGui::BulletText("%s [Y=%.1f] (priority: %d)", label, surfaceY, volume->priority);
+                        if (ImGui::IsItemClicked()) {
+                            SelectEntity(entity);
                         }
                     }
                     if (waterVolumeCount == 0) {
@@ -8780,10 +8812,8 @@ void EditorLayer::DrawGameViewPanel() {
     // Gather all camera entities in the scene
     std::vector<ECS::Entity> cameraEntities;
     if (m_World) {
-        for (ECS::Entity entity : m_World->GetAllEntities()) {
-            if (m_World->HasComponent<ECS::CameraComponent>(entity)) {
-                cameraEntities.push_back(entity);
-            }
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CameraComponent>()) {
+            cameraEntities.push_back(entity);
         }
     }
 
@@ -9061,15 +9091,13 @@ void EditorLayer::DrawGameViewPanel() {
             i32 bestWeatherPriority = INT_MIN;
 
             if (m_World && gameCameraTransform) {
-                for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    if (m_World->HasComponent<ECS::WeatherZoneComponent>(entity)) {
-                        auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
-                        auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
-                        if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
-                            if (zone->ContainsPoint(zoneTransform->position, gameCameraTransform->position)) {
-                                activeWeatherZone = zone;
-                                bestWeatherPriority = zone->priority;
-                            }
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::WeatherZoneComponent>()) {
+                    auto* zone = m_World->GetComponent<ECS::WeatherZoneComponent>(entity);
+                    auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (zone && zoneTransform && zone->priority > bestWeatherPriority) {
+                        if (zone->ContainsPoint(zoneTransform->position, gameCameraTransform->position)) {
+                            activeWeatherZone = zone;
+                            bestWeatherPriority = zone->priority;
                         }
                     }
                 }
@@ -9195,13 +9223,7 @@ void EditorLayer::DrawGameViewPanel() {
 
             // Flower Evaluate button overlay in game view
             if (m_PlayMode.IsPlaying() && m_World) {
-                bool hasFlowerStem = false;
-                for (ECS::Entity entity : m_World->GetAllEntities()) {
-                    if (m_World->HasComponent<ECS::FlowerStemComponent>(entity)) {
-                        hasFlowerStem = true;
-                        break;
-                    }
-                }
+                bool hasFlowerStem = !m_World->GetEntitiesWithComponent<ECS::FlowerStemComponent>().empty();
                 if (hasFlowerStem) {
                     f32 gvW = p1.x - p0.x;
                     f32 btnW = 100.0f, btnH = 28.0f;
@@ -11751,11 +11773,17 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     // Initialize git repository if requested
     if (m_GitInitOnCreate) {
         // Run git init
-        std::string gitInitCmd = "cd \"" + projRoot.string() + "\" && git init";
 #ifdef _WIN32
-        // On Windows, use system() which works with cmd
-        std::system(gitInitCmd.c_str());
+        std::string gitInitCmd = "git init \"" + projRoot.string() + "\"";
+        STARTUPINFOA si{}; si.cb = sizeof(si); si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi{};
+        std::string cmdCopy = gitInitCmd;
+        if (CreateProcessA(nullptr, cmdCopy.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+            WaitForSingleObject(pi.hProcess, 10000);
+            CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+        }
 #else
+        std::string gitInitCmd = "git init \"" + projRoot.string() + "\"";
         std::system(gitInitCmd.c_str());
 #endif
 
@@ -18769,12 +18797,8 @@ void EditorLayer::OnFileDrop(int count, const char** paths) {
 
 bool EditorLayer::SceneHasMouseLookController() const {
     if (!m_World) return false;
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<ECS::FirstPersonController>(entity) ||
-            m_World->HasComponent<ECS::ThirdPersonController>(entity)) {
-            return true;
-        }
-    }
+    if (!m_World->GetEntitiesWithComponent<ECS::FirstPersonController>().empty()) return true;
+    if (!m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>().empty()) return true;
     return false;
 }
 
@@ -22617,7 +22641,16 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
 #endif
 
     if (!cmd.empty()) {
+#ifdef _WIN32
+        STARTUPINFOA si{}; si.cb = sizeof(si); si.dwFlags = STARTF_USESHOWWINDOW; si.wShowWindow = SW_HIDE;
+        PROCESS_INFORMATION pi{};
+        std::string cmdCopy = cmd;
+        if (CreateProcessA(nullptr, cmdCopy.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+            CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
+        }
+#else
         std::system(cmd.c_str());
+#endif
         ENJIN_LOG_INFO(Editor, "Opening in IDE: %s", filePath.c_str());
     } else {
         ENJIN_LOG_WARN(Editor, "No IDE configured to open: %s", filePath.c_str());
@@ -25137,10 +25170,20 @@ ECS::Entity EditorLayer::FindPlayerEntity() const {
     ECS::Entity player = m_World->FindEntityByName("Player");
     if (player != ECS::INVALID_ENTITY) return player;
     // Fallback: first entity with any controller
-    for (ECS::Entity e : m_World->GetAllEntities()) {
-        if (EntityHasAnyController(e)) return e;
-    }
-    return ECS::INVALID_ENTITY;
+    auto tryFirst = [](const auto& entities) -> ECS::Entity {
+        for (ECS::Entity e : entities) return e;
+        return ECS::INVALID_ENTITY;
+    };
+    ECS::Entity found = tryFirst(m_World->GetEntitiesWithComponent<ECS::Platformer2DController>());
+    if (found != ECS::INVALID_ENTITY) return found;
+    found = tryFirst(m_World->GetEntitiesWithComponent<ECS::TopDown2DController>());
+    if (found != ECS::INVALID_ENTITY) return found;
+    found = tryFirst(m_World->GetEntitiesWithComponent<ECS::TopDown3DController>());
+    if (found != ECS::INVALID_ENTITY) return found;
+    found = tryFirst(m_World->GetEntitiesWithComponent<ECS::ThirdPersonController>());
+    if (found != ECS::INVALID_ENTITY) return found;
+    found = tryFirst(m_World->GetEntitiesWithComponent<ECS::FirstPersonController>());
+    return found;
 }
 
 static bool EntityHasAnyCollider(ECS::World* world, ECS::Entity entity) {
@@ -25519,21 +25562,19 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
             m_ConsoleLog.push_back("Error: No world loaded");
             return;
         }
-        const auto& entities = m_World->GetAllEntities();
+        usize entityCount = m_World->GetAllEntities().size();
         u32 meshCount = 0, lightCount = 0, cameraCount = 0;
         u32 totalVerts = 0, totalTris = 0;
-        for (ECS::Entity entity : entities) {
-            if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
-                meshCount++;
-                auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
-                totalVerts += static_cast<u32>(mesh->vertices.size());
-                totalTris += static_cast<u32>(mesh->indices.size()) / 3;
-            }
-            if (m_World->HasComponent<ECS::LightComponent>(entity)) lightCount++;
-            if (m_World->HasComponent<ECS::CameraComponent>(entity)) cameraCount++;
+        for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::MeshComponent>()) {
+            meshCount++;
+            auto* mesh = m_World->GetComponent<ECS::MeshComponent>(entity);
+            totalVerts += static_cast<u32>(mesh->vertices.size());
+            totalTris += static_cast<u32>(mesh->indices.size()) / 3;
         }
+        lightCount = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::LightComponent>().size());
+        cameraCount = static_cast<u32>(m_World->GetEntitiesWithComponent<ECS::CameraComponent>().size());
         m_ConsoleLog.push_back("Scene Statistics:");
-        m_ConsoleLog.push_back("  Entities: " + std::to_string(entities.size()));
+        m_ConsoleLog.push_back("  Entities: " + std::to_string(entityCount));
         m_ConsoleLog.push_back("  Meshes: " + std::to_string(meshCount) + " (" + std::to_string(totalVerts) + " verts, " + std::to_string(totalTris) + " tris)");
         m_ConsoleLog.push_back("  Lights: " + std::to_string(lightCount));
         m_ConsoleLog.push_back("  Cameras: " + std::to_string(cameraCount));
@@ -25677,8 +25718,7 @@ void EditorLayer::DrawBuildDialog() {
         ImGui::SameLine();
         if (ImGui::Button("Open Folder")) {
 #ifdef ENJIN_PLATFORM_WINDOWS
-            std::string cmd = "explorer \"" + m_BuildConfig.outputDir + "\"";
-            std::system(cmd.c_str());
+            ShellExecuteA(nullptr, "open", m_BuildConfig.outputDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(ENJIN_PLATFORM_MACOS)
             std::string cmd = "open \"" + m_BuildConfig.outputDir + "\"";
             std::system(cmd.c_str());
@@ -27760,10 +27800,8 @@ void EditorLayer::DrawDialoguePanel() {
     ImGui::Separator();
 
     std::vector<ECS::Entity> dialogueEntities;
-    for (ECS::Entity entity : m_World->GetAllEntities()) {
-        if (m_World->HasComponent<ECS::DialogueComponent>(entity)) {
-            dialogueEntities.push_back(entity);
-        }
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::DialogueComponent>()) {
+        dialogueEntities.push_back(entity);
     }
 
     if (dialogueEntities.empty()) {

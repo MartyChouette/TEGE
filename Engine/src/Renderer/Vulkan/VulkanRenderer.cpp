@@ -469,6 +469,7 @@ void VulkanRenderer::EndFrame() {
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
+    if (m_CurrentFrame >= m_CommandBuffers.size()) return VK_NULL_HANDLE;
     return m_CommandBuffers[m_CurrentFrame];
 }
 
@@ -575,12 +576,13 @@ void VulkanRenderer::DestroyComputeResources() {
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentComputeCommandBuffer() const {
-    if (m_ComputeCommandBuffers.empty()) return VK_NULL_HANDLE;
+    if (m_ComputeCommandBuffers.empty() || m_CurrentFrame >= m_ComputeCommandBuffers.size()) return VK_NULL_HANDLE;
     return m_ComputeCommandBuffers[m_CurrentFrame];
 }
 
 bool VulkanRenderer::BeginComputeCommandBuffer() {
     if (m_ComputeCommandPool == VK_NULL_HANDLE) return false;
+    if (m_CurrentFrame >= m_ComputeCommandBuffers.size()) return false;
     VkCommandBuffer cmd = m_ComputeCommandBuffers[m_CurrentFrame];
     vkResetCommandBuffer(cmd, 0);
     VkCommandBufferBeginInfo beginInfo{};
@@ -609,7 +611,15 @@ void VulkanRenderer::SubmitCompute() {
     submitInfo.pSignalSemaphores = &m_ComputeFinishedSemaphores[m_CurrentFrame];
 
     VkQueue computeQueue = m_Context->GetComputeQueue();
-    vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    VkResult submitResult = vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    if (submitResult == VK_ERROR_DEVICE_LOST) {
+        ENJIN_LOG_FATAL(Renderer, "Vulkan device lost during compute submit");
+        m_DeviceLost = true;
+        return;
+    } else if (submitResult != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to submit compute command buffer: %d", submitResult);
+        return;
+    }
     m_ComputeSubmittedThisFrame = true;
 }
 

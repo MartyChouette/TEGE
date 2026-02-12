@@ -18,6 +18,8 @@ namespace Enjin::GUI {
         return node.id;
     }
 
+    // Safe: only called from editor UI (context menu / inspector), never during
+    // DialoguePlayer iteration or ProcessNode(). No deferred removal needed.
     void DialogueTreeData::RemoveNode(u32 id) {
         nodes.erase(
             std::remove_if(nodes.begin(), nodes.end(),
@@ -194,6 +196,7 @@ namespace Enjin::GUI {
         m_CurrentNodeId = tree.rootNodeId;
         m_Active = true;
         m_WaitingForInput = false;
+        m_Variables.clear();
         ProcessNode();
     }
 

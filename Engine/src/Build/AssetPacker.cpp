@@ -126,6 +126,10 @@ bool AssetPacker::Finalize() {
     };
 
     for (auto& entry : m_Entries) {
+        if (entry.virtualPath.size() > UINT32_MAX) {
+            ENJIN_LOG_ERROR(Build, "Path too long to pack: %s", entry.virtualPath.c_str());
+            continue;
+        }
         u32 pathLen = static_cast<u32>(entry.virtualPath.size());
         appendBytes(&pathLen, sizeof(pathLen));
         indexBuf.insert(indexBuf.end(),

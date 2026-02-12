@@ -43,7 +43,12 @@ HTTPClient::ParsedURL HTTPClient::ParseURL(const std::string& url) {
     // Port in host
     auto colonPos = result.host.find(':');
     if (colonPos != std::string::npos) {
-        result.port = (u16)std::stoi(result.host.substr(colonPos + 1));
+        try {
+            int p = std::stoi(result.host.substr(colonPos + 1));
+            result.port = (p >= 1 && p <= 65535) ? static_cast<u16>(p) : 443;
+        } catch (...) {
+            result.port = 443;
+        }
         result.host = result.host.substr(0, colonPos);
     }
 
