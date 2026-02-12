@@ -1082,6 +1082,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterParticleBindings(engine);
     RegisterPrefabBindings(engine);
     RegisterStreamingBindings(engine);
+    RegisterFlowerBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

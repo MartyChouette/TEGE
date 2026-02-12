@@ -124,6 +124,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
     Scripting::SetBindingsPhysics(m_Physics.get());
     Scripting::SetBindingsStreaming(&m_StreamingManager);
+    Scripting::SetBindingsFlower(m_World);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
@@ -244,6 +245,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsPhysics(nullptr);
     Scripting::SetBindingsWeather(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
+    Scripting::SetBindingsFlower(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);

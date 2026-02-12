@@ -162,14 +162,12 @@ void FlowerSystem::ProcessInput() {
             auto* grab = m_World->GetComponent<GrabbableComponent>(m_GrabbedEntity);
             if (grab) {
                 if (grab->isBroken) {
-                    // Broken petal released: spawn splash and hide offscreen
-                    auto* transform = m_World->GetComponent<TransformComponent>(m_GrabbedEntity);
-                    if (transform) {
-                        auto* mat = m_World->GetComponent<MaterialComponent>(m_GrabbedEntity);
-                        Math::Vector3 color = mat ? mat->baseColor : Math::Vector3(1, 1, 1);
-                        SpawnGroundSplash(transform->position, color);
-                        // Hide entity (keeps GPU buffers valid, avoids freeze)
-                        transform->visible = false;
+                    // Broken petal released: let it fall with gravity.
+                    // CheckGroundImpact will spawn splash particles on ground hit.
+                    auto* rb = m_World->GetComponent<RigidbodyComponent>(m_GrabbedEntity);
+                    if (rb) {
+                        rb->useGravity = true;
+                        rb->velocity = Math::Vector3(0, 0, 0);
                     }
                 }
                 grab->isGrabbed = false;
@@ -289,9 +287,10 @@ void FlowerSystem::ProcessGrabForces(f32 dt) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
 
-        // Detect joints removed this frame (before UpdateJointTracking sets isBroken)
+        // Joint was just removed by ConstraintSolver this frame — skip force processing.
+        // Don't set isBroken here; let UpdateJointTracking handle break cleanup
+        // (sets grab->isBroken, spawns particles, clears jelly data).
         if (tether->hadJoint && !m_World->HasComponent<SpringJointComponent>(entity)) {
-            tether->isBroken = true;
             continue;
         }
 
@@ -355,15 +354,18 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
         auto* jelly = m_World->GetComponent<JellyMeshComponent>(entity);
         if (!jelly) continue;
 
-        // Skip broken entities — jelly deformation on a teleporting petal
-        // causes meshDirty every frame, forcing GPU buffer recreation that
-        // can race with the in-flight render and crash the driver.
-        // Also detect joints that were just removed this frame (isBroken is set
-        // later in UpdateJointTracking, but the spring component is already gone).
+        // Skip broken entities — jelly deformation on a broken/flying petal
+        // causes meshDirty, forcing GPU buffer recreation that can race with
+        // the in-flight render and crash the driver (VK_ERROR_DEVICE_LOST).
         auto* tetherCheck = m_World->GetComponent<TetherComponent>(entity);
-        if (tetherCheck && (tetherCheck->isBroken ||
-            (tetherCheck->hadJoint && !m_World->HasComponent<SpringJointComponent>(entity)))) {
-            tetherCheck->isBroken = true;  // Mark early so subsequent phases skip it too
+        if (tetherCheck && tetherCheck->isBroken) {
+            continue;
+        }
+        // Also detect joints that were just removed THIS frame by the
+        // ConstraintSolver (isBroken hasn't been set yet — that happens later
+        // in UpdateJointTracking which does the full cleanup).
+        if (tetherCheck && tetherCheck->hadJoint &&
+            !m_World->HasComponent<SpringJointComponent>(entity)) {
             continue;
         }
 
@@ -574,6 +576,13 @@ void FlowerSystem::UpdateJointTracking() {
                 grab->isBroken = true;
             }
 
+            // Enable gravity so the broken part falls (was disabled while spring-connected).
+            // If the petal is still grabbed, UpdateBrokenParts moves it to cursor instead.
+            auto* breakRb = m_World->GetComponent<RigidbodyComponent>(entity);
+            if (breakRb) {
+                breakRb->useGravity = true;
+            }
+
             BreakEvent evt;
             evt.entity = entity;
             evt.junctionPos = tether->junctionWorldPos;  // Last cached value
@@ -742,6 +751,11 @@ void FlowerSystem::CheckGroundImpact() {
         SpawnGroundSplash(evt.position, evt.color, splashConfig);
         if (m_World->HasComponent<RigidbodyComponent>(evt.entity)) {
             m_World->RemoveComponent<RigidbodyComponent>(evt.entity);
+        }
+        // Hide the petal — only particles remain
+        auto* impactTransform = m_World->GetComponent<TransformComponent>(evt.entity);
+        if (impactTransform) {
+            impactTransform->visible = false;
         }
     }
 }

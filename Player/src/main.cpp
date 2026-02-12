@@ -221,6 +221,7 @@ public:
 
         m_FlowerSystem.SetWorld(m_World.get());
         m_FlowerSystem.SetCamera(m_Camera.get());
+        m_FlowerSystem.SetRenderSystem(m_RenderSystem);
 
         m_TweenSystem.SetScriptEngine(&m_ScriptEngine);
         m_StateMachineSystem.SetScriptEngine(&m_ScriptEngine);
@@ -363,6 +364,13 @@ public:
 
         // --- Controllers & vegetation ---
         m_ControllerSystem.Update(deltaTime);
+        // Update flower system viewport (full screen in player)
+        if (m_Renderer) {
+            auto ext = m_Renderer->GetSwapchainExtent();
+            m_FlowerSystem.SetGameViewBounds(0.0f, 0.0f,
+                static_cast<Enjin::f32>(ext.width), static_cast<Enjin::f32>(ext.height));
+            m_FlowerSystem.SetRenderTargetSize(ext.width, ext.height);
+        }
         m_FlowerSystem.Update(deltaTime);
 
         // --- Camera (after controllers, which may drive it) ---
@@ -590,6 +598,7 @@ private:
         Enjin::Scripting::SetBindingsQuestSystem(&m_QuestSystem);
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
+        Enjin::Scripting::SetBindingsFlower(m_World.get());
 
         // Wire dialogue system event bus
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -606,6 +615,7 @@ private:
             auto cameras = Enjin::ECS::CameraManager::GetAllActiveCameras(m_World.get());
             if (!cameras.empty()) {
                 m_ControllerSystem.SetGameCameraEntity(cameras[0]);
+                m_FlowerSystem.SetGameCameraEntity(cameras[0]);
             }
         }
 

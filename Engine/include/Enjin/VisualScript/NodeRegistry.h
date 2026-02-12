@@ -227,6 +227,13 @@ constexpr const char* UISetVisible         = "UI_SetElementVisible";
 // Localization
 constexpr const char* LocGetString         = "Loc_Get";
 
+// Flower
+constexpr const char* FlowerGetTension     = "Flower_GetTension";
+constexpr const char* FlowerIsBroken       = "Flower_IsBroken";
+constexpr const char* FlowerIsGrabbed      = "Flower_IsGrabbed";
+constexpr const char* FlowerGetScore       = "Flower_GetScore";
+constexpr const char* FlowerSetBreakForce  = "Flower_SetBreakForce";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

@@ -17,6 +17,7 @@
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/Localization.h"
+#include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
@@ -3990,6 +3991,132 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<std::string>(inputs[0]) : "";
             outputs[0] = key.empty() ? std::string("") :
                 GUI::LocalizationManager::Get().GetString(key);
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // FLOWER
+    // ========================================================================
+
+    // Get Tension (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FlowerGetTension;
+        def.displayName = "Get Flower Tension";
+        def.description = "Get the current tension (0-1) of a tethered flower part";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Float("Tension", PK::Output)};
+        def.keywords = {"flower", "tension", "tether", "spring", "stress"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* tether = ctx.world->GetComponent<ECS::TetherComponent>(target);
+            return tether ? tether->currentTension : 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // Is Broken (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FlowerIsBroken;
+        def.displayName = "Is Flower Broken";
+        def.description = "Check if a flower part's tether has broken off";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Broken", PK::Output)};
+        def.keywords = {"flower", "broken", "tether", "pluck"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* tether = ctx.world->GetComponent<ECS::TetherComponent>(target);
+            return tether ? tether->isBroken : false;
+        };
+        RegisterNode(def);
+    }
+
+    // Is Grabbed (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FlowerIsGrabbed;
+        def.displayName = "Is Flower Grabbed";
+        def.description = "Check if a flower part is currently being held by the player";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Grabbed", PK::Output)};
+        def.keywords = {"flower", "grab", "held", "pick"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* grab = ctx.world->GetComponent<ECS::GrabbableComponent>(target);
+            return grab ? grab->isGrabbed : false;
+        };
+        RegisterNode(def);
+    }
+
+    // Get Score (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FlowerGetScore;
+        def.displayName = "Get Flower Score";
+        def.description = "Get the evaluation score of a flower stem";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Float("Score", PK::Output)};
+        def.keywords = {"flower", "score", "evaluate", "stem"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 0 && std::holds_alternative<u64>(inputs[0]) && std::get<u64>(inputs[0]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[0]));
+            auto* stem = ctx.world->GetComponent<ECS::FlowerStemComponent>(target);
+            return stem ? stem->score : 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Break Force (action)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::FlowerSetBreakForce;
+        def.displayName = "Set Break Force";
+        def.description = "Set the break force threshold for a tethered flower part";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Force", PK::Input, 25.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"flower", "break", "force", "tether", "strength"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            f32 force = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 25.0f;
+            auto* tether = ctx.world->GetComponent<ECS::TetherComponent>(target);
+            if (tether) tether->autoBreakForce = force;
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }

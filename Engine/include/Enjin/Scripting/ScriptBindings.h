@@ -44,6 +44,7 @@ void RegisterUIBindings(asIScriptEngine* engine);
 void RegisterParticleBindings(asIScriptEngine* engine);
 void RegisterPrefabBindings(asIScriptEngine* engine);
 void RegisterStreamingBindings(asIScriptEngine* engine);
+void RegisterFlowerBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -63,6 +64,7 @@ void SetBindingsCinematicSystem(Gameplay::CinematicSystem* cinematic);
 void SetBindingsObjectPool(Gameplay::ObjectPool* pool);
 void SetBindingsDestructible(Effects::DestructibleSystem* destructible);
 void SetBindingsStreaming(Scene::StreamingManager* mgr);
+void SetBindingsFlower(ECS::World* world);
 
 } // namespace Scripting
 } // namespace Enjin
