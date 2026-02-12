@@ -15244,7 +15244,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& crTether = m_World->AddComponent<ECS::TetherComponent>(crownEntity);
             crTether.stemEntity = stemEntity;
             crTether.connectedEntity = stemEntity;  // Crown connects to stem
-            crTether.attachLocalPos = Math::Vector3(0.0f, 0.9f, 0.0f);
+            crTether.attachLocalPos = Math::Vector3(0.0f, 0.8f, 0.0f);  // Offset below stem top so restLength > 0
             crTether.breakDistance = 1.0f;
             crTether.tensionRamp = 3.0f;
             crTether.autoMass = 0.5f;
@@ -15254,7 +15254,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             crTether.autoDrag = 2.0f;
             auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crownEntity);
             crGrab.pullForce = 40.0f;
-            crGrab.grabRadius = 0.12f;
+            crGrab.grabRadius = 0.25f;
         }
 
         // Petals (arranged radially, connected to crown)
@@ -15303,7 +15303,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.autoDrag = 1.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
             grab.pullForce = 50.0f;
-            grab.grabRadius = 0.15f;
+            grab.grabRadius = 0.3f;
 
             // Collision filtering: petals don't collide with other petals
             auto& petalCol = m_World->AddComponent<ECS::SphereColliderComponent>(petal);
@@ -15353,7 +15353,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tether.autoDrag = 1.5f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
             grab.pullForce = 60.0f;
-            grab.grabRadius = 0.12f;
+            grab.grabRadius = 0.25f;
 
             // Collision filtering: leaves don't collide with other leaves
             auto& leafCol = m_World->AddComponent<ECS::SphereColliderComponent>(leaf);

@@ -57,6 +57,15 @@ private:
     u32 m_Iterations = 8;
     f32 m_BaumgarteScale = 0.2f;
     std::vector<ContactConstraint> m_Contacts;
+
+    // Deferred removal lists for joints that break during solving
+    // (removing components during GetEntitiesWithComponent iteration is UB)
+    std::vector<ECS::Entity> m_BrokenDistanceJoints;
+    std::vector<ECS::Entity> m_BrokenHingeJoints;
+    std::vector<ECS::Entity> m_BrokenBallSocketJoints;
+    std::vector<ECS::Entity> m_BrokenSpringJoints;
+    std::vector<ECS::Entity> m_BrokenFixedJoints;
+    std::vector<ECS::Entity> m_BrokenSliderJoints;
 };
 
 } // namespace Physics

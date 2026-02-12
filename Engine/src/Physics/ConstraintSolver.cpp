@@ -60,31 +60,61 @@ void ConstraintSolver::SolveJointConstraints(f32 deltaTime) {
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::DistanceJointComponent>()) {
         SolveDistanceJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenDistanceJoints) {
+        if (m_World->HasComponent<ECS::DistanceJointComponent>(broken))
+            m_World->RemoveComponent<ECS::DistanceJointComponent>(broken);
+    }
+    m_BrokenDistanceJoints.clear();
 
     // Hinge joints
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::HingeJointComponent>()) {
         SolveHingeJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenHingeJoints) {
+        if (m_World->HasComponent<ECS::HingeJointComponent>(broken))
+            m_World->RemoveComponent<ECS::HingeJointComponent>(broken);
+    }
+    m_BrokenHingeJoints.clear();
 
     // Ball-socket joints
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BallSocketJointComponent>()) {
         SolveBallSocketJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenBallSocketJoints) {
+        if (m_World->HasComponent<ECS::BallSocketJointComponent>(broken))
+            m_World->RemoveComponent<ECS::BallSocketJointComponent>(broken);
+    }
+    m_BrokenBallSocketJoints.clear();
 
     // Spring joints
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SpringJointComponent>()) {
         SolveSpringJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenSpringJoints) {
+        if (m_World->HasComponent<ECS::SpringJointComponent>(broken))
+            m_World->RemoveComponent<ECS::SpringJointComponent>(broken);
+    }
+    m_BrokenSpringJoints.clear();
 
     // Fixed joints
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::FixedJointComponent>()) {
         SolveFixedJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenFixedJoints) {
+        if (m_World->HasComponent<ECS::FixedJointComponent>(broken))
+            m_World->RemoveComponent<ECS::FixedJointComponent>(broken);
+    }
+    m_BrokenFixedJoints.clear();
 
     // Slider joints
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SliderJointComponent>()) {
         SolveSliderJoint(entity, deltaTime);
     }
+    for (ECS::Entity broken : m_BrokenSliderJoints) {
+        if (m_World->HasComponent<ECS::SliderJointComponent>(broken))
+            m_World->RemoveComponent<ECS::SliderJointComponent>(broken);
+    }
+    m_BrokenSliderJoints.clear();
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +359,7 @@ void ConstraintSolver::SolveDistanceJoint(ECS::Entity jointEntity, f32 deltaTime
     if (joint->breakable && joint->currentStress > joint->breakForce) {
         ENJIN_LOG_INFO(Physics, "Distance joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                        static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-        m_World->RemoveComponent<ECS::DistanceJointComponent>(jointEntity);
+        m_BrokenDistanceJoints.push_back(jointEntity);
         return;
     }
 
@@ -381,7 +411,7 @@ void ConstraintSolver::SolveHingeJoint(ECS::Entity jointEntity, f32 deltaTime) {
         if (joint->breakable && joint->currentStress > joint->breakForce) {
             ENJIN_LOG_INFO(Physics, "Hinge joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                            static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-            m_World->RemoveComponent<ECS::HingeJointComponent>(jointEntity);
+            m_BrokenHingeJoints.push_back(jointEntity);
             return;
         }
 
@@ -528,7 +558,7 @@ void ConstraintSolver::SolveBallSocketJoint(ECS::Entity jointEntity, f32 deltaTi
     if (joint->breakable && joint->currentStress > joint->breakForce) {
         ENJIN_LOG_INFO(Physics, "Ball-socket joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                        static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-        m_World->RemoveComponent<ECS::BallSocketJointComponent>(jointEntity);
+        m_BrokenBallSocketJoints.push_back(jointEntity);
         return;
     }
 
@@ -609,7 +639,8 @@ void ConstraintSolver::SolveSpringJoint(ECS::Entity jointEntity, f32 deltaTime) 
     if (joint->breakable && joint->currentStress > joint->breakForce) {
         ENJIN_LOG_INFO(Physics, "Spring joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                        static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-        m_World->RemoveComponent<ECS::SpringJointComponent>(jointEntity);
+        // Defer removal — removing during iteration invalidates the entity list
+        m_BrokenSpringJoints.push_back(jointEntity);
         return;
     }
 
@@ -713,7 +744,7 @@ void ConstraintSolver::SolveFixedJoint(ECS::Entity jointEntity, f32 deltaTime) {
     if (joint->breakable && joint->currentStress > joint->breakForce) {
         ENJIN_LOG_INFO(Physics, "Fixed joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                        static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-        m_World->RemoveComponent<ECS::FixedJointComponent>(jointEntity);
+        m_BrokenFixedJoints.push_back(jointEntity);
     }
 }
 
@@ -845,7 +876,7 @@ void ConstraintSolver::SolveSliderJoint(ECS::Entity jointEntity, f32 deltaTime) 
     if (joint->breakable && joint->currentStress > joint->breakForce) {
         ENJIN_LOG_INFO(Physics, "Slider joint on entity %llu broke (stress %.2f > breakForce %.2f)",
                        static_cast<unsigned long long>(jointEntity), joint->currentStress, joint->breakForce);
-        m_World->RemoveComponent<ECS::SliderJointComponent>(jointEntity);
+        m_BrokenSliderJoints.push_back(jointEntity);
     }
 }
 
