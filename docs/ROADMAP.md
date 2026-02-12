@@ -571,7 +571,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 ### Pending
 
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
-- **Template Rebuild & Demo Scenes** — Update all 38 templates to latest features, add demo scene per template with "Demo" button
+- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced), each showcasing real engine features
 - **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
 - **Editor Accent Color & Theming** — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added

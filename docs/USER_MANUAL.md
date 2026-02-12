@@ -248,50 +248,56 @@ Import options include a configurable scale factor.
 
 ## 4. Templates
 
-Enjin provides 38 built-in startup templates. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+Enjin provides 22 built-in startup templates organized into 5 categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+
+**Foundations**
 
 | Template | Description |
 |----------|-------------|
-| **Blank** | Empty scene with only a directional light. Start from scratch. |
-| **Game Manager** | Singleton pattern with state machine, score, and timer components. |
-| **2D Platformer** | Side-scrolling setup with a Platformer2D controller, ground plane, and camera. |
-| **2D Top-Down** | Overhead 2D setup with a TopDown2D controller. |
-| **Endless Runner** | Auto-scrolling runner with lanes, obstacles, and score tracking. |
-| **2D Metroidvania** | Interconnected map with abilities and locked doors. |
-| **Survivor-like** | Top-down auto-attack with waves, XP, and level-up mechanics. |
-| **2D Rogue-like** | Grid-based dungeon with random rooms and permadeath. |
-| **3D Isometric** | 45-degree CRPG view with a TopDown3D controller and angled camera. |
-| **3D Third Person** | Over-the-shoulder camera with a ThirdPerson controller. |
-| **3D First Person** | FPS camera with a FirstPerson controller and mouse look. |
-| **RPG Village** | 3D RPG scene with NPCs, pickups, enemies, and quest framework. |
-| **3D Narrative** | Dialogue sequencing with condition-based branching and cinematic cameras. |
-| **Survival** | 3D survival with hazards, temperature zones, and resource management. |
-| **PS1 RPG** | Retro-styled RPG with flat shading, vertex snapping, and affine texturing. |
-| **City Builder** | Isometric city sim with grid-based placement. |
-| **FPS Arena** | First-person shooter with weapons, respawn, and ammo pickups. |
-| **Team Sports** | 3D soccer/basketball with 2 teams, ball, and goals. |
-| **Tower Defense** | Isometric TD with paths, turrets, and enemy waves. |
-| **Horror** | Walking sim with flashlight, collectible notes, and dark atmosphere. |
-| **Flower Garden** | Procedural flower scene with pluckable petals and scoring. |
-| **Fixed Camera** | Fixed-angle third person (classic RE / God of War style). |
-| **SMT Dungeon** | First-person dungeon crawler with grid movement and encounters. |
-| **3D Souls-like** | Challenging melee combat with bonfires, stamina, and fog gates. |
-| **Planet Gravity** | Spherical gravity — walk on a planet surface. |
-| **Shadow Test** | Shadow debug scene with ground, objects, and configurable light. |
-| **4P Racing** | 4-player splitscreen racing with vehicle controllers. |
-| **Arena Fighter** | Smash-style arena for 4-8 players with dynamic camera. |
-| **Puzzle Platformer** | Pushable blocks with pressure plates, doors, and switches. |
-| **2P Couch Co-op** | Splitscreen co-op for 2 players in a shared world. |
-| **Visual Novel** | Story-driven dialogue with sprites and portrait support. |
-| **Point & Click** | Flash-style adventure with click hotspots and inventory. |
-| **Flash TD** | Classic Flash tower defense with path, towers, and waves. |
-| **Bullet Hell** | Danmaku shmup with bullet patterns and score tracking. |
-| **Idle/Clicker** | Incremental game with click, upgrades, and prestige mechanics. |
-| **Dress Up** | Character dress-up with draggable items, layers, and save. |
-| **Escape Room** | Room escape puzzle with inventory, clues, and combinations. |
-| **Rhythm Game** | Music game with notes, timing windows, and combo system. |
+| **Blank** | Empty scene with directional light, procedural skybox, and FXAA. |
+| **2D Platformer** | Side-scrolling with wall jump, floating platforms, coin tween, torch particles. |
+| **2D Top-Down Action** | Overhead 2D with dash, health, AI patrol enemy, health pickup. |
+| **3D Third Person** | Over-the-shoulder camera with shadows, obstacle cubes, point light, bloom. |
+| **3D First Person** | FPS camera in an L-shaped corridor with warm point light and vignette. |
 
-Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre.
+**Genre Showcases**
+
+| Template | Description |
+|----------|-------------|
+| **Sokoban Puzzle** | Pushable crates with grid snap, 3 goal plates, switch door, top-down 3D camera. |
+| **Survival** | Temperature zones, weather zones, campfire particles, stamina, fog, hazard zone. |
+| **RPG Village** | NPC dialogue, chest pickup, house/fences, lantern point light. |
+| **Horror** | Flashlight (spot light with follow), fog, dark ambient, collectible notes, door switch. |
+| **Vehicle Racing** | VehicleController with chase camera, track barriers, checkpoint/finish goal zones, cinematic camera. |
+| **PS1 RPG** | Retro effects (pixelation, dither, color quantization, 320x240), flat shading, save point with magic particles. |
+| **Arena Fighter** | 2-player splitscreen with per-player cameras, health + stamina, arena walls. |
+
+**Systems Deep-Dives**
+
+| Template | Description |
+|----------|-------------|
+| **Physics Playground** | Ramp, 5 rigidbodies (spheres/cubes/capsule), gravity zone (point mode), conveyor, moving platform. |
+| **Dialogue & Narrative** | 3 NPCs with dialogue, quest state entity, dialogue box component, branching conversation notes. |
+| **Save System Demo** | 3-tier persistence demo: RunState collectibles, SceneState checkpoint, MetaProgression stats, save/load menu. |
+| **Visual Scripting** | 3 entities with VisualScriptComponent, switch, particle effect, guide notes for node editor. |
+| **UI Canvas Demo** | UICanvasComponent, HUD health bar widget, guide notes for the UI editor. |
+
+**Retro & Flash**
+
+| Template | Description |
+|----------|-------------|
+| **Point & Click** | Adventure game with background, 3 click hotspots, inventory UI canvas, dialogue descriptions. |
+| **Bullet Hell** | Fast top-down 2D, enemy spawner with particles, bullet pool, boundary walls. |
+| **Idle/Clicker** | Click target with scale tween feedback, UI canvas, MetaProgression save data. |
+
+**Advanced**
+
+| Template | Description |
+|----------|-------------|
+| **Planet Gravity** | Spherical planet with point gravity zone, surface-aligned controller, dark space skybox. |
+| **Dungeon Crawler** | Grid-based FPS with snap turns, L-shaped corridor walls, skeleton enemy, treasure, torch lights. |
+
+Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre. Every template includes NotesComponent hints explaining the featured systems.
 
 ### Custom Templates
 
