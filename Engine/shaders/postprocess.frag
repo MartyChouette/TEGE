@@ -132,7 +132,7 @@ layout(binding = 1) uniform PostProcessSettings {
 
     // Full-screen stipple / dither
     uint stippleEnabled;
-    uint stipplePattern;        // 0-7
+    uint stipplePatternMask;    // bitmask: bit0..bit7
     uint stippleColorMode;      // 0=mono, 1=duo-tone, 2=full color
     float stippleScale;
     float stippleDensity;
@@ -766,17 +766,22 @@ vec3 applyStipple(vec3 color, vec2 screenPos) {
 
     float luma = dot(color, vec3(0.2126, 0.7152, 0.0722));
 
-    // Get pattern threshold
-    float threshold = 0.5;
-    uint pat = settings.stipplePattern;
-    if (pat == 0)      threshold = stippleBayer4x4(pos);
-    else if (pat == 1) threshold = stippleBayer8x8(pos);
-    else if (pat == 2) threshold = stippleBlueNoise(pos);
-    else if (pat == 3) threshold = stippleHalftone(pos);
-    else if (pat == 4) threshold = stippleCrosshatch(pos);
-    else if (pat == 5) threshold = stippleOverlook(pos);
-    else if (pat == 6) threshold = stippleOrdered2x2(pos);
-    else               threshold = stippleFloydSteinberg(pos, luma);
+    // Accumulate thresholds from all enabled patterns (bitmask)
+    uint mask = settings.stipplePatternMask;
+    float threshold = 0.0;
+    float count = 0.0;
+
+    if ((mask & 0x01u) != 0u) { threshold += stippleBayer4x4(pos);              count += 1.0; }
+    if ((mask & 0x02u) != 0u) { threshold += stippleBayer8x8(pos);              count += 1.0; }
+    if ((mask & 0x04u) != 0u) { threshold += stippleBlueNoise(pos);             count += 1.0; }
+    if ((mask & 0x08u) != 0u) { threshold += stippleHalftone(pos);              count += 1.0; }
+    if ((mask & 0x10u) != 0u) { threshold += stippleCrosshatch(pos);            count += 1.0; }
+    if ((mask & 0x20u) != 0u) { threshold += stippleOverlook(pos);              count += 1.0; }
+    if ((mask & 0x40u) != 0u) { threshold += stippleOrdered2x2(pos);            count += 1.0; }
+    if ((mask & 0x80u) != 0u) { threshold += stippleFloydSteinberg(pos, luma);  count += 1.0; }
+
+    if (count < 1.0) threshold = 0.5;
+    else threshold /= count;
 
     // Apply density bias: shift threshold so more/fewer dots appear
     float biasedLuma = luma + (settings.stippleDensity - 0.5);

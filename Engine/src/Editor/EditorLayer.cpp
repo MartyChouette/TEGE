@@ -8602,9 +8602,14 @@ void EditorLayer::DrawPostProcessingPanel() {
                 "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone",
                 "Crosshatch", "Overlook", "Ordered 2x2", "Floyd-Steinberg"
             };
-            int currentPattern = static_cast<int>(settings.stipplePattern);
-            if (ImGui::Combo("Pattern##Stipple", &currentPattern, stipplePatterns, 8)) {
-                settings.stipplePattern = static_cast<u32>(currentPattern);
+            ImGui::Text("Patterns (combine any):");
+            for (int i = 0; i < 8; i++) {
+                bool on = (settings.stipplePatternMask & (1u << i)) != 0;
+                if (ImGui::Checkbox(stipplePatterns[i], &on)) {
+                    if (on) settings.stipplePatternMask |= (1u << i);
+                    else    settings.stipplePatternMask &= ~(1u << i);
+                }
+                if (i % 2 == 0 && i < 7) ImGui::SameLine(200.0f);
             }
 
             const char* colorModes[] = { "Monochrome", "Duo-Tone", "Full Color" };

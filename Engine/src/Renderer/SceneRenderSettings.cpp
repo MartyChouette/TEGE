@@ -191,7 +191,7 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
 
         // Stipple
         s.stippleEnabled               = pp->stippleEnabled != 0;
-        s.stipplePattern               = pp->stipplePattern;
+        s.stipplePatternMask           = pp->stipplePatternMask;
         s.stippleColorMode             = pp->stippleColorMode;
         s.stippleScale                 = pp->stippleScale;
         s.stippleDensity               = pp->stippleDensity;
@@ -380,7 +380,7 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
 
         // Stipple
         pp->stippleEnabled               = stippleEnabled ? 1 : 0;
-        pp->stipplePattern               = stipplePattern;
+        pp->stipplePatternMask           = stipplePatternMask;
         pp->stippleColorMode             = stippleColorMode;
         pp->stippleScale                 = stippleScale;
         pp->stippleDensity               = stippleDensity;
@@ -531,7 +531,7 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 
     // Stipple
     j["stippleEnabled"]    = s.stippleEnabled;
-    j["stipplePattern"]    = s.stipplePattern;
+    j["stipplePatternMask"] = s.stipplePatternMask;
     j["stippleColorMode"]  = s.stippleColorMode;
     j["stippleScale"]      = RF(s.stippleScale);
     j["stippleDensity"]    = RF(s.stippleDensity);
@@ -699,7 +699,8 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
 
     // Stipple
     if (j.contains("stippleEnabled"))    s.stippleEnabled    = j["stippleEnabled"].get<bool>();
-    if (j.contains("stipplePattern"))    s.stipplePattern    = j["stipplePattern"].get<u32>();
+    if (j.contains("stipplePatternMask")) s.stipplePatternMask = j["stipplePatternMask"].get<u32>();
+    if (j.contains("stipplePattern"))     s.stipplePatternMask = 1u << j["stipplePattern"].get<u32>(); // migrate old single-pattern
     if (j.contains("stippleColorMode"))  s.stippleColorMode  = j["stippleColorMode"].get<u32>();
     if (j.contains("stippleScale"))      s.stippleScale      = j["stippleScale"].get<f32>();
     if (j.contains("stippleDensity"))    s.stippleDensity    = j["stippleDensity"].get<f32>();

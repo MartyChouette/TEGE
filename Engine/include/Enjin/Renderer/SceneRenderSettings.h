@@ -139,7 +139,7 @@ struct SceneRenderSettings {
 
     // Full-screen stipple / dither
     bool stippleEnabled = false;
-    u32 stipplePattern = 0;       // 0=Bayer4x4..7=FloydSteinberg
+    u32 stipplePatternMask = 1;   // Bitmask: bit0=Bayer4x4..bit7=FloydSteinberg
     u32 stippleColorMode = 0;     // 0=Mono, 1=DuoTone, 2=FullColor
     f32 stippleScale = 1.0f;
     f32 stippleDensity = 0.5f;

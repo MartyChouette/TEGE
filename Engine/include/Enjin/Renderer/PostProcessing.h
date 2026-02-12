@@ -174,7 +174,7 @@ struct alignas(16) PostProcessSettings {
 
     // Full-screen stipple / dither
     alignas(4) u32 stippleEnabled = 0;
-    alignas(4) u32 stipplePattern = 0;       // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook, 6=Ordered2x2, 7=FloydSteinberg
+    alignas(4) u32 stipplePatternMask = 1;   // Bitmask: bit0=Bayer4x4, bit1=Bayer8x8, bit2=BlueNoise, bit3=Halftone, bit4=Crosshatch, bit5=Overlook, bit6=Ordered2x2, bit7=FloydSteinberg
     alignas(4) u32 stippleColorMode = 0;     // 0=Monochrome, 1=DuoTone, 2=FullColor
     alignas(4) f32 stippleScale = 1.0f;      // Pattern pixel scale (1.0=native, 2.0=bigger)
     alignas(4) f32 stippleDensity = 0.5f;    // Threshold bias 0.0-1.0
