@@ -5699,6 +5699,19 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             }
         }
 
+        // Rebuild ChildrenComponent from ParentComponent references
+        for (ECS::Entity entity : result.entities) {
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                ECS::Entity parent = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
+                if (parent != ECS::INVALID_ENTITY && m_World->IsValid(parent)) {
+                    if (!m_World->HasComponent<ECS::ChildrenComponent>(parent)) {
+                        m_World->AddComponent<ECS::ChildrenComponent>(parent);
+                    }
+                    m_World->GetComponent<ECS::ChildrenComponent>(parent)->children.push_back(entity);
+                }
+            }
+        }
+
         result.success = true;
         ENJIN_LOG_INFO(Asset, "Loaded scene from %s (%zu entities)", filepath.c_str(), result.entities.size());
 
@@ -6756,6 +6769,19 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             }
         }
 
+        // Rebuild ChildrenComponent from ParentComponent references
+        for (ECS::Entity entity : result.entities) {
+            if (m_World->HasComponent<ECS::ParentComponent>(entity)) {
+                ECS::Entity parent = m_World->GetComponent<ECS::ParentComponent>(entity)->parent;
+                if (parent != ECS::INVALID_ENTITY && m_World->IsValid(parent)) {
+                    if (!m_World->HasComponent<ECS::ChildrenComponent>(parent)) {
+                        m_World->AddComponent<ECS::ChildrenComponent>(parent);
+                    }
+                    m_World->GetComponent<ECS::ChildrenComponent>(parent)->children.push_back(entity);
+                }
+            }
+        }
+
         result.success = true;
         ENJIN_LOG_DEBUG(Asset, "Loaded scene from string (%zu entities)", result.entities.size());
 
@@ -7161,6 +7187,13 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);
             pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
+            // Rebuild child relationship if parent exists in world
+            if (pc.parent != ECS::INVALID_ENTITY && world->IsValid(pc.parent)) {
+                if (!world->HasComponent<ECS::ChildrenComponent>(pc.parent)) {
+                    world->AddComponent<ECS::ChildrenComponent>(pc.parent);
+                }
+                world->GetComponent<ECS::ChildrenComponent>(pc.parent)->children.push_back(entity);
+            }
         }
         // Prefab instance link
         if (entityJson.contains("prefabInstance")) {
