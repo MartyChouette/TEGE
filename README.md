@@ -8,7 +8,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
 - **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
 - **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping, receiveShadows toggle
-- **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 patterns, 3 color modes)
+- **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes)
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** - Rain, snow, fog, storms with toggleable lightning
 - **Water Rendering** - 3D water plane with Gerstner waves, shore foam, freeze system, ocean mode
