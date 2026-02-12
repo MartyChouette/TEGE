@@ -7,6 +7,10 @@
 #include "Enjin/Physics/JoltBackend.h"
 #endif
 
+#ifdef ENJIN_PHYSICS_BOX2D
+#include "Enjin/Physics/Box2DBackend.h"
+#endif
+
 namespace Enjin {
 namespace Physics {
 
@@ -33,9 +37,21 @@ std::unique_ptr<IPhysicsBackend> CreatePhysicsBackend(PhysicsBackendType type, S
 }
 
 std::unique_ptr<IPhysicsBackend2D> CreatePhysicsBackend2D(PhysicsBackendType type, Scene::ProjectMode mode) {
-    // Phase 3 will add: if Box2D requested/available, return Box2DBackend
+#ifdef ENJIN_PHYSICS_BOX2D
+    // Use Box2D when explicitly requested, or when Auto-selecting for 2D/Mixed modes
+    bool useBox2D = (type == PhysicsBackendType::Box2D) ||
+                    (type == PhysicsBackendType::Auto &&
+                     (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed));
+
+    if (useBox2D) {
+        auto backend = std::make_unique<Box2DBackend>();
+        ENJIN_LOG_INFO(Physics, "Created 2D physics backend: %s", backend->GetName());
+        return backend;
+    }
+#else
     (void)type;
     (void)mode;
+#endif
 
     auto backend = std::make_unique<SimplePhysicsBackend2D>();
     ENJIN_LOG_INFO(Physics, "Created 2D physics backend: %s", backend->GetName());

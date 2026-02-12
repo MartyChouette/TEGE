@@ -115,19 +115,24 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - Factory: `PhysicsBackendFactory` returns `JoltBackend` when `ENJIN_PHYSICS_JOLT=ON` and (type==Jolt or Auto with 3D/Mixed mode)
 - **Files:** `JoltBackend.h`, `JoltContactListener.h`, `JoltBackend.cpp`, modified `PhysicsBackendFactory.cpp`
 
-#### Phase 3: Box2D Backend (2D)
+#### Phase 3: Box2D Backend (2D) ✅ DONE
 
-- `Box2DBackend : IPhysicsBackend2D`
+- `Box2DBackend : IPhysicsBackend2D` wrapping Box2D v3.0.0 C API (~755 lines)
+- Handle-based IDs (`b2WorldId`, `b2BodyId`, `b2ShapeId`, `b2JointId`), not C++ classes
+- Full ECS↔Box2D synchronization (create/destroy/update bodies per frame)
 - Map ECS 2D components to Box2D bodies:
-  - `Rigidbody2DComponent` → `b2BodyDef`
-  - `BoxCollider2DComponent` → `b2Polygon`
-  - `CircleCollider2DComponent` → `b2Circle`
-  - `PolygonCollider2DComponent` → `b2Polygon`
-  - 2D joints → Box2D joint types
-- Box2D v3 multithreaded solver (built-in, uses `b2Enqueue` task system)
-- CCD: Box2D native continuous collision
-- Physics materials (friction, restitution, density)
-- **Files:** `Engine/include/Enjin/Physics/Box2DBackend.h`, `Engine/src/Physics/Box2DBackend.cpp`
+  - `Body2DComponent` (static/dynamic) → `b2BodyDef` + `b2ShapeDef`
+  - Circle/Box/Polygon shapes → `b2CreateCircleShape` / `b2CreatePolygonShape`
+  - Physics materials (friction, restitution, density) via direct `b2ShapeDef` fields
+  - Collision filtering: `b2Filter` with `categoryBits`/`maskBits` (`uint32_t`)
+- Contact + sensor events via polling: `b2World_GetContactEvents()` / `b2World_GetSensorEvents()`
+- Raycasting: `b2World_CastRayClosest()` for single, `b2World_CastRay()` with C callback for all
+- Overlap queries: `b2World_OverlapAABB()` with C callback for circle/box
+- 5 joint types: Revolute, Prismatic, Distance, Rope (Distance+limit), Weld — with limits, motors, spring settings
+- CCD via `isBullet` flag on `b2BodyDef`
+- Sub-step count (default 4) replaces old velocity/position iterations
+- Factory: `PhysicsBackendFactory` returns `Box2DBackend` when `ENJIN_PHYSICS_BOX2D=ON` and (type==Box2D or Auto with 2D/Mixed mode)
+- **Files:** `Box2DBackend.h`, `Box2DBackend.cpp`, modified `PhysicsBackendFactory.cpp`
 
 #### Phase 4: Wiring + Migration (mostly done in Phase 1)
 
