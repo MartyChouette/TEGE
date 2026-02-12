@@ -568,6 +568,11 @@ void FlowerSystem::UpdateJointTracking() {
         }
         else if (tether->hadJoint) {
             // Joint was destroyed by physics solver — this is a break!
+            // Cap breaks per frame to avoid GPU overload from simultaneous vertex
+            // buffer mutations + particle spawns. Leftover breaks will be detected
+            // next frame (SpringJointComponent is already removed, hadJoint is still true).
+            if (breaks.size() >= 3) continue;
+
             tether->isBroken = true;
             tether->justBroke = true;
 
@@ -609,11 +614,21 @@ void FlowerSystem::UpdateJointTracking() {
             else if (evt.hasHealthyTag) stemComp->healthyRemoved++;
         }
 
-        // Critical: clear meshDirty and remove JellyMeshComponent to stop
-        // the RenderSystem from erasing/recreating GPU buffers on this entity.
+        // Restore mesh to undeformed rest positions, then flag one final clean
+        // upload so the GPU gets safe vertex data.  After that the RenderSystem
+        // will clear meshDirty itself, stopping future uploads and eliminating
+        // the host-visible vertex buffer race that causes VK_ERROR_DEVICE_LOST.
         auto* jelly = m_World->GetComponent<JellyMeshComponent>(evt.entity);
         if (jelly) {
-            jelly->meshDirty = false;
+            auto* mesh = m_World->GetComponent<MeshComponent>(evt.entity);
+            if (mesh && !jelly->restPositions.empty()) {
+                for (usize i = 0; i < jelly->restPositions.size() && i < mesh->vertices.size(); ++i) {
+                    mesh->vertices[i].position = jelly->restPositions[i];
+                }
+                jelly->meshDirty = true;  // One final upload of clean data
+            } else {
+                jelly->meshDirty = false;
+            }
             jelly->initialized = false;
             jelly->velocities.clear();
             jelly->restPositions.clear();
