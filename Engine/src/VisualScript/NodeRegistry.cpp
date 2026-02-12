@@ -6,6 +6,8 @@
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Physics/IPhysicsBackend2D.h"
+#include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
@@ -3964,6 +3966,92 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
+    // UI Set Focus
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UISetFocus;
+        def.displayName = "UI Set Focus";
+        def.description = "Set keyboard/gamepad focus to a UI element";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Canvas Entity", PK::Input),
+            Int("Element ID", PK::Input, 1)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "focus", "keyboard", "gamepad", "navigation"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 2 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[1])
+                    ? std::get<ECS::Entity>(inputs[1]) : ECS::INVALID_ENTITY;
+                i32 elemId = std::holds_alternative<i32>(inputs[2])
+                    ? std::get<i32>(inputs[2]) : 0;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) canvas->focusedElementId = static_cast<u32>(elemId);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // UI Clear Focus
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UIClearFocus;
+        def.displayName = "UI Clear Focus";
+        def.description = "Clear keyboard/gamepad focus from a UI canvas";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Canvas Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"ui", "focus", "clear", "unfocus"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[1])
+                    ? std::get<ECS::Entity>(inputs[1]) : ECS::INVALID_ENTITY;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) canvas->focusedElementId = 0;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // UI Get Focused Element (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::UIGetFocusedElement;
+        def.displayName = "UI Get Focused Element";
+        def.description = "Get the currently focused element ID in a UI canvas";
+        def.category = NodeCategory::Gameplay;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            EntityPin("Canvas Entity", PK::Input)
+        };
+        def.outputs = {Int("Element ID", PK::Output)};
+        def.keywords = {"ui", "focus", "get", "focused", "element"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            if (inputs.size() > 0 && ctx.world) {
+                ECS::Entity entity = std::holds_alternative<ECS::Entity>(inputs[0])
+                    ? std::get<ECS::Entity>(inputs[0]) : ECS::INVALID_ENTITY;
+                auto* canvas = ctx.world->GetComponent<GUI::UICanvasComponent>(entity);
+                if (canvas) return static_cast<i32>(canvas->focusedElementId);
+            }
+            return 0;
+        };
+        RegisterNode(def);
+    }
+
     // ========================================================================
     // LOCALIZATION
     // ========================================================================
@@ -4116,6 +4204,347 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<f32>(inputs[2]) : 25.0f;
             auto* tether = ctx.world->GetComponent<ECS::TetherComponent>(target);
             if (tether) tether->autoBreakForce = force;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PHYSICS 2D
+    // ========================================================================
+
+    // Raycast2D
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::Raycast2D;
+        def.displayName = "Raycast 2D";
+        def.description = "Cast a 2D ray and return the hit entity";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Vec2("Origin", PK::Input),
+            Vec2("Direction", PK::Input, Math::Vector2(1.0f, 0.0f)),
+            Float("Distance", PK::Input, 100.0f),
+            Int("Layer Mask", PK::Input, static_cast<i32>(0xFFFF))
+        };
+        def.outputs = {
+            FlowOut("Hit"),
+            {PinDefinition{"Miss", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}},
+            EntityPin("Entity", PK::Output),
+            Vec2("Point", PK::Output),
+            Vec2("Normal", PK::Output)
+        };
+        def.keywords = {"raycast", "2d", "physics", "ray", "hit", "collision"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(3);
+            Math::Vector2 origin = (inputs.size() > 1 && std::holds_alternative<Math::Vector2>(inputs[1]))
+                ? std::get<Math::Vector2>(inputs[1]) : Math::Vector2();
+            Math::Vector2 dir = (inputs.size() > 2 && std::holds_alternative<Math::Vector2>(inputs[2]))
+                ? std::get<Math::Vector2>(inputs[2]) : Math::Vector2(1.0f, 0.0f);
+            f32 dist = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                ? std::get<f32>(inputs[3]) : 100.0f;
+            u32 mask = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4]))
+                ? static_cast<u32>(std::get<i32>(inputs[4])) : 0xFFFFFFFF;
+
+            Physics::RayHit2D hit;
+            bool didHit = ctx.physics2d && ctx.physics2d->Raycast(origin, dir, dist, hit, mask);
+            if (didHit) {
+                outputs[0] = static_cast<ECS::Entity>(hit.entity);
+                outputs[1] = hit.point;
+                outputs[2] = hit.normal;
+                ctx.nextFlowIndex = 0; // Hit
+            } else {
+                outputs[0] = ECS::INVALID_ENTITY;
+                outputs[1] = Math::Vector2();
+                outputs[2] = Math::Vector2();
+                ctx.nextFlowIndex = 1; // Miss
+            }
+        };
+        RegisterNode(def);
+    }
+
+    // OverlapCircle2D
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::OverlapCircle2D;
+        def.displayName = "Overlap Circle 2D";
+        def.description = "Check if any 2D physics bodies overlap a circle";
+        def.category = NodeCategory::Physics;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+        def.inputs = {
+            Vec2("Center", PK::Input),
+            Float("Radius", PK::Input, 1.0f)
+        };
+        def.outputs = {Bool("Hit", PK::Output)};
+        def.keywords = {"overlap", "circle", "2d", "physics", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            Math::Vector2 center = (inputs.size() > 0 && std::holds_alternative<Math::Vector2>(inputs[0]))
+                ? std::get<Math::Vector2>(inputs[0]) : Math::Vector2();
+            f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
+                ? std::get<f32>(inputs[1]) : 1.0f;
+            if (!ctx.physics2d) return false;
+            std::vector<ECS::Entity> entities;
+            return ctx.physics2d->OverlapCircle(center, radius, entities);
+        };
+        RegisterNode(def);
+    }
+
+    // OverlapBox2D
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::OverlapBox2D;
+        def.displayName = "Overlap Box 2D";
+        def.description = "Check if any 2D physics bodies overlap a box";
+        def.category = NodeCategory::Physics;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+        def.inputs = {
+            Vec2("Center", PK::Input),
+            Vec2("Half Extents", PK::Input, Math::Vector2(0.5f, 0.5f))
+        };
+        def.outputs = {Bool("Hit", PK::Output)};
+        def.keywords = {"overlap", "box", "2d", "physics", "aabb"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            Math::Vector2 center = (inputs.size() > 0 && std::holds_alternative<Math::Vector2>(inputs[0]))
+                ? std::get<Math::Vector2>(inputs[0]) : Math::Vector2();
+            Math::Vector2 halfExtents = (inputs.size() > 1 && std::holds_alternative<Math::Vector2>(inputs[1]))
+                ? std::get<Math::Vector2>(inputs[1]) : Math::Vector2(0.5f, 0.5f);
+            if (!ctx.physics2d) return false;
+            std::vector<ECS::Entity> entities;
+            return ctx.physics2d->OverlapBox(center, halfExtents, entities);
+        };
+        RegisterNode(def);
+    }
+
+    // AddForce2D
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AddForce2D;
+        def.displayName = "Add Force 2D";
+        def.description = "Apply a 2D force to a rigidbody (scaled by inverse mass)";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec2("Force", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"force", "2d", "physics", "push", "rigidbody"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity entity = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
+                ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
+            Math::Vector2 force = (inputs.size() > 2 && std::holds_alternative<Math::Vector2>(inputs[2]))
+                ? std::get<Math::Vector2>(inputs[2]) : Math::Vector2();
+            if (ctx.world) {
+                auto* rb = ctx.world->GetComponent<ECS::RigidbodyComponent>(entity);
+                if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
+                    f32 invMass = (rb->mass > 0.0f) ? 1.0f / rb->mass : 0.0f;
+                    rb->velocity.x += force.x * invMass;
+                    rb->velocity.y += force.y * invMass;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // AddImpulse2D
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AddImpulse2D;
+        def.displayName = "Add Impulse 2D";
+        def.description = "Apply a 2D impulse (instant velocity change) to a rigidbody";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec2("Impulse", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"impulse", "2d", "physics", "jump", "rigidbody"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity entity = (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]))
+                ? std::get<ECS::Entity>(inputs[1]) : ctx.entity;
+            Math::Vector2 impulse = (inputs.size() > 2 && std::holds_alternative<Math::Vector2>(inputs[2]))
+                ? std::get<Math::Vector2>(inputs[2]) : Math::Vector2();
+            if (ctx.world) {
+                auto* rb = ctx.world->GetComponent<ECS::RigidbodyComponent>(entity);
+                if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
+                    f32 invMass = (rb->mass > 0.0f) ? 1.0f / rb->mass : 0.0f;
+                    rb->velocity.x += impulse.x * invMass;
+                    rb->velocity.y += impulse.y * invMass;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // NETWORKING
+    // ========================================================================
+
+    // Net Host Game
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetHostGame;
+        def.displayName = "Host Game";
+        def.description = "Start hosting a multiplayer game on the specified port";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            Int("Port", PK::Input, 7777),
+            String("Player Name", PK::Input, "Host")
+        };
+        def.outputs = {
+            FlowOut("Success"),
+            {PinDefinition{"Failed", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}}
+        };
+        def.keywords = {"network", "host", "server", "multiplayer", "lan"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 port = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 7777;
+            std::string name = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "Host";
+            bool ok = ctx.networking && ctx.networking->HostGame(static_cast<u16>(port), name);
+            ctx.nextFlowIndex = ok ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Net Join Game
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetJoinGame;
+        def.displayName = "Join Game";
+        def.description = "Join a multiplayer game at the given IP and port";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            String("IP", PK::Input, "127.0.0.1"),
+            Int("Port", PK::Input, 7777),
+            String("Player Name", PK::Input, "Player")
+        };
+        def.outputs = {
+            FlowOut("Success"),
+            {PinDefinition{"Failed", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}}
+        };
+        def.keywords = {"network", "join", "connect", "client", "multiplayer"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string ip = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "127.0.0.1";
+            i32 port = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? std::get<i32>(inputs[2]) : 7777;
+            std::string name = (inputs.size() > 3 && std::holds_alternative<std::string>(inputs[3]))
+                ? std::get<std::string>(inputs[3]) : "Player";
+            bool ok = ctx.networking && ctx.networking->JoinGame(ip, static_cast<u16>(port), name);
+            ctx.nextFlowIndex = ok ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Net Disconnect
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetDisconnect;
+        def.displayName = "Disconnect";
+        def.description = "Disconnect from the current multiplayer game";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {FlowIn()};
+        def.outputs = {FlowOut()};
+        def.keywords = {"network", "disconnect", "leave", "quit"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (ctx.networking) ctx.networking->Disconnect();
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Net Is Connected (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetIsConnected;
+        def.displayName = "Is Connected";
+        def.description = "Check if currently connected to a multiplayer game";
+        def.category = NodeCategory::Networking;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {};
+        def.outputs = {Bool("Connected", PK::Output)};
+        def.keywords = {"network", "connected", "online", "status"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            return ctx.networking ? ctx.networking->IsConnected() : false;
+        };
+        RegisterNode(def);
+    }
+
+    // Net Get Ping (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetGetPing;
+        def.displayName = "Get Ping";
+        def.description = "Get the current network round-trip time in seconds";
+        def.category = NodeCategory::Networking;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {};
+        def.outputs = {Float("Ping", PK::Output)};
+        def.keywords = {"network", "ping", "latency", "rtt"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            return ctx.networking ? ctx.networking->GetPing() : 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // Net Call RPC
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NetCallRPC;
+        def.displayName = "Call RPC";
+        def.description = "Call a remote procedure on all connected peers";
+        def.category = NodeCategory::Networking;
+        def.headerColor = Math::Vector3(0.3f, 0.8f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            String("Name", PK::Input, ""),
+            String("Data", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"network", "rpc", "remote", "call", "broadcast"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string name = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            std::string data = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                ? std::get<std::string>(inputs[2]) : "";
+            if (ctx.networking && !name.empty()) {
+                ctx.networking->CallRPCAll(name,
+                    reinterpret_cast<const u8*>(data.data()), static_cast<u32>(data.size()));
+            }
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

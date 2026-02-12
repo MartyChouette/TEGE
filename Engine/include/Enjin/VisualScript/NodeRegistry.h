@@ -234,6 +234,26 @@ constexpr const char* FlowerIsGrabbed      = "Flower_IsGrabbed";
 constexpr const char* FlowerGetScore       = "Flower_GetScore";
 constexpr const char* FlowerSetBreakForce  = "Flower_SetBreakForce";
 
+// Physics 2D
+constexpr const char* Raycast2D            = "Physics2D_Raycast";
+constexpr const char* OverlapCircle2D      = "Physics2D_OverlapCircle";
+constexpr const char* OverlapBox2D         = "Physics2D_OverlapBox";
+constexpr const char* AddForce2D           = "Physics2D_AddForce";
+constexpr const char* AddImpulse2D         = "Physics2D_AddImpulse";
+
+// Networking
+constexpr const char* NetHostGame          = "Net_HostGame";
+constexpr const char* NetJoinGame          = "Net_JoinGame";
+constexpr const char* NetDisconnect        = "Net_Disconnect";
+constexpr const char* NetIsConnected       = "Net_IsConnected";
+constexpr const char* NetGetPing           = "Net_GetPing";
+constexpr const char* NetCallRPC           = "Net_CallRPC";
+
+// UI Focus
+constexpr const char* UISetFocus           = "UI_SetFocus";
+constexpr const char* UIClearFocus         = "UI_ClearFocus";
+constexpr const char* UIGetFocusedElement  = "UI_GetFocusedElement";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

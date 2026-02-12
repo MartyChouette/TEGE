@@ -11132,6 +11132,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         { "savesystem",   "Save System Demo",   "3-tier persistence\nCheckpoints + meta + save menu",   ImVec4(0.4f, 0.55f, 0.75f, 1.0f), TMPL_3D },
         { "visualscript", "Visual Scripting",   "Node-based logic\nSwitch triggers + particle events",  ImVec4(0.85f, 0.7f, 0.2f, 1.0f), TMPL_3D },
         { "uicanvas",     "UI Canvas Demo",     "In-game UI\nButtons + health bar + HUD overlay",       ImVec4(0.8f, 0.3f, 0.7f, 1.0f), TMPL_3D },
+        { "accessibility","Accessibility Menu","Settings menu\nSubtitles + colorblind + focus nav",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), TMPL_ALL },
         // -- Retro & Flash --
         { "pointclick",   "Point & Click",      "Adventure game\nClick hotspots + inventory + dialogue", ImVec4(1.0f, 0.55f, 0.2f, 1.0f), TMPL_2D },
         { "bullethell",   "Bullet Hell",        "Danmaku shmup\nObject pool + particles + health",      ImVec4(0.95f, 0.2f, 0.5f, 1.0f), TMPL_2D },
@@ -11140,7 +11141,7 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         { "planetgravity","Planet Gravity",     "Spherical gravity\nWalk on a planet surface",           ImVec4(0.3f, 0.6f, 0.95f, 1.0f), TMPL_3D },
         { "dungeon",      "Dungeon Crawler",    "Grid-based FPS\nSnap turns + enemies + dark corridors", ImVec4(0.15f, 0.5f, 0.15f, 1.0f), TMPL_3D },
     };
-    constexpr int builtinCount = 22;
+    constexpr int builtinCount = 23;
 
     f32 contentW = area.x - sidebarW;
 
@@ -13494,6 +13495,231 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             notes.notes = "UICanvasComponent holds UI elements (panels, buttons, labels, sliders).\n"
                 "HUDWidgetComponent provides quick health/resource overlays.\n"
                 "Select the Game UI entity and use the UI Editor to add widgets.";
+        }
+
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+        }
+
+    } else if (templateId == "accessibility") {
+        createGround();
+
+        // Directional light
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Directional Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+            lt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.intensity = 1.0f;
+        }
+
+        // In-game camera
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0.0f, 2.0f, 5.0f);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Perspective;
+            cc.fieldOfView = 60.0f;
+            cc.isActive = true;
+            cc.priority = 10;
+            m_SelectedGameCamera = cam;
+        }
+
+        // Accessibility Settings UICanvas
+        {
+            ECS::Entity uiEntity = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(uiEntity, "Accessibility Menu");
+            m_World->AddComponent<ECS::TransformComponent>(uiEntity);
+            auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(uiEntity);
+            canvas.canvasName = "AccessibilitySettings";
+            canvas.designWidth = 1920.0f;
+            canvas.designHeight = 1080.0f;
+
+            // Root panel (dark semi-transparent background, centered)
+            u32 panelId = canvas.AddElement(GUI::UIWidgetType::Panel, "Settings Panel");
+            if (auto* panel = canvas.GetElement(panelId)) {
+                panel->anchor.anchorMin = Math::Vector2(0.25f, 0.1f);
+                panel->anchor.anchorMax = Math::Vector2(0.75f, 0.9f);
+                panel->anchor.offsetLeft = 0; panel->anchor.offsetRight = 0;
+                panel->anchor.offsetTop = 0; panel->anchor.offsetBottom = 0;
+                panel->style.bgColor = Math::Vector3(0.12f, 0.13f, 0.16f);
+                panel->style.bgAlpha = 0.95f;
+                panel->style.borderRadius = 12.0f;
+                panel->style.borderWidth = 1.0f;
+                panel->style.borderColor = Math::Vector3(0.3f, 0.35f, 0.45f);
+                panel->focusable = false;
+            }
+
+            // Title label
+            u32 titleId = canvas.AddElement(GUI::UIWidgetType::Label, "Title", panelId);
+            if (auto* title = canvas.GetElement(titleId)) {
+                title->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                title->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+                title->anchor.offsetLeft = 0; title->anchor.offsetRight = 0;
+                title->anchor.offsetTop = 20.0f; title->anchor.offsetBottom = -60.0f;
+                title->data.text = "Accessibility Settings";
+                title->data.textAlignH = 1; // center
+                title->style.fontSize = 28.0f;
+                title->style.textColor = Math::Vector3(0.9f, 0.92f, 0.96f);
+                title->focusable = false;
+            }
+
+            // --- Subtitle Toggle ---
+            u32 subLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Subtitle Label", panelId);
+            if (auto* lbl = canvas.GetElement(subLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 90.0f; lbl->anchor.offsetBottom = -120.0f;
+                lbl->data.text = "Subtitles";
+                lbl->data.textAlignH = 0; // left
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 subToggleId = canvas.AddElement(GUI::UIWidgetType::Toggle, "Subtitle Toggle", panelId);
+            if (auto* tog = canvas.GetElement(subToggleId)) {
+                tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
+                tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                tog->anchor.offsetTop = 90.0f; tog->anchor.offsetBottom = -120.0f;
+                tog->data.checked = true;
+                tog->tabOrder = 1;
+                tog->onValueChangedEvent = "accessibility_subtitles";
+            }
+
+            // --- Subtitle Size Slider ---
+            u32 sizeLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Size Label", panelId);
+            if (auto* lbl = canvas.GetElement(sizeLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 140.0f; lbl->anchor.offsetBottom = -170.0f;
+                lbl->data.text = "Subtitle Size";
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 sizeSliderId = canvas.AddElement(GUI::UIWidgetType::Slider, "Size Slider", panelId);
+            if (auto* sl = canvas.GetElement(sizeSliderId)) {
+                sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
+                sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                sl->anchor.offsetTop = 140.0f; sl->anchor.offsetBottom = -170.0f;
+                sl->data.sliderMin = 0.5f;
+                sl->data.sliderMax = 2.0f;
+                sl->data.sliderValue = 1.0f;
+                sl->tabOrder = 2;
+                sl->onValueChangedEvent = "accessibility_subtitle_size";
+            }
+
+            // --- Colorblind Mode (Checkbox for now, dropdown in Phase 2) ---
+            u32 cbLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Colorblind Label", panelId);
+            if (auto* lbl = canvas.GetElement(cbLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 200.0f; lbl->anchor.offsetBottom = -230.0f;
+                lbl->data.text = "Colorblind Filter";
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 cbToggleId = canvas.AddElement(GUI::UIWidgetType::Toggle, "Colorblind Toggle", panelId);
+            if (auto* tog = canvas.GetElement(cbToggleId)) {
+                tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
+                tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                tog->anchor.offsetTop = 200.0f; tog->anchor.offsetBottom = -230.0f;
+                tog->data.checked = false;
+                tog->tabOrder = 3;
+                tog->onValueChangedEvent = "accessibility_colorblind";
+            }
+
+            // --- Reduced Motion Toggle ---
+            u32 motionLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Motion Label", panelId);
+            if (auto* lbl = canvas.GetElement(motionLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 260.0f; lbl->anchor.offsetBottom = -290.0f;
+                lbl->data.text = "Reduced Motion";
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 motionToggleId = canvas.AddElement(GUI::UIWidgetType::Toggle, "Motion Toggle", panelId);
+            if (auto* tog = canvas.GetElement(motionToggleId)) {
+                tog->anchor.anchorMin = Math::Vector2(0.7f, 0.0f);
+                tog->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                tog->anchor.offsetTop = 260.0f; tog->anchor.offsetBottom = -290.0f;
+                tog->data.checked = false;
+                tog->tabOrder = 4;
+                tog->onValueChangedEvent = "accessibility_reduced_motion";
+            }
+
+            // --- Input Sensitivity Slider ---
+            u32 sensLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Sensitivity Label", panelId);
+            if (auto* lbl = canvas.GetElement(sensLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 320.0f; lbl->anchor.offsetBottom = -350.0f;
+                lbl->data.text = "Input Sensitivity";
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 sensSliderId = canvas.AddElement(GUI::UIWidgetType::Slider, "Sensitivity Slider", panelId);
+            if (auto* sl = canvas.GetElement(sensSliderId)) {
+                sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
+                sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                sl->anchor.offsetTop = 320.0f; sl->anchor.offsetBottom = -350.0f;
+                sl->data.sliderMin = 0.1f;
+                sl->data.sliderMax = 3.0f;
+                sl->data.sliderValue = 1.0f;
+                sl->tabOrder = 5;
+                sl->onValueChangedEvent = "accessibility_sensitivity";
+            }
+
+            // --- Apply Button ---
+            u32 applyBtnId = canvas.AddElement(GUI::UIWidgetType::Button, "Apply Button", panelId);
+            if (auto* btn = canvas.GetElement(applyBtnId)) {
+                btn->anchor.anchorMin = Math::Vector2(0.3f, 0.0f);
+                btn->anchor.anchorMax = Math::Vector2(0.7f, 0.0f);
+                btn->anchor.offsetTop = 400.0f; btn->anchor.offsetBottom = -445.0f;
+                btn->data.text = "Apply Settings";
+                btn->tabOrder = 6;
+                btn->onClickEvent = "accessibility_apply";
+                btn->style.bgColor = Math::Vector3(0.2f, 0.5f, 0.8f);
+                btn->style.bgAlpha = 1.0f;
+                btn->style.borderRadius = 6.0f;
+            }
+
+            // Set theme for good focus visibility
+            canvas.theme.focusBorderWidth = 3.0f;
+            canvas.theme.inputFocused = Math::Vector3(0.3f, 0.7f, 1.0f);
+        }
+
+        // Guide notes
+        {
+            ECS::Entity hint = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hint, "Accessibility Guide");
+            m_World->AddComponent<ECS::TransformComponent>(hint);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
+            notes.notes = "Accessibility Settings Menu template.\n"
+                "Navigate with Tab/Shift+Tab or DPad/Arrow keys.\n"
+                "Enter/Space activates buttons and toggles.\n"
+                "Left/Right adjusts slider values when focused.\n"
+                "Each widget fires events via onValueChangedEvent for scripting.";
         }
 
         {
@@ -22026,6 +22252,8 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
         ImGui::DragFloat("Font Size Body", &theme.fontSizeBody, 0.5f, 8.0f, 48.0f);
         ImGui::DragFloat("Font Size Heading", &theme.fontSizeHeading, 0.5f, 12.0f, 72.0f);
         ImGui::DragFloat("BG Alpha", &theme.bgAlpha, 0.01f, 0.0f, 1.0f);
+        ImGui::DragFloat("Focus Border Width", &theme.focusBorderWidth, 0.25f, 0.0f, 6.0f);
+        ImGui::ColorEdit3("Focus Color", &theme.inputFocused.x);
 
         ImGui::TreePop();
     }
@@ -22128,6 +22356,11 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     ImGui::Checkbox("Visible", &sel->visible);
     ImGui::SameLine();
     ImGui::Checkbox("Enabled", &sel->enabled);
+    ImGui::SameLine();
+    ImGui::Checkbox("Focusable", &sel->focusable);
+
+    ImGui::SetNextItemWidth(100.0f);
+    ImGui::DragInt("Tab Order", &sel->tabOrder, 1, 0, 100, sel->tabOrder == 0 ? "Auto" : "%d");
 
     ImGui::Spacing();
 
@@ -22237,6 +22470,7 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     ImGui::DragFloat("Border Width", &sel->style.borderWidth, 0.25f, -1.0f, 5.0f);
 
     ImGui::DragFloat("Font Size", &sel->style.fontSize, 0.5f, -1.0f, 72.0f);
+    ImGui::ColorEdit3("Focus Color", &sel->style.focusColor.x);
     ImGui::TextDisabled("(-1 = use theme default)");
 
     // Nine-slice (collapsible — rarely used)

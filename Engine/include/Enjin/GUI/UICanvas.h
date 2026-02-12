@@ -34,6 +34,9 @@ struct UICanvasComponent {
     std::vector<UIElement> elements;
     u32 nextElementId = 1;
 
+    // Runtime focus state (not serialized)
+    u32 focusedElementId = 0;  // 0 = no focus
+
     // Add a new element, returns its ID
     u32 AddElement(UIWidgetType type, const std::string& name, u32 parentId = 0);
 

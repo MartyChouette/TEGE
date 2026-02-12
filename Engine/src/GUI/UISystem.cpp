@@ -66,7 +66,7 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
 // UPDATE (main entry point)
 // ============================================================================
 
-void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 /*deltaTime*/) {
+void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     if (!world || vpW <= 0 || vpH <= 0) return;
 
     // Collect all canvas entities and sort by sortOrder
@@ -91,6 +91,7 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 /*deltaTime*/) {
 
         ComputeLayout(*canvas, vpW, vpH);
         ProcessInput(*canvas, vpW, vpH);
+        ProcessFocusNavigation(*canvas, deltaTime);
         RenderCanvas(*canvas);
     }
 }
@@ -185,6 +186,11 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
         element.interaction.pressed = hit && mouseDown;
 
         if (!hit) continue;
+
+        // Set focus on mouse click for focusable elements
+        if (mouseClicked && IsElementFocusable(element)) {
+            canvas.focusedElementId = element.id;
+        }
 
         // Button click
         if (element.type == UIWidgetType::Button && mouseClicked) {
@@ -295,21 +301,23 @@ void UISystem::DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,
 // ============================================================================
 
 void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
+    u32 focusedId = canvas.focusedElementId;
+
     // Render root elements, then their children recursively
     for (const auto& element : canvas.elements) {
         if (element.parentId == 0 && element.visible) {
-            RenderElement(element, canvas.theme);
+            RenderElement(element, canvas.theme, focusedId);
 
             // Render children
             for (u32 childId : element.childIds) {
                 const UIElement* child = canvas.GetElement(childId);
                 if (child && child->visible) {
-                    RenderElement(*child, canvas.theme);
+                    RenderElement(*child, canvas.theme, focusedId);
                     // One level of nesting for children's children
                     for (u32 grandchildId : child->childIds) {
                         const UIElement* grandchild = canvas.GetElement(grandchildId);
                         if (grandchild && grandchild->visible) {
-                            RenderElement(*grandchild, canvas.theme);
+                            RenderElement(*grandchild, canvas.theme, focusedId);
                         }
                     }
                 }
@@ -318,10 +326,12 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
     }
 }
 
-void UISystem::RenderElement(const UIElement& element, const UITheme& theme) {
+void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId) {
+    bool isFocused = (element.id == focusedId && focusedId != 0);
+
     switch (element.type) {
         case UIWidgetType::Panel:       RenderPanel(element, theme); break;
-        case UIWidgetType::Button:      RenderButton(element, theme); break;
+        case UIWidgetType::Button:      RenderButton(element, theme, isFocused); break;
         case UIWidgetType::Label:       RenderLabel(element, theme); break;
         case UIWidgetType::Image:       RenderImage(element, theme); break;
         case UIWidgetType::ProgressBar: RenderProgressBar(element, theme); break;
@@ -329,6 +339,11 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme) {
         case UIWidgetType::Checkbox:    RenderCheckbox(element, theme); break;
         case UIWidgetType::Toggle:      RenderToggle(element, theme); break;
         default:                        RenderPlaceholder(element, theme); break;
+    }
+
+    // Draw focus indicator on top of widget
+    if (isFocused) {
+        RenderFocusIndicator(element, theme);
     }
 }
 
@@ -368,7 +383,7 @@ void UISystem::RenderPanel(const UIElement& element, const UITheme& theme) {
     }
 }
 
-void UISystem::RenderButton(const UIElement& element, const UITheme& theme) {
+void UISystem::RenderButton(const UIElement& element, const UITheme& theme, bool focused) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
 
@@ -385,7 +400,7 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme) {
                 tint = IM_COL32(128, 128, 128, 255);
             } else if (element.interaction.pressed) {
                 tint = IM_COL32(180, 180, 180, 255);
-            } else if (element.interaction.hovered) {
+            } else if (element.interaction.hovered || focused) {
                 tint = IM_COL32(230, 230, 230, 255);
             }
             DrawNineSlice(dl, element.computedRect, texId, texW, texH, ns, tint);
@@ -403,7 +418,7 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme) {
             bgColor = theme.buttonDisabled;
         } else if (element.interaction.pressed) {
             bgColor = theme.buttonPressed;
-        } else if (element.interaction.hovered) {
+        } else if (element.interaction.hovered || focused) {
             bgColor = theme.buttonHovered;
         }
 
@@ -653,6 +668,197 @@ void UISystem::RenderPlaceholder(const UIElement& element, const UITheme& theme)
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textSecondary, 0.7f);
     DrawCenteredText(dl, element.computedRect, label.c_str(),
         ImGui::ColorConvertFloat4ToU32(textColor), 1, 1, fontSize);
+}
+
+// ============================================================================
+// FOCUS MANAGEMENT
+// ============================================================================
+
+void UISystem::SetFocus(UICanvasComponent& canvas, u32 elementId) {
+    if (canvas.focusedElementId == elementId) return;
+    canvas.focusedElementId = elementId;
+
+    // Announce focus change for screen readers
+    if (m_AnnouncerCallback && elementId != 0) {
+        const UIElement* el = canvas.GetElement(elementId);
+        if (el) {
+            std::string announcement = el->name;
+            if (!el->data.text.empty()) announcement += ": " + el->data.text;
+            m_AnnouncerCallback(announcement);
+        }
+    }
+}
+
+void UISystem::ClearFocus(UICanvasComponent& canvas) {
+    canvas.focusedElementId = 0;
+}
+
+bool UISystem::IsElementFocusable(const UIElement& element) const {
+    return element.focusable && element.visible && element.enabled &&
+           IsFocusableType(element.type);
+}
+
+std::vector<UIElement*> UISystem::BuildTabOrder(UICanvasComponent& canvas) {
+    std::vector<UIElement*> focusable;
+    for (auto& el : canvas.elements) {
+        if (IsElementFocusable(el)) {
+            focusable.push_back(&el);
+        }
+    }
+
+    // Sort: explicit tabOrder (>0) first in ascending order, then auto (0) in element order
+    std::stable_sort(focusable.begin(), focusable.end(),
+        [](const UIElement* a, const UIElement* b) {
+            if (a->tabOrder > 0 && b->tabOrder > 0) return a->tabOrder < b->tabOrder;
+            if (a->tabOrder > 0) return true;   // Explicit before auto
+            if (b->tabOrder > 0) return false;
+            return false; // Preserve original order for auto
+        });
+
+    return focusable;
+}
+
+void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Check for Tab / Shift+Tab
+    bool tabPressed = ImGui::IsKeyPressed(ImGuiKey_Tab);
+    bool shiftHeld = io.KeyShift;
+
+    // Check for DPad / Arrow keys with repeat
+    bool navDown  = ImGui::IsKeyPressed(ImGuiKey_DownArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadDown);
+    bool navUp    = ImGui::IsKeyPressed(ImGuiKey_UpArrow)    || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadUp);
+    bool navRight = ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight);
+    bool navLeft  = ImGui::IsKeyPressed(ImGuiKey_LeftArrow)  || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft);
+
+    // Key repeat for held keys
+    bool anyNavHeld = ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_UpArrow) ||
+                      ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp);
+    if (anyNavHeld) {
+        m_NavRepeatTimer += deltaTime;
+        if (m_NavRepeatTimer > NAV_REPEAT_DELAY) {
+            f32 elapsed = m_NavRepeatTimer - NAV_REPEAT_DELAY;
+            if (std::fmod(elapsed, NAV_REPEAT_RATE) < deltaTime) {
+                // Fire repeat
+                if (ImGui::IsKeyDown(ImGuiKey_DownArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadDown)) navDown = true;
+                if (ImGui::IsKeyDown(ImGuiKey_UpArrow) || ImGui::IsKeyDown(ImGuiKey_GamepadDpadUp)) navUp = true;
+            }
+        }
+    } else {
+        m_NavRepeatTimer = 0.0f;
+    }
+
+    // Navigate forward/backward
+    bool forward  = tabPressed && !shiftHeld;
+    bool backward = (tabPressed && shiftHeld) || navUp;
+    if (navDown) forward = true;
+
+    if (forward || backward) {
+        auto focusable = BuildTabOrder(canvas);
+        if (focusable.empty()) return;
+
+        // Find current index
+        i32 currentIdx = -1;
+        for (i32 i = 0; i < static_cast<i32>(focusable.size()); ++i) {
+            if (focusable[i]->id == canvas.focusedElementId) {
+                currentIdx = i;
+                break;
+            }
+        }
+
+        i32 newIdx;
+        if (forward) {
+            newIdx = (currentIdx + 1) % static_cast<i32>(focusable.size());
+        } else {
+            newIdx = (currentIdx <= 0)
+                ? static_cast<i32>(focusable.size()) - 1
+                : currentIdx - 1;
+        }
+
+        SetFocus(canvas, focusable[newIdx]->id);
+        return; // Don't process activation in same frame as navigation
+    }
+
+    // Left/Right for slider adjustment when focused
+    if ((navLeft || navRight) && canvas.focusedElementId != 0) {
+        UIElement* focused = canvas.GetElement(canvas.focusedElementId);
+        if (focused && focused->type == UIWidgetType::Slider) {
+            AdjustSliderValue(*focused, navRight ? 1 : -1);
+            return;
+        }
+    }
+
+    // Activation: Enter / Space / Gamepad A
+    bool activate = ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
+                    ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown);
+    if (activate && canvas.focusedElementId != 0) {
+        ActivateFocusedElement(canvas);
+    }
+}
+
+void UISystem::ActivateFocusedElement(UICanvasComponent& canvas) {
+    UIElement* element = canvas.GetElement(canvas.focusedElementId);
+    if (!element || !element->enabled) return;
+
+    if (element->type == UIWidgetType::Button) {
+        if (!element->onClickEvent.empty()) {
+            UIEventData event;
+            event.elementId = element->id;
+            event.eventName = element->onClickEvent;
+            event.stringValue = element->data.text;
+            m_EventBus.Dispatch(event);
+        }
+    } else if (element->type == UIWidgetType::Checkbox || element->type == UIWidgetType::Toggle) {
+        element->data.checked = !element->data.checked;
+        if (!element->onValueChangedEvent.empty()) {
+            UIEventData event;
+            event.elementId = element->id;
+            event.eventName = element->onValueChangedEvent;
+            event.boolValue = element->data.checked;
+            m_EventBus.Dispatch(event);
+        }
+    }
+}
+
+void UISystem::AdjustSliderValue(UIElement& element, i32 direction) {
+    f32 range = element.data.sliderMax - element.data.sliderMin;
+    f32 step = range * 0.05f; // 5% per key press
+    f32 newValue = element.data.sliderValue + step * static_cast<f32>(direction);
+    newValue = std::max(element.data.sliderMin, std::min(element.data.sliderMax, newValue));
+
+    if (newValue != element.data.sliderValue) {
+        element.data.sliderValue = newValue;
+        if (!element.onValueChangedEvent.empty()) {
+            UIEventData event;
+            event.elementId = element.id;
+            event.eventName = element.onValueChangedEvent;
+            event.floatValue = newValue;
+            m_EventBus.Dispatch(event);
+        }
+    }
+}
+
+void UISystem::RenderFocusIndicator(const UIElement& element, const UITheme& theme) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius) + 2.0f;
+    f32 focusWidth = theme.focusBorderWidth;
+
+    // Use element focus color override or theme inputFocused
+    Math::Vector3 focusColor = element.style.HasFocusColor()
+        ? element.style.focusColor
+        : theme.inputFocused;
+
+    // Draw outset border (slightly larger than element rect)
+    f32 outset = focusWidth;
+    UIRect focusRect;
+    focusRect.x = element.computedRect.x - outset;
+    focusRect.y = element.computedRect.y - outset;
+    focusRect.w = element.computedRect.w + outset * 2.0f;
+    focusRect.h = element.computedRect.h + outset * 2.0f;
+
+    ImU32 color = ImGui::ColorConvertFloat4ToU32(
+        ImVec4(focusColor.x, focusColor.y, focusColor.z, 0.85f));
+    DrawRoundedRectBorder(dl, focusRect, color, radius, focusWidth);
 }
 
 // ============================================================================

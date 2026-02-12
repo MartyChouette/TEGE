@@ -17,9 +17,13 @@ namespace ECS {
 }
 namespace Physics {
     class IPhysicsBackend;
+    class IPhysicsBackend2D;
 }
 namespace Scripting {
     class ScriptEngine;
+}
+namespace Networking {
+    class NetworkSystem;
 }
 
 namespace VisualScript {
@@ -47,6 +51,12 @@ struct ExecutionContext {
 
     // Script engine for interop nodes
     Scripting::ScriptEngine* scriptEngine = nullptr;
+
+    // 2D physics system for 2D query nodes
+    Physics::IPhysicsBackend2D* physics2d = nullptr;
+
+    // Networking system for multiplayer nodes
+    Networking::NetworkSystem* networking = nullptr;
 
     // For event nodes, additional data
     std::string customEventName;
@@ -87,6 +97,7 @@ enum class NodeCategory : u8 {
     Debug,         // Print, DrawLine, etc.
     Utility,       // Delay, Random, etc.
     Gameplay,      // Save/Load, Checkpoint, Meta-progression
+    Networking,    // Multiplayer, RPC, lobby
     Custom         // User-defined nodes
 };
 
@@ -106,6 +117,7 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Debug:       return "Debug";
         case NodeCategory::Utility:     return "Utility";
         case NodeCategory::Gameplay:    return "Gameplay";
+        case NodeCategory::Networking:  return "Networking";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
     }
@@ -263,6 +275,15 @@ inline PinDefinition String(const std::string& name, Editor::PinKind kind, const
     PinDefinition p;
     p.name = name;
     p.type = Editor::PinType::String;
+    p.kind = kind;
+    p.defaultValue = defaultVal;
+    return p;
+}
+
+inline PinDefinition Vec2(const std::string& name, Editor::PinKind kind, Math::Vector2 defaultVal = Math::Vector2(0,0)) {
+    PinDefinition p;
+    p.name = name;
+    p.type = Editor::PinType::Vector2;
     p.kind = kind;
     p.defaultValue = defaultVal;
     return p;

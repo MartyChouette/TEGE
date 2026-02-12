@@ -230,6 +230,12 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `UI_SetBgColor(uint64, int, float r, g, b, float a)` — Element background color.
 - `UI_SetTextColor(uint64, int, float r, g, b)` — Text color.
 - `UI_IsHovered(uint64, int)`, `UI_IsPressed(uint64, int)` — Interaction state queries.
+- `UI_SetFocus(uint64, int elementId)` — Set keyboard/gamepad focus to a specific element.
+- `UI_ClearFocus(uint64)` — Remove focus from all elements on a canvas.
+- `UI_GetFocusedElement(uint64)` — Get the currently focused element ID (0 = none).
+- `UI_IsFocused(uint64, int)` — Check if a specific element has focus.
+- `UI_SetTabOrder(uint64, int elementId, int order)` — Set explicit tab order (0 = auto from element order).
+- `UI_SetFocusable(uint64, int elementId, bool)` — Set whether an element can receive focus.
 
 ## Localization
 
@@ -254,3 +260,46 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Streaming_IsLoaded(const string& chunkId)` — Check if a chunk is currently loaded.
 - `Streaming_GetLoadedCount()` — Get the number of currently loaded chunks.
 - `Streaming_SetEnabled(bool)` — Enable or disable the streaming system.
+
+## Physics 2D
+
+- `Physics2D_Raycast(float originX, originY, float dirX, dirY, float maxDist)` — Cast a 2D ray, returns true on hit.
+- `Physics2D_RaycastMask(float originX, originY, float dirX, dirY, float maxDist, uint mask)` — 2D raycast with collision mask filter.
+- `Physics2D_RaycastHit(float originX, originY, float dirX, dirY, float maxDist, Vector2 &out hitPoint, Vector2 &out hitNormal, float &out hitDist, uint64 &out hitEntity)` — 2D raycast returning full hit info.
+- `Physics2D_RaycastHitMask(float originX, originY, float dirX, dirY, float maxDist, uint mask, Vector2 &out hitPoint, Vector2 &out hitNormal, float &out hitDist, uint64 &out hitEntity)` — Full 2D raycast with mask.
+- `Physics2D_OverlapCircle(float cx, cy, float radius)` — Check for any body overlapping a circle. Returns entity ID (0 = none).
+- `Physics2D_OverlapCircleMask(float cx, cy, float radius, uint mask)` — Circle overlap with collision mask.
+- `Physics2D_OverlapBox(float cx, cy, float hw, hh)` — Check for any body overlapping an AABB. Returns entity ID (0 = none).
+- `Physics2D_OverlapBoxMask(float cx, cy, float hw, hh, uint mask)` — Box overlap with collision mask.
+- `Physics2D_AddForce(uint64, float fx, fy)` — Apply a continuous force to a 2D rigidbody.
+- `Physics2D_AddImpulse(uint64, float ix, iy)` — Apply an instant impulse to a 2D rigidbody.
+- `Physics2D_SetVelocity(uint64, float vx, vy)` — Directly set 2D velocity.
+- `Physics2D_GetVelocity(uint64)` — Get current 2D velocity as Vector2.
+- `Physics2D_SetGravity(float gx, gy)` — Set global 2D gravity.
+- `Physics2D_GetGravity()` — Get current 2D gravity as Vector2.
+- `Physics2D_SetGravityScale(uint64, float scale)` — Per-body gravity multiplier.
+
+## Networking
+
+**Enum `NetworkRole`:** `None = 0`, `Host = 1`, `Client = 2`
+
+- `Net_HostGame(int port)` — Start hosting a game on the given port.
+- `Net_JoinGame(const string& address, int port)` — Connect to a host.
+- `Net_Disconnect()` — Disconnect from the current session.
+- `Net_IsConnected()` — Check if connected to a session.
+- `Net_IsHost()` — Check if this peer is the host.
+- `Net_GetRole()` — Get current NetworkRole enum value.
+- `Net_GetLocalPlayerId()` — Get this peer's player ID.
+- `Net_GetPlayerCount()` — Get total connected player count.
+- `Net_GetPing()` — Get round-trip latency in milliseconds.
+- `Net_GetPacketLoss()` — Get packet loss percentage (0-1).
+- `Net_SetReady(bool)` — Set lobby ready state.
+- `Net_GetLobbyPlayerCount()` — Get number of players in the lobby.
+- `Net_GetLobbyPlayerName(int index)` — Get lobby player name by index.
+- `Net_GetLobbyPlayerReady(int index)` — Check if lobby player is ready.
+- `Net_RegisterEntity(uint64)` — Register an entity for network replication.
+- `Net_UnregisterEntity(uint64)` — Stop replicating an entity.
+- `Net_RequestOwnership(uint64)` — Request ownership of a networked entity.
+- `Net_CallRPC(const string& name, const string& data, int targetId)` — Send an RPC to a specific player.
+- `Net_CallRPCAll(const string& name, const string& data)` — Broadcast an RPC to all players.
+- `Net_RegisterRPCHandler(const string& name)` — Register an RPC handler. When received, fires `"__rpc_" + name` event via ScriptEventBus with data as payload.

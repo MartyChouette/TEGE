@@ -58,7 +58,9 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
     ctx.deltaTime = deltaTime;
     ctx.otherEntity = otherEntity;
     ctx.physics = m_Physics;
+    ctx.physics2d = m_Physics2D;
     ctx.scriptEngine = m_ScriptEngine;
+    ctx.networking = m_Networking;
     ctx.nextFlowIndex = 0;
 
     // Execute flow starting from the entry node

@@ -255,7 +255,7 @@ struct PushConstants {
 - **`UIElement`** — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`
 - **`UIWidgetType`**: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle
 - **`NineSliceConfig`** — 9-slice sprite config: `texturePath`, `borderLeft/Right/Top/Bottom` (texels)
-- **`UISystem`** — Layout + render + input. `SetTextureResolver()` for Vulkan texture loading. `RenderImage()` resolves textures via the resolver (SVG files auto-route through `SVGLoader`)
+- **`UISystem`** — Layout + render + input + focus navigation. `SetTextureResolver()` for Vulkan texture loading. `RenderImage()` resolves textures via the resolver (SVG files auto-route through `SVGLoader`). Focus navigation: Tab/Shift+Tab, DPad/Arrow keys with repeat, Enter/Space/Gamepad-A activation, Left/Right slider adjustment. Focus indicator rendered as outset rounded-rect border using theme `inputFocused` color or per-element `focusColor` override
 - **`DialogueBoxComponent`** — Auto-builds UICanvas elements for dialogue display: panel, speaker label, text label, portrait image, continue indicator, 6 choice buttons. `BuildDialogueBoxUI()` creates the element tree; `SyncDialogueBoxUI()` updates from `DialogueComponent` state each frame. Inspector with box layout, text style, portrait, choice, and continue settings
 - **UI Editor** — Viewport WYSIWYG: click-select, drag-move, resize handles, right-click context menu
 
@@ -280,9 +280,9 @@ struct PushConstants {
 ### Scripting
 
 - **AngelScript** via `TegeBehavior` base class with hot-reload
-- ~250 bound functions across math, entity, scene, input, physics, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas, localization, prefabs, Newgrounds
+- ~290 bound functions across math, entity, scene, input, physics, physics 2D, audio, components, coroutines, events, tweening, noise, rendering, post-processing, dialogue, save/load, weather, particles, quests, cinematics, object pool, destructibles, UI canvas (including focus management), localization, prefabs, networking, Newgrounds
 - See `docs/SCRIPTING_API.md` for the complete API reference
-- **Visual scripting** (Blueprint-style) with 62+ built-in nodes (including 22 Gameplay nodes: save/load/checkpoint/meta, weather, quests, cinematics, particles, destructibles, prefabs, UI, localization), debugger with breakpoints/step-through, execution timeline profiler
+- **Visual scripting** (Blueprint-style) with 76+ built-in nodes (including 25 Gameplay nodes: save/load/checkpoint/meta, weather, quests, cinematics, particles, destructibles, prefabs, UI focus, localization; 5 Physics 2D nodes; 6 Networking nodes), debugger with breakpoints/step-through, execution timeline profiler
 
 ### Window Icon
 
@@ -369,19 +369,19 @@ if (result.success) {
 The engine has 120+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.
 
 - **Rendering:** Vulkan with Blinn-Phong, PBR materials, normal/parallax mapping, 4-cascade CSM shadows, post-processing (bloom, vignette, FXAA, film grain, color grading, full-screen stipple/dither), retro effects, wireframe, deferred framework, GPU frustum culling, per-scene render settings, ray tracing pipeline (RT shadows, reflections, AO, GI, path tracing, SVGF denoiser — awaiting compiled SPIR-V shaders)
-- **ECS & Editor:** 70+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 22 startup templates, entity visibility toggle, bug reporting & feedback system (auto-diagnostics, JSON persistence, remote submission), vector drawing editor (7 shapes, layers, SVG export), splash screen with animated mantra
+- **ECS & Editor:** 70+ component types, ImGui editor with hierarchy/inspector/viewport, transform gizmos, multi-select, undo/redo, component search with fuzzy matching, 23 startup templates, entity visibility toggle, bug reporting & feedback system (auto-diagnostics, JSON persistence, remote submission), vector drawing editor (7 shapes, layers, SVG export), splash screen with animated mantra
 - **2D:** Sprite rendering, sprite texture atlas (auto-packing for batched draw calls), tilemap rendering/editing, sprite animation, 2D camera (follow, bounds, shake, dead zones, look-ahead), 2D/3D project mode separation
 - **3D:** glTF/FBX/OBJ/DAE/PLY/VOX import, skeletal animation, LOD, terrain sculpting, vegetation (grass/shrub/tree with custom assets), cubemap skybox
 - **Physics:** `IPhysicsBackend` abstraction layer with Jolt Physics v5.2.0 backend (multi-threaded solver, rotational dynamics, CCD, island-based sleep) and Box2D v3.0.0 backend (production-grade 2D: sub-stepping, contact/sensor events, raycasting, overlap queries, 5 joint types, CCD), SimplePhysics fallback, collision detection (sphere/AABB), constraint solver (6 joint types), ragdoll, gravity/temperature zones, collision filtering (32-group bitmask), 2D physics (circle/box/polygon, 5 joint types, CCD, physics materials)
 - **Audio:** miniaudio backend, 3D spatialization, multi-channel mixing
-- **Scripting:** AngelScript (~185 bindings), visual scripting (46+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
+- **Scripting:** AngelScript (~220 bindings), visual scripting (60+ nodes, debugger), state machines with script callbacks, coroutines, event system, DataAsset system (schemas + instances, JSON I/O, AS + VS bindings), documentation generator, plugin DLL repositories
 - **Gameplay:** Tiered save system (20 slots, 3-tier persistence: SceneState/RunState/MetaProgression, auto-save, checkpoints, pluggable backends — Local/Newgrounds/Steam), play mode diff dialog (cherry-pick entity changes on Stop), in-game save/load menu component, quest/objective system, HUD overlay, cinematic camera, dialogue trees (7 node types, .enjdlg files), tweening (25 easing functions), object pooling, damage/stamina systems, destructible environments (4 fracture patterns, chain destruction), localization system (string tables, CSV/JSON, LOC() macro), Newgrounds.io API (medals, scoreboards, cloud saves)
 - **Networking:** LAN multiplayer (host-authoritative UDP, client-side prediction, 20Hz state sync, interpolation buffer, entity ownership, RPC system, lobby, reliable delivery, editor Network Panel)
 - **Effects:** Weather, water, particles (12 presets, GPU instanced), world time/seasons, noise library (4 types, 2D+3D, fractal functions)
 - **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview
 - **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P), HTML5 export (canvas, preloader, responsive scaling, Newgrounds-compatible embed)
 - **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system, shader graph (skeleton), audio event graph (skeleton), particle graph (skeleton)
-- **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer
+- **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer, UICanvas focus navigation (Tab/DPad/Arrow keys with focus indicators)
 
 ## Known Performance Issues
 

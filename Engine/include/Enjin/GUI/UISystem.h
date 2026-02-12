@@ -29,9 +29,24 @@ public:
     using TextureResolver = std::function<void*(const std::string& path, u32& outW, u32& outH)>;
     void SetTextureResolver(TextureResolver resolver) { m_TextureResolver = std::move(resolver); }
 
+    // Focus management
+    void SetFocus(UICanvasComponent& canvas, u32 elementId);
+    void ClearFocus(UICanvasComponent& canvas);
+    u32 GetFocusedElementId(const UICanvasComponent& canvas) const { return canvas.focusedElementId; }
+
+    // Announcer callback for screen reader support (called on focus change)
+    using AnnouncerCallback = std::function<void(const std::string& text)>;
+    void SetAnnouncerCallback(AnnouncerCallback cb) { m_AnnouncerCallback = std::move(cb); }
+
 private:
     UIEventBus m_EventBus;
     TextureResolver m_TextureResolver;
+    AnnouncerCallback m_AnnouncerCallback;
+
+    // Focus navigation state
+    f32 m_NavRepeatTimer = 0.0f;
+    static constexpr f32 NAV_REPEAT_DELAY = 0.4f;  // Initial delay before repeat
+    static constexpr f32 NAV_REPEAT_RATE  = 0.1f;  // Repeat interval
 
     // Layout pass: compute rects for all elements in a canvas
     void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH);
@@ -39,11 +54,11 @@ private:
 
     // Render pass: draw all visible elements
     void RenderCanvas(const UICanvasComponent& canvas);
-    void RenderElement(const UIElement& element, const UITheme& theme);
+    void RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId);
 
     // Individual widget renderers
     void RenderPanel(const UIElement& element, const UITheme& theme);
-    void RenderButton(const UIElement& element, const UITheme& theme);
+    void RenderButton(const UIElement& element, const UITheme& theme, bool focused);
     void RenderLabel(const UIElement& element, const UITheme& theme);
     void RenderImage(const UIElement& element, const UITheme& theme);
     void RenderProgressBar(const UIElement& element, const UITheme& theme);
@@ -51,6 +66,9 @@ private:
     void RenderCheckbox(const UIElement& element, const UITheme& theme);
     void RenderToggle(const UIElement& element, const UITheme& theme);
     void RenderPlaceholder(const UIElement& element, const UITheme& theme);
+
+    // Focus indicator rendering
+    void RenderFocusIndicator(const UIElement& element, const UITheme& theme);
 
     // Nine-slice rendering helper
     void DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,
@@ -61,6 +79,21 @@ private:
 
     // Input pass: hit test and process interactions
     void ProcessInput(UICanvasComponent& canvas, f32 vpW, f32 vpH);
+
+    // Focus navigation: Tab/DPad/Arrow key navigation with repeat
+    void ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime);
+
+    // Activate the currently focused element (Enter/Space/Gamepad-A)
+    void ActivateFocusedElement(UICanvasComponent& canvas);
+
+    // Adjust slider value when focused (Left/Right keys)
+    void AdjustSliderValue(UIElement& element, i32 direction);
+
+    // Build sorted tab order from focusable elements
+    std::vector<UIElement*> BuildTabOrder(UICanvasComponent& canvas);
+
+    // Check if an element can receive focus
+    bool IsElementFocusable(const UIElement& element) const;
 };
 
 } // namespace Enjin::GUI

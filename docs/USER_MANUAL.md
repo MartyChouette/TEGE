@@ -138,7 +138,7 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
 | **Rendering** | Skybox configuration, shadow settings, ambient lighting, cel shading, ray tracing, and fog. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
-| **Visual Script** | Blueprint-style visual scripting editor with 40+ node types and debugger. |
+| **Visual Script** | Blueprint-style visual scripting editor with 76+ node types and debugger. |
 | **Behavior Tree** | AI behavior tree editor with 20 node types, blackboard editor, and play-mode visualization. |
 | **Quest Flow** | Visual quest designer with objectives, branches, conditions, and rewards. |
 | **Pixel Editor** | Pixel art creation tool with layers, 8 drawing tools, undo/redo, and retro presets. |
@@ -248,7 +248,7 @@ Import options include a configurable scale factor.
 
 ## 4. Templates
 
-Enjin provides 22 built-in startup templates organized into 5 categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
+Enjin provides 23 built-in startup templates organized into 5 categories. When you create a new project or scene, the template selector offers these options. All templates start with a minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, Asset Browser) for a clean first impression:
 
 **Foundations**
 
@@ -296,6 +296,7 @@ Enjin provides 22 built-in startup templates organized into 5 categories. When y
 |----------|-------------|
 | **Planet Gravity** | Spherical planet with point gravity zone, surface-aligned controller, dark space skybox. |
 | **Dungeon Crawler** | Grid-based FPS with snap turns, L-shaped corridor walls, skeleton enemy, treasure, torch lights. |
+| **Accessibility Menu** | In-game accessibility settings: subtitle toggle + size, colorblind toggle, reduced motion, input sensitivity. All controls use UICanvas focus navigation (Tab/Arrow/Gamepad). |
 
 Each template creates the appropriate entities (ground, lights, player entity with controller, camera) and pre-configures component values for that genre. Every template includes NotesComponent hints explaining the featured systems.
 
@@ -1818,6 +1819,21 @@ Four one-click presets that configure multiple accessibility settings at once:
 | **Photosensitive** | Reduced motion, disabled screen shake, disabled FOV effects. |
 | **Reset All** | Restores all settings to defaults. |
 
+### UICanvas Focus Navigation
+
+UICanvas supports full keyboard and gamepad navigation for in-game UI, enabling accessible menu control without a mouse:
+
+| Input | Action |
+|-------|--------|
+| **Tab / Shift+Tab** | Move focus forward/backward through focusable elements (ordered by `tabOrder`). |
+| **Arrow Keys / D-Pad** | Navigate between elements with key repeat support. |
+| **Enter / Space / Gamepad A** | Activate the focused element (button press, checkbox toggle). |
+| **Left / Right** | Adjust slider values on focused slider elements. |
+
+- **Focus indicators** are rendered as an outset rounded-rect border around the focused element, using the theme's `inputFocused` color or a per-element `focusColor` override.
+- Elements can be marked as focusable/unfocusable via the `focusable` flag and ordered with `tabOrder` (0 = auto from element order).
+- AngelScript bindings: `UI_SetFocus()`, `UI_ClearFocus()`, `UI_GetFocusedElement()`, `UI_IsFocused()`, `UI_SetTabOrder()`, `UI_SetFocusable()`.
+
 ### Mouse Input Settings
 
 | Setting | Description |
@@ -2492,7 +2508,9 @@ The visual script system provides 80+ built-in nodes organized into these catego
 | **Debug** | Print String, Print Warning, Print Error | Console output for debugging. |
 | **Functions** | Function Entry, Function Return, Call Function | Reusable subgraph functions. |
 | **Script** | Call Script | Call AngelScript functions from visual scripts. |
-| **Gameplay** | Save To Slot, Load From Slot, Delete Slot, Checkpoint, Meta Set Float, Meta Get Float | Save system operations: save/load/delete slots, create checkpoints, read/write meta-progression values. |
+| **Gameplay** | Save To Slot, Load From Slot, Delete Slot, Checkpoint, Meta Set Float, Meta Get Float, Weather Set/Get, Quest Start/Complete/Query, Cinematic Play/Stop, Particle Play/Stop/Burst, Destructible Damage, Prefab Instantiate, UI Set Focus/Clear Focus, Localization Get | Save system, weather, quests, cinematics, particles, destructibles, prefabs, UI focus, and localization. |
+| **Physics 2D** | Raycast 2D, Overlap Circle 2D, Add Force 2D, Set Velocity 2D, Set Gravity 2D | 2D physics queries, forces, and gravity control. |
+| **Networking** | Host Game, Join Game, Disconnect, Is Connected, Get Player Count, Call RPC | LAN multiplayer session management and RPC calls. |
 
 ### Debugger
 

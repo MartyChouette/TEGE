@@ -34,7 +34,7 @@ using namespace Enjin::ECS;
 ECS::World* s_BindingsWorld = nullptr;
 
 static Scripting::CoroutineScheduler* s_BindingsCoroutineScheduler = nullptr;
-static Scripting::ScriptEventBus* s_BindingsEventBus = nullptr;
+Scripting::ScriptEventBus* s_BindingsEventBus = nullptr;
 static Scripting::ScriptEngine* s_BindingsScriptEngine = nullptr;
 
 namespace Enjin {
@@ -1083,6 +1083,8 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterPrefabBindings(engine);
     RegisterStreamingBindings(engine);
     RegisterFlowerBindings(engine);
+    RegisterPhysics2DBindings(engine);
+    RegisterNetworkBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

@@ -38,7 +38,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 22 templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced)
+- **Startup Templates** - 23 templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced)
 - **Custom Templates** - Save/load from templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
@@ -52,7 +52,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 - **Animation Graph** - Visual state machine editor for AnimatorComponent with Entry pseudo-node, transitions, parameters
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
-- **Visual Script Editor** - Blueprint-style visual scripting with 50+ nodes, breakpoint debugging, execution profiler
+- **Visual Script Editor** - Blueprint-style visual scripting with 76+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling

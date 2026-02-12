@@ -55,8 +55,14 @@ public:
     // Physics system for physics query nodes
     void SetPhysics(Physics::IPhysicsBackend* physics) { m_Physics = physics; }
 
+    // 2D physics system for 2D physics query nodes
+    void SetPhysics2D(Physics::IPhysicsBackend2D* physics2d) { m_Physics2D = physics2d; }
+
     // Script engine for interop nodes
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_ScriptEngine = engine; }
+
+    // Networking system for multiplayer nodes
+    void SetNetworking(Networking::NetworkSystem* net) { m_Networking = net; }
 
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }
@@ -92,7 +98,9 @@ private:
     ExecutionStats m_LastStats;
     u32 m_MaxIterations = 10000;  // Safety limit to prevent infinite loops
     Physics::IPhysicsBackend* m_Physics = nullptr;
+    Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
+    Networking::NetworkSystem* m_Networking = nullptr;
     u32 m_FunctionCallDepth = 0;
     static constexpr u32 MAX_CALL_DEPTH = 32;
 };

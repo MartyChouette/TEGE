@@ -5,7 +5,8 @@ class asIScriptEngine;
 
 namespace Enjin {
 namespace ECS { class World; class DialogueSystem; class RenderSystem; }
-namespace Physics { class IPhysicsBackend; }
+namespace Physics { class IPhysicsBackend; class IPhysicsBackend2D; }
+namespace Networking { class NetworkSystem; }
 namespace Audio { class SimpleAudio; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
@@ -45,6 +46,8 @@ void RegisterParticleBindings(asIScriptEngine* engine);
 void RegisterPrefabBindings(asIScriptEngine* engine);
 void RegisterStreamingBindings(asIScriptEngine* engine);
 void RegisterFlowerBindings(asIScriptEngine* engine);
+void RegisterPhysics2DBindings(asIScriptEngine* engine);
+void RegisterNetworkBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);
@@ -65,6 +68,8 @@ void SetBindingsObjectPool(Gameplay::ObjectPool* pool);
 void SetBindingsDestructible(Effects::DestructibleSystem* destructible);
 void SetBindingsStreaming(Scene::StreamingManager* mgr);
 void SetBindingsFlower(ECS::World* world);
+void SetBindingsPhysics2D(Physics::IPhysicsBackend2D* physics2d);
+void SetBindingsNetworking(Networking::NetworkSystem* net);
 
 } // namespace Scripting
 } // namespace Enjin

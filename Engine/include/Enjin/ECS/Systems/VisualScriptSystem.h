@@ -24,8 +24,14 @@ public:
     // Set physics system for physics query nodes
     void SetPhysics(Physics::IPhysicsBackend* physics) { m_Executor.SetPhysics(physics); }
 
+    // Set 2D physics system for 2D physics query nodes
+    void SetPhysics2D(Physics::IPhysicsBackend2D* physics2d) { m_Executor.SetPhysics2D(physics2d); }
+
     // Set script engine for interop nodes
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_Executor.SetScriptEngine(engine); }
+
+    // Set networking system for multiplayer nodes
+    void SetNetworking(Networking::NetworkSystem* net) { m_Executor.SetNetworking(net); }
 
     // Called once when play mode starts
     void Initialize();

@@ -26,6 +26,18 @@ Each template now showcases specific engine features using real components. Layo
 ### SceneSerializer Robustness
 Applied tolerant `JB()` bool deserialization across all scene components. This prevents crashes when loading scenes saved with the old `RF()` rounding bug that wrote booleans as `0.0`/`1.0` instead of `true`/`false`.
 
+### Physics 2D Script Bindings
+Added 15 AngelScript bindings for 2D physics via `IPhysicsBackend2D`: 4 raycast variants (basic, with mask, full hit info, full hit info + mask), 4 overlap queries (circle/box, each with mask variant), 3 body manipulation (AddForce, AddImpulse, SetVelocity, GetVelocity), and 3 gravity functions (Set/Get global gravity, per-body gravity scale). New file: `ScriptBindings_Physics2D.cpp`. Also added 5 visual script nodes: Raycast 2D, Overlap Circle 2D, Add Force 2D, Set Velocity 2D, Set Gravity 2D.
+
+### Networking Script Bindings
+Added 21 AngelScript bindings for LAN multiplayer via `NetworkSystem`: connection management (Host/Join/Disconnect), 7 state queries (IsConnected, IsHost, GetRole, GetLocalPlayerId, GetPlayerCount, GetPing, GetPacketLoss), 4 lobby functions (SetReady, GetLobbyPlayerCount/Name/Ready), 3 entity ownership (Register/Unregister/RequestOwnership), and 3 RPC functions (CallRPC, CallRPCAll, RegisterRPCHandler). RPC handlers fire `__rpc_<name>` events via ScriptEventBus. Registered `NetworkRole` enum (None/Host/Client). New file: `ScriptBindings_Networking.cpp`. Also added 6 visual script nodes: Host Game, Join Game, Disconnect, Is Connected, Get Player Count, Call RPC.
+
+### UICanvas Keyboard & Gamepad Focus Navigation
+Implemented full keyboard/gamepad navigation for UICanvas: Tab/Shift+Tab cycles through focusable elements (ordered by `tabOrder`), Arrow keys and DPad navigate with key repeat (150ms initial, 100ms repeat), Enter/Space/Gamepad-A activates focused element, Left/Right adjusts sliders. Added `tabOrder`, `focusable`, and `focusColor` fields to `UIElement`. Focus state machine in `UISystem` with `m_FocusedElementId` tracking. Focus indicator rendered as outset rounded-rect border using theme `inputFocused` color or per-element override. 6 new AngelScript bindings: `UI_SetFocus`, `UI_ClearFocus`, `UI_GetFocusedElement`, `UI_IsFocused`, `UI_SetTabOrder`, `UI_SetFocusable`. Serialization of new fields in SceneSerializer.
+
+### Accessibility Menu Template
+Added template #23: "Accessibility Menu" — an in-game accessibility settings screen built with UICanvas. Features subtitle toggle + subtitle size slider, colorblind toggle, reduced motion toggle, and input sensitivity slider. All controls are focusable with proper tab order, demonstrating the new keyboard/gamepad focus navigation system.
+
 ---
 
 ## 2026-02-11

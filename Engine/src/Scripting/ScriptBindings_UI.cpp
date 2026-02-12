@@ -181,6 +181,44 @@ static bool UI_IsPressed(u64 entity, int elementId) {
 }
 
 // ============================================================================
+// Focus Management
+// ============================================================================
+
+static void UI_SetFocus(u64 entity, int elementId) {
+    auto* canvas = GetCanvas(entity);
+    if (canvas) canvas->focusedElementId = static_cast<u32>(elementId);
+}
+
+static void UI_ClearFocus(u64 entity) {
+    auto* canvas = GetCanvas(entity);
+    if (canvas) canvas->focusedElementId = 0;
+}
+
+static int UI_GetFocusedElement(u64 entity) {
+    auto* canvas = GetCanvas(entity);
+    return canvas ? static_cast<int>(canvas->focusedElementId) : 0;
+}
+
+static bool UI_IsFocused(u64 entity, int elementId) {
+    auto* canvas = GetCanvas(entity);
+    return canvas ? (canvas->focusedElementId == static_cast<u32>(elementId)) : false;
+}
+
+static void UI_SetTabOrder(u64 entity, int elementId, int order) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (el) el->tabOrder = order;
+}
+
+static void UI_SetFocusable(u64 entity, int elementId, bool focusable) {
+    auto* canvas = GetCanvas(entity);
+    if (!canvas) return;
+    auto* el = canvas->GetElement(static_cast<u32>(elementId));
+    if (el) el->focusable = focusable;
+}
+
+// ============================================================================
 // Localization
 // ============================================================================
 
@@ -269,6 +307,20 @@ void RegisterUIBindings(asIScriptEngine* engine) {
         asFUNCTION(UI_IsHovered), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsPressed(uint64, int)",
         asFUNCTION(UI_IsPressed), asCALL_CDECL));
+
+    // -- Focus --
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFocus(uint64, int)",
+        asFUNCTION(UI_SetFocus), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_ClearFocus(uint64)",
+        asFUNCTION(UI_ClearFocus), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("int UI_GetFocusedElement(uint64)",
+        asFUNCTION(UI_GetFocusedElement), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool UI_IsFocused(uint64, int)",
+        asFUNCTION(UI_IsFocused), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetTabOrder(uint64, int, int)",
+        asFUNCTION(UI_SetTabOrder), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void UI_SetFocusable(uint64, int, bool)",
+        asFUNCTION(UI_SetFocusable), asCALL_CDECL));
 
     // -- Localization --
     AS_CHECK(engine->RegisterGlobalFunction("string Loc_Get(const string &in)",

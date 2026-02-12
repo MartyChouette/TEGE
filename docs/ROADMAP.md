@@ -368,12 +368,12 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 12 | Weather | No AS/VS bindings — can't start/stop rain/snow/storms from game code |
 | 13 | Water | No AS/VS bindings — can't configure water planes from scripts |
 | 14 | Particles | No AS/VS bindings — can't spawn/stop particle effects from code |
-| 15 | Networking | No AS/VS bindings — can't host/join/send RPCs from scripts |
+| ~~15~~ | ~~Networking~~ | ~~No AS/VS bindings~~ ✅ 20 AS + 6 VS bindings added |
 | 16 | Quest System | No AS/VS bindings — can't start/complete/query quests from scripts |
 | 17 | HUD System | No AS/VS bindings — can't show/hide/update HUD from scripts |
 | 18 | Cinematic System | No AS/VS bindings — can't trigger camera sequences from code |
 | 19 | Destructible System | No AS/VS bindings — can't trigger destruction from scripts |
-| 20 | Physics 2D | No AS/VS bindings — only 3D physics is partially bound |
+| ~~20~~ | ~~Physics 2D~~ | ~~No AS/VS bindings~~ ✅ 15 AS + 5 VS bindings added |
 | 21 | Prefab System | No AS/VS bindings — can't instantiate prefabs at runtime |
 | 22 | Procedural Generation | No AS/VS bindings — 9 algorithms exist but can't be invoked from code |
 
@@ -451,9 +451,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Scene Lock UI Enhancements | Medium | Low | P2 | ✅ Complete |
 | Panel Reorganization | Medium | Medium | P2 | ✅ Complete |
 | **— Runtime Accessibility —** | | | | |
-| UICanvas Keyboard/Gamepad Navigation | High | Medium | P1 | Planned |
-| In-Game Accessibility Menu Template | High | Medium | P1 | Planned |
-| Focus Indicators for UICanvas | Medium | Low | P1 | Planned |
+| UICanvas Keyboard/Gamepad Navigation | High | Medium | P1 | ✅ Complete |
+| In-Game Accessibility Menu Template | High | Medium | P1 | ✅ Complete |
+| Focus Indicators for UICanvas | Medium | Low | P1 | ✅ Complete |
 | Wire AlternativeInput to Player/UISystem | Medium | Medium | P2 | Planned |
 | Wire Announcer to UISystem (screen reader) | Medium | Medium | P2 | Planned |
 | Accessible Labels on UIElement | Medium | Low | P2 | Planned |
@@ -471,9 +471,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Register Newgrounds script bindings (dead code) | High | Low | P0 | ✅ Complete |
 | Add UI System script bindings (AS + VS) | Critical | High | P1 | ✅ Complete |
 | Add Weather/Water/Particles script bindings | High | Medium | P1 | ✅ Complete |
-| Add Physics 2D script bindings | High | Medium | P1 | Planned |
+| Add Physics 2D script bindings | High | Medium | P1 | ✅ Complete |
 | Add Quest/HUD/Cinematic/Destructible script bindings | High | Medium | P1 | ✅ Complete |
-| Add Networking script bindings | High | High | P1 | Planned |
+| Add Networking script bindings | High | High | P1 | ✅ Complete |
 | Add Prefab script bindings | Medium | Medium | P2 | ✅ Complete |
 | Add Procedural Gen script bindings | Medium | Medium | P2 | Planned |
 | Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | ✅ Complete |
@@ -1103,11 +1103,11 @@ The following accessibility features exist as infrastructure/settings structs bu
 
 | Feature | Priority | Effort | Description |
 |---------|----------|--------|-------------|
-| **UICanvas Keyboard Navigation** | P1 | Medium | Tab/Shift+Tab between focusable UIElements, Enter/Space activation, arrow key menu navigation. Add `tabIndex` field to UIElement, focus state machine in UISystem |
-| **UICanvas Gamepad Navigation** | P1 | Medium | D-pad/analog stick navigation between UIElements, A/B button activation/cancel. Spatial navigation algorithm (find nearest element in direction) |
-| **Focus Indicators** | P1 | Low | Visible focus ring rendering on active UIElement (configurable color/width in UITheme). Render in UISystem when element has keyboard/gamepad focus |
+| ~~**UICanvas Keyboard Navigation**~~ | P1 | Medium | ~~Tab/Shift+Tab between focusable UIElements, Enter/Space activation, arrow key menu navigation. `tabOrder` field on UIElement, focus state machine in UISystem~~ ✅ Complete |
+| ~~**UICanvas Gamepad Navigation**~~ | P1 | Medium | ~~D-pad/analog stick navigation between UIElements, A/B activation. Arrow/DPad/Left Stick navigation with key repeat~~ ✅ Complete |
+| ~~**Focus Indicators**~~ | P1 | Low | ~~Visible focus ring rendering on active UIElement (configurable color/width in UITheme, per-element focusColor override). Rendered in UISystem after widget render~~ ✅ Complete |
 | **Accessible Labels** | P2 | Low | Add `accessibleLabel` and `accessibleDescription` fields to UIElement for screen reader text. Fall back to widget text if not set |
-| **In-Game Accessibility Menu** | P1 | Medium | UICanvas template (like existing MainMenu/PauseMenu/OptionsMenu templates) with subtitle toggle, colorblind mode dropdown, font size slider, reduced motion toggle, input rebinding. Wired to RuntimeAccessibilitySettings |
+| ~~**In-Game Accessibility Menu**~~ | P1 | Medium | ~~Accessibility Menu startup template with subtitle toggle, subtitle size slider, colorblind toggle, reduced motion toggle, input sensitivity slider. Uses focus navigation for keyboard/gamepad control~~ ✅ Complete |
 | **High Contrast UI Theme** | P2 | Low | Add `HighContrast` preset to UIThemePreset with WCAG AAA-compliant contrast ratios, bold borders, no transparency |
 | **Font Scaling for Players** | P2 | Low | Player-controlled font size multiplier in RuntimeAccessibilitySettings, applied to UITheme font sizes at runtime |
 | **Dyslexia-Friendly Options** | P3 | Low | Dyslexic-friendly font option in UITheme (OpenDyslexic or similar OFL font), increased letter/word spacing controls |

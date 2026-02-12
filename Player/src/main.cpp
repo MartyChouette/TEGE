@@ -278,6 +278,8 @@ public:
         Enjin::Scripting::SetBindingsStreaming(nullptr);
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
         Enjin::Scripting::SetBindingsPostProcessing(nullptr);
+        Enjin::Scripting::SetBindingsPhysics2D(nullptr);
+        Enjin::Scripting::SetBindingsNetworking(nullptr);
 
         // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
@@ -646,6 +648,8 @@ private:
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsPostProcessing(nullptr); // No post-processing in standalone player
+        Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
+        Enjin::Scripting::SetBindingsNetworking(nullptr); // No NetworkSystem in standalone player yet
 
         // Wire dialogue system event bus
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);

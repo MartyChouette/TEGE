@@ -123,6 +123,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
     Scripting::SetBindingsPhysics(m_Physics.get());
+    Scripting::SetBindingsPhysics2D(m_Physics2D.get());
+    Scripting::SetBindingsNetworking(&m_NetworkSystem);
     Scripting::SetBindingsStreaming(&m_StreamingManager);
     Scripting::SetBindingsFlower(m_World);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
@@ -137,6 +139,8 @@ void PlayMode::Play() {
 
     // Initialize visual script system
     m_VisualScriptSystem.SetPhysics(m_Physics.get());
+    m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
+    m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
     m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
@@ -243,6 +247,8 @@ void PlayMode::Stop() {
     Scripting::SetBindingsCinematicSystem(nullptr);
     Scripting::SetBindingsObjectPool(nullptr);
     Scripting::SetBindingsPhysics(nullptr);
+    Scripting::SetBindingsPhysics2D(nullptr);
+    Scripting::SetBindingsNetworking(nullptr);
     Scripting::SetBindingsWeather(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
     Scripting::SetBindingsFlower(nullptr);

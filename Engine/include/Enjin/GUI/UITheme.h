@@ -66,6 +66,9 @@ struct UITheme {
     // Background alpha
     f32 bgAlpha = 0.92f;
 
+    // Focus indicator
+    f32 focusBorderWidth = 2.5f;
+
     // Nine-slice defaults per widget type (empty = flat color)
     NineSliceConfig panelNineSlice;
     NineSliceConfig buttonNineSlice;

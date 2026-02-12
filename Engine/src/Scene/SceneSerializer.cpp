@@ -3262,6 +3262,8 @@ json SerializeUIElement(const GUI::UIElement& e) {
     j["type"] = static_cast<u8>(e.type);
     j["visible"] = RF(e.visible);
     j["enabled"] = e.enabled;
+    j["focusable"] = e.focusable;
+    j["tabOrder"] = e.tabOrder;
     j["parentId"] = e.parentId;
     j["childIds"] = e.childIds;
 
@@ -3285,6 +3287,7 @@ json SerializeUIElement(const GUI::UIElement& e) {
     style["borderRadius"] = RF(e.style.borderRadius);
     style["borderWidth"] = RF(e.style.borderWidth);
     style["fontSize"] = RF(e.style.fontSize);
+    style["focusColor"] = SerializeVector3(e.style.focusColor);
     if (e.style.nineSlice.IsActive()) {
         json ns;
         ns["texturePath"] = e.style.nineSlice.texturePath;
@@ -3331,6 +3334,8 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v < static_cast<u8>(GUI::UIWidgetType::Count)) e.type = static_cast<GUI::UIWidgetType>(v); }
     if (j.contains("visible")) e.visible = JB(j["visible"]);
     if (j.contains("enabled")) e.enabled = JB(j["enabled"]);
+    if (j.contains("focusable")) e.focusable = JB(j["focusable"]);
+    if (j.contains("tabOrder")) e.tabOrder = j["tabOrder"].get<i32>();
     if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
     if (j.contains("childIds") && j["childIds"].is_array()) {
         for (const auto& cid : j["childIds"]) e.childIds.push_back(cid.get<u32>());
@@ -3356,6 +3361,7 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (s.contains("borderRadius")) e.style.borderRadius = s["borderRadius"].get<f32>();
         if (s.contains("borderWidth")) e.style.borderWidth = s["borderWidth"].get<f32>();
         if (s.contains("fontSize")) e.style.fontSize = s["fontSize"].get<f32>();
+        if (s.contains("focusColor")) e.style.focusColor = DeserializeVector3(s["focusColor"]);
         if (s.contains("nineSlice")) {
             const auto& ns = s["nineSlice"];
             if (ns.contains("texturePath")) e.style.nineSlice.texturePath = ns["texturePath"].get<std::string>();
@@ -3428,6 +3434,7 @@ json SerializeUITheme(const GUI::UITheme& t) {
     j["fontSizeSmall"] = RF(t.fontSizeSmall);
     j["spacing"] = RF(t.spacing);
     j["bgAlpha"] = RF(t.bgAlpha);
+    j["focusBorderWidth"] = RF(t.focusBorderWidth);
     if (t.panelNineSlice.IsActive()) {
         json ns;
         ns["texturePath"] = t.panelNineSlice.texturePath;
@@ -3482,6 +3489,7 @@ GUI::UITheme DeserializeUITheme(const json& j) {
     if (j.contains("fontSizeSmall")) t.fontSizeSmall = j["fontSizeSmall"].get<f32>();
     if (j.contains("spacing")) t.spacing = j["spacing"].get<f32>();
     if (j.contains("bgAlpha")) t.bgAlpha = j["bgAlpha"].get<f32>();
+    if (j.contains("focusBorderWidth")) t.focusBorderWidth = j["focusBorderWidth"].get<f32>();
     auto deserializeNS = [](const json& ns, GUI::NineSliceConfig& cfg) {
         if (ns.contains("texturePath")) cfg.texturePath = ns["texturePath"].get<std::string>();
         if (ns.contains("borderLeft")) cfg.borderLeft = ns["borderLeft"].get<f32>();

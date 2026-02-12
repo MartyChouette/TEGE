@@ -69,6 +69,7 @@ struct UIStyleOverride {
     f32 borderRadius = -1.0f;
     f32 borderWidth  = -1.0f;
     f32 fontSize     = -1.0f;
+    Math::Vector3 focusColor = Math::Vector3(-1, -1, -1); // -1 = use theme inputFocused
 
     bool HasBgColor()     const { return bgColor.x >= 0.0f; }
     bool HasTextColor()   const { return textColor.x >= 0.0f; }
@@ -77,6 +78,7 @@ struct UIStyleOverride {
     bool HasBorderRadius() const { return borderRadius >= 0.0f; }
     bool HasBorderWidth() const { return borderWidth >= 0.0f; }
     bool HasFontSize()    const { return fontSize >= 0.0f; }
+    bool HasFocusColor()  const { return focusColor.x >= 0.0f; }
 
     NineSliceConfig nineSlice; // Empty = flat color fallback
 };
@@ -140,6 +142,13 @@ struct UIInteractionState {
     bool active  = false; // For sliders being dragged
 };
 
+// Returns true for widget types that are focusable by default
+inline bool IsFocusableType(UIWidgetType type) {
+    return type == UIWidgetType::Button   || type == UIWidgetType::Slider ||
+           type == UIWidgetType::Checkbox || type == UIWidgetType::Toggle ||
+           type == UIWidgetType::Dropdown || type == UIWidgetType::TextInput;
+}
+
 // A single UI element in the canvas
 struct UIElement {
     u32 id = 0;
@@ -147,6 +156,8 @@ struct UIElement {
     UIWidgetType type = UIWidgetType::Panel;
     bool visible = true;
     bool enabled = true;
+    bool focusable = true;  // Can receive keyboard/gamepad focus
+    i32 tabOrder = 0;       // 0 = auto (element order), >0 = explicit
 
     // Layout
     UIAnchor anchor;
