@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Scripting/ScriptBindings.h"
@@ -14,15 +15,24 @@ namespace Enjin {
 namespace Editor {
 
 void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
-                          Renderer::CameraController* cameraController) {
+                          Renderer::CameraController* cameraController,
+                          Scene::SceneManager* sceneManager) {
     m_World = world;
     m_Camera = camera;
     m_CameraController = cameraController;
 
-    m_Physics = Physics::CreatePhysicsBackend();
+    // Read physics backend preference and project mode from SceneManager
+    Physics::PhysicsBackendType backendType = Physics::PhysicsBackendType::Auto;
+    Scene::ProjectMode projectMode = Scene::ProjectMode::Mode3D;
+    if (sceneManager) {
+        backendType = sceneManager->GetPhysicsBackendType();
+        projectMode = sceneManager->GetProjectMode();
+    }
+
+    m_Physics = Physics::CreatePhysicsBackend(backendType, projectMode);
     m_Physics->SetWorld(world);
 
-    m_Physics2D = Physics::CreatePhysicsBackend2D();
+    m_Physics2D = Physics::CreatePhysicsBackend2D(backendType, projectMode);
 
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);

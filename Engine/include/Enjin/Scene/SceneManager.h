@@ -4,6 +4,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Physics/PhysicsBackendType.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -158,6 +159,10 @@ public:
     void SetProjectMode(ProjectMode mode) { m_ProjectMode = mode; }
     ProjectMode GetProjectMode() const { return m_ProjectMode; }
 
+    // --- Physics backend selection ---
+    void SetPhysicsBackendType(Physics::PhysicsBackendType type) { m_PhysicsBackendType = type; }
+    Physics::PhysicsBackendType GetPhysicsBackendType() const { return m_PhysicsBackendType; }
+
     // --- Project-level render defaults ---
     void SetDefaultRenderSettings(const Renderer::SceneRenderSettings& s) { m_DefaultRenderSettings = s; }
     const Renderer::SceneRenderSettings& GetDefaultRenderSettings() const { return m_DefaultRenderSettings; }
@@ -187,6 +192,9 @@ private:
 
     // Project mode (2D/3D/Mixed)
     ProjectMode m_ProjectMode = ProjectMode::Mode3D;
+
+    // Physics backend selection
+    Physics::PhysicsBackendType m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
 
     // Project-level render defaults
     Renderer::SceneRenderSettings m_DefaultRenderSettings;

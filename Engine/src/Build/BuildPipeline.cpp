@@ -162,6 +162,10 @@ bool BuildPipeline::ScanProject(const std::string& projectPath) {
             m_BackgroundBehavior = 1;
         }
 
+        // Read physics backend and project mode
+        m_PhysicsBackendType = root.value("physicsBackend", 0u);  // 0 = Auto
+        m_ProjectMode = root.value("projectMode", 1u);            // 1 = 3D
+
         AddMessage(MessageSeverity::Info, "Found " + std::to_string(m_Scenes.size()) + " scenes in project '" + m_ProjectName + "'");
         return true;
 
@@ -501,6 +505,10 @@ bool BuildPipeline::WriteBuildManifest(const BuildConfig& config, AssetPacker& p
     frameSettings["vSync"] = m_VSync;
     frameSettings["backgroundBehavior"] = m_BackgroundBehavior;
     manifest["frameSettings"] = frameSettings;
+
+    // Physics backend and project mode
+    manifest["physicsBackend"] = m_PhysicsBackendType;
+    manifest["projectMode"] = m_ProjectMode;
 
     std::string jsonStr = manifest.dump(2);
     if (!packer.AddData("_build/manifest.json",

@@ -32,6 +32,7 @@
 #include <string>
 
 namespace Enjin {
+namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
 namespace Accessibility { class SubtitleSystem; }
@@ -51,7 +52,8 @@ public:
     ~PlayMode() = default;
 
     void Initialize(ECS::World* world, Renderer::Camera* camera,
-                    Renderer::CameraController* cameraController);
+                    Renderer::CameraController* cameraController,
+                    Scene::SceneManager* sceneManager = nullptr);
 
     // State transitions
     void Play();      // Enter play mode

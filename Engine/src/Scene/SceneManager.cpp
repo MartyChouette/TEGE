@@ -26,6 +26,7 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_DefaultRenderSettings = Renderer::SceneRenderSettings{};
     m_GameFrameSettings = GameFrameSettings{};
     m_ProjectMode = ProjectMode::Mode3D;
+    m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
     m_CollisionGroupNames.clear();
     m_CollisionGroupNames.resize(32);
     m_CollisionGroupNames[0] = "Default";
@@ -74,6 +75,13 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         if (root.contains("projectMode")) {
             int mode = root["projectMode"].get<int>();
             if (mode >= 0 && mode <= 2) m_ProjectMode = static_cast<ProjectMode>(mode);
+        }
+
+        // Load physics backend type
+        m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
+        if (root.contains("physicsBackend")) {
+            int val = root["physicsBackend"].get<int>();
+            if (val >= 0 && val <= 2) m_PhysicsBackendType = static_cast<Physics::PhysicsBackendType>(val);
         }
 
         // Load project-level render defaults
@@ -136,6 +144,9 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
 
         // Save project mode
         root["projectMode"] = static_cast<int>(m_ProjectMode);
+
+        // Save physics backend type
+        root["physicsBackend"] = static_cast<int>(m_PhysicsBackendType);
 
         // Save project-level render defaults
         root["defaultRenderSettings"] = Renderer::SerializeRenderSettings(m_DefaultRenderSettings);

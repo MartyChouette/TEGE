@@ -68,6 +68,10 @@ private:
     bool m_VSync = true;
     u32 m_BackgroundBehavior = 1;    // 0 = run normally, 1 = reduce to 30, 2 = pause
 
+    // Physics backend selection (read from project, written to manifest)
+    u32 m_PhysicsBackendType = 0;    // 0 = Auto, 1 = Jolt, 2 = Box2D
+    u32 m_ProjectMode = 1;           // 0 = 2D, 1 = 3D, 2 = Mixed
+
     ProgressCallback m_ProgressCallback;
 };
 

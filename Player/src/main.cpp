@@ -37,7 +37,9 @@
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
+#include "Enjin/Physics/PhysicsBackendType.h"
 #include "Enjin/ECS/Systems/ControllerSystem.h"
 #include "Enjin/ECS/Systems/FlowerSystem.h"
 #include "Enjin/ECS/Systems/TweenSystem.h"
@@ -98,6 +100,10 @@ public:
                 m_VSync = fs.value("vSync", true);
                 m_BackgroundBehavior = fs.value("backgroundBehavior", 1u);
             }
+
+            // Read physics backend and project mode
+            m_PhysicsBackendType = manifest.value("physicsBackend", 0u);
+            m_ProjectMode = manifest.value("projectMode", 1u);
 
             ENJIN_LOG_INFO(Player, "Game: %s (%ux%u, %s FPS, VSync: %s)",
                 m_WindowTitle.c_str(), m_WindowWidth, m_WindowHeight,
@@ -198,9 +204,14 @@ public:
             ENJIN_LOG_WARN(Player, "Failed to initialize script engine");
         }
 
-        // Initialize physics
-        m_Physics = Enjin::Physics::CreatePhysicsBackend();
+        // Initialize physics with backend from build manifest
+        auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
+            m_PhysicsBackendType <= 2 ? m_PhysicsBackendType : 0);
+        auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
+            m_ProjectMode <= 2 ? m_ProjectMode : 1);
+        m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
         m_Physics->SetWorld(m_World.get());
+        m_Physics2D = Enjin::Physics::CreatePhysicsBackend2D(backendType, projectMode);
 
         // Initialize gameplay systems
         m_ControllerSystem.SetWorld(m_World.get());
@@ -667,6 +678,10 @@ private:
     bool m_VSync = true;
     Enjin::u32 m_BackgroundBehavior = 1; // 0=RunNormally, 1=ReduceTo30, 2=Pause
 
+    // Physics backend settings (from build manifest)
+    Enjin::u32 m_PhysicsBackendType = 0;  // 0=Auto, 1=Jolt, 2=Box2D
+    Enjin::u32 m_ProjectMode = 1;         // 0=2D, 1=3D, 2=Mixed
+
     // Core systems
     std::unique_ptr<Enjin::Renderer::VulkanRenderer> m_Renderer;
     std::unique_ptr<Enjin::Renderer::Camera> m_Camera;
@@ -695,6 +710,7 @@ private:
 
     // Physics (created via factory)
     std::unique_ptr<Enjin::Physics::IPhysicsBackend> m_Physics;
+    std::unique_ptr<Enjin::Physics::IPhysicsBackend2D> m_Physics2D;
 
     // Gameplay systems
     Enjin::ECS::ControllerSystem m_ControllerSystem;

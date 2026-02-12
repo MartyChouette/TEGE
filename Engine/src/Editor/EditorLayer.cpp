@@ -19,6 +19,7 @@
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
+#include "Enjin/Physics/PhysicsBackendType.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -957,7 +958,7 @@ void EditorLayer::StartPlayMode() {
 
 void EditorLayer::InitializePlayMode() {
     if (m_World && m_Camera && m_CameraController) {
-        m_PlayMode.Initialize(m_World, m_Camera, m_CameraController);
+        m_PlayMode.Initialize(m_World, m_Camera, m_CameraController, &m_SceneManager);
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
 
@@ -7978,6 +7979,43 @@ void EditorLayer::DrawProjectSettingsPanel() {
     }
 
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
+        // Physics Backend selection
+        {
+            const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)" };
+            int currentBackend = static_cast<int>(m_SceneManager.GetPhysicsBackendType());
+            if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 3)) {
+                m_SceneManager.SetPhysicsBackendType(static_cast<Physics::PhysicsBackendType>(currentBackend));
+                if (!m_SceneManager.GetProjectPath().empty()) {
+                    m_SceneManager.SaveProject();
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Auto: Selects best backend for project mode\n"
+                    "  3D/Mixed -> Jolt (if compiled), else SimplePhysics\n"
+                    "  2D -> Box2D (if compiled), else SimplePhysics\n"
+                    "Jolt: Force Jolt Physics (3D, requires ENJIN_PHYSICS_JOLT)\n"
+                    "Box2D: Force Box2D v3 (2D, requires ENJIN_PHYSICS_BOX2D)");
+            }
+
+            // Info text showing what Auto resolves to
+            if (currentBackend == 0) {
+                auto mode = m_SceneManager.GetProjectMode();
+                const char* resolved = "SimplePhysics (fallback)";
+#ifdef ENJIN_PHYSICS_JOLT
+                if (mode == Scene::ProjectMode::Mode3D || mode == Scene::ProjectMode::Mixed)
+                    resolved = "Jolt Physics";
+#endif
+#ifdef ENJIN_PHYSICS_BOX2D
+                if (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed)
+                    resolved = "Box2D";
+#endif
+                ImGui::TextDisabled("Auto resolves to: %s", resolved);
+            }
+
+            ImGui::Spacing();
+        }
+
         Physics::IPhysicsBackend* physics = m_PlayMode.GetPhysics();
         Math::Vector3 gravity = physics->GetGravity();
 
