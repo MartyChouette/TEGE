@@ -60,7 +60,7 @@ static f32 RF(f32 val) {
     return std::round(val * mult) / mult;
 }
 
-// Tolerant bool deserialization — handles numbers (from RF() bug) and booleans
+// Tolerant bool deserialization â€” handles numbers (from RF() bug) and booleans
 static bool JB(const json& val) {
     if (val.is_boolean()) return val.get<bool>();
     if (val.is_number()) return val.get<double>() != 0.0;
@@ -277,7 +277,7 @@ ECS::TransformComponent DeserializeTransformComponent(const json& j) {
     transform.position = DeserializeVector3(j["position"]);
     transform.rotation = DeserializeQuaternion(j["rotation"]);
     transform.scale = DeserializeVector3(j["scale"]);
-    if (j.contains("visible")) transform.visible = j["visible"].get<bool>();
+    if (j.contains("visible")) transform.visible = JB(j["visible"]);
     return transform;
 }
 
@@ -315,18 +315,18 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
     if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
     // Retro rendering flags (optional, added in later versions)
-    if (j.contains("flatShading")) material.flatShading = j["flatShading"].get<bool>();
-    if (j.contains("affineTexturing")) material.affineTexturing = j["affineTexturing"].get<bool>();
-    if (j.contains("vertexSnapping")) material.vertexSnapping = j["vertexSnapping"].get<bool>();
-    if (j.contains("stippleTransparency")) material.stippleTransparency = j["stippleTransparency"].get<bool>();
-    if (j.contains("uvQuantize")) material.uvQuantize = j["uvQuantize"].get<bool>();
-    if (j.contains("gouraudOnly")) material.gouraudOnly = j["gouraudOnly"].get<bool>();
+    if (j.contains("flatShading")) material.flatShading = JB(j["flatShading"]);
+    if (j.contains("affineTexturing")) material.affineTexturing = JB(j["affineTexturing"]);
+    if (j.contains("vertexSnapping")) material.vertexSnapping = JB(j["vertexSnapping"]);
+    if (j.contains("stippleTransparency")) material.stippleTransparency = JB(j["stippleTransparency"]);
+    if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
+    if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
     if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
     if (j.contains("shadowDitherMode")) material.shadowDitherMode = j["shadowDitherMode"].get<u8>();
     if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
-    if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = j["excludeFromCelShading"].get<bool>();
+    if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = JB(j["excludeFromCelShading"]);
     return material;
 }
 
@@ -377,7 +377,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.innerConeAngle = j.value("innerConeAngle", 12.5f);
     light.outerConeAngle = j.value("outerConeAngle", 17.5f);
     light.castShadows = j.value("castShadows", false);
-    // Note: old scenes may contain "shadowMapResolution" — silently ignored
+    // Note: old scenes may contain "shadowMapResolution" â€” silently ignored
     return light;
 }
 
@@ -456,7 +456,7 @@ ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
     zone.fogColor = DeserializeVector3(j["fogColor"]);
     zone.fogStart = j["fogStart"].get<f32>();
     zone.fogEnd = j["fogEnd"].get<f32>();
-    zone.lightningEnabled = j["lightningEnabled"].get<bool>();
+    zone.lightningEnabled = JB(j["lightningEnabled"]);
     if (j.contains("lightningMinInterval")) zone.lightningMinInterval = j["lightningMinInterval"].get<f32>();
     if (j.contains("lightningMaxInterval")) zone.lightningMaxInterval = j["lightningMaxInterval"].get<f32>();
     if (j.contains("windDirection")) zone.windDirection = DeserializeVector3(j["windDirection"]);
@@ -494,7 +494,7 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     volume.opacity = j["opacity"].get<f32>();
     volume.waveSpeed = j["waveSpeed"].get<f32>();
     volume.waveHeight = j["waveHeight"].get<f32>();
-    if (j.contains("enableShore")) volume.enableShore = j["enableShore"].get<bool>();
+    if (j.contains("enableShore")) volume.enableShore = JB(j["enableShore"]);
     if (j.contains("shoreWidth")) volume.shoreWidth = j["shoreWidth"].get<f32>();
     if (j.contains("foamIntensity")) volume.foamIntensity = j["foamIntensity"].get<f32>();
     if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
@@ -651,7 +651,7 @@ ECS::Terrain2DComponent DeserializeTerrain2DComponent(const json& j) {
     if (j.contains("depth")) terrain.depth = j["depth"].get<f32>();
     if (j.contains("uvScale")) terrain.uvScale = j["uvScale"].get<f32>();
     if (j.contains("texturePath")) terrain.texturePath = j["texturePath"].get<std::string>();
-    if (j.contains("autoColliders")) terrain.autoColliders = j["autoColliders"].get<bool>();
+    if (j.contains("autoColliders")) terrain.autoColliders = JB(j["autoColliders"]);
     terrain.meshDirty = true;
     return terrain;
 }
@@ -710,7 +710,7 @@ ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     zone.gravityDirection = DeserializeVector3(j["gravityDirection"]);
     zone.gravityStrength = j["gravityStrength"].get<f32>();
     zone.priority = j["priority"].get<i32>();
-    if (j.contains("isActive")) zone.isActive = j["isActive"].get<bool>();
+    if (j.contains("isActive")) zone.isActive = JB(j["isActive"]);
     return zone;
 }
 
@@ -753,11 +753,11 @@ ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
     if (j.contains("fluidColor")) vol.fluidColor = DeserializeVector3(j["fluidColor"]);
     if (j.contains("opacity")) vol.opacity = j["opacity"].get<f32>();
     if (j.contains("densityThreshold")) vol.densityThreshold = j["densityThreshold"].get<f32>();
-    if (j.contains("renderEnabled")) vol.renderEnabled = j["renderEnabled"].get<bool>();
+    if (j.contains("renderEnabled")) vol.renderEnabled = JB(j["renderEnabled"]);
     if (j.contains("sourceRadius")) vol.sourceRadius = j["sourceRadius"].get<f32>();
     if (j.contains("sourceDensity")) vol.sourceDensity = j["sourceDensity"].get<f32>();
     if (j.contains("sourceVelocityScale")) vol.sourceVelocityScale = j["sourceVelocityScale"].get<f32>();
-    if (j.contains("isActive")) vol.isActive = j["isActive"].get<bool>();
+    if (j.contains("isActive")) vol.isActive = JB(j["isActive"]);
     if (j.contains("priority")) vol.priority = j["priority"].get<i32>();
     return vol;
 }
@@ -1143,9 +1143,9 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("pitch")) audio.pitch = j["pitch"].get<f32>();
     if (j.contains("minDistance")) audio.minDistance = j["minDistance"].get<f32>();
     if (j.contains("maxDistance")) audio.maxDistance = j["maxDistance"].get<f32>();
-    if (j.contains("playOnAwake")) audio.playOnAwake = j["playOnAwake"].get<bool>();
-    if (j.contains("loop")) audio.loop = j["loop"].get<bool>();
-    if (j.contains("is3D")) audio.is3D = j["is3D"].get<bool>();
+    if (j.contains("playOnAwake")) audio.playOnAwake = JB(j["playOnAwake"]);
+    if (j.contains("loop")) audio.loop = JB(j["loop"]);
+    if (j.contains("is3D")) audio.is3D = JB(j["is3D"]);
     if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
     if (j.contains("rolloff")) { u8 v = j["rolloff"].get<u8>(); if (v <= 2) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(v); }
     if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
@@ -1161,7 +1161,7 @@ json SerializeAudioListenerComponent(const ECS::AudioListenerComponent& listener
 
 ECS::AudioListenerComponent DeserializeAudioListenerComponent(const json& j) {
     ECS::AudioListenerComponent listener;
-    if (j.contains("isActive")) listener.isActive = j["isActive"].get<bool>();
+    if (j.contains("isActive")) listener.isActive = JB(j["isActive"]);
     if (j.contains("volumeScale")) listener.volumeScale = j["volumeScale"].get<f32>();
     return listener;
 }
@@ -1193,14 +1193,14 @@ ECS::RigidbodyComponent DeserializeRigidbodyComponent(const json& j) {
     if (j.contains("mass")) rb.mass = j["mass"].get<f32>();
     if (j.contains("drag")) rb.drag = j["drag"].get<f32>();
     if (j.contains("angularDrag")) rb.angularDrag = j["angularDrag"].get<f32>();
-    if (j.contains("useGravity")) rb.useGravity = j["useGravity"].get<bool>();
+    if (j.contains("useGravity")) rb.useGravity = JB(j["useGravity"]);
     if (j.contains("gravityScale")) rb.gravityScale = j["gravityScale"].get<f32>();
-    if (j.contains("freezePositionX")) rb.freezePositionX = j["freezePositionX"].get<bool>();
-    if (j.contains("freezePositionY")) rb.freezePositionY = j["freezePositionY"].get<bool>();
-    if (j.contains("freezePositionZ")) rb.freezePositionZ = j["freezePositionZ"].get<bool>();
-    if (j.contains("freezeRotationX")) rb.freezeRotationX = j["freezeRotationX"].get<bool>();
-    if (j.contains("freezeRotationY")) rb.freezeRotationY = j["freezeRotationY"].get<bool>();
-    if (j.contains("freezeRotationZ")) rb.freezeRotationZ = j["freezeRotationZ"].get<bool>();
+    if (j.contains("freezePositionX")) rb.freezePositionX = JB(j["freezePositionX"]);
+    if (j.contains("freezePositionY")) rb.freezePositionY = JB(j["freezePositionY"]);
+    if (j.contains("freezePositionZ")) rb.freezePositionZ = JB(j["freezePositionZ"]);
+    if (j.contains("freezeRotationX")) rb.freezeRotationX = JB(j["freezeRotationX"]);
+    if (j.contains("freezeRotationY")) rb.freezeRotationY = JB(j["freezeRotationY"]);
+    if (j.contains("freezeRotationZ")) rb.freezeRotationZ = JB(j["freezeRotationZ"]);
     if (j.contains("bodyType")) { u8 v = j["bodyType"].get<u8>(); if (v <= 2) rb.bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(v); }
     if (j.contains("collisionMode")) { u8 v = j["collisionMode"].get<u8>(); if (v <= 2) rb.collisionMode = static_cast<ECS::RigidbodyComponent::CollisionMode>(v); }
     return rb;
@@ -1222,13 +1222,13 @@ ECS::BoxColliderComponent DeserializeBoxColliderComponent(const json& j) {
     ECS::BoxColliderComponent col;
     if (j.contains("center")) col.center = DeserializeVector3(j["center"]);
     if (j.contains("size")) col.size = DeserializeVector3(j["size"]);
-    if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
+    if (j.contains("isTrigger")) col.isTrigger = JB(j["isTrigger"]);
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
     if (j.contains("categoryBits")) {
         col.categoryBits = j["categoryBits"].get<u32>();
     } else if (j.contains("layer")) {
-        // Migrate old "layer" field: layer 0 → bit 0, layer N → bit N
+        // Migrate old "layer" field: layer 0 â†’ bit 0, layer N â†’ bit N
         u32 oldLayer = j["layer"].get<u32>();
         col.categoryBits = (oldLayer == 0) ? 1 : (1u << oldLayer);
     }
@@ -1257,7 +1257,7 @@ json SerializePerFrameColliderComponent(const ECS::PerFrameColliderComponent& pf
 
 ECS::PerFrameColliderComponent DeserializePerFrameColliderComponent(const json& j) {
     ECS::PerFrameColliderComponent pfc;
-    if (j.contains("autoApply")) pfc.autoApply = j["autoApply"].get<bool>();
+    if (j.contains("autoApply")) pfc.autoApply = JB(j["autoApply"]);
     if (j.contains("frameColliders") && j["frameColliders"].is_array()) {
         for (const auto& f : j["frameColliders"]) {
             ECS::PerFrameColliderComponent::FrameCollider fc;
@@ -1267,7 +1267,7 @@ ECS::PerFrameColliderComponent DeserializePerFrameColliderComponent(const json& 
             if (f.contains("size") && f["size"].is_array() && f["size"].size() >= 2) {
                 fc.size = Math::Vector2(f["size"][0].get<f32>(), f["size"][1].get<f32>());
             }
-            if (f.contains("enabled")) fc.enabled = f["enabled"].get<bool>();
+            if (f.contains("enabled")) fc.enabled = JB(f["enabled"]);
             pfc.frameColliders.push_back(fc);
         }
     }
@@ -1302,7 +1302,7 @@ ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json
             }
         }
     }
-    if (j.contains("isTrigger")) poly.isTrigger = j["isTrigger"].get<bool>();
+    if (j.contains("isTrigger")) poly.isTrigger = JB(j["isTrigger"]);
     if (j.contains("friction")) poly.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) poly.bounciness = j["bounciness"].get<f32>();
     if (j.contains("categoryBits")) poly.categoryBits = j["categoryBits"].get<u32>();
@@ -1324,7 +1324,7 @@ ECS::NetworkIdentityComponent DeserializeNetworkIdentityComponent(const json& j)
     ECS::NetworkIdentityComponent net;
     if (j.contains("networkId")) net.networkId = j["networkId"].get<u32>();
     if (j.contains("ownerId")) net.ownerId = j["ownerId"].get<u8>();
-    if (j.contains("syncTransform")) net.syncTransform = j["syncTransform"].get<bool>();
+    if (j.contains("syncTransform")) net.syncTransform = JB(j["syncTransform"]);
     if (j.contains("syncInterval")) net.syncInterval = j["syncInterval"].get<f32>();
     return net;
 }
@@ -1363,7 +1363,7 @@ ECS::SphereColliderComponent DeserializeSphereColliderComponent(const json& j) {
     ECS::SphereColliderComponent col;
     if (j.contains("center")) col.center = DeserializeVector3(j["center"]);
     if (j.contains("radius")) col.radius = j["radius"].get<f32>();
-    if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
+    if (j.contains("isTrigger")) col.isTrigger = JB(j["isTrigger"]);
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
     if (j.contains("categoryBits")) {
@@ -1396,7 +1396,7 @@ ECS::CapsuleColliderComponent DeserializeCapsuleColliderComponent(const json& j)
     if (j.contains("radius")) col.radius = j["radius"].get<f32>();
     if (j.contains("height")) col.height = j["height"].get<f32>();
     if (j.contains("direction")) { u8 v = j["direction"].get<u8>(); if (v <= 2) col.direction = static_cast<ECS::CapsuleColliderComponent::Direction>(v); }
-    if (j.contains("isTrigger")) col.isTrigger = j["isTrigger"].get<bool>();
+    if (j.contains("isTrigger")) col.isTrigger = JB(j["isTrigger"]);
     if (j.contains("friction")) col.friction = j["friction"].get<f32>();
     if (j.contains("bounciness")) col.bounciness = j["bounciness"].get<f32>();
     if (j.contains("categoryBits")) {
@@ -1432,7 +1432,7 @@ ECS::HealthComponent DeserializeHealthComponent(const json& j) {
     h.currentHealth = h.maxHealth;
     if (j.contains("regenRate")) h.regenRate = j["regenRate"].get<f32>();
     if (j.contains("regenDelay")) h.regenDelay = j["regenDelay"].get<f32>();
-    if (j.contains("isInvulnerable")) h.isInvulnerable = j["isInvulnerable"].get<bool>();
+    if (j.contains("isInvulnerable")) h.isInvulnerable = JB(j["isInvulnerable"]);
     if (j.contains("invulnerabilityTime")) h.invulnerabilityTime = j["invulnerabilityTime"].get<f32>();
     if (j.contains("maxShield")) h.maxShield = j["maxShield"].get<f32>();
     h.currentShield = h.maxShield;
@@ -1456,8 +1456,8 @@ ECS::DamageComponent DeserializeDamageComponent(const json& j) {
     ECS::DamageComponent d;
     if (j.contains("damage")) d.damage = j["damage"].get<f32>();
     if (j.contains("knockbackForce")) d.knockbackForce = j["knockbackForce"].get<f32>();
-    if (j.contains("destroyOnHit")) d.destroyOnHit = j["destroyOnHit"].get<bool>();
-    if (j.contains("damageOnce")) d.damageOnce = j["damageOnce"].get<bool>();
+    if (j.contains("destroyOnHit")) d.destroyOnHit = JB(j["destroyOnHit"]);
+    if (j.contains("damageOnce")) d.damageOnce = JB(j["damageOnce"]);
     if (j.contains("damageInterval")) d.damageInterval = j["damageInterval"].get<f32>();
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) d.type = static_cast<ECS::DamageComponent::DamageType>(v); }
     return d;
@@ -1483,7 +1483,7 @@ ECS::TriggerZoneComponent DeserializeTriggerZoneComponent(const json& j) {
     if (j.contains("boxSize")) tz.boxSize = DeserializeVector3(j["boxSize"]);
     if (j.contains("sphereRadius")) tz.sphereRadius = j["sphereRadius"].get<f32>();
     if (j.contains("triggerMask")) tz.triggerMask = j["triggerMask"].get<u32>();
-    if (j.contains("triggerOnce")) tz.triggerOnce = j["triggerOnce"].get<bool>();
+    if (j.contains("triggerOnce")) tz.triggerOnce = JB(j["triggerOnce"]);
     return tz;
 }
 
@@ -1504,11 +1504,11 @@ ECS::InteractableComponent DeserializeInteractableComponent(const json& j) {
     ECS::InteractableComponent ic;
     if (j.contains("promptText")) ic.promptText = j["promptText"].get<std::string>();
     if (j.contains("interactionRange")) ic.interactionRange = j["interactionRange"].get<f32>();
-    if (j.contains("requiresLookAt")) ic.requiresLookAt = j["requiresLookAt"].get<bool>();
+    if (j.contains("requiresLookAt")) ic.requiresLookAt = JB(j["requiresLookAt"]);
     if (j.contains("lookAtAngle")) ic.lookAtAngle = j["lookAtAngle"].get<f32>();
-    if (j.contains("isEnabled")) ic.isEnabled = j["isEnabled"].get<bool>();
-    if (j.contains("singleUse")) ic.singleUse = j["singleUse"].get<bool>();
-    if (j.contains("highlightOnHover")) ic.highlightOnHover = j["highlightOnHover"].get<bool>();
+    if (j.contains("isEnabled")) ic.isEnabled = JB(j["isEnabled"]);
+    if (j.contains("singleUse")) ic.singleUse = JB(j["singleUse"]);
+    if (j.contains("highlightOnHover")) ic.highlightOnHover = JB(j["highlightOnHover"]);
     if (j.contains("highlightColor")) ic.highlightColor = DeserializeVector3(j["highlightColor"]);
     return ic;
 }
@@ -1537,11 +1537,11 @@ ECS::PickupComponent DeserializePickupComponent(const json& j) {
     if (j.contains("value")) p.value = j["value"].get<f32>();
     if (j.contains("customId")) p.customId = j["customId"].get<std::string>();
     if (j.contains("pickupRange")) p.pickupRange = j["pickupRange"].get<f32>();
-    if (j.contains("destroyOnPickup")) p.destroyOnPickup = j["destroyOnPickup"].get<bool>();
-    if (j.contains("magnetToPlayer")) p.magnetToPlayer = j["magnetToPlayer"].get<bool>();
+    if (j.contains("destroyOnPickup")) p.destroyOnPickup = JB(j["destroyOnPickup"]);
+    if (j.contains("magnetToPlayer")) p.magnetToPlayer = JB(j["magnetToPlayer"]);
     if (j.contains("magnetRange")) p.magnetRange = j["magnetRange"].get<f32>();
     if (j.contains("magnetSpeed")) p.magnetSpeed = j["magnetSpeed"].get<f32>();
-    if (j.contains("canRespawn")) p.canRespawn = j["canRespawn"].get<bool>();
+    if (j.contains("canRespawn")) p.canRespawn = JB(j["canRespawn"]);
     if (j.contains("respawnTime")) p.respawnTime = j["respawnTime"].get<f32>();
     if (j.contains("bobSpeed")) p.bobSpeed = j["bobSpeed"].get<f32>();
     if (j.contains("bobHeight")) p.bobHeight = j["bobHeight"].get<f32>();
@@ -1589,8 +1589,8 @@ json SerializeBillboardComponent(const ECS::BillboardComponent& b) {
 
 ECS::BillboardComponent DeserializeBillboardComponent(const json& j) {
     ECS::BillboardComponent b;
-    if (j.contains("faceCamera")) b.faceCamera = j["faceCamera"].get<bool>();
-    if (j.contains("lockY")) b.lockY = j["lockY"].get<bool>();
+    if (j.contains("faceCamera")) b.faceCamera = JB(j["faceCamera"]);
+    if (j.contains("lockY")) b.lockY = JB(j["lockY"]);
     if (j.contains("rotationOffset")) b.rotationOffset = j["rotationOffset"].get<f32>();
     return b;
 }
@@ -1640,8 +1640,8 @@ json SerializeParticleEmitterComponent(const ECS::ParticleEmitterComponent& pe) 
 
 ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j) {
     ECS::ParticleEmitterComponent pe;
-    if (j.contains("playOnAwake")) pe.playOnAwake = j["playOnAwake"].get<bool>();
-    if (j.contains("loop")) pe.loop = j["loop"].get<bool>();
+    if (j.contains("playOnAwake")) pe.playOnAwake = JB(j["playOnAwake"]);
+    if (j.contains("loop")) pe.loop = JB(j["loop"]);
     if (j.contains("emissionRate")) pe.emissionRate = j["emissionRate"].get<f32>();
     if (j.contains("burstCount")) pe.burstCount = j["burstCount"].get<i32>();
     if (j.contains("burstInterval")) pe.burstInterval = j["burstInterval"].get<f32>();
@@ -1718,9 +1718,9 @@ ECS::Sprite2DComponent DeserializeSprite2DComponent(const json& j) {
     if (j.contains("alpha")) s.alpha = j["alpha"].get<f32>();
     if (j.contains("sortingLayer")) s.sortingLayer = j["sortingLayer"].get<i32>();
     if (j.contains("orderInLayer")) s.orderInLayer = j["orderInLayer"].get<i32>();
-    if (j.contains("flipX")) s.flipX = j["flipX"].get<bool>();
-    if (j.contains("flipY")) s.flipY = j["flipY"].get<bool>();
-    if (j.contains("visible")) s.visible = j["visible"].get<bool>();
+    if (j.contains("flipX")) s.flipX = JB(j["flipX"]);
+    if (j.contains("flipY")) s.flipY = JB(j["flipY"]);
+    if (j.contains("visible")) s.visible = JB(j["visible"]);
     return s;
 }
 
@@ -1752,8 +1752,8 @@ ECS::AnimatedSprite2DComponent DeserializeAnimatedSprite2DComponent(const json& 
             a.frames.push_back(f);
         }
     }
-    if (j.contains("playing")) a.playing = j["playing"].get<bool>();
-    if (j.contains("loop")) a.loop = j["loop"].get<bool>();
+    if (j.contains("playing")) a.playing = JB(j["playing"]);
+    if (j.contains("loop")) a.loop = JB(j["loop"]);
     if (j.contains("playbackSpeed")) a.playbackSpeed = j["playbackSpeed"].get<f32>();
     return a;
 }
@@ -1787,7 +1787,7 @@ ECS::TilemapComponent DeserializeTilemapComponent(const json& j) {
     if (j.contains("tilesetColumns")) tm.tilesetColumns = j["tilesetColumns"].get<u32>();
     if (j.contains("worldTileWidth")) tm.worldTileWidth = j["worldTileWidth"].get<f32>();
     if (j.contains("worldTileHeight")) tm.worldTileHeight = j["worldTileHeight"].get<f32>();
-    if (j.contains("hasCollision")) tm.hasCollision = j["hasCollision"].get<bool>();
+    if (j.contains("hasCollision")) tm.hasCollision = JB(j["hasCollision"]);
     if (j.contains("collisionMask")) tm.collisionMask = j["collisionMask"].get<std::vector<bool>>();
     return tm;
 }
@@ -1823,7 +1823,7 @@ json SerializeCamera2DBoundsComponent(const ECS::Camera2DBoundsComponent& cb) {
 
 ECS::Camera2DBoundsComponent DeserializeCamera2DBoundsComponent(const json& j) {
     ECS::Camera2DBoundsComponent cb;
-    if (j.contains("useBounds")) cb.useBounds = j["useBounds"].get<bool>();
+    if (j.contains("useBounds")) cb.useBounds = JB(j["useBounds"]);
     if (j.contains("minBounds")) cb.minBounds = DeserializeVector2(j["minBounds"]);
     if (j.contains("maxBounds")) cb.maxBounds = DeserializeVector2(j["maxBounds"]);
     if (j.contains("boundsPadding")) cb.boundsPadding = j["boundsPadding"].get<f32>();
@@ -1839,7 +1839,7 @@ ECS::Camera2DBoundsComponent DeserializeCamera2DBoundsComponent(const json& j) {
     if (j.contains("lookAheadSmoothing")) cb.lookAheadSmoothing = j["lookAheadSmoothing"].get<f32>();
     if (j.contains("shakeFrequency")) cb.shakeFrequency = j["shakeFrequency"].get<f32>();
     if (j.contains("multiTargetPadding")) cb.multiTargetPadding = j["multiTargetPadding"].get<f32>();
-    if (j.contains("autoZoomToFitTargets")) cb.autoZoomToFitTargets = j["autoZoomToFitTargets"].get<bool>();
+    if (j.contains("autoZoomToFitTargets")) cb.autoZoomToFitTargets = JB(j["autoZoomToFitTargets"]);
     if (j.contains("additionalTargets")) {
         for (const auto& t : j["additionalTargets"]) {
             cb.additionalTargets.push_back(static_cast<ECS::Entity>(t.get<u64>()));
@@ -1967,7 +1967,7 @@ ECS::StateMachineComponent DeserializeStateMachineComponent(const json& j) {
     // New format: params as objects
     if (j.contains("boolParams") && j["boolParams"].is_object()) {
         for (auto& [key, val] : j["boolParams"].items()) {
-            sm.boolParams[key] = val.get<bool>();
+            sm.boolParams[key] = JB(val);
         }
     }
     if (j.contains("floatParams") && j["floatParams"].is_object()) {
@@ -1999,7 +1999,7 @@ ECS::StateMachineComponent DeserializeStateMachineComponent(const json& j) {
     if (j.contains("boolParams") && j["boolParams"].is_array()) {
         for (const auto& p : j["boolParams"]) {
             if (p.is_array() && p.size() >= 2) {
-                sm.boolParams[p[0].get<std::string>()] = p[1].get<bool>();
+                sm.boolParams[p[0].get<std::string>()] = JB(p[1]);
             }
         }
     }
@@ -2048,7 +2048,7 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
     if (j.contains("speakerName")) d.speakerName = j["speakerName"].get<std::string>();
     if (j.contains("portraitPath")) d.portraitPath = j["portraitPath"].get<std::string>();
     if (j.contains("typeSound")) d.typeSound = j["typeSound"].get<std::string>();
-    if (j.contains("playTypeSound")) d.playTypeSound = j["playTypeSound"].get<bool>();
+    if (j.contains("playTypeSound")) d.playTypeSound = JB(j["playTypeSound"]);
     if (j.contains("choices") && j["choices"].is_array()) {
         for (const auto& cj : j["choices"]) {
             ECS::DialogueComponent::Choice c;
@@ -2109,7 +2109,7 @@ ECS::DialogueBoxComponent DeserializeDialogueBoxComponent(const json& j) {
     if (j.contains("textFontSize")) b.textFontSize = j["textFontSize"].get<f32>();
     if (j.contains("textColor") && j["textColor"].is_array() && j["textColor"].size() >= 3)
         b.textColor = Math::Vector3(j["textColor"][0], j["textColor"][1], j["textColor"][2]);
-    if (j.contains("showPortrait")) b.showPortrait = j["showPortrait"].get<bool>();
+    if (j.contains("showPortrait")) b.showPortrait = JB(j["showPortrait"]);
     if (j.contains("portraitSize")) b.portraitSize = j["portraitSize"].get<f32>();
     if (j.contains("choiceSpacing")) b.choiceSpacing = j["choiceSpacing"].get<f32>();
     if (j.contains("choiceColor") && j["choiceColor"].is_array() && j["choiceColor"].size() >= 3)
@@ -2160,12 +2160,12 @@ ECS::VisualScriptVariable DeserializeVisualScriptVariable(const json& j) {
     ECS::VisualScriptVariable var;
     if (j.contains("name")) var.name = j["name"].get<std::string>();
     if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v < static_cast<i32>(Editor::PinType::COUNT)) var.type = static_cast<Editor::PinType>(v); }
-    if (j.contains("exposed")) var.exposed = j["exposed"].get<bool>();
+    if (j.contains("exposed")) var.exposed = JB(j["exposed"]);
 
     if (j.contains("value")) {
         switch (var.type) {
             case Editor::PinType::Bool:
-                var.value = j["value"].get<bool>();
+                var.value = JB(j["value"]);
                 break;
             case Editor::PinType::Int:
                 var.value = j["value"].get<i32>();
@@ -2301,7 +2301,7 @@ ECS::VisualScriptComponent DeserializeVisualScriptComponent(const json& j) {
         }
     }
 
-    if (j.contains("enabled")) vs.enabled = j["enabled"].get<bool>();
+    if (j.contains("enabled")) vs.enabled = JB(j["enabled"]);
 
     return vs;
 }
@@ -2335,7 +2335,7 @@ ECS::TweenEntry DeserializeTweenEntry(const json& j) {
     if (j.contains("endValue")) te.endValue = DeserializeVector3(j["endValue"]);
     if (j.contains("duration")) te.duration = j["duration"].get<f32>();
     if (j.contains("delay")) te.delay = j["delay"].get<f32>();
-    if (j.contains("useCurrentAsStart")) te.useCurrentAsStart = j["useCurrentAsStart"].get<bool>();
+    if (j.contains("useCurrentAsStart")) te.useCurrentAsStart = JB(j["useCurrentAsStart"]);
     if (j.contains("onCompleteCallback")) te.onCompleteCallback = j["onCompleteCallback"].get<std::string>();
     return te;
 }
@@ -2353,7 +2353,7 @@ json SerializeTweenComponent(const ECS::TweenComponent& tc) {
 
 ECS::TweenComponent DeserializeTweenComponent(const json& j) {
     ECS::TweenComponent tc;
-    if (j.contains("autoPlay")) tc.autoPlay = j["autoPlay"].get<bool>();
+    if (j.contains("autoPlay")) tc.autoPlay = JB(j["autoPlay"]);
     if (j.contains("tweens") && j["tweens"].is_array()) {
         for (const auto& te : j["tweens"]) {
             tc.tweens.push_back(DeserializeTweenEntry(te));
@@ -2412,15 +2412,15 @@ ECS::AIControllerComponent DeserializeAIControllerComponent(const json& j) {
         }
     }
     if (j.contains("patrolWaitTime")) ai.patrolWaitTime = j["patrolWaitTime"].get<f32>();
-    if (j.contains("patrolLoop")) ai.patrolLoop = j["patrolLoop"].get<bool>();
-    if (j.contains("useNavmesh")) ai.useNavmesh = j["useNavmesh"].get<bool>();
+    if (j.contains("patrolLoop")) ai.patrolLoop = JB(j["patrolLoop"]);
+    if (j.contains("useNavmesh")) ai.useNavmesh = JB(j["useNavmesh"]);
     if (j.contains("repathInterval")) ai.repathInterval = j["repathInterval"].get<f32>();
     if (j.contains("arrivalRadius")) ai.arrivalRadius = j["arrivalRadius"].get<f32>();
     if (j.contains("chaseSpeed")) ai.chaseSpeed = j["chaseSpeed"].get<f32>();
     if (j.contains("fleeSpeed")) ai.fleeSpeed = j["fleeSpeed"].get<f32>();
     if (j.contains("fleeDistance")) ai.fleeDistance = j["fleeDistance"].get<f32>();
-    if (j.contains("debugDrawPath")) ai.debugDrawPath = j["debugDrawPath"].get<bool>();
-    if (j.contains("debugDrawDetection")) ai.debugDrawDetection = j["debugDrawDetection"].get<bool>();
+    if (j.contains("debugDrawPath")) ai.debugDrawPath = JB(j["debugDrawPath"]);
+    if (j.contains("debugDrawDetection")) ai.debugDrawDetection = JB(j["debugDrawDetection"]);
     return ai;
 }
 
@@ -2499,9 +2499,9 @@ ECS::BehaviorTreeComponent DeserializeBehaviorTreeComponent(const json& j) {
 
     if (j.contains("graph")) bt.graph.FromJson(j["graph"]);
     if (j.contains("rootNodeId")) bt.rootNodeId = j["rootNodeId"].get<Editor::NodeId>();
-    if (j.contains("enabled")) bt.enabled = j["enabled"].get<bool>();
+    if (j.contains("enabled")) bt.enabled = JB(j["enabled"]);
     if (j.contains("tickInterval")) bt.tickInterval = j["tickInterval"].get<f32>();
-    if (j.contains("debugEnabled")) bt.debugEnabled = j["debugEnabled"].get<bool>();
+    if (j.contains("debugEnabled")) bt.debugEnabled = JB(j["debugEnabled"]);
 
     if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
         for (const auto& m : j["nodeMeta"]) {
@@ -2572,7 +2572,7 @@ ECS::QuestFlowComponent DeserializeQuestFlowComponent(const json& j) {
     if (j.contains("questId")) qf.questId = j["questId"].get<std::string>();
     if (j.contains("questTitle")) qf.questTitle = j["questTitle"].get<std::string>();
     if (j.contains("questDescription")) qf.questDescription = j["questDescription"].get<std::string>();
-    if (j.contains("enabled")) qf.enabled = j["enabled"].get<bool>();
+    if (j.contains("enabled")) qf.enabled = JB(j["enabled"]);
 
     if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
         for (const auto& m : j["nodeMeta"]) {
@@ -2616,10 +2616,10 @@ ECS::FollowTargetComponent DeserializeFollowTargetComponent(const json& j) {
     if (j.contains("maxDistance")) ft.maxDistance = j["maxDistance"].get<f32>();
     if (j.contains("moveSpeed")) ft.moveSpeed = j["moveSpeed"].get<f32>();
     if (j.contains("smoothTime")) ft.smoothTime = j["smoothTime"].get<f32>();
-    if (j.contains("matchTargetRotation")) ft.matchTargetRotation = j["matchTargetRotation"].get<bool>();
+    if (j.contains("matchTargetRotation")) ft.matchTargetRotation = JB(j["matchTargetRotation"]);
     if (j.contains("rotationSpeed")) ft.rotationSpeed = j["rotationSpeed"].get<f32>();
     if (j.contains("offset")) ft.offset = DeserializeVector3(j["offset"]);
-    if (j.contains("useLocalOffset")) ft.useLocalOffset = j["useLocalOffset"].get<bool>();
+    if (j.contains("useLocalOffset")) ft.useLocalOffset = JB(j["useLocalOffset"]);
     return ft;
 }
 
@@ -2644,12 +2644,12 @@ ECS::LookAtTargetComponent DeserializeLookAtTargetComponent(const json& j) {
     ECS::LookAtTargetComponent la;
     if (j.contains("target")) la.target = static_cast<ECS::Entity>(j["target"].get<u64>());
     if (j.contains("worldTarget")) la.worldTarget = DeserializeVector3(j["worldTarget"]);
-    if (j.contains("useWorldTarget")) la.useWorldTarget = j["useWorldTarget"].get<bool>();
+    if (j.contains("useWorldTarget")) la.useWorldTarget = JB(j["useWorldTarget"]);
     if (j.contains("rotationSpeed")) la.rotationSpeed = j["rotationSpeed"].get<f32>();
-    if (j.contains("instant")) la.instant = j["instant"].get<bool>();
-    if (j.contains("constrainX")) la.constrainX = j["constrainX"].get<bool>();
-    if (j.contains("constrainY")) la.constrainY = j["constrainY"].get<bool>();
-    if (j.contains("constrainZ")) la.constrainZ = j["constrainZ"].get<bool>();
+    if (j.contains("instant")) la.instant = JB(j["instant"]);
+    if (j.contains("constrainX")) la.constrainX = JB(j["constrainX"]);
+    if (j.contains("constrainY")) la.constrainY = JB(j["constrainY"]);
+    if (j.contains("constrainZ")) la.constrainZ = JB(j["constrainZ"]);
     if (j.contains("minYaw")) la.minYaw = j["minYaw"].get<f32>();
     if (j.contains("maxYaw")) la.maxYaw = j["maxYaw"].get<f32>();
     if (j.contains("minPitch")) la.minPitch = j["minPitch"].get<f32>();
@@ -2696,12 +2696,12 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
     ECS::SpawnPointComponent sp;
     if (j.contains("spawnId")) sp.spawnId = j["spawnId"].get<std::string>();
     if (j.contains("prefabToSpawn")) sp.prefabToSpawn = j["prefabToSpawn"].get<std::string>();
-    if (j.contains("spawnOnStart")) sp.spawnOnStart = j["spawnOnStart"].get<bool>();
+    if (j.contains("spawnOnStart")) sp.spawnOnStart = JB(j["spawnOnStart"]);
     if (j.contains("spawnDelay")) sp.spawnDelay = j["spawnDelay"].get<f32>();
     if (j.contains("respawnTime")) sp.respawnTime = j["respawnTime"].get<f32>();
     if (j.contains("maxSpawns")) sp.maxSpawns = j["maxSpawns"].get<i32>();
     if (j.contains("spawnRadius")) sp.spawnRadius = j["spawnRadius"].get<f32>();
-    if (j.contains("randomRotation")) sp.randomRotation = j["randomRotation"].get<bool>();
+    if (j.contains("randomRotation")) sp.randomRotation = JB(j["randomRotation"]);
     return sp;
 }
 
@@ -2716,8 +2716,8 @@ json SerializeTimerComponent(const ECS::TimerComponent& t) {
 ECS::TimerComponent DeserializeTimerComponent(const json& j) {
     ECS::TimerComponent t;
     if (j.contains("duration")) t.duration = j["duration"].get<f32>();
-    if (j.contains("loop")) t.loop = j["loop"].get<bool>();
-    if (j.contains("autoStart")) t.autoStart = j["autoStart"].get<bool>();
+    if (j.contains("loop")) t.loop = JB(j["loop"]);
+    if (j.contains("autoStart")) t.autoStart = JB(j["autoStart"]);
     return t;
 }
 
@@ -2783,10 +2783,10 @@ json SerializeSaveDataComponent(const ECS::SaveDataComponent& sd) {
 
 ECS::SaveDataComponent DeserializeSaveDataComponent(const json& j) {
     ECS::SaveDataComponent sd;
-    if (j.contains("savePosition")) sd.savePosition = j["savePosition"].get<bool>();
-    if (j.contains("saveRotation")) sd.saveRotation = j["saveRotation"].get<bool>();
-    if (j.contains("saveScale")) sd.saveScale = j["saveScale"].get<bool>();
-    if (j.contains("saveEnabled")) sd.saveEnabled = j["saveEnabled"].get<bool>();
+    if (j.contains("savePosition")) sd.savePosition = JB(j["savePosition"]);
+    if (j.contains("saveRotation")) sd.saveRotation = JB(j["saveRotation"]);
+    if (j.contains("saveScale")) sd.saveScale = JB(j["saveScale"]);
+    if (j.contains("saveEnabled")) sd.saveEnabled = JB(j["saveEnabled"]);
     if (j.contains("tier")) {
         u8 t = j["tier"].get<u8>();
         if (t < static_cast<u8>(ECS::PersistenceTier::COUNT))
@@ -2819,11 +2819,11 @@ json SerializeSaveLoadMenuComponent(const ECS::SaveLoadMenuComponent& m) {
 
 ECS::SaveLoadMenuComponent DeserializeSaveLoadMenuComponent(const json& j) {
     ECS::SaveLoadMenuComponent m;
-    if (j.contains("showOnPause")) m.showOnPause = j["showOnPause"].get<bool>();
-    if (j.contains("allowManualSave")) m.allowManualSave = j["allowManualSave"].get<bool>();
-    if (j.contains("allowManualLoad")) m.allowManualLoad = j["allowManualLoad"].get<bool>();
-    if (j.contains("allowDelete")) m.allowDelete = j["allowDelete"].get<bool>();
-    if (j.contains("showAutoSaves")) m.showAutoSaves = j["showAutoSaves"].get<bool>();
+    if (j.contains("showOnPause")) m.showOnPause = JB(j["showOnPause"]);
+    if (j.contains("allowManualSave")) m.allowManualSave = JB(j["allowManualSave"]);
+    if (j.contains("allowManualLoad")) m.allowManualLoad = JB(j["allowManualLoad"]);
+    if (j.contains("allowDelete")) m.allowDelete = JB(j["allowDelete"]);
+    if (j.contains("showAutoSaves")) m.showAutoSaves = JB(j["showAutoSaves"]);
     if (j.contains("columnsPerRow")) m.columnsPerRow = j["columnsPerRow"].get<i32>();
     if (j.contains("headerText")) m.headerText = j["headerText"].get<std::string>();
     return m;
@@ -3000,8 +3000,8 @@ ECS::LODComponent DeserializeLODComponent(const json& j) {
     if (j.contains("levelCount")) lod.levelCount = j["levelCount"].get<i32>();
     if (j.contains("baseDistance")) lod.baseDistance = j["baseDistance"].get<f32>();
     if (j.contains("distanceMultiplier")) lod.distanceMultiplier = j["distanceMultiplier"].get<f32>();
-    if (j.contains("enabled")) lod.enabled = j["enabled"].get<bool>();
-    if (j.contains("autoGenerated")) lod.autoGenerated = j["autoGenerated"].get<bool>();
+    if (j.contains("enabled")) lod.enabled = JB(j["enabled"]);
+    if (j.contains("autoGenerated")) lod.autoGenerated = JB(j["autoGenerated"]);
     if (j.contains("reductionRatios") && j["reductionRatios"].is_array()) {
         for (int i = 0; i < ECS::LODComponent::MAX_LEVELS && i < static_cast<int>(j["reductionRatios"].size()); ++i) {
             lod.reductionRatios[i] = j["reductionRatios"][i].get<f32>();
@@ -3060,7 +3060,7 @@ ECS::VegetationComponent DeserializeVegetationComponent(const json& j) {
     ECS::VegetationComponent v;
     if (j.contains("swayStrength")) v.swayStrength = j["swayStrength"].get<f32>();
     if (j.contains("swayFrequency")) v.swayFrequency = j["swayFrequency"].get<f32>();
-    if (j.contains("useVertexColorWeight")) v.useVertexColorWeight = j["useVertexColorWeight"].get<bool>();
+    if (j.contains("useVertexColorWeight")) v.useVertexColorWeight = JB(j["useVertexColorWeight"]);
     return v;
 }
 
@@ -3233,8 +3233,8 @@ json SerializeHUDWidgetComponent(const ECS::HUDWidgetComponent& h) {
 ECS::HUDWidgetComponent DeserializeHUDWidgetComponent(const json& j) {
     ECS::HUDWidgetComponent h;
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) h.type = static_cast<ECS::HUDWidgetComponent::WidgetType>(v); }
-    if (j.contains("visible")) h.visible = j["visible"].get<bool>();
-    if (j.contains("screenSpace")) h.screenSpace = j["screenSpace"].get<bool>();
+    if (j.contains("visible")) h.visible = JB(j["visible"]);
+    if (j.contains("screenSpace")) h.screenSpace = JB(j["screenSpace"]);
     if (j.contains("anchorX")) h.anchorX = j["anchorX"].get<f32>();
     if (j.contains("anchorY")) h.anchorY = j["anchorY"].get<f32>();
     if (j.contains("width")) h.width = j["width"].get<f32>();
@@ -3327,8 +3327,8 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     if (j.contains("id")) e.id = j["id"].get<u32>();
     if (j.contains("name")) e.name = j["name"].get<std::string>();
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v < static_cast<u8>(GUI::UIWidgetType::Count)) e.type = static_cast<GUI::UIWidgetType>(v); }
-    if (j.contains("visible")) e.visible = j["visible"].get<bool>();
-    if (j.contains("enabled")) e.enabled = j["enabled"].get<bool>();
+    if (j.contains("visible")) e.visible = JB(j["visible"]);
+    if (j.contains("enabled")) e.enabled = JB(j["enabled"]);
     if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
     if (j.contains("childIds") && j["childIds"].is_array()) {
         for (const auto& cid : j["childIds"]) e.childIds.push_back(cid.get<u32>());
@@ -3377,7 +3377,7 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("sliderValue")) e.data.sliderValue = d["sliderValue"].get<f32>();
         if (d.contains("sliderMin")) e.data.sliderMin = d["sliderMin"].get<f32>();
         if (d.contains("sliderMax")) e.data.sliderMax = d["sliderMax"].get<f32>();
-        if (d.contains("checked")) e.data.checked = d["checked"].get<bool>();
+        if (d.contains("checked")) e.data.checked = JB(d["checked"]);
         if (d.contains("options") && d["options"].is_array()) {
             for (const auto& opt : d["options"]) e.data.options.push_back(opt.get<std::string>());
         }
@@ -3514,7 +3514,7 @@ json SerializeUICanvasComponent(const GUI::UICanvasComponent& c) {
 GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
     GUI::UICanvasComponent c;
     if (j.contains("canvasName")) c.canvasName = j["canvasName"].get<std::string>();
-    if (j.contains("visible")) c.visible = j["visible"].get<bool>();
+    if (j.contains("visible")) c.visible = JB(j["visible"]);
     if (j.contains("sortOrder")) c.sortOrder = j["sortOrder"].get<i32>();
     if (j.contains("designWidth")) c.designWidth = j["designWidth"].get<f32>();
     if (j.contains("designHeight")) c.designHeight = j["designHeight"].get<f32>();
@@ -3555,10 +3555,10 @@ json SerializeCinematicCameraComponent(const ECS::CinematicCameraComponent& c) {
 
 ECS::CinematicCameraComponent DeserializeCinematicCameraComponent(const json& j) {
     ECS::CinematicCameraComponent c;
-    if (j.contains("loop")) c.loop = j["loop"].get<bool>();
-    if (j.contains("autoPlay")) c.autoPlay = j["autoPlay"].get<bool>();
-    if (j.contains("hideHUD")) c.hideHUD = j["hideHUD"].get<bool>();
-    if (j.contains("disableInput")) c.disableInput = j["disableInput"].get<bool>();
+    if (j.contains("loop")) c.loop = JB(j["loop"]);
+    if (j.contains("autoPlay")) c.autoPlay = JB(j["autoPlay"]);
+    if (j.contains("hideHUD")) c.hideHUD = JB(j["hideHUD"]);
+    if (j.contains("disableInput")) c.disableInput = JB(j["disableInput"]);
     if (j.contains("onCompleteNotify")) c.onCompleteNotify = static_cast<ECS::Entity>(j["onCompleteNotify"].get<u64>());
     if (j.contains("onWaypointReachNotify")) c.onWaypointReachNotify = static_cast<ECS::Entity>(j["onWaypointReachNotify"].get<u64>());
     if (j.contains("waypoints") && j["waypoints"].is_array()) {
@@ -3603,7 +3603,7 @@ ECS::DistanceJointComponent DeserializeDistanceJointComponent(const json& j) {
     if (j.contains("restDistance")) c.restDistance = j["restDistance"].get<f32>();
     if (j.contains("tolerance")) c.tolerance = j["tolerance"].get<f32>();
     if (j.contains("stiffness")) c.stiffness = j["stiffness"].get<f32>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3633,13 +3633,13 @@ ECS::HingeJointComponent DeserializeHingeJointComponent(const json& j) {
     if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
     if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
     if (j.contains("axis")) c.axis = DeserializeVector3(j["axis"]);
-    if (j.contains("useLimits")) c.useLimits = j["useLimits"].get<bool>();
+    if (j.contains("useLimits")) c.useLimits = JB(j["useLimits"]);
     if (j.contains("lowerLimit")) c.lowerLimit = j["lowerLimit"].get<f32>();
     if (j.contains("upperLimit")) c.upperLimit = j["upperLimit"].get<f32>();
-    if (j.contains("useMotor")) c.useMotor = j["useMotor"].get<bool>();
+    if (j.contains("useMotor")) c.useMotor = JB(j["useMotor"]);
     if (j.contains("motorSpeed")) c.motorSpeed = j["motorSpeed"].get<f32>();
     if (j.contains("motorMaxForce")) c.motorMaxForce = j["motorMaxForce"].get<f32>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3666,12 +3666,12 @@ ECS::BallSocketJointComponent DeserializeBallSocketJointComponent(const json& j)
     if (j.contains("entityB")) c.entityB = static_cast<ECS::Entity>(j["entityB"].get<u64>());
     if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
     if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
-    if (j.contains("useConeLimit")) c.useConeLimit = j["useConeLimit"].get<bool>();
+    if (j.contains("useConeLimit")) c.useConeLimit = JB(j["useConeLimit"]);
     if (j.contains("coneAngleLimit")) c.coneAngleLimit = j["coneAngleLimit"].get<f32>();
-    if (j.contains("useTwistLimit")) c.useTwistLimit = j["useTwistLimit"].get<bool>();
+    if (j.contains("useTwistLimit")) c.useTwistLimit = JB(j["useTwistLimit"]);
     if (j.contains("twistLowerLimit")) c.twistLowerLimit = j["twistLowerLimit"].get<f32>();
     if (j.contains("twistUpperLimit")) c.twistUpperLimit = j["twistUpperLimit"].get<f32>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3703,7 +3703,7 @@ ECS::SpringJointComponent DeserializeSpringJointComponent(const json& j) {
     if (j.contains("dampingCoefficient")) c.dampingCoefficient = j["dampingCoefficient"].get<f32>();
     if (j.contains("minDistance")) c.minDistance = j["minDistance"].get<f32>();
     if (j.contains("maxDistance")) c.maxDistance = j["maxDistance"].get<f32>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3730,8 +3730,8 @@ ECS::FixedJointComponent DeserializeFixedJointComponent(const json& j) {
     if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
     if (j.contains("relativePosition")) c.relativePosition = DeserializeVector3(j["relativePosition"]);
     if (j.contains("relativeRotation")) c.relativeRotation = DeserializeVector3(j["relativeRotation"]);
-    if (j.contains("initialized")) c.initialized = j["initialized"].get<bool>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("initialized")) c.initialized = JB(j["initialized"]);
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3761,13 +3761,13 @@ ECS::SliderJointComponent DeserializeSliderJointComponent(const json& j) {
     if (j.contains("anchorA")) c.anchorA = DeserializeVector3(j["anchorA"]);
     if (j.contains("anchorB")) c.anchorB = DeserializeVector3(j["anchorB"]);
     if (j.contains("slideAxis")) c.slideAxis = DeserializeVector3(j["slideAxis"]);
-    if (j.contains("useLimits")) c.useLimits = j["useLimits"].get<bool>();
+    if (j.contains("useLimits")) c.useLimits = JB(j["useLimits"]);
     if (j.contains("lowerLimit")) c.lowerLimit = j["lowerLimit"].get<f32>();
     if (j.contains("upperLimit")) c.upperLimit = j["upperLimit"].get<f32>();
-    if (j.contains("useMotor")) c.useMotor = j["useMotor"].get<bool>();
+    if (j.contains("useMotor")) c.useMotor = JB(j["useMotor"]);
     if (j.contains("motorSpeed")) c.motorSpeed = j["motorSpeed"].get<f32>();
     if (j.contains("motorMaxForce")) c.motorMaxForce = j["motorMaxForce"].get<f32>();
-    if (j.contains("breakable")) c.breakable = j["breakable"].get<bool>();
+    if (j.contains("breakable")) c.breakable = JB(j["breakable"]);
     if (j.contains("breakForce")) c.breakForce = j["breakForce"].get<f32>();
     return c;
 }
@@ -3802,8 +3802,8 @@ json SerializeRagdollComponent(const ECS::RagdollComponent& r) {
 
 ECS::RagdollComponent DeserializeRagdollComponent(const json& j) {
     ECS::RagdollComponent r;
-    if (j.contains("enabled")) r.enabled = j["enabled"].get<bool>();
-    if (j.contains("autoDisableAfterSettle")) r.autoDisableAfterSettle = j["autoDisableAfterSettle"].get<bool>();
+    if (j.contains("enabled")) r.enabled = JB(j["enabled"]);
+    if (j.contains("autoDisableAfterSettle")) r.autoDisableAfterSettle = JB(j["autoDisableAfterSettle"]);
     if (j.contains("settleThreshold")) r.settleThreshold = j["settleThreshold"].get<f32>();
     if (j.contains("settleTime")) r.settleTime = j["settleTime"].get<f32>();
     if (j.contains("blendWeight")) r.blendWeight = j["blendWeight"].get<f32>();
@@ -3917,7 +3917,7 @@ ECS::ScriptComponent DeserializeScriptComponent(const json& j) {
             ECS::ScriptAttachment script;
             if (sj.contains("path")) script.scriptPath = sj["path"].get<std::string>();
             if (sj.contains("class")) script.className = sj["class"].get<std::string>();
-            if (sj.contains("enabled")) script.enabled = sj["enabled"].get<bool>();
+            if (sj.contains("enabled")) script.enabled = JB(sj["enabled"]);
             if (sj.contains("properties") && sj["properties"].is_object()) {
                 for (auto it = sj["properties"].begin(); it != sj["properties"].end(); ++it) {
                     ECS::ScriptProperty prop;
@@ -3965,9 +3965,9 @@ json SerializeLockComponent(const ECS::LockComponent& lk) {
 ECS::LockComponent DeserializeLockComponent(const json& j) {
     ECS::LockComponent lk;
     if (j.contains("requiredKey")) lk.requiredKey = j["requiredKey"].get<std::string>();
-    if (j.contains("isLocked")) lk.isLocked = j["isLocked"].get<bool>();
-    if (j.contains("consumeKey")) lk.consumeKey = j["consumeKey"].get<bool>();
-    if (j.contains("autoOpen")) lk.autoOpen = j["autoOpen"].get<bool>();
+    if (j.contains("isLocked")) lk.isLocked = JB(j["isLocked"]);
+    if (j.contains("consumeKey")) lk.consumeKey = JB(j["consumeKey"]);
+    if (j.contains("autoOpen")) lk.autoOpen = JB(j["autoOpen"]);
     if (j.contains("interactRange")) lk.interactRange = j["interactRange"].get<f32>();
     if (j.contains("openMode")) { i32 v = j["openMode"].get<i32>(); if (v >= 0 && v <= 2) lk.openMode = static_cast<ECS::LockComponent::OpenMode>(v); }
     if (j.contains("openDuration")) lk.openDuration = j["openDuration"].get<f32>();
@@ -4001,13 +4001,13 @@ ECS::PushableComponent DeserializePushableComponent(const json& j) {
     if (j.contains("mass")) pb.mass = j["mass"].get<f32>();
     if (j.contains("pushSpeed")) pb.pushSpeed = j["pushSpeed"].get<f32>();
     if (j.contains("friction")) pb.friction = j["friction"].get<f32>();
-    if (j.contains("gridSnap")) pb.gridSnap = j["gridSnap"].get<bool>();
+    if (j.contains("gridSnap")) pb.gridSnap = JB(j["gridSnap"]);
     if (j.contains("gridCellSize")) pb.gridCellSize = j["gridCellSize"].get<f32>();
     if (j.contains("gridMoveSpeed")) pb.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();
-    if (j.contains("pushableX")) pb.pushableX = j["pushableX"].get<bool>();
-    if (j.contains("pushableY")) pb.pushableY = j["pushableY"].get<bool>();
-    if (j.contains("pushableZ")) pb.pushableZ = j["pushableZ"].get<bool>();
-    if (j.contains("canBePushedOff")) pb.canBePushedOff = j["canBePushedOff"].get<bool>();
+    if (j.contains("pushableX")) pb.pushableX = JB(j["pushableX"]);
+    if (j.contains("pushableY")) pb.pushableY = JB(j["pushableY"]);
+    if (j.contains("pushableZ")) pb.pushableZ = JB(j["pushableZ"]);
+    if (j.contains("canBePushedOff")) pb.canBePushedOff = JB(j["canBePushedOff"]);
     return pb;
 }
 
@@ -4036,7 +4036,7 @@ json SerializeSwitchComponent(const ECS::SwitchComponent& sw) {
 ECS::SwitchComponent DeserializeSwitchComponent(const json& j) {
     ECS::SwitchComponent sw;
     if (j.contains("type")) { i32 v = j["type"].get<i32>(); if (v >= 0 && v <= 4) sw.type = static_cast<ECS::SwitchComponent::SwitchType>(v); }
-    if (j.contains("requireSpecificTag")) sw.requireSpecificTag = j["requireSpecificTag"].get<bool>();
+    if (j.contains("requireSpecificTag")) sw.requireSpecificTag = JB(j["requireSpecificTag"]);
     if (j.contains("requiredTag")) sw.requiredTag = j["requiredTag"].get<std::string>();
     if (j.contains("activationWeight")) sw.activationWeight = j["activationWeight"].get<f32>();
     if (j.contains("activeDuration")) sw.activeDuration = j["activeDuration"].get<f32>();
@@ -4051,7 +4051,7 @@ ECS::SwitchComponent DeserializeSwitchComponent(const json& j) {
     if (j.contains("onPosition")) sw.onPosition = DeserializeVector3(j["onPosition"]);
     if (j.contains("transitionSpeed")) sw.transitionSpeed = j["transitionSpeed"].get<f32>();
     if (j.contains("promptText")) sw.promptText = j["promptText"].get<std::string>();
-    if (j.contains("showPrompt")) sw.showPrompt = j["showPrompt"].get<bool>();
+    if (j.contains("showPrompt")) sw.showPrompt = JB(j["showPrompt"]);
     return sw;
 }
 
@@ -4093,9 +4093,9 @@ ECS::ConveyorComponent DeserializeConveyorComponent(const json& j) {
     ECS::ConveyorComponent cv;
     if (j.contains("direction")) cv.direction = DeserializeVector3(j["direction"]);
     if (j.contains("speed")) cv.speed = j["speed"].get<f32>();
-    if (j.contains("affectsPlayer")) cv.affectsPlayer = j["affectsPlayer"].get<bool>();
-    if (j.contains("affectsPushables")) cv.affectsPushables = j["affectsPushables"].get<bool>();
-    if (j.contains("isActive")) cv.isActive = j["isActive"].get<bool>();
+    if (j.contains("affectsPlayer")) cv.affectsPlayer = JB(j["affectsPlayer"]);
+    if (j.contains("affectsPushables")) cv.affectsPushables = JB(j["affectsPushables"]);
+    if (j.contains("isActive")) cv.isActive = JB(j["isActive"]);
     return cv;
 }
 
@@ -4116,7 +4116,7 @@ ECS::TeleporterComponent DeserializeTeleporterComponent(const json& j) {
     if (j.contains("targetRotation")) tp.targetRotation = DeserializeVector3(j["targetRotation"]);
     if (j.contains("linkedTeleporter")) tp.linkedTeleporter = static_cast<ECS::Entity>(j["linkedTeleporter"].get<u64>());
     if (j.contains("cooldown")) tp.cooldown = j["cooldown"].get<f32>();
-    if (j.contains("preserveVelocity")) tp.preserveVelocity = j["preserveVelocity"].get<bool>();
+    if (j.contains("preserveVelocity")) tp.preserveVelocity = JB(j["preserveVelocity"]);
     if (j.contains("requiredTag")) tp.requiredTag = j["requiredTag"].get<std::string>();
     return tp;
 }
@@ -4137,11 +4137,11 @@ json SerializeDestructibleComponent(const ECS::DestructibleComponent& dc) {
 ECS::DestructibleComponent DeserializeDestructibleComponent(const json& j) {
     ECS::DestructibleComponent dc;
     if (j.contains("health")) dc.health = j["health"].get<f32>();
-    if (j.contains("destroyOnHit")) dc.destroyOnHit = j["destroyOnHit"].get<bool>();
-    if (j.contains("spawnPickup")) dc.spawnPickup = j["spawnPickup"].get<bool>();
+    if (j.contains("destroyOnHit")) dc.destroyOnHit = JB(j["destroyOnHit"]);
+    if (j.contains("spawnPickup")) dc.spawnPickup = JB(j["spawnPickup"]);
     if (j.contains("pickupId")) dc.pickupId = j["pickupId"].get<std::string>();
     if (j.contains("pickupCount")) dc.pickupCount = j["pickupCount"].get<i32>();
-    if (j.contains("canRespawn")) dc.canRespawn = j["canRespawn"].get<bool>();
+    if (j.contains("canRespawn")) dc.canRespawn = JB(j["canRespawn"]);
     if (j.contains("respawnTime")) dc.respawnTime = j["respawnTime"].get<f32>();
     if (j.contains("shakeOnHit")) dc.shakeOnHit = j["shakeOnHit"].get<f32>();
     return dc;
@@ -4176,9 +4176,9 @@ ECS::CurlNoiseFieldComponent DeserializeCurlNoiseFieldComponent(const json& j) {
     if (j.contains("timeScale")) cn.timeScale = j["timeScale"].get<f32>();
     if (j.contains("halfExtents")) cn.halfExtents = DeserializeVector3(j["halfExtents"]);
     if (j.contains("falloff")) { i32 v = j["falloff"].get<i32>(); if (v >= 0 && v <= 2) cn.falloff = static_cast<ECS::CurlNoiseFieldComponent::Falloff>(v); }
-    if (j.contains("affectParticles")) cn.affectParticles = j["affectParticles"].get<bool>();
-    if (j.contains("affectMeshVertices")) cn.affectMeshVertices = j["affectMeshVertices"].get<bool>();
-    if (j.contains("showDebugArrows")) cn.showDebugArrows = j["showDebugArrows"].get<bool>();
+    if (j.contains("affectParticles")) cn.affectParticles = JB(j["affectParticles"]);
+    if (j.contains("affectMeshVertices")) cn.affectMeshVertices = JB(j["affectMeshVertices"]);
+    if (j.contains("showDebugArrows")) cn.showDebugArrows = JB(j["showDebugArrows"]);
     if (j.contains("debugArrowResolution")) cn.debugArrowResolution = j["debugArrowResolution"].get<u32>();
     return cn;
 }
@@ -4206,13 +4206,13 @@ ECS::FractureConfigComponent DeserializeFractureConfigComponent(const json& j) {
     ECS::FractureConfigComponent fc;
     if (j.contains("fragmentCount")) fc.fragmentCount = j["fragmentCount"].get<u32>();
     if (j.contains("explosionForce")) fc.explosionForce = j["explosionForce"].get<f32>();
-    if (j.contains("persistentFragments")) fc.persistentFragments = j["persistentFragments"].get<bool>();
-    if (j.contains("allowRefracture")) fc.allowRefracture = j["allowRefracture"].get<bool>();
+    if (j.contains("persistentFragments")) fc.persistentFragments = JB(j["persistentFragments"]);
+    if (j.contains("allowRefracture")) fc.allowRefracture = JB(j["allowRefracture"]);
     if (j.contains("maxRefractureDepth")) fc.maxRefractureDepth = j["maxRefractureDepth"].get<u32>();
     if (j.contains("maxFragmentEntities")) fc.maxFragmentEntities = j["maxFragmentEntities"].get<u32>();
-    if (j.contains("autoCleanup")) fc.autoCleanup = j["autoCleanup"].get<bool>();
+    if (j.contains("autoCleanup")) fc.autoCleanup = JB(j["autoCleanup"]);
     if (j.contains("cleanupDelay")) fc.cleanupDelay = j["cleanupDelay"].get<f32>();
-    if (j.contains("preFracture")) fc.preFracture = j["preFracture"].get<bool>();
+    if (j.contains("preFracture")) fc.preFracture = JB(j["preFracture"]);
     if (j.contains("jointBreakForce")) fc.jointBreakForce = j["jointBreakForce"].get<f32>();
     if (j.contains("fragmentDensity")) fc.fragmentDensity = j["fragmentDensity"].get<f32>();
     if (j.contains("fragmentFriction")) fc.fragmentFriction = j["fragmentFriction"].get<f32>();
@@ -4245,7 +4245,7 @@ ECS::MovingPlatformComponent DeserializeMovingPlatformComponent(const json& j) {
     if (j.contains("speed")) mp.speed = j["speed"].get<f32>();
     if (j.contains("waitTime")) mp.waitTime = j["waitTime"].get<f32>();
     if (j.contains("mode")) { i32 v = j["mode"].get<i32>(); if (v >= 0 && v <= 3) mp.mode = static_cast<ECS::MovingPlatformComponent::PlatformMode>(v); }
-    if (j.contains("carryEntities")) mp.carryEntities = j["carryEntities"].get<bool>();
+    if (j.contains("carryEntities")) mp.carryEntities = JB(j["carryEntities"]);
     return mp;
 }
 
@@ -4528,7 +4528,7 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
                 if (tj.contains("fromState")) trans.fromState = tj["fromState"].get<std::string>();
                 if (tj.contains("toState")) trans.toState = tj["toState"].get<std::string>();
                 if (tj.contains("blendTime")) trans.blendTime = tj["blendTime"].get<f32>();
-                if (tj.contains("hasExitTime")) trans.hasExitTime = tj["hasExitTime"].get<bool>();
+                if (tj.contains("hasExitTime")) trans.hasExitTime = JB(tj["hasExitTime"]);
                 if (tj.contains("exitTime")) trans.exitTime = tj["exitTime"].get<f32>();
 
                 if (tj.contains("conditions") && tj["conditions"].is_array()) {
@@ -4541,7 +4541,7 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
                         switch (cond.type) {
                             case Animation::TransitionCondition::Type::Bool:
                             case Animation::TransitionCondition::Type::Trigger:
-                                if (cj.contains("boolValue")) cond.value.boolValue = cj["boolValue"].get<bool>();
+                                if (cj.contains("boolValue")) cond.value.boolValue = JB(cj["boolValue"]);
                                 break;
                             case Animation::TransitionCondition::Type::Float:
                                 if (cj.contains("floatValue")) cond.value.floatValue = cj["floatValue"].get<f32>();
@@ -4561,7 +4561,7 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
         // Parameters
         if (smJson.contains("boolParams") && smJson["boolParams"].is_object()) {
             for (auto& [k, v] : smJson["boolParams"].items())
-                animComp.stateMachine.SetBool(k, v.get<bool>());
+                animComp.stateMachine.SetBool(k, JB(v));
         }
         if (smJson.contains("floatParams") && smJson["floatParams"].is_object()) {
             for (auto& [k, v] : smJson["floatParams"].items())
@@ -5414,7 +5414,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                     auto& arr = ikJson["targetPos"];
                     ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
                 }
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
                 if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
@@ -6201,13 +6201,26 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
         return result;
     }
 
+    // Parse JSON FIRST â€” only clear the world after we know the JSON is valid
+    json sceneJson;
+    try {
+        sceneJson = json::parse(jsonString);
+    } catch (const std::exception& e) {
+        result.error = std::string("JSON parse error: ") + e.what();
+        return result;  // Return without clearing â€” scene is untouched
+    }
+
+    if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
+        result.error = "Invalid scene format: missing entities array";
+        return result;  // Return without clearing â€” scene is untouched
+    }
+
+    // JSON is structurally valid â€” safe to clear the world now
     if (clearExisting) {
         m_World->Clear();
     }
 
     try {
-        json sceneJson = json::parse(jsonString);
-
         // Deserialize skybox configuration (string-based load)
         if (sceneJson.contains("skybox")) {
             const auto& sj = sceneJson["skybox"];
@@ -6243,12 +6256,6 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             m_ContentFlags = DeserializeContentFlags(sceneJson["accessibility"]);
         } else {
             m_ContentFlags = Accessibility::SceneContentFlags{};
-        }
-
-        // Deserialize entities
-        if (!sceneJson.contains("entities") || !sceneJson["entities"].is_array()) {
-            result.error = "Invalid scene format: missing entities array";
-            return result;
         }
 
         // Map old entity IDs -> new entity IDs for remapping references
@@ -6464,7 +6471,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                     auto& arr = ikJson["targetPos"];
                     ik.targetWorldPos = Math::Vector3(arr[0].get<f32>(), arr[1].get<f32>(), arr[2].get<f32>());
                 }
-                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+                if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
                 if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
                 if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
                 if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
@@ -7140,7 +7147,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         // Script
         if (entityJson.contains("scriptComponent"))
             world->AddComponent<ECS::ScriptComponent>(entity, DeserializeScriptComponent(entityJson["scriptComponent"]));
-        // Hierarchy (parent reference — stored as entity ID, may need remapping by caller)
+        // Hierarchy (parent reference â€” stored as entity ID, may need remapping by caller)
         if (entityJson.contains("parent")) {
             auto& pc = world->AddComponent<ECS::ParentComponent>(entity);
             pc.parent = static_cast<ECS::Entity>(entityJson["parent"].get<u64>());
@@ -7160,7 +7167,7 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             if (ikJson.contains("neckBone")) ik.neckBoneName = ikJson["neckBone"].get<std::string>();
             if (ikJson.contains("targetEntity")) ik.targetEntity = static_cast<ECS::Entity>(ikJson["targetEntity"].get<u64>());
             if (ikJson.contains("targetPos") && ikJson["targetPos"].is_array() && ikJson["targetPos"].size() >= 3) { auto& a = ikJson["targetPos"]; ik.targetWorldPos = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
-            if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = ikJson["useEntityTarget"].get<bool>();
+            if (ikJson.contains("useEntityTarget")) ik.useEntityTarget = JB(ikJson["useEntityTarget"]);
             if (ikJson.contains("maxRotation")) ik.maxRotation = ikJson["maxRotation"].get<f32>();
             if (ikJson.contains("smoothSpeed")) ik.smoothSpeed = ikJson["smoothSpeed"].get<f32>();
             if (ikJson.contains("lookWeight")) ik.lookWeight = ikJson["lookWeight"].get<f32>();
@@ -7322,7 +7329,7 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
 
     try {
         json j;
-        // Dispatch by component key — must match the keys used in scene JSON
+        // Dispatch by component key â€” must match the keys used in scene JSON
         if (key == "name" && world->HasComponent<ECS::NameComponent>(entity))
             j = SerializeNameComponent(*world->GetComponent<ECS::NameComponent>(entity));
         else if (key == "transform" && world->HasComponent<ECS::TransformComponent>(entity))
@@ -7537,7 +7544,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
     try {
         json j = json::parse(jsonStr);
 
-        // Dispatch by component key — must match the keys used in scene JSON
+        // Dispatch by component key â€” must match the keys used in scene JSON
         if (key == "name") { world->AddComponent<ECS::NameComponent>(entity, DeserializeNameComponent(j)); return true; }
         if (key == "transform") { world->AddComponent<ECS::TransformComponent>(entity, DeserializeTransformComponent(j)); return true; }
         if (key == "material") { world->AddComponent<ECS::MaterialComponent>(entity, DeserializeMaterialComponent(j)); return true; }
