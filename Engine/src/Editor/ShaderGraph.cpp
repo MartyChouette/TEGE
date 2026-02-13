@@ -2,6 +2,11 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cstring>
+#include <queue>
+#include <unordered_map>
+#include <fstream>
+#include <sstream>
+#include <nlohmann/json.hpp>
 
 namespace Enjin {
 namespace Editor {
@@ -237,8 +242,12 @@ void ShaderGraphEditor::Render() {
                 m_Graph->nextLinkId = 1;
                 m_SelectedNodeId = 0;
             }
-            ImGui::MenuItem("Save", "Ctrl+S");  // TODO: implement
-            ImGui::MenuItem("Load");             // TODO: implement
+            if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                Save("shader_graph.enjshader");
+            }
+            if (ImGui::MenuItem("Load")) {
+                Load("shader_graph.enjshader");
+            }
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit")) {
@@ -261,9 +270,47 @@ void ShaderGraphEditor::Render() {
     }
     ImGui::SameLine();
     if (ImGui::Button("Generate GLSL")) {
-        GenerateGLSL();
+        m_LastResult = GenerateGLSL();
+        m_ShowCodeWindow = true;
+    }
+    if (m_LastResult.success) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.2f, 0.8f, 0.2f, 1.0f), "OK");
+    } else if (!m_LastResult.errors.empty()) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.8f, 0.2f, 0.2f, 1.0f), "%zu error(s)",
+                           m_LastResult.errors.size());
     }
     ImGui::Separator();
+
+    // Code output window
+    if (m_ShowCodeWindow) {
+        ImGui::SetNextWindowSize(ImVec2(600, 500), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Generated GLSL", &m_ShowCodeWindow)) {
+            if (!m_LastResult.errors.empty()) {
+                ImGui::TextColored(ImVec4(1, 0.3f, 0.3f, 1), "Errors:");
+                for (const auto& err : m_LastResult.errors) {
+                    ImGui::BulletText("%s", err.c_str());
+                }
+                ImGui::Separator();
+            }
+            if (!m_LastResult.vertexCode.empty()) {
+                if (ImGui::CollapsingHeader("Vertex Shader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::InputTextMultiline("##vert", const_cast<char*>(m_LastResult.vertexCode.c_str()),
+                        m_LastResult.vertexCode.size() + 1, ImVec2(-1, 200),
+                        ImGuiInputTextFlags_ReadOnly);
+                }
+            }
+            if (!m_LastResult.fragmentCode.empty()) {
+                if (ImGui::CollapsingHeader("Fragment Shader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::InputTextMultiline("##frag", const_cast<char*>(m_LastResult.fragmentCode.c_str()),
+                        m_LastResult.fragmentCode.size() + 1, ImVec2(-1, 200),
+                        ImGuiInputTextFlags_ReadOnly);
+                }
+            }
+        }
+        ImGui::End();
+    }
 
     // Layout: canvas on left, inspector on right
     f32 inspectorWidth = 250.0f;
@@ -724,17 +771,509 @@ void ShaderGraphEditor::DrawContextMenu() {
 }
 
 // ============================================================================
-// Generate GLSL
+// GLSL Code Generation — topological sort + per-node emission
 // ============================================================================
+
+// Helper: get the GLSL variable name for a node output
+static std::string NodeVar(u32 nodeId, u32 pinIdx = 0) {
+    return "n" + std::to_string(nodeId) + "_" + std::to_string(pinIdx);
+}
+
+// Helper: get the GLSL type string for a node's output
+static const char* NodeOutType(ShaderNodeType type) {
+    switch (type) {
+        case ShaderNodeType::FloatConstant:
+        case ShaderNodeType::FloatParameter:
+        case ShaderNodeType::Time:
+        case ShaderNodeType::DotProduct:
+        case ShaderNodeType::Abs:
+        case ShaderNodeType::Negate:
+        case ShaderNodeType::Sin:
+        case ShaderNodeType::Cos:
+        case ShaderNodeType::Pow:
+        case ShaderNodeType::Sqrt:
+        case ShaderNodeType::Floor:
+        case ShaderNodeType::Ceil:
+        case ShaderNodeType::Fract:
+        case ShaderNodeType::Step:
+        case ShaderNodeType::SmoothStep:
+        case ShaderNodeType::Saturate:
+        case ShaderNodeType::Min:
+        case ShaderNodeType::Max:
+        case ShaderNodeType::Brightness:
+        case ShaderNodeType::Contrast:
+        case ShaderNodeType::SplitVec2:
+        case ShaderNodeType::SplitVec3:
+        case ShaderNodeType::SplitVec4:
+            return "float";
+        case ShaderNodeType::Vec2Constant:
+        case ShaderNodeType::VertexUV:
+        case ShaderNodeType::CombineVec2:
+        case ShaderNodeType::UVTransform:
+        case ShaderNodeType::Flipbook:
+            return "vec2";
+        case ShaderNodeType::Vec3Constant:
+        case ShaderNodeType::VertexPosition:
+        case ShaderNodeType::VertexNormal:
+        case ShaderNodeType::CameraPosition:
+        case ShaderNodeType::ViewDirection:
+        case ShaderNodeType::CombineVec3:
+        case ShaderNodeType::Normalize:
+        case ShaderNodeType::CrossProduct:
+        case ShaderNodeType::Reflect:
+        case ShaderNodeType::HSVToRGB:
+        case ShaderNodeType::RGBToHSV:
+            return "vec3";
+        case ShaderNodeType::Vec4Constant:
+        case ShaderNodeType::ColorConstant:
+        case ShaderNodeType::VertexColor:
+        case ShaderNodeType::CombineVec4:
+        case ShaderNodeType::SampleTexture2D:
+        case ShaderNodeType::SampleCubemap:
+        case ShaderNodeType::Blend:
+        case ShaderNodeType::Parallax:
+            return "vec4";
+        // Arithmetic nodes: type depends on inputs (default float)
+        case ShaderNodeType::Add:
+        case ShaderNodeType::Subtract:
+        case ShaderNodeType::Multiply:
+        case ShaderNodeType::Divide:
+        case ShaderNodeType::Lerp:
+        case ShaderNodeType::Clamp:
+            return "float";  // conservative default
+        default:
+            return "float";
+    }
+}
+
+// Get the input variable name feeding into a node's pin
+static std::string GetInputExpr(const ShaderGraphData& graph, u32 nodeId, u32 pinIdx,
+                                 const char* defaultVal = "0.0") {
+    for (const auto& link : graph.links) {
+        if (link.toNode == nodeId && link.toPin == pinIdx) {
+            return NodeVar(link.fromNode, link.fromPin);
+        }
+    }
+    return defaultVal;
+}
 
 ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
     ShaderCodeResult result;
+    if (!m_Graph || m_Graph->nodes.empty()) {
+        result.errors.push_back("No graph data or empty graph");
+        return result;
+    }
 
-    // TODO: Implement full graph traversal and GLSL code generation.
-    // For now, return passthrough shader templates.
+    const auto& graph = *m_Graph;
 
+    // Build node lookup
+    std::unordered_map<u32, const ShaderGraphNode*> nodeMap;
+    for (const auto& node : graph.nodes) {
+        nodeMap[node.id] = &node;
+    }
+
+    // --- Topological sort (Kahn's algorithm) ---
+    std::unordered_map<u32, u32> inDegree;
+    std::unordered_map<u32, std::vector<u32>> adj; // from -> [to]
+    for (const auto& node : graph.nodes) {
+        inDegree[node.id] = 0;
+    }
+    for (const auto& link : graph.links) {
+        adj[link.fromNode].push_back(link.toNode);
+        inDegree[link.toNode]++;
+    }
+
+    std::vector<u32> sorted;
+    std::queue<u32> ready;
+    for (const auto& node : graph.nodes) {
+        if (inDegree[node.id] == 0) ready.push(node.id);
+    }
+    while (!ready.empty()) {
+        u32 cur = ready.front();
+        ready.pop();
+        sorted.push_back(cur);
+        for (u32 next : adj[cur]) {
+            if (--inDegree[next] == 0) ready.push(next);
+        }
+    }
+    if (sorted.size() != graph.nodes.size()) {
+        result.errors.push_back("Cycle detected in shader graph");
+        return result;
+    }
+
+    // --- Collect texture samplers ---
+    u32 samplerBinding = 3; // Start after existing bindings 0-2
+    std::unordered_map<u32, u32> nodeSamplerBinding;
+    for (u32 nid : sorted) {
+        auto* node = nodeMap[nid];
+        if (!node) continue;
+        if (node->type == ShaderNodeType::SampleTexture2D ||
+            node->type == ShaderNodeType::SampleCubemap ||
+            node->type == ShaderNodeType::TextureParameter) {
+            nodeSamplerBinding[nid] = samplerBinding++;
+        }
+    }
+
+    // --- Generate fragment shader body ---
+    std::string body;
+    for (u32 nid : sorted) {
+        auto* node = nodeMap[nid];
+        if (!node) continue;
+
+        std::string var = NodeVar(nid);
+        const char* outType = NodeOutType(node->type);
+
+        switch (node->type) {
+            // --- Inputs ---
+            case ShaderNodeType::VertexPosition:
+                body += "    vec3 " + var + " = fragWorldPos;\n";
+                break;
+            case ShaderNodeType::VertexNormal:
+                body += "    vec3 " + var + " = fragNormal;\n";
+                break;
+            case ShaderNodeType::VertexUV:
+                body += "    vec2 " + var + " = fragUV;\n";
+                break;
+            case ShaderNodeType::VertexColor:
+                body += "    vec4 " + var + " = fragColor;\n";
+                break;
+            case ShaderNodeType::Time:
+                body += "    float " + var + " = pc.emissiveStrength;\n"; // Reuse push constant
+                break;
+            case ShaderNodeType::CameraPosition:
+                body += "    vec3 " + var + " = lighting.cameraPos;\n";
+                break;
+            case ShaderNodeType::ViewDirection:
+                body += "    vec3 " + var + " = normalize(lighting.cameraPos - fragWorldPos);\n";
+                break;
+            case ShaderNodeType::FloatConstant:
+                body += "    float " + var + " = " + std::to_string(node->floatValue) + ";\n";
+                break;
+            case ShaderNodeType::Vec2Constant:
+                body += "    vec2 " + var + " = vec2(" +
+                    std::to_string(node->vec2Value.x) + ", " +
+                    std::to_string(node->vec2Value.y) + ");\n";
+                break;
+            case ShaderNodeType::Vec3Constant:
+                body += "    vec3 " + var + " = vec3(" +
+                    std::to_string(node->vec3Value.x) + ", " +
+                    std::to_string(node->vec3Value.y) + ", " +
+                    std::to_string(node->vec3Value.z) + ");\n";
+                break;
+            case ShaderNodeType::Vec4Constant:
+                body += "    vec4 " + var + " = vec4(" +
+                    std::to_string(node->vec4Value.x) + ", " +
+                    std::to_string(node->vec4Value.y) + ", " +
+                    std::to_string(node->vec4Value.z) + ", " +
+                    std::to_string(node->vec4Value.w) + ");\n";
+                break;
+            case ShaderNodeType::ColorConstant:
+                body += "    vec4 " + var + " = vec4(" +
+                    std::to_string(node->vec4Value.x) + ", " +
+                    std::to_string(node->vec4Value.y) + ", " +
+                    std::to_string(node->vec4Value.z) + ", " +
+                    std::to_string(node->vec4Value.w) + ");\n";
+                break;
+            case ShaderNodeType::FloatParameter:
+                body += "    float " + var + " = " + std::to_string(node->floatValue) + "; // param: " + node->parameterName + "\n";
+                break;
+            case ShaderNodeType::TextureParameter:
+                // Handled as sampler below
+                break;
+
+            // --- Math ---
+            case ShaderNodeType::Add: {
+                auto a = GetInputExpr(graph, nid, 0, "0.0");
+                auto b = GetInputExpr(graph, nid, 1, "0.0");
+                body += "    " + std::string(outType) + " " + var + " = " + a + " + " + b + ";\n";
+                break;
+            }
+            case ShaderNodeType::Subtract: {
+                auto a = GetInputExpr(graph, nid, 0, "0.0");
+                auto b = GetInputExpr(graph, nid, 1, "0.0");
+                body += "    " + std::string(outType) + " " + var + " = " + a + " - " + b + ";\n";
+                break;
+            }
+            case ShaderNodeType::Multiply: {
+                auto a = GetInputExpr(graph, nid, 0, "1.0");
+                auto b = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    " + std::string(outType) + " " + var + " = " + a + " * " + b + ";\n";
+                break;
+            }
+            case ShaderNodeType::Divide: {
+                auto a = GetInputExpr(graph, nid, 0, "1.0");
+                auto b = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    " + std::string(outType) + " " + var + " = " + a + " / max(" + b + ", 0.0001);\n";
+                break;
+            }
+            case ShaderNodeType::Lerp: {
+                auto a = GetInputExpr(graph, nid, 0, "0.0");
+                auto b = GetInputExpr(graph, nid, 1, "1.0");
+                auto t = GetInputExpr(graph, nid, 2, "0.5");
+                body += "    " + std::string(outType) + " " + var + " = mix(" + a + ", " + b + ", " + t + ");\n";
+                break;
+            }
+            case ShaderNodeType::Clamp: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                auto lo = GetInputExpr(graph, nid, 1, "0.0");
+                auto hi = GetInputExpr(graph, nid, 2, "1.0");
+                body += "    " + std::string(outType) + " " + var + " = clamp(" + x + ", " + lo + ", " + hi + ");\n";
+                break;
+            }
+            case ShaderNodeType::Saturate: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = clamp(" + x + ", 0.0, 1.0);\n";
+                break;
+            }
+            case ShaderNodeType::Abs: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = abs(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Negate: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = -(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Sin: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = sin(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Cos: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = cos(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Pow: {
+                auto a = GetInputExpr(graph, nid, 0, "1.0");
+                auto b = GetInputExpr(graph, nid, 1, "2.0");
+                body += "    float " + var + " = pow(max(" + a + ", 0.0), " + b + ");\n";
+                break;
+            }
+            case ShaderNodeType::Sqrt: {
+                auto x = GetInputExpr(graph, nid, 0, "1.0");
+                body += "    float " + var + " = sqrt(max(" + x + ", 0.0));\n";
+                break;
+            }
+            case ShaderNodeType::Floor: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = floor(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Ceil: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = ceil(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Fract: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    float " + var + " = fract(" + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::Min: {
+                auto a = GetInputExpr(graph, nid, 0, "0.0");
+                auto b = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    float " + var + " = min(" + a + ", " + b + ");\n";
+                break;
+            }
+            case ShaderNodeType::Max: {
+                auto a = GetInputExpr(graph, nid, 0, "0.0");
+                auto b = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    float " + var + " = max(" + a + ", " + b + ");\n";
+                break;
+            }
+            case ShaderNodeType::Step: {
+                auto edge = GetInputExpr(graph, nid, 0, "0.5");
+                auto x = GetInputExpr(graph, nid, 1, "0.0");
+                body += "    float " + var + " = step(" + edge + ", " + x + ");\n";
+                break;
+            }
+            case ShaderNodeType::SmoothStep: {
+                auto lo = GetInputExpr(graph, nid, 0, "0.0");
+                auto hi = GetInputExpr(graph, nid, 1, "1.0");
+                auto x = GetInputExpr(graph, nid, 2, "0.5");
+                body += "    float " + var + " = smoothstep(" + lo + ", " + hi + ", " + x + ");\n";
+                break;
+            }
+
+            // --- Texture ---
+            case ShaderNodeType::SampleTexture2D: {
+                auto uv = GetInputExpr(graph, nid, 0, "fragUV");
+                auto it = nodeSamplerBinding.find(nid);
+                u32 bind = it != nodeSamplerBinding.end() ? it->second : 3;
+                body += "    vec4 " + var + " = texture(uSampler" + std::to_string(bind) + ", " + uv + ");\n";
+                break;
+            }
+            case ShaderNodeType::SampleCubemap: {
+                auto dir = GetInputExpr(graph, nid, 0, "fragNormal");
+                auto it = nodeSamplerBinding.find(nid);
+                u32 bind = it != nodeSamplerBinding.end() ? it->second : 3;
+                body += "    vec4 " + var + " = texture(uSamplerCube" + std::to_string(bind) + ", " + dir + ");\n";
+                break;
+            }
+            case ShaderNodeType::UVTransform: {
+                auto uv = GetInputExpr(graph, nid, 0, "fragUV");
+                auto scale = GetInputExpr(graph, nid, 1, "1.0");
+                auto offset = GetInputExpr(graph, nid, 2, "0.0");
+                body += "    vec2 " + var + " = " + uv + " * " + scale + " + " + offset + ";\n";
+                break;
+            }
+            case ShaderNodeType::Parallax: {
+                auto uv = GetInputExpr(graph, nid, 0, "fragUV");
+                body += "    vec4 " + var + " = vec4(" + uv + ", 0.0, 1.0); // Parallax placeholder\n";
+                break;
+            }
+            case ShaderNodeType::Flipbook: {
+                auto uv = GetInputExpr(graph, nid, 0, "fragUV");
+                body += "    vec2 " + var + " = " + uv + "; // Flipbook placeholder\n";
+                break;
+            }
+
+            // --- Color ---
+            case ShaderNodeType::HSVToRGB: {
+                auto hsv = GetInputExpr(graph, nid, 0, "vec3(0.0, 1.0, 1.0)");
+                body += "    vec3 " + var + ";\n";
+                body += "    { vec3 c = " + hsv + "; vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0);\n";
+                body += "      " + var + " = c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y); }\n";
+                break;
+            }
+            case ShaderNodeType::RGBToHSV: {
+                auto rgb = GetInputExpr(graph, nid, 0, "vec3(1.0)");
+                body += "    vec3 " + var + ";\n";
+                body += "    { vec3 c = " + rgb + "; float mx = max(c.r, max(c.g, c.b)), mn = min(c.r, min(c.g, c.b));\n";
+                body += "      float d = mx - mn; float h = (d == 0.0) ? 0.0 : (mx == c.r) ? mod((c.g - c.b)/d, 6.0)/6.0 : (mx == c.g) ? ((c.b-c.r)/d+2.0)/6.0 : ((c.r-c.g)/d+4.0)/6.0;\n";
+                body += "      " + var + " = vec3(h, (mx == 0.0) ? 0.0 : d/mx, mx); }\n";
+                break;
+            }
+            case ShaderNodeType::Brightness: {
+                auto col = GetInputExpr(graph, nid, 0, "vec3(1.0)");
+                auto amt = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    float " + var + " = dot(" + col + ", vec3(0.299, 0.587, 0.114)) * " + amt + ";\n";
+                break;
+            }
+            case ShaderNodeType::Contrast: {
+                auto col = GetInputExpr(graph, nid, 0, "0.5");
+                auto amt = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    float " + var + " = (" + col + " - 0.5) * " + amt + " + 0.5;\n";
+                break;
+            }
+            case ShaderNodeType::Blend: {
+                auto a = GetInputExpr(graph, nid, 0, "vec4(0.0)");
+                auto b = GetInputExpr(graph, nid, 1, "vec4(1.0)");
+                auto t = GetInputExpr(graph, nid, 2, "0.5");
+                body += "    vec4 " + var + " = mix(" + a + ", " + b + ", " + t + ");\n";
+                break;
+            }
+
+            // --- Vector ---
+            case ShaderNodeType::SplitVec2: {
+                auto v = GetInputExpr(graph, nid, 0, "vec2(0.0)");
+                body += "    float " + NodeVar(nid, 0) + " = " + v + ".x;\n";
+                body += "    float " + NodeVar(nid, 1) + " = " + v + ".y;\n";
+                break;
+            }
+            case ShaderNodeType::SplitVec3: {
+                auto v = GetInputExpr(graph, nid, 0, "vec3(0.0)");
+                body += "    float " + NodeVar(nid, 0) + " = " + v + ".x;\n";
+                body += "    float " + NodeVar(nid, 1) + " = " + v + ".y;\n";
+                body += "    float " + NodeVar(nid, 2) + " = " + v + ".z;\n";
+                break;
+            }
+            case ShaderNodeType::SplitVec4: {
+                auto v = GetInputExpr(graph, nid, 0, "vec4(0.0)");
+                body += "    float " + NodeVar(nid, 0) + " = " + v + ".x;\n";
+                body += "    float " + NodeVar(nid, 1) + " = " + v + ".y;\n";
+                body += "    float " + NodeVar(nid, 2) + " = " + v + ".z;\n";
+                body += "    float " + NodeVar(nid, 3) + " = " + v + ".w;\n";
+                break;
+            }
+            case ShaderNodeType::CombineVec2: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                auto y = GetInputExpr(graph, nid, 1, "0.0");
+                body += "    vec2 " + var + " = vec2(" + x + ", " + y + ");\n";
+                break;
+            }
+            case ShaderNodeType::CombineVec3: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                auto y = GetInputExpr(graph, nid, 1, "0.0");
+                auto z = GetInputExpr(graph, nid, 2, "0.0");
+                body += "    vec3 " + var + " = vec3(" + x + ", " + y + ", " + z + ");\n";
+                break;
+            }
+            case ShaderNodeType::CombineVec4: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                auto y = GetInputExpr(graph, nid, 1, "0.0");
+                auto z = GetInputExpr(graph, nid, 2, "0.0");
+                auto w = GetInputExpr(graph, nid, 3, "1.0");
+                body += "    vec4 " + var + " = vec4(" + x + ", " + y + ", " + z + ", " + w + ");\n";
+                break;
+            }
+            case ShaderNodeType::Normalize: {
+                auto v = GetInputExpr(graph, nid, 0, "vec3(0.0, 1.0, 0.0)");
+                body += "    vec3 " + var + " = normalize(" + v + ");\n";
+                break;
+            }
+            case ShaderNodeType::DotProduct: {
+                auto a = GetInputExpr(graph, nid, 0, "vec3(0.0)");
+                auto b = GetInputExpr(graph, nid, 1, "vec3(0.0)");
+                body += "    float " + var + " = dot(" + a + ", " + b + ");\n";
+                break;
+            }
+            case ShaderNodeType::CrossProduct: {
+                auto a = GetInputExpr(graph, nid, 0, "vec3(1.0, 0.0, 0.0)");
+                auto b = GetInputExpr(graph, nid, 1, "vec3(0.0, 1.0, 0.0)");
+                body += "    vec3 " + var + " = cross(" + a + ", " + b + ");\n";
+                break;
+            }
+            case ShaderNodeType::Reflect: {
+                auto incident = GetInputExpr(graph, nid, 0, "vec3(0.0, -1.0, 0.0)");
+                auto normal = GetInputExpr(graph, nid, 1, "vec3(0.0, 1.0, 0.0)");
+                body += "    vec3 " + var + " = reflect(" + incident + ", " + normal + ");\n";
+                break;
+            }
+
+            // --- Output ---
+            case ShaderNodeType::FragmentOutput: {
+                auto col = GetInputExpr(graph, nid, 0, "vec4(1.0)");
+                auto alpha = GetInputExpr(graph, nid, 1, "1.0");
+                body += "    outColor = vec4(" + col + ".rgb, " + alpha + ");\n";
+                break;
+            }
+            case ShaderNodeType::VertexOutput:
+                // Vertex displacement handled separately
+                break;
+
+            // --- Utility ---
+            case ShaderNodeType::Comment:
+                if (!node->label.empty()) {
+                    body += "    // " + node->label + "\n";
+                }
+                break;
+            case ShaderNodeType::Reroute: {
+                auto x = GetInputExpr(graph, nid, 0, "0.0");
+                body += "    " + std::string(outType) + " " + var + " = " + x + ";\n";
+                break;
+            }
+        }
+    }
+
+    // --- Build sampler declarations ---
+    std::string samplerDecls;
+    for (const auto& [nid, binding] : nodeSamplerBinding) {
+        auto* node = nodeMap.at(nid);
+        if (node->type == ShaderNodeType::SampleCubemap) {
+            samplerDecls += "layout(set = 0, binding = " + std::to_string(binding) +
+                ") uniform samplerCube uSamplerCube" + std::to_string(binding) + ";\n";
+        } else {
+            samplerDecls += "layout(set = 0, binding = " + std::to_string(binding) +
+                ") uniform sampler2D uSampler" + std::to_string(binding) + ";\n";
+        }
+    }
+
+    // --- Assemble vertex shader ---
     result.vertexCode =
-        "// Generated by Enjin Shader Graph (stub)\n"
+        "// Generated by Enjin Shader Graph\n"
         "#version 450\n"
         "\n"
         "layout(location = 0) in vec3 inPosition;\n"
@@ -749,38 +1288,164 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         "\n"
         "layout(push_constant) uniform PushConstants {\n"
         "    mat4 model;\n"
+        "    vec3 baseColor; float metallic;\n"
+        "    vec3 emissiveColor; float roughness;\n"
+        "    float emissiveStrength, opacity, alphaCutoff;\n"
+        "    int flags;\n"
+        "    float parallaxScale;\n"
         "} pc;\n"
         "\n"
         "layout(location = 0) out vec3 fragNormal;\n"
         "layout(location = 1) out vec2 fragUV;\n"
         "layout(location = 2) out vec4 fragColor;\n"
+        "layout(location = 3) out vec3 fragWorldPos;\n"
         "\n"
         "void main() {\n"
-        "    gl_Position = vp.proj * vp.view * pc.model * vec4(inPosition, 1.0);\n"
+        "    vec4 worldPos = pc.model * vec4(inPosition, 1.0);\n"
+        "    fragWorldPos = worldPos.xyz;\n"
+        "    gl_Position = vp.proj * vp.view * worldPos;\n"
         "    fragNormal = mat3(pc.model) * inNormal;\n"
         "    fragUV = inUV;\n"
         "    fragColor = inColor;\n"
         "}\n";
 
+    // --- Assemble fragment shader ---
     result.fragmentCode =
-        "// Generated by Enjin Shader Graph (stub)\n"
+        "// Generated by Enjin Shader Graph\n"
         "#version 450\n"
         "\n"
         "layout(location = 0) in vec3 fragNormal;\n"
         "layout(location = 1) in vec2 fragUV;\n"
         "layout(location = 2) in vec4 fragColor;\n"
+        "layout(location = 3) in vec3 fragWorldPos;\n"
         "\n"
         "layout(location = 0) out vec4 outColor;\n"
         "\n"
-        "void main() {\n"
-        "    // TODO: Replace with shader graph output\n"
-        "    vec3 normal = normalize(fragNormal);\n"
-        "    float diffuse = max(dot(normal, vec3(0.0, 1.0, 0.0)), 0.2);\n"
-        "    outColor = vec4(fragColor.rgb * diffuse, fragColor.a);\n"
+        "layout(set = 0, binding = 1) uniform LightingUBO {\n"
+        "    vec3 cameraPos;\n"
+        "    // ... (simplified)\n"
+        "} lighting;\n"
+        "\n"
+        "layout(push_constant) uniform PushConstants {\n"
+        "    mat4 model;\n"
+        "    vec3 baseColor; float metallic;\n"
+        "    vec3 emissiveColor; float roughness;\n"
+        "    float emissiveStrength, opacity, alphaCutoff;\n"
+        "    int flags;\n"
+        "    float parallaxScale;\n"
+        "} pc;\n"
+        "\n" + samplerDecls +
+        "\n"
+        "void main() {\n" +
+        body +
         "}\n";
 
     result.success = true;
     return result;
+}
+
+// ============================================================================
+// Save/Load (.enjshader JSON format)
+// ============================================================================
+
+bool ShaderGraphEditor::Save(const std::string& path) const {
+    if (!m_Graph) return false;
+
+    std::string json = "{\n";
+    json += "  \"name\": \"" + m_Graph->name + "\",\n";
+    json += "  \"stage\": " + std::to_string(static_cast<int>(m_Graph->stage)) + ",\n";
+    json += "  \"nextNodeId\": " + std::to_string(m_Graph->nextNodeId) + ",\n";
+    json += "  \"nextLinkId\": " + std::to_string(m_Graph->nextLinkId) + ",\n";
+
+    json += "  \"nodes\": [\n";
+    for (usize i = 0; i < m_Graph->nodes.size(); ++i) {
+        const auto& n = m_Graph->nodes[i];
+        json += "    { \"id\": " + std::to_string(n.id) +
+                ", \"type\": " + std::to_string(static_cast<int>(n.type)) +
+                ", \"x\": " + std::to_string(n.position.x) +
+                ", \"y\": " + std::to_string(n.position.y) +
+                ", \"label\": \"" + n.label + "\"" +
+                ", \"float\": " + std::to_string(n.floatValue) +
+                ", \"v2\": [" + std::to_string(n.vec2Value.x) + "," + std::to_string(n.vec2Value.y) + "]" +
+                ", \"v3\": [" + std::to_string(n.vec3Value.x) + "," + std::to_string(n.vec3Value.y) + "," + std::to_string(n.vec3Value.z) + "]" +
+                ", \"v4\": [" + std::to_string(n.vec4Value.x) + "," + std::to_string(n.vec4Value.y) + "," + std::to_string(n.vec4Value.z) + "," + std::to_string(n.vec4Value.w) + "]" +
+                ", \"tex\": \"" + n.texturePath + "\"" +
+                ", \"param\": \"" + n.parameterName + "\"" +
+                " }" + (i + 1 < m_Graph->nodes.size() ? ",\n" : "\n");
+    }
+    json += "  ],\n";
+
+    json += "  \"links\": [\n";
+    for (usize i = 0; i < m_Graph->links.size(); ++i) {
+        const auto& l = m_Graph->links[i];
+        json += "    { \"id\": " + std::to_string(l.id) +
+                ", \"from\": " + std::to_string(l.fromNode) +
+                ", \"fromPin\": " + std::to_string(l.fromPin) +
+                ", \"to\": " + std::to_string(l.toNode) +
+                ", \"toPin\": " + std::to_string(l.toPin) +
+                " }" + (i + 1 < m_Graph->links.size() ? ",\n" : "\n");
+    }
+    json += "  ]\n";
+    json += "}\n";
+
+    std::ofstream file(path);
+    if (!file.is_open()) return false;
+    file << json;
+    return true;
+}
+
+bool ShaderGraphEditor::Load(const std::string& path) {
+    if (!m_Graph) return false;
+
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+    std::string json((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+
+    // Simple JSON parsing (reuse nlohmann if available, otherwise manual)
+    // For robustness, use the same approach as other serializers in the engine
+    try {
+        nlohmann::json j = nlohmann::json::parse(json);
+        m_Graph->name = j.value("name", "Untitled");
+        m_Graph->stage = static_cast<ShaderGraphData::Stage>(j.value("stage", 1));
+        m_Graph->nextNodeId = j.value("nextNodeId", 1u);
+        m_Graph->nextLinkId = j.value("nextLinkId", 1u);
+
+        m_Graph->nodes.clear();
+        if (j.contains("nodes")) {
+            for (const auto& nj : j["nodes"]) {
+                ShaderGraphNode n;
+                n.id = nj.value("id", 0u);
+                n.type = static_cast<ShaderNodeType>(nj.value("type", 0));
+                n.position.x = nj.value("x", 0.0f);
+                n.position.y = nj.value("y", 0.0f);
+                n.label = nj.value("label", "");
+                n.floatValue = nj.value("float", 0.0f);
+                if (nj.contains("v2")) { n.vec2Value.x = nj["v2"][0]; n.vec2Value.y = nj["v2"][1]; }
+                if (nj.contains("v3")) { n.vec3Value.x = nj["v3"][0]; n.vec3Value.y = nj["v3"][1]; n.vec3Value.z = nj["v3"][2]; }
+                if (nj.contains("v4")) { n.vec4Value.x = nj["v4"][0]; n.vec4Value.y = nj["v4"][1]; n.vec4Value.z = nj["v4"][2]; n.vec4Value.w = nj["v4"][3]; }
+                n.texturePath = nj.value("tex", "");
+                n.parameterName = nj.value("param", "");
+                m_Graph->nodes.push_back(n);
+            }
+        }
+
+        m_Graph->links.clear();
+        if (j.contains("links")) {
+            for (const auto& lj : j["links"]) {
+                ShaderGraphLink l;
+                l.id = lj.value("id", 0u);
+                l.fromNode = lj.value("from", 0u);
+                l.fromPin = lj.value("fromPin", 0u);
+                l.toNode = lj.value("to", 0u);
+                l.toPin = lj.value("toPin", 0u);
+                m_Graph->links.push_back(l);
+            }
+        }
+    } catch (...) {
+        return false;
+    }
+    return true;
 }
 
 } // namespace Editor

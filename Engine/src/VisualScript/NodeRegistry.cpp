@@ -27,6 +27,8 @@
 #include "Enjin/Math/Noise.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
+#include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -36,6 +38,12 @@
 // TODO: Move this to ExecutionContext so save nodes receive the system via the
 //       execution context rather than relying on a global extern pointer.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
+
+// Global pointer for visual script audio event graph runtime access (set by PlayMode)
+Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
+
+// Global pointer for visual script plugin system access (set by EditorLayer)
+Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -5956,6 +5964,192 @@ void NodeRegistry::RegisterBuiltinNodes() {
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
             // Spawn grid delegates to script binding function; VS nodes use the same cached grid
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // AUDIO EVENT GRAPH NODES
+    // ========================================================================
+
+    // Audio Graph: Trigger Event
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioGraphTriggerEvent;
+        def.displayName = "Trigger Audio Event";
+        def.description = "Trigger a named event in the active audio event graph";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            String("Event Name", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "graph", "event", "trigger", "sound"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string eventName;
+            if (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0])) {
+                eventName = std::get<std::string>(inputs[0]);
+            }
+            if (!eventName.empty() && s_VisualScriptAudioGraphRuntime) {
+                s_VisualScriptAudioGraphRuntime->TriggerEvent(eventName);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Graph: Set Parameter
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioGraphSetParameter;
+        def.displayName = "Set Audio Parameter";
+        def.description = "Set a named parameter on the active audio event graph";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            String("Parameter", PK::Input),
+            Float("Value", PK::Input, 0.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "graph", "parameter", "set", "value"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string paramName;
+            f32 value = 0.0f;
+            if (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0])) {
+                paramName = std::get<std::string>(inputs[0]);
+            }
+            if (inputs.size() > 1) {
+                if (std::holds_alternative<f32>(inputs[1])) {
+                    value = std::get<f32>(inputs[1]);
+                } else if (std::holds_alternative<i32>(inputs[1])) {
+                    value = static_cast<f32>(std::get<i32>(inputs[1]));
+                }
+            }
+            if (!paramName.empty() && s_VisualScriptAudioGraphRuntime) {
+                s_VisualScriptAudioGraphRuntime->SetParameter(paramName, value);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Graph: Stop All
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioGraphStopAll;
+        def.displayName = "Stop All Audio Events";
+        def.description = "Stop all sounds playing from the audio event graph";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.3f);
+        def.inputs = {FlowIn()};
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "graph", "stop", "all", "silence"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (s_VisualScriptAudioGraphRuntime) {
+                s_VisualScriptAudioGraphRuntime->StopAll();
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PLUGIN NODES
+    // ========================================================================
+
+    // Plugin: Is Loaded
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PluginIsLoaded;
+        def.displayName = "Plugin Is Loaded";
+        def.description = "Check if a plugin is currently loaded";
+        def.category = NodeCategory::Utility;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            String("Plugin Name", PK::Input)
+        };
+        def.outputs = {
+            Bool("Is Loaded", PK::Output)
+        };
+        def.keywords = {"plugin", "loaded", "check", "query"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string name;
+            if (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0])) {
+                name = std::get<std::string>(inputs[0]);
+            }
+            bool loaded = false;
+            if (!name.empty() && s_VisualScriptPluginSystem) {
+                loaded = s_VisualScriptPluginSystem->IsLoaded(name);
+            }
+            outputs.push_back(loaded);
+        };
+        RegisterNode(def);
+    }
+
+    // Plugin: Load
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PluginLoad;
+        def.displayName = "Load Plugin";
+        def.description = "Load a plugin by name";
+        def.category = NodeCategory::Utility;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            String("Plugin Name", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"plugin", "load", "enable"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string name;
+            if (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0])) {
+                name = std::get<std::string>(inputs[0]);
+            }
+            if (!name.empty() && s_VisualScriptPluginSystem) {
+                s_VisualScriptPluginSystem->LoadPlugin(name);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Plugin: Unload
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PluginUnload;
+        def.displayName = "Unload Plugin";
+        def.description = "Unload a plugin by name";
+        def.category = NodeCategory::Utility;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            String("Plugin Name", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"plugin", "unload", "disable"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string name;
+            if (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0])) {
+                name = std::get<std::string>(inputs[0]);
+            }
+            if (!name.empty() && s_VisualScriptPluginSystem) {
+                s_VisualScriptPluginSystem->UnloadPlugin(name);
+            }
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

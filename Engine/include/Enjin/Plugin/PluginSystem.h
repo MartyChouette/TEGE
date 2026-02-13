@@ -8,7 +8,23 @@
 #include <functional>
 
 namespace Enjin {
+
+// Forward declarations for plugin context
+namespace ECS { class World; class RenderSystem; }
+namespace Scripting { class ScriptEngine; }
+namespace Audio { class SimpleAudio; }
+class SceneManager;
+
 namespace Plugin {
+
+// Context passed to plugins on load — provides access to engine systems
+struct PluginContext {
+    ECS::World* world = nullptr;
+    ECS::RenderSystem* renderSystem = nullptr;
+    Scripting::ScriptEngine* scriptEngine = nullptr;
+    Audio::SimpleAudio* audio = nullptr;
+    SceneManager* sceneManager = nullptr;
+};
 
 // Plugin interface — implement to create engine plugins
 class IPlugin {
@@ -17,9 +33,12 @@ public:
     virtual const char* GetName() const = 0;
     virtual const char* GetVersion() const = 0;
     virtual bool OnLoad() = 0;
+    virtual bool OnLoad(PluginContext& context) { (void)context; return OnLoad(); }  // Context-aware overload
     virtual void OnUnload() = 0;
     virtual void OnUpdate(f32 deltaTime) = 0;
     virtual void OnEditorUI() {}  // Optional ImGui panel
+    virtual void OnSaveState(std::string& outState) { (void)outState; }    // Hot-reload save
+    virtual void OnRestoreState(const std::string& state) { (void)state; } // Hot-reload restore
 };
 
 // Plugin manifest (loaded from JSON)
@@ -70,6 +89,9 @@ public:
     PluginEntry* FindPlugin(const std::string& name);
     bool IsLoaded(const std::string& name) const;
 
+    // Set context that will be passed to plugins on load
+    void SetContext(const PluginContext& ctx) { m_Context = ctx; }
+
     // Draw ImGui management panel
     void DrawPluginPanel();
 
@@ -81,6 +103,7 @@ private:
 
     std::vector<PluginEntry> m_Plugins;
     std::string m_PluginDirectory;
+    PluginContext m_Context;
 };
 
 } // namespace Plugin

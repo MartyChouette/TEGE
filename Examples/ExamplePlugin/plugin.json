@@ -1,0 +1,11 @@
+{
+    "name": "ExamplePlugin",
+    "version": "1.0.0",
+    "library": "ExamplePlugin.dll",
+    "description": "Example plugin demonstrating the Enjin Plugin SDK",
+    "author": "Enjin",
+    "category": "Example",
+    "loadOnStartup": false,
+    "dependencies": [],
+    "tags": ["example", "template"]
+}

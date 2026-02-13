@@ -7,7 +7,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
 - **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
-- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping, receiveShadows toggle
+- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), receiveShadows toggle
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes)
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** - Rain, snow, fog, storms with toggleable lightning
@@ -26,7 +26,13 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 - **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
 - **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser (awaiting compiled SPIR-V)
+- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser, real depth buffer wiring, RT composition pass (awaiting compiled SPIR-V)
+- **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and nearest-probe queries
+- **SDF Scene** - CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
+- **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures
+- **Depth of Field** - Bokeh DoF with aperture shapes (circle/hexagon/octagon), focal distance/range, CoC debug visualization
+- **Tilt-Shift** - Miniature/toy-model post-process blur with configurable focus band and falloff
+- **Camera Presets** - 9 built-in presets (Isometric 45/30, TopDown, SideScroller, FPS, TPS, Cinematic, SecurityCam, BirdsEye)
 
 ### Editor
 - **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
@@ -38,7 +44,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 23 templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced)
+- **Startup Templates** - 43 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
 - **Custom Templates** - Save/load from templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
@@ -51,8 +57,11 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 - **Animation Graph** - Visual state machine editor for AnimatorComponent with Entry pseudo-node, transitions, parameters
+- **Shader Graph** - Visual shader authoring with 54 node types, topological sort GLSL code generation, .enjshader save/load
+- **Audio Event Graph** - Dynamic audio mixing with runtime execution (trigger events, parameter thresholds, delay scheduling), .enjaudiopkg save/load
+- **Particle Graph** - Visual particle system authoring with compiler to ParticleEmitterComponent, .enjparticle save/load
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
-- **Visual Script Editor** - Blueprint-style visual scripting with 88+ nodes, breakpoint debugging, execution profiler
+- **Visual Script Editor** - Blueprint-style visual scripting with 126+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
@@ -105,12 +114,15 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Motor Accessibility** - Adjustable click/drag thresholds, dwell-click, sticky drag, motor impaired preset
 - **Command Palette** - Ctrl+P for keyboard-driven command access
 - **Alternative Input** - Switch access, eye tracking, sip-and-puff, head tracking support
-- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection
+- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection, collaborative editing integration (remote edit callbacks, scene sync, status indicator)
 - **Screen Reader Support** - Priority-queued text announcer with visual status bar
 - **Audio Visual Indicators** - Colored dot overlays for audio events
 - **High Contrast UI Themes** - HighContrastDark and HighContrastLight presets with WCAG AAA 7:1+ contrast ratios
 - **Font Scaling** - Runtime font size multiplier for UISystem (0.5-3.0x)
 - **Accessible Labels** - Per-element screen reader labels on UICanvas elements
+- **Dyslexia Mode** - Configurable letter/word/line spacing for improved readability
+- **Colorblind-Safe Theme** - Blue/orange palette universally distinguishable across all color vision types
+- **Switch Access** - One-button auto-scan mode for UICanvas focus navigation
 
 ### Scene Management
 - **Project File Format** - .enjinproject JSON manifest
@@ -142,10 +154,10 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop with full particle, subtitle, announcer, alternative input, and post-processing support
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~350 API bindings (incl. AI/BT, accessibility, physics 2D, networking), hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~390 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
-- **Plugin System** - IPlugin interface, DLL/SO loading, manifest JSON, editor panel
+- **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
 - **C++ Hot-Reload** - File watching, DLL reload with state save/restore
 - **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes
 - **Newgrounds.io API** - Session management, medals, scoreboards, cloud saves for web games
@@ -153,7 +165,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **102+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, noise, streaming, debug
+- **126+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, procedural generation, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through
@@ -211,7 +223,7 @@ enjin/
 - [x] Play Mode (play/pause/stop)
 - [x] Undo/Redo System
 - [x] Entity Clipboard (Cut/Copy/Paste)
-- [x] Startup Template Selector (31 templates)
+- [x] Startup Template Selector (43 templates)
 
 ### Phase 5: Advanced Rendering ✅
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)

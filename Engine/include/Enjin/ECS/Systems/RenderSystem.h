@@ -660,6 +660,7 @@ private:
     bool m_RTEnabled = false;
     u32 m_RTMode = 0;  // 0=Hybrid, 1=PathTrace
     u32 m_RTFrameCount = 0;
+    Math::Matrix4 m_PrevViewProj;  // Previous frame's VP for path tracer camera change detection
 
     std::unique_ptr<Renderer::AccelerationStructureManager> m_ASManager;
     std::unique_ptr<Renderer::RTShadows> m_RTShadows;

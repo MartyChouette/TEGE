@@ -50,6 +50,9 @@
 #include "Enjin/Editor/SpriteColliderGenerator.h"
 #include "Enjin/Editor/BehaviorTreeEditor.h"
 #include "Enjin/Editor/QuestFlowEditor.h"
+#include "Enjin/Editor/ShaderGraph.h"
+#include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Editor/ParticleGraph.h"
 #include "Enjin/Editor/DocGenerator.h"
 #include "Enjin/Editor/SceneLock.h"
 #include "Enjin/Editor/CollaborativeEditing.h"
@@ -445,6 +448,18 @@ private:
 
     // Quest Flow graph editor
     QuestFlowEditor m_QuestFlowEditor;
+
+    // Shader Graph editor
+    ShaderGraphEditor m_ShaderGraphEditor;
+    ShaderGraphData m_ShaderGraphData;
+
+    // Audio Event Graph editor
+    AudioEventGraphEditor m_AudioGraphEditor;
+    AudioEventGraphData m_AudioGraphData;
+
+    // Particle Graph editor
+    ParticleGraphEditor m_ParticleGraphEditor;
+    ParticleGraphData m_ParticleGraphData;
 
     // Scene management
     void SaveScene(const std::string& path);

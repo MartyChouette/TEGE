@@ -135,8 +135,8 @@ bool PluginSystem::LoadPlugin(const std::string& name) {
         return false;
     }
 
-    // Call OnLoad
-    if (!entry->instance->OnLoad()) {
+    // Call OnLoad with context
+    if (!entry->instance->OnLoad(m_Context)) {
         ENJIN_LOG_ERROR(Script, "Plugin '%s' OnLoad failed", name.c_str());
         entry->error = "OnLoad failed";
 

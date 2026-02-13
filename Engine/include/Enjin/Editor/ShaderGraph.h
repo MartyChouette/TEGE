@@ -107,8 +107,12 @@ public:
     bool IsOpen() const { return m_Open; }
     void SetOpen(bool open) { m_Open = open; }
 
-    // Code generation (stub - returns template GLSL)
+    // Code generation — topological sort + per-node GLSL emission
     ShaderCodeResult GenerateGLSL() const;
+
+    // Save/Load (.enjshader JSON format)
+    bool Save(const std::string& path) const;
+    bool Load(const std::string& path);
 
 private:
     ShaderGraphData* m_Graph = nullptr;
@@ -116,6 +120,10 @@ private:
     u32 m_SelectedNodeId = 0;
     Math::Vector2 m_ScrollOffset;
     f32 m_Zoom = 1.0f;
+
+    // Last generation result for display
+    ShaderCodeResult m_LastResult;
+    bool m_ShowCodeWindow = false;
 
     void DrawNode(ShaderGraphNode& node);
     void DrawConnections();

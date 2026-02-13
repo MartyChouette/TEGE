@@ -1,7 +1,10 @@
 #include "Enjin/Editor/ParticleGraph.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cstring>
+#include <fstream>
 
 namespace Enjin {
 namespace Editor {
@@ -136,8 +139,12 @@ void ParticleGraphEditor::Render() {
                 m_Graph->nextLinkId = 1;
                 m_SelectedNodeId = 0;
             }
-            ImGui::MenuItem("Save", "Ctrl+S");  // TODO: implement
-            ImGui::MenuItem("Load");             // TODO: implement
+            if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                Save("particle_graph.enjparticle");
+            }
+            if (ImGui::MenuItem("Load")) {
+                Load("particle_graph.enjparticle");
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();
@@ -145,6 +152,14 @@ void ParticleGraphEditor::Render() {
 
     // Toolbar
     ImGui::Text("System: %s", m_Graph->name.c_str());
+    ImGui::Separator();
+
+    // Compile + Apply button
+    if (ImGui::Button("Apply to Selected Entity")) {
+        m_CompileRequested = true;
+    }
+    ImGui::SameLine();
+    ImGui::TextDisabled("(%zu nodes, %zu links)", m_Graph->nodes.size(), m_Graph->links.size());
     ImGui::Separator();
 
     // Layout: canvas on left, inspector on right
@@ -597,6 +612,322 @@ void ParticleGraphEditor::DrawContextMenu() {
     }
 
     ImGui::EndPopup();
+}
+
+// ============================================================================
+// Save/Load (.enjparticle JSON format)
+// ============================================================================
+
+bool ParticleGraphEditor::Save(const std::string& path) const {
+    if (!m_Graph) return false;
+
+    std::string json = "{\n";
+    json += "  \"name\": \"" + m_Graph->name + "\",\n";
+    json += "  \"nextNodeId\": " + std::to_string(m_Graph->nextNodeId) + ",\n";
+    json += "  \"nextLinkId\": " + std::to_string(m_Graph->nextLinkId) + ",\n";
+
+    json += "  \"nodes\": [\n";
+    for (usize i = 0; i < m_Graph->nodes.size(); ++i) {
+        const auto& n = m_Graph->nodes[i];
+        json += "    { \"id\": " + std::to_string(n.id) +
+                ", \"type\": " + std::to_string(static_cast<int>(n.type)) +
+                ", \"x\": " + std::to_string(n.position.x) +
+                ", \"y\": " + std::to_string(n.position.y) +
+                ", \"label\": \"" + n.label + "\"" +
+                ", \"rate\": " + std::to_string(n.rate) +
+                ", \"lifetime\": " + std::to_string(n.lifetime) +
+                ", \"startSpeed\": " + std::to_string(n.startSpeed) +
+                ", \"dir\": [" + std::to_string(n.direction.x) + "," + std::to_string(n.direction.y) + "," + std::to_string(n.direction.z) + "]" +
+                ", \"spread\": " + std::to_string(n.spread) +
+                ", \"strength\": " + std::to_string(n.strength);
+
+        if (!n.curve.empty()) {
+            json += ", \"curve\": [";
+            for (usize c = 0; c < n.curve.size(); ++c) {
+                json += "[" + std::to_string(n.curve[c].x) + "," + std::to_string(n.curve[c].y) + "]";
+                if (c + 1 < n.curve.size()) json += ",";
+            }
+            json += "]";
+        }
+
+        json += " }" + std::string(i + 1 < m_Graph->nodes.size() ? ",\n" : "\n");
+    }
+    json += "  ],\n";
+
+    json += "  \"links\": [\n";
+    for (usize i = 0; i < m_Graph->links.size(); ++i) {
+        const auto& l = m_Graph->links[i];
+        json += "    { \"id\": " + std::to_string(l.id) +
+                ", \"from\": " + std::to_string(l.fromNode) +
+                ", \"fromPin\": " + std::to_string(l.fromPin) +
+                ", \"to\": " + std::to_string(l.toNode) +
+                ", \"toPin\": " + std::to_string(l.toPin) +
+                " }" + std::string(i + 1 < m_Graph->links.size() ? ",\n" : "\n");
+    }
+    json += "  ]\n";
+    json += "}\n";
+
+    std::ofstream file(path);
+    if (!file.is_open()) return false;
+    file << json;
+    return true;
+}
+
+bool ParticleGraphEditor::Load(const std::string& path) {
+    if (!m_Graph) return false;
+
+    std::ifstream file(path);
+    if (!file.is_open()) return false;
+    std::string json((std::istreambuf_iterator<char>(file)),
+                      std::istreambuf_iterator<char>());
+
+    try {
+        nlohmann::json j = nlohmann::json::parse(json);
+        m_Graph->name = j.value("name", "New Particle System");
+        m_Graph->nextNodeId = j.value("nextNodeId", 1u);
+        m_Graph->nextLinkId = j.value("nextLinkId", 1u);
+
+        m_Graph->nodes.clear();
+        if (j.contains("nodes")) {
+            for (const auto& nj : j["nodes"]) {
+                ParticleGraphNode n;
+                n.id = nj.value("id", 0u);
+                n.type = static_cast<ParticleNodeType>(nj.value("type", 0));
+                n.position.x = nj.value("x", 0.0f);
+                n.position.y = nj.value("y", 0.0f);
+                n.label = nj.value("label", std::string(""));
+                n.rate = nj.value("rate", 10.0f);
+                n.lifetime = nj.value("lifetime", 2.0f);
+                n.startSpeed = nj.value("startSpeed", 5.0f);
+                if (nj.contains("dir")) {
+                    n.direction.x = nj["dir"][0];
+                    n.direction.y = nj["dir"][1];
+                    n.direction.z = nj["dir"][2];
+                }
+                n.spread = nj.value("spread", 0.5f);
+                n.strength = nj.value("strength", 1.0f);
+                if (nj.contains("curve")) {
+                    for (const auto& cp : nj["curve"]) {
+                        n.curve.push_back(Math::Vector2(cp[0].get<f32>(), cp[1].get<f32>()));
+                    }
+                }
+                m_Graph->nodes.push_back(n);
+            }
+        }
+
+        m_Graph->links.clear();
+        if (j.contains("links")) {
+            for (const auto& lj : j["links"]) {
+                ParticleGraphLink l;
+                l.id = lj.value("id", 0u);
+                l.fromNode = lj.value("from", 0u);
+                l.fromPin = lj.value("fromPin", 0u);
+                l.toNode = lj.value("to", 0u);
+                l.toPin = lj.value("toPin", 0u);
+                m_Graph->links.push_back(l);
+            }
+        }
+    } catch (...) {
+        return false;
+    }
+    return true;
+}
+
+// ============================================================================
+// Particle Graph Compiler
+// ============================================================================
+
+static bool IsEmitterType(ParticleNodeType type) {
+    return type == ParticleNodeType::PointEmitter ||
+           type == ParticleNodeType::SphereEmitter ||
+           type == ParticleNodeType::BoxEmitter ||
+           type == ParticleNodeType::ConeEmitter ||
+           type == ParticleNodeType::MeshEmitter;
+}
+
+ParticleCompileResult ParticleGraphCompiler::Compile(const ParticleGraphData& graph,
+                                                      ECS::ParticleEmitterComponent& target) {
+    ParticleCompileResult result;
+
+    // ---- Find first emitter node ----
+    const ParticleGraphNode* emitter = nullptr;
+    for (const auto& node : graph.nodes) {
+        if (IsEmitterType(node.type)) {
+            emitter = &node;
+            break;
+        }
+    }
+
+    if (!emitter) {
+        result.errors.push_back("No emitter node found in graph");
+        return result;
+    }
+
+    // ---- Map emitter type to EmitterShape ----
+    using Shape = ECS::ParticleEmitterComponent::EmitterShape;
+    switch (emitter->type) {
+        case ParticleNodeType::PointEmitter:
+            target.shape = Shape::Point;
+            break;
+        case ParticleNodeType::SphereEmitter:
+            target.shape = Shape::Sphere;
+            target.shapeRadius = emitter->spread;
+            break;
+        case ParticleNodeType::BoxEmitter:
+            target.shape = Shape::Box;
+            target.shapeRadius = emitter->spread;
+            break;
+        case ParticleNodeType::ConeEmitter:
+            target.shape = Shape::Cone;
+            target.coneAngle = emitter->spread * 90.0f;
+            break;
+        case ParticleNodeType::MeshEmitter:
+            target.shape = Shape::Point;  // Fallback
+            result.warnings.push_back("MeshEmitter mapped to Point shape (mesh emission not supported on component)");
+            break;
+        default:
+            break;
+    }
+
+    // ---- Set basic emitter properties ----
+    target.emissionRate = emitter->rate;
+    target.lifetime = emitter->lifetime;
+    target.startSpeed = emitter->startSpeed;
+
+    // ---- Walk all modifier nodes ----
+    for (const auto& node : graph.nodes) {
+        switch (node.type) {
+            case ParticleNodeType::Gravity:
+                target.gravity = node.direction * node.strength;
+                break;
+
+            case ParticleNodeType::Wind:
+                target.gravity.x += node.direction.x * node.strength;
+                target.gravity.y += node.direction.y * node.strength;
+                target.gravity.z += node.direction.z * node.strength;
+                result.warnings.push_back("Wind force added to gravity (no separate wind field on component)");
+                break;
+
+            case ParticleNodeType::Drag:
+                target.drag = node.strength;
+                break;
+
+            case ParticleNodeType::Turbulence:
+                result.warnings.push_back("Turbulence not directly supported on ParticleEmitterComponent");
+                break;
+
+            case ParticleNodeType::Vortex:
+                result.warnings.push_back("Vortex not directly supported on ParticleEmitterComponent");
+                break;
+
+            case ParticleNodeType::ColorOverLife:
+                if (node.curve.size() >= 2) {
+                    f32 startIntensity = node.curve.front().y;
+                    f32 endIntensity = node.curve.back().y;
+                    target.startColor = Math::Vector3(startIntensity, startIntensity, startIntensity);
+                    target.endColor = Math::Vector3(endIntensity, endIntensity, endIntensity);
+                    // Also map to alpha if curve descends toward zero
+                    target.startAlpha = startIntensity;
+                    target.endAlpha = endIntensity;
+                } else if (node.curve.size() == 1) {
+                    f32 intensity = node.curve[0].y;
+                    target.startColor = Math::Vector3(intensity, intensity, intensity);
+                    target.endColor = Math::Vector3(intensity, intensity, intensity);
+                }
+                break;
+
+            case ParticleNodeType::SizeOverLife:
+                if (!node.curve.empty()) {
+                    target.startSize = node.curve.front().y;
+                    target.endSize = node.curve.back().y;
+                    if (node.curve.size() >= 3) {
+                        // Use the middle point for sizeMid
+                        usize midIdx = node.curve.size() / 2;
+                        target.sizeMid = node.curve[midIdx].y;
+                    }
+                }
+                break;
+
+            case ParticleNodeType::SpeedOverLife:
+                if (node.curve.size() >= 2) {
+                    target.speedMultiplierEnd = node.curve.back().y;
+                    if (node.curve.size() >= 3) {
+                        usize midIdx = node.curve.size() / 2;
+                        target.speedMultiplierMid = node.curve[midIdx].y;
+                    }
+                } else if (node.curve.size() == 1) {
+                    target.speedMultiplierEnd = node.curve[0].y;
+                }
+                break;
+
+            case ParticleNodeType::RotationOverLife:
+                if (node.curve.size() >= 2) {
+                    // Estimate rotation speed from slope of curve
+                    f32 dt = node.curve.back().x - node.curve.front().x;
+                    f32 dv = node.curve.back().y - node.curve.front().y;
+                    if (dt > 0.0f) {
+                        target.rotationSpeed = dv / dt;
+                    }
+                } else if (node.curve.size() == 1) {
+                    target.rotationSpeed = node.curve[0].y;
+                }
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // ---- Walk control nodes ----
+    for (const auto& node : graph.nodes) {
+        switch (node.type) {
+            case ParticleNodeType::Burst:
+                target.burstCount = static_cast<i32>(node.rate);
+                target.burstInterval = node.lifetime;
+                break;
+
+            case ParticleNodeType::Loop:
+                target.loop = true;
+                if (node.lifetime > 0.0f) {
+                    result.warnings.push_back("Loop duration (" + std::to_string(node.lifetime) +
+                        "s) noted but component uses continuous looping");
+                }
+                break;
+
+            case ParticleNodeType::Delay:
+                result.warnings.push_back("Delay (" + std::to_string(node.lifetime) +
+                    "s) not supported on ParticleEmitterComponent — no startDelay field");
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    // ---- Walk renderer nodes ----
+    using RMode = ECS::ParticleEmitterComponent::RenderMode;
+    for (const auto& node : graph.nodes) {
+        switch (node.type) {
+            case ParticleNodeType::BillboardRenderer:
+                target.renderMode = RMode::Billboard;
+                break;
+
+            case ParticleNodeType::MeshRenderer:
+                target.renderMode = RMode::Billboard;
+                result.warnings.push_back("MeshRenderer mapped to Billboard (mesh particle rendering not supported)");
+                break;
+
+            case ParticleNodeType::TrailRenderer:
+                result.warnings.push_back("TrailRenderer not supported on ParticleEmitterComponent");
+                break;
+
+            default:
+                break;
+        }
+    }
+
+    result.success = true;
+    return result;
 }
 
 } // namespace Editor

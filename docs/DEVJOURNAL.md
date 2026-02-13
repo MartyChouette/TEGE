@@ -2,6 +2,76 @@
 
 ---
 
+## 2026-02-13 (Session 2)
+
+### Graph System Full Implementations + RT Pipeline Wiring + Plugin SDK + Collaborative Editing
+
+Six skeletal systems promoted to full implementations, two bug fixes applied. Build clean, all 6 targets verified.
+
+**Bug Fix: Template Hover Popup** — Consolidated duplicate template arrays into shared `s_BuiltinTemplates[]` at file scope. Hover preview now indexes the correct array, fixing mismatched tooltip content.
+
+**Bug Fix: Shadow Offset in Editor Game View** — Added `SelectShadowLights()` call with the game camera in `RenderShadowPassForCamera()`. Clamped `m_ShadowDistance` to camera far plane in the offscreen rendering path, fixing shadow cascade misalignment.
+
+**Collaborative Editing Wiring** — Wired collab callbacks in `EditorLayer::Initialize()` (remote edit, scene sync request/received). Added edit recording at 5 key edit points (entity creation x2, deletion, rename, gizmo transform). Added collab status indicator in menu bar and `m_CollabSystem.Update(deltaTime)` in `EditorLayer::Update()`.
+
+**Shader Graph: Full GLSL Code Generation** — Replaced `GenerateGLSL()` stub with full topological sort and per-node GLSL emission for all 54 node types. Save/load in `.enjshader` JSON format. GLSL code display window with error/success status. EditorLayer wiring: View > Tools > Shader Graph menu entry with graph editor rendering.
+
+**Audio Event Graph: Full Runtime Execution** — `AudioEventGraphRuntime` class with `TriggerEvent()`, `SetParameter()`, `GetParameter()`, `StopAll()`, `Update()`. Graph execution walks from trigger nodes through processing chain (Volume/Pitch/Pan/Delay) to source nodes (SoundClip/RandomClip/SequenceClip), plays via SimpleAudio. Parameter triggers with threshold crossing. Delayed sound scheduling. Save/load in `.enjaudiopkg` JSON format. 4 AngelScript bindings (`AudioGraph_TriggerEvent`, `AudioGraph_SetParameter`, `AudioGraph_GetParameter`, `AudioGraph_StopAll`). 3 visual script nodes (AudioGraph_TriggerEvent, AudioGraph_SetParameter, AudioGraph_StopAll).
+
+**Particle Graph: Full Compiler to Component** — `ParticleGraphCompiler::Compile()` converts graph nodes to `ParticleEmitterComponent` fields. Maps emitter types to EmitterShape (Point/Sphere/Box/Cone), modifiers (Gravity, Drag, SizeOverLife, SpeedOverLife, RotationOverLife), controls (Burst, Loop, Delay), and renderers (Billboard, VelocityStretch). "Apply to Selected Entity" button with compile feedback. Save/load in `.enjparticle` JSON format.
+
+**Ray Tracing Pipeline Completion** — Added `CompositeRTResults(commandBuffer)` call after denoising. Wired real depth buffer to RT descriptor binding 2. Camera change detection for path tracer accumulation reset. Replaced `DenoiseRTOutputs()` stub with real SVGF calls (temporal, variance, a-trous wavelet passes).
+
+**Plugin System Enhancement** — `PluginContext` struct providing World, RenderSystem, ScriptEngine, SimpleAudio, SceneManager to plugins. `IPlugin::OnLoad(PluginContext&)` context-aware overload. `IPlugin::OnSaveState/OnRestoreState` for hot-reload state preservation. `PluginSDK.h` single-header include with `ENJIN_IMPLEMENT_PLUGIN()` macro. 4 AngelScript bindings (`Plugin_IsLoaded`, `Plugin_GetVersion`, `Plugin_Load`, `Plugin_Unload`). 3 visual script nodes (Plugin_IsLoaded, Plugin_Load, Plugin_Unload). Example plugin in `examples/ExamplePlugin/`.
+
+---
+
+## 2026-02-13
+
+### OIT, SH Light Probes, SDF Scene, and Parallax Occlusion Mapping
+
+Added three new rendering subsystems and advanced material mapping:
+
+**Order-Independent Transparency (OIT):** Weighted Blended OIT (McGuire & Bavoil 2013) with RGBA16F accumulation texture and R8 revealage texture. Full Vulkan resource management (create/destroy/resize). Render pass stubs (BeginTransparentPass/EndTransparentPass/CompositePass) ready for composite shader SPIR-V. Configurable weight function (depth-based, alpha-based, combined). Editor toggle in Rendering panel.
+
+**SH Light Probes:** L2 spherical harmonics lighting system with 9 coefficients per RGB channel (27 floats per probe). `SHProbeGrid` for axis-aligned bounding box coverage with configurable resolution. `GenerateGridProbes()` fills the grid with evenly spaced probes. `BakeProbe()` initializes L0 band with ambient light (stub for full cubemap sampling). `GetIrradiance()` queries nearest-probe irradiance at any world position. Full JSON serialization for scene persistence. Editor UI: grid bounds/resolution sliders, Generate/Bake/Clear buttons, probe count display.
+
+**SDF Scene:** CPU-side signed distance field evaluation with 6 primitive types (Sphere, Box, Cylinder, Torus, Plane, RoundedBox) and 6 boolean operations (Union, Subtract, Intersect + smooth variants with configurable smoothness). `SDFObjectGPU` struct (48 bytes, `alignas(16)`) for shader upload. Transform support (position, rotation via conjugate quaternion, scale). Material properties (color, metallic, roughness) per object. Editor UI: Add Sphere/Box buttons, object count, Clear.
+
+**Parallax Occlusion Mapping:** Extended `MaterialComponent` with `parallaxMode` (Basic/Steep/Occlusion Mapping/Relief Mapping), `pomMaxSteps` (8-128), and `pomHeightScale` (0-0.3). Inspector UI: mode dropdown, conditional step/scale controls for POM modes. Full serialization with validated deserialization.
+
+All three systems instantiated in `RenderSystem::Initialize()`, cleaned up in `Shutdown()`.
+
+### Depth of Field and Tilt-Shift Post-Processing
+
+Added DOF and tilt-shift post-processing infrastructure to the rendering pipeline:
+
+**Depth of Field:** Focal distance, focal range, near/far blur strength, bokeh size, aperture shape (Circle/Hexagon/Octagon), CoC debug visualization mode. Full `PostProcessSettings` UBO fields and `SceneRenderSettings` config with JSON serialization. Editor UI in PostProcessing panel. Shader implementation pending SPIR-V compilation.
+
+**Tilt-Shift:** Focus Y position, band width, blur amount controls for miniature/toy-model effect. Same serialization and editor UI treatment.
+
+### Camera Presets
+
+Added `CameraPreset` enum with 9 built-in presets: Isometric45, Isometric30, TopDown, SideScroller, FirstPerson, ThirdPerson, CinematicWide, SecurityCam, BirdsEye. `ApplyCameraPreset()` returns configured camera settings + recommended Euler rotation angles.
+
+Inspector: Preset dropdown in Camera component header applies values immediately on selection. Script bindings: `Camera_ApplyPreset(entity, presetIndex)`, `Camera_GetPresetName(index)`.
+
+### Accessibility: Dyslexia Mode, Reduced Motion, Colorblind-Safe Theme, Switch Access
+
+**Dyslexia-friendly font infrastructure:** Letter spacing, word spacing, and line spacing fields on `UITheme` and `RuntimeAccessibilitySettings`. Editor toggle in Cognitive section.
+
+**Reduced motion:** `SetReducedMotion()` on `UISystem` skips animations when enabled.
+
+**ColorblindSafe theme:** New `UIThemePreset` using blue/orange palette universally distinguishable across all color vision types, avoids red/green for state indication.
+
+**Switch access / one-button mode:** Auto-cycles focus through UICanvas elements at configurable scan speed, single input (Enter/Space/Gamepad-A) to select. Enables one-button gameplay for motor-impaired users.
+
+### Procedural Generation Script Bindings and Visual Script Nodes
+
+Exposed all 9 procedural generation algorithms to AngelScript (~15 bindings) and visual scripting (9 nodes under `NodeCategory::Procedural`): CellularAutomata, RandomWalker, BSP, DiamondSquare, LSystem, Voronoi, WFC, Grammar, PrefabAssemble. Plus result query functions (GetCell, GetHeight, GetWidth, GetGridHeight) and SpawnGrid entity creation. Wired `SetBindingsProcedural` into PlayMode and Player.
+
+---
+
 ## 2026-02-12
 
 ### Comprehensive Audit #3 — Round 2: 38 More Fixes (All 83 Addressed)

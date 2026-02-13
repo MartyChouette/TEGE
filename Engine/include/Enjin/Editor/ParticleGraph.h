@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+namespace Enjin { namespace ECS { struct ParticleEmitterComponent; } }
+
 namespace Enjin {
 namespace Editor {
 
@@ -67,9 +69,15 @@ public:
     bool IsOpen() const { return m_Open; }
     void SetOpen(bool open) { m_Open = open; }
 
+    bool Save(const std::string& path) const;
+    bool Load(const std::string& path);
+
+    bool WasCompileRequested() { bool r = m_CompileRequested; m_CompileRequested = false; return r; }
+
 private:
     ParticleGraphData* m_Graph = nullptr;
     bool m_Open = false;
+    bool m_CompileRequested = false;
     u32 m_SelectedNodeId = 0;
     Math::Vector2 m_ScrollOffset;
     f32 m_Zoom = 1.0f;
@@ -79,6 +87,20 @@ private:
     void DrawInspector();
     void DrawContextMenu();
     static const char* GetNodeName(ParticleNodeType type);
+};
+
+// Compile particle graph into ParticleEmitterComponent fields
+struct ParticleCompileResult {
+    bool success = false;
+    std::vector<std::string> errors;
+    std::vector<std::string> warnings;
+};
+
+class ENJIN_API ParticleGraphCompiler {
+public:
+    // Compile graph -> write fields into target component
+    static ParticleCompileResult Compile(const ParticleGraphData& graph,
+                                          ECS::ParticleEmitterComponent& target);
 };
 
 } // namespace Editor

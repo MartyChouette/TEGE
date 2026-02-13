@@ -330,6 +330,16 @@ constexpr const char* StreamingIsLoaded    = "Streaming_IsLoaded";
 constexpr const char* StreamingGetLoadedCount = "Streaming_GetLoadedCount";
 constexpr const char* StreamingSetEnabled  = "Streaming_SetEnabled";
 
+// Audio Event Graph
+constexpr const char* AudioGraphTriggerEvent = "AudioGraph_TriggerEvent";
+constexpr const char* AudioGraphSetParameter = "AudioGraph_SetParameter";
+constexpr const char* AudioGraphStopAll      = "AudioGraph_StopAll";
+
+// Plugin
+constexpr const char* PluginIsLoaded  = "Plugin_IsLoaded";
+constexpr const char* PluginLoad      = "Plugin_Load";
+constexpr const char* PluginUnload    = "Plugin_Unload";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

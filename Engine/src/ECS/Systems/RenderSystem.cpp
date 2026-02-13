@@ -805,6 +805,7 @@ void RenderSystem::Update(f32 deltaTime) {
             RebuildTLAS(commandBuffer);
             DispatchRTEffects(commandBuffer);
             DenoiseRTOutputs(commandBuffer);
+            CompositeRTResults(commandBuffer);
         }
     }
 
@@ -1118,8 +1119,17 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
+    // Clamp shadow distance to match game camera far plane (keeps cascade splits consistent)
+    f32 prevShadowDist = m_ShadowDistance;
+    f32 camFar = camera->GetFarPlane();
+    if (m_ShadowDistance > camFar) {
+        m_ShadowDistance = camFar;
+    }
+
     // Upload frame-level uniforms to offscreen buffers (game camera view/proj + lighting)
     UpdateFrameUniforms();
+
+    m_ShadowDistance = prevShadowDist;
 
     // Set viewport and scissor to match render target size
     VkViewport viewport{};
@@ -3913,9 +3923,20 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
 
     Renderer::Camera* prevCamera = m_Camera;
     m_Camera = camera;
+
+    // Clamp shadow distance to game camera far plane to align cascade splits
+    f32 prevShadowDist = m_ShadowDistance;
+    f32 camFar = camera->GetFarPlane();
+    if (m_ShadowDistance > camFar) {
+        m_ShadowDistance = camFar;
+    }
+
+    // Re-select shadow lights relative to game camera position
+    SelectShadowLights();
+
     RenderShadowPass();
 
-    // Also render point and spot shadow passes (previously missing from offscreen path)
+    // Also render point and spot shadow passes
     if (m_PointShadowMap && m_PointShadowPipeline && m_ActivePointShadowCount > 0) {
         RenderPointShadowPass();
     }
@@ -3923,6 +3944,7 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
         RenderSpotShadowPass();
     }
 
+    m_ShadowDistance = prevShadowDist;
     m_Camera = prevCamera;
 }
 
@@ -5230,6 +5252,22 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     Math::Matrix4 invViewProj = viewProj.Inverse();
     Math::Vector3 cameraPos = m_Camera->GetPosition();
 
+    // Detect camera changes for path tracer accumulation reset
+    bool cameraChanged = false;
+    {
+        // Compare VP matrices — any significant change resets accumulation
+        const f32* a = viewProj.m;
+        const f32* b = m_PrevViewProj.m;
+        f32 diff = 0.0f;
+        for (int i = 0; i < 16; ++i) diff += std::abs(a[i] - b[i]);
+        cameraChanged = (diff > 0.001f);
+        m_PrevViewProj = viewProj;
+    }
+    if (cameraChanged && m_PathTracer) {
+        m_PathTracer->ResetAccumulation();
+        m_RTFrameCount = 0;
+    }
+
     // Find primary directional light direction from its transform
     Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
     f32 lightIntensity = 1.0f;
@@ -5305,10 +5343,39 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 
 void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
     if (!m_RTEnabled || !m_SVGFDenoiser || m_RTMode == 1) return;
-    // Denoising is handled by the SVGF denoiser using the RT output images
-    // In a full implementation, this would call DenoiseSingleChannel/DenoiseColor
-    // for each active RT effect. For now, the raw outputs are used directly.
-    // TODO: Wire up denoiser when G-buffer MRT (motion vectors + normals) is available
+
+    // Use real depth from swapchain; normals + motion vectors still use dummy
+    // (spatial denoising still works without motion vectors — just no temporal accumulation)
+    auto* swapchain = m_Renderer->GetSwapchain();
+    VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
+        ? swapchain->GetDepthImageView() : m_RTDummyImageView;
+    VkImageView normalView = m_RTDummyImageView;
+    VkImageView motionView = m_RTDummyImageView;
+
+    // Denoise shadow output (single channel R16F)
+    if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
+        m_SVGFDenoiser->DenoiseSingleChannel(cmd,
+            m_RTShadows->GetOutputView(), depthView, normalView, motionView,
+            m_RTShadows->GetOutputView());
+    }
+    // Denoise AO output (single channel R16F)
+    if (m_RTAO && m_RTAO->GetConfig().enabled) {
+        m_SVGFDenoiser->DenoiseSingleChannel(cmd,
+            m_RTAO->GetOutputView(), depthView, normalView, motionView,
+            m_RTAO->GetOutputView());
+    }
+    // Denoise reflections (RGBA16F)
+    if (m_RTReflections && m_RTReflections->GetConfig().enabled) {
+        m_SVGFDenoiser->DenoiseColor(cmd,
+            m_RTReflections->GetOutputView(), depthView, normalView, motionView,
+            m_RTReflections->GetOutputView());
+    }
+    // Denoise GI (RGBA16F)
+    if (m_RTGI && m_RTGI->GetConfig().enabled) {
+        m_SVGFDenoiser->DenoiseColor(cmd,
+            m_RTGI->GetOutputView(), depthView, normalView, motionView,
+            m_RTGI->GetOutputView());
+    }
 }
 
 void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
@@ -5461,13 +5528,19 @@ void RenderSystem::WriteRTDescriptors() {
     storageImageInfo1.imageView = m_PathTracer ? m_PathTracer->GetOutputView() : m_RTDummyImageView;
     storageImageInfo1.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Bindings 2, 3, 4: Depth, normals, motion vectors (combined image sampler) — dummy for now
-    // Use GENERAL layout to match the actual image layout (dummy image is transitioned to GENERAL)
+    // Bindings 2, 3, 4: Depth, normals, motion vectors (combined image sampler)
+    // Binding 2 uses real swapchain depth when available; bindings 3-4 use dummy (no G-buffer MRT yet)
     VkDescriptorImageInfo samplerInfos[3]{};
     for (auto& si : samplerInfos) {
         si.sampler = m_RTDummySampler;
         si.imageView = m_RTDummyImageView;
         si.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    }
+    // Wire real depth buffer from swapchain
+    auto* swapchain = m_Renderer->GetSwapchain();
+    if (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE) {
+        samplerInfos[0].imageView = swapchain->GetDepthImageView();
+        samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     }
 
     // Bindings 5-8: RT output images (storage image)

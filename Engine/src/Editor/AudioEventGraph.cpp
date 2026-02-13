@@ -1,7 +1,12 @@
 #include "Enjin/Editor/AudioEventGraph.h"
+#include "Enjin/Audio/SimpleAudio.h"
+#include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cstring>
+#include <fstream>
+#include <nlohmann/json.hpp>
+#include <random>
 
 namespace Enjin {
 namespace Editor {
@@ -568,6 +573,414 @@ void AudioEventGraphEditor::DrawContextMenu() {
     }
 
     ImGui::EndPopup();
+}
+
+// ============================================================================
+// Save / Load
+// ============================================================================
+
+bool AudioEventGraphEditor::Save(const std::string& path) const {
+    if (!m_Graph) return false;
+
+    nlohmann::json j;
+    j["name"] = m_Graph->name;
+    j["nextNodeId"] = m_Graph->nextNodeId;
+    j["nextLinkId"] = m_Graph->nextLinkId;
+
+    auto& jNodes = j["nodes"];
+    jNodes = nlohmann::json::array();
+    for (const auto& node : m_Graph->nodes) {
+        nlohmann::json jn;
+        jn["id"] = node.id;
+        jn["type"] = static_cast<u8>(node.type);
+        jn["position"] = { node.position.x, node.position.y };
+        jn["label"] = node.label;
+        jn["audioPath"] = node.audioPath;
+        jn["audioPaths"] = node.audioPaths;
+        jn["floatValue"] = node.floatValue;
+        jn["minValue"] = node.minValue;
+        jn["maxValue"] = node.maxValue;
+        jn["parameterName"] = node.parameterName;
+        jn["busName"] = node.busName;
+        jNodes.push_back(jn);
+    }
+
+    auto& jLinks = j["links"];
+    jLinks = nlohmann::json::array();
+    for (const auto& link : m_Graph->links) {
+        nlohmann::json jl;
+        jl["id"] = link.id;
+        jl["fromNode"] = link.fromNode;
+        jl["fromPin"] = link.fromPin;
+        jl["toNode"] = link.toNode;
+        jl["toPin"] = link.toPin;
+        jLinks.push_back(jl);
+    }
+
+    std::ofstream ofs(path);
+    if (!ofs.is_open()) return false;
+    ofs << j.dump(2);
+    return ofs.good();
+}
+
+bool AudioEventGraphEditor::Load(const std::string& path) {
+    if (!m_Graph) return false;
+
+    std::ifstream ifs(path);
+    if (!ifs.is_open()) return false;
+
+    nlohmann::json j;
+    try {
+        ifs >> j;
+    } catch (...) {
+        return false;
+    }
+
+    m_Graph->nodes.clear();
+    m_Graph->links.clear();
+    m_SelectedNodeId = 0;
+
+    if (j.contains("name")) m_Graph->name = j["name"].get<std::string>();
+    if (j.contains("nextNodeId")) m_Graph->nextNodeId = j["nextNodeId"].get<u32>();
+    if (j.contains("nextLinkId")) m_Graph->nextLinkId = j["nextLinkId"].get<u32>();
+
+    if (j.contains("nodes") && j["nodes"].is_array()) {
+        for (const auto& jn : j["nodes"]) {
+            AudioGraphNode node;
+            if (jn.contains("id")) node.id = jn["id"].get<u32>();
+            if (jn.contains("type")) {
+                u8 t = jn["type"].get<u8>();
+                if (t <= static_cast<u8>(AudioNodeType::BusOutput))
+                    node.type = static_cast<AudioNodeType>(t);
+            }
+            if (jn.contains("position") && jn["position"].is_array() && jn["position"].size() >= 2) {
+                node.position.x = jn["position"][0].get<f32>();
+                node.position.y = jn["position"][1].get<f32>();
+            }
+            if (jn.contains("label")) node.label = jn["label"].get<std::string>();
+            if (jn.contains("audioPath")) node.audioPath = jn["audioPath"].get<std::string>();
+            if (jn.contains("audioPaths") && jn["audioPaths"].is_array()) {
+                for (const auto& ap : jn["audioPaths"]) {
+                    node.audioPaths.push_back(ap.get<std::string>());
+                }
+            }
+            if (jn.contains("floatValue")) node.floatValue = jn["floatValue"].get<f32>();
+            if (jn.contains("minValue")) node.minValue = jn["minValue"].get<f32>();
+            if (jn.contains("maxValue")) node.maxValue = jn["maxValue"].get<f32>();
+            if (jn.contains("parameterName")) node.parameterName = jn["parameterName"].get<std::string>();
+            if (jn.contains("busName")) node.busName = jn["busName"].get<std::string>();
+            m_Graph->nodes.push_back(node);
+        }
+    }
+
+    if (j.contains("links") && j["links"].is_array()) {
+        for (const auto& jl : j["links"]) {
+            AudioGraphLink link;
+            if (jl.contains("id")) link.id = jl["id"].get<u32>();
+            if (jl.contains("fromNode")) link.fromNode = jl["fromNode"].get<u32>();
+            if (jl.contains("fromPin")) link.fromPin = jl["fromPin"].get<u32>();
+            if (jl.contains("toNode")) link.toNode = jl["toNode"].get<u32>();
+            if (jl.contains("toPin")) link.toPin = jl["toPin"].get<u32>();
+            m_Graph->links.push_back(link);
+        }
+    }
+
+    return true;
+}
+
+// ============================================================================
+// AudioEventGraphRuntime
+// ============================================================================
+
+void AudioEventGraphRuntime::Initialize(Audio::SimpleAudio* audio) {
+    m_Audio = audio;
+    m_Graph = nullptr;
+    m_Parameters.clear();
+    m_DelayedSounds.clear();
+    m_SequenceIndices.clear();
+    m_ActiveSounds.clear();
+}
+
+void AudioEventGraphRuntime::Shutdown() {
+    StopAll();
+    m_Audio = nullptr;
+    m_Graph = nullptr;
+    m_Parameters.clear();
+    m_DelayedSounds.clear();
+    m_SequenceIndices.clear();
+    m_ActiveSounds.clear();
+}
+
+void AudioEventGraphRuntime::SetGraph(const AudioEventGraphData* graph) {
+    m_Graph = graph;
+    m_SequenceIndices.clear();
+}
+
+void AudioEventGraphRuntime::TriggerEvent(const std::string& name) {
+    if (!m_Graph || !m_Audio) return;
+
+    for (const auto& node : m_Graph->nodes) {
+        if (node.type == AudioNodeType::EventTrigger && node.parameterName == name) {
+            ExecuteFromNode(node.id);
+        }
+    }
+}
+
+void AudioEventGraphRuntime::SetParameter(const std::string& name, f32 value) {
+    if (!m_Graph || !m_Audio) return;
+
+    f32 oldValue = 0.0f;
+    auto it = m_Parameters.find(name);
+    if (it != m_Parameters.end()) {
+        oldValue = it->second;
+    }
+    m_Parameters[name] = value;
+
+    // Check ParameterTrigger nodes for threshold crossing
+    for (const auto& node : m_Graph->nodes) {
+        if (node.type == AudioNodeType::ParameterTrigger && node.parameterName == name) {
+            f32 threshold = node.floatValue;
+            // Trigger if we cross the threshold upward
+            if (oldValue < threshold && value >= threshold) {
+                ExecuteFromNode(node.id);
+            }
+        }
+    }
+}
+
+f32 AudioEventGraphRuntime::GetParameter(const std::string& name) const {
+    auto it = m_Parameters.find(name);
+    return (it != m_Parameters.end()) ? it->second : 0.0f;
+}
+
+void AudioEventGraphRuntime::StopAll() {
+    if (!m_Audio) return;
+    for (auto handle : m_ActiveSounds) {
+        m_Audio->Stop(handle);
+    }
+    m_ActiveSounds.clear();
+    m_DelayedSounds.clear();
+}
+
+void AudioEventGraphRuntime::Update(f32 deltaTime) {
+    if (!m_Audio) return;
+
+    // Process delayed sounds
+    for (auto it = m_DelayedSounds.begin(); it != m_DelayedSounds.end(); ) {
+        it->remainingDelay -= deltaTime;
+        if (it->remainingDelay <= 0.0f) {
+            // Play the sound
+            Audio::SoundHandle handle = m_Audio->Play(
+                static_cast<Audio::AudioClipHandle>(it->clip),
+                it->volume, it->pitch, false);
+            if (handle != Audio::INVALID_SOUND) {
+                m_ActiveSounds.push_back(handle);
+            }
+            it = m_DelayedSounds.erase(it);
+        } else {
+            ++it;
+        }
+    }
+
+    // Clean up finished sounds from active list
+    for (auto it = m_ActiveSounds.begin(); it != m_ActiveSounds.end(); ) {
+        if (!m_Audio->IsPlaying(*it)) {
+            it = m_ActiveSounds.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
+void AudioEventGraphRuntime::ExecuteFromNode(u32 nodeId) {
+    if (!m_Graph || !m_Audio) return;
+
+    // Walk forward from trigger node through connected nodes
+    std::vector<u32> connected = GetConnectedNodes(nodeId);
+    for (u32 connId : connected) {
+        // Find the node
+        const AudioGraphNode* connNode = nullptr;
+        for (const auto& n : m_Graph->nodes) {
+            if (n.id == connId) { connNode = &n; break; }
+        }
+        if (!connNode) continue;
+
+        // If it's a source node, resolve the chain and play
+        if (connNode->type == AudioNodeType::SoundClip ||
+            connNode->type == AudioNodeType::RandomClip ||
+            connNode->type == AudioNodeType::SequenceClip) {
+
+            AudioChainResult result = ResolveChain(connId);
+            if (result.clip == 0) continue;  // Invalid clip
+
+            if (result.delay > 0.0f) {
+                // Queue delayed playback
+                DelayedSound ds;
+                ds.clip = result.clip;
+                ds.volume = result.volume;
+                ds.pitch = result.pitch;
+                ds.pan = result.pan;
+                ds.remainingDelay = result.delay;
+                m_DelayedSounds.push_back(ds);
+            } else {
+                // Play immediately
+                Audio::SoundHandle handle = m_Audio->Play(
+                    static_cast<Audio::AudioClipHandle>(result.clip),
+                    result.volume, result.pitch, false);
+                if (handle != Audio::INVALID_SOUND) {
+                    m_ActiveSounds.push_back(handle);
+                }
+            }
+        } else {
+            // For non-source nodes (processing/mixing), continue walking
+            ExecuteFromNode(connId);
+        }
+    }
+}
+
+std::vector<u32> AudioEventGraphRuntime::GetConnectedNodes(u32 fromNodeId) const {
+    std::vector<u32> result;
+    if (!m_Graph) return result;
+
+    for (const auto& link : m_Graph->links) {
+        if (link.fromNode == fromNodeId) {
+            result.push_back(link.toNode);
+        }
+    }
+    return result;
+}
+
+u32 AudioEventGraphRuntime::GetInputNode(u32 toNodeId) const {
+    if (!m_Graph) return 0;
+
+    for (const auto& link : m_Graph->links) {
+        if (link.toNode == toNodeId) {
+            return link.fromNode;
+        }
+    }
+    return 0;
+}
+
+AudioEventGraphRuntime::AudioChainResult AudioEventGraphRuntime::ResolveChain(u32 nodeId) {
+    AudioChainResult result;
+    if (!m_Graph || !m_Audio) return result;
+
+    // Find the node
+    const AudioGraphNode* node = nullptr;
+    for (const auto& n : m_Graph->nodes) {
+        if (n.id == nodeId) { node = &n; break; }
+    }
+    if (!node) return result;
+
+    // Handle source nodes: load the clip
+    switch (node->type) {
+        case AudioNodeType::SoundClip: {
+            if (!node->audioPath.empty()) {
+                result.clip = m_Audio->LoadClip(node->audioPath);
+            }
+            break;
+        }
+        case AudioNodeType::RandomClip: {
+            if (!node->audioPaths.empty()) {
+                static std::mt19937 rng(std::random_device{}());
+                std::uniform_int_distribution<usize> dist(0, node->audioPaths.size() - 1);
+                usize idx = dist(rng);
+                result.clip = m_Audio->LoadClip(node->audioPaths[idx]);
+            }
+            break;
+        }
+        case AudioNodeType::SequenceClip: {
+            if (!node->audioPaths.empty()) {
+                u32& seqIdx = m_SequenceIndices[nodeId];
+                if (seqIdx >= static_cast<u32>(node->audioPaths.size())) {
+                    seqIdx = 0;
+                }
+                result.clip = m_Audio->LoadClip(node->audioPaths[seqIdx]);
+                seqIdx++;
+            }
+            break;
+        }
+        default:
+            // Not a source node, skip
+            break;
+    }
+
+    // Walk forward through processing nodes
+    std::vector<u32> connected = GetConnectedNodes(nodeId);
+    for (u32 nextId : connected) {
+        const AudioGraphNode* nextNode = nullptr;
+        for (const auto& n : m_Graph->nodes) {
+            if (n.id == nextId) { nextNode = &n; break; }
+        }
+        if (!nextNode) continue;
+
+        switch (nextNode->type) {
+            case AudioNodeType::Volume:
+                result.volume *= nextNode->floatValue;
+                break;
+            case AudioNodeType::Pitch:
+                result.pitch *= nextNode->floatValue;
+                break;
+            case AudioNodeType::Pan:
+                result.pan = nextNode->floatValue;
+                break;
+            case AudioNodeType::Delay:
+                result.delay += nextNode->floatValue;
+                break;
+            case AudioNodeType::LowPass:
+            case AudioNodeType::HighPass:
+                // No runtime filter support yet - pass through
+                break;
+            case AudioNodeType::Mixer:
+            case AudioNodeType::Crossfade:
+                // Pass through
+                break;
+            case AudioNodeType::BusOutput:
+                result.busName = nextNode->busName;
+                break;
+            case AudioNodeType::MasterOutput:
+                // Terminal node
+                break;
+            default:
+                break;
+        }
+
+        // Continue walking from processing/output nodes
+        if (nextNode->type != AudioNodeType::MasterOutput &&
+            nextNode->type != AudioNodeType::BusOutput) {
+            // Walk further through the chain
+            std::vector<u32> further = GetConnectedNodes(nextId);
+            for (u32 furtherId : further) {
+                const AudioGraphNode* furtherNode = nullptr;
+                for (const auto& n : m_Graph->nodes) {
+                    if (n.id == furtherId) { furtherNode = &n; break; }
+                }
+                if (!furtherNode) continue;
+
+                switch (furtherNode->type) {
+                    case AudioNodeType::Volume:
+                        result.volume *= furtherNode->floatValue;
+                        break;
+                    case AudioNodeType::Pitch:
+                        result.pitch *= furtherNode->floatValue;
+                        break;
+                    case AudioNodeType::Pan:
+                        result.pan = furtherNode->floatValue;
+                        break;
+                    case AudioNodeType::Delay:
+                        result.delay += furtherNode->floatValue;
+                        break;
+                    case AudioNodeType::BusOutput:
+                        result.busName = furtherNode->busName;
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+    }
+
+    return result;
 }
 
 } // namespace Editor

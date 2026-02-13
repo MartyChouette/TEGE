@@ -1096,6 +1096,8 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterAIBindings(engine);
     RegisterAccessibilityBindings(engine);
     RegisterProceduralBindings(engine);
+    RegisterPluginBindings(engine);
+    RegisterAudioGraphBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

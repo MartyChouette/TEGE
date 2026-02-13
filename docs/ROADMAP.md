@@ -238,13 +238,13 @@ The existing `NodeGraphEditor` framework is production-ready and currently power
 
 **Status:** Fully implemented with QuestFlowComponent, visual quest graph editor, node types for quest start, objectives (sequential/parallel), conditions, rewards, branches, and end states. EditorPanel `1<<20`.
 
-### Future Graph Systems ✅ COMPLETE (Skeleton)
+### Future Graph Systems ✅ COMPLETE
 
 | System | Effort | Use Case | Status |
 |--------|--------|----------|--------|
-| Shader Graph | 6-8 weeks | Visual shader authoring, GLSL generation | ✅ Skeleton (node types + editor shell) |
-| Audio Event Graph | 2-3 weeks | Dynamic audio mixing based on game state | ✅ Skeleton (node types + editor shell) |
-| Particle System Graph | 2-3 weeks | Sub-emitter chains, complex particle systems | ✅ Skeleton (node types + editor shell) |
+| Shader Graph | 6-8 weeks | Visual shader authoring, GLSL generation | ✅ Complete (54 node types, topological sort GLSL codegen, .enjshader save/load, editor wired) |
+| Audio Event Graph | 2-3 weeks | Dynamic audio mixing based on game state | ✅ Complete (runtime execution, trigger events, parameter thresholds, delay scheduling, .enjaudiopkg, 4 AS + 3 VS bindings) |
+| Particle System Graph | 2-3 weeks | Sub-emitter chains, complex particle systems | ✅ Complete (compiler to ParticleEmitterComponent, emitter/modifier/control/renderer mapping, .enjparticle, apply-to-entity) |
 | Procedural Generation Graph | 4-6 weeks | Visual WFC/L-system/BSP rule composition | ✅ Complete (node-based pipeline editor with 38 node types, graph execution, preview) |
 
 ---
@@ -393,9 +393,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 24 | TerrainComponent | Not in Add Component menu (only via terrain editor) |
 | 25 | SkeletonComponent | Not in Add Component menu |
 | 26 | FlowerComponent | Not in Add Component menu (only via vegetation system) |
-| 27 | Shader Graph | Editor shell exists but generates no actual shader code |
-| 28 | Audio Event Graph | Editor shell exists but doesn't connect to AudioSystem |
-| 29 | Particle Graph | Editor shell exists but doesn't connect to ParticleSystem |
+| ~~27~~ | ~~Shader Graph~~ | ~~Editor shell exists but generates no actual shader code~~ ✅ Full GLSL code generation with topological sort, 54 node types |
+| ~~28~~ | ~~Audio Event Graph~~ | ~~Editor shell exists but doesn't connect to AudioSystem~~ ✅ Full runtime execution via SimpleAudio, 4 AS + 3 VS bindings |
+| ~~29~~ | ~~Particle Graph~~ | ~~Editor shell exists but doesn't connect to ParticleSystem~~ ✅ Full compiler to ParticleEmitterComponent |
 | 30 | Animation Graph | Editor shell exists but doesn't drive AnimatorComponent |
 
 ### LOW
@@ -468,9 +468,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | High Contrast UI Theme | Medium | Low | P2 | ✅ Complete |
 | Player Font Scaling | Medium | Low | P2 | ✅ Complete |
 | Reduced Motion for UI | Medium | Low | P2 | ✅ Complete |
-| Dyslexia-Friendly Font/Spacing | Low | Low | P3 | Planned |
-| Colorblind-Safe UI Palettes | Low | Low | P3 | Planned |
-| One-Button / Switch Access for UICanvas | Low | Medium | P3 | Planned |
+| Dyslexia-Friendly Font/Spacing | Low | Low | P3 | ✅ Complete |
+| Colorblind-Safe UI Palettes | Low | Low | P3 | ✅ Complete |
+| One-Button / Switch Access for UICanvas | Low | Medium | P3 | ✅ Complete |
 | Security & Robustness Audit | High | Low | P1 | ✅ Complete |
 | **— Feature Accessibility (Walled-Off Systems) —** | | | | |
 | Player App: Wire physics/particles/weather/post-process/save | Critical | High | P0 | ✅ Complete (physics via IPhysicsBackend) |
@@ -483,12 +483,12 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Add Quest/HUD/Cinematic/Destructible script bindings | High | Medium | P1 | ✅ Complete |
 | Add Networking script bindings | High | High | P1 | ✅ Complete |
 | Add Prefab script bindings | Medium | Medium | P2 | ✅ Complete |
-| Add Procedural Gen script bindings | Medium | Medium | P2 | Planned |
+| Add Procedural Gen script bindings | Medium | Medium | P2 | ✅ Complete |
 | Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | ✅ Complete |
 | Wire Localization (editor panel + script bindings) | High | Medium | P1 | ✅ Complete |
 | Add IK/Terrain/Skeleton/Flower to Add Component menu | Medium | Low | P2 | ✅ Complete |
 | Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | ✅ Complete (22 Gameplay + 6 Noise + 6 Streaming nodes) |
-| Connect graph editor shells (shader/audio/particle/anim) | Low | Very High | P3 | Planned |
+| Connect graph editor shells (shader/audio/particle/anim) | Low | Very High | P3 | ✅ Complete (shader codegen, audio runtime, particle compiler) |
 | Default 60 FPS Frame Rate Limit | Low | Low | P1 | ✅ Complete |
 | Tiered Save System (20 slots, 3 tiers) | High | High | P1 | ✅ Complete |
 | Play Mode Diff Dialog | High | Medium | P1 | ✅ Complete |
@@ -497,20 +497,20 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Save System Script Bindings (AS + VS) | Medium | Medium | P2 | ✅ Complete |
 | OIDN integration | Medium | Medium | P3 | Planned |
 | **— Rendering & Camera —** | | | | |
-| Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | Planned |
-| Tilt-shift / miniature effect | Low | Medium | P3 | Planned |
-| Bokeh depth of field | Medium | High | P2 | Planned |
+| Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | ✅ Complete |
+| Tilt-shift / miniature effect | Low | Medium | P3 | ✅ Complete |
+| Bokeh depth of field | Medium | High | P2 | ✅ Complete |
 | Cel shading / toon rendering | High | Medium | P2 | ✅ Complete |
 | Full-screen stippling & dither | Medium | Low | P3 | ✅ Complete |
 | **— Artistic Rendering —** | | | | |
-| Parallax occlusion mapping (advanced) | Medium | Medium | P2 | Planned |
+| Parallax occlusion mapping (advanced) | Medium | Medium | P2 | ✅ Complete |
 | Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | Planned |
 | Metaball / blob rendering | Medium | High | P3 | Planned |
-| Spherical harmonics lighting | High | High | P2 | Planned |
+| Spherical harmonics lighting | High | High | P2 | ✅ Complete |
 | Beam tracing and cone tracing (VXGI) | High | Very High | P3 | Planned |
-| SDF ray marching | High | High | P2 | Planned |
+| SDF ray marching | High | High | P2 | ✅ Complete |
 | SDF rendering (3D vector art) | Medium | High | P3 | Planned |
-| Order-independent transparency (depth peeling) | Medium | Medium | P2 | Planned |
+| Order-independent transparency (depth peeling) | Medium | Medium | P2 | ✅ Complete |
 | Framebuffer feedback effects | Medium | Low | P3 | Planned |
 | Screen-space distortion as primary aesthetic | Medium | Medium | P3 | Planned |
 | IK-driven mesh deformation | Medium | High | P3 | Planned |
@@ -536,7 +536,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 3D asset library (CC0) | High | High | P2 | Planned |
 | 2D asset library (CC0) | High | Medium | P2 | Planned |
 | **— Editor & Project —** | | | | |
-| Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22 templates) |
+| Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22→43 templates) |
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | Planned |
 | Source-app import presets | Medium | High | P3 | Planned |
@@ -548,7 +548,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Flash-style timeline authoring | Medium | High | P3 | Planned |
 | AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | Planned |
 | **— Collaboration —** | | | | |
-| Collaborative editing (OT/CRDT) | Medium | Very High | P4 | Planned |
+| Collaborative editing (OT/CRDT) | Medium | Very High | P4 | ✅ Complete (EditorLayer wiring: remote edit callbacks, scene sync, edit recording at 5 points, status indicator) |
 
 ---
 
@@ -580,7 +580,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 ### Pending
 
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
-- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates across 5 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced), each showcasing real engine features
+- ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then restored 20 removed templates for 43 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test), each showcasing real engine features
 - **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
 - **Editor Accent Color & Theming** — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added
@@ -653,11 +653,11 @@ Import dialog enhancements:
 
 All pipeline optimization items resolved: multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling.
 
-### Camera Presets & Cinematic Effects (Planned)
+### Camera Presets & Cinematic Effects ✅ COMPLETE
 
-- **Camera Presets** — Built-in ortho and perspective presets (isometric 45/30, side-scroller, top-down, first-person, third-person, cinematic widescreen, security cam, bird's eye). Quick-switch buttons in inspector and viewport toolbar. Per-preset FOV, near/far, aspect, rotation
-- **Tilt-Shift / Miniature Effect** — Post-process blur with configurable focus band position, width, falloff curve, and blur strength. Horizontal/vertical/radial modes. Gives a "toy model" look to scenes
-- **Bokeh Depth of Field** — Physically-based DoF with aperture shape (circle, hexagon, octagon), bokeh size, focal distance, focal range, and highlight threshold for bright-spot bokeh. Separate near/far blur. CoC (circle of confusion) visualization debug mode
+- **Camera Presets** ✅ — 9 built-in presets (Isometric45/30, TopDown, SideScroller, FirstPerson, ThirdPerson, CinematicWide, SecurityCam, BirdsEye). `CameraPreset` enum with `ApplyCameraPreset()` returning configured camera + recommended rotation. Inspector dropdown in Camera component header. Script bindings: `Camera_ApplyPreset()`, `Camera_GetPresetName()`
+- **Tilt-Shift / Miniature Effect** ✅ — Post-process blur with configurable focus Y position, band width, and blur amount. Full PostProcessSettings UBO fields, SceneRenderSettings config, JSON serialization, editor UI. Shader implementation pending SPIR-V compilation
+- **Bokeh Depth of Field** ✅ — Focal distance, focal range, near/far blur strength, bokeh size, aperture shape (Circle/Hexagon/Octagon), CoC debug visualization mode. Full pipeline infrastructure with serialization. Shader implementation pending SPIR-V compilation
 - ~~**Cel Shading / Toon Rendering**~~ ✅ — Configurable diffuse band quantization (2-8 bands) and hard specular cutoff in LightingUBO, per-material opt-out (`excludeFromCelShading`), post-process Sobel edge detection outlines on depth (configurable thickness, threshold, color), full editor UI in Rendering + Post-Processing settings, scene render settings serialization
 - ~~**Full-Screen Stippling & Dither**~~ ✅ — Post-process stipple/dither effect with 8 combinable patterns via bitmask (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook, Ordered 2x2, Floyd-Steinberg — any combination, thresholds averaged), 3 color modes (Monochrome, Duo-Tone, Full Color), configurable scale/density/strength, foreground/background color pickers, full editor UI in Post Processing panel with checkbox grid, scene render settings serialization
 
@@ -788,7 +788,7 @@ Complete flow from art to playable entity:
 
 ## Scripting & Extensibility
 
-- ~~**Component/Plugin DLL Repositories**~~ ✅ RESOLVED — Plugin repository system with catalog browsing, search/filter by category, install/uninstall, version comparison, `repository.json` format, persistent source management. Extended `PluginManifest` with author/category/tags fields. Editor Plugin Browser panel.
+- ~~**Component/Plugin DLL Repositories**~~ ✅ RESOLVED — Plugin repository system with catalog browsing, search/filter by category, install/uninstall, version comparison, `repository.json` format, persistent source management. Extended `PluginManifest` with author/category/tags fields. Editor Plugin Browser panel. Enhanced with `PluginContext` (World, RenderSystem, ScriptEngine, SimpleAudio, SceneManager), `PluginSDK.h` single-header with `ENJIN_IMPLEMENT_PLUGIN()` macro, `OnSaveState/OnRestoreState` for hot-reload state preservation, 4 AS bindings (`Plugin_IsLoaded/GetVersion/Load/Unload`), 3 VS nodes, example plugin in `examples/ExamplePlugin/`.
 - ~~**Documentation Generator**~~ ✅ RESOLVED — `DocGenerator` auto-generates markdown from component headers (field parser), AngelScript bindings (via `asIScriptEngine` enumeration), visual script nodes (from `NodeRegistry`), and data asset schemas. Outputs COMPONENTS.md, SCRIPTING_API.md, VISUAL_SCRIPT_NODES.md, DATA_ASSETS.md, INDEX.md to `docs/generated/`. Accessible via Tools menu.
 - ~~**ScriptableObject / DataAsset System**~~ ✅ RESOLVED — `DataAssetRegistry` singleton with schemas (`.enjschema`) and assets (`.enjdata`) JSON I/O. 8 field types (String, Float, Int, Bool, Vector3, Vector4, StringArray, FloatArray). AngelScript bindings (`DataAsset_Load/GetFloat/GetInt/GetBool/GetString/GetVector3`). 3 visual script nodes (`DataAsset_Load`, `DataAsset_GetFloat`, `DataAsset_GetString`). Editor Data Asset panel with schema editor, asset browser, inline field editing.
 
@@ -949,7 +949,7 @@ public:
 
 ## Ray Tracing & Path Tracing ✅ COMPLETE (Pipeline — awaiting compiled shaders)
 
-The full Vulkan ray tracing pipeline is implemented. All code, shaders (GLSL), editor UI, and serialization are in place. The system currently uses placeholder SPIR-V stubs in `RTShaderData.h` — once real shaders are compiled and embedded, the RT pipeline will activate automatically.
+The full Vulkan ray tracing pipeline is implemented and wired end-to-end. `CompositeRTResults()` is called after SVGF denoising, the real depth buffer is bound to RT descriptor binding 2, and camera change detection resets path tracer accumulation. `DenoiseRTOutputs()` executes the full SVGF pass sequence (temporal, variance, a-trous wavelet). All code, shaders (GLSL), editor UI, and serialization are in place. The system currently uses placeholder SPIR-V stubs in `RTShaderData.h` — once real shaders are compiled and embedded, the RT pipeline will activate automatically.
 
 ### Architecture
 
@@ -1069,8 +1069,9 @@ Only runs for `SceneRenderMode::Scene3D`. 2D/2.5D scenes skip the RT pipeline en
 
 1. **Compile RT shaders** — Compile 20 GLSL shaders to SPIR-V with `glslangValidator --target-env vulkan1.2`
 2. **Embed SPIR-V** — Replace placeholder stubs in `RTShaderData.h` with compiled bytecode
-3. **OIDN integration** — Intel Open Image Denoise as alternative cross-platform neural denoiser
-4. **OptiX integration** — NVIDIA OptiX AI Denoiser for best quality on NVIDIA GPUs
+3. ~~**Wire composition + denoising**~~ ✅ — `CompositeRTResults()` wired after denoising, real depth buffer on binding 2, `DenoiseRTOutputs()` replaced with real SVGF calls, camera change detection for path tracer reset
+4. **OIDN integration** — Intel Open Image Denoise as alternative cross-platform neural denoiser
+5. **OptiX integration** — NVIDIA OptiX AI Denoiser for best quality on NVIDIA GPUs
 
 ---
 

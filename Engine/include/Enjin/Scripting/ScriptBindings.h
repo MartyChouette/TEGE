@@ -14,6 +14,8 @@ namespace Renderer { class PostProcessing; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; }
 namespace Effects { class WeatherSystem; class DestructibleSystem; }
 namespace Procedural { class LevelGenerator; }
+namespace Plugin { class PluginSystem; }
+namespace Editor { class AudioEventGraphRuntime; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -88,6 +90,18 @@ void RegisterAIBindings(asIScriptEngine* engine);
 
 // Registration for procedural generation bindings (defined in ScriptBindings_Procedural.cpp)
 void RegisterProceduralBindings(asIScriptEngine* engine);
+
+// Registration for plugin bindings (defined in ScriptBindings_Plugin.cpp)
+void RegisterPluginBindings(asIScriptEngine* engine);
+
+// Registration for audio event graph bindings (defined in ScriptBindings_AudioGraph.cpp)
+void RegisterAudioGraphBindings(asIScriptEngine* engine);
+
+// Plugin system setter
+void SetBindingsPluginSystem(Plugin::PluginSystem* system);
+
+// Audio event graph runtime setter
+void SetBindingsAudioGraphRuntime(Editor::AudioEventGraphRuntime* runtime);
 
 } // namespace Scripting
 } // namespace Enjin
