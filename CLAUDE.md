@@ -276,7 +276,7 @@ struct PushConstants {
 - **`PrefabManager`** - Create/instantiate/save/load `.enjprefab` files with per-instance overrides
 - **`BuildPipeline`** - Full game export: scan → validate → pack `.enjpak` → copy player → manifest
 - **Pack format:** `.enjpak` with magic `ENJPAK10`, per-file CRC32, XOR obfuscation (key: `enjin_default_pack_key_2025`)
-- **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`. Runtime systems: ParticleSystem, SubtitleSystem, AlternativeInputManager, AccessibilityAnnouncer, PostProcessing, reduced motion wiring, font scaling
+- **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`. Runtime systems: ParticleSystem, SubtitleSystem, AlternativeInputManager, AccessibilityAnnouncer, PostProcessing, FluidSimulation, WindSystem, WorldTime, SeasonalWeather, reduced motion wiring, font scaling. Applies per-scene render settings after loading.
 
 ### Scripting
 
