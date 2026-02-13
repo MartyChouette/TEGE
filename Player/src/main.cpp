@@ -57,6 +57,7 @@
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
+#include "Enjin/Networking/NetworkSystem.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -243,6 +244,7 @@ public:
         m_DestructibleSystem.Initialize(m_World.get());
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
+        m_NetworkSystem.SetWorld(m_World.get());
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
 
@@ -445,6 +447,9 @@ public:
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
         }
         m_DestructibleSystem.Update(deltaTime);
+
+        // Networking
+        m_NetworkSystem.Update(deltaTime);
 
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
@@ -652,7 +657,7 @@ private:
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
         Enjin::Scripting::SetBindingsPostProcessing(nullptr); // No post-processing in standalone player
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
-        Enjin::Scripting::SetBindingsNetworking(nullptr); // No NetworkSystem in standalone player yet
+        Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
 
         // Wire dialogue system event bus
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -683,6 +688,7 @@ private:
         // Initialize visual scripts and behavior trees
         m_VisualScriptSystem.SetPhysics(m_Physics.get());
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
+        m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
@@ -807,6 +813,7 @@ private:
     Enjin::Effects::DestructibleSystem m_DestructibleSystem;
     Enjin::Scene::StreamingManager m_StreamingManager;
     Enjin::Scene::SceneManager m_SceneManager;
+    Enjin::Networking::NetworkSystem m_NetworkSystem;
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
         m_DialogueSystem.Update(m_World.get(), deltaTime);

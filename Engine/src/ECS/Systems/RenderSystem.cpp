@@ -926,11 +926,54 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Single-camera main pass (default)
 
-    // Render skybox first (behind all geometry)
-    RenderSkybox(commandBuffer);
-
     // Upload frame-level uniforms once (view/proj + lighting)
     UpdateFrameUniforms();
+
+    // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
+    {
+        m_SortedRenderList.clear();
+        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            if (!xform || !xform->visible) continue;
+
+            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
+            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
+                usize entityIdx = static_cast<usize>(entity);
+                if (entityIdx < m_EntityToCullIndex.size()) {
+                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
+                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
+                        continue;
+                    }
+                }
+            }
+
+            // Skip 2D sprites — rendered in sorted pass after 3D geometry
+            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+
+            m_SortedRenderList.push_back(entity);
+        }
+
+        // Sort by cachedTextureKey so entities sharing textures are drawn consecutively,
+        // maximizing descriptor set cache hits (skipping redundant vkUpdateDescriptorSets)
+        std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
+            [this](Entity a, Entity b) {
+                auto* matA = m_World->GetComponent<MaterialComponent>(a);
+                auto* matB = m_World->GetComponent<MaterialComponent>(b);
+                const auto& keyA = matA ? matA->cachedTextureKey : MaterialComponent::TextureKey{};
+                const auto& keyB = matB ? matB->cachedTextureKey : MaterialComponent::TextureKey{};
+                return keyA < keyB;
+            });
+    }
+
+    // In play mode, the game view renders via RenderToTarget() to an offscreen target
+    // which is composited as a fullscreen ImGui::Image. The main swapchain pass geometry
+    // is entirely occluded behind ImGui, so skip it to avoid double-drawing everything.
+    if (m_SkipMainPassRendering) {
+        return;
+    }
+
+    // Render skybox first (behind all geometry)
+    RenderSkybox(commandBuffer);
 
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
@@ -961,43 +1004,6 @@ void RenderSystem::Update(f32 deltaTime) {
         Math::Vector3 camPos;
         bool doLOD = (m_Camera != nullptr);
         if (doLOD) camPos = m_Camera->GetPosition();
-
-        // Collect visible, non-sprite entities and sort by material for descriptor caching
-        m_SortedRenderList.clear();
-        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-            // Skip invisible entities or entities without transform
-            {
-                auto* xform = m_World->GetComponent<TransformComponent>(entity);
-                if (!xform || !xform->visible) continue;
-            }
-
-            // Skip GPU-culled entities (frustum culling — disabled in editor mode)
-            if (m_GPUCullingEnabled && !m_IsEditorMode && m_GPUCulling && !m_CullableObjects.empty()) {
-                usize entityIdx = static_cast<usize>(entity);
-                if (entityIdx < m_EntityToCullIndex.size()) {
-                    u32 cullIdx = m_EntityToCullIndex[entityIdx];
-                    if (cullIdx != UINT32_MAX && !m_GPUCulling->IsVisible(cullIdx)) {
-                        continue;
-                    }
-                }
-            }
-
-            // Skip 2D sprites — rendered in sorted pass after 3D geometry
-            if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-
-            m_SortedRenderList.push_back(entity);
-        }
-
-        // Sort by cachedTextureKey so entities sharing textures are drawn consecutively,
-        // maximizing descriptor set cache hits (skipping redundant vkUpdateDescriptorSets)
-        std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
-            [this](Entity a, Entity b) {
-                auto* matA = m_World->GetComponent<MaterialComponent>(a);
-                auto* matB = m_World->GetComponent<MaterialComponent>(b);
-                const auto& keyA = matA ? matA->cachedTextureKey : MaterialComponent::TextureKey{};
-                const auto& keyB = matB ? matB->cachedTextureKey : MaterialComponent::TextureKey{};
-                return keyA < keyB;
-            });
 
         for (Entity entity : m_SortedRenderList) {
             // LOD selection (if camera is available)
@@ -1109,8 +1115,19 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     // Reset descriptor cache for this render pass
     m_LastBound.Reset();
 
-    // Render all entities with mesh and transform (skip sprites — drawn in sorted pass)
-    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+    // Bind pipeline and descriptor set ONCE before the entity loop (not per-entity)
+    m_Pipeline->Bind(commandBuffer);
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+
+    // Use the sorted render list (sorted by cachedTextureKey) to maximize descriptor cache hits.
+    // The main pass builds m_SortedRenderList each frame; reuse it for the offscreen path.
+    // If the list is empty (e.g. first frame), fall back to unsorted iteration.
+    const auto& renderList = m_SortedRenderList.empty()
+        ? m_World->GetEntitiesWithComponent<MeshComponent>()
+        : m_SortedRenderList;
+
+    for (Entity entity : renderList) {
         {
             // Skip invisible entities or entities without transform
             auto* xformRT = m_World->GetComponent<TransformComponent>(entity);
@@ -1137,15 +1154,6 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
 
             // Update per-entity material UBO
             UpdateMaterialBuffer(entity);
-
-            // Bind pipeline and descriptor set (offscreen set with game camera UBOs)
-            m_Pipeline->Bind(commandBuffer);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1, &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
-
-            // Re-set viewport/scissor (pipeline bind may reset dynamic state)
-            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
             // Push constants
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -3879,6 +3887,15 @@ void RenderSystem::RenderShadowPassForCamera(Renderer::Camera* camera) {
     Renderer::Camera* prevCamera = m_Camera;
     m_Camera = camera;
     RenderShadowPass();
+
+    // Also render point and spot shadow passes (previously missing from offscreen path)
+    if (m_PointShadowMap && m_PointShadowPipeline && m_ActivePointShadowCount > 0) {
+        RenderPointShadowPass();
+    }
+    if (m_SpotShadowMap && m_SpotShadowPipeline && m_ActiveSpotShadowCount > 0) {
+        RenderSpotShadowPass();
+    }
+
     m_Camera = prevCamera;
 }
 

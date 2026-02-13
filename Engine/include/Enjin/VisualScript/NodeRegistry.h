@@ -293,6 +293,16 @@ constexpr const char* SubtitleShow         = "Subtitle_Show";
 constexpr const char* AnnouncerAnnounce    = "Announcer_Announce";
 constexpr const char* ColorblindSetMode    = "Colorblind_SetMode";
 
+// Input
+constexpr const char* InputIsKeyPressed    = "Input_IsKeyPressed";
+constexpr const char* InputIsKeyDown       = "Input_IsKeyDown";
+constexpr const char* InputGetMousePosition = "Input_GetMousePosition";
+constexpr const char* InputGetAxis         = "Input_GetAxis";
+
+// Scene Management
+constexpr const char* SceneLoadScene       = "Scene_LoadScene";
+constexpr const char* SceneGetCurrentScene = "Scene_GetCurrentScene";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

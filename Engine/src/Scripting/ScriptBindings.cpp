@@ -1097,6 +1097,7 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterFlowerBindings(engine);
     RegisterPhysics2DBindings(engine);
     RegisterNetworkBindings(engine);
+    RegisterSpriteBindings(engine);
     RegisterAIBindings(engine);
     RegisterAccessibilityBindings(engine);
 

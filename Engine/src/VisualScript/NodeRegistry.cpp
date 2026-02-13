@@ -23,6 +23,7 @@
 #include "Enjin/ECS/Components/Flower.h"
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -5158,6 +5159,154 @@ void NodeRegistry::RegisterBuiltinNodes() {
             (void)ctx;
             (void)inputs;
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // INPUT NODES
+    // ========================================================================
+
+    // Input Is Key Pressed (pure) - single frame press
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::InputIsKeyPressed;
+        def.displayName = "Is Key Pressed";
+        def.description = "Check if a key was pressed this frame (single frame)";
+        def.category = NodeCategory::Input;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.7f, 0.2f);
+        def.inputs = {Int("Key Code", PK::Input, 0)};
+        def.outputs = {Bool("Pressed", PK::Output)};
+        def.keywords = {"input", "key", "pressed", "keyboard", "down"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 keyCode = (inputs.size() > 0 && std::holds_alternative<i32>(inputs[0]))
+                ? std::get<i32>(inputs[0]) : 0;
+            return Enjin::Input::IsKeyPressed(static_cast<Enjin::KeyCode>(keyCode));
+        };
+        RegisterNode(def);
+    }
+
+    // Input Is Key Down (pure) - held
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::InputIsKeyDown;
+        def.displayName = "Is Key Down";
+        def.description = "Check if a key is currently held down";
+        def.category = NodeCategory::Input;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.7f, 0.2f);
+        def.inputs = {Int("Key Code", PK::Input, 0)};
+        def.outputs = {Bool("Down", PK::Output)};
+        def.keywords = {"input", "key", "held", "keyboard", "down"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 keyCode = (inputs.size() > 0 && std::holds_alternative<i32>(inputs[0]))
+                ? std::get<i32>(inputs[0]) : 0;
+            return Enjin::Input::IsKeyDown(static_cast<Enjin::KeyCode>(keyCode));
+        };
+        RegisterNode(def);
+    }
+
+    // Input Get Mouse Position (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::InputGetMousePosition;
+        def.displayName = "Get Mouse Position";
+        def.description = "Get the current mouse cursor position";
+        def.category = NodeCategory::Input;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.7f, 0.2f);
+        def.inputs = {};
+        def.outputs = {
+            Float("X", PK::Output),
+            Float("Y", PK::Output)
+        };
+        def.keywords = {"input", "mouse", "position", "cursor", "x", "y"};
+        // Pure node with multiple outputs: evaluate returns first (X)
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            auto pos = Enjin::Input::GetMousePosition();
+            return pos.x;
+        };
+        RegisterNode(def);
+    }
+
+    // Input Get Axis (pure) - gamepad axis
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::InputGetAxis;
+        def.displayName = "Get Gamepad Axis";
+        def.description = "Get the value of a gamepad axis (-1 to 1)";
+        def.category = NodeCategory::Input;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.9f, 0.7f, 0.2f);
+        def.inputs = {
+            Int("Axis", PK::Input, 0),
+            Int("Gamepad Index", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"input", "gamepad", "axis", "stick", "joystick", "controller"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            i32 axis = (inputs.size() > 0 && std::holds_alternative<i32>(inputs[0]))
+                ? std::get<i32>(inputs[0]) : 0;
+            i32 index = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            return Enjin::Input::GetGamepadAxis(static_cast<Enjin::GamepadAxis>(axis), index);
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // SCENE NODES
+    // ========================================================================
+
+    // Scene Load Scene
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SceneLoadScene;
+        def.displayName = "Load Scene";
+        def.description = "Load a scene by name";
+        def.category = NodeCategory::Scene;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.9f);
+        def.inputs = {
+            FlowIn(),
+            String("Scene Name", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"scene", "load", "level", "change", "switch"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string sceneName = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            if (!sceneName.empty()) {
+                // Scene loading is handled via the SceneManager bound externally
+                ENJIN_LOG_INFO(Script, "Scene_LoadScene requested: %s", sceneName.c_str());
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Scene Get Current Scene (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SceneGetCurrentScene;
+        def.displayName = "Get Current Scene";
+        def.description = "Get the name of the currently loaded scene";
+        def.category = NodeCategory::Scene;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.9f);
+        def.inputs = {};
+        def.outputs = {String("Scene Name", PK::Output, "")};
+        def.keywords = {"scene", "current", "name", "active", "loaded"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            // Scene name querying would need SceneManager access; return empty for now
+            return std::string("");
         };
         RegisterNode(def);
     }

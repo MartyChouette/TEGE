@@ -14,6 +14,7 @@
         #define WIN32_LEAN_AND_MEAN
     #endif
     #include <Windows.h>
+    #include <timeapi.h>  // timeBeginPeriod/timeEndPeriod (requires winmm.lib)
     // Windows headers define CreateWindow/CreateWindowA macros which conflict
     // with Enjin::CreateWindow(). Undefine them so our function name is usable.
     #ifdef CreateWindow
@@ -62,6 +63,12 @@ int Application::Run() {
 }
 
 void Application::InitializeEngine() {
+#if defined(ENJIN_PLATFORM_WINDOWS)
+    // Set Windows timer resolution to 1ms for precise sleep_for() and frame pacing.
+    // Without this, sleep granularity defaults to ~15.6ms causing severe frame jitter.
+    timeBeginPeriod(1);
+#endif
+
     // Make relative paths (like "enjin.log" or shader/assets folders) resolve
     // next to the executable, even when launched via double-click.
     Platform::SetWorkingDirectoryToExecutableDirectory();
@@ -116,13 +123,17 @@ void Application::InitializeEngine() {
 
 void Application::ShutdownEngine() {
     ENJIN_LOG_INFO(Core, "Shutting down Enjin Engine...");
-    
+
     if (m_Window) {
         DestroyWindow(m_Window);
         m_Window = nullptr;
     }
-    
+
     Logger::Get().Shutdown();
+
+#if defined(ENJIN_PLATFORM_WINDOWS)
+    timeEndPeriod(1);
+#endif
 }
 
 void Application::MainLoop() {
@@ -193,9 +204,9 @@ void Application::LimitFrameRate(f32 targetFPS) {
     if (elapsed < targetFrameTime) {
         f32 remaining = targetFrameTime - elapsed;
 
-        // Sleep for most of the remaining time (saves CPU), leave ~1ms for precision spin
-        if (remaining > 0.002f) {
-            auto sleepDuration = std::chrono::microseconds(static_cast<i64>((remaining - 0.001f) * 1'000'000));
+        // Sleep for most of the remaining time (saves CPU), leave ~2ms for precision spin
+        if (remaining > 0.003f) {
+            auto sleepDuration = std::chrono::microseconds(static_cast<i64>((remaining - 0.002f) * 1'000'000));
             std::this_thread::sleep_for(sleepDuration);
         }
 

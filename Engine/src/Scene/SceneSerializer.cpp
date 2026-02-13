@@ -36,6 +36,7 @@
 #include "Enjin/Renderer/SceneRenderSettings.h"
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/GUI/UICanvas.h"
+#include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -2707,6 +2708,55 @@ ECS::SpawnPointComponent DeserializeSpawnPointComponent(const json& j) {
     return sp;
 }
 
+// ============================================================================
+// Streaming
+// ============================================================================
+
+json SerializeStreamingVolumeComponent(const Scene::StreamingVolumeComponent& sv) {
+    json j;
+    j["chunkId"] = sv.chunkId;
+    j["halfExtents"] = {RF(sv.halfExtents.x), RF(sv.halfExtents.y), RF(sv.halfExtents.z)};
+    j["loadDistance"] = RF(sv.loadDistance);
+    j["unloadDistance"] = RF(sv.unloadDistance);
+    j["priority"] = static_cast<int>(sv.priority);
+    return j;
+}
+
+Scene::StreamingVolumeComponent DeserializeStreamingVolumeComponent(const json& j) {
+    Scene::StreamingVolumeComponent sv;
+    if (j.contains("chunkId")) sv.chunkId = j["chunkId"].get<std::string>();
+    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() >= 3) {
+        sv.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
+    }
+    if (j.contains("loadDistance")) sv.loadDistance = j["loadDistance"].get<f32>();
+    if (j.contains("unloadDistance")) sv.unloadDistance = j["unloadDistance"].get<f32>();
+    if (j.contains("priority")) {
+        int p = j["priority"].get<int>();
+        if (p >= 0 && p <= 3) sv.priority = static_cast<Scene::StreamPriority>(p);
+    }
+    return sv;
+}
+
+json SerializeStreamingPortalComponent(const Scene::StreamingPortalComponent& sp) {
+    json j;
+    j["chunkA"] = sp.chunkA;
+    j["chunkB"] = sp.chunkB;
+    j["halfExtents"] = {RF(sp.halfExtents.x), RF(sp.halfExtents.y), RF(sp.halfExtents.z)};
+    j["bidirectional"] = sp.bidirectional;
+    return j;
+}
+
+Scene::StreamingPortalComponent DeserializeStreamingPortalComponent(const json& j) {
+    Scene::StreamingPortalComponent sp;
+    if (j.contains("chunkA")) sp.chunkA = j["chunkA"].get<std::string>();
+    if (j.contains("chunkB")) sp.chunkB = j["chunkB"].get<std::string>();
+    if (j.contains("halfExtents") && j["halfExtents"].is_array() && j["halfExtents"].size() >= 3) {
+        sp.halfExtents = Math::Vector3(j["halfExtents"][0].get<f32>(), j["halfExtents"][1].get<f32>(), j["halfExtents"][2].get<f32>());
+    }
+    if (j.contains("bidirectional")) sp.bidirectional = JB(j["bidirectional"]);
+    return sp;
+}
+
 json SerializeTimerComponent(const ECS::TimerComponent& t) {
     json j;
     j["duration"] = RF(t.duration);
@@ -4977,6 +5027,14 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["timer"] = SerializeTimerComponent(*m_World->GetComponent<ECS::TimerComponent>(entity));
             }
 
+            // Streaming
+            if (m_World->HasComponent<Scene::StreamingVolumeComponent>(entity)) {
+                entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*m_World->GetComponent<Scene::StreamingVolumeComponent>(entity));
+            }
+            if (m_World->HasComponent<Scene::StreamingPortalComponent>(entity)) {
+                entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
+            }
+
             // Inventory & Save Data
             if (m_World->HasComponent<ECS::InventoryComponent>(entity)) {
                 entityJson["inventory"] = SerializeInventoryComponent(*m_World->GetComponent<ECS::InventoryComponent>(entity));
@@ -5568,6 +5626,14 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
             }
 
+            // Streaming
+            if (entityJson.contains("streamingVolume")) {
+                m_World->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
+            }
+            if (entityJson.contains("streamingPortal")) {
+                m_World->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
+            }
+
             // Inventory & Save Data
             if (entityJson.contains("inventory")) {
                 m_World->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
@@ -6083,6 +6149,14 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::TimerComponent>(entity)) {
                 entityJson["timer"] = SerializeTimerComponent(*m_World->GetComponent<ECS::TimerComponent>(entity));
+            }
+
+            // Streaming
+            if (m_World->HasComponent<Scene::StreamingVolumeComponent>(entity)) {
+                entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*m_World->GetComponent<Scene::StreamingVolumeComponent>(entity));
+            }
+            if (m_World->HasComponent<Scene::StreamingPortalComponent>(entity)) {
+                entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
             }
 
             // Inventory & Save Data
@@ -6638,6 +6712,14 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
             }
 
+            // Streaming
+            if (entityJson.contains("streamingVolume")) {
+                m_World->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
+            }
+            if (entityJson.contains("streamingPortal")) {
+                m_World->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
+            }
+
             // Inventory & Save Data
             if (entityJson.contains("inventory")) {
                 m_World->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(entityJson["inventory"]));
@@ -7001,6 +7083,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
         // Misc gameplay
         if (world->HasComponent<ECS::SpawnPointComponent>(entity))
             entityJson["spawnPoint"] = SerializeSpawnPointComponent(*world->GetComponent<ECS::SpawnPointComponent>(entity));
+        if (world->HasComponent<Scene::StreamingVolumeComponent>(entity))
+            entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*world->GetComponent<Scene::StreamingVolumeComponent>(entity));
+        if (world->HasComponent<Scene::StreamingPortalComponent>(entity))
+            entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*world->GetComponent<Scene::StreamingPortalComponent>(entity));
         if (world->HasComponent<ECS::TimerComponent>(entity))
             entityJson["timer"] = SerializeTimerComponent(*world->GetComponent<ECS::TimerComponent>(entity));
         if (world->HasComponent<ECS::InventoryComponent>(entity))
@@ -7299,6 +7385,10 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         // Misc gameplay
         if (entityJson.contains("spawnPoint"))
             world->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(entityJson["spawnPoint"]));
+        if (entityJson.contains("streamingVolume"))
+            world->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(entityJson["streamingVolume"]));
+        if (entityJson.contains("streamingPortal"))
+            world->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(entityJson["streamingPortal"]));
         if (entityJson.contains("timer"))
             world->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(entityJson["timer"]));
         if (entityJson.contains("inventory"))
@@ -7517,6 +7607,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeWaypointComponent(*world->GetComponent<ECS::WaypointComponent>(entity));
         else if (key == "spawnPoint" && world->HasComponent<ECS::SpawnPointComponent>(entity))
             j = SerializeSpawnPointComponent(*world->GetComponent<ECS::SpawnPointComponent>(entity));
+        else if (key == "streamingVolume" && world->HasComponent<Scene::StreamingVolumeComponent>(entity))
+            j = SerializeStreamingVolumeComponent(*world->GetComponent<Scene::StreamingVolumeComponent>(entity));
+        else if (key == "streamingPortal" && world->HasComponent<Scene::StreamingPortalComponent>(entity))
+            j = SerializeStreamingPortalComponent(*world->GetComponent<Scene::StreamingPortalComponent>(entity));
         else if (key == "timer" && world->HasComponent<ECS::TimerComponent>(entity))
             j = SerializeTimerComponent(*world->GetComponent<ECS::TimerComponent>(entity));
         else if (key == "inventory" && world->HasComponent<ECS::InventoryComponent>(entity))
@@ -7668,6 +7762,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "lookAtTarget") { world->AddComponent<ECS::LookAtTargetComponent>(entity, DeserializeLookAtTargetComponent(j)); return true; }
         if (key == "waypoint") { world->AddComponent<ECS::WaypointComponent>(entity, DeserializeWaypointComponent(j)); return true; }
         if (key == "spawnPoint") { world->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(j)); return true; }
+        if (key == "streamingVolume") { world->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(j)); return true; }
+        if (key == "streamingPortal") { world->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(j)); return true; }
         if (key == "timer") { world->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(j)); return true; }
         if (key == "inventory") { world->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(j)); return true; }
         if (key == "saveData") { world->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(j)); return true; }

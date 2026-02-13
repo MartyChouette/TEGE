@@ -98,6 +98,8 @@ enum class NodeCategory : u8 {
     Utility,       // Delay, Random, etc.
     Gameplay,      // Save/Load, Checkpoint, Meta-progression
     Networking,    // Multiplayer, RPC, lobby
+    Input,         // Keyboard, mouse, gamepad queries
+    Scene,         // Scene loading, current scene
     Custom         // User-defined nodes
 };
 
@@ -118,6 +120,8 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Utility:     return "Utility";
         case NodeCategory::Gameplay:    return "Gameplay";
         case NodeCategory::Networking:  return "Networking";
+        case NodeCategory::Input:       return "Input";
+        case NodeCategory::Scene:       return "Scene";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
     }

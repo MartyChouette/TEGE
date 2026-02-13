@@ -151,6 +151,7 @@ public:
     // Used during play mode — the game view already runs its own shadow pass via
     // RenderShadowPassForCamera(), so the editor viewport shadows are redundant.
     void SetSkipMainPassShadows(bool skip) { m_SkipMainPassShadows = skip; }
+    void SetSkipMainPassRendering(bool skip) { m_SkipMainPassRendering = skip; }
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
@@ -491,6 +492,7 @@ private:
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
     bool m_SkipMainPassShadows = false; // When true, skip shadow passes in Update() (play mode)
+    bool m_SkipMainPassRendering = false; // When true, skip geometry+effects in Update() (play mode — game view handles rendering)
     void BuildCullableObjectList();
     void PerformGPUCulling();
     void PerformGPUCullingAsync(); // Record to compute command buffer

@@ -48,6 +48,7 @@ void RegisterStreamingBindings(asIScriptEngine* engine);
 void RegisterFlowerBindings(asIScriptEngine* engine);
 void RegisterPhysics2DBindings(asIScriptEngine* engine);
 void RegisterNetworkBindings(asIScriptEngine* engine);
+void RegisterSpriteBindings(asIScriptEngine* engine);
 
 // Set subsystem pointers for script bindings
 void SetBindingsWorld(ECS::World* world);

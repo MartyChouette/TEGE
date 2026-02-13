@@ -185,6 +185,7 @@ void PlayMode::Play() {
     // runs its own shadow pass via RenderShadowPassForCamera()
     if (m_RenderSystem) {
         m_RenderSystem->SetSkipMainPassShadows(true);
+        m_RenderSystem->SetSkipMainPassRendering(true);
     }
 
     m_State = PlayState::Playing;
@@ -289,7 +290,8 @@ void PlayMode::Stop() {
     // Release mouse
     Input::SetMouseCaptured(false);
 
-    // Capture current (played) scene state before restoring
+    // Keep the scene as-is after stopping (no restore — play mode changes persist).
+    // Compute diff so the user can see what changed during play.
     {
         Scene::SceneSerializer serializer(m_World);
         if (m_RenderSystem) {
@@ -297,17 +299,21 @@ void PlayMode::Stop() {
         }
         m_PlayedSceneJson = serializer.SaveToString();
 
-        // Compute diff between saved and played states
         m_PlayModeDiff = ComputePlayModeDiff(m_SavedSceneJson, m_PlayedSceneJson);
         m_ShowDiffDialog = m_PlayModeDiff.HasChanges();
     }
 
-    // Restore editor state
-    RestoreEditorState();
+    // Restore only camera state (so editor camera returns to its pre-play position)
+    if (m_Camera) {
+        m_Camera->SetPosition(m_SavedCameraPos);
+        m_Camera->SetRotation(m_SavedCameraRot);
+        m_Camera->SetPerspective(m_SavedCameraFov, 16.0f / 9.0f, 0.1f, 1000.0f);
+    }
 
     // Re-enable main-pass shadow rendering for editor mode
     if (m_RenderSystem) {
         m_RenderSystem->SetSkipMainPassShadows(false);
+        m_RenderSystem->SetSkipMainPassRendering(false);
     }
 
     m_State = PlayState::Stopped;

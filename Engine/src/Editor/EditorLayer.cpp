@@ -736,6 +736,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::SpawnPointComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::SpawnPointComponent>(e); },
             "spawnPoint"},
+        {"Layer", "Other", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::LayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::LayerComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::LayerComponent>(e); },
+            "layer"},
     };
     return entries;
 }
@@ -4435,6 +4440,12 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::SkeletonComponent>(m_PrimarySelected)) {
             DrawSkeletonComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<Scene::StreamingVolumeComponent>(m_PrimarySelected)) {
+            DrawStreamingVolumeComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<Scene::StreamingPortalComponent>(m_PrimarySelected)) {
+            DrawStreamingPortalComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
             // Animator component inspector (inline)
@@ -18201,6 +18212,70 @@ void EditorLayer::DrawLayerComponent(ECS::Entity entity) {
         if (ImGui::BeginPopupContextItem("LayerContext")) {
             if (ImGui::MenuItem("Remove Component")) {
                 RemoveComponentWithUndo<ECS::LayerComponent>(entity, "layer", "Layer");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawStreamingVolumeComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Streaming Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* vol = m_World->GetComponent<Scene::StreamingVolumeComponent>(entity);
+        if (!vol) return;
+
+        char chunkBuf[256];
+        strncpy(chunkBuf, vol->chunkId.c_str(), sizeof(chunkBuf) - 1);
+        chunkBuf[sizeof(chunkBuf) - 1] = '\0';
+        InspectorUndo::InputText(m_UndoRedo, "Chunk ID", chunkBuf, sizeof(chunkBuf), [vol](const std::string& val) { vol->chunkId = val; });
+
+        f32 halfExt[3] = { vol->halfExtents.x, vol->halfExtents.y, vol->halfExtents.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", halfExt,
+                [vol](f32 x, f32 y, f32 z) { vol->halfExtents = Math::Vector3(x, y, z); },
+                0.5f, 0.0f, 10000.0f)) {
+            vol->halfExtents = Math::Vector3(halfExt[0], halfExt[1], halfExt[2]);
+        }
+        InspectorUndo::DragFloat(m_UndoRedo, "Load Distance", &vol->loadDistance, 1.0f, 0.0f, 10000.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Unload Distance", &vol->unloadDistance, 1.0f, 0.0f, 10000.0f);
+
+        const char* priorityNames[] = { "Critical", "High", "Normal", "Low" };
+        int priIdx = static_cast<int>(vol->priority);
+        if (ImGui::Combo("Priority", &priIdx, priorityNames, 4)) {
+            vol->priority = static_cast<Scene::StreamPriority>(priIdx);
+        }
+
+        if (ImGui::BeginPopupContextItem("StreamingVolumeCtx")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<Scene::StreamingVolumeComponent>(entity, "streamingVolume", "Streaming Volume");
+            }
+            ImGui::EndPopup();
+        }
+    }
+}
+
+void EditorLayer::DrawStreamingPortalComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Streaming Portal", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* portal = m_World->GetComponent<Scene::StreamingPortalComponent>(entity);
+        if (!portal) return;
+
+        char chunkABuf[256], chunkBBuf[256];
+        strncpy(chunkABuf, portal->chunkA.c_str(), sizeof(chunkABuf) - 1);
+        chunkABuf[sizeof(chunkABuf) - 1] = '\0';
+        strncpy(chunkBBuf, portal->chunkB.c_str(), sizeof(chunkBBuf) - 1);
+        chunkBBuf[sizeof(chunkBBuf) - 1] = '\0';
+
+        InspectorUndo::InputText(m_UndoRedo, "Chunk A", chunkABuf, sizeof(chunkABuf), [portal](const std::string& val) { portal->chunkA = val; });
+        InspectorUndo::InputText(m_UndoRedo, "Chunk B", chunkBBuf, sizeof(chunkBBuf), [portal](const std::string& val) { portal->chunkB = val; });
+        f32 portalExt[3] = { portal->halfExtents.x, portal->halfExtents.y, portal->halfExtents.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents", portalExt,
+                [portal](f32 x, f32 y, f32 z) { portal->halfExtents = Math::Vector3(x, y, z); },
+                0.1f, 0.0f, 100.0f)) {
+            portal->halfExtents = Math::Vector3(portalExt[0], portalExt[1], portalExt[2]);
+        }
+        InspectorUndo::Checkbox(m_UndoRedo, "Bidirectional", &portal->bidirectional);
+
+        if (ImGui::BeginPopupContextItem("StreamingPortalCtx")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                RemoveComponentWithUndo<Scene::StreamingPortalComponent>(entity, "streamingPortal", "Streaming Portal");
             }
             ImGui::EndPopup();
         }
