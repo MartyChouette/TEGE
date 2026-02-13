@@ -16,6 +16,7 @@ enum class UIThemePreset : u8 {
     Fantasy,
     HighContrastDark,
     HighContrastLight,
+    ColorblindSafe,
     Count
 };
 
@@ -71,6 +72,12 @@ struct UITheme {
     // Focus indicator
     f32 focusBorderWidth = 2.5f;
 
+    // Dyslexia-friendly text spacing (multiplied on top of base values)
+    bool useDyslexicFont = false;
+    f32 letterSpacing = 0.0f;   // Extra spacing between characters (pixels)
+    f32 wordSpacing = 0.0f;     // Extra spacing between words (pixels)
+    f32 lineSpacingMultiplier = 1.0f; // Line height multiplier
+
     // Nine-slice defaults per widget type (empty = flat color)
     NineSliceConfig panelNineSlice;
     NineSliceConfig buttonNineSlice;
@@ -82,6 +89,7 @@ struct UITheme {
     static UITheme Fantasy();
     static UITheme HighContrastDark();
     static UITheme HighContrastLight();
+    static UITheme ColorblindSafe();
     static UITheme FromPreset(UIThemePreset preset);
 };
 

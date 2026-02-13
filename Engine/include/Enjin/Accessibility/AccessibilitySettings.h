@@ -49,6 +49,11 @@ struct RuntimeAccessibilitySettings {
     // Font scaling (applied to UISystem runtime font sizes)
     f32 fontScale = 1.0f;  // 0.5 - 3.0
 
+    // Dyslexia-friendly text adjustments
+    bool dyslexiaFriendly = false;
+    f32 letterSpacing = 0.0f;   // Extra pixels between characters
+    f32 wordSpacing = 0.0f;     // Extra pixels between words
+
     // Input
     u32 sprintMode = 0;   // 0=Hold, 1=Toggle
     u32 crouchMode = 0;   // 0=Hold, 1=Toggle

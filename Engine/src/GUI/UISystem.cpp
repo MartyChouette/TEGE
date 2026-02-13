@@ -721,6 +721,34 @@ std::vector<UIElement*> UISystem::BuildTabOrder(UICanvasComponent& canvas) {
 void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) {
     ImGuiIO& io = ImGui::GetIO();
 
+    // Switch access auto-scan mode: cycle focus automatically, single input to select
+    if (m_SwitchAccessEnabled) {
+        m_SwitchScanTimer += deltaTime;
+        if (m_SwitchScanTimer >= m_SwitchScanSpeed) {
+            m_SwitchScanTimer -= m_SwitchScanSpeed;
+            // Advance focus to next element
+            auto focusable = BuildTabOrder(canvas);
+            if (!focusable.empty()) {
+                i32 currentIdx = -1;
+                for (i32 i = 0; i < static_cast<i32>(focusable.size()); i++) {
+                    if (focusable[i]->id == canvas.focusedElementId) { currentIdx = i; break; }
+                }
+                i32 nextIdx = (currentIdx + 1) % static_cast<i32>(focusable.size());
+                canvas.focusedElementId = focusable[nextIdx]->id;
+                if (m_AnnouncerCallback) {
+                    const auto& el = *focusable[nextIdx];
+                    m_AnnouncerCallback(el.accessibleLabel.empty() ? el.name : el.accessibleLabel);
+                }
+            }
+        }
+        // Check for activation (single input)
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter) || ImGui::IsKeyPressed(ImGuiKey_Space) ||
+            ImGui::IsKeyPressed(ImGuiKey_GamepadFaceDown)) {
+            ActivateFocusedElement(canvas);
+        }
+        return; // Skip normal navigation in switch access mode
+    }
+
     // Check for Tab / Shift+Tab
     bool tabPressed = ImGui::IsKeyPressed(ImGuiKey_Tab);
     bool shiftHeld = io.KeyShift;

@@ -102,6 +102,7 @@ struct EditorSettings {
     f32 subtitleBgOpacity = 0.7f;
     bool subtitleSpeakerNames = true;
     bool simplifiedEditor = false;
+    bool dyslexiaFontEnabled = false;  // Increase letter/word/line spacing for readability
 
     // Play Mode
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play

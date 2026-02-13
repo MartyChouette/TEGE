@@ -42,11 +42,28 @@ public:
     void SetFontScale(f32 scale) { m_FontScale = (scale > 0.1f) ? scale : 1.0f; }
     f32 GetFontScale() const { return m_FontScale; }
 
+    // Reduced motion: skip animations, instant transitions
+    void SetReducedMotion(bool enabled) { m_ReducedMotion = enabled; }
+    bool GetReducedMotion() const { return m_ReducedMotion; }
+
+    // Switch access / one-button mode: auto-cycle focus, single input to select
+    void SetSwitchAccessEnabled(bool enabled, f32 scanSpeed = 1.5f) {
+        m_SwitchAccessEnabled = enabled;
+        m_SwitchScanSpeed = (scanSpeed > 0.1f) ? scanSpeed : 1.5f;
+    }
+    bool GetSwitchAccessEnabled() const { return m_SwitchAccessEnabled; }
+
 private:
     UIEventBus m_EventBus;
     TextureResolver m_TextureResolver;
     AnnouncerCallback m_AnnouncerCallback;
     f32 m_FontScale = 1.0f;
+    bool m_ReducedMotion = false;
+
+    // Switch access state
+    bool m_SwitchAccessEnabled = false;
+    f32 m_SwitchScanSpeed = 1.5f;  // Seconds per element
+    f32 m_SwitchScanTimer = 0.0f;
 
     // Focus navigation state
     f32 m_NavRepeatTimer = 0.0f;

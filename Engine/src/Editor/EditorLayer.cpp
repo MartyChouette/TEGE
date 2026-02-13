@@ -7835,6 +7835,12 @@ void EditorLayer::DrawEditorSettingsPanel() {
                 ImGui::SetTooltip("Hides advanced panels and collapses complex inspector sections");
             }
 
+            ImGui::Separator();
+            if (ImGui::Checkbox("Dyslexia-Friendly Mode", &m_EditorSettings.dyslexiaFontEnabled)) settingsChanged = true;
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Increases letter, word, and line spacing for improved readability");
+            }
+
             ImGui::TreePop();
         }
 

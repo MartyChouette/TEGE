@@ -206,6 +206,50 @@ UITheme UITheme::HighContrastLight() {
     return t;
 }
 
+UITheme UITheme::ColorblindSafe() {
+    UITheme t;
+    t.name = "ColorblindSafe";
+
+    // Blue/Orange palette — universally distinguishable across all color vision types
+    t.primary    = Math::Vector3(0.00f, 0.45f, 0.70f); // Blue
+    t.secondary  = Math::Vector3(0.90f, 0.60f, 0.00f); // Orange
+    t.background = Math::Vector3(0.10f, 0.10f, 0.12f);
+    t.surface    = Math::Vector3(0.16f, 0.16f, 0.19f);
+    t.error      = Math::Vector3(0.90f, 0.60f, 0.00f); // Orange (not red)
+
+    t.textPrimary   = Math::Vector3(0.95f, 0.95f, 0.97f);
+    t.textSecondary = Math::Vector3(0.70f, 0.70f, 0.73f);
+    t.textDisabled  = Math::Vector3(0.40f, 0.40f, 0.43f);
+
+    // Blue buttons
+    t.buttonDefault  = Math::Vector3(0.00f, 0.45f, 0.70f);
+    t.buttonHovered  = Math::Vector3(0.10f, 0.55f, 0.80f);
+    t.buttonPressed  = Math::Vector3(0.00f, 0.35f, 0.55f);
+    t.buttonDisabled = Math::Vector3(0.25f, 0.25f, 0.28f);
+
+    t.inputBg      = Math::Vector3(0.12f, 0.12f, 0.14f);
+    t.inputBorder  = Math::Vector3(0.45f, 0.45f, 0.48f);
+    t.inputFocused = Math::Vector3(0.90f, 0.60f, 0.00f); // Orange focus
+
+    // Orange slider fill on dark track
+    t.sliderTrack = Math::Vector3(0.22f, 0.22f, 0.25f);
+    t.sliderFill  = Math::Vector3(0.90f, 0.60f, 0.00f);
+    t.sliderThumb = Math::Vector3(0.95f, 0.95f, 0.97f);
+
+    // Blue checked state
+    t.checkboxBg      = Math::Vector3(0.14f, 0.14f, 0.16f);
+    t.checkboxChecked  = Math::Vector3(0.00f, 0.45f, 0.70f);
+    t.toggleOffBg      = Math::Vector3(0.30f, 0.30f, 0.33f);
+    t.toggleOnBg       = Math::Vector3(0.00f, 0.45f, 0.70f);
+    t.toggleKnob       = Math::Vector3(0.95f, 0.95f, 0.97f);
+
+    t.borderRadius = 4.0f;
+    t.borderWidth  = 2.0f;
+    t.bgAlpha = 0.94f;
+    t.focusBorderWidth = 3.0f;
+    return t;
+}
+
 UITheme UITheme::FromPreset(UIThemePreset preset) {
     switch (preset) {
         case UIThemePreset::Light:              return Light();
@@ -213,6 +257,7 @@ UITheme UITheme::FromPreset(UIThemePreset preset) {
         case UIThemePreset::Fantasy:            return Fantasy();
         case UIThemePreset::HighContrastDark:   return HighContrastDark();
         case UIThemePreset::HighContrastLight:  return HighContrastLight();
+        case UIThemePreset::ColorblindSafe:     return ColorblindSafe();
         default:                               return Dark();
     }
 }
