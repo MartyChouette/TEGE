@@ -138,11 +138,12 @@ void Box2DBackend::Update(f32 deltaTime) {
 // ============================================================================
 
 void Box2DBackend::SyncECSToBox2D() {
-    // Build set of entities that currently have Body2DComponent
-    std::unordered_set<ECS::Entity> currentEntities;
+    // Build set of entities that currently have Body2DComponent (reuse member to avoid per-frame alloc)
+    m_CurrentEntitiesCache.clear();
     for (ECS::Entity e : m_World->GetEntitiesWithComponent<Body2DComponent>()) {
-        currentEntities.insert(e);
+        m_CurrentEntitiesCache.insert(e);
     }
+    const auto& currentEntities = m_CurrentEntitiesCache;
 
     // Create bodies for new entities
     for (ECS::Entity entity : currentEntities) {
@@ -303,12 +304,10 @@ void Box2DBackend::SyncBox2DToECS() {
         transform->position.x = pos.x;
         transform->position.y = pos.y;
 
-        // Rotation (Z axis only for 2D)
+        // Rotation (Z axis only for 2D) — construct quaternion directly from Z angle
         b2Rot rot = b2Body_GetRotation(bodyId);
         f32 newAngle = b2Rot_GetAngle(rot);
-        Math::Vector3 euler = transform->rotation.ToEuler();
-        euler.z = newAngle;
-        transform->rotation = Math::Quaternion::FromEuler(euler);
+        transform->rotation = Math::Quaternion(Math::Vector3(0.0f, 0.0f, 1.0f), newAngle);
 
         // Velocity
         b2Vec2 linearVel = b2Body_GetLinearVelocity(bodyId);
@@ -341,7 +340,8 @@ void Box2DBackend::ProcessEvents() {
     // --- Contact events ---
     b2ContactEvents contacts = b2World_GetContactEvents(m_WorldId);
 
-    std::unordered_set<u64> newContacts;
+    m_NewContactsCache.clear();
+    auto& newContacts = m_NewContactsCache;
 
     // Begin touch events
     for (int i = 0; i < contacts.beginCount; ++i) {
@@ -401,7 +401,8 @@ void Box2DBackend::ProcessEvents() {
     // --- Sensor events ---
     b2SensorEvents sensors = b2World_GetSensorEvents(m_WorldId);
 
-    std::unordered_set<u64> newSensorContacts;
+    m_NewSensorContactsCache.clear();
+    auto& newSensorContacts = m_NewSensorContactsCache;
 
     for (int i = 0; i < sensors.beginCount; ++i) {
         const b2SensorBeginTouchEvent& evt = sensors.beginEvents[i];

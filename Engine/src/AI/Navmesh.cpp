@@ -463,10 +463,12 @@ PathResult Pathfinder::ReconstructPath(const std::unordered_map<u32, PathNode>& 
 
     // Build waypoints
     result.waypoints.push_back(start);
-    for (usize i = 1; i < polyPath.size() - 1; ++i) {
-        const NavPolygon* poly = m_Navmesh->GetPolygon(polyPath[i]);
-        if (poly) {
-            result.waypoints.push_back(poly->center);
+    if (polyPath.size() > 2) {
+        for (usize i = 1; i < polyPath.size() - 1; ++i) {
+            const NavPolygon* poly = m_Navmesh->GetPolygon(polyPath[i]);
+            if (poly) {
+                result.waypoints.push_back(poly->center);
+            }
         }
     }
     result.waypoints.push_back(end);
@@ -637,6 +639,8 @@ bool NavmeshGenerator::GenerateFromHeightmap(const std::vector<f32>& heights,
 bool NavmeshGenerator::GenerateGrid(const Math::Vector3& min, const Math::Vector3& max,
                                    f32 cellSize, f32 height) {
     m_Navmesh.Clear();
+
+    if (cellSize <= 0.0f) { return false; }
 
     f32 width = max.x - min.x;
     f32 depth = max.z - min.z;

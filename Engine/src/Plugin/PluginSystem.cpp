@@ -52,7 +52,17 @@ void PluginSystem::ScanPluginDirectory(const std::string& directory) {
 
                     // Resolve library path relative to the plugin.json directory
                     fs::path manifestDir = entry.path().parent_path();
-                    fs::path libPath = manifestDir / manifest.libraryPath;
+                    fs::path libPath = (manifestDir / manifest.libraryPath).lexically_normal();
+
+                    // S2: Validate resolved path stays within plugin directory
+                    std::string normalLib = libPath.string();
+                    std::string normalDir = manifestDir.lexically_normal().string();
+                    if (normalLib.find("..") != std::string::npos ||
+                        normalLib.compare(0, normalDir.size(), normalDir) != 0) {
+                        ENJIN_LOG_ERROR(Script, "Plugin library path escapes plugin directory: %s", normalLib.c_str());
+                        continue;
+                    }
+
                     pluginEntry.manifest.libraryPath = libPath.string();
 
                     m_Plugins.push_back(pluginEntry);

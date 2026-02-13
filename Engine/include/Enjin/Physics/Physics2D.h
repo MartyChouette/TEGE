@@ -214,6 +214,7 @@ private:
 
     // Contact tracking for enter/exit callbacks
     std::unordered_set<u64> m_ActiveContacts;  // Pack entity pair into u64
+    std::unordered_set<u64> m_NewContactsCache;  // Reused per-frame to avoid alloc
 
     CollisionCallback m_OnCollisionEnter;
     CollisionCallback m_OnCollisionExit;

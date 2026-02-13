@@ -106,7 +106,7 @@ namespace Enjin::GUI {
         std::unordered_map<std::string, std::string> m_Variables;
         EventCallback m_EventCallback;
 
-        void ProcessNode();
+        void ProcessNode(u32 depth = 0);
         bool EvaluateCondition(const DialogueCondition& cond);
     };
 

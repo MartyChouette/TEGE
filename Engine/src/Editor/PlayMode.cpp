@@ -137,8 +137,36 @@ void PlayMode::Play() {
     Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
     Scripting::SetBindingsEventBus(&m_EventBus);
     Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
+    Scripting::SetBindingsSubtitles(m_SubtitleSystem);
+    Scripting::SetBindingsAnnouncer(m_Announcer);
+    Scripting::SetBindingsAccessibilitySettings(m_AccessibilitySettings);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
+
+    // Initialize owned systems
+    m_SimpleAudio.Initialize();
+    m_SimpleAudio.SetWorld(m_World);
+    m_DestructibleSystem.Initialize(m_World);
+
+    // Wire 2D physics collision callbacks to visual script system
+    if (m_Physics2D) {
+        m_Physics2D->SetOnCollisionEnter([this](const Physics::Contact2D& c) {
+            m_VisualScriptSystem.OnCollisionEnter(c.entityA, c.entityB, 0.0f);
+            m_VisualScriptSystem.OnCollisionEnter(c.entityB, c.entityA, 0.0f);
+        });
+        m_Physics2D->SetOnCollisionExit([this](const Physics::Contact2D& c) {
+            m_VisualScriptSystem.OnCollisionExit(c.entityA, c.entityB, 0.0f);
+            m_VisualScriptSystem.OnCollisionExit(c.entityB, c.entityA, 0.0f);
+        });
+        m_Physics2D->SetOnSensorEnter([this](const Physics::Contact2D& c) {
+            m_VisualScriptSystem.OnTriggerEnter(c.entityA, c.entityB, 0.0f);
+            m_VisualScriptSystem.OnTriggerEnter(c.entityB, c.entityA, 0.0f);
+        });
+        m_Physics2D->SetOnSensorExit([this](const Physics::Contact2D& c) {
+            m_VisualScriptSystem.OnTriggerExit(c.entityA, c.entityB, 0.0f);
+            m_VisualScriptSystem.OnTriggerExit(c.entityB, c.entityA, 0.0f);
+        });
+    }
 
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
     m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -255,8 +283,23 @@ void PlayMode::Stop() {
     m_EventBus.Clear();
     m_EntityEventBus.Clear();
 
+    // Shutdown owned runtime systems
+    m_SimpleAudio.Shutdown();
+    m_DestructibleSystem.Shutdown();
+
+    // Clear 2D physics callbacks
+    if (m_Physics2D) {
+        m_Physics2D->SetOnCollisionEnter(nullptr);
+        m_Physics2D->SetOnCollisionExit(nullptr);
+        m_Physics2D->SetOnSensorEnter(nullptr);
+        m_Physics2D->SetOnSensorExit(nullptr);
+    }
+
     // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
+    Scripting::SetBindingsSubtitles(nullptr);
+    Scripting::SetBindingsAnnouncer(nullptr);
+    Scripting::SetBindingsAccessibilitySettings(nullptr);
     Scripting::SetBindingsSaveSystem(nullptr);
     Scripting::SetBindingsQuestSystem(nullptr);
     Scripting::SetBindingsCinematicSystem(nullptr);
@@ -363,6 +406,7 @@ void PlayMode::Update(f32 deltaTime) {
             }
             m_Physics->ClearPendingCollisionEvents();
         } // if m_Physics
+
         auto t1 = std::chrono::high_resolution_clock::now();
 
         {
@@ -398,7 +442,12 @@ void PlayMode::Update(f32 deltaTime) {
 
         m_FootstepSystem.Update(m_World, deltaTime);
         m_ObjectPool.Update(m_World, deltaTime);
+        m_DestructibleSystem.Update(deltaTime);
         m_EntityEventBus.ProcessDeferred();
+
+        // Audio
+        m_SimpleAudio.Update(deltaTime);
+        m_SimpleAudio.UpdateAudioSources(deltaTime);
 
         // Networking
         {

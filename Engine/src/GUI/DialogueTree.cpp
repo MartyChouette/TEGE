@@ -267,8 +267,14 @@ namespace Enjin::GUI {
         m_EventCallback = std::move(cb);
     }
 
-    void DialoguePlayer::ProcessNode() {
+    void DialoguePlayer::ProcessNode(u32 depth) {
         if (!m_Active) return;
+
+        if (depth >= 128) {
+            ENJIN_LOG_ERROR(Script, "DialoguePlayer::ProcessNode exceeded max recursion depth (128), deactivating");
+            m_Active = false;
+            return;
+        }
 
         const DialogueNode* node = GetCurrentNode();
         if (!node) {
@@ -290,14 +296,14 @@ namespace Enjin::GUI {
             case DialogueNodeType::Condition: {
                 bool result = EvaluateCondition(node->condition);
                 m_CurrentNodeId = result ? node->trueNodeId : node->falseNodeId;
-                ProcessNode();
+                ProcessNode(depth + 1);
                 break;
             }
 
             case DialogueNodeType::SetVariable: {
                 m_Variables[node->variableName] = node->variableValue;
                 m_CurrentNodeId = node->nextNodeId;
-                ProcessNode();
+                ProcessNode(depth + 1);
                 break;
             }
 
@@ -306,13 +312,13 @@ namespace Enjin::GUI {
                     m_EventCallback(node->eventName);
                 }
                 m_CurrentNodeId = node->nextNodeId;
-                ProcessNode();
+                ProcessNode(depth + 1);
                 break;
             }
 
             case DialogueNodeType::Root: {
                 m_CurrentNodeId = node->nextNodeId;
-                ProcessNode();
+                ProcessNode(depth + 1);
                 break;
             }
 

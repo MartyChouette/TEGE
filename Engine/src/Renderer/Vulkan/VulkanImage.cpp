@@ -135,8 +135,8 @@ bool VulkanImage::CreateFromData(
         m_MipLevels = static_cast<u32>(std::floor(std::log2(std::max(width, height)))) + 1;
     }
     
-    // Create staging buffer
-    VkDeviceSize imageSize = width * height * channels;
+    // Create staging buffer — S7: cast to VkDeviceSize before multiplication to prevent u32 overflow
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * channels;
     
     VkBuffer stagingBuffer;
     VkDeviceMemory stagingBufferMemory;

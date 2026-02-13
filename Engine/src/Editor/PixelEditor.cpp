@@ -76,10 +76,18 @@ bool PixelEditor::LoadImage(const std::string& path) {
         return false;
     }
 
+    // S8: Validate dimensions don't exceed reasonable max to prevent overflow
+    if (w > 8192 || h > 8192 || w <= 0 || h <= 0) {
+        ENJIN_LOG_ERROR(Editor, "PixelEditor: Image dimensions too large (%dx%d, max 8192)", w, h);
+        stbi_image_free(data);
+        return false;
+    }
+
     NewCanvas(static_cast<u32>(w), static_cast<u32>(h));
 
-    // Copy pixels into first layer
-    std::memcpy(m_Layers[0].pixels.data(), data, w * h * 4);
+    // Copy pixels into first layer — use size_t for safe calculation
+    size_t pixelDataSize = static_cast<size_t>(w) * static_cast<size_t>(h) * 4;
+    std::memcpy(m_Layers[0].pixels.data(), data, pixelDataSize);
     stbi_image_free(data);
 
     ENJIN_LOG_INFO(Editor, "PixelEditor: Loaded '%s' (%dx%d)", path.c_str(), w, h);

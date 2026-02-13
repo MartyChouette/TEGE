@@ -135,9 +135,14 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     // CSS
     html << "  <link rel=\"stylesheet\" href=\"style.css\">\n";
 
-    // Custom CSS
+    // Custom CSS — S4: strip sequences that could break out of style tag
     if (!config.customCSS.empty()) {
-        html << "  <style>\n" << config.customCSS << "\n  </style>\n";
+        std::string safeCSS = config.customCSS;
+        // Remove </style> (case-insensitive) and angle brackets to prevent XSS
+        for (auto& c : safeCSS) {
+            if (c == '<' || c == '>') c = ' ';
+        }
+        html << "  <style>\n" << safeCSS << "\n  </style>\n";
     }
 
     html << "</head>\n"

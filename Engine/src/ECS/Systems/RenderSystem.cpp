@@ -1478,8 +1478,16 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         // Reset descriptor cache for each viewport
         m_LastBound.Reset();
 
-        // Render all entities (skip sprites — drawn in sorted pass)
-        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        // Bind pipeline, descriptor set, viewport, and scissor once per viewport
+        m_Pipeline->Bind(commandBuffer);
+        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+            m_Pipeline->GetLayout(), 0, 1,
+            &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
+        vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
+        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+        // Render all entities using sorted render list (skip sprites — drawn in sorted pass)
+        for (Entity entity : m_SortedRenderList) {
             // Skip invisible entities or entities without transform
             {
                 auto* xformSS = m_World->GetComponent<TransformComponent>(entity);
@@ -1495,15 +1503,6 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
             EntityRenderData& renderData = *pRD;
 
             UpdateMaterialBuffer(entity);
-
-            m_Pipeline->Bind(commandBuffer);
-            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                m_Pipeline->GetLayout(), 0, 1,
-                &(*m_ActiveDescriptorSets)[GetActiveBufferIndex(currentFrame)], 0, nullptr);
-
-            // Restore viewport/scissor after pipeline bind
-            vkCmdSetViewport(commandBuffer, 0, 1, &vkViewport);
-            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
             // Build push constants (same logic as RenderToTarget)
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -1782,22 +1781,14 @@ void RenderSystem::ClassifySceneComposition() {
     m_SceneComposition.mesh3DCount = 0;
     m_SceneComposition.hasShadowCastingLights = false;
 
-    // Count sprites
-    for (Entity entity : m_World->GetEntitiesWithComponent<Sprite2DComponent>()) {
-        (void)entity;
-        m_SceneComposition.spriteCount++;
-    }
-
-    // Count tilemaps
-    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-        (void)entity;
-        m_SceneComposition.tilemapCount++;
-    }
+    // Count sprites and tilemaps using direct container size (avoids iteration)
+    m_SceneComposition.spriteCount = static_cast<u32>(m_World->GetEntitiesWithComponent<Sprite2DComponent>().size());
+    m_SceneComposition.tilemapCount = static_cast<u32>(m_World->GetEntitiesWithComponent<TilemapComponent>().size());
 
     // Count 3D meshes (MeshComponent WITHOUT Sprite2DComponent and WITHOUT TilemapComponent)
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
+        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
         m_SceneComposition.mesh3DCount++;
     }
 

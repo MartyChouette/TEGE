@@ -283,7 +283,8 @@ void PhysicsWorld2D::Update(f32 deltaTime) {
     }
 
     // 9. Contact tracking for enter/exit callbacks
-    std::unordered_set<u64> newContacts;
+    m_NewContactsCache.clear();
+    auto& newContacts = m_NewContactsCache;
     for (const auto& m : m_CachedManifolds) {
         u64 key = MakePairKey(m.entityA, m.entityB);
         newContacts.insert(key);
@@ -372,12 +373,10 @@ void PhysicsWorld2D::IntegratePositions(f32 dt) {
         transform->position.x += body->velocity.x * dt;
         transform->position.y += body->velocity.y * dt;
 
-        // Update rotation (Z axis for 2D)
+        // Update rotation (Z axis for 2D) — construct quaternion directly from Z angle
         if (!body->fixedRotation) {
-            // Extract current Z rotation, add angular velocity, write back as quaternion
-            Math::Vector3 euler = transform->rotation.ToEuler();
-            euler.z += body->angularVelocity * dt;
-            transform->rotation = Math::Quaternion::FromEuler(euler);
+            f32 currentZ = transform->rotation.ToEuler().z;
+            transform->rotation = Math::Quaternion(Math::Vector3(0.0f, 0.0f, 1.0f), currentZ + body->angularVelocity * dt);
         }
     }
 }
@@ -403,7 +402,8 @@ void PhysicsWorld2D::BroadPhase(std::vector<std::pair<ECS::Entity, ECS::Entity>>
         Body2DComponent* body;
     };
 
-    std::vector<EntityAABB> entries;
+    static std::vector<EntityAABB> entries;
+    entries.clear();
     entries.reserve(entities.size());
 
     for (ECS::Entity e : entities) {

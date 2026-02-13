@@ -196,14 +196,31 @@ HTTPResponse HTTPClient::Post(const std::string& url,
     return DoRequest("POST", url, body, headers);
 }
 
+// S6: RFC 3986 percent-encoding for form POST key/value pairs
+static std::string PercentEncode(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += static_cast<char>(c);
+        } else {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            out += buf;
+        }
+    }
+    return out;
+}
+
 HTTPResponse HTTPClient::PostForm(const std::string& url,
                                    const std::unordered_map<std::string, std::string>& params,
                                    const std::unordered_map<std::string, std::string>& headers) {
-    // Build URL-encoded form body
+    // Build URL-encoded form body — S6: properly percent-encode keys and values
     std::string body;
     for (auto& [key, value] : params) {
         if (!body.empty()) body += "&";
-        body += key + "=" + value;
+        body += PercentEncode(key) + "=" + PercentEncode(value);
     }
 
     auto h = headers;

@@ -112,9 +112,15 @@ bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::ve
                            CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
             return -1;
         }
-        WaitForSingleObject(pi.hProcess, INFINITE);
+        // S9: Use bounded timeout (60s) instead of INFINITE to prevent hangs
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, 60000);
         DWORD exitCode = 1;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
+        if (waitResult == WAIT_TIMEOUT) {
+            ENJIN_LOG_ERROR(Renderer, "Shader compile process timed out after 60 seconds, terminating");
+            TerminateProcess(pi.hProcess, 1);
+        } else {
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+        }
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
         return static_cast<int>(exitCode);

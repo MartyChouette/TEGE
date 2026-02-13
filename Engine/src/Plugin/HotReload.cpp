@@ -191,9 +191,16 @@ bool HotReloadSystem::Compile()
                              CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     int result = -1;
     if (ok) {
-        WaitForSingleObject(pi.hProcess, INFINITE);
+        // S9: Use bounded timeout (60s) instead of INFINITE to prevent hangs
+        DWORD waitResult = WaitForSingleObject(pi.hProcess, 60000);
         DWORD exitCode = 0;
-        GetExitCodeProcess(pi.hProcess, &exitCode);
+        if (waitResult == WAIT_TIMEOUT) {
+            ENJIN_LOG_ERROR(Script, "Compile process timed out after 60 seconds, terminating");
+            TerminateProcess(pi.hProcess, 1);
+            exitCode = 1;
+        } else {
+            GetExitCodeProcess(pi.hProcess, &exitCode);
+        }
         result = static_cast<int>(exitCode);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

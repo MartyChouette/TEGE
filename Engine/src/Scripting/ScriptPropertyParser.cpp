@@ -23,9 +23,13 @@ static void ParseRangeAttribute(const std::string& attrs, ParsedProperty& prop) 
     std::regex rangeRegex(R"(Range\s*\(\s*(-?[\d.]+)\s*,\s*(-?[\d.]+)\s*\))");
     std::smatch match;
     if (std::regex_search(attrs, match, rangeRegex)) {
-        prop.hasRange = true;
-        prop.rangeMin = std::stof(match[1].str());
-        prop.rangeMax = std::stof(match[2].str());
+        try {
+            prop.hasRange = true;
+            prop.rangeMin = std::stof(match[1].str());
+            prop.rangeMax = std::stof(match[2].str());
+        } catch (const std::exception&) {
+            prop.hasRange = false;
+        }
     }
 }
 

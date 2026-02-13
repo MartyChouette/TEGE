@@ -997,6 +997,7 @@ void EditorLayer::InitializePlayMode() {
 
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
+        m_PlayMode.SetAnnouncer(&m_Announcer);
 
         // Configure subtitle system from editor settings
         Accessibility::SubtitleConfig subConfig;
@@ -12240,9 +12241,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
 
         // Handle custom templates
     if (templateId.substr(0, 7) == "custom:") {
-        int idx = std::stoi(templateId.substr(7));
-        if (idx >= 0 && idx < static_cast<int>(m_CustomTemplatePaths.size())) {
-            OpenScene(m_CustomTemplatePaths[idx]);
+        try {
+            int idx = std::stoi(templateId.substr(7));
+            if (idx >= 0 && idx < static_cast<int>(m_CustomTemplatePaths.size())) {
+                OpenScene(m_CustomTemplatePaths[idx]);
+            }
+        } catch (const std::exception&) {
+            ENJIN_LOG_WARN(Editor, "Invalid custom template ID: {}", templateId);
         }
         return;
     }

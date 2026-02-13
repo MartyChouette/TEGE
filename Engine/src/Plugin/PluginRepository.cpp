@@ -193,6 +193,12 @@ std::vector<std::string> PluginRepository::GetCategories() const {
 // ============================================================================
 
 bool PluginRepository::Install(const std::string& name, const std::string& targetDir) {
+    // S3: Validate name doesn't contain path traversal characters
+    if (name.find("..") != std::string::npos || name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+        ENJIN_LOG_ERROR(Script, "Invalid plugin name: %s", name.c_str());
+        return false;
+    }
+
     // Find the catalog entry
     const PluginCatalogEntry* entry = nullptr;
     for (const auto& e : m_Catalog) {
@@ -228,6 +234,12 @@ bool PluginRepository::Install(const std::string& name, const std::string& targe
 }
 
 bool PluginRepository::Uninstall(const std::string& name, const std::string& pluginsDir) {
+    // S3: Validate name doesn't contain path traversal characters
+    if (name.find("..") != std::string::npos || name.find('/') != std::string::npos || name.find('\\') != std::string::npos) {
+        ENJIN_LOG_ERROR(Script, "Invalid plugin name: %s", name.c_str());
+        return false;
+    }
+
     fs::path pluginDir = fs::path(pluginsDir) / name;
     if (!fs::exists(pluginDir)) {
         ENJIN_LOG_WARN(Script, "Plugin directory not found for uninstall: %s",

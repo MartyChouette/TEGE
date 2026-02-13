@@ -162,7 +162,7 @@ const SpriteFrame* SpriteAnimator::GetCurrentFrame() const {
 template<typename T>
 static T SampleKeyframes(const std::vector<f32>& times, const std::vector<T>& values, f32 time,
                          T (*lerpFunc)(const T&, const T&, f32)) {
-    if (values.empty()) return T{};
+    if (times.size() != values.size() || times.empty()) return T{};
     if (values.size() == 1) return values[0];
 
     // Clamp time
@@ -178,7 +178,8 @@ static T SampleKeyframes(const std::vector<f32>& times, const std::vector<T>& va
     // Interpolate
     f32 t1 = times[i];
     f32 t2 = times[i + 1];
-    f32 t = (time - t1) / (t2 - t1);
+    f32 denom = t2 - t1;
+    f32 t = (denom > 1e-7f) ? (time - t1) / denom : 0.0f;
 
     return lerpFunc(values[i], values[i + 1], t);
 }

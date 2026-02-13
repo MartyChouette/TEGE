@@ -28,6 +28,7 @@
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/RetroEffects.h"
+#include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Audio/AudioSystem.h"
@@ -250,6 +251,8 @@ public:
         m_DestructibleSystem.Initialize(m_World.get());
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
+        // TODO(F5): SceneManager cannot load scenes from .enjpak — needs AssetReader integration
+        //           so that SceneManager::LoadScene() can read packed scene files at runtime.
         m_NetworkSystem.SetWorld(m_World.get());
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
@@ -291,6 +294,9 @@ public:
         m_Announcer.Clear();
 
         // Clear script bindings
+        Enjin::Scripting::SetBindingsSubtitles(nullptr);
+        Enjin::Scripting::SetBindingsAnnouncer(nullptr);
+        Enjin::Scripting::SetBindingsAccessibilitySettings(nullptr);
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
         Enjin::Scripting::SetBindingsDestructible(nullptr);
@@ -390,28 +396,29 @@ public:
         if (m_Physics2D) m_Physics2D->Update(deltaTime);
 
         // Dispatch collision events to visual scripts
-        if (!m_Physics) return;
-        const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
-        for (const auto& evt : collisionEvents) {
-            if (evt.isTrigger) {
-                if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
-                    m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
-                    m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+        if (m_Physics) {
+            const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
+            for (const auto& evt : collisionEvents) {
+                if (evt.isTrigger) {
+                    if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
+                        m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+                    } else {
+                        m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
+                    }
                 } else {
-                    m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
-                    m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
-                }
-            } else {
-                if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
-                    m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
-                    m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
-                } else {
-                    m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
-                    m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
+                    if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
+                        m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
+                    } else {
+                        m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
+                        m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
+                    }
                 }
             }
+            m_Physics->ClearPendingCollisionEvents();
         }
-        m_Physics->ClearPendingCollisionEvents();
 
         // --- Controllers & vegetation ---
         m_ControllerSystem.Update(deltaTime);
@@ -457,12 +464,16 @@ public:
         m_ObjectPool.Update(m_World.get(), deltaTime);
         m_EntityEventBus.ProcessDeferred();
 
-        // Weather, destructible, and streaming
+        // Weather, destructible, wind, world time, seasonal weather, and streaming
+        m_WindSystem.Update(deltaTime);
+        m_WorldTime.Update(deltaTime);
+        m_SeasonalWeather.Update(deltaTime, m_WorldTime.GetState(), m_WeatherSystem);
         if (m_Camera) {
             m_WeatherSystem.Update(deltaTime, m_Camera->GetPosition());
             m_StreamingManager.Update(m_Camera->GetPosition(), deltaTime);
         }
         m_DestructibleSystem.Update(deltaTime);
+        m_FluidSimulation.Update(deltaTime, m_World.get());
 
         // Particle emitter simulation
         m_ParticleSystem.Update(deltaTime, m_World.get());
@@ -703,6 +714,9 @@ private:
         Enjin::Scripting::SetBindingsPostProcessing(m_PostProcessing.get());
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
+        Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
+        Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
+        Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
 
         // Wire dialogue system event bus and subtitle system
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -734,6 +748,10 @@ private:
             return nullptr; // TODO: Wire through Vulkan ImGui texture descriptor for full image support
         });
 
+        // Wire fluid simulation and wind system to renderer
+        m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
+        m_RenderSystem->SetWindSystem(&m_WindSystem);
+
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);
@@ -749,6 +767,26 @@ private:
                 m_ControllerSystem.SetGameCameraEntity(cameras[0]);
                 m_FlowerSystem.SetGameCameraEntity(cameras[0]);
             }
+        }
+
+        // Wire 2D physics collision callbacks to visual script system
+        if (m_Physics2D) {
+            m_Physics2D->SetOnCollisionEnter([this](const Enjin::Physics::Contact2D& c) {
+                m_VisualScriptSystem.OnCollisionEnter(c.entityA, c.entityB, 0.0f);
+                m_VisualScriptSystem.OnCollisionEnter(c.entityB, c.entityA, 0.0f);
+            });
+            m_Physics2D->SetOnCollisionExit([this](const Enjin::Physics::Contact2D& c) {
+                m_VisualScriptSystem.OnCollisionExit(c.entityA, c.entityB, 0.0f);
+                m_VisualScriptSystem.OnCollisionExit(c.entityB, c.entityA, 0.0f);
+            });
+            m_Physics2D->SetOnSensorEnter([this](const Enjin::Physics::Contact2D& c) {
+                m_VisualScriptSystem.OnTriggerEnter(c.entityA, c.entityB, 0.0f);
+                m_VisualScriptSystem.OnTriggerEnter(c.entityB, c.entityA, 0.0f);
+            });
+            m_Physics2D->SetOnSensorExit([this](const Enjin::Physics::Contact2D& c) {
+                m_VisualScriptSystem.OnTriggerExit(c.entityA, c.entityB, 0.0f);
+                m_VisualScriptSystem.OnTriggerExit(c.entityB, c.entityA, 0.0f);
+            });
         }
 
         // Initialize visual scripts and behavior trees
@@ -791,6 +829,13 @@ private:
         // Apply skybox
         if (m_RenderSystem) {
             m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+        }
+
+        // Apply scene render settings (shadows, ambient, cel shading, post-processing, etc.)
+        if (m_RenderSystem) {
+            auto renderSettings = serializer.GetRenderSettings();
+            renderSettings.ApplyToRuntime(m_RenderSystem,
+                m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
 
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
@@ -884,6 +929,12 @@ private:
 
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Enjin::Effects::ParticleSystem m_ParticleSystem;
+
+    // Fluid simulation, wind, world time, seasonal weather
+    Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::WindSystem m_WindSystem;
+    Enjin::Effects::WorldTimeSystem m_WorldTime;
+    Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;

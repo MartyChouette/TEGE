@@ -103,6 +103,9 @@ private:
     // Reusable per-frame temporaries (avoid per-frame heap allocation)
     std::vector<ECS::Entity> m_ToRemoveCache;
     std::vector<ECS::Entity> m_JointToRemoveCache;
+    std::unordered_set<ECS::Entity> m_CurrentEntitiesCache;
+    std::unordered_set<u64> m_NewContactsCache;
+    std::unordered_set<u64> m_NewSensorContactsCache;
 };
 
 } // namespace Physics

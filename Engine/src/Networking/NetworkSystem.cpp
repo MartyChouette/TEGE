@@ -410,6 +410,12 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     const u8* payload = data + offset;
     u32 payloadSize = (size > offset) ? size - offset : 0;
 
+    // S10: Validate message type is within valid range before processing
+    if (header.type == 0 || header.type > static_cast<u8>(MessageType::ReliableMessage)) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Invalid message type %u, dropping packet", header.type);
+        return;
+    }
+
     MessageType type = static_cast<MessageType>(header.type);
 
     switch (type) {

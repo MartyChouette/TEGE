@@ -677,10 +677,12 @@ void ConstraintSolver::SolveFixedJoint(ECS::Entity jointEntity, f32 deltaTime) {
     if (!joint->initialized) {
         joint->relativePosition = tB->position - tA->position;
         // Store rotation difference as Euler (simplified; sufficient for fixed joints)
+        Math::Vector3 eulerA = tA->rotation.ToEuler();
+        Math::Vector3 eulerB = tB->rotation.ToEuler();
         joint->relativeRotation = Math::Vector3(
-            tB->rotation.ToEuler().x - tA->rotation.ToEuler().x,
-            tB->rotation.ToEuler().y - tA->rotation.ToEuler().y,
-            tB->rotation.ToEuler().z - tA->rotation.ToEuler().z
+            eulerB.x - eulerA.x,
+            eulerB.y - eulerA.y,
+            eulerB.z - eulerA.z
         );
         joint->initialized = true;
         return;

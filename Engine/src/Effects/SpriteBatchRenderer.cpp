@@ -398,6 +398,40 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     std::string currentTexture;
     u32 batchStart = 0;
 
+    // Bind pipeline, descriptor set, viewport, scissor, push constants, and buffers ONCE
+    activePipeline->Bind(commandBuffer);
+
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+        activePipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+    VkViewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<f32>(extent.width);
+    viewport.height = static_cast<f32>(extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+    vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+
+    VkRect2D scissor{};
+    scissor.offset = {0, 0};
+    scissor.extent = extent;
+    vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+    Renderer::PushConstants pc{};
+    pc.model = Math::Matrix4::Identity();
+    pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+    pc.metallic = 0.0f;
+    pc.opacity = 1.0f;
+    pc.flags = 0;
+    vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
+        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+    VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+    VkDeviceSize offsets[] = { 0, 0 };
+    vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
+    vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
     // Lambda to flush the current batch as an instanced draw call
     auto flushBatch = [&](u32 batchEnd) {
         u32 count = batchEnd - batchStart;
@@ -408,52 +442,15 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             m_InstanceDataCache.data() + batchStart,
             count * sizeof(SpriteInstanceData));
 
-        // Bind the texture for this batch
+        // Bind the texture for this batch (only per-batch state that changes)
         if (textureBindCallback) {
             textureBindCallback(currentTexture);
         }
 
-        // Bind pipeline (lit or unlit depending on mode)
-        activePipeline->Bind(commandBuffer);
-
-        // Bind descriptor set
-        vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
-            activePipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
-
-        // Set viewport
-        VkViewport viewport{};
-        viewport.x = 0.0f;
-        viewport.y = 0.0f;
-        viewport.width = static_cast<f32>(extent.width);
-        viewport.height = static_cast<f32>(extent.height);
-        viewport.minDepth = 0.0f;
-        viewport.maxDepth = 1.0f;
-        vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
-
-        // Set scissor
-        VkRect2D scissor{};
-        scissor.offset = {0, 0};
-        scissor.extent = extent;
-        vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
-
-        // Push constants — identity model matrix, white base color, full opacity
-        Renderer::PushConstants pc{};
-        pc.model = Math::Matrix4::Identity();
-        pc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
-        pc.metallic = 0.0f;
-        pc.opacity = 1.0f;
-        pc.flags = 0;
-
-        vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
-            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
-
-        // Bind vertex buffers (quad = binding 0, instances = binding 1)
-        VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
-        VkDeviceSize offsets[] = { 0, 0 };
-        vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
-
-        // Bind index buffer
-        vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+        // Re-bind instance buffer after upload (data may have been re-uploaded)
+        VkBuffer instanceBufs[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+        VkDeviceSize instanceOffsets[] = { 0, 0 };
+        vkCmdBindVertexBuffers(commandBuffer, 0, 2, instanceBufs, instanceOffsets);
 
         // Draw instanced: 6 indices per quad, count instances
         vkCmdDrawIndexed(commandBuffer, 6, count, 0, 0, 0);
@@ -469,13 +466,14 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         // Determine effective texture for batching — atlased sprites share "__atlas__" key
         const std::string& texPath = sprite->texturePath;
         const AtlasRegion* atlasRegion = m_Atlas ? m_Atlas->GetRegion(texPath) : nullptr;
-        std::string effectiveTexture = atlasRegion ? "__atlas__" : texPath;
+        static const std::string kAtlasSentinel("__atlas__");
+        const std::string& effectiveKey = atlasRegion ? kAtlasSentinel : texPath;
 
         // Flush when effective texture changes (but not on the first sprite)
-        if (effectiveTexture != currentTexture && m_InstanceDataCache.size() > batchStart) {
+        if (effectiveKey != currentTexture && m_InstanceDataCache.size() > batchStart) {
             flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
         }
-        currentTexture = effectiveTexture;
+        currentTexture = effectiveKey;
 
         // Build instance data from sprite + transform
         SpriteInstanceData inst{};

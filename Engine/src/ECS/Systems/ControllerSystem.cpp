@@ -841,10 +841,8 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         Math::Vector2 moveDir(ctrl.velocity.x, ctrl.velocity.z);
         if (moveDir.Length() > 0.1f) {
             f32 targetAngle = Math::Degrees(Math::Atan2(moveDir.x, moveDir.y));
-            f32 currentAngle = Math::Degrees(Math::Atan2(
-                transform.rotation.ToMatrix().m[8],
-                transform.rotation.ToMatrix().m[10]
-            ));
+            Math::Matrix4 rotMat = transform.rotation.ToMatrix();
+            f32 currentAngle = Math::Degrees(Math::Atan2(rotMat.m[8], rotMat.m[10]));
             f32 newAngle = Math::MoveTowardsAngle(currentAngle, targetAngle, ctrl.rotationSpeed * dt);
             transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(newAngle));
         }
@@ -1009,10 +1007,8 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // Rotate character to face movement direction
     if (ctrl.rotateToFaceMovement && moveMag > 0.1f) {
         f32 targetAngle = Math::Degrees(Math::Atan2(moveDir.x, moveDir.z));
-        f32 currentAngle = Math::Degrees(Math::Atan2(
-            transform.rotation.ToMatrix().m[8],
-            transform.rotation.ToMatrix().m[10]
-        ));
+        Math::Matrix4 rotMat = transform.rotation.ToMatrix();
+        f32 currentAngle = Math::Degrees(Math::Atan2(rotMat.m[8], rotMat.m[10]));
         f32 newAngle = Math::MoveTowardsAngle(currentAngle, targetAngle, ctrl.rotationSpeed * dt);
         transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(newAngle));
     } else if (ctrl.rotateToFaceCamera) {

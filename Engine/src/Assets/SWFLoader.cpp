@@ -278,7 +278,12 @@ std::vector<SWFShapePath> SWFLoader::ReadShapeRecords(BitReader& reader, u8 /*sh
     SWFShapePath currentPath;
     f32 curX = 0, curY = 0;
 
+    u32 shapeRecordIter = 0;
+    constexpr u32 kMaxShapeRecordIterations = 100000;
     while (true) {
+        if (++shapeRecordIter > kMaxShapeRecordIterations) {
+            break;
+        }
         u32 typeFlag = reader.ReadBits(1);
 
         if (typeFlag == 0) {

@@ -8,6 +8,7 @@ namespace ECS { class World; class DialogueSystem; class RenderSystem; }
 namespace Physics { class IPhysicsBackend; class IPhysicsBackend2D; }
 namespace Networking { class NetworkSystem; }
 namespace Audio { class SimpleAudio; }
+namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; }
@@ -71,6 +72,17 @@ void SetBindingsStreaming(Scene::StreamingManager* mgr);
 void SetBindingsFlower(ECS::World* world);
 void SetBindingsPhysics2D(Physics::IPhysicsBackend2D* physics2d);
 void SetBindingsNetworking(Networking::NetworkSystem* net);
+
+// Accessibility binding setters
+void SetBindingsSubtitles(Accessibility::SubtitleSystem* subtitles);
+void SetBindingsAnnouncer(Accessibility::AccessibilityAnnouncer* announcer);
+void SetBindingsAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings);
+
+// Registration for accessibility bindings (defined in ScriptBindings_Accessibility.cpp)
+void RegisterAccessibilityBindings(asIScriptEngine* engine);
+
+// Registration for AI bindings (defined in ScriptBindings_AI.cpp)
+void RegisterAIBindings(asIScriptEngine* engine);
 
 } // namespace Scripting
 } // namespace Enjin

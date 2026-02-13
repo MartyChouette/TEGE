@@ -250,17 +250,46 @@ std::vector<NGSaveSlot> NewgroundsAPI::GetSaveSlots() {
 // Internal: API Call
 // ============================================================================
 
+// S5: JSON string escape helper to prevent injection via untrusted values
+static std::string JsonEscapeString(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (char c : s) {
+        switch (c) {
+            case '"':  out += "\\\""; break;
+            case '\\': out += "\\\\"; break;
+            case '\n': out += "\\n"; break;
+            case '\r': out += "\\r"; break;
+            case '\t': out += "\\t"; break;
+            default:
+                if (static_cast<unsigned char>(c) < 0x20) {
+                    char buf[8];
+                    snprintf(buf, sizeof(buf), "\\u%04x", (unsigned)c);
+                    out += buf;
+                } else {
+                    out += c;
+                }
+                break;
+        }
+    }
+    return out;
+}
+
 std::string NewgroundsAPI::CallComponent(const std::string& component,
                                           const std::string& parameters) {
-    // Build NG.io request JSON
+    // Build NG.io request JSON — S5: escape interpolated strings
+    std::string safeAppId = JsonEscapeString(m_AppId);
+    std::string safeComponent = JsonEscapeString(component);
+
     std::ostringstream json;
-    json << "{\"app_id\":\"" << m_AppId << "\"";
+    json << "{\"app_id\":\"" << safeAppId << "\"";
 
     if (!m_Session.id.empty()) {
-        json << ",\"session_id\":\"" << m_Session.id << "\"";
+        std::string safeSessionId = JsonEscapeString(m_Session.id);
+        json << ",\"session_id\":\"" << safeSessionId << "\"";
     }
 
-    json << ",\"call\":{\"component\":\"" << component << "\"";
+    json << ",\"call\":{\"component\":\"" << safeComponent << "\"";
     if (parameters != "{}") {
         json << ",\"parameters\":" << parameters;
     }

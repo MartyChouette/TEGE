@@ -39,7 +39,7 @@ namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
 namespace Effects { class WeatherSystem; }
-namespace Accessibility { class SubtitleSystem; }
+namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Editor {
 
 // Play mode state
@@ -114,6 +114,8 @@ public:
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
+    void SetAnnouncer(Accessibility::AccessibilityAnnouncer* ann) { m_Announcer = ann; }
+    void SetAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings) { m_AccessibilitySettings = settings; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
 
@@ -181,6 +183,8 @@ private:
     ECS::RenderSystem* m_RenderSystem = nullptr;
     Renderer::PostProcessing* m_PostProcessing = nullptr;
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
+    Accessibility::AccessibilityAnnouncer* m_Announcer = nullptr;
+    Accessibility::RuntimeAccessibilitySettings* m_AccessibilitySettings = nullptr;
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
 

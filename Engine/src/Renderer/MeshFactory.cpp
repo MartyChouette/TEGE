@@ -269,7 +269,7 @@ ECS::MeshComponent MeshFactory::CreateCone(f32 radius, f32 height, u32 segments)
     });
 
     // Side vertices (at base)
-    f32 slopeAngle = Math::Atan(radius / height);
+    f32 slopeAngle = (height > 1e-6f) ? Math::Atan(radius / height) : Math::PI * 0.5f;
     f32 normalY = Math::Sin(slopeAngle);
     f32 normalXZScale = Math::Cos(slopeAngle);
 
