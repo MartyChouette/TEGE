@@ -64,6 +64,9 @@ public:
     // Networking system for multiplayer nodes
     void SetNetworking(Networking::NetworkSystem* net) { m_Networking = net; }
 
+    // Streaming manager for level streaming nodes
+    void SetStreaming(Scene::StreamingManager* sm) { m_Streaming = sm; }
+
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }
     u32 GetMaxIterations() const { return m_MaxIterations; }
@@ -101,6 +104,7 @@ private:
     Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
     Networking::NetworkSystem* m_Networking = nullptr;
+    Scene::StreamingManager* m_Streaming = nullptr;
     u32 m_FunctionCallDepth = 0;
     static constexpr u32 MAX_CALL_DEPTH = 32;
 };

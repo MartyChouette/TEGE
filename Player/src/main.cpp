@@ -690,6 +690,7 @@ private:
         m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
         m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
         m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+        m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
         m_VisualScriptSystem.Initialize();
         m_BehaviorTreeSystem.Initialize();
 

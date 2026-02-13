@@ -303,6 +303,22 @@ constexpr const char* InputGetAxis         = "Input_GetAxis";
 constexpr const char* SceneLoadScene       = "Scene_LoadScene";
 constexpr const char* SceneGetCurrentScene = "Scene_GetCurrentScene";
 
+// Noise
+constexpr const char* NoisePerlin2D        = "Noise_Perlin2D";
+constexpr const char* NoiseSimplex2D       = "Noise_Simplex2D";
+constexpr const char* NoiseWorley2D        = "Noise_Worley2D";
+constexpr const char* NoiseFBM2D           = "Noise_FBM2D";
+constexpr const char* NoisePerlin3D        = "Noise_Perlin3D";
+constexpr const char* NoiseSimplex3D       = "Noise_Simplex3D";
+
+// Streaming
+constexpr const char* StreamingForceLoad   = "Streaming_ForceLoad";
+constexpr const char* StreamingForceUnload = "Streaming_ForceUnload";
+constexpr const char* StreamingGetState    = "Streaming_GetState";
+constexpr const char* StreamingIsLoaded    = "Streaming_IsLoaded";
+constexpr const char* StreamingGetLoadedCount = "Streaming_GetLoadedCount";
+constexpr const char* StreamingSetEnabled  = "Streaming_SetEnabled";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

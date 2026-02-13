@@ -132,6 +132,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsAudio(&m_SimpleAudio);
     Scripting::SetBindingsDestructible(&m_DestructibleSystem);
     Scripting::SetBindingsFlower(m_World);
+    Scripting::SetBindingsWeather(m_WeatherSystem);
+    Scripting::SetBindingsSceneManager(m_SceneManager);
     Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
     Scripting::SetBindingsEventBus(&m_EventBus);
     Scripting::SetBindingsScriptEngine(&m_ScriptEngine);
@@ -150,6 +152,7 @@ void PlayMode::Play() {
     m_VisualScriptSystem.SetPhysics2D(m_Physics2D.get());
     m_VisualScriptSystem.SetNetworking(&m_NetworkSystem);
     m_VisualScriptSystem.SetScriptEngine(&m_ScriptEngine);
+    m_VisualScriptSystem.SetStreaming(&m_StreamingManager);
     m_VisualScriptSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: VisualScriptSystem initialized");
 
@@ -262,6 +265,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsPhysics2D(nullptr);
     Scripting::SetBindingsNetworking(nullptr);
     Scripting::SetBindingsWeather(nullptr);
+    Scripting::SetBindingsSceneManager(nullptr);
     Scripting::SetBindingsStreaming(nullptr);
     Scripting::SetBindingsAudio(nullptr);
     Scripting::SetBindingsDestructible(nullptr);

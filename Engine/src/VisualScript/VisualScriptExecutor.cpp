@@ -61,6 +61,7 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
     ctx.physics2d = m_Physics2D;
     ctx.scriptEngine = m_ScriptEngine;
     ctx.networking = m_Networking;
+    ctx.streamingManager = m_Streaming;
     ctx.nextFlowIndex = 0;
 
     // Execute flow starting from the entry node

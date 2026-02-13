@@ -24,6 +24,8 @@
 #include "Enjin/ECS/Components/Tween.h"
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Platform/Input.h"
+#include "Enjin/Math/Noise.h"
+#include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -5307,6 +5309,320 @@ void NodeRegistry::RegisterBuiltinNodes() {
                           const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
             // Scene name querying would need SceneManager access; return empty for now
             return std::string("");
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // NOISE NODES
+    // ========================================================================
+
+    // Perlin Noise 2D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoisePerlin2D;
+        def.displayName = "Perlin Noise 2D";
+        def.description = "Sample 2D Perlin noise at a position";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "perlin", "procedural", "random", "2d"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            u32 seed = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? static_cast<u32>(std::get<i32>(inputs[2])) : 0u;
+            return Math::PerlinNoise2D(x, y, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // Simplex Noise 2D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoiseSimplex2D;
+        def.displayName = "Simplex Noise 2D";
+        def.description = "Sample 2D Simplex noise at a position";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "simplex", "procedural", "random", "2d"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            u32 seed = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? static_cast<u32>(std::get<i32>(inputs[2])) : 0u;
+            return Math::SimplexNoise2D(x, y, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // Worley Noise 2D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoiseWorley2D;
+        def.displayName = "Worley Noise 2D";
+        def.description = "Sample 2D Worley (cellular) noise at a position";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "worley", "cellular", "voronoi", "2d"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            u32 seed = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? static_cast<u32>(std::get<i32>(inputs[2])) : 0u;
+            return Math::WorleyNoise2D(x, y, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // FBM 2D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoiseFBM2D;
+        def.displayName = "FBM Noise 2D";
+        def.description = "Fractal Brownian Motion noise (layered Perlin)";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Int("Octaves", PK::Input, 6),
+            Float("Frequency", PK::Input, 1.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "fbm", "fractal", "terrain", "procedural"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            i32 oct = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 6;
+            f32 freq = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 1.0f;
+            u32 seed = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? static_cast<u32>(std::get<i32>(inputs[4])) : 0u;
+            return Math::FBM2D(x, y, oct, 2.0f, 0.5f, freq, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // Perlin Noise 3D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoisePerlin3D;
+        def.displayName = "Perlin Noise 3D";
+        def.description = "Sample 3D Perlin noise at a position";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Float("Z", PK::Input, 0.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "perlin", "procedural", "random", "3d"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            f32 z = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 0.0f;
+            u32 seed = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? static_cast<u32>(std::get<i32>(inputs[3])) : 0u;
+            return Math::PerlinNoise3D(x, y, z, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // Simplex Noise 3D (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::NoiseSimplex3D;
+        def.displayName = "Simplex Noise 3D";
+        def.description = "Sample 3D Simplex noise at a position";
+        def.category = NodeCategory::Noise;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.5f, 0.8f, 0.4f);
+        def.inputs = {
+            Float("X", PK::Input, 0.0f),
+            Float("Y", PK::Input, 0.0f),
+            Float("Z", PK::Input, 0.0f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {Float("Value", PK::Output)};
+        def.keywords = {"noise", "simplex", "procedural", "random", "3d"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 y = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            f32 z = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 0.0f;
+            u32 seed = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? static_cast<u32>(std::get<i32>(inputs[3])) : 0u;
+            return Math::SimplexNoise3D(x, y, z, seed);
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // STREAMING NODES
+    // ========================================================================
+
+    // Streaming Force Load
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingForceLoad;
+        def.displayName = "Force Load Chunk";
+        def.description = "Force-load a streaming chunk by ID";
+        def.category = NodeCategory::Streaming;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            String("Chunk ID", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"streaming", "load", "chunk", "level"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string chunkId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            if (!chunkId.empty() && ctx.streamingManager)
+                ctx.streamingManager->ForceLoadChunk(chunkId);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Streaming Force Unload
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingForceUnload;
+        def.displayName = "Force Unload Chunk";
+        def.description = "Force-unload a streaming chunk by ID";
+        def.category = NodeCategory::Streaming;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            String("Chunk ID", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"streaming", "unload", "chunk", "level"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string chunkId = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                ? std::get<std::string>(inputs[1]) : "";
+            if (!chunkId.empty() && ctx.streamingManager)
+                ctx.streamingManager->ForceUnloadChunk(chunkId);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Streaming Get State (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingGetState;
+        def.displayName = "Get Chunk State";
+        def.description = "Get the loading state of a streaming chunk (0=Unloaded, 1=Loading, 2=Loaded, 3=Unloading)";
+        def.category = NodeCategory::Streaming;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {String("Chunk ID", PK::Input, "")};
+        def.outputs = {Int("State", PK::Output, 0)};
+        def.keywords = {"streaming", "state", "chunk", "status"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string chunkId = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            if (chunkId.empty() || !ctx.streamingManager) return 0;
+            return static_cast<i32>(ctx.streamingManager->GetChunkState(chunkId));
+        };
+        RegisterNode(def);
+    }
+
+    // Streaming Is Loaded (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingIsLoaded;
+        def.displayName = "Is Chunk Loaded";
+        def.description = "Check if a streaming chunk is fully loaded";
+        def.category = NodeCategory::Streaming;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {String("Chunk ID", PK::Input, "")};
+        def.outputs = {Bool("Loaded", PK::Output)};
+        def.keywords = {"streaming", "loaded", "chunk", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            std::string chunkId = (inputs.size() > 0 && std::holds_alternative<std::string>(inputs[0]))
+                ? std::get<std::string>(inputs[0]) : "";
+            if (chunkId.empty() || !ctx.streamingManager) return false;
+            return ctx.streamingManager->GetChunkState(chunkId) == Scene::ChunkState::Loaded;
+        };
+        RegisterNode(def);
+    }
+
+    // Streaming Get Loaded Count (pure)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingGetLoadedCount;
+        def.displayName = "Get Loaded Chunk Count";
+        def.description = "Get the number of currently loaded streaming chunks";
+        def.category = NodeCategory::Streaming;
+        def.flags = NodeDefFlags::Pure;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {};
+        def.outputs = {Int("Count", PK::Output, 0)};
+        def.keywords = {"streaming", "count", "loaded", "chunks"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            if (!ctx.streamingManager) return 0;
+            return static_cast<i32>(ctx.streamingManager->GetLoadedChunkCount());
+        };
+        RegisterNode(def);
+    }
+
+    // Streaming Set Enabled
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::StreamingSetEnabled;
+        def.displayName = "Set Streaming Enabled";
+        def.description = "Enable or disable the level streaming system";
+        def.category = NodeCategory::Streaming;
+        def.headerColor = Math::Vector3(0.3f, 0.7f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            Bool("Enabled", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"streaming", "enable", "disable", "toggle"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1]))
+                ? std::get<bool>(inputs[1]) : true;
+            if (ctx.streamingManager)
+                ctx.streamingManager->SetEnabled(enabled);
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }

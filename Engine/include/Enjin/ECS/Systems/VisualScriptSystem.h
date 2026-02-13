@@ -33,6 +33,9 @@ public:
     // Set networking system for multiplayer nodes
     void SetNetworking(Networking::NetworkSystem* net) { m_Executor.SetNetworking(net); }
 
+    // Set streaming manager for level streaming nodes
+    void SetStreaming(Scene::StreamingManager* sm) { m_Executor.SetStreaming(sm); }
+
     // Called once when play mode starts
     void Initialize();
 

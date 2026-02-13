@@ -25,6 +25,9 @@ namespace Scripting {
 namespace Networking {
     class NetworkSystem;
 }
+namespace Scene {
+    class StreamingManager;
+}
 
 namespace VisualScript {
 
@@ -57,6 +60,9 @@ struct ExecutionContext {
 
     // Networking system for multiplayer nodes
     Networking::NetworkSystem* networking = nullptr;
+
+    // Streaming manager for level streaming nodes
+    Scene::StreamingManager* streamingManager = nullptr;
 
     // For event nodes, additional data
     std::string customEventName;
@@ -100,6 +106,8 @@ enum class NodeCategory : u8 {
     Networking,    // Multiplayer, RPC, lobby
     Input,         // Keyboard, mouse, gamepad queries
     Scene,         // Scene loading, current scene
+    Noise,         // Perlin, Simplex, Worley, fractal noise
+    Streaming,     // Level streaming (load/unload chunks)
     Custom         // User-defined nodes
 };
 
@@ -122,6 +130,8 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Networking:  return "Networking";
         case NodeCategory::Input:       return "Input";
         case NodeCategory::Scene:       return "Scene";
+        case NodeCategory::Noise:       return "Noise";
+        case NodeCategory::Streaming:   return "Streaming";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
     }

@@ -992,6 +992,8 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.Initialize(m_World, m_Camera, m_CameraController, &m_SceneManager);
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
+        m_PlayMode.SetWeatherSystem(&m_WeatherSystem);
+        m_PlayMode.SetSceneManager(&m_SceneManager);
 
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
