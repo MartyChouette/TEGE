@@ -4,6 +4,18 @@
 
 ## 2026-02-12
 
+### Comprehensive Audit #3 — Round 2: 38 More Fixes (All 83 Addressed)
+
+Second pass addressing all remaining findings from audit #3. 38 more fixes across 31 files.
+
+**Security (13 fixes):** FileDialog shell escaping on macOS/Linux (S1), network payload size validation (S11), save slot range validation (S13), xorshift32 PRNG replacing rand() globally (S14), Newgrounds save metadata slot mapping eliminates hash collisions (S15), PixelEditor sheet export size_t (S16), snapshot count cap 1024 (S17), shader compiler fork/exec on Unix (S18), IDE/folder/git shell escaping on Unix (S19/S20/S23), SDFGenerator dimension validation (S22). TODO comments for network auth (S12) and replay protection (S21).
+
+**Stability (5 fixes):** Network connections reserve(MAX_PLAYERS+1) prevents pointer invalidation (T10), spline length table size guard (T13), navmesh triangulate + terrain safer loop idioms (T14/T15).
+
+**Performance (11 fixes):** SimplePhysics AABB cache in RebuildColliderCache (P5/P15), VS executor guarded timestamps + callstack + reserved input vectors (P11-P13), NetworkSystem member send buffer (P14), scene composition mesh3D by subtraction (P20), SpriteBatch precomputed isAtlased + callback by ref (P21/P22), MeshComponent cached AABB (P23), RenderSystem cached light entity list (P24).
+
+**Features (9 fixes):** SceneManager AssetReader integration for Player .enjpak scene loading (F5), Player data asset loading from pack (F10), PlayMode weather update + particle system wiring (F12/F13), PlayMode pause toggles streaming (F14), dead code/include cleanup (F17/F18), TODO comments for remaining items (F11/F15/F16/F19).
+
 ### Comprehensive Audit #3 — 40 Fixes Applied
 
 Full codebase audit (83 findings documented in `docs/AUDIT_2026_02_12_R2.md`), 40 fixes applied across 31 files covering security, stability, performance, and feature gaps.
