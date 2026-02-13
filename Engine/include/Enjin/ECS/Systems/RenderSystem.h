@@ -43,7 +43,7 @@
 #include <memory>
 #include <vector>
 
-// Forward declarations for RT subsystems
+// Forward declarations for RT subsystems and rendering infrastructure
 namespace Enjin { namespace Renderer {
     class AccelerationStructureManager;
     class RTShadows;
@@ -53,6 +53,9 @@ namespace Enjin { namespace Renderer {
     class PathTracer;
     class SVGFDenoiser;
     class RTCompositor;
+    class OITManager;
+    class SHLightingSystem;
+    class SDFScene;
 }}
 
 namespace Enjin {
@@ -316,6 +319,17 @@ public:
     Renderer::PathTracer* GetPathTracer() { return m_PathTracer.get(); }
     Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
+
+    // Order-Independent Transparency
+    bool IsOITEnabled() const { return m_OITEnabled; }
+    void SetOITEnabled(bool enabled) { m_OITEnabled = enabled; }
+    Renderer::OITManager* GetOITManager() { return m_OITManager.get(); }
+
+    // SH Light Probes
+    Renderer::SHLightingSystem* GetSHLighting() { return m_SHLighting.get(); }
+
+    // SDF Scene
+    Renderer::SDFScene* GetSDFScene() { return m_SDFScene.get(); }
 
     // Onion skin ghost rendering (editor viewport only)
     void SetOnionSkinGhosts(const std::vector<Editor::OnionSkinGhost>& ghosts) { m_OnionSkinGhosts = ghosts; }
@@ -676,6 +690,16 @@ private:
     void* m_RTLightUBOMapped[RT_FRAMES_IN_FLIGHT] = {};
 
     bool m_RTDescriptorsWritten = false;
+
+    // --- Order-Independent Transparency (Weighted Blended OIT) ---
+    std::unique_ptr<Renderer::OITManager> m_OITManager;
+    bool m_OITEnabled = false;
+
+    // --- SH Light Probes ---
+    std::unique_ptr<Renderer::SHLightingSystem> m_SHLighting;
+
+    // --- SDF Scene (ray-marched primitives) ---
+    std::unique_ptr<Renderer::SDFScene> m_SDFScene;
 
     // Onion skin ghosts (set by editor, rendered in main pass only)
     std::vector<Editor::OnionSkinGhost> m_OnionSkinGhosts;

@@ -50,6 +50,9 @@ struct MaterialComponent {
     i32 heightTexture = -1;
     std::string heightTexturePath;
     f32 parallaxScale = 0.05f;
+    u32 parallaxMode = 0;       // 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping
+    u32 pomMaxSteps = 32;       // Max ray-march steps for POM modes
+    f32 pomHeightScale = 0.05f; // Height scale for POM
 
     // Retro rendering flags (per-material)
     bool flatShading = false;

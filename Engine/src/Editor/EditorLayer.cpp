@@ -51,6 +51,9 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
+#include "Enjin/Renderer/SHLightProbe.h"
+#include "Enjin/Renderer/SDFScene.h"
+#include "Enjin/Renderer/OITManager.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Scene/SceneSerializer.h"
@@ -5411,6 +5414,19 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Parallax Scale", &material->parallaxScale, 0.001f, 0.0f, 0.2f, "%.3f");
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("Height displacement intensity (0.03-0.05 typical)");
 
+            const char* parallaxModes[] = { "Basic", "Steep", "Occlusion Mapping", "Relief Mapping" };
+            int pMode = static_cast<int>(material->parallaxMode);
+            if (ImGui::Combo("Parallax Mode", &pMode, parallaxModes, 4)) {
+                material->parallaxMode = static_cast<u32>(pMode);
+            }
+            if (material->parallaxMode >= 1) {
+                int steps = static_cast<int>(material->pomMaxSteps);
+                if (ImGui::DragInt("POM Max Steps", &steps, 1, 8, 128)) {
+                    material->pomMaxSteps = static_cast<u32>(steps);
+                }
+                ImGui::DragFloat("POM Height Scale", &material->pomHeightScale, 0.001f, 0.0f, 0.3f, "%.3f");
+            }
+
             ImGui::TreePop();
         }
 
@@ -10023,6 +10039,95 @@ void EditorLayer::DrawRenderingPanel() {
                     ImGui::Text("Instance Count: %u", asManager->GetInstanceCount());
                 }
             }
+        }
+    }
+
+    // === LIGHT PROBES ===
+    {
+        if (ImGui::CollapsingHeader("Light Probes")) {
+            if (auto* shLighting = m_RenderSystem->GetSHLighting()) {
+                auto& grid = shLighting->GetGrid();
+
+                ImGui::Text("Probes: %u", shLighting->GetProbeCount());
+
+                if (ImGui::TreeNode("Grid Configuration")) {
+                    f32 boundsMin[3] = { grid.boundsMin.x, grid.boundsMin.y, grid.boundsMin.z };
+                    if (ImGui::DragFloat3("Bounds Min", boundsMin, 0.5f)) {
+                        grid.boundsMin = Math::Vector3(boundsMin[0], boundsMin[1], boundsMin[2]);
+                    }
+                    f32 boundsMax[3] = { grid.boundsMax.x, grid.boundsMax.y, grid.boundsMax.z };
+                    if (ImGui::DragFloat3("Bounds Max", boundsMax, 0.5f)) {
+                        grid.boundsMax = Math::Vector3(boundsMax[0], boundsMax[1], boundsMax[2]);
+                    }
+
+                    int resX = static_cast<int>(grid.resolutionX);
+                    int resY = static_cast<int>(grid.resolutionY);
+                    int resZ = static_cast<int>(grid.resolutionZ);
+                    if (ImGui::SliderInt("Resolution X", &resX, 1, 16)) grid.resolutionX = static_cast<u32>(resX);
+                    if (ImGui::SliderInt("Resolution Y", &resY, 1, 8)) grid.resolutionY = static_cast<u32>(resY);
+                    if (ImGui::SliderInt("Resolution Z", &resZ, 1, 16)) grid.resolutionZ = static_cast<u32>(resZ);
+
+                    if (ImGui::Button("Generate Grid")) {
+                        shLighting->GenerateGridProbes();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Bake All")) {
+                        shLighting->BakeAll(m_World);
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear##SHProbes")) {
+                        shLighting->Clear();
+                    }
+
+                    ImGui::TreePop();
+                }
+            } else {
+                ImGui::TextDisabled("SH Lighting system not initialized");
+            }
+        }
+    }
+
+    // === SDF SCENE ===
+    {
+        if (ImGui::CollapsingHeader("SDF Primitives")) {
+            if (auto* sdfScene = m_RenderSystem->GetSDFScene()) {
+                ImGui::Text("Objects: %u", sdfScene->GetObjectCount());
+                ImGui::TextDisabled("CPU-side SDF evaluation. GPU ray march requires compute shader.");
+
+                if (ImGui::Button("Add Sphere##SDF")) {
+                    Renderer::SDFObject obj;
+                    obj.type = Renderer::SDFPrimitive::Sphere;
+                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    sdfScene->AddObject(obj);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add Box##SDF")) {
+                    Renderer::SDFObject obj;
+                    obj.type = Renderer::SDFPrimitive::Box;
+                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    sdfScene->AddObject(obj);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear##SDF")) {
+                    sdfScene->Clear();
+                }
+            } else {
+                ImGui::TextDisabled("SDF scene not initialized");
+            }
+        }
+    }
+
+    // === ORDER-INDEPENDENT TRANSPARENCY ===
+    {
+        if (ImGui::CollapsingHeader("Transparency (OIT)")) {
+            bool oitEnabled = m_RenderSystem->IsOITEnabled();
+            if (ImGui::Checkbox("Enable Weighted Blended OIT", &oitEnabled)) {
+                m_RenderSystem->SetOITEnabled(oitEnabled);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Weighted Blended Order-Independent Transparency\n"
+                "(McGuire & Bavoil 2013).\n"
+                "Requires composite shader — stub until SPIR-V compiled.");
         }
     }
 

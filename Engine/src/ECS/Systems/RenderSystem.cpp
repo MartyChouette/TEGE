@@ -33,6 +33,9 @@
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
+#include "Enjin/Renderer/SHLightProbe.h"
+#include "Enjin/Renderer/SDFScene.h"
+#include "Enjin/Renderer/OITManager.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -274,6 +277,17 @@ void RenderSystem::Initialize() {
     // Initialize ray tracing subsystems (if hardware supports it)
     InitializeRayTracing();
 
+    // Initialize OIT, SH light probes, and SDF scene
+    m_OITManager = std::make_unique<Renderer::OITManager>();
+    auto extent = m_Renderer->GetSwapchainExtent();
+    if (!m_OITManager->Initialize(m_Renderer->GetContext(), extent.width, extent.height)) {
+        ENJIN_LOG_WARN(Renderer, "OITManager init failed, OIT disabled");
+        m_OITManager.reset();
+    }
+
+    m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
+    m_SDFScene = std::make_unique<Renderer::SDFScene>();
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -356,6 +370,11 @@ void RenderSystem::Shutdown() {
         }
     }
     m_Skybox.Shutdown();
+
+    // Clean up OIT, SH light probes, and SDF scene
+    if (m_OITManager) { m_OITManager->Shutdown(); m_OITManager.reset(); }
+    m_SHLighting.reset();
+    m_SDFScene.reset();
 
     // Clean up ray tracing subsystems
     ShutdownRayTracing();

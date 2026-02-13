@@ -158,6 +158,9 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     // Height/parallax mapping
     j["heightTexturePath"] = material.heightTexturePath;
     j["parallaxScale"] = RF(material.parallaxScale);
+    j["parallaxMode"] = material.parallaxMode;
+    j["pomMaxSteps"] = material.pomMaxSteps;
+    j["pomHeightScale"] = RF(material.pomHeightScale);
     // Retro rendering flags
     j["flatShading"] = material.flatShading;
     j["affineTexturing"] = material.affineTexturing;
@@ -316,6 +319,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     // Height/parallax mapping (optional, added in later versions)
     if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
     if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
+    if (j.contains("parallaxMode")) { u32 v = j["parallaxMode"].get<u32>(); if (v <= 3) material.parallaxMode = v; }
+    if (j.contains("pomMaxSteps")) { u32 v = j["pomMaxSteps"].get<u32>(); if (v >= 1 && v <= 256) material.pomMaxSteps = v; }
+    if (j.contains("pomHeightScale")) material.pomHeightScale = j["pomHeightScale"].get<f32>();
     // Retro rendering flags (optional, added in later versions)
     if (j.contains("flatShading")) material.flatShading = JB(j["flatShading"]);
     if (j.contains("affineTexturing")) material.affineTexturing = JB(j["affineTexturing"]);
