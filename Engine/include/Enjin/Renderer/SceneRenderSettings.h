@@ -147,6 +147,22 @@ struct SceneRenderSettings {
     Math::Vector3 stippleFgColor = Math::Vector3(0.0f, 0.0f, 0.0f);
     Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);
 
+    // --- Depth of Field ---
+    bool dofEnabled = false;
+    f32 dofFocalDistance = 10.0f;
+    f32 dofFocalRange = 5.0f;
+    f32 dofNearBlurStrength = 1.0f;
+    f32 dofFarBlurStrength = 1.0f;
+    f32 dofBokehSize = 4.0f;
+    u32 dofApertureShape = 0;
+    bool dofDebugCoC = false;
+
+    // --- Tilt-Shift ---
+    bool tiltShiftEnabled = false;
+    f32 tiltShiftFocusY = 0.5f;
+    f32 tiltShiftBandWidth = 0.3f;
+    f32 tiltShiftBlurAmount = 3.0f;
+
     // --- Cel Shading ---
     bool celShadingEnabled = false;
     f32 celDiffuseBands = 3.0f;

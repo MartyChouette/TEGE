@@ -183,6 +183,22 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.paletteEnabled               = pp->paletteEnabled != 0;
         s.paletteColors                = pp->paletteColors;
 
+        // Depth of Field
+        s.dofEnabled                   = pp->dofEnabled != 0;
+        s.dofFocalDistance             = pp->dofFocalDistance;
+        s.dofFocalRange               = pp->dofFocalRange;
+        s.dofNearBlurStrength         = pp->dofNearBlurStrength;
+        s.dofFarBlurStrength          = pp->dofFarBlurStrength;
+        s.dofBokehSize                = pp->dofBokehSize;
+        s.dofApertureShape            = pp->dofApertureShape;
+        s.dofDebugCoC                 = pp->dofDebugCoC != 0;
+
+        // Tilt-Shift
+        s.tiltShiftEnabled            = pp->tiltShiftEnabled != 0;
+        s.tiltShiftFocusY             = pp->tiltShiftFocusY;
+        s.tiltShiftBandWidth          = pp->tiltShiftBandWidth;
+        s.tiltShiftBlurAmount         = pp->tiltShiftBlurAmount;
+
         // Cel outline
         s.celOutlineEnabled            = pp->celOutlineEnabled != 0;
         s.celOutlineThickness          = pp->celOutlineThickness;
@@ -372,6 +388,22 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->paletteEnabled               = paletteEnabled ? 1 : 0;
         pp->paletteColors                = paletteColors;
 
+        // Depth of Field
+        pp->dofEnabled                   = dofEnabled ? 1 : 0;
+        pp->dofFocalDistance             = dofFocalDistance;
+        pp->dofFocalRange               = dofFocalRange;
+        pp->dofNearBlurStrength         = dofNearBlurStrength;
+        pp->dofFarBlurStrength          = dofFarBlurStrength;
+        pp->dofBokehSize                = dofBokehSize;
+        pp->dofApertureShape            = dofApertureShape;
+        pp->dofDebugCoC                 = dofDebugCoC ? 1 : 0;
+
+        // Tilt-Shift
+        pp->tiltShiftEnabled            = tiltShiftEnabled ? 1 : 0;
+        pp->tiltShiftFocusY             = tiltShiftFocusY;
+        pp->tiltShiftBandWidth          = tiltShiftBandWidth;
+        pp->tiltShiftBlurAmount         = tiltShiftBlurAmount;
+
         // Cel outline
         pp->celOutlineEnabled            = celOutlineEnabled ? 1 : 0;
         pp->celOutlineThickness          = celOutlineThickness;
@@ -548,6 +580,22 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["globalGouraudOnly"]          = s.globalGouraudOnly;
     j["globalVertexSnapResolution"] = s.globalVertexSnapResolution;
 
+    // Depth of Field
+    j["dofEnabled"]            = s.dofEnabled;
+    j["dofFocalDistance"]      = RF(s.dofFocalDistance);
+    j["dofFocalRange"]         = RF(s.dofFocalRange);
+    j["dofNearBlurStrength"]   = RF(s.dofNearBlurStrength);
+    j["dofFarBlurStrength"]    = RF(s.dofFarBlurStrength);
+    j["dofBokehSize"]          = RF(s.dofBokehSize);
+    j["dofApertureShape"]      = s.dofApertureShape;
+    j["dofDebugCoC"]           = s.dofDebugCoC;
+
+    // Tilt-Shift
+    j["tiltShiftEnabled"]      = s.tiltShiftEnabled;
+    j["tiltShiftFocusY"]       = RF(s.tiltShiftFocusY);
+    j["tiltShiftBandWidth"]    = RF(s.tiltShiftBandWidth);
+    j["tiltShiftBlurAmount"]   = RF(s.tiltShiftBlurAmount);
+
     // Cel Shading
     j["celShadingEnabled"]     = s.celShadingEnabled;
     j["celDiffuseBands"]       = s.celDiffuseBands;
@@ -716,6 +764,22 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = j["globalUVQuantize"].get<bool>();
     if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = j["globalGouraudOnly"].get<bool>();
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
+
+    // Depth of Field
+    if (j.contains("dofEnabled"))            s.dofEnabled            = j["dofEnabled"].get<bool>();
+    if (j.contains("dofFocalDistance"))       s.dofFocalDistance      = j["dofFocalDistance"].get<f32>();
+    if (j.contains("dofFocalRange"))         s.dofFocalRange         = j["dofFocalRange"].get<f32>();
+    if (j.contains("dofNearBlurStrength"))   s.dofNearBlurStrength   = j["dofNearBlurStrength"].get<f32>();
+    if (j.contains("dofFarBlurStrength"))    s.dofFarBlurStrength    = j["dofFarBlurStrength"].get<f32>();
+    if (j.contains("dofBokehSize"))          s.dofBokehSize          = j["dofBokehSize"].get<f32>();
+    if (j.contains("dofApertureShape"))      s.dofApertureShape      = j["dofApertureShape"].get<u32>();
+    if (j.contains("dofDebugCoC"))           s.dofDebugCoC           = j["dofDebugCoC"].get<bool>();
+
+    // Tilt-Shift
+    if (j.contains("tiltShiftEnabled"))      s.tiltShiftEnabled      = j["tiltShiftEnabled"].get<bool>();
+    if (j.contains("tiltShiftFocusY"))       s.tiltShiftFocusY       = j["tiltShiftFocusY"].get<f32>();
+    if (j.contains("tiltShiftBandWidth"))    s.tiltShiftBandWidth    = j["tiltShiftBandWidth"].get<f32>();
+    if (j.contains("tiltShiftBlurAmount"))   s.tiltShiftBlurAmount   = j["tiltShiftBlurAmount"].get<f32>();
 
     // Cel Shading
     if (j.contains("celShadingEnabled"))     s.celShadingEnabled     = j["celShadingEnabled"].get<bool>();

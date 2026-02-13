@@ -164,6 +164,22 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _palPad0 = 0.0f;
     alignas(4) f32 _palPad1 = 0.0f;
 
+    // Depth of Field
+    alignas(4) u32 dofEnabled = 0;
+    alignas(4) f32 dofFocalDistance = 10.0f;    // World units
+    alignas(4) f32 dofFocalRange = 5.0f;        // Transition zone width
+    alignas(4) f32 dofNearBlurStrength = 1.0f;  // 0-1
+    alignas(4) f32 dofFarBlurStrength = 1.0f;   // 0-1
+    alignas(4) f32 dofBokehSize = 4.0f;         // Pixel radius
+    alignas(4) u32 dofApertureShape = 0;        // 0=Circle, 1=Hexagon, 2=Octagon
+    alignas(4) u32 dofDebugCoC = 0;             // Visualize circle of confusion
+
+    // Tilt-Shift
+    alignas(4) u32 tiltShiftEnabled = 0;
+    alignas(4) f32 tiltShiftFocusY = 0.5f;      // Normalized screen Y (0-1)
+    alignas(4) f32 tiltShiftBandWidth = 0.3f;   // Focus band width
+    alignas(4) f32 tiltShiftBlurAmount = 3.0f;  // Max blur
+
     // Cel shading outlines (Sobel edge detection on depth)
     alignas(4) u32 celOutlineEnabled = 0;
     alignas(4) f32 celOutlineThickness = 1.0f;

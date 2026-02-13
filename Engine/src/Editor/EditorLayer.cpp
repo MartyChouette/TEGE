@@ -8797,6 +8797,50 @@ void EditorLayer::DrawPostProcessingPanel() {
         }
     }
 
+    // Depth of Field
+    if (ImGui::CollapsingHeader("Depth of Field")) {
+        bool dofEnabled = settings.dofEnabled != 0;
+        if (ImGui::Checkbox("Enabled##DOF", &dofEnabled)) {
+            settings.dofEnabled = dofEnabled ? 1 : 0;
+        }
+
+        if (settings.dofEnabled) {
+            ImGui::DragFloat("Focal Distance", &settings.dofFocalDistance, 0.5f, 0.1f, 500.0f);
+            ImGui::DragFloat("Focal Range", &settings.dofFocalRange, 0.1f, 0.0f, 50.0f);
+            ImGui::DragFloat("Near Blur", &settings.dofNearBlurStrength, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Far Blur", &settings.dofFarBlurStrength, 0.01f, 0.0f, 1.0f);
+            ImGui::DragFloat("Bokeh Size", &settings.dofBokehSize, 0.1f, 0.5f, 16.0f);
+
+            const char* apertureShapes[] = { "Circle", "Hexagon", "Octagon" };
+            int shape = static_cast<int>(settings.dofApertureShape);
+            if (ImGui::Combo("Aperture Shape", &shape, apertureShapes, 3)) {
+                settings.dofApertureShape = static_cast<u32>(shape);
+            }
+
+            bool debugCoC = settings.dofDebugCoC != 0;
+            if (ImGui::Checkbox("Debug CoC", &debugCoC)) {
+                settings.dofDebugCoC = debugCoC ? 1 : 0;
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Visualize Circle of Confusion (red=near blur, green=in focus, blue=far blur)");
+            }
+        }
+    }
+
+    // Tilt-Shift
+    if (ImGui::CollapsingHeader("Tilt-Shift")) {
+        bool tsEnabled = settings.tiltShiftEnabled != 0;
+        if (ImGui::Checkbox("Enabled##TiltShift", &tsEnabled)) {
+            settings.tiltShiftEnabled = tsEnabled ? 1 : 0;
+        }
+
+        if (settings.tiltShiftEnabled) {
+            ImGui::SliderFloat("Focus Y", &settings.tiltShiftFocusY, 0.0f, 1.0f);
+            ImGui::DragFloat("Band Width", &settings.tiltShiftBandWidth, 0.01f, 0.01f, 1.0f);
+            ImGui::DragFloat("Blur Amount", &settings.tiltShiftBlurAmount, 0.1f, 0.0f, 10.0f);
+        }
+    }
+
     // FXAA
     if (ImGui::CollapsingHeader("Anti-Aliasing (FXAA)")) {
         bool fxaaEnabled = settings.fxaaEnabled != 0;
