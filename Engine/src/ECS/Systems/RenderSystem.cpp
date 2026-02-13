@@ -2148,7 +2148,7 @@ void RenderSystem::CreateShadowPipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_BACK_BIT;  // Back-face culling: front faces in shadow map for tight contact shadows
+    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Front-face culling: render back faces into shadow map to eliminate self-shadowing acne on curved geometry (capsules, spheres)
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
@@ -3990,7 +3990,7 @@ void RenderSystem::CreatePointShadowPipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Render back faces to eliminate self-shadowing on curved geometry
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
@@ -4014,7 +4014,7 @@ void RenderSystem::CreateSpotShadowPipeline() {
     config.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
     config.depthTest = true;
     config.depthWrite = true;
-    config.cullMode = VK_CULL_MODE_BACK_BIT;
+    config.cullMode = VK_CULL_MODE_FRONT_BIT;  // Render back faces to eliminate self-shadowing on curved geometry
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.depthBiasEnable = true;
