@@ -82,6 +82,8 @@ private:
     // Thread-local current scheduler for yield functions
     static CoroutineScheduler* s_Current;
     static asIScriptContext* s_CurrentYieldContext;
+    // T-M13: Direct pointer to current coroutine (avoids O(N) scan in yield functions)
+    static Coroutine* s_CurrentCoroutine;
 
     friend void YieldSeconds(f32);
     friend void YieldFrames(u32);

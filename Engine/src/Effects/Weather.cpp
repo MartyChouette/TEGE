@@ -234,24 +234,12 @@ void Weather2D::Update(f32 deltaTime, const Math::Vector2& cameraPos, const Math
     (void)cameraPos;
     m_ScreenSize = screenSize;
 
-    // Update existing particles
-    for (auto& p : m_Particles) {
-        p.position = p.position + p.velocity * deltaTime;
-
-        // Wrap around screen
-        if (p.position.y > screenSize.y) {
-            p.position.y = 0;
-            p.position.x = RandomFloat(0, screenSize.x);
-        }
-        if (p.position.x < 0) p.position.x = screenSize.x;
-        if (p.position.x > screenSize.x) p.position.x = 0;
-    }
-
-    // Update particle velocities based on weather
+    // P-17: Combined position update + velocity update in a single pass
     f32 rainSpeed = 300.0f;
     f32 snowSpeed = 50.0f;
 
     for (auto& p : m_Particles) {
+        // Update velocity based on weather type
         switch (m_Weather) {
             case WeatherType::Rain:
             case WeatherType::HeavyRain:
@@ -266,6 +254,17 @@ void Weather2D::Update(f32 deltaTime, const Math::Vector2& cameraPos, const Math
                 p.velocity = Math::Vector2(0, 0);
                 break;
         }
+
+        // Update position
+        p.position = p.position + p.velocity * deltaTime;
+
+        // Wrap around screen
+        if (p.position.y > screenSize.y) {
+            p.position.y = 0;
+            p.position.x = RandomFloat(0, screenSize.x);
+        }
+        if (p.position.x < 0) p.position.x = screenSize.x;
+        if (p.position.x > screenSize.x) p.position.x = 0;
     }
 }
 

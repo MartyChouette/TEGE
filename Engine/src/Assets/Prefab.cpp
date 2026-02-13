@@ -401,6 +401,17 @@ std::shared_ptr<Prefab> PrefabManager::CreateFromEntities(ECS::World* world,
 
 void PrefabManager::SerializeEntityRecursive(ECS::World* world, ECS::Entity entity,
                                              Prefab& prefab, i32 parentIndex) {
+    // Guard against excessive recursion depth (e.g. circular parent-child references)
+    static constexpr i32 MAX_SERIALIZE_DEPTH = 64;
+    static thread_local i32 s_SerializeDepth = 0;
+    s_SerializeDepth++;
+    struct DepthGuard { ~DepthGuard() { s_SerializeDepth--; } } depthGuard;
+
+    if (s_SerializeDepth > MAX_SERIALIZE_DEPTH) {
+        ENJIN_LOG_ERROR(Assets, "Prefab serialization depth exceeded (%d), aborting recursive serialize", MAX_SERIALIZE_DEPTH);
+        return;
+    }
+
     PrefabEntityData entityData;
     entityData.parentIndex = parentIndex;
 
@@ -648,12 +659,20 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
             }
             if (compJson.contains("vec3s")) {
                 for (auto& [key, val] : compJson["vec3s"].items()) {
-                    compData.vec3Properties[key] = Math::Vector3(val[0], val[1], val[2]);
+                    if (val.is_array() && val.size() >= 3) {
+                        compData.vec3Properties[key] = Math::Vector3(val[0], val[1], val[2]);
+                    } else {
+                        ENJIN_LOG_WARN(Assets, "Invalid vec3 array for key '%s' in prefab", key.c_str());
+                    }
                 }
             }
             if (compJson.contains("vec4s")) {
                 for (auto& [key, val] : compJson["vec4s"].items()) {
-                    compData.vec4Properties[key] = Math::Vector4(val[0], val[1], val[2], val[3]);
+                    if (val.is_array() && val.size() >= 4) {
+                        compData.vec4Properties[key] = Math::Vector4(val[0], val[1], val[2], val[3]);
+                    } else {
+                        ENJIN_LOG_WARN(Assets, "Invalid vec4 array for key '%s' in prefab", key.c_str());
+                    }
                 }
             }
 

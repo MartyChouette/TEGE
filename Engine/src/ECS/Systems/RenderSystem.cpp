@@ -731,12 +731,12 @@ void RenderSystem::Update(f32 deltaTime) {
 
                 if (nearestDist <= interactionIK->interactionRadius) {
                     // Simple 3-bone FABRIK solve for hand chain
-                    std::vector<Math::Vector3> chain = {
-                        entityTransform->position + Math::Vector3(0.2f, 1.3f, 0.0f), // shoulder
-                        entityTransform->position + Math::Vector3(0.3f, 1.1f, 0.3f), // elbow
-                        handPos                                                        // hand
-                    };
-                    Animation::FABRIK::Solve(chain, nearestTarget, 5);
+                    // Reuse member vector to avoid per-frame heap allocation
+                    m_IKChainCache.resize(3);
+                    m_IKChainCache[0] = entityTransform->position + Math::Vector3(0.2f, 1.3f, 0.0f); // shoulder
+                    m_IKChainCache[1] = entityTransform->position + Math::Vector3(0.3f, 1.1f, 0.3f); // elbow
+                    m_IKChainCache[2] = handPos;                                                        // hand
+                    Animation::FABRIK::Solve(m_IKChainCache, nearestTarget, 5);
                 }
             }
         }

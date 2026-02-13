@@ -28,6 +28,16 @@ private:
     void InvokeCallback(World* world, Entity entity, const std::string& methodName);
 
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
+
+    // Reusable per-frame storage (avoids per-frame allocation)
+    struct PendingCallback {
+        Entity entity;
+        std::string methodName;
+    };
+    std::vector<PendingCallback> m_PendingCallbacks;
+
+    // Cached method signature to avoid per-callback string concatenation
+    std::string m_MethodSignature;
 };
 
 } // namespace ECS

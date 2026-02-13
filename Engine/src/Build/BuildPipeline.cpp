@@ -609,6 +609,9 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".ply",        &m_ModelPaths },
         { ".vox",        &m_ModelPaths },
         { ".svg",        &m_TexturePaths },        // F23: SVG files
+        { ".enjshader",  &m_DataAssetPaths },     // Graph system assets
+        { ".enjaudiopkg", &m_DataAssetPaths },
+        { ".enjparticle", &m_DataAssetPaths },
     };
 
     try {

@@ -882,8 +882,9 @@ AudioEventGraphRuntime::AudioChainResult AudioEventGraphRuntime::ResolveChain(u3
         }
         case AudioNodeType::RandomClip: {
             if (!node->audioPaths.empty()) {
-                static std::mt19937 rng(std::random_device{}());
-                std::uniform_int_distribution<usize> dist(0, node->audioPaths.size() - 1);
+                // T-H7: thread_local to avoid data races if called from multiple threads
+                thread_local static std::mt19937 rng(std::random_device{}());
+                std::uniform_int_distribution<size_t> dist(0, node->audioPaths.size() - 1);
                 usize idx = dist(rng);
                 result.clip = m_Audio->LoadClip(node->audioPaths[idx]);
             }

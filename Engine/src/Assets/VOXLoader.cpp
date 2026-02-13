@@ -105,9 +105,16 @@ bool VOXLoader::Load(const std::string& filepath, VOXModel& outModel) {
                 return false;
             }
 
-            // Validate count against remaining chunk data
-            u32 expectedBytes = numVoxels * 4;
-            if (expectedBytes > chunkSize - 4) {
+            // Reject unreasonably large voxel counts to prevent overflow and OOM
+            if (numVoxels > 16000000) {
+                s_LastError = "XYZI voxel count too large: " + std::to_string(numVoxels);
+                ENJIN_LOG_ERROR(Asset, "%s", s_LastError.c_str());
+                return false;
+            }
+
+            // Validate count against remaining chunk data (use u64 to prevent overflow)
+            u64 expectedBytes = static_cast<u64>(numVoxels) * 4;
+            if (chunkSize < 4 || expectedBytes > static_cast<u64>(chunkSize - 4)) {
                 s_LastError = "XYZI voxel count exceeds chunk size";
                 ENJIN_LOG_ERROR(Asset, "%s", s_LastError.c_str());
                 return false;

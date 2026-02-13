@@ -3,6 +3,7 @@
 #include <fstream>
 #include <sstream>
 #include <filesystem>
+#include <algorithm>
 
 namespace Enjin {
 namespace Build {
@@ -114,6 +115,11 @@ static std::string HtmlEscape(const std::string& s) {
 std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
                                          const BuildConfig& buildConfig) {
     std::string safeTitle = HtmlEscape(config.title);
+
+    // Clamp dimensions to reasonable ranges to prevent injection of extreme values
+    u32 safeWidth = std::clamp(config.width, 1u, 7680u);
+    u32 safeHeight = std::clamp(config.height, 1u, 4320u);
+
     std::ostringstream html;
 
     html << "<!DOCTYPE html>\n"
@@ -148,8 +154,8 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     html << "</head>\n"
          << "<body>\n"
          << "  <div id=\"game-container\">\n"
-         << "    <canvas id=\"game-canvas\" width=\"" << config.width
-         << "\" height=\"" << config.height << "\" tabindex=\"0\"></canvas>\n";
+         << "    <canvas id=\"game-canvas\" width=\"" << safeWidth
+         << "\" height=\"" << safeHeight << "\" tabindex=\"0\"></canvas>\n";
 
     // Preloader overlay
     if (config.showPreloader) {
@@ -287,6 +293,8 @@ std::string HTML5Exporter::GeneratePreloaderJS(const HTML5ExportConfig& config) 
 // ============================================================================
 
 std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
+    u32 safeWidth = std::clamp(config.width, 1u, 7680u);
+    u32 safeHeight = std::clamp(config.height, 1u, 4320u);
     std::ostringstream css;
 
     css << "/* Enjin Engine - HTML5 Export Styles */\n"
@@ -309,17 +317,17 @@ std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
         << "#game-canvas {\n"
         << "  max-width: 100%;\n"
         << "  max-height: 100%;\n"
-        << "  width: " << config.width << "px;\n"
-        << "  height: " << config.height << "px;\n"
+        << "  width: " << safeWidth << "px;\n"
+        << "  height: " << safeHeight << "px;\n"
         << "  image-rendering: pixelated;\n"
         << "  image-rendering: crisp-edges;\n"
         << "  outline: none;\n"
         << "}\n\n"
         << "/* Responsive scaling */\n"
-        << "@media (max-width: " << config.width << "px), (max-height: " << config.height << "px) {\n"
+        << "@media (max-width: " << safeWidth << "px), (max-height: " << safeHeight << "px) {\n"
         << "  #game-canvas {\n"
         << "    width: 100vw;\n"
-        << "    height: " << (f32)config.height / (f32)config.width * 100.0f << "vw;\n"
+        << "    height: " << (f32)safeHeight / (f32)safeWidth * 100.0f << "vw;\n"
         << "    max-height: 100vh;\n"
         << "  }\n"
         << "}\n\n";
@@ -417,19 +425,22 @@ std::string HTML5Exporter::GenerateStyleCSS(const HTML5ExportConfig& config) {
 // ============================================================================
 
 std::string HTML5Exporter::GenerateEmbedSnippet(const HTML5ExportConfig& config) {
+    u32 safeWidth = std::clamp(config.width, 1u, 7680u);
+    u32 safeHeight = std::clamp(config.height, 1u, 4320u);
+    std::string safeTitle = HtmlEscape(config.title);
     std::ostringstream embed;
 
     // iframe embed (Newgrounds-compatible)
     embed << "<!-- Embed Code (iframe) -->\n"
-          << "<iframe src=\"index.html\" width=\"" << config.width
-          << "\" height=\"" << config.height << "\" "
+          << "<iframe src=\"index.html\" width=\"" << safeWidth
+          << "\" height=\"" << safeHeight << "\" "
           << "frameborder=\"0\" scrolling=\"no\" "
           << "allowfullscreen=\"true\" "
           << "allow=\"autoplay; fullscreen; gamepad\" "
           << "style=\"border:none;\"></iframe>\n\n"
           << "<!-- Embed Code (Newgrounds-compatible) -->\n"
-          << "<div id=\"" << config.title << "\" style=\"width:" << config.width
-          << "px;height:" << config.height << "px;\">\n"
+          << "<div id=\"" << safeTitle << "\" style=\"width:" << safeWidth
+          << "px;height:" << safeHeight << "px;\">\n"
           << "  <iframe src=\"index.html\" width=\"100%\" height=\"100%\" "
           << "frameborder=\"0\" allowfullscreen></iframe>\n"
           << "</div>\n";

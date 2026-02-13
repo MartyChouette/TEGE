@@ -110,6 +110,24 @@ private:
 
     // Joint setup state
     bool m_JointsInitialized = false;
+
+    // P-19: Reusable per-frame event vectors (avoid per-call allocation)
+    struct BreakEvent {
+        Entity entity;
+        Math::Vector3 junctionPos;
+        Math::Vector3 color;
+        Entity stemEntity;
+        bool hasWitheredTag;
+        bool hasHealthyTag;
+    };
+    std::vector<BreakEvent> m_BreakEvents;
+
+    struct ImpactEvent {
+        Entity entity;
+        Math::Vector3 position;
+        Math::Vector3 color;
+    };
+    std::vector<ImpactEvent> m_ImpactEvents;
 };
 
 } // namespace ECS

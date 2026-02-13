@@ -4603,6 +4603,46 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
+    // Tween Rotation
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenRotation;
+        def.displayName = "Tween Rotation";
+        def.description = "Start a rotation tween on an entity's TweenComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Target Rotation", PK::Input),
+            Float("Duration", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "rotation", "rotate", "animate", "spin"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* tc = ctx.world->GetComponent<ECS::TweenComponent>(target);
+            if (tc && !tc->tweens.empty()) {
+                auto& entry = tc->tweens[0];
+                entry.property = ECS::TweenProperty::Rotation;
+                if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                    entry.endValue = std::get<Math::Vector3>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    entry.duration = std::get<f32>(inputs[3]);
+                entry.useCurrentAsStart = true;
+                entry.elapsed = 0.0f;
+                entry.isPlaying = true;
+                entry.isComplete = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
     // Tween Scale
     {
         NodeDefinition def;

@@ -197,6 +197,10 @@ Math::Vector3 BoneTrack::SamplePosition(f32 time) const {
 }
 
 Math::Quaternion BoneTrack::SampleRotation(f32 time) const {
+    // Return identity quaternion instead of zero quaternion when keyframes are empty
+    if (rotations.empty() || rotationTimes.size() != rotations.size()) {
+        return Math::Quaternion(0, 0, 0, 1);
+    }
     return SampleKeyframes(rotationTimes, rotations, time, SlerpQuat);
 }
 

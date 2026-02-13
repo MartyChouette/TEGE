@@ -24,7 +24,13 @@ void FluidSimulation::Update(f32 dt, ECS::World* world) {
         else clampedSize = std::min(clampedSize, 128u);
         clampedSize = std::max(clampedSize, 8u);
 
-        if (grid.N != clampedSize || grid.is3D != is3D) {
+        // Hysteresis: only reallocate if dimension mode changed or size differs by >10%
+        bool needRealloc = (grid.is3D != is3D) || (grid.N == 0);
+        if (!needRealloc && grid.N != clampedSize) {
+            f32 ratio = static_cast<f32>(clampedSize) / static_cast<f32>(grid.N);
+            needRealloc = (ratio > 1.1f || ratio < 0.9f);
+        }
+        if (needRealloc) {
             grid.Allocate(clampedSize, is3D);
             vol->simulationInitialized = true;
         }

@@ -951,11 +951,16 @@ bool PixelEditor::ExportAsPrefab(const std::string& outputPath) {
     u32 frameCount = static_cast<u32>(m_AnimFrames.size());
 
     // Layout: horizontal strip
-    // S16: Use size_t for offset calculations to prevent integer overflow
-    u32 sheetW = m_Width * frameCount;
+    // Use 64-bit intermediate to detect overflow before narrowing to u32
+    u64 sheetW64 = static_cast<u64>(m_Width) * static_cast<u64>(frameCount);
+    if (sheetW64 > 65536) {
+        ENJIN_LOG_ERROR(Editor, "PixelEditor: Sprite sheet width too large (%llu), aborting export", sheetW64);
+        return false;
+    }
+    u32 sheetW = static_cast<u32>(sheetW64);
     u32 sheetH = m_Height;
     size_t totalPixels = static_cast<size_t>(sheetW) * static_cast<size_t>(sheetH) * 4;
-    if (sheetW > 65536 || sheetH > 65536 || totalPixels > 256 * 1024 * 1024) {
+    if (sheetH > 65536 || totalPixels > 256 * 1024 * 1024) {
         ENJIN_LOG_ERROR(Editor, "PixelEditor: Sprite sheet too large (%ux%u), aborting export", sheetW, sheetH);
         return false;
     }

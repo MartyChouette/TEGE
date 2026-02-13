@@ -47,6 +47,28 @@ ECS::Entity ObjectPool::Acquire(const std::string& poolId) {
     return entity;
 }
 
+ECS::Entity ObjectPool::Acquire(const std::string& poolId, ECS::World* world) {
+    auto it = m_Pools.find(poolId);
+    if (it == m_Pools.end()) {
+        return ECS::INVALID_ENTITY;
+    }
+
+    // Pop entities from the back, skipping any that are no longer valid in the world
+    while (!it->second.available.empty()) {
+        ECS::Entity entity = it->second.available.back();
+        it->second.available.pop_back();
+        if (world && !world->IsValid(entity)) {
+            ENJIN_LOG_WARN(Editor, "ObjectPool '%s': Discarding stale entity %llu",
+                           poolId.c_str(), (unsigned long long)entity);
+            continue;
+        }
+        it->second.inUse.push_back(entity);
+        return entity;
+    }
+
+    return ECS::INVALID_ENTITY;
+}
+
 void ObjectPool::Release(const std::string& poolId, ECS::Entity entity) {
     auto it = m_Pools.find(poolId);
     if (it == m_Pools.end()) return;

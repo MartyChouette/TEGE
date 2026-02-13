@@ -177,6 +177,9 @@ std::string FileDialog::OpenFolder(
 
 #include <cstdio>
 #include <array>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 // Shell-escape a string for safe interpolation into single-quoted shell arguments.
 // Wraps the string in single quotes and escapes any embedded single quotes.
@@ -190,15 +193,37 @@ static std::string ShellEscape(const std::string& s) {
     return result;
 }
 
+// S-C1: Use posix_spawn with pipe to capture output (avoids popen shell injection)
 static std::string ExecuteCommand(const std::string& cmd) {
-    std::array<char, 4096> buffer;
     std::string result;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
-        result += buffer.data();
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return "";
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipefd[0]);
+
+    const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
+    pid_t pid = 0;
+    extern char** environ;
+    int spawnResult = posix_spawnp(&pid, "/bin/sh", &actions, nullptr,
+                                   const_cast<char**>(argv), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    close(pipefd[1]);
+
+    if (spawnResult == 0) {
+        char buffer[4096];
+        ssize_t n;
+        while ((n = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[n] = '\0';
+            result += buffer;
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
     }
-    pclose(pipe);
+    close(pipefd[0]);
+
     // Remove trailing newline
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
         result.pop_back();
@@ -316,6 +341,9 @@ std::string FileDialog::OpenFolder(
 #include <cstdio>
 #include <cstdlib>
 #include <array>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 // Shell-escape a string for safe interpolation into single-quoted shell arguments.
 // Wraps the string in single quotes and escapes any embedded single quotes.
@@ -329,16 +357,41 @@ static std::string ShellEscape(const std::string& s) {
     return result;
 }
 
+// S-C1: Use posix_spawn with pipe to capture output (avoids popen shell injection)
 static std::string ExecuteCommand(const std::string& cmd) {
-    std::array<char, 4096> buffer;
     std::string result;
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    while (fgets(buffer.data(), static_cast<int>(buffer.size()), pipe)) {
-        result += buffer.data();
+    int pipefd[2];
+    if (pipe(pipefd) != 0) return "";
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
+    posix_spawn_file_actions_addclose(&actions, pipefd[0]);
+
+    const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
+    pid_t pid = 0;
+    extern char** environ;
+    int spawnResult = posix_spawnp(&pid, "/bin/sh", &actions, nullptr,
+                                   const_cast<char**>(argv), environ);
+    posix_spawn_file_actions_destroy(&actions);
+    close(pipefd[1]);
+
+    if (spawnResult == 0) {
+        char buffer[4096];
+        ssize_t n;
+        while ((n = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+            buffer[n] = '\0';
+            result += buffer;
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            close(pipefd[0]);
+            return ""; // User cancelled or error
+        }
     }
-    int status = pclose(pipe);
-    if (status != 0) return ""; // User cancelled
+    close(pipefd[0]);
+
     // Remove trailing newline
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r')) {
         result.pop_back();
@@ -355,8 +408,15 @@ static bool HasCommand(const char* cmd) {
             return false;
         }
     }
-    std::string check = std::string("which ") + cmd + " >/dev/null 2>&1";
-    return std::system(check.c_str()) == 0;
+    // S-C1: Use posix_spawn instead of std::system
+    std::string which = "which " + std::string(cmd) + " >/dev/null 2>&1";
+    const char* argv[] = { "/bin/sh", "-c", which.c_str(), nullptr };
+    pid_t pid = 0;
+    extern char** environ;
+    if (posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ) != 0) return false;
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
 std::string FileDialog::OpenFile(

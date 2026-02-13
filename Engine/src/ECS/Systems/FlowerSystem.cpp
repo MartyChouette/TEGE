@@ -501,15 +501,8 @@ void FlowerSystem::UpdateJointTracking() {
 
     // Collect break events first — spawning particles during iteration would
     // create entities and invalidate the entity list iterator, causing a freeze.
-    struct BreakEvent {
-        Entity entity;
-        Math::Vector3 junctionPos;   // Last cached junction point
-        Math::Vector3 color;
-        Entity stemEntity;
-        bool hasWitheredTag;
-        bool hasHealthyTag;
-    };
-    std::vector<BreakEvent> breaks;
+    // P-19: Reuse member vector to avoid per-frame allocation
+    m_BreakEvents.clear();
 
     for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
@@ -571,7 +564,7 @@ void FlowerSystem::UpdateJointTracking() {
             // Cap breaks per frame to avoid GPU overload from simultaneous vertex
             // buffer mutations + particle spawns. Leftover breaks will be detected
             // next frame (SpringJointComponent is already removed, hadJoint is still true).
-            if (breaks.size() >= 3) continue;
+            if (m_BreakEvents.size() >= 3) continue;
 
             tether->isBroken = true;
             tether->justBroke = true;
@@ -598,12 +591,12 @@ void FlowerSystem::UpdateJointTracking() {
             auto* tags = m_World->GetComponent<TagComponent>(entity);
             evt.hasWitheredTag = tags && tags->HasTag("withered");
             evt.hasHealthyTag = tags && tags->HasTag("healthy");
-            breaks.push_back(evt);
+            m_BreakEvents.push_back(evt);
         }
     }
 
     // Spawn particles and update counters outside the entity iteration
-    for (const auto& evt : breaks) {
+    for (const auto& evt : m_BreakEvents) {
         auto* pConfig = m_World->GetComponent<FlowerParticleConfigComponent>(evt.stemEntity);
         SpawnBreakParticles(evt.junctionPos, evt.color, pConfig);
 
@@ -714,12 +707,8 @@ void FlowerSystem::CheckGroundImpact() {
 
     // Collect impact events first — spawning particles and removing components
     // during iteration would invalidate the entity list iterator, causing a freeze.
-    struct ImpactEvent {
-        Entity entity;
-        Math::Vector3 position;
-        Math::Vector3 color;
-    };
-    std::vector<ImpactEvent> impacts;
+    // P-19: Reuse member vector to avoid per-frame allocation
+    m_ImpactEvents.clear();
 
     for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
@@ -751,12 +740,12 @@ void FlowerSystem::CheckGroundImpact() {
             evt.color = Math::Vector3(1.0f, 1.0f, 1.0f);
             auto* mat = m_World->GetComponent<MaterialComponent>(entity);
             if (mat) evt.color = mat->baseColor;
-            impacts.push_back(evt);
+            m_ImpactEvents.push_back(evt);
         }
     }
 
     // Spawn splash particles and remove rigidbodies outside the entity iteration
-    for (const auto& evt : impacts) {
+    for (const auto& evt : m_ImpactEvents) {
         // Find particle config from this entity's tether -> stem
         const FlowerParticleConfigComponent* splashConfig = nullptr;
         auto* tetherForSplash = m_World->GetComponent<TetherComponent>(evt.entity);

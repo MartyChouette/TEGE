@@ -96,6 +96,10 @@ void PatrolBehavior::Update(AIAgent* agent, f32 deltaTime) {
 
     if (m_Mode == PatrolMode::Waypoints) {
         if (m_Waypoints.empty()) return;
+        // Clamp waypoint index to valid range to prevent underflow on size==1
+        if (m_CurrentWaypoint >= m_Waypoints.size()) {
+            m_CurrentWaypoint = 0;
+        }
 
         if (m_IsWaiting) {
             m_WaitTimer += deltaTime;
@@ -107,7 +111,10 @@ void PatrolBehavior::Update(AIAgent* agent, f32 deltaTime) {
                     m_CurrentWaypoint = (m_CurrentWaypoint + 1) % m_Waypoints.size();
                 } else {
                     // Ping-pong
-                    if (m_MovingForward) {
+                    if (m_Waypoints.size() <= 1) {
+                        // Single waypoint: nowhere to go
+                        m_CurrentWaypoint = 0;
+                    } else if (m_MovingForward) {
                         if (m_CurrentWaypoint < m_Waypoints.size() - 1) {
                             m_CurrentWaypoint++;
                         } else {
@@ -288,14 +295,27 @@ void FleeBehavior::Enter(AIAgent* agent) {
 
     if (agent->HasTarget()) {
         // Run opposite direction from target
-        m_FleeDirection = (agent->GetPosition() - agent->GetTarget().position).Normalized();
+        Math::Vector3 awayDir = agent->GetPosition() - agent->GetTarget().position;
+        f32 len = awayDir.Length();
+        if (len > 0.0001f) {
+            m_FleeDirection = awayDir * (1.0f / len);
+        } else {
+            // On top of target, flee in arbitrary direction
+            m_FleeDirection = Math::Vector3(0.0f, 0.0f, 1.0f);
+        }
     } else {
         // Random direction
-        m_FleeDirection = Math::Vector3(
+        Math::Vector3 randDir(
             Math::Random(-1.0f, 1.0f),
             0.0f,
             Math::Random(-1.0f, 1.0f)
-        ).Normalized();
+        );
+        f32 len = randDir.Length();
+        if (len > 0.0001f) {
+            m_FleeDirection = randDir * (1.0f / len);
+        } else {
+            m_FleeDirection = Math::Vector3(0.0f, 0.0f, 1.0f);
+        }
     }
 
     // If navmesh is available, find a valid flee destination on the navmesh
@@ -312,7 +332,11 @@ void FleeBehavior::Update(AIAgent* agent, f32 deltaTime) {
 
     // Update flee direction if target is still visible
     if (agent->HasTarget() && agent->CanSeeTarget()) {
-        m_FleeDirection = (agent->GetPosition() - agent->GetTarget().position).Normalized();
+        Math::Vector3 awayDir = agent->GetPosition() - agent->GetTarget().position;
+        f32 awayLen = awayDir.Length();
+        if (awayLen > 0.0001f) {
+            m_FleeDirection = awayDir * (1.0f / awayLen);
+        }
         m_FleeTimer = 0.0f; // Reset timer while target visible
 
         // Re-path using navmesh if available

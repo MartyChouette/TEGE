@@ -53,8 +53,9 @@ static Math::Vector2 CrossVS(const Math::Vector2& v, f32 s) {
 }
 
 // Get the Z-axis Euler angle (radians) from a TransformComponent quaternion
+// Uses direct extraction instead of full Euler decomposition for performance
 static f32 GetRotationZ(const ECS::TransformComponent& t) {
-    return t.rotation.ToEuler().z;
+    return t.rotation.GetRotationZ();
 }
 
 // Get world-space position as Vector2 from transform
@@ -377,7 +378,7 @@ void PhysicsWorld2D::IntegratePositions(f32 dt) {
 
         // Update rotation (Z axis for 2D) — construct quaternion directly from Z angle
         if (!body->fixedRotation) {
-            f32 currentZ = transform->rotation.ToEuler().z;
+            f32 currentZ = transform->rotation.GetRotationZ();
             transform->rotation = Math::Quaternion(Math::Vector3(0.0f, 0.0f, 1.0f), currentZ + body->angularVelocity * dt);
         }
     }

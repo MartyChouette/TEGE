@@ -500,6 +500,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Save/Load UI (Editor + In-Game) | Medium | Medium | P2 | ✅ Complete |
 | Cloud Save Backends (NG/Steam) | Medium | Medium | P2 | ✅ Complete |
 | Save System Script Bindings (AS + VS) | Medium | Medium | P2 | ✅ Complete |
+| Wire AISystem into PlayMode and Player | Critical | Low | P0 | ✅ Complete (patrol/chase/flee/wander/navmesh — was 615+ lines dead code) |
+| Add AS bindings for 22 gameplay component types | High | High | P1 | ✅ Complete (~180 new bindings, total ~570) |
+| Wire plugin/audio graph/input action bindings in PlayMode | Medium | Low | P1 | ✅ Complete |
+| Pack graph assets in BuildPipeline | Medium | Low | P2 | ✅ Complete (.enjshader/.enjaudiopkg/.enjparticle) |
+| Quaternion GetRotationZ/GetForward/GetRight/GetUp helpers | High | Low | P1 | ✅ Complete (eliminates ToEuler/ToMatrix in 19+ hot paths) |
 | OIDN integration | Medium | Medium | P3 | Planned |
 | **— Rendering & Camera —** | | | | |
 | Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | ✅ Complete |

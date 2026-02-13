@@ -90,9 +90,9 @@ bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string&
 void NetworkSystem::Disconnect() {
     if (m_Role == NetworkRole::None) return;
 
-    // Send disconnect to all peers
-    static const std::vector<u8> kEmpty;
-    SendToAll(MessageType::Disconnect, kEmpty);
+    // Send disconnect to all peers (S-M11: avoid static vector destruction order issues)
+    const std::vector<u8> empty;
+    SendToAll(MessageType::Disconnect, empty);
 
     // If host, notify all clients they're disconnected
     if (m_Role == NetworkRole::Host) {
@@ -158,6 +158,8 @@ NetworkId NetworkSystem::RegisterNetworkEntity(ECS::Entity entity, PlayerId owne
     if (it != m_EntityToNetwork.end()) return it->second;
 
     NetworkId id = m_NextNetworkId++;
+    // S-H3: Skip 0 on wraparound (0 is reserved as INVALID_NETWORK_ID)
+    if (m_NextNetworkId == 0) m_NextNetworkId = 1;
     m_NetworkToEntity[id] = entity;
     m_EntityToNetwork[entity] = id;
 
@@ -241,6 +243,12 @@ void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* 
     auto it = m_RPCRegistry.find(nameHash);
     bool reliable = (it != m_RPCRegistry.end()) ? it->second.reliable : false;
 
+    // S-C3: Reject payload too large for u16 size field
+    if (size > 65535) {
+        ENJIN_LOG_ERROR(Network, "RPC payload too large: %u bytes (max 65535)", size);
+        return;
+    }
+
     std::vector<u8> payload;
     WriteU32(payload, nameHash);
     WriteU8(payload, target);
@@ -260,6 +268,12 @@ void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* 
 }
 
 void NetworkSystem::CallRPCAll(const std::string& name, const u8* data, u32 size) {
+    // S-C4: Reject payload too large for u16 size field
+    if (size > 65535) {
+        ENJIN_LOG_ERROR(Network, "RPC broadcast payload too large: %u bytes (max 65535)", size);
+        return;
+    }
+
     u32 nameHash = FNV1aHash(name);
     auto it = m_RPCRegistry.find(nameHash);
     bool reliable = (it != m_RPCRegistry.end()) ? it->second.reliable : false;
@@ -620,9 +634,9 @@ void NetworkSystem::HandleDisconnect(const NetworkAddress& sender, PlayerId send
 }
 
 void NetworkSystem::HandleHeartbeat(const NetworkAddress& sender, PlayerId senderId) {
-    // Send ack back
-    static const std::vector<u8> kEmpty;
-    SendPacket(sender, MessageType::HeartbeatAck, kEmpty);
+    // Send ack back (S-M11: avoid static vector destruction order issues)
+    const std::vector<u8> empty;
+    SendPacket(sender, MessageType::HeartbeatAck, empty);
 }
 
 void NetworkSystem::HandlePlayerReady(PlayerId senderId, const u8* payload, u32 size) {
@@ -873,6 +887,12 @@ void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size
 // ============================================================================
 
 void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload) {
+    // S-C3: Reject payload too large for u16 size field
+    if (payload.size() > 65535) {
+        ENJIN_LOG_ERROR(Network, "Packet payload too large: %zu bytes (max 65535)", payload.size());
+        return;
+    }
+
     ConnectionInfo* conn = FindConnectionByAddress(addr);
 
     PacketHeader header;
@@ -943,10 +963,11 @@ void NetworkSystem::UpdateHeartbeats(f32 dt) {
     if (m_HeartbeatTimer < HEARTBEAT_INTERVAL) return;
     m_HeartbeatTimer -= HEARTBEAT_INTERVAL;
 
-    static const std::vector<u8> kEmpty;
+    // S-M11: avoid static vector destruction order issues
+    const std::vector<u8> empty;
     for (auto& conn : m_Connections) {
         if (conn.state == ConnectionState::Connected) {
-            SendPacket(conn.address, MessageType::Heartbeat, kEmpty);
+            SendPacket(conn.address, MessageType::Heartbeat, empty);
         }
     }
 }

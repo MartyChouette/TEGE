@@ -55,6 +55,8 @@ void SubtitleSystem::Update(f32 dt) {
 void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
     if (m_Entries.empty()) return;
     if (!m_Config.enabled && !m_Config.captionsEnabled) return;
+    // T-L8: Guard against zero viewport dimensions
+    if (viewportWidth == 0 || viewportHeight == 0) return;
 
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
     if (!drawList) return;
@@ -90,9 +92,10 @@ void SubtitleSystem::RenderOverlay(u32 viewportWidth, u32 viewportHeight) {
     f32 y = startY;
     for (const auto& entry : m_Entries) {
         // Fade out in last 0.5 seconds
+        // T-M6: Guard against divide-by-zero if fadeDuration is very small
         f32 alpha = 1.0f;
         if (entry.timeRemaining < 0.5f) {
-            alpha = entry.timeRemaining / 0.5f;
+            alpha = std::max(0.0f, entry.timeRemaining) / 0.5f;
         }
 
         std::string line;

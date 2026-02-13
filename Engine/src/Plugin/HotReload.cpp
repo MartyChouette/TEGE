@@ -7,6 +7,8 @@
 #include <windows.h>
 #else
 #include <dlfcn.h>
+#include <spawn.h>
+#include <sys/wait.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -206,7 +208,18 @@ bool HotReloadSystem::Compile()
         CloseHandle(pi.hThread);
     }
 #else
-    int result = std::system(m_CompileCommand.c_str());
+    // S-C1: Use posix_spawn instead of std::system to avoid shell injection
+    int result = -1;
+    {
+        const char* argv[] = { "/bin/sh", "-c", m_CompileCommand.c_str(), nullptr };
+        pid_t pid = 0;
+        extern char** environ;
+        if (posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ) == 0) {
+            int status = 0;
+            waitpid(pid, &status, 0);
+            result = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+        }
+    }
 #endif
 
     m_IsCompiling = false;

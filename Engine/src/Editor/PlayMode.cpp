@@ -72,6 +72,9 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
         // Initialize behavior tree system
         m_BehaviorTreeSystem.SetWorld(world);
 
+        // Initialize AI system
+        m_AISystem.SetWorld(world);
+
         // Initialize network system
         m_NetworkSystem.SetWorld(world);
 
@@ -108,6 +111,7 @@ void PlayMode::Play() {
     m_FlowerSystem.SetRenderSystem(m_RenderSystem);
     m_FlowerSystem.Reset();
     m_FlowerSystem.SetEnabled(true);
+    m_FlowerSystem.SetGameCameraEntity(gameCam);
     ENJIN_LOG_INFO(Editor, "PlayMode: FlowerSystem enabled");
     m_ScriptSystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: ScriptSystem enabled");
@@ -116,6 +120,7 @@ void PlayMode::Play() {
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
     m_StreamingManager.SetEnabled(true);
+    m_AISystem.SetEnabled(true);
     ENJIN_LOG_INFO(Editor, "PlayMode: Gameplay systems enabled");
     m_TweenSystem.PlayAll(m_World);
     Scripting::SetBindingsWorld(m_World);
@@ -142,6 +147,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsSubtitles(m_SubtitleSystem);
     Scripting::SetBindingsAnnouncer(m_Announcer);
     Scripting::SetBindingsAccessibilitySettings(m_AccessibilitySettings);
+    Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem instance yet — null-safe
+    Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
@@ -149,6 +156,7 @@ void PlayMode::Play() {
     m_SimpleAudio.Initialize();
     m_SimpleAudio.SetWorld(m_World);
     m_DestructibleSystem.Initialize(m_World);
+    m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
 
     // Wire 2D physics collision callbacks to visual script system
     if (m_Physics2D) {
@@ -189,6 +197,9 @@ void PlayMode::Play() {
     // Initialize behavior tree system
     m_BehaviorTreeSystem.Initialize();
     ENJIN_LOG_INFO(Editor, "PlayMode: BehaviorTreeSystem initialized");
+
+    // AI system is already set up (world set in Initialize) — just enabled above
+    ENJIN_LOG_INFO(Editor, "PlayMode: AISystem enabled");
 
     // Enable network system if connected
     if (m_NetworkSystem.IsConnected()) {
@@ -238,6 +249,7 @@ void PlayMode::Pause() {
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
     m_StreamingManager.SetEnabled(false);
+    m_AISystem.SetEnabled(false);
     // NOTE: TweenSystem, VisualScriptSystem, BehaviorTreeSystem, and DialogueSystem
     // do not have SetEnabled()/SetPaused() methods. They are effectively paused because
     // PlayMode::Update() only runs the gameplay block when m_State == PlayState::Playing.
@@ -262,6 +274,7 @@ void PlayMode::Resume() {
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
     m_StreamingManager.SetEnabled(true);
+    m_AISystem.SetEnabled(true);
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
     m_State = PlayState::Playing;
@@ -293,6 +306,7 @@ void PlayMode::Stop() {
     m_EntityEventBus.Clear();
 
     // Shutdown owned runtime systems
+    m_AudioGraphRuntime.Shutdown();
     m_SimpleAudio.Shutdown();
     m_DestructibleSystem.Shutdown();
 
@@ -323,6 +337,8 @@ void PlayMode::Stop() {
     Scripting::SetBindingsDestructible(nullptr);
     Scripting::SetBindingsFlower(nullptr);
     Scripting::SetBindingsProcedural(nullptr);
+    Scripting::SetBindingsPluginSystem(nullptr);
+    Scripting::SetBindingsAudioGraphRuntime(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);
@@ -338,6 +354,7 @@ void PlayMode::Stop() {
     m_StreamingManager.SetEnabled(false);
     m_StreamingManager.ClearChunks();
     m_DialogueSystem.Clear();
+    m_AISystem.SetEnabled(false);
 
     // Re-enable editor camera controller
     if (m_CameraController) {
@@ -383,6 +400,9 @@ void PlayMode::Update(f32 deltaTime) {
     // Update controller system when playing
     if (m_State == PlayState::Playing) {
         auto frameStart = std::chrono::high_resolution_clock::now();
+
+        // Update input action map (polls input state for remappable actions)
+        m_InputMap.Update(deltaTime);
 
         // Physics runs first to update rigidbody positions, then controllers overlay input
         auto t0 = std::chrono::high_resolution_clock::now();
@@ -440,6 +460,7 @@ void PlayMode::Update(f32 deltaTime) {
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
         m_DialogueSystem.Update(m_World, deltaTime);
+        m_AISystem.Update(deltaTime);
         m_CinematicSystem.Update(m_World, m_Camera, deltaTime);
         m_QuestSystem.Update(m_World, deltaTime);
 
@@ -468,6 +489,7 @@ void PlayMode::Update(f32 deltaTime) {
         // Audio
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
+        m_AudioGraphRuntime.Update(deltaTime);
 
         // Networking
         {
@@ -534,7 +556,7 @@ void PlayMode::SaveEditorState() {
     m_SavedCameraRot = m_Camera->GetRotation();
     m_SavedCameraFov = m_Camera->GetFOV();
 
-    usize entityCount = m_World->GetAllEntities().size();
+    usize entityCount = m_World->GetEntityCount();
     ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities, %zu bytes JSON)", entityCount, m_SavedSceneJson.size());
 }
 
@@ -557,7 +579,7 @@ void PlayMode::RestoreEditorState() {
             m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
         }
 
-        usize entityCount = m_World->GetAllEntities().size();
+        usize entityCount = m_World->GetEntityCount();
         ENJIN_LOG_DEBUG(Editor, "Restored editor state (%zu entities)", entityCount);
     } else {
         ENJIN_LOG_WARN(Editor, "No saved scene JSON to restore — editor state was empty");

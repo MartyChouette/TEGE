@@ -25,8 +25,9 @@ static inline Math::Vector2 FromBox2D(b2Vec2 v) {
 }
 
 // Extract Z-axis Euler angle (radians) from a quaternion
+// Uses direct extraction instead of full Euler decomposition for performance
 static f32 GetRotationZ(const ECS::TransformComponent& t) {
-    return t.rotation.ToEuler().z;
+    return t.rotation.GetRotationZ();
 }
 
 static Math::Vector2 GetPosition2D(const ECS::TransformComponent& t) {

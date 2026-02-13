@@ -315,6 +315,10 @@ void TimelineSystem::EvaluateEventTracks(TimelineComponent& tl) {
         if (!track.enabled) continue;
 
         for (auto& event : track.events) {
+            // In PingPong reverse playback, skip firing events to prevent
+            // duplicate triggers when time re-crosses event timestamps
+            if (tl.pingPong && tl.direction < 0) continue;
+
             if (!event.fired && event.time <= tl.currentTime) {
                 event.fired = true;
                 ENJIN_LOG_INFO(Animation, "Timeline event fired: %s (t=%.3f, data=%s)",

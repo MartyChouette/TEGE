@@ -37,26 +37,31 @@ void ControllerSystem::UpdateGameCameraTransform(const Math::Vector3& position, 
                     f32 m20 = right.z,        m21 = correctedUp.z, m22 = -fwd.z;
                     f32 trace = m00 + m11 + m22;
                     f32 qx, qy, qz, qw;
+                    constexpr f32 eps = 1e-6f;
                     if (trace > 0.0f) {
                         f32 s = std::sqrt(trace + 1.0f) * 2.0f;
+                        if (s < eps) s = eps;
                         qw = 0.25f * s;
                         qx = (m21 - m12) / s;
                         qy = (m02 - m20) / s;
                         qz = (m10 - m01) / s;
                     } else if (m00 > m11 && m00 > m22) {
-                        f32 s = std::sqrt(1.0f + m00 - m11 - m22) * 2.0f;
+                        f32 s = std::sqrt(std::max(0.0f, 1.0f + m00 - m11 - m22)) * 2.0f;
+                        if (s < eps) s = eps;
                         qw = (m21 - m12) / s;
                         qx = 0.25f * s;
                         qy = (m01 + m10) / s;
                         qz = (m02 + m20) / s;
                     } else if (m11 > m22) {
-                        f32 s = std::sqrt(1.0f + m11 - m00 - m22) * 2.0f;
+                        f32 s = std::sqrt(std::max(0.0f, 1.0f + m11 - m00 - m22)) * 2.0f;
+                        if (s < eps) s = eps;
                         qw = (m02 - m20) / s;
                         qx = (m01 + m10) / s;
                         qy = 0.25f * s;
                         qz = (m12 + m21) / s;
                     } else {
-                        f32 s = std::sqrt(1.0f + m22 - m00 - m11) * 2.0f;
+                        f32 s = std::sqrt(std::max(0.0f, 1.0f + m22 - m00 - m11)) * 2.0f;
+                        if (s < eps) s = eps;
                         qw = (m10 - m01) / s;
                         qx = (m02 + m20) / s;
                         qy = (m12 + m21) / s;
@@ -374,7 +379,7 @@ void ControllerSystem::Update(f32 deltaTime) {
         } else {
             cam2d->currentZoom = cam2d->targetZoom;
         }
-        cam2d->currentZoom = std::clamp(cam2d->currentZoom, cam2d->minZoom, cam2d->maxZoom);
+        cam2d->currentZoom = std::clamp(cam2d->currentZoom, std::max(cam2d->minZoom, 0.01f), cam2d->maxZoom);
 
         // Apply zoom to camera ortho size (only if zoom != 1.0)
         auto* camComp = m_World->GetComponent<CameraComponent>(entity);
@@ -383,6 +388,7 @@ void ControllerSystem::Update(f32 deltaTime) {
             if (cam2d->baseOrthoSize <= 0.0f) {
                 cam2d->baseOrthoSize = camComp->orthoSize;
             }
+            // Guard: clamp zoom to minimum 0.01f to prevent division by near-zero
             if (cam2d->currentZoom > 0.01f) {
                 camComp->orthoSize = cam2d->baseOrthoSize / cam2d->currentZoom;
             }
@@ -841,8 +847,9 @@ void ControllerSystem::UpdateTopDown3D(Entity entity, TopDown3DController& ctrl,
         Math::Vector2 moveDir(ctrl.velocity.x, ctrl.velocity.z);
         if (moveDir.Length() > 0.1f) {
             f32 targetAngle = Math::Degrees(Math::Atan2(moveDir.x, moveDir.y));
-            Math::Matrix4 rotMat = transform.rotation.ToMatrix();
-            f32 currentAngle = Math::Degrees(Math::Atan2(rotMat.m[8], rotMat.m[10]));
+            // Extract yaw from forward direction (avoids full ToMatrix decomposition)
+            Math::Vector3 fwd = transform.rotation.GetForward();
+            f32 currentAngle = Math::Degrees(Math::Atan2(-fwd.x, -fwd.z));
             f32 newAngle = Math::MoveTowardsAngle(currentAngle, targetAngle, ctrl.rotationSpeed * dt);
             transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(newAngle));
         }
@@ -1007,8 +1014,9 @@ void ControllerSystem::UpdateThirdPerson(Entity entity, ThirdPersonController& c
     // Rotate character to face movement direction
     if (ctrl.rotateToFaceMovement && moveMag > 0.1f) {
         f32 targetAngle = Math::Degrees(Math::Atan2(moveDir.x, moveDir.z));
-        Math::Matrix4 rotMat = transform.rotation.ToMatrix();
-        f32 currentAngle = Math::Degrees(Math::Atan2(rotMat.m[8], rotMat.m[10]));
+        // Extract yaw from forward direction (avoids full ToMatrix decomposition)
+        Math::Vector3 fwd = transform.rotation.GetForward();
+        f32 currentAngle = Math::Degrees(Math::Atan2(-fwd.x, -fwd.z));
         f32 newAngle = Math::MoveTowardsAngle(currentAngle, targetAngle, ctrl.rotationSpeed * dt);
         transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(newAngle));
     } else if (ctrl.rotateToFaceCamera) {
@@ -1545,10 +1553,9 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
     // Movement input
     Math::Vector2 input = GetMovementInput(ctrl);
 
-    // Build tangent frame from surfaceRotation
-    Math::Matrix4 rotMat = ctrl.surfaceRotation.ToMatrix();
-    Math::Vector3 surfaceRight(rotMat.m[0], rotMat.m[1], rotMat.m[2]);
-    Math::Vector3 surfaceForward(rotMat.m[8], rotMat.m[9], rotMat.m[10]);
+    // Build tangent frame from surfaceRotation (using Rotate() avoids full ToMatrix)
+    Math::Vector3 surfaceRight = ctrl.surfaceRotation.GetRight();
+    Math::Vector3 surfaceForward = ctrl.surfaceRotation.Rotate(Math::Vector3(0, 0, 1));
 
     // Rotate tangent frame by camera yaw
     f32 yawRad = Math::Radians(ctrl.cameraYaw);
@@ -1663,13 +1670,8 @@ void ControllerSystem::UpdateSurfaceAligned(Entity entity, SurfaceAlignedControl
         localOffset.y = Math::Sin(pitchRad) * ctrl.cameraDistance + ctrl.cameraHeight;
         localOffset.z = Math::Cos(pitchRad) * Math::Cos(yawRad2) * ctrl.cameraDistance;
 
-        // Transform offset to world space using surface rotation
-        Math::Matrix4 surfMat = ctrl.surfaceRotation.ToMatrix();
-        Math::Vector3 worldOffset(
-            surfMat.m[0] * localOffset.x + surfMat.m[4] * localOffset.y + surfMat.m[8] * localOffset.z,
-            surfMat.m[1] * localOffset.x + surfMat.m[5] * localOffset.y + surfMat.m[9] * localOffset.z,
-            surfMat.m[2] * localOffset.x + surfMat.m[6] * localOffset.y + surfMat.m[10] * localOffset.z
-        );
+        // Transform offset to world space using surface rotation (Rotate() avoids full ToMatrix)
+        Math::Vector3 worldOffset = ctrl.surfaceRotation.Rotate(localOffset);
 
         Math::Vector3 cameraPos = transform.position + worldOffset;
         Math::Vector3 lookTarget = transform.position + ctrl.localUp * ctrl.cameraHeight * 0.5f;

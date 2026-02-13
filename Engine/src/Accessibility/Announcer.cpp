@@ -62,7 +62,8 @@ void AccessibilityAnnouncer::RenderStatusBar() {
     ImDrawList* drawList = ImGui::GetForegroundDrawList();
 
     // Background
-    f32 alpha = std::min(1.0f, current.timeRemaining / 0.5f);
+    // T-M6: Guard against negative timeRemaining producing negative alpha
+    f32 alpha = std::min(1.0f, std::max(0.0f, current.timeRemaining) / 0.5f);
     ImU32 bgCol = IM_COL32(20, 20, 30, static_cast<u8>(200 * alpha));
     drawList->AddRectFilled(barPos, barEnd, bgCol);
 

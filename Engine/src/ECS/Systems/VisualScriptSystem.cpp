@@ -50,7 +50,14 @@ void VisualScriptSystem::Shutdown() {
 void VisualScriptSystem::Update(f32 deltaTime) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
+    // Copy entity list before iterating — script execution may destroy entities
+    auto entities = m_World->GetEntitiesWithComponent<VisualScriptComponent>();
+    std::vector<Entity> entitySnapshot(entities.begin(), entities.end());
+
+    for (Entity entity : entitySnapshot) {
+        // Verify entity still exists (scripts may destroy other entities)
+        if (!m_World->IsValid(entity)) continue;
+
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (!script || !script->enabled) continue;
 
@@ -86,7 +93,12 @@ void VisualScriptSystem::Update(f32 deltaTime) {
 void VisualScriptSystem::BroadcastEvent(const std::string& eventName, f32 deltaTime) {
     if (!m_World) return;
 
-    for (Entity entity : m_World->GetEntitiesWithComponent<VisualScriptComponent>()) {
+    // Copy entity list — event handlers may destroy entities
+    auto entities = m_World->GetEntitiesWithComponent<VisualScriptComponent>();
+    std::vector<Entity> entitySnapshot(entities.begin(), entities.end());
+
+    for (Entity entity : entitySnapshot) {
+        if (!m_World->IsValid(entity)) continue;
         auto* script = m_World->GetComponent<VisualScriptComponent>(entity);
         if (script && script->enabled) {
             m_Executor.ExecuteCustomEvent(m_World, entity, script, eventName, deltaTime);

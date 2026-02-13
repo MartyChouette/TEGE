@@ -44,6 +44,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 using json = nlohmann::json;
 
@@ -2290,8 +2291,18 @@ ECS::VisualScriptComponent DeserializeVisualScriptComponent(const json& j) {
     // Deserialize event nodes
     if (j.contains("eventNodes") && j["eventNodes"].is_object()) {
         for (auto& [key, val] : j["eventNodes"].items()) {
-            u8 eventType = static_cast<u8>(std::stoi(key));
-            vs.eventNodes[eventType] = val.get<Editor::NodeId>();
+            try {
+                int parsed = std::stoi(key);
+                if (parsed < 0 || parsed > 255) {
+                    ENJIN_LOG_WARN(Editor, "Event node ID out of u8 range: %d", parsed);
+                    continue;
+                }
+                u8 eventType = static_cast<u8>(parsed);
+                vs.eventNodes[eventType] = val.get<Editor::NodeId>();
+            } catch (const std::exception&) {
+                ENJIN_LOG_WARN(Editor, "Invalid event node ID in scene: %s", key.c_str());
+                continue;
+            }
         }
     }
 
@@ -2305,8 +2316,18 @@ ECS::VisualScriptComponent DeserializeVisualScriptComponent(const json& j) {
     // Deserialize node metadata
     if (j.contains("nodeMeta") && j["nodeMeta"].is_object()) {
         for (auto& [key, val] : j["nodeMeta"].items()) {
-            Editor::NodeId nodeId = static_cast<Editor::NodeId>(std::stoul(key));
-            vs.nodeMeta[nodeId] = DeserializeVisualScriptNodeMeta(val);
+            try {
+                unsigned long parsed = std::stoul(key);
+                if (parsed > static_cast<unsigned long>(std::numeric_limits<u32>::max())) {
+                    ENJIN_LOG_WARN(Editor, "Node ID overflow in scene: %s", key.c_str());
+                    continue;
+                }
+                Editor::NodeId nodeId = static_cast<Editor::NodeId>(parsed);
+                vs.nodeMeta[nodeId] = DeserializeVisualScriptNodeMeta(val);
+            } catch (const std::exception&) {
+                ENJIN_LOG_WARN(Editor, "Invalid node ID in scene: %s", key.c_str());
+                continue;
+            }
         }
     }
 

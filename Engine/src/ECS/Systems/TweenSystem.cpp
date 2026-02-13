@@ -259,11 +259,18 @@ void TweenSystem::InvokeCallback(World* world, Entity entity, const std::string&
     auto* scriptComp = world->GetComponent<ScriptComponent>(entity);
     if (!scriptComp) return;
 
+    // Build method signature once into member to avoid per-call string concatenation
+    m_MethodSignature.clear();
+    m_MethodSignature.reserve(5 + methodName.size() + 2);
+    m_MethodSignature.append("void ");
+    m_MethodSignature.append(methodName);
+    m_MethodSignature.append("()");
+
     for (auto& attachment : scriptComp->scripts) {
         if (!attachment.enabled || !attachment.instance) continue;
 
         auto* obj = static_cast<asIScriptObject*>(attachment.instance);
-        auto* func = m_ScriptEngine->FindMethod(obj, "void " + methodName + "()");
+        auto* func = m_ScriptEngine->FindMethod(obj, m_MethodSignature);
         if (!func) continue;
 
         auto* ctx = m_ScriptEngine->AcquireContext();
@@ -275,13 +282,9 @@ void TweenSystem::InvokeCallback(World* world, Entity entity, const std::string&
 }
 
 void TweenSystem::Update(World* world, f32 deltaTime) {
-    // Collect callbacks to dispatch after iteration (prevents iterator invalidation
+    // Reuse member vector to avoid per-frame allocation (prevents iterator invalidation
     // if a callback creates or removes tweens)
-    struct PendingCallback {
-        Entity entity;
-        std::string methodName;
-    };
-    std::vector<PendingCallback> pendingCallbacks;
+    m_PendingCallbacks.clear();
 
     auto entities = world->GetEntitiesWithComponent<TweenComponent>();
     for (auto entity : entities) {
@@ -297,6 +300,7 @@ void TweenSystem::Update(World* world, f32 deltaTime) {
             if (tween.elapsed < tween.delay) continue;
 
             f32 activeTime = tween.elapsed - tween.delay;
+            // T-L3: Clamp minimum duration to avoid division issues
             f32 dur = std::max(tween.duration, 0.001f);
             f32 t = std::clamp(activeTime / dur, 0.0f, 1.0f);
 
@@ -312,7 +316,7 @@ void TweenSystem::Update(World* world, f32 deltaTime) {
                     ApplyTween(world, entity, tween, 1.0f);
                     // Queue callback for deferred dispatch
                     if (!tween.onCompleteCallback.empty()) {
-                        pendingCallbacks.push_back({entity, tween.onCompleteCallback});
+                        m_PendingCallbacks.push_back({entity, tween.onCompleteCallback});
                     }
                     break;
 
@@ -335,7 +339,7 @@ void TweenSystem::Update(World* world, f32 deltaTime) {
     }
 
     // Dispatch deferred callbacks
-    for (const auto& cb : pendingCallbacks) {
+    for (const auto& cb : m_PendingCallbacks) {
         InvokeCallback(world, cb.entity, cb.methodName);
     }
 }

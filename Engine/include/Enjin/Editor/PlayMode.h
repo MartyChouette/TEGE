@@ -11,7 +11,9 @@
 #include "Enjin/ECS/Systems/DialogueSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
+#include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/Networking/NetworkSystem.h"
+#include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
@@ -103,6 +105,7 @@ public:
     ECS::DialogueSystem* GetDialogueSystem() { return &m_DialogueSystem; }
     ECS::VisualScriptSystem* GetVisualScriptSystem() { return &m_VisualScriptSystem; }
     ECS::BehaviorTreeSystem* GetBehaviorTreeSystem() { return &m_BehaviorTreeSystem; }
+    ECS::AISystem* GetAISystem() { return &m_AISystem; }
 
     Networking::NetworkSystem* GetNetworkSystem() { return &m_NetworkSystem; }
     Scene::StreamingManager* GetStreamingManager() { return &m_StreamingManager; }
@@ -110,6 +113,7 @@ public:
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
     InputSystem::InputActionMap* GetInputActionMap() { return &m_InputMap; }
+    Editor::AudioEventGraphRuntime* GetAudioGraphRuntime() { return &m_AudioGraphRuntime; }
 
     void SetRenderSystem(ECS::RenderSystem* rs) { m_RenderSystem = rs; }
     void SetPostProcessing(Renderer::PostProcessing* pp) { m_PostProcessing = pp; }
@@ -177,6 +181,9 @@ private:
     // Behavior tree system
     ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
 
+    // AI system
+    ECS::AISystem m_AISystem;
+
     // Network system
     Networking::NetworkSystem m_NetworkSystem;
 
@@ -198,6 +205,9 @@ private:
 
     // Input action map for remappable input
     InputSystem::InputActionMap m_InputMap;
+
+    // Audio event graph runtime
+    Editor::AudioEventGraphRuntime m_AudioGraphRuntime;
 
     // Level streaming
     Scene::StreamingManager m_StreamingManager;

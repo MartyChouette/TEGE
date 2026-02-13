@@ -2,6 +2,63 @@
 
 ---
 
+## 2026-02-13 (Session 5)
+
+### Comprehensive Audit Fix Round — 132 of 152 Findings Resolved
+
+Applied fixes for 132 of 152 findings from `docs/AUDIT_2026_02_13.md` across 6 parallel agents. All 6 build targets verified clean. 20 remaining findings are mostly LOW/API consistency items.
+
+**Security (29 fixes):**
+- Replaced all remaining `std::system()`/`popen()` on Linux/macOS with `posix_spawn()` (S-C1, S-H8)
+- Collaborative editing: enum validation on EditOpType, NaN/Inf guard on remote transforms (S-C2, S-H4)
+- Network payload >64KB now rejected instead of silently truncated via `static_cast<u16>` (S-C3, S-C4)
+- NetworkId wraparound guard, audio handle overflow guard (S-H3, S-H9)
+- All `std::stoi`/`std::stoul` in deserialization wrapped in try-catch (S-H5, S-H6, S-H7)
+- Collaborative editing: capped pending ops, string length, log entries, scene sync allocation (S-H10, S-M1, S-M2, S-M6)
+- WAV loader division-by-zero guards for bitsPerSample/channels/sampleRate (S-M3, S-M4)
+- VOX loader integer overflow check (S-M5), save file JSON type checks (S-M7)
+- Newgrounds ExtractString infinite loop fix (S-M8), HTTP truncation error flag (S-M9)
+- HTML5 width/height validation (S-M13), SceneLock getenv null check (S-M14)
+- Audio clip map cleanup, collab peer list bounds, network interpolation buffer cap, Newgrounds unescape (S-L1-L4)
+
+**Stability (20 fixes):**
+- EntityEventBus copy-before-dispatch prevents use-after-free (T-C4)
+- ShaderGraph `nodeMap.at()` replaced with `find()` (T-C2), prefab recursion depth limit (T-C3)
+- BehaviorTree near-zero distance guard (T-C5), AISystem flee zero-length normalization guard (T-H2)
+- Spline single-point underflow guard (T-H1), FlashTimeline empty check (T-H4)
+- Dialogue legacy bounds check (T-H5), Quaternion ToMatrix Shepperd div-by-zero guard (T-H6)
+- AudioEventGraph thread_local RNG (T-H7), ObjectPool stale entity check (T-H8)
+- Prefab JSON array validation (T-H9), SceneSerializer stoul overflow (T-H10)
+- AIBehaviors empty waypoint guard (T-M1), Timeline reverse playback fix (T-M4)
+- VisualScriptSystem deferred entity destruction (T-M11), Animation zero quaternion guard (T-M12)
+- SubtitleSystem/Announcer fade div-by-zero guard (T-M6), CoroutineScheduler optimization (T-M13)
+- FluidSimulation grid reallocation hysteresis (T-L4), SubtitleSystem zero viewport guard (T-L8)
+- EditorLayer log format fix (T-L7)
+
+**Performance (19 fixes):**
+- `Quaternion::GetRotationZ()` — single `atan2` replacing full Euler decomposition in 12+ hot paths (P-1, P-5, P-21)
+- `Quaternion::GetForward()/GetRight()/GetUp()` helpers eliminating `ToMatrix()` overhead (P-6, P-7, P-16)
+- SpriteBatchRenderer: cached atlas region pointer + pre-hashed texture paths (P-2, P-3)
+- RenderSystem: pre-classified entity component flags reducing optional `GetComponent()` calls (P-4)
+- Per-frame vector allocations promoted to members: IK chain (P-13), TweenSystem callbacks (P-9), FlowerSystem events (P-19)
+- Editor `GetAllEntities()` calls replaced with component queries (P-14)
+- SpriteBatchRenderer texture string copy eliminated (P-15)
+- DialogueSystem string construction reduced (P-11, P-12)
+- Weather2D double iteration eliminated (P-17), AISystem debug lines bounded (P-18)
+
+**Feature Wiring (12 fixes):**
+- AISystem fully wired into PlayMode and Player — was 615+ lines of completely dead code (F-H1, F-H2)
+- `SetBindingsPluginSystem` and `SetBindingsAudioGraphRuntime` now called in PlayMode (F-M1, F-M2)
+- `InputActionMap.Update()` called in PlayMode (F-M3)
+- Graph assets (.enjshader, .enjaudiopkg, .enjparticle) included in BuildPipeline (F-M6)
+- FlashAPIShim bindings registered (F-L1), TweenRotation VS node registered (F-L2)
+- FlowerSystem.SetGameCameraEntity called in PlayMode (F-L3)
+
+**AngelScript Bindings (~180 new functions across 22 component types):**
+- Rigidbody, BoxCollider, SphereCollider, CapsuleCollider, TriggerZone, Interactable, Pickup, Inventory, Timer, Lock, Switch, GoalZone, Conveyor, Teleporter, MovingPlatform, Checkpoint, DamageZone, SpawnPoint, WaypointPath, LOD, Layer, Tag — all now scriptable from AngelScript
+
+---
+
 ## 2026-02-13 (Session 4)
 
 ### Startup Template Polish Pass — All 43 Templates Improved ~50%

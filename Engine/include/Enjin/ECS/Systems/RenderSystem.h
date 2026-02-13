@@ -614,6 +614,7 @@ private:
     };
     LastBoundState m_LastBound;
     std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
+    std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
 
     // Draw call / triangle counters
     u32 m_DrawCallCount = 0;

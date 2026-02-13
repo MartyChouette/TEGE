@@ -4,6 +4,7 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <fstream>
+#include <unordered_set>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -108,6 +109,13 @@ bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
                 ENJIN_LOG_WARN(Audio, "WAV file is not PCM format (format=%u): %s", audioFormat, filepath.c_str());
             }
 
+            // S-M3/S-M4: Validate format fields to prevent division by zero
+            if (clip.bitsPerSample == 0 || clip.channels == 0 || clip.sampleRate == 0) {
+                ENJIN_LOG_ERROR(Audio, "WAV invalid format (bps=%u, ch=%u, sr=%u): %s",
+                    clip.bitsPerSample, clip.channels, clip.sampleRate, filepath.c_str());
+                return false;
+            }
+
             foundFmt = true;
         } else if (std::memcmp(chunkId, "data", 4) == 0) {
             clip.pcmData.resize(chunkSize);
@@ -150,6 +158,8 @@ AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
     }
 
     AudioClipHandle handle = m_NextClipHandle++;
+    // S-H9: Skip handle 0 on wraparound (0 is INVALID_AUDIO_CLIP)
+    if (m_NextClipHandle == 0) m_NextClipHandle = 1;
     AudioClipData clipData;
     clipData.filepath = filepath;
 
@@ -183,6 +193,23 @@ void SimpleAudio::UnloadClip(AudioClipHandle clip) {
     }
 }
 
+void SimpleAudio::CleanupUnusedClips() {
+    // S-L1: Build set of clips referenced by active sounds, then erase unreferenced clips
+    std::unordered_set<AudioClipHandle> referencedClips;
+    for (const auto& [handle, sound] : m_Sounds) {
+        referencedClips.insert(sound.clip);
+    }
+
+    for (auto it = m_Clips.begin(); it != m_Clips.end(); ) {
+        if (referencedClips.find(it->first) == referencedClips.end()) {
+            ENJIN_LOG_INFO(Audio, "Cleaning up unused audio clip: %s", it->second.filepath.c_str());
+            it = m_Clips.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool loop) {
     auto clipIt = m_Clips.find(clip);
     if (clipIt == m_Clips.end()) {
@@ -191,6 +218,8 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     }
 
     SoundHandle handle = m_NextSoundHandle++;
+    // S-H9: Skip handle 0 on wraparound (0 is INVALID_SOUND)
+    if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
     SoundInstance sound;
     sound.clip = clip;
@@ -226,6 +255,8 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
     }
 
     SoundHandle handle = m_NextSoundHandle++;
+    // S-H9: Skip handle 0 on wraparound (0 is INVALID_SOUND)
+    if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
     SoundInstance sound;
     sound.clip = clip;

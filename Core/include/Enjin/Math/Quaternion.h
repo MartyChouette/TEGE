@@ -112,6 +112,26 @@ struct ENJIN_API Quaternion {
         return Quaternion(0.0f, 0.0f, 0.0f, 1.0f);
     }
 
+    // Extract Z-axis rotation angle directly (avoids full ToEuler decomposition)
+    f32 GetRotationZ() const {
+        return Atan2(2.0f * (w * z + x * y), 1.0f - 2.0f * (y * y + z * z));
+    }
+
+    // Get forward direction (-Z axis rotated by this quaternion)
+    constexpr Vector3 GetForward() const {
+        return Rotate(Vector3(0, 0, -1));
+    }
+
+    // Get right direction (+X axis rotated by this quaternion)
+    constexpr Vector3 GetRight() const {
+        return Rotate(Vector3(1, 0, 0));
+    }
+
+    // Get up direction (+Y axis rotated by this quaternion)
+    constexpr Vector3 GetUp() const {
+        return Rotate(Vector3(0, 1, 0));
+    }
+
     // Convert quaternion to euler angles (radians, XYZ order)
     Vector3 ToEuler() const {
         Vector3 euler;

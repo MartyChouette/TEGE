@@ -1,4 +1,5 @@
 #include "Enjin/Editor/ShaderGraph.h"
+#include "Enjin/Logging/Log.h"
 #include <imgui.h>
 #include <algorithm>
 #include <cstring>
@@ -1261,7 +1262,12 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
     // --- Build sampler declarations ---
     std::string samplerDecls;
     for (const auto& [nid, binding] : nodeSamplerBinding) {
-        auto* node = nodeMap.at(nid);
+        auto nodeIt = nodeMap.find(nid);
+        if (nodeIt == nodeMap.end()) {
+            ENJIN_LOG_WARN(Editor, "ShaderGraph: Node %u referenced in sampler bindings not found in nodeMap, skipping", nid);
+            continue;
+        }
+        auto* node = nodeIt->second;
         if (node->type == ShaderNodeType::SampleCubemap) {
             samplerDecls += "layout(set = 0, binding = " + std::to_string(binding) +
                 ") uniform samplerCube uSamplerCube" + std::to_string(binding) + ";\n";

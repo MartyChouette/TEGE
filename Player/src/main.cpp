@@ -48,6 +48,7 @@
 #include "Enjin/ECS/Systems/StateMachineSystem.h"
 #include "Enjin/ECS/Systems/VisualScriptSystem.h"
 #include "Enjin/ECS/Systems/BehaviorTreeSystem.h"
+#include "Enjin/ECS/Systems/AISystem.h"
 #include "Enjin/ECS/EntityEventBus.h"
 #include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Gameplay/QuestSystem.h"
@@ -63,6 +64,7 @@
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
@@ -239,6 +241,7 @@ public:
 
         m_VisualScriptSystem.SetWorld(m_World.get());
         m_BehaviorTreeSystem.SetWorld(m_World.get());
+        m_AISystem.SetWorld(m_World.get());
 
         // Initialize save system with local backend
         m_TieredSaveSystem.LoadMeta();
@@ -376,6 +379,7 @@ public:
         // Shutdown gameplay systems before world is destroyed
         m_VisualScriptSystem.Shutdown();
         m_BehaviorTreeSystem.Shutdown();
+        m_AISystem.SetEnabled(false);
         m_ControllerSystem.SetEnabled(false);
         m_FlowerSystem.SetEnabled(false);
         m_HUDSystem.SetEnabled(false);
@@ -383,6 +387,7 @@ public:
         m_FootstepSystem.SetEnabled(false);
 
         // Shutdown script-bound systems
+        m_AudioGraphRuntime.Shutdown();
         m_DestructibleSystem.Shutdown();
         m_WeatherSystem.Shutdown();
         m_SimpleAudio.Shutdown();
@@ -412,6 +417,8 @@ public:
         Enjin::Scripting::SetBindingsPostProcessing(nullptr);
         Enjin::Scripting::SetBindingsPhysics2D(nullptr);
         Enjin::Scripting::SetBindingsNetworking(nullptr);
+        Enjin::Scripting::SetBindingsPluginSystem(nullptr);
+        Enjin::Scripting::SetBindingsAudioGraphRuntime(nullptr);
 
         // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
@@ -482,6 +489,7 @@ public:
         Enjin::Audio::AudioManager::Get().Update();
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
+        m_AudioGraphRuntime.Update(deltaTime);
 
         // Update input
         m_InputMap.Update(deltaTime);
@@ -552,6 +560,7 @@ public:
         m_StateMachineSystem.Update(m_World.get(), deltaTime);
         m_VisualScriptSystem.Update(deltaTime);
         m_BehaviorTreeSystem.Update(deltaTime);
+        m_AISystem.Update(deltaTime);
 
         // Dialogue
         UpdateDialogue(deltaTime);
@@ -825,6 +834,8 @@ private:
         Enjin::Scripting::SetBindingsSubtitles(&m_SubtitleSystem);
         Enjin::Scripting::SetBindingsAnnouncer(&m_Announcer);
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
+        Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
+        Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
 
         // Wire dialogue system event bus and subtitle system
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
@@ -869,9 +880,13 @@ private:
         m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
         m_RenderSystem->SetWindSystem(&m_WindSystem);
 
+        // Initialize audio event graph runtime
+        m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+
         // Enable all gameplay systems
         m_ControllerSystem.SetEnabled(true);
         m_FlowerSystem.SetEnabled(true);
+        m_AISystem.SetEnabled(true);
         m_HUDSystem.SetEnabled(true);
         m_QuestSystem.SetEnabled(true);
         m_FootstepSystem.SetEnabled(true);
@@ -1026,6 +1041,7 @@ private:
     Enjin::ECS::StateMachineSystem m_StateMachineSystem;
     Enjin::ECS::VisualScriptSystem m_VisualScriptSystem;
     Enjin::ECS::BehaviorTreeSystem m_BehaviorTreeSystem;
+    Enjin::ECS::AISystem m_AISystem;
     Enjin::ECS::EntityEventBus m_EntityEventBus;
     Enjin::ECS::DialogueSystem m_DialogueSystem;
     Enjin::ECS::Entity m_ActiveDialogueEntity = 0;
@@ -1062,6 +1078,9 @@ private:
     //   CRT, VHS, fog, color mode). It has no Vulkan rendering integration in RenderSystem or
     //   PostProcessing yet. To wire: add RetroEffects member, apply settings to push constant
     //   retro flags and shader uniforms, integrate CRT/VHS as post-process passes.
+
+    // Audio event graph runtime
+    Enjin::Editor::AudioEventGraphRuntime m_AudioGraphRuntime;
 
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;

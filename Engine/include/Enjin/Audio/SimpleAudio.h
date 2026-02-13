@@ -61,6 +61,9 @@ public:
     // Unload audio clip
     void UnloadClip(AudioClipHandle clip);
 
+    // S-L1: Remove clips that have no active sound instances referencing them
+    void CleanupUnusedClips();
+
     // Play a sound
     SoundHandle Play(AudioClipHandle clip, f32 volume = 1.0f, f32 pitch = 1.0f, bool loop = false);
 

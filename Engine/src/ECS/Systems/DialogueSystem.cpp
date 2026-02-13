@@ -447,13 +447,14 @@ void DialogueSystem::SyncDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueB
     if (panel) panel->visible = active;
     if (!active) return;
 
-    // Speaker name
+    // Speaker name (use const ref to avoid copy when possible)
     auto* speaker = canvas.GetElement(box.speakerElementId);
     if (speaker) {
-        std::string name = dlg.currentSpeaker.empty() ? dlg.speakerName : dlg.currentSpeaker;
-        speaker->data.text = name;
-        Math::Vector3 col = dlg.IsTreeMode() ? dlg.currentSpeakerColor : box.defaultSpeakerColor;
-        speaker->style.textColor = col;
+        const std::string& name = dlg.currentSpeaker.empty() ? dlg.speakerName : dlg.currentSpeaker;
+        if (speaker->data.text != name) {
+            speaker->data.text = name;
+        }
+        speaker->style.textColor = dlg.IsTreeMode() ? dlg.currentSpeakerColor : box.defaultSpeakerColor;
     }
 
     // Dialogue text (typewriter)
@@ -499,14 +500,20 @@ void DialogueSystem::SyncDialogueBoxUI(GUI::UICanvasComponent& canvas, DialogueB
         if (!btn) continue;
         if (i < numChoices) {
             btn->visible = true;
-            std::string prefix = (static_cast<i32>(i) == dlg.selectedChoice) ? "> " : "  ";
-            btn->data.text = prefix + dlg.currentChoices[i].text;
-            // Highlight selected choice
-            if (static_cast<i32>(i) == dlg.selectedChoice) {
-                btn->style.bgAlpha = 1.0f;
-            } else {
-                btn->style.bgAlpha = 0.6f;
+            // Build choice text in-place to minimize string allocations
+            bool isSelected = (static_cast<i32>(i) == dlg.selectedChoice);
+            const char* prefix = isSelected ? "> " : "  ";
+            const std::string& choiceText = dlg.currentChoices[i].text;
+            // Only rebuild if content changed (avoids per-frame string concatenation)
+            if (btn->data.text.size() != 2 + choiceText.size() ||
+                btn->data.text.compare(2, std::string::npos, choiceText) != 0 ||
+                btn->data.text[0] != prefix[0]) {
+                btn->data.text.clear();
+                btn->data.text.reserve(2 + choiceText.size());
+                btn->data.text.append(prefix);
+                btn->data.text.append(choiceText);
             }
+            btn->style.bgAlpha = isSelected ? 1.0f : 0.6f;
         } else {
             btn->visible = false;
         }
@@ -517,7 +524,9 @@ void DialogueSystem::BroadcastEvent(Entity entity, const std::string& eventName)
     if (!m_EventBus) return;
 
     EntityEvent evt;
-    evt.name = "Dialogue_" + eventName;
+    evt.name.reserve(9 + eventName.size());
+    evt.name.append("Dialogue_");
+    evt.name.append(eventName);
     evt.sender = entity;
     evt.strings["event"] = eventName;
     m_EventBus->Broadcast(evt);

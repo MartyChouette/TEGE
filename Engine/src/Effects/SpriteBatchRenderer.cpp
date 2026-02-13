@@ -339,6 +339,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         i32 sortingLayer;
         i32 orderInLayer;
         const ECS::Sprite2DComponent* sprite;
+        const AtlasRegion* cachedAtlasRegion;  // Cached to avoid double GetRegion() lookup
         bool isAtlased;  // Precomputed to avoid redundant GetRegion() in sort comparator
     };
 
@@ -360,7 +361,8 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         entry.sortingLayer = sprite->sortingLayer;
         entry.orderInLayer = sprite->orderInLayer;
         entry.sprite = sprite;
-        entry.isAtlased = m_Atlas && m_Atlas->GetRegion(sprite->texturePath) != nullptr;
+        entry.cachedAtlasRegion = m_Atlas ? m_Atlas->GetRegion(sprite->texturePath) : nullptr;
+        entry.isAtlased = entry.cachedAtlasRegion != nullptr;
         sortedSprites.push_back(entry);
     }
 
@@ -463,16 +465,18 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         if (!transform) continue;
 
         // Determine effective texture for batching — atlased sprites share "__atlas__" key
-        const std::string& texPath = sprite->texturePath;
-        const AtlasRegion* atlasRegion = m_Atlas ? m_Atlas->GetRegion(texPath) : nullptr;
+        // Reuse the cached atlas region from the sort phase (avoids second GetRegion() lookup)
+        const AtlasRegion* atlasRegion = entry.cachedAtlasRegion;
         static const std::string kAtlasSentinel("__atlas__");
-        const std::string& effectiveKey = atlasRegion ? kAtlasSentinel : texPath;
+        const std::string& effectiveKey = atlasRegion ? kAtlasSentinel : sprite->texturePath;
 
         // Flush when effective texture changes (but not on the first sprite)
         if (effectiveKey != currentTexture && m_InstanceDataCache.size() > batchStart) {
             flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
+            currentTexture = effectiveKey;
+        } else if (currentTexture.empty()) {
+            currentTexture = effectiveKey;
         }
-        currentTexture = effectiveKey;
 
         // Build instance data from sprite + transform
         SpriteInstanceData inst{};
@@ -480,9 +484,8 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         inst.sizeX = sprite->size.x;
         inst.sizeY = sprite->size.y;
 
-        // Extract Z-axis rotation from quaternion (radians)
-        Math::Vector3 euler = transform->rotation.ToEuler();
-        inst.rotation = euler.z;
+        // Extract Z-axis rotation from quaternion (radians) — avoids full Euler decomposition
+        inst.rotation = transform->rotation.GetRotationZ();
 
         // Compute UV coordinates from sprite source rectangle
         if (sprite->srcWidth > 0 && sprite->srcHeight > 0 &&

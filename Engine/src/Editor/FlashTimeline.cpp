@@ -67,6 +67,11 @@ FlashKeyframe& FlashTimelineLayer::GetOrCreateKeyframe(u32 frame) {
     for (auto& kf : keyframes) {
         if (kf.frameIndex == frame) return kf;
     }
+    // Safety: should never be empty since we just pushed a keyframe above
+    if (keyframes.empty()) {
+        ENJIN_LOG_WARN(Editor, "FlashTimeline: GetOrCreateKeyframe fallback on empty keyframes vector");
+        keyframes.push_back(newKf);
+    }
     return keyframes.back();
 }
 

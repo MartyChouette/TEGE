@@ -147,21 +147,22 @@ namespace Enjin::Scene
             data.playerPosition.z = pos.value("z", 0.0f);
         }
 
-        if (j.contains("playerHealth"))
+        if (j.contains("playerHealth") && j["playerHealth"].is_number())
             data.playerHealth = j["playerHealth"].get<f32>();
 
-        if (j.contains("playTime"))
+        if (j.contains("playTime") && j["playTime"].is_number())
             data.playTime = j["playTime"].get<f32>();
 
-        if (j.contains("saveTimestamp"))
+        if (j.contains("saveTimestamp") && j["saveTimestamp"].is_string())
             data.saveTimestamp = j["saveTimestamp"].get<std::string>();
 
-        // N13: Validate entry fields before access to prevent exceptions on malformed saves
+        // N13: Validate entry fields and types before access to prevent exceptions on malformed saves
         if (j.contains("floatVars") && j["floatVars"].is_array())
         {
             for (const auto& entry : j["floatVars"])
             {
-                if (!entry.contains("name") || !entry.contains("value")) continue;
+                if (!entry.contains("name") || !entry["name"].is_string()) continue;
+                if (!entry.contains("value") || !entry["value"].is_number()) continue;
                 data.floatVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<f32>()
@@ -173,7 +174,8 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["intVars"])
             {
-                if (!entry.contains("name") || !entry.contains("value")) continue;
+                if (!entry.contains("name") || !entry["name"].is_string()) continue;
+                if (!entry.contains("value") || !entry["value"].is_number_integer()) continue;
                 data.intVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<i32>()
@@ -185,7 +187,8 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["boolVars"])
             {
-                if (!entry.contains("name") || !entry.contains("value")) continue;
+                if (!entry.contains("name") || !entry["name"].is_string()) continue;
+                if (!entry.contains("value") || !entry["value"].is_boolean()) continue;
                 data.boolVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<bool>()
@@ -197,7 +200,8 @@ namespace Enjin::Scene
         {
             for (const auto& entry : j["stringVars"])
             {
-                if (!entry.contains("name") || !entry.contains("value")) continue;
+                if (!entry.contains("name") || !entry["name"].is_string()) continue;
+                if (!entry.contains("value") || !entry["value"].is_string()) continue;
                 data.stringVars.emplace_back(
                     entry["name"].get<std::string>(),
                     entry["value"].get<std::string>()
@@ -310,13 +314,13 @@ namespace Enjin::Scene
 
         info.occupied = true;
 
-        if (j.contains("saveTimestamp"))
+        if (j.contains("saveTimestamp") && j["saveTimestamp"].is_string())
             info.timestamp = j["saveTimestamp"].get<std::string>();
 
-        if (j.contains("scenePath"))
+        if (j.contains("scenePath") && j["scenePath"].is_string())
             info.scenePath = j["scenePath"].get<std::string>();
 
-        if (j.contains("playTime"))
+        if (j.contains("playTime") && j["playTime"].is_number())
             info.playTime = j["playTime"].get<f32>();
 
         info.displayName = "Slot " + std::to_string(slot);

@@ -321,12 +321,37 @@ std::string NewgroundsAPI::ExtractString(const std::string& json, const std::str
     if (end == std::string::npos) return "";
 
     // Handle escaped quotes
+    // S-M8: Add iteration limit to prevent infinite loop on malformed input
+    constexpr size_t MAX_ITERATIONS = 1000000;
+    size_t iterations = 0;
     while (end > 0 && json[end - 1] == '\\') {
         end = json.find('"', end + 1);
         if (end == std::string::npos) return "";
+        if (++iterations > MAX_ITERATIONS) {
+            ENJIN_LOG_WARN(Network, "ExtractString iteration limit reached for key '%s'", key.c_str());
+            return "";
+        }
     }
 
-    return json.substr(pos, end - pos);
+    // S-L4: Basic JSON unescaping for common escape sequences
+    std::string raw = json.substr(pos, end - pos);
+    std::string result;
+    result.reserve(raw.size());
+    for (size_t i = 0; i < raw.size(); ++i) {
+        if (raw[i] == '\\' && i + 1 < raw.size()) {
+            switch (raw[i + 1]) {
+                case '\\': result += '\\'; ++i; break;
+                case '"':  result += '"';  ++i; break;
+                case 'n':  result += '\n'; ++i; break;
+                case 't':  result += '\t'; ++i; break;
+                case 'r':  result += '\r'; ++i; break;
+                default:   result += raw[i]; break;
+            }
+        } else {
+            result += raw[i];
+        }
+    }
+    return result;
 }
 
 i32 NewgroundsAPI::ExtractInt(const std::string& json, const std::string& key) {

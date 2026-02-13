@@ -260,8 +260,9 @@ private:
     std::vector<CollabPeer> m_Peers;
 
     // Operation log (bounded, oldest trimmed when > MAX_LOG_SIZE)
+    // S-M1: Capped to prevent unbounded growth
     std::deque<EditOperation> m_OperationLog;
-    static constexpr usize MAX_LOG_SIZE = 1000;
+    static constexpr usize MAX_LOG_SIZE = 10000;
 
     // Pending operations from remote peers (buffered during sync)
     std::vector<EditOperation> m_PendingRemoteOps;

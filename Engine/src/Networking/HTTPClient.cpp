@@ -178,6 +178,13 @@ static HTTPResponse DoRequest(const std::string& method, const std::string& url,
     response.body = responseBody;
     response.success = (statusCode >= 200 && statusCode < 300);
 
+    // S-M9: When response was truncated at 16MB, mark as truncated and warn
+    if (responseBody.size() >= MAX_RESPONSE_SIZE) {
+        response.success = false;
+        response.error = "Response truncated at 16MB limit";
+        ENJIN_LOG_WARN(Network, "HTTP response truncated at 16MB, marking as unsuccessful");
+    }
+
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);

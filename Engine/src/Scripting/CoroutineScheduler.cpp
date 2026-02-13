@@ -8,6 +8,7 @@ namespace Scripting {
 
 CoroutineScheduler* CoroutineScheduler::s_Current = nullptr;
 asIScriptContext* CoroutineScheduler::s_CurrentYieldContext = nullptr;
+Coroutine* CoroutineScheduler::s_CurrentCoroutine = nullptr;
 
 CoroutineScheduler::CoroutineScheduler() = default;
 
@@ -122,7 +123,9 @@ void CoroutineScheduler::ResumeCoroutine(Coroutine& co) {
     if (!co.context || co.finished) return;
 
     s_CurrentYieldContext = co.context;
+    s_CurrentCoroutine = &co;  // T-M13: Direct pointer avoids O(N) scan in yield functions
     int r = co.context->Execute();
+    s_CurrentCoroutine = nullptr;
     s_CurrentYieldContext = nullptr;
 
     if (r == asEXECUTION_SUSPENDED) {
@@ -175,44 +178,29 @@ usize CoroutineScheduler::GetActiveCount() const {
 }
 
 // Static yield functions called from scripts
+// T-M13: Use s_CurrentCoroutine pointer directly instead of O(N) scan
 void CoroutineScheduler::YieldSeconds(f32 seconds) {
-    if (!s_Current || !s_CurrentYieldContext) return;
+    if (!s_Current || !s_CurrentYieldContext || !s_CurrentCoroutine) return;
 
-    // Find the coroutine for this context and update its yield state
-    for (auto& co : s_Current->m_Coroutines) {
-        if (co.context == s_CurrentYieldContext) {
-            co.yieldType = YieldType::WaitForSeconds;
-            co.waitTimeRemaining = seconds;
-            break;
-        }
-    }
+    s_CurrentCoroutine->yieldType = YieldType::WaitForSeconds;
+    s_CurrentCoroutine->waitTimeRemaining = seconds;
 
     s_CurrentYieldContext->Suspend();
 }
 
 void CoroutineScheduler::YieldFrames(u32 frames) {
-    if (!s_Current || !s_CurrentYieldContext) return;
+    if (!s_Current || !s_CurrentYieldContext || !s_CurrentCoroutine) return;
 
-    for (auto& co : s_Current->m_Coroutines) {
-        if (co.context == s_CurrentYieldContext) {
-            co.yieldType = YieldType::WaitForFrames;
-            co.waitFramesRemaining = frames;
-            break;
-        }
-    }
+    s_CurrentCoroutine->yieldType = YieldType::WaitForFrames;
+    s_CurrentCoroutine->waitFramesRemaining = frames;
 
     s_CurrentYieldContext->Suspend();
 }
 
 void CoroutineScheduler::YieldEndOfFrame() {
-    if (!s_Current || !s_CurrentYieldContext) return;
+    if (!s_Current || !s_CurrentYieldContext || !s_CurrentCoroutine) return;
 
-    for (auto& co : s_Current->m_Coroutines) {
-        if (co.context == s_CurrentYieldContext) {
-            co.yieldType = YieldType::WaitForEndOfFrame;
-            break;
-        }
-    }
+    s_CurrentCoroutine->yieldType = YieldType::WaitForEndOfFrame;
 
     s_CurrentYieldContext->Suspend();
 }

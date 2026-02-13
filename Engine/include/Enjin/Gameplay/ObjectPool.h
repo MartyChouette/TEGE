@@ -18,6 +18,8 @@ public:
 
     // Get entity from pool (returns INVALID_ENTITY if exhausted)
     ECS::Entity Acquire(const std::string& poolId);
+    // Acquire with entity validation - removes stale entities from pool
+    ECS::Entity Acquire(const std::string& poolId, ECS::World* world);
 
     // Return entity to pool
     void Release(const std::string& poolId, ECS::Entity entity);

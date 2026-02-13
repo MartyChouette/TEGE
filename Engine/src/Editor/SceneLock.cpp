@@ -285,7 +285,13 @@ bool SceneLockManager::LoadLockFile() {
 
         if (j.contains("entities") && j["entities"].is_object()) {
             for (auto& [key, val] : j["entities"].items()) {
-                u64 entityId = std::stoull(key);
+                u64 entityId = 0;
+                try {
+                    entityId = std::stoull(key);
+                } catch (const std::exception&) {
+                    ENJIN_LOG_WARN(Editor, "Invalid entity ID in lock file: %s", key.c_str());
+                    continue;
+                }
                 EntityLockInfo lock;
                 if (val.contains("user")) lock.user = val["user"].get<std::string>();
                 if (val.contains("machine")) lock.machine = val["machine"].get<std::string>();

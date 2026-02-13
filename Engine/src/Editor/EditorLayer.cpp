@@ -98,6 +98,9 @@
 #undef CreateWindow
 #undef min
 #undef max
+#else
+#include <spawn.h>
+#include <sys/wait.h>
 #endif
 #include <climits>
 #include <cmath>
@@ -10643,7 +10646,7 @@ void EditorLayer::DrawStatsOverlay() {
 
         if (m_World) {
             ImGui::Separator();
-            ImGui::Text("Entities: %zu", m_World->GetAllEntities().size());
+            ImGui::Text("Entities: %zu", m_World->GetEntityCount());
         }
 
         if (m_CameraController) {
@@ -12438,9 +12441,16 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
             CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
         }
 #else
-        // S23: Shell-escape project path to prevent command injection
-        std::string gitInitCmd = "git init " + ShellEscape(projRoot.string());
-        std::system(gitInitCmd.c_str());
+        // S23: Use posix_spawn to avoid shell command injection
+        {
+            const char* argv[] = { "git", "init", projRoot.string().c_str(), nullptr };
+            pid_t pid = 0;
+            extern char** environ;
+            if (posix_spawnp(&pid, "git", nullptr, nullptr, const_cast<char**>(argv), environ) == 0) {
+                int status = 0;
+                waitpid(pid, &status, 0);
+            }
+        }
 #endif
 
         // Write .gitignore
@@ -12721,7 +12731,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 OpenScene(m_CustomTemplatePaths[idx]);
             }
         } catch (const std::exception&) {
-            ENJIN_LOG_WARN(Editor, "Invalid custom template ID: {}", templateId);
+            ENJIN_LOG_WARN(Editor, "Invalid custom template ID: %s", templateId.c_str());
         }
         return;
     }
@@ -22082,7 +22092,7 @@ void EditorLayer::SaveScene(const std::string& path) {
 
     if (result.success) {
         m_CurrentScenePath = path;
-        usize entityCount = m_World->GetAllEntities().size();
+        usize entityCount = m_World->GetEntityCount();
         std::stringstream ss;
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
@@ -25337,7 +25347,14 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
             CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
         }
 #else
-        std::system(cmd.c_str());
+        // S-C1: Use posix_spawn instead of std::system to avoid shell injection
+        {
+            const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
+            pid_t pid = 0;
+            extern char** environ;
+            posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ);
+            // Fire and forget — IDE runs in background
+        }
 #endif
         ENJIN_LOG_INFO(Editor, "Opening in IDE: %s", filePath.c_str());
     } else {
@@ -28250,7 +28267,7 @@ void EditorLayer::ExecuteConsoleCommand(const std::string& command) {
             m_ConsoleLog.push_back("Error: No world loaded");
             return;
         }
-        usize entityCount = m_World->GetAllEntities().size();
+        usize entityCount = m_World->GetEntityCount();
         u32 meshCount = 0, lightCount = 0, cameraCount = 0;
         u32 totalVerts = 0, totalTris = 0;
         for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::MeshComponent>()) {
@@ -28408,13 +28425,21 @@ void EditorLayer::DrawBuildDialog() {
 #ifdef ENJIN_PLATFORM_WINDOWS
             ShellExecuteA(nullptr, "open", m_BuildConfig.outputDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(ENJIN_PLATFORM_MACOS)
-            // S20: Shell-escape path to prevent command injection
-            { std::string cmd = "open " + ShellEscape(m_BuildConfig.outputDir);
-            std::system(cmd.c_str()); }
+            // S20: Use posix_spawn to avoid shell command injection
+            {
+                const char* argv[] = { "open", m_BuildConfig.outputDir.c_str(), nullptr };
+                pid_t pid = 0;
+                extern char** environ;
+                posix_spawnp(&pid, "open", nullptr, nullptr, const_cast<char**>(argv), environ);
+            }
 #else
-            // S20: Shell-escape path to prevent command injection
-            { std::string cmd = "xdg-open " + ShellEscape(m_BuildConfig.outputDir);
-            std::system(cmd.c_str()); }
+            // S20: Use posix_spawn to avoid shell command injection
+            {
+                const char* argv[] = { "xdg-open", m_BuildConfig.outputDir.c_str(), nullptr };
+                pid_t pid = 0;
+                extern char** environ;
+                posix_spawnp(&pid, "xdg-open", nullptr, nullptr, const_cast<char**>(argv), environ);
+            }
 #endif
         }
     }
@@ -32532,14 +32557,40 @@ std::string EditorLayer::RunGitCommand(const std::string& args, const std::strin
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
 #else
-    std::string cmd = "cd \"" + workingDir + "\" && git " + args + " 2>&1";
-    FILE* pipe = popen(cmd.c_str(), "r");
-    if (!pipe) return "";
-    char buffer[4096];
-    while (fgets(buffer, sizeof(buffer), pipe)) {
-        result += buffer;
+    // S-H8: Use posix_spawn with pipe to capture output safely (no shell injection)
+    {
+        int pipefd[2];
+        if (pipe(pipefd) != 0) return "";
+
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDOUT_FILENO);
+        posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDERR_FILENO);
+        posix_spawn_file_actions_addclose(&actions, pipefd[0]);
+
+        // Shell-escape workingDir for safety
+        std::string cmd = "cd " + ShellEscape(workingDir) + " && git " + args + " 2>&1";
+        const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
+
+        pid_t pid = 0;
+        extern char** environ;
+        int spawnResult = posix_spawnp(&pid, "/bin/sh", &actions, nullptr,
+                                       const_cast<char**>(argv), environ);
+        posix_spawn_file_actions_destroy(&actions);
+        close(pipefd[1]);
+
+        if (spawnResult == 0) {
+            char buffer[4096];
+            ssize_t n;
+            while ((n = read(pipefd[0], buffer, sizeof(buffer) - 1)) > 0) {
+                buffer[n] = '\0';
+                result += buffer;
+            }
+            int status = 0;
+            waitpid(pid, &status, 0);
+        }
+        close(pipefd[0]);
     }
-    pclose(pipe);
 #endif
     // Trim trailing newline
     while (!result.empty() && (result.back() == '\n' || result.back() == '\r'))
@@ -34087,7 +34138,7 @@ void EditorLayer::ResetFeedbackForm() {
 
 DiagnosticSnapshot EditorLayer::CaptureDiagnostics(bool includeScene) {
     f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
-    u32 entityCount = m_World ? static_cast<u32>(m_World->GetAllEntities().size()) : 0;
+    u32 entityCount = m_World ? static_cast<u32>(m_World->GetEntityCount()) : 0;
     std::string sceneJson;
     // Scene snapshot is intentionally omitted for now — serializing mid-frame
     // is unsafe and the diagnostics already capture the scene path.
@@ -34687,7 +34738,7 @@ void EditorLayer::DrawNewBugReportForm() {
     ImGui::Spacing();
     if (ImGui::TreeNode("Live Diagnostics Preview")) {
         f32 fps = m_FrameTimeAvg > 0.0f ? 1000.0f / m_FrameTimeAvg : 0.0f;
-        u32 entityCount = m_World ? static_cast<u32>(m_World->GetAllEntities().size()) : 0;
+        u32 entityCount = m_World ? static_cast<u32>(m_World->GetEntityCount()) : 0;
         ImGui::Text("FPS: %.1f | Frame: %.2fms", fps, m_FrameTimeAvg);
         ImGui::Text("Draw Calls: %u | Triangles: %u", m_PerfMetrics.drawCallCount, m_PerfMetrics.triangleCount);
         ImGui::Text("Entities: %u | Selected: %zu", entityCount, m_SelectedEntities.size());

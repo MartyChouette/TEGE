@@ -287,6 +287,10 @@ BTStatus BehaviorTreeExecutor::TickAction(BTExecutionContext& ctx, Editor::NodeI
             if (dist <= ctx.aiController->stoppingDistance) {
                 return BTStatus::Success;
             }
+            // Skip movement if distance is near-zero to avoid divide-by-zero
+            if (dist < 0.0001f) {
+                return BTStatus::Running;
+            }
             // Move toward target
             Math::Vector3 dir = Math::Vector3(
                 target.x - ctx.transform->position.x,
@@ -322,7 +326,7 @@ BTStatus BehaviorTreeExecutor::TickAction(BTExecutionContext& ctx, Editor::NodeI
             if (dist <= ai.stoppingDistance) {
                 // Advance to next patrol point
                 ai.currentPatrolIndex = (ai.currentPatrolIndex + 1) % ai.patrolPoints.size();
-            } else {
+            } else if (dist >= 0.0001f) {
                 Math::Vector3 dir = Math::Vector3(
                     target.x - ctx.transform->position.x,
                     target.y - ctx.transform->position.y,

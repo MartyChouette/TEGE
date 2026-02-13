@@ -4,6 +4,7 @@
 #include "Enjin/Logging/Log.h"
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 
 namespace Enjin {
 namespace Editor {
@@ -92,6 +93,15 @@ void CollaborativeEditingSystem::Update(f32 deltaTime) {
             ENJIN_LOG_WARN(Editor, "Collab peer '%s' timed out", peer.name.c_str());
         }
     }
+
+    // S-L2: Remove peers that haven't sent a message in >30 seconds to prevent unbounded growth
+    m_Peers.erase(
+        std::remove_if(m_Peers.begin(), m_Peers.end(),
+            [this](const CollabPeer& peer) {
+                return peer.peerId != m_LocalPeerId && !peer.connected &&
+                       (m_Time - peer.lastHeartbeat) > 30.0f;
+            }),
+        m_Peers.end());
 
     // Trim old local edit records (keep last 5 seconds for conflict detection)
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -537,12 +547,25 @@ EditOperation CollaborativeEditingSystem::DeserializeOperation(const u8* data, u
         u32 len = 0;
         for (int i = 0; i < 4 && pos < size; ++i) len |= static_cast<u32>(data[pos++]) << (i * 8);
         if (len > size - pos) len = size - pos;
+        // S-M2: Cap string length to 64KB to prevent unbounded allocation from malicious data
+        constexpr u32 MAX_STRING_LEN = 64 * 1024;
+        if (len > MAX_STRING_LEN) {
+            ENJIN_LOG_WARN(Editor, "Collab: readString length %u exceeds 64KB cap, truncating", len);
+            len = MAX_STRING_LEN;
+        }
         std::string s(reinterpret_cast<const char*>(data + pos), len);
         pos += len;
         return s;
     };
 
-    op.type = static_cast<EditOpType>(readU8());
+    u8 rawType = readU8();
+    // S-C2: Validate EditOpType enum range before applying
+    if (rawType < static_cast<u8>(EditOpType::CreateEntity) ||
+        rawType > static_cast<u8>(EditOpType::UnlockEntity)) {
+        ENJIN_LOG_WARN(Editor, "Collab: Invalid EditOpType %u from remote, rejecting", rawType);
+        return op;
+    }
+    op.type = static_cast<EditOpType>(rawType);
     op.entityId = readU64();
     op.sequenceId = readU64();
     op.lamportClock = readU64();
@@ -557,6 +580,16 @@ EditOperation CollaborativeEditingSystem::DeserializeOperation(const u8* data, u
             op.position.x = readF32(); op.position.y = readF32(); op.position.z = readF32();
             op.rotation.x = readF32(); op.rotation.y = readF32(); op.rotation.z = readF32();
             op.scale.x = readF32(); op.scale.y = readF32(); op.scale.z = readF32();
+
+            // S-H4: Validate all transform floats are finite (reject NaN/Inf from remote)
+            if (!std::isfinite(op.position.x) || !std::isfinite(op.position.y) || !std::isfinite(op.position.z) ||
+                !std::isfinite(op.rotation.x) || !std::isfinite(op.rotation.y) || !std::isfinite(op.rotation.z) ||
+                !std::isfinite(op.scale.x) || !std::isfinite(op.scale.y) || !std::isfinite(op.scale.z)) {
+                ENJIN_LOG_WARN(Editor, "Collab: NaN/Inf in remote transform data, zeroing");
+                op.position = Math::Vector3(0, 0, 0);
+                op.rotation = Math::Vector3(0, 0, 0);
+                op.scale = Math::Vector3(1, 1, 1);
+            }
             break;
 
         case EditOpType::CreateEntity:
@@ -588,6 +621,11 @@ void CollaborativeEditingSystem::HandleEditOp(u8 senderId, const u8* data, u32 s
 
     if (m_State == CollabSessionState::Syncing) {
         // Buffer operations during sync
+        // S-M6: Cap pending remote ops to prevent unbounded growth
+        if (m_PendingRemoteOps.size() >= 10000) {
+            ENJIN_LOG_WARN(Editor, "Collab: Pending remote ops buffer full (10000), dropping oldest");
+            m_PendingRemoteOps.erase(m_PendingRemoteOps.begin());
+        }
         m_PendingRemoteOps.push_back(op);
         return;
     }
@@ -614,9 +652,15 @@ void CollaborativeEditingSystem::HandleSyncRequest(u8 senderId, const u8* /*data
         sceneJson = m_OnSceneSyncRequest();
     }
 
+    // S-H10: Cap sync response size to 64MB to prevent unbounded allocation
+    static constexpr size_t MAX_SYNC_SIZE = 64 * 1024 * 1024;
     if (!sceneJson.empty()) {
-        auto payload = reinterpret_cast<const u8*>(sceneJson.data());
-        m_Network->CallRPC(RPC_SYNC_RESPONSE, senderId, payload, static_cast<u32>(sceneJson.size()));
+        if (sceneJson.size() > MAX_SYNC_SIZE) {
+            ENJIN_LOG_ERROR(Editor, "Collab: Scene JSON too large for sync (%zu bytes, max 64MB)", sceneJson.size());
+        } else {
+            auto payload = reinterpret_cast<const u8*>(sceneJson.data());
+            m_Network->CallRPC(RPC_SYNC_RESPONSE, senderId, payload, static_cast<u32>(sceneJson.size()));
+        }
     }
 
     // Add the new peer
@@ -652,10 +696,11 @@ void CollaborativeEditingSystem::HandleSyncResponse(u8 /*senderId*/, const u8* d
     for (const auto& op : m_PendingRemoteOps) {
         ProcessRemoteOperation(op);
     }
-    m_PendingRemoteOps.clear();
 
+    // S-M10: Log count BEFORE clearing so it prints the actual count
     ENJIN_LOG_INFO(Editor, "Collab: Sync complete, applied %zu buffered operations",
                    m_PendingRemoteOps.size());
+    m_PendingRemoteOps.clear();
 }
 
 void CollaborativeEditingSystem::HandlePeerCursor(u8 senderId, const u8* data, u32 size) {
