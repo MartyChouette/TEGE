@@ -22,6 +22,14 @@ Replaced all `GetAllEntities()` + filter patterns with `GetEntitiesWithComponent
 
 Added `cachedBaseColorTexture`, `cachedHeightTexture`, `cachedNormalTexture`, `cachedMetallicRoughnessTexture`, `cachedEmissiveTexture` on `MaterialComponent`. Cache invalidated via `InvalidateTextureCache()` on path changes.
 
+#### 4. ~~Play Mode Double-Draw~~ ✅ RESOLVED
+
+During play mode, `m_SkipMainPassRendering` flag bypasses all main swapchain geometry/effects. The sorted render list is now built before the skip check so the offscreen path reuses it (previously fell back to unsorted entity list with zero descriptor cache hits). Pipeline bind, descriptor set bind, viewport/scissor commands moved outside the per-entity loop in `RenderToTarget()`.
+
+#### 5. ~~Frame Jitter on Windows~~ ✅ RESOLVED
+
+Added `timeBeginPeriod(1)` on Windows startup for 1ms sleep resolution (default 15.6ms was causing 5-14ms variance in `sleep_for()`). Increased frame limiter spin margin from 1ms to 2ms. Linked `winmm.lib` via CMake.
+
 ### Medium Priority Optimizations
 
 #### 5. ~~Redundant Component Lookups~~ ✅ RESOLVED

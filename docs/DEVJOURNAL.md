@@ -4,6 +4,17 @@
 
 ## 2026-02-12
 
+### Rendering Optimization, Frame Pacing, Play Mode Fix, Feature Wiring
+Major optimization and feature wiring pass across 15 files + 1 new file.
+
+**Rendering:** Sorted render list now built before main pass skip, so the offscreen game view path reuses the material-sorted list instead of falling back to unsorted entity queries. This eliminates redundant descriptor writes during play mode. Point and spot shadow passes added to the offscreen path (previously only directional CSM rendered).
+
+**Frame Pacing:** Added `timeBeginPeriod(1)` on Windows for 1ms sleep resolution (default is 15.6ms, causing severe frame jitter). Increased frame limiter spin margin from 1ms to 2ms. Linked `winmm.lib` in Core CMake.
+
+**Play Mode:** Stop button no longer restores pre-play scene state — objects persist after stopping, only camera position is restored. This avoids the previous behavior where all scene changes were lost on stop.
+
+**Feature Wiring:** New `ScriptBindings_Sprite.cpp` with 13 bindings (8 Sprite2D + 5 AnimatedSprite2D). 4 Input VS nodes (IsKeyPressed, IsKeyDown, GetMousePosition, GetAxis). 2 Scene VS nodes (LoadScene, GetCurrentScene). StreamingVolume/Portal serialization in SceneSerializer (all 6 serialize/deserialize paths). StreamingVolume/Portal inspector UI with undo support. LayerComponent added to Add Component menu. NetworkSystem fully wired in Player app (was previously null).
+
 ### Comprehensive Audit — Round 3: 30+ More Fixes
 Third round of audit fixes across 19 files + 2 new files.
 

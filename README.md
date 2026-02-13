@@ -32,7 +32,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
 - **Transform Gizmos** - Translate, rotate, scale via ImGuizmo
 - **Entity Selection** - Click-to-select with ray casting, double-click to focus
-- **Play Mode** - Play/pause/stop game preview with input isolation
+- **Play Mode** - Play/pause/stop game preview with input isolation, scene changes persist on stop
 - **Game View** - Renders from in-scene camera components independently from the editor camera
 - **Scene Serialization** - JSON save/load with full component support
 - **Undo/Redo** - Command-pattern undo/redo system
