@@ -26,6 +26,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Math/Noise.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -5624,6 +5625,337 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 ? std::get<bool>(inputs[1]) : true;
             if (ctx.streamingManager)
                 ctx.streamingManager->SetEnabled(enabled);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // PROCEDURAL GENERATION
+    // ========================================================================
+
+    // Cellular Automata
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralCellularAutomata;
+        def.displayName = "Cellular Automata";
+        def.description = "Generate a cave/organic layout using cellular automata";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Width", PK::Input, 64),
+            Int("Height", PK::Input, 64),
+            Int("Fill %", PK::Input, 45),
+            Int("Smooth Passes", PK::Input, 5),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "cave", "cellular", "automata", "generate"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 w = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 64;
+            i32 h = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 64;
+            i32 fill = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 45;
+            i32 smooth = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? std::get<i32>(inputs[4]) : 5;
+            i32 seed = (inputs.size() > 5 && std::holds_alternative<i32>(inputs[5])) ? std::get<i32>(inputs[5]) : 0;
+            Procedural::CellularAutomata::Params p;
+            p.width = static_cast<u32>(w); p.height = static_cast<u32>(h);
+            p.fillPercent = static_cast<u32>(fill); p.iterations = static_cast<u32>(smooth);
+            p.seed = static_cast<u32>(seed);
+            Procedural::CellularAutomata::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Random Walker
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralRandomWalker;
+        def.displayName = "Random Walker";
+        def.description = "Carve dungeon passages using a random walk algorithm";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Width", PK::Input, 64),
+            Int("Height", PK::Input, 64),
+            Int("Steps", PK::Input, 2000),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "random", "walker", "dungeon", "carve"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 w = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 64;
+            i32 h = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 64;
+            i32 steps = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 2000;
+            i32 seed = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? std::get<i32>(inputs[4]) : 0;
+            Procedural::RandomWalker::Params p;
+            p.width = static_cast<u32>(w); p.height = static_cast<u32>(h);
+            p.steps = static_cast<u32>(steps); p.seed = static_cast<u32>(seed);
+            Procedural::RandomWalker::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // BSP
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralBSP;
+        def.displayName = "BSP Dungeon";
+        def.description = "Generate rooms and corridors using binary space partition";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Width", PK::Input, 64),
+            Int("Height", PK::Input, 64),
+            Int("Min Room", PK::Input, 5),
+            Int("Max Room", PK::Input, 15),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "bsp", "dungeon", "rooms", "corridors"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 w = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 64;
+            i32 h = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 64;
+            i32 minR = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 5;
+            i32 maxR = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? std::get<i32>(inputs[4]) : 15;
+            i32 seed = (inputs.size() > 5 && std::holds_alternative<i32>(inputs[5])) ? std::get<i32>(inputs[5]) : 0;
+            Procedural::BSPGenerator::Params p;
+            p.width = static_cast<u32>(w); p.height = static_cast<u32>(h);
+            p.minRoomSize = static_cast<u32>(minR); p.maxRoomSize = static_cast<u32>(maxR);
+            p.seed = static_cast<u32>(seed);
+            Procedural::BSPGenerator::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Diamond-Square
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralDiamondSquare;
+        def.displayName = "Diamond-Square Heightmap";
+        def.description = "Generate a heightmap terrain using diamond-square algorithm";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Size", PK::Input, 129),
+            Float("Roughness", PK::Input, 0.5f),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "heightmap", "terrain", "diamond", "square"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 size = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 129;
+            f32 rough = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 0.5f;
+            i32 seed = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 0;
+            Procedural::DiamondSquare::Params p;
+            p.size = static_cast<u32>(size); p.roughness = rough; p.seed = static_cast<u32>(seed);
+            Procedural::DiamondSquare::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // L-System
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralLSystem;
+        def.displayName = "L-System";
+        def.description = "Generate an L-System string from axiom and rewriting rules";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            String("Axiom", PK::Input, "F"),
+            String("Rules", PK::Input, "F=F+F-F"),
+            Int("Iterations", PK::Input, 4)
+        };
+        def.outputs = {
+            FlowOut(),
+            String("Result", PK::Output, "")
+        };
+        def.keywords = {"procedural", "lsystem", "fractal", "plant", "turtle"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string axiom = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "F";
+            std::string rules = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "F=F+F-F";
+            i32 iters = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 4;
+            if (iters < 0) iters = 0;
+            if (iters > 10) iters = 10;
+
+            Procedural::LSystemGenerator::Params p;
+            p.axiom = axiom;
+            p.iterations = static_cast<u32>(iters);
+            // Parse rules
+            size_t pos = 0;
+            while (pos < rules.size()) {
+                size_t eq = rules.find('=', pos);
+                if (eq == std::string::npos || eq == pos) break;
+                char sym = rules[pos];
+                size_t semi = rules.find(';', eq);
+                p.rules[sym] = rules.substr(eq + 1, (semi == std::string::npos) ? std::string::npos : semi - eq - 1);
+                pos = (semi == std::string::npos) ? rules.size() : semi + 1;
+            }
+
+            // Expand
+            std::string expanded = axiom;
+            for (u32 i = 0; i < static_cast<u32>(iters); i++) {
+                std::string next;
+                next.reserve(expanded.size() * 2);
+                for (char c : expanded) {
+                    auto it = p.rules.find(c);
+                    next += (it != p.rules.end()) ? it->second : std::string(1, c);
+                }
+                expanded = std::move(next);
+                if (expanded.size() > 100000) break;
+            }
+            outputs.resize(2);
+            outputs[1] = expanded;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Voronoi
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralVoronoi;
+        def.displayName = "Voronoi Regions";
+        def.description = "Partition space into regions using Voronoi diagram";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Width", PK::Input, 128),
+            Int("Height", PK::Input, 128),
+            Int("Num Points", PK::Input, 20),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "voronoi", "regions", "diagram", "partition"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 w = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 128;
+            i32 h = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 128;
+            i32 pts = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 20;
+            i32 seed = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? std::get<i32>(inputs[4]) : 0;
+            Procedural::VoronoiGenerator::Params p;
+            p.width = static_cast<u32>(w); p.height = static_cast<u32>(h);
+            p.numSeeds = static_cast<u32>(pts); p.seed = static_cast<u32>(seed);
+            Procedural::VoronoiGenerator::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // WFC
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralWFC;
+        def.displayName = "Wave Function Collapse";
+        def.description = "Tile-based generation using wave function collapse";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Int("Width", PK::Input, 16),
+            Int("Height", PK::Input, 16),
+            Int("Tile Set Size", PK::Input, 4),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "wfc", "wave", "function", "collapse", "tiles"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 w = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 16;
+            i32 h = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2])) ? std::get<i32>(inputs[2]) : 16;
+            i32 tiles = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 4;
+            i32 seed = (inputs.size() > 4 && std::holds_alternative<i32>(inputs[4])) ? std::get<i32>(inputs[4]) : 0;
+
+            Procedural::WaveFunctionCollapse::Params p;
+            p.width = static_cast<u32>(w); p.height = static_cast<u32>(h);
+            p.seed = static_cast<u32>(seed);
+            u32 ts = static_cast<u32>(tiles);
+            for (u32 i = 0; i < ts; i++) {
+                Procedural::WaveFunctionCollapse::WFCTile tile;
+                tile.id = i;
+                for (int dir = 0; dir < 4; dir++)
+                    for (u32 j = 0; j < ts; j++) tile.allowedNeighbors[dir].push_back(j);
+                p.tiles.push_back(tile);
+            }
+            Procedural::WaveFunctionCollapse::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Grammar
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralGrammar;
+        def.displayName = "Shape Grammar";
+        def.description = "Generate structures using shape grammar rules";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            String("Rules", PK::Input, "building=wall wall roof"),
+            String("Start Symbol", PK::Input, "building"),
+            Int("Seed", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "grammar", "building", "structure", "shape"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string rules = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) ? std::get<std::string>(inputs[1]) : "";
+            std::string start = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) ? std::get<std::string>(inputs[2]) : "building";
+            i32 seed = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3])) ? std::get<i32>(inputs[3]) : 0;
+            Procedural::GrammarGenerator::Params p;
+            p.startSymbol = start;
+            p.seed = static_cast<u32>(seed);
+            Procedural::GrammarGenerator::Generate(p);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Spawn Grid
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ProceduralSpawnGrid;
+        def.displayName = "Spawn Grid Entities";
+        def.description = "Create wall/floor entities from the last generated grid";
+        def.category = NodeCategory::Procedural;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Float("Cell Size", PK::Input, 1.0f),
+            Int("Wall Value", PK::Input, 1),
+            Int("Floor Value", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"procedural", "spawn", "grid", "entities", "instantiate"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            // Spawn grid delegates to script binding function; VS nodes use the same cached grid
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

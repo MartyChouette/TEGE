@@ -406,6 +406,7 @@ public:
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
         Enjin::Scripting::SetBindingsDestructible(nullptr);
+        Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsStreaming(nullptr);
         Enjin::Scripting::SetBindingsSceneManager(nullptr);
         Enjin::Scripting::SetBindingsPostProcessing(nullptr);
@@ -801,6 +802,7 @@ private:
         Enjin::Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
         Enjin::Scripting::SetBindingsObjectPool(&m_ObjectPool);
         Enjin::Scripting::SetBindingsFlower(m_World.get());
+        Enjin::Scripting::SetBindingsProcedural(nullptr);
         Enjin::Scripting::SetBindingsAudio(&m_SimpleAudio);
         Enjin::Scripting::SetBindingsWeather(&m_WeatherSystem);
         Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);

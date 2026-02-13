@@ -108,6 +108,7 @@ enum class NodeCategory : u8 {
     Scene,         // Scene loading, current scene
     Noise,         // Perlin, Simplex, Worley, fractal noise
     Streaming,     // Level streaming (load/unload chunks)
+    Procedural,    // Procedural generation (caves, BSP, heightmaps, etc.)
     Custom         // User-defined nodes
 };
 
@@ -132,6 +133,7 @@ inline const char* NodeCategoryToString(NodeCategory cat) {
         case NodeCategory::Scene:       return "Scene";
         case NodeCategory::Noise:       return "Noise";
         case NodeCategory::Streaming:   return "Streaming";
+        case NodeCategory::Procedural:  return "Procedural";
         case NodeCategory::Custom:      return "Custom";
         default:                        return "Unknown";
     }

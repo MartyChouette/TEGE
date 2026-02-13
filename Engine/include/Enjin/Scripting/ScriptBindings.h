@@ -13,6 +13,7 @@ namespace Scene { class SceneManager; class StreamingManager; }
 namespace Renderer { class PostProcessing; }
 namespace Gameplay { class TieredSaveSystem; class QuestSystem; class CinematicSystem; class ObjectPool; }
 namespace Effects { class WeatherSystem; class DestructibleSystem; }
+namespace Procedural { class LevelGenerator; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -72,6 +73,7 @@ void SetBindingsStreaming(Scene::StreamingManager* mgr);
 void SetBindingsFlower(ECS::World* world);
 void SetBindingsPhysics2D(Physics::IPhysicsBackend2D* physics2d);
 void SetBindingsNetworking(Networking::NetworkSystem* net);
+void SetBindingsProcedural(Procedural::LevelGenerator* generator);
 
 // Accessibility binding setters
 void SetBindingsSubtitles(Accessibility::SubtitleSystem* subtitles);
@@ -83,6 +85,9 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine);
 
 // Registration for AI bindings (defined in ScriptBindings_AI.cpp)
 void RegisterAIBindings(asIScriptEngine* engine);
+
+// Registration for procedural generation bindings (defined in ScriptBindings_Procedural.cpp)
+void RegisterProceduralBindings(asIScriptEngine* engine);
 
 } // namespace Scripting
 } // namespace Enjin

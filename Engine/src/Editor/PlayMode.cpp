@@ -133,6 +133,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsAudio(&m_SimpleAudio);
     Scripting::SetBindingsDestructible(&m_DestructibleSystem);
     Scripting::SetBindingsFlower(m_World);
+    Scripting::SetBindingsProcedural(nullptr);
     Scripting::SetBindingsWeather(m_WeatherSystem);
     Scripting::SetBindingsSceneManager(m_SceneManager);
     Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
@@ -321,6 +322,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsAudio(nullptr);
     Scripting::SetBindingsDestructible(nullptr);
     Scripting::SetBindingsFlower(nullptr);
+    Scripting::SetBindingsProcedural(nullptr);
 
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);

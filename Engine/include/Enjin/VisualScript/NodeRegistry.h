@@ -311,6 +311,17 @@ constexpr const char* NoiseFBM2D           = "Noise_FBM2D";
 constexpr const char* NoisePerlin3D        = "Noise_Perlin3D";
 constexpr const char* NoiseSimplex3D       = "Noise_Simplex3D";
 
+// Procedural
+constexpr const char* ProceduralCellularAutomata = "Procedural_CellularAutomata";
+constexpr const char* ProceduralRandomWalker     = "Procedural_RandomWalker";
+constexpr const char* ProceduralBSP              = "Procedural_BSP";
+constexpr const char* ProceduralDiamondSquare    = "Procedural_DiamondSquare";
+constexpr const char* ProceduralLSystem          = "Procedural_LSystem";
+constexpr const char* ProceduralVoronoi          = "Procedural_Voronoi";
+constexpr const char* ProceduralWFC              = "Procedural_WFC";
+constexpr const char* ProceduralGrammar          = "Procedural_Grammar";
+constexpr const char* ProceduralSpawnGrid        = "Procedural_SpawnGrid";
+
 // Streaming
 constexpr const char* StreamingForceLoad   = "Streaming_ForceLoad";
 constexpr const char* StreamingForceUnload = "Streaming_ForceUnload";
