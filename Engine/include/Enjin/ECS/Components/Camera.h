@@ -16,6 +16,37 @@ enum class ProjectionType : u32 {
     Orthographic = 1
 };
 
+// Common camera presets for quick setup
+enum class CameraPreset : u32 {
+    Custom = 0,
+    Isometric45,
+    Isometric30,
+    TopDown,
+    SideScroller,
+    FirstPerson,
+    ThirdPerson,
+    CinematicWide,
+    SecurityCam,
+    BirdsEye,
+    Count
+};
+
+inline const char* CameraPresetName(CameraPreset p) {
+    switch (p) {
+        case CameraPreset::Custom:         return "Custom";
+        case CameraPreset::Isometric45:    return "Isometric 45";
+        case CameraPreset::Isometric30:    return "Isometric 30";
+        case CameraPreset::TopDown:        return "Top-Down";
+        case CameraPreset::SideScroller:   return "Side Scroller";
+        case CameraPreset::FirstPerson:    return "First Person";
+        case CameraPreset::ThirdPerson:    return "Third Person";
+        case CameraPreset::CinematicWide:  return "Cinematic Wide";
+        case CameraPreset::SecurityCam:    return "Security Cam";
+        case CameraPreset::BirdsEye:       return "Bird's Eye";
+        default:                           return "Unknown";
+    }
+}
+
 // Camera component - attach to entities to create game cameras
 // The editor has its own camera; these are for in-game use
 struct ENJIN_API CameraComponent {
@@ -55,6 +86,85 @@ struct ENJIN_API CameraComponent {
         return (height > 0.0f) ? (width / height) : 1.0f;
     }
 };
+
+// Preset result: camera settings + recommended Euler rotation for the entity transform
+struct CameraPresetResult {
+    CameraComponent camera;
+    Math::Vector3 rotation; // Euler angles (degrees)
+};
+
+// Apply a camera preset — returns configured camera + recommended rotation
+inline CameraPresetResult ApplyCameraPreset(CameraPreset preset) {
+    CameraPresetResult r;
+    r.rotation = Math::Vector3(0.0f, 0.0f, 0.0f);
+
+    switch (preset) {
+        case CameraPreset::Isometric45:
+            r.camera.projectionType = ProjectionType::Orthographic;
+            r.camera.orthoSize = 10.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 500.0f;
+            r.rotation = Math::Vector3(-45.0f, 45.0f, 0.0f);
+            break;
+        case CameraPreset::Isometric30:
+            r.camera.projectionType = ProjectionType::Orthographic;
+            r.camera.orthoSize = 12.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 500.0f;
+            r.rotation = Math::Vector3(-30.0f, 45.0f, 0.0f);
+            break;
+        case CameraPreset::TopDown:
+            r.camera.projectionType = ProjectionType::Orthographic;
+            r.camera.orthoSize = 15.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 500.0f;
+            r.rotation = Math::Vector3(-90.0f, 0.0f, 0.0f);
+            break;
+        case CameraPreset::SideScroller:
+            r.camera.projectionType = ProjectionType::Orthographic;
+            r.camera.orthoSize = 8.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 100.0f;
+            r.rotation = Math::Vector3(0.0f, 0.0f, 0.0f);
+            break;
+        case CameraPreset::FirstPerson:
+            r.camera.projectionType = ProjectionType::Perspective;
+            r.camera.fieldOfView = 75.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 1000.0f;
+            break;
+        case CameraPreset::ThirdPerson:
+            r.camera.projectionType = ProjectionType::Perspective;
+            r.camera.fieldOfView = 60.0f;
+            r.camera.nearPlane = 0.3f;
+            r.camera.farPlane = 1000.0f;
+            r.rotation = Math::Vector3(-15.0f, 0.0f, 0.0f);
+            break;
+        case CameraPreset::CinematicWide:
+            r.camera.projectionType = ProjectionType::Perspective;
+            r.camera.fieldOfView = 40.0f;
+            r.camera.nearPlane = 0.5f;
+            r.camera.farPlane = 2000.0f;
+            break;
+        case CameraPreset::SecurityCam:
+            r.camera.projectionType = ProjectionType::Perspective;
+            r.camera.fieldOfView = 90.0f;
+            r.camera.nearPlane = 0.1f;
+            r.camera.farPlane = 50.0f;
+            r.rotation = Math::Vector3(-30.0f, 0.0f, 0.0f);
+            break;
+        case CameraPreset::BirdsEye:
+            r.camera.projectionType = ProjectionType::Perspective;
+            r.camera.fieldOfView = 50.0f;
+            r.camera.nearPlane = 1.0f;
+            r.camera.farPlane = 5000.0f;
+            r.rotation = Math::Vector3(-70.0f, 0.0f, 0.0f);
+            break;
+        default:
+            break;
+    }
+    return r;
+}
 
 // Virtual camera manager helper - finds the highest priority active camera
 // This is a utility struct, not a component

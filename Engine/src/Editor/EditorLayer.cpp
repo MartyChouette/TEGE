@@ -5515,6 +5515,28 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         ECS::CameraComponent* camera = m_World->GetComponent<ECS::CameraComponent>(entity);
         if (!camera) return;
 
+        // Camera preset dropdown
+        {
+            const char* presetNames[] = {
+                "(Custom)", "Isometric 45", "Isometric 30", "Top-Down", "Side Scroller",
+                "First Person", "Third Person", "Cinematic Wide", "Security Cam", "Bird's Eye"
+            };
+            int presetIdx = 0; // Default to Custom
+            if (ImGui::Combo("Preset", &presetIdx, presetNames, 10)) {
+                if (presetIdx > 0) {
+                    auto result = ECS::ApplyCameraPreset(static_cast<ECS::CameraPreset>(presetIdx));
+                    *camera = result.camera;
+                    // Apply rotation to transform
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (transform) {
+                        transform->rotation = Math::Quaternion::FromEuler(result.rotation);
+                    }
+                }
+            }
+        }
+
+        ImGui::Separator();
+
         // Projection type
         const char* projTypes[] = { "Perspective", "Orthographic" };
         int currentType = static_cast<int>(camera->projectionType);

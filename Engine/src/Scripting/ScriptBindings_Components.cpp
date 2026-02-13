@@ -129,6 +129,22 @@ static f32 Camera_GetFOV(u64 id) {
     return cc ? cc->fieldOfView : 60.0f;
 }
 
+static void Camera_ApplyPreset(u64 id, int presetIndex) {
+    if (!s_BindingsWorld) return;
+    if (presetIndex < 0 || presetIndex >= static_cast<int>(CameraPreset::Count)) return;
+    auto* cc = s_BindingsWorld->GetComponent<CameraComponent>(static_cast<Entity>(id));
+    if (!cc) return;
+    auto result = ApplyCameraPreset(static_cast<CameraPreset>(presetIndex));
+    *cc = result.camera;
+    auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
+    if (tc) tc->rotation = Math::Quaternion::FromEuler(result.rotation);
+}
+
+static std::string Camera_GetPresetName(int presetIndex) {
+    if (presetIndex < 0 || presetIndex >= static_cast<int>(CameraPreset::Count)) return "Unknown";
+    return CameraPresetName(static_cast<CameraPreset>(presetIndex));
+}
+
 // ============================================================================
 // AudioSource component access
 // ============================================================================
@@ -396,6 +412,8 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     // Camera
     AS_CHECK(engine->RegisterGlobalFunction("void Camera_SetFOV(uint64, float)", asFUNCTION(Camera_SetFOV), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Camera_GetFOV(uint64)", asFUNCTION(Camera_GetFOV), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Camera_ApplyPreset(uint64, int)", asFUNCTION(Camera_ApplyPreset), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Camera_GetPresetName(int)", asFUNCTION(Camera_GetPresetName), asCALL_CDECL));
 
     // AudioSource
     AS_CHECK(engine->RegisterGlobalFunction("void AudioSource_Play(uint64)", asFUNCTION(AudioSource_Play), asCALL_CDECL));
