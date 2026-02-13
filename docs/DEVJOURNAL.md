@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-02-13 (Session 4)
+
+### Startup Template Polish Pass — All 43 Templates Improved ~50%
+
+Comprehensive improvement pass across all 43 startup templates in `ApplyTemplate()`. Each template received 3-10 new entities, components, atmosphere, and gameplay polish to better showcase engine features out of the box.
+
+**Tier 1 (SPARSE templates — major additions, 5-10 entities each):**
+- **Isometric:** Added buildings, NPCs, chest, lantern entities
+- **Visual Script:** Moving platform, door+switch puzzle, score counter, particle trigger
+- **UI Canvas:** 5 UICanvas elements (health panel, progress bar, score label, ammo counter, pause button)
+- **Bullet Hell:** 3 enemy types, power-up, score display, parallax background layer, bloom post-processing
+- **Idle/Clicker:** UICanvas HUD (currency, click power, upgrade, auto-click buttons), trophy markers, click burst particles, decorations
+- **Point & Click:** Inventory key item, locked door, dialogue box, cursor indicator, UICanvas inventory panel
+
+**Tier 2 (GOOD templates — 3-5 additions each):**
+- **Platformer:** Wall-jump wall, moving platform with tween, 2nd enemy type
+- **Top-Down 2D:** Obstacles, speed boost pickup, particle effects on enemies
+- **Third Person:** Ramp geometry, collectible coin with bob tween, fog atmosphere
+- **First Person:** Interactable door, flashlight spotlight, ambient sound source
+- **RPG Village:** Fountain with particle effects, 2nd NPC, quest item
+- **Narrative:** Interactable objects, firefly particles, point light atmosphere
+- **Save System:** Danger zone, checkpoint particles, score text display
+- **PS1 RPG:** Treasure chest, dungeon entrance, battle arena trigger zone
+- **Visual Novel:** Name plate + speaker name labels, 3 choice buttons
+- **Game Manager:** Enemy spawner entity, sample enemy, wave counter display
+
+**Tier 2B (already-good templates — small targeted additions):**
+- **City Builder:** Population/income/funds HUD labels
+- **FPS Arena:** Crosshair + kill feed HUD elements
+- **Team Sports:** Center circle + center line field markings
+- **Tower Defense:** Sample turret + creep enemy entities
+- **Runner:** High obstacles, speed boost, shield power-up
+- **Flower:** Ambient bee particles, second smaller flower
+- **Fixed Camera:** 2nd camera zone, corridor gem collectible
+
+**Tier 2C (restored templates — filling gaps):**
+- **Metroidvania:** Save station, spike trap hazard
+- **Vampire Survivor:** Level-up zone, wave counter display
+- **Roguelike:** Spike trap, health potion pickup
+- **Soulslike:** Soul fragment pickup, bloodstain corpse run marker
+- **Couch Co-op:** Shared power-up, treasure chest cooperative objective
+- **Shadow Test:** Archway (pillars+lintel), rotated cube, point+spot lights
+
+**Flash templates:**
+- **Flash TD:** Creep enemy, gold/wave/lives HUD labels
+- **Flash Dress-Up:** Background entity, save/clear buttons
+- **Flash Escape Room:** Inventory bar + 5 slots, hint text label
+- **Flash Rhythm:** Background, judgment line, score/combo/judgment text
+
+---
+
 ## 2026-02-13 (Session 3)
 
 ### Physics Phase 4-5: Production Backends Enabled, SimplePhysics Retired

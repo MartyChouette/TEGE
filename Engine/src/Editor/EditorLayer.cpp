@@ -12899,6 +12899,63 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ApplyParticlePreset(pe, "Sparks");
         }
 
+        // Wall-jump wall (vertical surface)
+        {
+            ECS::Entity wallJump = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wallJump, "Wall Jump Wall");
+            auto& wjt = m_World->AddComponent<ECS::TransformComponent>(wallJump);
+            wjt.position = Math::Vector3(-8.0f, 3.0f, 0.0f);
+            wjt.scale = Math::Vector3(0.4f, 6.0f, 1.0f);
+            auto& wjmat = m_World->AddComponent<ECS::MaterialComponent>(wallJump);
+            wjmat.baseColor = Math::Vector3(0.45f, 0.4f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(wallJump, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& wjcol = m_World->AddComponent<ECS::BoxColliderComponent>(wallJump);
+            wjcol.size = Math::Vector3(0.4f, 6.0f, 1.0f);
+        }
+
+        // Moving platform with tween
+        {
+            ECS::Entity movPlat = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(movPlat, "Moving Platform");
+            auto& mpt = m_World->AddComponent<ECS::TransformComponent>(movPlat);
+            mpt.position = Math::Vector3(-3.0f, 5.5f, 0.0f);
+            mpt.scale = Math::Vector3(2.5f, 0.3f, 1.0f);
+            auto& mpmat = m_World->AddComponent<ECS::MaterialComponent>(movPlat);
+            mpmat.baseColor = Math::Vector3(0.3f, 0.55f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(movPlat, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& mpcol = m_World->AddComponent<ECS::BoxColliderComponent>(movPlat);
+            mpcol.size = Math::Vector3(2.5f, 0.3f, 1.0f);
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(movPlat);
+            ECS::TweenEntry move;
+            move.property = ECS::TweenProperty::Position;
+            move.easing = ECS::EasingType::EaseInOutSine;
+            move.mode = ECS::TweenMode::PingPong;
+            move.startValue = Math::Vector3(-3.0f, 5.5f, 0.0f);
+            move.endValue = Math::Vector3(4.0f, 5.5f, 0.0f);
+            move.duration = 3.0f;
+            tw.tweens.push_back(move);
+        }
+
+        // Enemy (patrolling)
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Slime");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(6.0f, 0.0f, 0.0f);
+            et.scale = Math::Vector3(1.0f, 0.6f, 1.0f);
+            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            emat.baseColor = Math::Vector3(0.4f, 0.8f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.5f, 0.6f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            hp.maxHealth = 20.0f;
+            hp.currentHealth = 20.0f;
+            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            ai.patrolPoints = { Math::Vector3(3,0,0), Math::Vector3(8,0,0) };
+            ai.moveSpeed = 2.0f;
+        }
+
         m_RenderSystem->SetShadowsEnabled(false);
         m_RenderSystem->SetAmbientIntensity(0.2f);
         if (m_PostProcessing) {
@@ -12990,6 +13047,45 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pick.value = 25.0f;
         }
 
+        // Obstacles (crates and barrel)
+        {
+            const Math::Vector3 oPos[] = { {-6,2,0}, {3,-7,0}, {8,4,0} };
+            const Math::Vector3 oScl[] = { {2,2,1}, {1.5f,1.5f,1}, {1.8f,1.8f,1} };
+            const char* oNames[] = { "Crate", "Barrel", "Crate 2" };
+            const Math::Vector3 oCol[] = { {0.55f,0.4f,0.25f}, {0.45f,0.35f,0.2f}, {0.5f,0.38f,0.22f} };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity obs = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(obs, oNames[i]);
+                auto& ot = m_World->AddComponent<ECS::TransformComponent>(obs);
+                ot.position = oPos[i];
+                ot.scale = oScl[i];
+                auto& omat = m_World->AddComponent<ECS::MaterialComponent>(obs);
+                omat.baseColor = oCol[i];
+                m_World->AddComponent<ECS::MeshComponent>(obs, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                m_World->AddComponent<ECS::Sprite2DComponent>(obs);
+                auto& ocol = m_World->AddComponent<ECS::BoxColliderComponent>(obs);
+                ocol.size = oScl[i];
+            }
+        }
+
+        // Speed boost power-up
+        {
+            ECS::Entity speedPU = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(speedPU, "Speed Boost");
+            auto& spt = m_World->AddComponent<ECS::TransformComponent>(speedPU);
+            spt.position = Math::Vector3(0.0f, 8.0f, 0.0f);
+            auto& spmat = m_World->AddComponent<ECS::MaterialComponent>(speedPU);
+            spmat.baseColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+            spmat.emissiveColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+            spmat.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(speedPU, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(speedPU);
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(speedPU);
+            pk.type = ECS::PickupComponent::PickupType::Powerup;
+            pk.customId = "Speed Boost";
+            pk.value = 1.0f;
+        }
+
         m_RenderSystem->SetShadowsEnabled(false);
         m_RenderSystem->SetAmbientIntensity(0.25f);
         if (m_PostProcessing) {
@@ -13037,6 +13133,48 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             plc.color = Math::Vector3(1.0f, 0.9f, 0.8f);
         }
 
+        // Ramp
+        {
+            ECS::Entity ramp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ramp, "Ramp");
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(ramp);
+            rt.position = Math::Vector3(-6.0f, 0.5f, -3.0f);
+            rt.scale = Math::Vector3(3.0f, 0.3f, 4.0f);
+            rt.rotation = Math::Quaternion(Math::Vector3(0, 0, 1), Math::Radians(20.0f));
+            auto& rmat = m_World->AddComponent<ECS::MaterialComponent>(ramp);
+            rmat.baseColor = Math::Vector3(0.5f, 0.45f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(ramp, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& rcol = m_World->AddComponent<ECS::BoxColliderComponent>(ramp);
+            rcol.size = Math::Vector3(3.0f, 0.3f, 4.0f);
+        }
+
+        // Collectible coin with bob
+        {
+            ECS::Entity coin = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+            ct.position = Math::Vector3(-6.0f, 2.0f, -3.0f);
+            ct.scale = Math::Vector3(0.4f, 0.4f, 0.4f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            cmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            cmat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            cmat.emissiveStrength = 0.4f;
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.2f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(coin);
+            pk.type = ECS::PickupComponent::PickupType::Coin;
+            pk.customId = "Coin";
+            pk.value = 10.0f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(-6.0f, 2.0f, -3.0f);
+            bob.endValue = Math::Vector3(-6.0f, 2.5f, -3.0f);
+            bob.duration = 1.5f;
+            tw.tweens.push_back(bob);
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13048,6 +13186,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
         m_RenderSystem->SetShadowsEnabled(true);
         m_RenderSystem->SetAmbientIntensity(0.12f);
+        m_RenderSystem->SetFogParams(0.01f, 20.0f, 100.0f, 0.3f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
@@ -13098,6 +13237,54 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             plc.color = Math::Vector3(1.0f, 0.85f, 0.7f);
         }
 
+        // Interactable door
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Door");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(0.0f, 1.5f, -4.8f);
+            dt.scale = Math::Vector3(1.5f, 3.0f, 0.2f);
+            auto& dmat = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dmat.baseColor = Math::Vector3(0.4f, 0.3f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& dsw = m_World->AddComponent<ECS::SwitchComponent>(door);
+            dsw.type = ECS::SwitchComponent::SwitchType::Toggle;
+            dsw.promptText = "Open Door";
+            auto& dcol = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+            dcol.size = Math::Vector3(1.5f, 3.0f, 0.2f);
+        }
+
+        // Flashlight (player spot light)
+        {
+            ECS::Entity flashlight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(flashlight, "Flashlight");
+            auto& flt = m_World->AddComponent<ECS::TransformComponent>(flashlight);
+            flt.position = Math::Vector3(0.0f, 1.7f, 0.0f);
+            auto& flc = m_World->AddComponent<ECS::LightComponent>(flashlight);
+            flc.type = ECS::LightType::Spot;
+            flc.intensity = 2.0f;
+            flc.range = 15.0f;
+            flc.outerConeAngle = 25.0f;
+            auto& follow = m_World->AddComponent<ECS::FollowTargetComponent>(flashlight);
+            follow.target = player;
+            follow.offset = Math::Vector3(0.2f, -0.1f, 0.0f);
+        }
+
+        // Ambient sound source note
+        {
+            ECS::Entity ambNote = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ambNote, "Ambient Sound Source");
+            auto& ant = m_World->AddComponent<ECS::TransformComponent>(ambNote);
+            ant.position = Math::Vector3(0.0f, 1.0f, -8.0f);
+            auto& ac = m_World->AddComponent<ECS::AudioSourceComponent>(ambNote);
+            ac.loop = true;
+            ac.volume = 0.4f;
+            ac.is3D = true;
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(ambNote);
+            notes.notes = "Assign an ambient audio file (e.g. humming, wind).\n"
+                "Spatial audio makes it grow louder as you approach.";
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13124,11 +13311,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraDistance = 12.0f;
         SetupCameraForController(player, "TopDown3D");
 
-        // 3 pushable crates
+        // 4 pushable crates
         {
-            const Math::Vector3 cratePos[] = { {2,0.5f,0}, {-1,0.5f,3}, {4,0.5f,-2} };
-            const Math::Vector3 crateCol[] = { {0.7f,0.4f,0.2f}, {0.6f,0.35f,0.25f}, {0.75f,0.45f,0.15f} };
-            for (int i = 0; i < 3; ++i) {
+            const Math::Vector3 cratePos[] = { {2,0.5f,0}, {-1,0.5f,3}, {4,0.5f,-2}, {-4,0.5f,-1} };
+            const Math::Vector3 crateCol[] = { {0.7f,0.4f,0.2f}, {0.6f,0.35f,0.25f}, {0.75f,0.45f,0.15f}, {0.65f,0.4f,0.3f} };
+            for (int i = 0; i < 4; ++i) {
                 ECS::Entity crate = m_World->CreateEntity();
                 m_World->AddComponent<ECS::NameComponent>(crate, "Crate " + std::to_string(i + 1));
                 auto& ct = m_World->AddComponent<ECS::TransformComponent>(crate);
@@ -13144,11 +13331,11 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // 3 goal plates
+        // 4 goal plates with pulse tween
         {
-            const Math::Vector3 platePos[] = { {6,0.05f,0}, {-5,0.05f,3}, {0,0.05f,-4} };
-            const Math::Vector3 plateCol[] = { {0.2f,0.8f,0.2f}, {0.2f,0.5f,0.9f}, {0.9f,0.8f,0.2f} };
-            for (int i = 0; i < 3; ++i) {
+            const Math::Vector3 platePos[] = { {6,0.05f,0}, {-5,0.05f,3}, {0,0.05f,-4}, {-6,0.05f,-3} };
+            const Math::Vector3 plateCol[] = { {0.2f,0.8f,0.2f}, {0.2f,0.5f,0.9f}, {0.9f,0.8f,0.2f}, {0.8f,0.3f,0.6f} };
+            for (int i = 0; i < 4; ++i) {
                 ECS::Entity plate = m_World->CreateEntity();
                 m_World->AddComponent<ECS::NameComponent>(plate, "Goal Plate " + std::to_string(i + 1));
                 auto& pt = m_World->AddComponent<ECS::TransformComponent>(plate);
@@ -13162,6 +13349,16 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& goal = m_World->AddComponent<ECS::GoalZoneComponent>(plate);
                 goal.type = ECS::GoalZoneComponent::GoalType::PushTarget;
                 goal.goalGroup = i;
+                // Pulse glow tween
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(plate);
+                ECS::TweenEntry pulse;
+                pulse.property = ECS::TweenProperty::Scale;
+                pulse.easing = ECS::EasingType::EaseInOutSine;
+                pulse.mode = ECS::TweenMode::PingPong;
+                pulse.startValue = Math::Vector3(1.5f, 0.1f, 1.5f);
+                pulse.endValue = Math::Vector3(1.6f, 0.12f, 1.6f);
+                pulse.duration = 2.0f;
+                tw.tweens.push_back(pulse);
             }
         }
 
@@ -13281,6 +13478,55 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             trigger.boxSize = Math::Vector3(3.0f, 1.0f, 3.0f);
         }
 
+        // Shelter (roof + 2 walls)
+        {
+            ECS::Entity roof = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(roof, "Shelter Roof");
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(roof);
+            rt.position = Math::Vector3(5.0f, 2.5f, -5.0f);
+            rt.scale = Math::Vector3(4.0f, 0.2f, 3.0f);
+            auto& rmat = m_World->AddComponent<ECS::MaterialComponent>(roof);
+            rmat.baseColor = Math::Vector3(0.4f, 0.3f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(roof, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& rcol = m_World->AddComponent<ECS::BoxColliderComponent>(roof);
+            rcol.size = rt.scale;
+
+            ECS::Entity wallL = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wallL, "Shelter Wall Left");
+            auto& wlt = m_World->AddComponent<ECS::TransformComponent>(wallL);
+            wlt.position = Math::Vector3(3.0f, 1.25f, -5.0f);
+            wlt.scale = Math::Vector3(0.2f, 2.5f, 3.0f);
+            auto& wlmat = m_World->AddComponent<ECS::MaterialComponent>(wallL);
+            wlmat.baseColor = Math::Vector3(0.35f, 0.25f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(wallL, Renderer::MeshFactory::CreateCube(1.0f));
+
+            ECS::Entity wallR = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wallR, "Shelter Wall Right");
+            auto& wrt = m_World->AddComponent<ECS::TransformComponent>(wallR);
+            wrt.position = Math::Vector3(7.0f, 1.25f, -5.0f);
+            wrt.scale = Math::Vector3(0.2f, 2.5f, 3.0f);
+            auto& wrmat = m_World->AddComponent<ECS::MaterialComponent>(wallR);
+            wrmat.baseColor = Math::Vector3(0.35f, 0.25f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(wallR, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Wood resource pickup
+        {
+            ECS::Entity wood = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wood, "Wood Pile");
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wood);
+            wt.position = Math::Vector3(-5.0f, 0.3f, 3.0f);
+            wt.scale = Math::Vector3(1.0f, 0.6f, 0.6f);
+            auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wood);
+            wmat.baseColor = Math::Vector3(0.55f, 0.35f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(wood, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(wood);
+            pk.type = ECS::PickupComponent::PickupType::Custom;
+            pk.customId = "Wood";
+            pk.value = 5.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(wood).promptText = "Gather Wood";
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13383,6 +13629,59 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             lc.color = Math::Vector3(1.0f, 0.85f, 0.6f);
         }
 
+        // Fountain with water particles
+        {
+            ECS::Entity fountain = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fountain, "Fountain");
+            auto& ft = m_World->AddComponent<ECS::TransformComponent>(fountain);
+            ft.position = Math::Vector3(0.0f, 0.4f, 0.0f);
+            ft.scale = Math::Vector3(1.5f, 0.8f, 1.5f);
+            auto& fmat = m_World->AddComponent<ECS::MaterialComponent>(fountain);
+            fmat.baseColor = Math::Vector3(0.5f, 0.5f, 0.55f);
+            m_World->AddComponent<ECS::MeshComponent>(fountain, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fountain);
+            pe.emissionRate = 30.0f;
+            pe.startSpeed = 3.0f;
+            pe.startSize = 0.1f;
+            pe.lifetime = 1.5f;
+            pe.startColor = Math::Vector3(0.4f, 0.6f, 0.9f);
+            pe.gravity = Math::Vector3(0.0f, -9.8f, 0.0f);
+        }
+
+        // 2nd NPC (Quest giver)
+        {
+            ECS::Entity npc2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(npc2, "Elder");
+            auto& n2t = m_World->AddComponent<ECS::TransformComponent>(npc2);
+            n2t.position = Math::Vector3(-2.0f, 1.0f, 4.0f);
+            auto& n2mat = m_World->AddComponent<ECS::MaterialComponent>(npc2);
+            n2mat.baseColor = Math::Vector3(0.5f, 0.4f, 0.6f);
+            m_World->AddComponent<ECS::MeshComponent>(npc2, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& dlg2 = m_World->AddComponent<ECS::DialogueComponent>(npc2);
+            dlg2.speakerName = "Elder";
+            dlg2.dialogueLines = { "Brave adventurer, I need your help.", "Find the ancient amulet in the forest.", "Return it to me for a reward." };
+            m_World->AddComponent<ECS::InteractableComponent>(npc2).promptText = "Talk to Elder";
+        }
+
+        // Quest item
+        {
+            ECS::Entity amulet = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(amulet, "Ancient Amulet");
+            auto& at = m_World->AddComponent<ECS::TransformComponent>(amulet);
+            at.position = Math::Vector3(8.0f, 0.5f, -6.0f);
+            at.scale = Math::Vector3(0.4f, 0.4f, 0.2f);
+            auto& amat = m_World->AddComponent<ECS::MaterialComponent>(amulet);
+            amat.baseColor = Math::Vector3(0.8f, 0.6f, 0.9f);
+            amat.emissiveColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+            amat.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(amulet, Renderer::MeshFactory::CreateSphere(0.2f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(amulet);
+            pk.type = ECS::PickupComponent::PickupType::Custom;
+            pk.customId = "Ancient Amulet";
+            pk.value = 1.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(amulet).promptText = "Pick up Amulet";
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13475,6 +13774,52 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pe.lifetime = 4.0f;
         }
 
+        // Second room (through the door)
+        {
+            // Room walls
+            const Math::Vector3 rPos[] = { {-4,1.5f,-12}, {4,1.5f,-12}, {0,1.5f,-16} };
+            const Math::Vector3 rScl[] = { {0.3f,3,8}, {0.3f,3,8}, {8,3,0.3f} };
+            const char* rNames[] = { "Room 2 Wall Left", "Room 2 Wall Right", "Room 2 Wall Back" };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity wall = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(wall, rNames[i]);
+                auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+                wt.position = rPos[i];
+                wt.scale = rScl[i];
+                auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+                wmat.baseColor = Math::Vector3(0.2f, 0.18f, 0.15f);
+                m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& wcol = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+                wcol.size = rScl[i];
+            }
+
+            // Dim light in room 2
+            ECS::Entity r2Light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(r2Light, "Room 2 Light");
+            auto& r2lt = m_World->AddComponent<ECS::TransformComponent>(r2Light);
+            r2lt.position = Math::Vector3(0.0f, 2.5f, -12.0f);
+            auto& r2lc = m_World->AddComponent<ECS::LightComponent>(r2Light);
+            r2lc.type = ECS::LightType::Point;
+            r2lc.intensity = 0.8f;
+            r2lc.range = 8.0f;
+            r2lc.color = Math::Vector3(0.4f, 0.3f, 0.5f);
+        }
+
+        // Ambient sound entity (creaking)
+        {
+            ECS::Entity ambSound = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ambSound, "Ambient Sound");
+            auto& ast = m_World->AddComponent<ECS::TransformComponent>(ambSound);
+            ast.position = Math::Vector3(0.0f, 2.0f, -10.0f);
+            auto& ac = m_World->AddComponent<ECS::AudioSourceComponent>(ambSound);
+            ac.loop = true;
+            ac.volume = 0.3f;
+            ac.is3D = true;
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(ambSound);
+            notes.notes = "Assign a creaking/dripping audio file to AudioSourceComponent.\n"
+                "Spatial audio will make it louder as the player approaches.";
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13552,20 +13897,40 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
-        // Checkpoint
+        // Checkpoints (2)
         {
-            ECS::Entity cp = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(cp, "Checkpoint");
-            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cp);
-            ct.position = Math::Vector3(10.0f, 0.5f, 0.0f);
-            ct.scale = Math::Vector3(0.3f, 2.0f, 4.0f);
-            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(cp);
-            cmat.baseColor = Math::Vector3(1.0f, 0.8f, 0.0f);
-            cmat.opacity = 0.5f;
-            cmat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
-            m_World->AddComponent<ECS::MeshComponent>(cp, Renderer::MeshFactory::CreateCube(1.0f));
-            auto& goal = m_World->AddComponent<ECS::GoalZoneComponent>(cp);
-            goal.type = ECS::GoalZoneComponent::GoalType::Checkpoint;
+            const Math::Vector3 cpPos[] = { {10.0f, 0.5f, 0.0f}, {-5.0f, 0.5f, 10.0f} };
+            for (int i = 0; i < 2; ++i) {
+                ECS::Entity cp = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(cp, "Checkpoint " + std::to_string(i + 1));
+                auto& ct = m_World->AddComponent<ECS::TransformComponent>(cp);
+                ct.position = cpPos[i];
+                ct.scale = Math::Vector3(0.3f, 2.0f, 4.0f);
+                auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(cp);
+                cmat.baseColor = Math::Vector3(1.0f, 0.8f, 0.0f);
+                cmat.opacity = 0.5f;
+                cmat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+                m_World->AddComponent<ECS::MeshComponent>(cp, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& goal = m_World->AddComponent<ECS::GoalZoneComponent>(cp);
+                goal.type = ECS::GoalZoneComponent::GoalType::Checkpoint;
+            }
+        }
+
+        // Tire barrier obstacles
+        {
+            const Math::Vector3 tPos[] = { {5,0.4f,5}, {-8,0.4f,8}, {10,0.4f,-8}, {-3,0.4f,-10} };
+            for (int i = 0; i < 4; ++i) {
+                ECS::Entity tire = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(tire, "Tire Barrier " + std::to_string(i + 1));
+                auto& tt = m_World->AddComponent<ECS::TransformComponent>(tire);
+                tt.position = tPos[i];
+                tt.scale = Math::Vector3(1.5f, 0.8f, 1.5f);
+                auto& tmat = m_World->AddComponent<ECS::MaterialComponent>(tire);
+                tmat.baseColor = Math::Vector3(0.15f, 0.15f, 0.15f);
+                m_World->AddComponent<ECS::MeshComponent>(tire, Renderer::MeshFactory::CreateSphere(0.5f));
+                auto& tcol = m_World->AddComponent<ECS::SphereColliderComponent>(tire);
+                tcol.radius = 0.75f;
+            }
         }
 
         // Finish line
@@ -13683,6 +14048,66 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ApplyParticlePreset(pe, "Magic");
         }
 
+        // Treasure chest
+        {
+            ECS::Entity chest = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(chest, "Treasure Chest");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(chest);
+            ct.position = Math::Vector3(6.0f, 0.3f, -2.0f);
+            ct.scale = Math::Vector3(0.8f, 0.6f, 0.5f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(chest);
+            cmat.baseColor = Math::Vector3(0.6f, 0.45f, 0.15f);
+            cmat.flatShading = true;
+            cmat.vertexSnapping = true;
+            cmat.vertexSnapResolution = 160;
+            m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(chest);
+            pk.type = ECS::PickupComponent::PickupType::Health;
+            pk.customId = "Potion";
+            pk.value = 3.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(chest).promptText = "Open Chest";
+        }
+
+        // Dungeon entrance
+        {
+            ECS::Entity entrance = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(entrance, "Dungeon Entrance");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(entrance);
+            et.position = Math::Vector3(0.0f, 1.5f, -10.0f);
+            et.scale = Math::Vector3(3.0f, 3.0f, 0.5f);
+            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(entrance);
+            emat.baseColor = Math::Vector3(0.3f, 0.25f, 0.2f);
+            emat.flatShading = true;
+            emat.vertexSnapping = true;
+            emat.vertexSnapResolution = 160;
+            m_World->AddComponent<ECS::MeshComponent>(entrance, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(entrance);
+            bcol.size = et.scale;
+            auto& sw = m_World->AddComponent<ECS::SwitchComponent>(entrance);
+            sw.type = ECS::SwitchComponent::SwitchType::Toggle;
+            sw.promptText = "Enter Dungeon";
+        }
+
+        // Battle arena trigger zone
+        {
+            ECS::Entity battleZone = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(battleZone, "Battle Zone");
+            auto& bzt = m_World->AddComponent<ECS::TransformComponent>(battleZone);
+            bzt.position = Math::Vector3(8.0f, 0.05f, 5.0f);
+            bzt.scale = Math::Vector3(4.0f, 0.1f, 4.0f);
+            auto& bzmat = m_World->AddComponent<ECS::MaterialComponent>(battleZone);
+            bzmat.baseColor = Math::Vector3(0.5f, 0.2f, 0.2f);
+            bzmat.opacity = 0.3f;
+            bzmat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+            m_World->AddComponent<ECS::MeshComponent>(battleZone, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(battleZone);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(4.0f, 2.0f, 4.0f);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(battleZone);
+            notes.notes = "Stepping into this zone triggers a random encounter.\n"
+                "Wire via VisualScript or AngelScript.";
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13774,6 +14199,49 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pcol = m_World->AddComponent<ECS::BoxColliderComponent>(plat);
                 pcol.size = pt.scale;
             }
+        }
+
+        // Health pickup in center
+        {
+            ECS::Entity healthPU = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(healthPU, "Health Pickup");
+            auto& hpt = m_World->AddComponent<ECS::TransformComponent>(healthPU);
+            hpt.position = Math::Vector3(0.0f, 0.5f, 0.0f);
+            hpt.scale = Math::Vector3(0.6f, 0.6f, 0.6f);
+            auto& hpmat = m_World->AddComponent<ECS::MaterialComponent>(healthPU);
+            hpmat.baseColor = Math::Vector3(0.2f, 0.9f, 0.2f);
+            hpmat.emissiveColor = Math::Vector3(0.2f, 0.9f, 0.2f);
+            hpmat.emissiveStrength = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(healthPU, Renderer::MeshFactory::CreateSphere(0.3f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(healthPU);
+            pk.type = ECS::PickupComponent::PickupType::Health;
+            pk.customId = "Health Pack";
+            pk.value = 25.0f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(healthPU);
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(0.0f, 0.5f, 0.0f);
+            bob.endValue = Math::Vector3(0.0f, 1.2f, 0.0f);
+            bob.duration = 2.0f;
+            tw.tweens.push_back(bob);
+        }
+
+        // Destructible pillar
+        {
+            ECS::Entity pillar = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillar, "Destructible Pillar");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pillar);
+            pt.position = Math::Vector3(0.0f, 1.5f, 4.0f);
+            pt.scale = Math::Vector3(1.0f, 3.0f, 1.0f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(pillar);
+            pmat.baseColor = Math::Vector3(0.55f, 0.5f, 0.45f);
+            m_World->AddComponent<ECS::MeshComponent>(pillar, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(pillar);
+            bcol.size = pt.scale;
+            auto& dest = m_World->AddComponent<ECS::DestructibleComponent>(pillar);
+            dest.health = 50.0f;
         }
 
         // Spotlight
@@ -13900,6 +14368,56 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             mpc.mode = ECS::MovingPlatformComponent::PlatformMode::PingPong;
         }
 
+        // Pendulum (hinge joint demo)
+        {
+            // Anchor point (static)
+            ECS::Entity anchor = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(anchor, "Pendulum Anchor");
+            auto& anT = m_World->AddComponent<ECS::TransformComponent>(anchor);
+            anT.position = Math::Vector3(4.0f, 6.0f, -5.0f);
+            anT.scale = Math::Vector3(0.3f, 0.3f, 0.3f);
+            auto& anMat = m_World->AddComponent<ECS::MaterialComponent>(anchor);
+            anMat.baseColor = Math::Vector3(0.5f, 0.5f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(anchor, Renderer::MeshFactory::CreateCube(1.0f));
+
+            // Pendulum bob
+            ECS::Entity bob = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bob, "Pendulum Bob");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(bob);
+            bt.position = Math::Vector3(6.0f, 4.0f, -5.0f);
+            auto& bmat = m_World->AddComponent<ECS::MaterialComponent>(bob);
+            bmat.baseColor = Math::Vector3(0.8f, 0.3f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(bob, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& sc = m_World->AddComponent<ECS::SphereColliderComponent>(bob);
+            sc.radius = 0.5f;
+            auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(bob);
+            rb.mass = 2.0f;
+            rb.useGravity = true;
+
+            // Hinge joint connecting anchor to bob
+            auto& joint = m_World->AddComponent<ECS::HingeJointComponent>(bob);
+            joint.entityA = anchor;
+            joint.entityB = bob;
+            joint.anchorA = Math::Vector3(0, -0.5f, 0);
+            joint.axis = Math::Vector3(0, 0, 1);
+        }
+
+        // Breakable wall
+        {
+            ECS::Entity bWall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bWall, "Breakable Wall");
+            auto& bwt = m_World->AddComponent<ECS::TransformComponent>(bWall);
+            bwt.position = Math::Vector3(0.0f, 1.5f, -8.0f);
+            bwt.scale = Math::Vector3(4.0f, 3.0f, 0.5f);
+            auto& bwmat = m_World->AddComponent<ECS::MaterialComponent>(bWall);
+            bwmat.baseColor = Math::Vector3(0.6f, 0.4f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(bWall, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bwcol = m_World->AddComponent<ECS::BoxColliderComponent>(bWall);
+            bwcol.size = bwt.scale;
+            auto& dest = m_World->AddComponent<ECS::DestructibleComponent>(bWall);
+            dest.health = 30.0f;
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
@@ -13967,20 +14485,83 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::DialogueBoxComponent>(dbox);
         }
 
+        // Interactable objects
+        {
+            ECS::Entity book = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(book, "Old Book");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(book);
+            bt.position = Math::Vector3(-2.0f, 0.5f, -3.0f);
+            bt.scale = Math::Vector3(0.4f, 0.5f, 0.3f);
+            auto& bmat = m_World->AddComponent<ECS::MaterialComponent>(book);
+            bmat.baseColor = Math::Vector3(0.5f, 0.3f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(book, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bi = m_World->AddComponent<ECS::InteractableComponent>(book);
+            bi.promptText = "Read Book";
+            auto& bd = m_World->AddComponent<ECS::DialogueComponent>(book);
+            bd.dialogueLines = { "The pages describe an ancient ritual...", "Something about a lost amulet." };
+
+            ECS::Entity chest = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(chest, "Mysterious Chest");
+            auto& cht = m_World->AddComponent<ECS::TransformComponent>(chest);
+            cht.position = Math::Vector3(5.0f, 0.3f, -4.0f);
+            cht.scale = Math::Vector3(0.8f, 0.6f, 0.5f);
+            auto& chmat = m_World->AddComponent<ECS::MaterialComponent>(chest);
+            chmat.baseColor = Math::Vector3(0.55f, 0.4f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& ci = m_World->AddComponent<ECS::InteractableComponent>(chest);
+            ci.promptText = "Open Chest";
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(chest);
+            pk.type = ECS::PickupComponent::PickupType::Custom;
+            pk.customId = "Story Fragment";
+            pk.value = 1.0f;
+        }
+
+        // Ambient firefly particles
+        {
+            ECS::Entity fireflies = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fireflies, "Fireflies");
+            auto& ft = m_World->AddComponent<ECS::TransformComponent>(fireflies);
+            ft.position = Math::Vector3(0.0f, 1.5f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fireflies);
+            pe.emissionRate = 8.0f;
+            pe.startSpeed = 0.5f;
+            pe.startSize = 0.08f;
+            pe.lifetime = 4.0f;
+            pe.startColor = Math::Vector3(0.8f, 1.0f, 0.3f);
+            pe.gravity = Math::Vector3(0.0f, 0.0f, 0.0f);
+            pe.shape = ECS::ParticleEmitterComponent::EmitterShape::Sphere;
+            pe.shapeRadius = 8.0f;
+        }
+
+        // Point light near quest giver
+        {
+            ECS::Entity ql = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ql, "Quest Giver Light");
+            auto& qlt = m_World->AddComponent<ECS::TransformComponent>(ql);
+            qlt.position = Math::Vector3(3.0f, 3.0f, 2.0f);
+            auto& qlc = m_World->AddComponent<ECS::LightComponent>(ql);
+            qlc.type = ECS::LightType::Point;
+            qlc.intensity = 1.5f;
+            qlc.range = 8.0f;
+            qlc.color = Math::Vector3(1.0f, 0.9f, 0.7f);
+        }
+
         {
             Renderer::SkyboxConfig skyConfig;
             skyConfig.type = Renderer::SkyboxType::Procedural;
-            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
-            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
-            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
-            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            skyConfig.topColor = Math::Vector3(0.08f, 0.15f, 0.4f);
+            skyConfig.horizonColor = Math::Vector3(0.4f, 0.35f, 0.5f);
+            skyConfig.bottomColor = Math::Vector3(0.2f, 0.2f, 0.25f);
+            skyConfig.sunDirection = Math::Vector3(0.3f, 0.3f, 0.0f);
             m_RenderSystem->SetSkybox(skyConfig);
         }
         m_RenderSystem->SetShadowsEnabled(true);
-        m_RenderSystem->SetAmbientIntensity(0.15f);
+        m_RenderSystem->SetAmbientIntensity(0.1f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.15f;
         }
 
     } else if (templateId == "savesystem") {
@@ -14051,6 +14632,35 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             slm.allowManualLoad = true;
         }
 
+        // Danger zone (lava/hazard)
+        {
+            ECS::Entity danger = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(danger, "Danger Zone");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(danger);
+            dt.position = Math::Vector3(-4.0f, 0.05f, 2.0f);
+            dt.scale = Math::Vector3(3.0f, 0.1f, 3.0f);
+            auto& dmat = m_World->AddComponent<ECS::MaterialComponent>(danger);
+            dmat.baseColor = Math::Vector3(0.9f, 0.3f, 0.1f);
+            dmat.emissiveColor = Math::Vector3(0.9f, 0.2f, 0.0f);
+            dmat.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(danger, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(danger);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(3.0f, 1.0f, 3.0f);
+        }
+
+        // Score display
+        {
+            ECS::Entity score = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(score, "Score Display");
+            m_World->AddComponent<ECS::TransformComponent>(score);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(score);
+            tc.text = "Collected: 0/3";
+            tc.fontSize = 28.0f;
+            tc.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            m_World->AddComponent<ECS::TagComponent>(score).tags.push_back("score");
+        }
+
         {
             ECS::Entity hint = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(hint, "Save System Guide");
@@ -14059,7 +14669,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             notes.notes = "3-tier save system demo:\n"
                 "- RunState: Collectibles reset each run\n"
                 "- SceneState: Checkpoint persists per scene\n"
-                "- MetaProgression: Stats survive across all runs";
+                "- MetaProgression: Stats survive across all runs\n"
+                "Danger Zone deals damage — checkpoint saves progress.\n"
+                "Score Display tracks collection progress.";
         }
 
         {
@@ -14118,6 +14730,57 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::MeshComponent>(sw, Renderer::MeshFactory::CreateCube(1.0f));
             auto& swc = m_World->AddComponent<ECS::SwitchComponent>(sw);
             swc.type = ECS::SwitchComponent::SwitchType::Toggle;
+            m_World->AddComponent<ECS::VisualScriptComponent>(sw);
+        }
+
+        // Door (tied to switch via visual script)
+        {
+            ECS::Entity door = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(door, "Door");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(door);
+            dt.position = Math::Vector3(5.0f, 1.5f, -2.0f);
+            dt.scale = Math::Vector3(2.0f, 3.0f, 0.3f);
+            auto& dmat = m_World->AddComponent<ECS::MaterialComponent>(door);
+            dmat.baseColor = Math::Vector3(0.45f, 0.3f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(door, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& dcol = m_World->AddComponent<ECS::BoxColliderComponent>(door);
+            dcol.size = Math::Vector3(2.0f, 3.0f, 0.3f);
+            m_World->AddComponent<ECS::VisualScriptComponent>(door);
+            m_World->AddComponent<ECS::InteractableComponent>(door).promptText = "Open Door";
+        }
+
+        // Moving platform (demonstrates movement via tween)
+        {
+            ECS::Entity plat = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(plat, "Moving Platform");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(plat);
+            pt.position = Math::Vector3(-5.0f, 0.2f, 0.0f);
+            pt.scale = Math::Vector3(3.0f, 0.4f, 3.0f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(plat);
+            pmat.baseColor = Math::Vector3(0.3f, 0.6f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(plat, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(plat);
+            ECS::TweenEntry move;
+            move.property = ECS::TweenProperty::Position;
+            move.easing = ECS::EasingType::EaseInOutSine;
+            move.mode = ECS::TweenMode::PingPong;
+            move.startValue = Math::Vector3(-5.0f, 0.2f, 0.0f);
+            move.endValue = Math::Vector3(-5.0f, 0.2f, 6.0f);
+            move.duration = 3.0f;
+            tw.tweens.push_back(move);
+        }
+
+        // Score counter entity
+        {
+            ECS::Entity score = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(score, "Score Counter");
+            m_World->AddComponent<ECS::TransformComponent>(score);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(score);
+            tc.text = "Score: 0";
+            tc.fontSize = 28.0f;
+            tc.textColor = Math::Vector3(1.0f, 1.0f, 0.0f);
+            m_World->AddComponent<ECS::TagComponent>(score).tags.push_back("score_display");
+            m_World->AddComponent<ECS::VisualScriptComponent>(score);
         }
 
         // Particle effect
@@ -14131,14 +14794,34 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pe.playOnAwake = false;
         }
 
+        // Particle trigger zone
+        {
+            ECS::Entity zone = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(zone, "Particle Trigger Zone");
+            auto& zt = m_World->AddComponent<ECS::TransformComponent>(zone);
+            zt.position = Math::Vector3(0.0f, 0.0f, -4.0f);
+            zt.scale = Math::Vector3(3.0f, 1.0f, 3.0f);
+            auto& zmat = m_World->AddComponent<ECS::MaterialComponent>(zone);
+            zmat.baseColor = Math::Vector3(0.5f, 0.2f, 0.8f);
+            zmat.opacity = 0.3f;
+            zmat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+            m_World->AddComponent<ECS::MeshComponent>(zone, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& zcol = m_World->AddComponent<ECS::BoxColliderComponent>(zone);
+            zcol.size = Math::Vector3(3.0f, 1.0f, 3.0f);
+            zcol.isTrigger = true;
+            m_World->AddComponent<ECS::VisualScriptComponent>(zone);
+        }
+
         {
             ECS::Entity hint = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(hint, "Visual Script Guide");
             m_World->AddComponent<ECS::TransformComponent>(hint);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
-            notes.notes = "Select an entity with VisualScriptComponent and open\n"
-                "the Visual Script panel to create node-based logic.\n"
-                "Wire OnInteract events to trigger particles and switches.";
+            notes.notes = "Visual Script demo: each entity with VisualScriptComponent can be wired.\n"
+                "Switch toggles the Door open/close via events.\n"
+                "Moving Platform uses TweenComponent PingPong for back-and-forth motion.\n"
+                "Particle Trigger Zone fires particles when player enters.\n"
+                "Score Counter tracks interactions — wire OnInteract to increment.";
         }
 
         {
@@ -14165,8 +14848,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraDistance = 5.0f;
         ctrl.cameraHeight = 2.0f;
         SetupCameraForController(player, "ThirdPerson");
+        m_World->AddComponent<ECS::HealthComponent>(player).maxHealth = 100.0f;
+        m_World->GetComponent<ECS::HealthComponent>(player)->currentHealth = 100.0f;
 
-        // UI Canvas entity
+        // UI Canvas entity with populated HUD elements
         {
             ECS::Entity uiEntity = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(uiEntity, "Game UI");
@@ -14175,12 +14860,66 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             canvas.canvasName = "GameHUD";
             canvas.designWidth = 1920.0f;
             canvas.designHeight = 1080.0f;
+
+            // Health panel (top-left)
+            u32 hpPanelId = canvas.AddElement(GUI::UIWidgetType::Panel, "HealthPanel");
+            if (auto* hp = canvas.GetElement(hpPanelId)) {
+                hp->anchor.anchorMin = Math::Vector2(0.0f, 0.0f);
+                hp->anchor.anchorMax = Math::Vector2(0.0f, 0.0f);
+                hp->anchor.offsetLeft = 20.0f; hp->anchor.offsetTop = 20.0f;
+                hp->anchor.offsetRight = -320.0f; hp->anchor.offsetBottom = -60.0f;
+                hp->style.bgColor = Math::Vector3(0.1f, 0.1f, 0.12f);
+                hp->style.bgAlpha = 0.7f;
+                hp->focusable = false;
+            }
+            // Health bar (progress bar inside panel)
+            u32 hpBarId = canvas.AddElement(GUI::UIWidgetType::ProgressBar, "HealthBar", hpPanelId);
+            if (auto* bar = canvas.GetElement(hpBarId)) {
+                bar->anchor.anchorMin = Math::Vector2(0.05f, 0.15f);
+                bar->anchor.anchorMax = Math::Vector2(0.95f, 0.85f);
+                bar->data.progressValue = 1.0f;
+                bar->focusable = false;
+            }
+            // Score label (top-right)
+            u32 scoreId = canvas.AddElement(GUI::UIWidgetType::Label, "ScoreLabel");
+            if (auto* sc = canvas.GetElement(scoreId)) {
+                sc->anchor.anchorMin = Math::Vector2(1.0f, 0.0f);
+                sc->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+                sc->anchor.offsetLeft = 200.0f; sc->anchor.offsetTop = 20.0f;
+                sc->anchor.offsetRight = -20.0f; sc->anchor.offsetBottom = -60.0f;
+                sc->data.text = "Score: 0";
+                sc->data.textAlignH = 2; // right
+                sc->style.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+                sc->focusable = false;
+            }
+            // Ammo label (bottom-right)
+            u32 ammoId = canvas.AddElement(GUI::UIWidgetType::Label, "AmmoLabel");
+            if (auto* ammo = canvas.GetElement(ammoId)) {
+                ammo->anchor.anchorMin = Math::Vector2(1.0f, 1.0f);
+                ammo->anchor.anchorMax = Math::Vector2(1.0f, 1.0f);
+                ammo->anchor.offsetLeft = 200.0f; ammo->anchor.offsetTop = 60.0f;
+                ammo->anchor.offsetRight = -20.0f; ammo->anchor.offsetBottom = -20.0f;
+                ammo->data.text = "Ammo: 30";
+                ammo->data.textAlignH = 2;
+                ammo->style.textColor = Math::Vector3(0.8f, 0.8f, 1.0f);
+                ammo->focusable = false;
+            }
+            // Pause button (top-right corner)
+            u32 pauseId = canvas.AddElement(GUI::UIWidgetType::Button, "PauseButton");
+            if (auto* pause = canvas.GetElement(pauseId)) {
+                pause->anchor.anchorMin = Math::Vector2(1.0f, 0.0f);
+                pause->anchor.anchorMax = Math::Vector2(1.0f, 0.0f);
+                pause->anchor.offsetLeft = 80.0f; pause->anchor.offsetTop = 20.0f;
+                pause->anchor.offsetRight = -20.0f; pause->anchor.offsetBottom = -60.0f;
+                pause->data.text = "||";
+                pause->tabOrder = 1;
+            }
         }
 
         // HUD widget
         {
             ECS::Entity hud = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(hud, "Health Bar");
+            m_World->AddComponent<ECS::NameComponent>(hud, "Health Bar Overlay");
             m_World->AddComponent<ECS::TransformComponent>(hud);
             auto& hw = m_World->AddComponent<ECS::HUDWidgetComponent>(hud);
             hw.type = ECS::HUDWidgetComponent::WidgetType::HealthBar;
@@ -14192,14 +14931,77 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             hw.bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
         }
 
+        // Collectibles
+        {
+            const Math::Vector3 cPos[] = { {4,0.5f,2}, {-3,0.5f,-4}, {6,0.5f,-1} };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity coin = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(coin, "Coin " + std::to_string(i + 1));
+                auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
+                ct.position = cPos[i];
+                ct.scale = Math::Vector3(0.5f, 0.5f, 0.5f);
+                auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+                cmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+                cmat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+                cmat.emissiveStrength = 0.5f;
+                m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.3f));
+                auto& pk = m_World->AddComponent<ECS::PickupComponent>(coin);
+                pk.type = ECS::PickupComponent::PickupType::Coin;
+                pk.customId = "Coin";
+                pk.value = 10.0f;
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
+                ECS::TweenEntry bob;
+                bob.property = ECS::TweenProperty::Position;
+                bob.easing = ECS::EasingType::EaseInOutSine;
+                bob.mode = ECS::TweenMode::PingPong;
+                bob.startValue = cPos[i];
+                bob.endValue = cPos[i] + Math::Vector3(0, 0.5f, 0);
+                bob.duration = 1.5f;
+                tw.tweens.push_back(bob);
+            }
+        }
+
+        // Enemy with health (to test HUD updates)
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Training Dummy");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(-5.0f, 0.75f, 3.0f);
+            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            emat.baseColor = Math::Vector3(0.8f, 0.2f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule(0.4f, 1.5f));
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            hp.maxHealth = 50.0f;
+            hp.currentHealth = 50.0f;
+            auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(enemy);
+            bcol.size = Math::Vector3(0.8f, 1.5f, 0.8f);
+        }
+
+        // Point light for atmosphere
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Scene Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0.0f, 5.0f, 0.0f);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(1.0f, 0.95f, 0.85f);
+            lc.intensity = 2.5f;
+            lc.range = 20.0f;
+        }
+
         {
             ECS::Entity hint = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(hint, "UI Guide");
             m_World->AddComponent<ECS::TransformComponent>(hint);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
-            notes.notes = "UICanvasComponent holds UI elements (panels, buttons, labels, sliders).\n"
-                "HUDWidgetComponent provides quick health/resource overlays.\n"
-                "Select the Game UI entity and use the UI Editor to add widgets.";
+            notes.notes = "UI Canvas demo with pre-built HUD elements:\n"
+                "- HealthBar (ProgressBar widget) tracks player health\n"
+                "- ScoreLabel updates when coins are collected\n"
+                "- AmmoLabel shows current ammo count\n"
+                "- PauseButton demonstrates interactive UI\n"
+                "Select Game UI and open UI Editor to customize layout.\n"
+                "HUDWidgetComponent provides a simpler health bar overlay.";
         }
 
         {
@@ -14395,14 +15197,37 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 sl->onValueChangedEvent = "accessibility_sensitivity";
             }
 
+            // --- Font Scale Slider ---
+            u32 fontLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "Font Scale Label", panelId);
+            if (auto* lbl = canvas.GetElement(fontLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.0f);
+                lbl->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                lbl->anchor.offsetTop = 380.0f; lbl->anchor.offsetBottom = -410.0f;
+                lbl->data.text = "Font Scale";
+                lbl->data.textAlignH = 0;
+                lbl->style.textColor = Math::Vector3(0.8f, 0.82f, 0.88f);
+                lbl->focusable = false;
+            }
+            u32 fontSliderId = canvas.AddElement(GUI::UIWidgetType::Slider, "Font Scale Slider", panelId);
+            if (auto* sl = canvas.GetElement(fontSliderId)) {
+                sl->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
+                sl->anchor.anchorMax = Math::Vector2(0.95f, 0.0f);
+                sl->anchor.offsetTop = 380.0f; sl->anchor.offsetBottom = -410.0f;
+                sl->data.sliderMin = 0.75f;
+                sl->data.sliderMax = 2.5f;
+                sl->data.sliderValue = 1.0f;
+                sl->tabOrder = 6;
+                sl->onValueChangedEvent = "accessibility_font_scale";
+            }
+
             // --- Apply Button ---
             u32 applyBtnId = canvas.AddElement(GUI::UIWidgetType::Button, "Apply Button", panelId);
             if (auto* btn = canvas.GetElement(applyBtnId)) {
                 btn->anchor.anchorMin = Math::Vector2(0.3f, 0.0f);
                 btn->anchor.anchorMax = Math::Vector2(0.7f, 0.0f);
-                btn->anchor.offsetTop = 400.0f; btn->anchor.offsetBottom = -445.0f;
+                btn->anchor.offsetTop = 440.0f; btn->anchor.offsetBottom = -485.0f;
                 btn->data.text = "Apply Settings";
-                btn->tabOrder = 6;
+                btn->tabOrder = 7;
                 btn->onClickEvent = "accessibility_apply";
                 btn->style.bgColor = Math::Vector3(0.2f, 0.5f, 0.8f);
                 btn->style.bgAlpha = 1.0f;
@@ -14412,6 +15237,31 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             // Set theme for good focus visibility
             canvas.theme.focusBorderWidth = 3.0f;
             canvas.theme.inputFocused = Math::Vector3(0.3f, 0.7f, 1.0f);
+        }
+
+        // Screen reader label examples
+        {
+            ECS::Entity exampleObj = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(exampleObj, "Interactive Object");
+            auto& ot = m_World->AddComponent<ECS::TransformComponent>(exampleObj);
+            ot.position = Math::Vector3(3.0f, 0.5f, 0.0f);
+            auto& omat = m_World->AddComponent<ECS::MaterialComponent>(exampleObj);
+            omat.baseColor = Math::Vector3(0.4f, 0.6f, 0.8f);
+            m_World->AddComponent<ECS::MeshComponent>(exampleObj, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(exampleObj);
+            interact.promptText = "Press E to interact";
+            auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(exampleObj);
+            bcol.size = Math::Vector3(1, 1, 1);
+
+            ECS::Entity exampleObj2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(exampleObj2, "Labeled Button");
+            auto& o2t = m_World->AddComponent<ECS::TransformComponent>(exampleObj2);
+            o2t.position = Math::Vector3(-3.0f, 0.5f, 0.0f);
+            auto& o2mat = m_World->AddComponent<ECS::MaterialComponent>(exampleObj2);
+            o2mat.baseColor = Math::Vector3(0.8f, 0.4f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(exampleObj2, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& interact2 = m_World->AddComponent<ECS::InteractableComponent>(exampleObj2);
+            interact2.promptText = "Activate button";
         }
 
         // Guide notes
@@ -14424,6 +15274,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "Navigate with Tab/Shift+Tab or DPad/Arrow keys.\n"
                 "Enter/Space activates buttons and toggles.\n"
                 "Left/Right adjusts slider values when focused.\n"
+                "Font Scale slider controls text size via accessibility_font_scale event.\n"
+                "Interactive objects demonstrate screen reader accessible labels.\n"
                 "Each widget fires events via onValueChangedEvent for scripting.";
         }
 
@@ -14493,6 +15345,92 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             }
         }
 
+        // Inventory key item
+        {
+            ECS::Entity key = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(key, "Key");
+            auto& kt = m_World->AddComponent<ECS::TransformComponent>(key);
+            kt.position = Math::Vector3(2.0f, -1.5f, 0.1f);
+            kt.scale = Math::Vector3(0.5f, 0.5f, 0.1f);
+            auto& kmat = m_World->AddComponent<ECS::MaterialComponent>(key);
+            kmat.baseColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            kmat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            kmat.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(key, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(key);
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(key);
+            pk.type = ECS::PickupComponent::PickupType::Key;
+            pk.customId = "Brass Key";
+            pk.value = 1.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(key).promptText = "Pick up Key";
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(key);
+            ECS::TweenEntry glow;
+            glow.property = ECS::TweenProperty::Scale;
+            glow.easing = ECS::EasingType::EaseInOutSine;
+            glow.mode = ECS::TweenMode::PingPong;
+            glow.startValue = Math::Vector3(0.45f, 0.45f, 0.1f);
+            glow.endValue = Math::Vector3(0.55f, 0.55f, 0.1f);
+            glow.duration = 1.2f;
+            tw.tweens.push_back(glow);
+        }
+
+        // Locked cabinet (requires key)
+        {
+            ECS::Entity cabinet = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cabinet, "Locked Cabinet");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cabinet);
+            ct.position = Math::Vector3(-5.0f, 0.0f, 0.0f);
+            ct.scale = Math::Vector3(2.0f, 2.5f, 0.1f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(cabinet);
+            cmat.baseColor = Math::Vector3(0.35f, 0.25f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(cabinet, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(cabinet);
+            auto& ci = m_World->AddComponent<ECS::InteractableComponent>(cabinet);
+            ci.promptText = "Examine Cabinet";
+            auto& cd = m_World->AddComponent<ECS::DialogueComponent>(cabinet);
+            cd.dialogueLines = { "The cabinet is locked. You need a key." };
+        }
+
+        // Dialogue box entity
+        {
+            ECS::Entity dlgBox = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(dlgBox, "Dialogue Box");
+            auto& dt = m_World->AddComponent<ECS::TransformComponent>(dlgBox);
+            dt.position = Math::Vector3(0.0f, -3.5f, 1.0f);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(dlgBox);
+            tc.text = "Click on objects to examine them.";
+            tc.fontSize = 24.0f;
+            tc.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            m_World->AddComponent<ECS::DialogueBoxComponent>(dlgBox);
+        }
+
+        // Ambient point light
+        {
+            ECS::Entity lamp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lamp, "Room Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(lamp);
+            lt.position = Math::Vector3(0.0f, 4.0f, 2.0f);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(lamp);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(1.0f, 0.9f, 0.75f);
+            lc.intensity = 1.5f;
+            lc.range = 12.0f;
+        }
+
+        // Cursor indicator
+        {
+            ECS::Entity cursor = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cursor, "Cursor Indicator");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cursor);
+            ct.position = Math::Vector3(0.0f, 0.0f, 2.0f);
+            ct.scale = Math::Vector3(0.3f, 0.3f, 0.1f);
+            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(cursor);
+            cmat.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            m_World->AddComponent<ECS::MeshComponent>(cursor, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(cursor);
+            m_World->AddComponent<ECS::TagComponent>(cursor).tags.push_back("cursor");
+        }
+
         // Inventory UI
         {
             ECS::Entity inv = m_World->CreateEntity();
@@ -14500,6 +15438,28 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::TransformComponent>(inv);
             auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(inv);
             canvas.canvasName = "Inventory";
+            canvas.designWidth = 1920.0f;
+            canvas.designHeight = 1080.0f;
+
+            u32 invPanelId = canvas.AddElement(GUI::UIWidgetType::Panel, "InventoryPanel");
+            if (auto* panel = canvas.GetElement(invPanelId)) {
+                panel->anchor.anchorMin = Math::Vector2(0.0f, 1.0f);
+                panel->anchor.anchorMax = Math::Vector2(0.0f, 1.0f);
+                panel->anchor.offsetLeft = 20.0f; panel->anchor.offsetTop = 80.0f;
+                panel->anchor.offsetRight = -420.0f; panel->anchor.offsetBottom = -20.0f;
+                panel->style.bgColor = Math::Vector3(0.1f, 0.1f, 0.12f);
+                panel->style.bgAlpha = 0.8f;
+                panel->focusable = false;
+            }
+            u32 invLabelId = canvas.AddElement(GUI::UIWidgetType::Label, "InventoryLabel", invPanelId);
+            if (auto* lbl = canvas.GetElement(invLabelId)) {
+                lbl->anchor.anchorMin = Math::Vector2(0.05f, 0.1f);
+                lbl->anchor.anchorMax = Math::Vector2(0.95f, 0.9f);
+                lbl->data.text = "Inventory: (empty)";
+                lbl->data.textAlignH = 0; // left
+                lbl->style.textColor = Math::Vector3(0.9f, 0.9f, 0.8f);
+                lbl->focusable = false;
+            }
         }
 
         {
@@ -14507,13 +15467,22 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(hint, "Adventure Guide");
             m_World->AddComponent<ECS::TransformComponent>(hint);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
-            notes.notes = "Point & click adventure template.\n"
-                "Hotspot entities have InteractableComponent + DialogueComponent.\n"
-                "Add inventory items via UICanvasComponent on the Inventory entity.";
+            notes.notes = "Point & click adventure template:\n"
+                "- 3 Hotspots: Door, Desk, Window — each with dialogue\n"
+                "- Key item (glowing) can be picked up via PickupComponent\n"
+                "- Locked Cabinet requires the key to open\n"
+                "- Dialogue Box shows examine text at screen bottom\n"
+                "- Cursor Indicator follows mouse (wire via script)\n"
+                "- Inventory UI panel tracks collected items.";
         }
 
         m_RenderSystem->SetShadowsEnabled(false);
         m_RenderSystem->SetAmbientIntensity(0.3f);
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.2f;
+        }
 
     } else if (templateId == "bullethell") {
         // Player
@@ -14548,6 +15517,87 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pc.lifetime = 5.0f;
         }
 
+        // 3 enemy types
+        {
+            const Math::Vector3 ePos[] = { {-4,6,0}, {4,7,0}, {0,8.5f,0} };
+            const Math::Vector3 eCol[] = { {0.9f,0.1f,0.1f}, {0.1f,0.1f,0.9f}, {0.7f,0.1f,0.7f} };
+            const char* eNames[] = { "Chaser Enemy", "Circle Enemy", "Spread Enemy" };
+            const f32 eSpeeds[] = { 3.0f, 2.0f, 1.5f };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity enemy = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(enemy, eNames[i]);
+                auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+                et.position = ePos[i];
+                et.scale = Math::Vector3(1.2f, 1.2f, 1.0f);
+                auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+                emat.baseColor = eCol[i];
+                emat.emissiveColor = eCol[i];
+                emat.emissiveStrength = 0.8f;
+                m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.5f, 1.0f));
+                m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
+                hp.maxHealth = 30.0f + i * 20.0f;
+                hp.currentHealth = hp.maxHealth;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+                ai.moveSpeed = eSpeeds[i];
+                auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(enemy);
+                bcol.size = Math::Vector3(1.0f, 1.0f, 0.5f);
+            }
+        }
+
+        // Power-up (shield)
+        {
+            ECS::Entity powerup = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(powerup, "Shield Power-Up");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(powerup);
+            pt.position = Math::Vector3(0.0f, -5.0f, 0.0f);
+            pt.scale = Math::Vector3(0.8f, 0.8f, 1.0f);
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(powerup);
+            pmat.baseColor = Math::Vector3(0.2f, 0.8f, 1.0f);
+            pmat.emissiveColor = Math::Vector3(0.2f, 0.8f, 1.0f);
+            pmat.emissiveStrength = 1.0f;
+            m_World->AddComponent<ECS::MeshComponent>(powerup, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(powerup);
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(powerup);
+            pk.type = ECS::PickupComponent::PickupType::Powerup;
+            pk.customId = "Shield";
+            pk.value = 1.0f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(powerup);
+            ECS::TweenEntry pulse;
+            pulse.property = ECS::TweenProperty::Scale;
+            pulse.easing = ECS::EasingType::EaseInOutSine;
+            pulse.mode = ECS::TweenMode::PingPong;
+            pulse.startValue = Math::Vector3(0.7f, 0.7f, 1.0f);
+            pulse.endValue = Math::Vector3(0.9f, 0.9f, 1.0f);
+            pulse.duration = 1.0f;
+            tw.tweens.push_back(pulse);
+        }
+
+        // Score display
+        {
+            ECS::Entity score = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(score, "Score Display");
+            m_World->AddComponent<ECS::TransformComponent>(score);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(score);
+            tc.text = "SCORE: 0";
+            tc.fontSize = 36.0f;
+            tc.textColor = Math::Vector3(1.0f, 1.0f, 0.0f);
+            m_World->AddComponent<ECS::TagComponent>(score).tags.push_back("score");
+        }
+
+        // Background parallax layer
+        {
+            ECS::Entity bgLayer = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bgLayer, "Star Field");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bgLayer);
+            bgt.position = Math::Vector3(0.0f, 0.0f, -2.0f);
+            bgt.scale = Math::Vector3(20.0f, 24.0f, 1.0f);
+            auto& bgmat = m_World->AddComponent<ECS::MaterialComponent>(bgLayer);
+            bgmat.baseColor = Math::Vector3(0.05f, 0.02f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(bgLayer, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(bgLayer);
+        }
+
         // Boundary walls
         {
             const Math::Vector3 wPos[] = { {0,10,0}, {0,-10,0}, {8,0,0}, {-8,0,0} };
@@ -14571,16 +15621,30 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(hint, "Bullet Hell Guide");
             m_World->AddComponent<ECS::TransformComponent>(hint);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
-            notes.notes = "Bullet hell template.\n"
-                "Use PoolableComponent + ObjectPool for efficient bullet management.\n"
-                "ParticleEmitter on the spawner simulates projectile streams.";
+            notes.notes = "Bullet hell template with 3 enemy types:\n"
+                "- Chaser: fast, pursues player directly\n"
+                "- Circle: fires in circular patterns\n"
+                "- Spread: slow but wide projectile spread\n"
+                "Use PoolableComponent + ObjectPool for bullet management.\n"
+                "Shield power-up pulses and grants temporary invulnerability.\n"
+                "Star Field provides dark background parallax layer.";
         }
 
+        // Dark space skybox
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::SolidColor;
+            skyConfig.solidColor = Math::Vector3(0.02f, 0.01f, 0.05f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
         m_RenderSystem->SetShadowsEnabled(false);
         m_RenderSystem->SetAmbientIntensity(0.2f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomThreshold = 0.5f;
+            pp.bloomIntensity = 0.6f;
         }
 
     } else if (templateId == "idleclicker") {
@@ -14622,13 +15686,119 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tw.tweens.push_back(bounce);
         }
 
-        // UI Canvas for game state
+        // UI Canvas with idle game HUD elements
         {
             ECS::Entity ui = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(ui, "Game UI");
             m_World->AddComponent<ECS::TransformComponent>(ui);
             auto& canvas = m_World->AddComponent<GUI::UICanvasComponent>(ui);
             canvas.canvasName = "IdleUI";
+            canvas.designWidth = 1920.0f;
+            canvas.designHeight = 1080.0f;
+
+            // Currency label (top center)
+            u32 currId = canvas.AddElement(GUI::UIWidgetType::Label, "CurrencyLabel");
+            if (auto* curr = canvas.GetElement(currId)) {
+                curr->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
+                curr->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                curr->anchor.offsetLeft = 100.0f; curr->anchor.offsetTop = 30.0f;
+                curr->anchor.offsetRight = -100.0f; curr->anchor.offsetBottom = -80.0f;
+                curr->data.text = "Gold: 0";
+                curr->data.textAlignH = 1;
+                curr->style.textColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+                curr->style.fontSize = 36.0f;
+                curr->focusable = false;
+            }
+            // Click power label
+            u32 cpId = canvas.AddElement(GUI::UIWidgetType::Label, "ClickPowerLabel");
+            if (auto* cp = canvas.GetElement(cpId)) {
+                cp->anchor.anchorMin = Math::Vector2(0.5f, 0.0f);
+                cp->anchor.anchorMax = Math::Vector2(0.5f, 0.0f);
+                cp->anchor.offsetLeft = 100.0f; cp->anchor.offsetTop = 80.0f;
+                cp->anchor.offsetRight = -100.0f; cp->anchor.offsetBottom = -120.0f;
+                cp->data.text = "Click Power: 1";
+                cp->data.textAlignH = 1;
+                cp->style.textColor = Math::Vector3(0.8f, 0.8f, 0.9f);
+                cp->focusable = false;
+            }
+            // Upgrade button (bottom center)
+            u32 upgId = canvas.AddElement(GUI::UIWidgetType::Button, "UpgradeButton");
+            if (auto* upg = canvas.GetElement(upgId)) {
+                upg->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
+                upg->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
+                upg->anchor.offsetLeft = 120.0f; upg->anchor.offsetTop = 120.0f;
+                upg->anchor.offsetRight = -120.0f; upg->anchor.offsetBottom = -70.0f;
+                upg->data.text = "Upgrade (Cost: 10)";
+                upg->tabOrder = 1;
+            }
+            // Auto-click toggle (below upgrade)
+            u32 actId = canvas.AddElement(GUI::UIWidgetType::Toggle, "AutoClickToggle");
+            if (auto* act = canvas.GetElement(actId)) {
+                act->anchor.anchorMin = Math::Vector2(0.5f, 1.0f);
+                act->anchor.anchorMax = Math::Vector2(0.5f, 1.0f);
+                act->anchor.offsetLeft = 120.0f; act->anchor.offsetTop = 60.0f;
+                act->anchor.offsetRight = -120.0f; act->anchor.offsetBottom = -20.0f;
+                act->data.text = "Auto-Click";
+                act->tabOrder = 2;
+            }
+        }
+
+        // Visual upgrade markers (appear at progression milestones)
+        {
+            const Math::Vector3 mPos[] = { {-4,0,0}, {4,0,0}, {0,-3.5f,0} };
+            const Math::Vector3 mCol[] = { {0.6f,0.6f,0.6f}, {0.8f,0.7f,0.2f}, {0.3f,0.8f,1.0f} };
+            const char* mNames[] = { "Bronze Trophy", "Gold Trophy", "Diamond Trophy" };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity marker = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(marker, mNames[i]);
+                auto& mt = m_World->AddComponent<ECS::TransformComponent>(marker);
+                mt.position = mPos[i];
+                mt.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                mt.visible = (i == 0); // Only bronze visible initially
+                auto& mmat = m_World->AddComponent<ECS::MaterialComponent>(marker);
+                mmat.baseColor = mCol[i];
+                mmat.emissiveColor = mCol[i];
+                mmat.emissiveStrength = 0.3f;
+                m_World->AddComponent<ECS::MeshComponent>(marker, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                m_World->AddComponent<ECS::Sprite2DComponent>(marker);
+                m_World->AddComponent<ECS::TagComponent>(marker).tags.push_back("trophy_" + std::to_string(i));
+            }
+        }
+
+        // Particle burst effect (triggered on click)
+        {
+            ECS::Entity burst = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(burst, "Click Burst");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(burst);
+            bt.position = Math::Vector3(0.0f, 1.0f, 0.5f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(burst);
+            ApplyParticlePreset(pe, "Sparks");
+            pe.playOnAwake = false;
+            pe.emissionRate = 50.0f;
+            pe.startColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+        }
+
+        // Background decorations
+        {
+            ECS::Entity bgLeft = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bgLeft, "Decoration Left");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(bgLeft);
+            lt.position = Math::Vector3(-7.0f, 0.0f, -0.5f);
+            lt.scale = Math::Vector3(3.0f, 8.0f, 1.0f);
+            auto& lmat = m_World->AddComponent<ECS::MaterialComponent>(bgLeft);
+            lmat.baseColor = Math::Vector3(0.15f, 0.2f, 0.25f);
+            m_World->AddComponent<ECS::MeshComponent>(bgLeft, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(bgLeft);
+
+            ECS::Entity bgRight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bgRight, "Decoration Right");
+            auto& rt = m_World->AddComponent<ECS::TransformComponent>(bgRight);
+            rt.position = Math::Vector3(7.0f, 0.0f, -0.5f);
+            rt.scale = Math::Vector3(3.0f, 8.0f, 1.0f);
+            auto& rmat = m_World->AddComponent<ECS::MaterialComponent>(bgRight);
+            rmat.baseColor = Math::Vector3(0.15f, 0.2f, 0.25f);
+            m_World->AddComponent<ECS::MeshComponent>(bgRight, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(bgRight);
         }
 
         // Meta-progression save
@@ -14638,7 +15808,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::TransformComponent>(save);
             auto& sd = m_World->AddComponent<ECS::SaveDataComponent>(save);
             sd.tier = ECS::PersistenceTier::MetaProgression;
-            sd.customData = { {"currency", "0"}, {"clickPower", "1"}, {"autoClickRate", "0"} };
+            sd.customData = { {"currency", "0"}, {"clickPower", "1"}, {"autoClickRate", "0"}, {"highestTrophy", "0"} };
         }
 
         {
@@ -14646,12 +15816,22 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::NameComponent>(hint, "Idle Guide");
             m_World->AddComponent<ECS::TransformComponent>(hint);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
-            notes.notes = "Idle/clicker template.\n"
-                "SaveDataComponent with MetaProgression tier persists currency across runs.\n"
-                "TweenComponent provides click feedback (scale bounce).\n"
-                "Add upgrade logic via VisualScript or AngelScript.";
+            notes.notes = "Idle/clicker template with full UI:\n"
+                "- Currency and Click Power labels update in real-time\n"
+                "- Upgrade Button increases click power (costs gold)\n"
+                "- Auto-Click toggle enables passive income\n"
+                "- Trophy markers unlock at milestones (toggle visible)\n"
+                "- Click Burst particles fire on each click\n"
+                "SaveDataComponent with MetaProgression persists across runs.";
         }
 
+        // Warm gradient background
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::SolidColor;
+            skyConfig.solidColor = Math::Vector3(0.12f, 0.1f, 0.18f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
         m_RenderSystem->SetShadowsEnabled(false);
         m_RenderSystem->SetAmbientIntensity(0.3f);
 
@@ -14726,6 +15906,53 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 pmat.baseColor = propCol[i];
                 m_World->AddComponent<ECS::MeshComponent>(prop, Renderer::MeshFactory::CreateCube(1.0f));
             }
+        }
+
+        // Second moon (smaller, different color)
+        {
+            ECS::Entity moon = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(moon, "Small Moon");
+            auto& mt = m_World->AddComponent<ECS::TransformComponent>(moon);
+            mt.position = Math::Vector3(15.0f, 8.0f, 0.0f);
+            mt.scale = Math::Vector3(2.0f, 2.0f, 2.0f);
+            auto& mmat = m_World->AddComponent<ECS::MaterialComponent>(moon);
+            mmat.baseColor = Math::Vector3(0.6f, 0.55f, 0.5f);
+            mmat.roughness = 0.9f;
+            m_World->AddComponent<ECS::MeshComponent>(moon, Renderer::MeshFactory::CreateSphere(1.0f));
+            auto& gz = m_World->AddComponent<ECS::GravityZoneComponent>(moon);
+            gz.mode = ECS::GravityZoneMode::Point;
+            gz.shape = ECS::GravityZoneShape::Sphere;
+            gz.halfExtents = Math::Vector3(20.0f, 20.0f, 20.0f);
+            gz.gravityStrength = 8.0f;
+            auto& sc = m_World->AddComponent<ECS::SphereColliderComponent>(moon);
+            sc.radius = 2.0f;
+        }
+
+        // Collectible on planet surface
+        {
+            ECS::Entity gem = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gem, "Space Gem");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(gem);
+            gt.position = Math::Vector3(0.0f, 5.8f, 2.0f);
+            gt.scale = Math::Vector3(0.4f, 0.4f, 0.4f);
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(gem);
+            gmat.baseColor = Math::Vector3(0.3f, 0.9f, 1.0f);
+            gmat.emissiveColor = Math::Vector3(0.3f, 0.9f, 1.0f);
+            gmat.emissiveStrength = 1.0f;
+            m_World->AddComponent<ECS::MeshComponent>(gem, Renderer::MeshFactory::CreateSphere(0.2f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(gem);
+            pk.type = ECS::PickupComponent::PickupType::Custom;
+            pk.customId = "Space Gem";
+            pk.value = 1.0f;
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(gem);
+            ECS::TweenEntry spin;
+            spin.property = ECS::TweenProperty::Position;
+            spin.easing = ECS::EasingType::EaseInOutSine;
+            spin.mode = ECS::TweenMode::PingPong;
+            spin.startValue = Math::Vector3(0.0f, 5.8f, 2.0f);
+            spin.endValue = Math::Vector3(0.0f, 6.3f, 2.0f);
+            spin.duration = 1.5f;
+            tw.tweens.push_back(spin);
         }
 
         {
@@ -14825,6 +16052,59 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.moveSpeed = 2.0f;
         }
 
+        // Second enemy (in corridor 2)
+        {
+            ECS::Entity enemy2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy2, "Zombie");
+            auto& e2t = m_World->AddComponent<ECS::TransformComponent>(enemy2);
+            e2t.position = Math::Vector3(CELL * 2.5f, 1.0f, CELL * 1.0f);
+            auto& e2mat = m_World->AddComponent<ECS::MaterialComponent>(enemy2);
+            e2mat.baseColor = Math::Vector3(0.4f, 0.5f, 0.35f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy2, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& e2hp = m_World->AddComponent<ECS::HealthComponent>(enemy2);
+            e2hp.maxHealth = 20.0f;
+            e2hp.currentHealth = 20.0f;
+            auto& e2ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy2);
+            e2ai.currentState = ECS::AIControllerComponent::AIState::Idle;
+            e2ai.moveSpeed = 1.5f;
+        }
+
+        // Locked door (requires key)
+        {
+            ECS::Entity lockedDoor = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lockedDoor, "Locked Door");
+            auto& ldt = m_World->AddComponent<ECS::TransformComponent>(lockedDoor);
+            ldt.position = Math::Vector3(CELL * 0.5f, 1.5f, CELL * 1.0f);
+            ldt.scale = Math::Vector3(CELL * 0.9f, 3.0f, 0.3f);
+            auto& ldmat = m_World->AddComponent<ECS::MaterialComponent>(lockedDoor);
+            ldmat.baseColor = Math::Vector3(0.4f, 0.25f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(lockedDoor, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& ldsw = m_World->AddComponent<ECS::SwitchComponent>(lockedDoor);
+            ldsw.type = ECS::SwitchComponent::SwitchType::Toggle;
+            ldsw.promptText = "Unlock Door (requires key)";
+            auto& ldcol = m_World->AddComponent<ECS::BoxColliderComponent>(lockedDoor);
+            ldcol.size = ldt.scale;
+        }
+
+        // Dungeon key
+        {
+            ECS::Entity dKey = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(dKey, "Dungeon Key");
+            auto& dkt = m_World->AddComponent<ECS::TransformComponent>(dKey);
+            dkt.position = Math::Vector3(CELL * 2.5f, 0.5f, CELL * 0.5f);
+            dkt.scale = Math::Vector3(0.3f, 0.3f, 0.1f);
+            auto& dkmat = m_World->AddComponent<ECS::MaterialComponent>(dKey);
+            dkmat.baseColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+            dkmat.emissiveColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+            dkmat.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(dKey, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& dkpk = m_World->AddComponent<ECS::PickupComponent>(dKey);
+            dkpk.type = ECS::PickupComponent::PickupType::Key;
+            dkpk.customId = "Dungeon Key";
+            dkpk.value = 1.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(dKey).promptText = "Pick up Key";
+        }
+
         // Treasure
         {
             ECS::Entity treasure = m_World->CreateEntity();
@@ -14884,6 +16164,93 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         ctrl.cameraAngle = 45.0f;
         ctrl.cameraDistance = 15.0f;
         SetupCameraForController(player, "TopDown3D");
+
+        // Buildings (4 varied cubes representing houses)
+        {
+            const Math::Vector3 bPos[] = { {-6,1.5f,-4}, {-3,1.0f,-6}, {5,2.0f,-3}, {7,1.0f,-7} };
+            const Math::Vector3 bScl[] = { {3,3,3}, {2,2,2}, {3,4,3}, {2.5f,2,2.5f} };
+            const Math::Vector3 bCol[] = { {0.7f,0.55f,0.4f}, {0.6f,0.45f,0.35f}, {0.75f,0.6f,0.45f}, {0.65f,0.5f,0.38f} };
+            const char* bNames[] = { "House A", "House B", "House C", "House D" };
+            for (int i = 0; i < 4; ++i) {
+                ECS::Entity bld = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(bld, bNames[i]);
+                auto& bt = m_World->AddComponent<ECS::TransformComponent>(bld);
+                bt.position = bPos[i];
+                bt.scale = bScl[i];
+                auto& bmat = m_World->AddComponent<ECS::MaterialComponent>(bld);
+                bmat.baseColor = bCol[i];
+                m_World->AddComponent<ECS::MeshComponent>(bld, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& bcol = m_World->AddComponent<ECS::BoxColliderComponent>(bld);
+                bcol.size = bScl[i];
+            }
+        }
+
+        // NPCs with dialogue
+        {
+            ECS::Entity npc1 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(npc1, "Villager");
+            auto& n1t = m_World->AddComponent<ECS::TransformComponent>(npc1);
+            n1t.position = Math::Vector3(-2.0f, 0.5f, -2.0f);
+            auto& n1mat = m_World->AddComponent<ECS::MaterialComponent>(npc1);
+            n1mat.baseColor = Math::Vector3(0.2f, 0.5f, 0.8f);
+            m_World->AddComponent<ECS::MeshComponent>(npc1, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& n1d = m_World->AddComponent<ECS::DialogueComponent>(npc1);
+            n1d.dialogueLines = { "Welcome, traveler!", "The market is to the east." };
+            m_World->AddComponent<ECS::InteractableComponent>(npc1).promptText = "Talk to Villager";
+
+            ECS::Entity npc2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(npc2, "Merchant");
+            auto& n2t = m_World->AddComponent<ECS::TransformComponent>(npc2);
+            n2t.position = Math::Vector3(3.0f, 0.5f, 1.0f);
+            auto& n2mat = m_World->AddComponent<ECS::MaterialComponent>(npc2);
+            n2mat.baseColor = Math::Vector3(0.8f, 0.6f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(npc2, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& n2d = m_World->AddComponent<ECS::DialogueComponent>(npc2);
+            n2d.dialogueLines = { "Fine wares for sale!", "Come back anytime." };
+            m_World->AddComponent<ECS::InteractableComponent>(npc2).promptText = "Talk to Merchant";
+        }
+
+        // Treasure chest
+        {
+            ECS::Entity chest = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(chest, "Treasure Chest");
+            auto& chT = m_World->AddComponent<ECS::TransformComponent>(chest);
+            chT.position = Math::Vector3(6.0f, 0.3f, 2.0f);
+            chT.scale = Math::Vector3(0.8f, 0.6f, 0.6f);
+            auto& chMat = m_World->AddComponent<ECS::MaterialComponent>(chest);
+            chMat.baseColor = Math::Vector3(0.6f, 0.4f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pk = m_World->AddComponent<ECS::PickupComponent>(chest);
+            pk.type = ECS::PickupComponent::PickupType::Coin;
+            pk.customId = "Gold Coins";
+            pk.value = 50.0f;
+            m_World->AddComponent<ECS::InteractableComponent>(chest).promptText = "Open Chest";
+        }
+
+        // Lantern (point light)
+        {
+            ECS::Entity lantern = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lantern, "Lantern");
+            auto& lnT = m_World->AddComponent<ECS::TransformComponent>(lantern);
+            lnT.position = Math::Vector3(0.0f, 3.0f, 0.0f);
+            auto& lnL = m_World->AddComponent<ECS::LightComponent>(lantern);
+            lnL.type = ECS::LightType::Point;
+            lnL.color = Math::Vector3(1.0f, 0.9f, 0.7f);
+            lnL.intensity = 2.0f;
+            lnL.range = 15.0f;
+        }
+
+        // Notes
+        {
+            ECS::Entity hint = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hint, "Isometric Guide");
+            m_World->AddComponent<ECS::TransformComponent>(hint);
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(hint);
+            notes.notes = "Isometric template uses TopDown3DController with 45-degree camera angle.\n"
+                "Camera distance 15 gives a classic isometric overview.\n"
+                "Buildings use BoxColliderComponent for solid walls.\n"
+                "NPCs have DialogueComponent + InteractableComponent for talk prompts.";
+        }
 
         // Skybox
         {
@@ -15012,6 +16379,61 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.bloomIntensity = 0.3f;
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.15f;
+        }
+
+        // Name Plate (speaker name display below text box top edge)
+        {
+            ECS::Entity namePlate = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(namePlate, "Name Plate");
+            auto& npT = m_World->AddComponent<ECS::TransformComponent>(namePlate);
+            npT.position = Math::Vector3(-5.5f, -2.2f, 1.2f);
+            npT.scale = Math::Vector3(4.0f, 0.8f, 1.0f);
+            auto& npMat = m_World->AddComponent<ECS::MaterialComponent>(namePlate);
+            npMat.baseColor = Math::Vector3(0.15f, 0.12f, 0.2f);
+            npMat.opacity = 0.9f;
+            npMat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+            m_World->AddComponent<ECS::MeshComponent>(namePlate, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+        }
+        {
+            ECS::Entity nameText = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(nameText, "Speaker Name");
+            auto& ntT = m_World->AddComponent<ECS::TransformComponent>(nameText);
+            ntT.position = Math::Vector3(-5.5f, -2.2f, 1.3f);
+            auto& ntText = m_World->AddComponent<ECS::TextComponent>(nameText);
+            ntText.text = "Character Name";
+            ntText.fontSize = 26.0f;
+            ntText.textColor = Math::Vector3(0.9f, 0.8f, 1.0f);
+        }
+
+        // Choice Buttons (3 branching choice buttons below dialogue text)
+        for (int ci = 0; ci < 3; ++ci) {
+            ECS::Entity choiceBtn = m_World->CreateEntity();
+            char cname[32]; snprintf(cname, sizeof(cname), "Choice %d", ci + 1);
+            m_World->AddComponent<ECS::NameComponent>(choiceBtn, cname);
+            auto& cbT = m_World->AddComponent<ECS::TransformComponent>(choiceBtn);
+            cbT.position = Math::Vector3(-5.0f + ci * 5.0f, -4.8f, 1.2f);
+            cbT.scale = Math::Vector3(4.5f, 0.7f, 1.0f);
+            auto& cbMat = m_World->AddComponent<ECS::MaterialComponent>(choiceBtn);
+            cbMat.baseColor = Math::Vector3(0.2f, 0.18f, 0.28f);
+            cbMat.opacity = 0.85f;
+            cbMat.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+            m_World->AddComponent<ECS::MeshComponent>(choiceBtn, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& interact = m_World->AddComponent<ECS::InteractableComponent>(choiceBtn);
+            interact.promptText = cname;
+            auto& tag = m_World->AddComponent<ECS::TagComponent>(choiceBtn);
+            tag.tags.push_back("choice_button");
+        }
+        for (int ci = 0; ci < 3; ++ci) {
+            ECS::Entity choiceText = m_World->CreateEntity();
+            char ctname[48]; snprintf(ctname, sizeof(ctname), "Choice %d Text", ci + 1);
+            m_World->AddComponent<ECS::NameComponent>(choiceText, ctname);
+            auto& ctT = m_World->AddComponent<ECS::TransformComponent>(choiceText);
+            ctT.position = Math::Vector3(-5.0f + ci * 5.0f, -4.8f, 1.3f);
+            auto& ct = m_World->AddComponent<ECS::TextComponent>(choiceText);
+            char optLabel[32]; snprintf(optLabel, sizeof(optLabel), "Option %d...", ci + 1);
+            ct.text = optLabel;
+            ct.fontSize = 22.0f;
+            ct.textColor = Math::Vector3(0.8f, 0.8f, 0.9f);
         }
 
         // Main Menu UI canvas
@@ -15212,6 +16634,59 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pc = m_World->AddComponent<ECS::PickupComponent>(coin);
             pc.type = ECS::PickupComponent::PickupType::Coin;
             pc.value = 100.0f;
+        }
+
+        // Enemy Spawner (spawn point for waves of enemies)
+        {
+            ECS::Entity spawner = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spawner, "Enemy Spawner");
+            auto& spt = m_World->AddComponent<ECS::TransformComponent>(spawner);
+            spt.position = Math::Vector3(8.0f, 0.5f, -8.0f);
+            spt.scale = Math::Vector3(1.0f);
+            m_World->AddComponent<ECS::MeshComponent>(spawner, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& spm = m_World->AddComponent<ECS::MaterialComponent>(spawner);
+            spm.baseColor = Math::Vector3(0.7f, 0.1f, 0.1f);
+            spm.emissiveColor = Math::Vector3(0.8f, 0.1f, 0.05f);
+            spm.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::SpawnPointComponent>(spawner);
+            auto& spTag = m_World->AddComponent<ECS::TagComponent>(spawner);
+            spTag.tags.push_back("enemy_spawner");
+            auto& spNotes = m_World->AddComponent<ECS::NotesComponent>(spawner);
+            spNotes.notes = "Enemy spawn point — spawn enemies here on wave start.\n"
+                "Use a script or VS to: read wave number, create N enemy entities,\n"
+                "set their AI state to Patrol, increase difficulty each wave.";
+        }
+
+        // Sample Enemy (shows what spawned enemies look like)
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Sample Enemy");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(6.0f, 0.5f, -5.0f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule(0.3f, 0.8f));
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = Math::Vector3(0.8f, 0.15f, 0.1f);
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 50.0f; eh.currentHealth = 50.0f;
+            auto& eai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            eai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            eai.moveSpeed = 3.0f;
+            auto& edm = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            edm.damage = 10.0f;
+        }
+
+        // Wave Counter Text
+        {
+            ECS::Entity waveUI = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(waveUI, "Wave Counter");
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(waveUI);
+            wt.position = Math::Vector3(0.0f, 4.0f, 5.0f);
+            auto& wtext = m_World->AddComponent<ECS::TextComponent>(waveUI);
+            wtext.text = "Wave: 1";
+            wtext.fontSize = 48.0f;
+            wtext.textColor = Math::Vector3(1.0f, 0.5f, 0.2f);
+            auto& wTag = m_World->AddComponent<ECS::TagComponent>(waveUI);
+            wTag.tags.push_back("wave_counter");
         }
 
         // Skybox: Midday
@@ -15439,6 +16914,44 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_RenderSystem->SetSkybox(skyConfig);
         }
 
+        // Population / Income HUD labels
+        {
+            ECS::Entity popLabel = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(popLabel, "Population Label");
+            auto& plt = m_World->AddComponent<ECS::TransformComponent>(popLabel);
+            plt.position = Math::Vector3(-7.0f, 4.0f, 5.0f);
+            auto& ptext = m_World->AddComponent<ECS::TextComponent>(popLabel);
+            ptext.text = "Pop: 24";
+            ptext.fontSize = 32.0f;
+            ptext.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            auto& ptag = m_World->AddComponent<ECS::TagComponent>(popLabel);
+            ptag.tags.push_back("hud_population");
+        }
+        {
+            ECS::Entity incLabel = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(incLabel, "Income Label");
+            auto& ilt = m_World->AddComponent<ECS::TransformComponent>(incLabel);
+            ilt.position = Math::Vector3(-1.0f, 4.0f, 5.0f);
+            auto& itext = m_World->AddComponent<ECS::TextComponent>(incLabel);
+            itext.text = "$150/min";
+            itext.fontSize = 32.0f;
+            itext.textColor = Math::Vector3(0.3f, 0.9f, 0.3f);
+            auto& itag = m_World->AddComponent<ECS::TagComponent>(incLabel);
+            itag.tags.push_back("hud_income");
+        }
+        {
+            ECS::Entity fundsLabel = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fundsLabel, "Funds Label");
+            auto& flt = m_World->AddComponent<ECS::TransformComponent>(fundsLabel);
+            flt.position = Math::Vector3(5.0f, 4.0f, 5.0f);
+            auto& ftext = m_World->AddComponent<ECS::TextComponent>(fundsLabel);
+            ftext.text = "$1,000";
+            ftext.fontSize = 36.0f;
+            ftext.textColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+            auto& ftag = m_World->AddComponent<ECS::TagComponent>(fundsLabel);
+            ftag.tags.push_back("hud_funds");
+        }
+
         m_RenderSystem->SetShadowsEnabled(true);
         m_RenderSystem->SetShadowDistance(200.0f);
         if (m_PostProcessing) {
@@ -15642,6 +17155,37 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pp.vignetteEnabled = 1;
             pp.vignetteIntensity = 0.15f;
         }
+        // Crosshair HUD entity (centered on screen)
+        {
+            ECS::Entity crosshair = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(crosshair, "Crosshair");
+            auto& cht = m_World->AddComponent<ECS::TransformComponent>(crosshair);
+            cht.position = Math::Vector3(0.0f, 0.0f, 5.0f);
+            auto& chText = m_World->AddComponent<ECS::TextComponent>(crosshair);
+            chText.text = "+";
+            chText.fontSize = 28.0f;
+            chText.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            auto& chTag = m_World->AddComponent<ECS::TagComponent>(crosshair);
+            chTag.tags.push_back("crosshair");
+            auto& notes = m_World->AddComponent<ECS::NotesComponent>(crosshair);
+            notes.notes = "CROSSHAIR\nReplace with a UICanvas image for a proper crosshair sprite.\n"
+                "Or use a small quad with an alpha texture.";
+        }
+
+        // Kill Feed text
+        {
+            ECS::Entity killFeed = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(killFeed, "Kill Feed");
+            auto& kft = m_World->AddComponent<ECS::TransformComponent>(killFeed);
+            kft.position = Math::Vector3(5.0f, 3.5f, 5.0f);
+            auto& kfText = m_World->AddComponent<ECS::TextComponent>(killFeed);
+            kfText.text = "";
+            kfText.fontSize = 20.0f;
+            kfText.textColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+            auto& kfTag = m_World->AddComponent<ECS::TagComponent>(killFeed);
+            kfTag.tags.push_back("kill_feed");
+        }
+
         // Pause Menu UI canvas
         {
             ECS::Entity uiEntity = m_World->CreateEntity();
@@ -15793,6 +17337,34 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tc.duration = 300.0f;
         }
 
+        // Center Circle (ground marking)
+        {
+            ECS::Entity circle = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(circle, "Center Circle");
+            auto& cct = m_World->AddComponent<ECS::TransformComponent>(circle);
+            cct.position = Math::Vector3(0.0f, 0.01f, 0.0f);
+            cct.scale = Math::Vector3(6.0f, 0.01f, 6.0f);
+            m_World->AddComponent<ECS::MeshComponent>(circle, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& ccm = m_World->AddComponent<ECS::MaterialComponent>(circle);
+            ccm.baseColor = Math::Vector3(0.9f, 0.9f, 0.9f);
+            ccm.opacity = 0.3f;
+            ccm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+        }
+
+        // Center line (midfield marking)
+        {
+            ECS::Entity midline = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(midline, "Center Line");
+            auto& mlt = m_World->AddComponent<ECS::TransformComponent>(midline);
+            mlt.position = Math::Vector3(0.0f, 0.01f, 0.0f);
+            mlt.scale = Math::Vector3(0.15f, 0.01f, 25.0f);
+            m_World->AddComponent<ECS::MeshComponent>(midline, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& mlm = m_World->AddComponent<ECS::MaterialComponent>(midline);
+            mlm.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            mlm.opacity = 0.5f;
+            mlm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+        }
+
         // Field boundary walls
         Math::Vector3 boundaryPos[] = {
             Math::Vector3(0.0f, 1.0f, -12.5f), Math::Vector3(0.0f, 1.0f, 12.5f),
@@ -15937,6 +17509,55 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             interact.promptText = "Build Turret ($50)";
             auto& tag = m_World->AddComponent<ECS::TagComponent>(slot);
             tag.tags.push_back("turret_slot");
+        }
+
+        // Sample Turret on Slot 1 (shows what a built turret looks like)
+        {
+            ECS::Entity turret = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(turret, "Arrow Turret");
+            auto& trt = m_World->AddComponent<ECS::TransformComponent>(turret);
+            trt.position = Math::Vector3(-12.0f, 0.6f, 3.0f);  // On top of Turret Slot 1
+            trt.scale = Math::Vector3(0.6f, 1.0f, 0.6f);
+            m_World->AddComponent<ECS::MeshComponent>(turret, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& trm = m_World->AddComponent<ECS::MaterialComponent>(turret);
+            trm.baseColor = Math::Vector3(0.4f, 0.35f, 0.6f);
+            trm.roughness = 0.5f;
+            auto& trTag = m_World->AddComponent<ECS::TagComponent>(turret);
+            trTag.tags.push_back("turret");
+            trTag.tags.push_back("arrow_turret");
+            auto& trdmg = m_World->AddComponent<ECS::DamageComponent>(turret);
+            trdmg.damage = 15.0f;
+        }
+        // Turret barrel (visual detail)
+        {
+            ECS::Entity barrel = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(barrel, "Turret Barrel");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(barrel);
+            bt.position = Math::Vector3(-12.0f, 0.9f, 2.2f);
+            bt.scale = Math::Vector3(0.15f, 0.15f, 0.8f);
+            m_World->AddComponent<ECS::MeshComponent>(barrel, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bm = m_World->AddComponent<ECS::MaterialComponent>(barrel);
+            bm.baseColor = Math::Vector3(0.3f, 0.3f, 0.5f);
+            bm.metallic = 0.6f;
+        }
+
+        // Sample Enemy on path (shows what enemies look like)
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Sample Creep");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(-12.0f, 0.4f, -4.0f);  // On path between waypoints 1-2
+            et.scale = Math::Vector3(0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& em = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            em.baseColor = Math::Vector3(0.7f, 0.2f, 0.15f);
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 30.0f; eh.currentHealth = 30.0f;
+            auto& eai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+            eai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+            eai.moveSpeed = 2.5f;
+            auto& eTag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            eTag.tags.push_back("enemy");
         }
 
         // Spawn portal (where enemies come from)
@@ -16172,6 +17793,80 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             bob.duration = 1.5f;
             bob.useCurrentAsStart = false;
             tw.tweens.push_back(bob);
+        }
+
+        // High obstacles (crouch/slide to go under)
+        Math::Vector3 highObsPositions[] = {
+            Math::Vector3(0.0f, 1.5f, 20.0f), Math::Vector3(-2.0f, 1.5f, 45.0f),
+            Math::Vector3(2.0f, 1.5f, 70.0f),
+        };
+        for (int i = 0; i < 3; ++i) {
+            ECS::Entity hobs = m_World->CreateEntity();
+            char hname[32]; snprintf(hname, sizeof(hname), "High Obstacle %d", i + 1);
+            m_World->AddComponent<ECS::NameComponent>(hobs, hname);
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hobs);
+            ht.position = highObsPositions[i];
+            ht.scale = Math::Vector3(1.5f, 0.3f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(hobs, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& hm = m_World->AddComponent<ECS::MaterialComponent>(hobs);
+            hm.baseColor = Math::Vector3(0.6f, 0.4f, 0.15f);
+            auto& hcol = m_World->AddComponent<ECS::BoxColliderComponent>(hobs);
+            hcol.size = Math::Vector3(1.5f, 0.3f, 0.4f);
+            auto& hdmg = m_World->AddComponent<ECS::DamageComponent>(hobs);
+            hdmg.damage = 1.0f;
+            auto& htag = m_World->AddComponent<ECS::TagComponent>(hobs);
+            htag.tags.push_back("high_obstacle");
+        }
+
+        // Speed Boost Power-up
+        {
+            ECS::Entity boost = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(boost, "Speed Boost");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(boost);
+            bt.position = Math::Vector3(0.0f, 0.5f, 40.0f);
+            bt.scale = Math::Vector3(0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(boost, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& bm = m_World->AddComponent<ECS::MaterialComponent>(boost);
+            bm.baseColor = Math::Vector3(0.0f, 0.8f, 1.0f);
+            bm.emissiveColor = Math::Vector3(0.0f, 0.6f, 0.9f);
+            bm.emissiveStrength = 0.6f;
+            auto& bpc = m_World->AddComponent<ECS::PickupComponent>(boost);
+            bpc.type = ECS::PickupComponent::PickupType::Powerup;
+            bpc.value = 2.0f;  // 2x speed multiplier
+            auto& btag = m_World->AddComponent<ECS::TagComponent>(boost);
+            btag.tags.push_back("powerup");
+            btag.tags.push_back("speed_boost");
+            // Pulsing tween
+            auto& btw = m_World->AddComponent<ECS::TweenComponent>(boost);
+            btw.autoPlay = true;
+            ECS::TweenEntry pulse;
+            pulse.property = ECS::TweenProperty::Scale;
+            pulse.easing = ECS::EasingType::EaseInOutSine;
+            pulse.mode = ECS::TweenMode::PingPong;
+            pulse.startValue = Math::Vector3(0.4f);
+            pulse.endValue = Math::Vector3(0.5f);
+            pulse.duration = 0.8f;
+            btw.tweens.push_back(pulse);
+        }
+
+        // Shield Power-up
+        {
+            ECS::Entity shield = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(shield, "Shield");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(shield);
+            st.position = Math::Vector3(2.0f, 0.5f, 55.0f);
+            st.scale = Math::Vector3(0.35f);
+            m_World->AddComponent<ECS::MeshComponent>(shield, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& sm = m_World->AddComponent<ECS::MaterialComponent>(shield);
+            sm.baseColor = Math::Vector3(0.2f, 0.9f, 0.3f);
+            sm.emissiveColor = Math::Vector3(0.1f, 0.7f, 0.2f);
+            sm.emissiveStrength = 0.5f;
+            auto& spc = m_World->AddComponent<ECS::PickupComponent>(shield);
+            spc.type = ECS::PickupComponent::PickupType::Powerup;
+            spc.value = 1.0f;
+            auto& stag = m_World->AddComponent<ECS::TagComponent>(shield);
+            stag.tags.push_back("powerup");
+            stag.tags.push_back("shield");
         }
 
         // Score display
@@ -16448,6 +18143,50 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         // Render settings
         m_RenderSystem->SetShadowsEnabled(true);
 
+        // Ambient Bee particles (small yellow dots floating around the flower)
+        {
+            ECS::Entity bees = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bees, "Ambient Bees");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(bees);
+            bt.position = Math::Vector3(0.0f, 1.5f, 0.0f);
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(bees);
+            pe.maxParticles = 20;
+            pe.emissionRate = 3.0f;
+            pe.lifetime = 5.0f;
+            pe.startSpeed = 0.3f;
+            pe.startSize = 0.04f;
+            pe.endSize = 0.02f;
+            pe.startColor = Math::Vector3(1.0f, 0.9f, 0.2f);
+            pe.endColor = Math::Vector3(0.8f, 0.7f, 0.1f);
+            pe.gravity = Math::Vector3(0.0f, 0.0f, 0.0f);
+            pe.drag = 0.5f;
+            pe.shape = ECS::ParticleEmitterComponent::EmitterShape::Sphere;
+            pe.shapeRadius = 1.5f;
+            pe.playOnAwake = true;
+        }
+
+        // Second flower (smaller, to the side)
+        {
+            ECS::Entity stem2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(stem2, "Small Flower Stem");
+            auto& st2 = m_World->AddComponent<ECS::TransformComponent>(stem2);
+            st2.position = Math::Vector3(2.5f, 0.4f, 1.0f);
+            st2.scale = Math::Vector3(0.05f, 0.8f, 0.05f);
+            auto& sm2 = m_World->AddComponent<ECS::MaterialComponent>(stem2);
+            sm2.baseColor = Math::Vector3(0.15f, 0.45f, 0.1f);
+            m_World->AddComponent<ECS::MeshComponent>(stem2, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+        {
+            ECS::Entity bud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bud, "Small Flower Bud");
+            auto& bdt = m_World->AddComponent<ECS::TransformComponent>(bud);
+            bdt.position = Math::Vector3(2.5f, 0.9f, 1.0f);
+            bdt.scale = Math::Vector3(0.3f, 0.15f, 0.3f);
+            auto& bdm = m_World->AddComponent<ECS::MaterialComponent>(bud);
+            bdm.baseColor = Math::Vector3(0.95f, 0.5f, 0.7f);
+            m_World->AddComponent<ECS::MeshComponent>(bud, Renderer::MeshFactory::CreateSphere(0.5f));
+        }
+
         // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
@@ -16645,6 +18384,50 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             clc.color = Math::Vector3(1.0f, 0.8f, 0.5f);
             clc.intensity = 2.0f;
             clc.range = 8.0f;
+        }
+
+        // --- 2nd Camera Zone (corridor, different angle) ---
+        {
+            ECS::Entity camZone2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(camZone2, "Corridor Camera Zone 2");
+            auto& z2t = m_World->AddComponent<ECS::TransformComponent>(camZone2);
+            z2t.position = Math::Vector3(14.0f, 1.5f, 2.0f);
+            auto& z2trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(camZone2);
+            z2trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            z2trigger.boxSize = Math::Vector3(4.0f, 3.0f, 5.0f);
+            z2trigger.triggerOnce = false;
+            auto& z2tag = m_World->AddComponent<ECS::TagComponent>(camZone2);
+            z2tag.tags.push_back("camera_zone");
+            auto& z2notes = m_World->AddComponent<ECS::NotesComponent>(camZone2);
+            z2notes.notes = "CAMERA ZONE 2\nWhen player enters, switch to overhead camera angle.\n"
+                "Script: detect trigger enter -> lerp camera to new offset.";
+        }
+
+        // Corridor end collectible
+        {
+            ECS::Entity gem = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(gem, "Corridor Gem");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(gem);
+            gt.position = Math::Vector3(15.0f, 0.6f, 2.0f);
+            gt.scale = Math::Vector3(0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(gem, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& gm = m_World->AddComponent<ECS::MaterialComponent>(gem);
+            gm.baseColor = Math::Vector3(0.4f, 0.9f, 0.5f);
+            gm.emissiveColor = Math::Vector3(0.2f, 0.7f, 0.3f);
+            gm.emissiveStrength = 0.5f;
+            auto& gpc = m_World->AddComponent<ECS::PickupComponent>(gem);
+            gpc.type = ECS::PickupComponent::PickupType::Custom;
+            gpc.value = 50.0f;
+            auto& gtw = m_World->AddComponent<ECS::TweenComponent>(gem);
+            gtw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(15.0f, 0.6f, 2.0f);
+            bob.endValue = Math::Vector3(15.0f, 1.0f, 2.0f);
+            bob.duration = 1.5f;
+            gtw.tweens.push_back(bob);
         }
 
         // --- HUD ---
@@ -17106,6 +18889,48 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tag.tags.push_back("heavy");
         }
 
+        // --- Save Station in Room E (hub) ---
+        {
+            ECS::Entity saveStation = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(saveStation, "Save Station (Hub)");
+            auto& sst = m_World->AddComponent<ECS::TransformComponent>(saveStation);
+            sst.position = Math::Vector3(rEx, rEy, 0.0f);
+            sst.scale = Math::Vector3(0.6f, 0.6f, 1.0f);
+            auto& ssm = m_World->AddComponent<ECS::MaterialComponent>(saveStation);
+            ssm.baseColor = Math::Vector3(0.3f, 0.8f, 0.9f);
+            ssm.emissiveColor = Math::Vector3(0.2f, 0.6f, 0.8f);
+            ssm.emissiveStrength = 0.8f;
+            m_World->AddComponent<ECS::MeshComponent>(saveStation, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(saveStation);
+            auto& ssint = m_World->AddComponent<ECS::InteractableComponent>(saveStation);
+            ssint.promptText = "Save Progress";
+            ssint.interactionRange = 2.0f;
+            auto& sstag = m_World->AddComponent<ECS::TagComponent>(saveStation);
+            sstag.tags.push_back("save_station");
+            auto& ssnotes = m_World->AddComponent<ECS::NotesComponent>(saveStation);
+            ssnotes.notes = "Save station — restores health and saves progress.\n"
+                "Script: on interact, call SaveGame_ToSlot() and restore player HP.";
+        }
+
+        // Spike trap in Room D
+        {
+            ECS::Entity spikes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spikes, "Spike Trap (Room D)");
+            auto& spt = m_World->AddComponent<ECS::TransformComponent>(spikes);
+            spt.position = Math::Vector3(rDx - 2.0f, rDy - 4.5f, 0.0f);
+            spt.scale = Math::Vector3(3.0f, 0.3f, 1.0f);
+            auto& spm = m_World->AddComponent<ECS::MaterialComponent>(spikes);
+            spm.baseColor = Math::Vector3(0.5f, 0.2f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(spikes, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spikes);
+            dmg.damage = 20.0f;
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(spikes);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(3.0f, 0.3f, 1.0f);
+            auto& sptag = m_World->AddComponent<ECS::TagComponent>(spikes);
+            sptag.tags.push_back("hazard");
+        }
+
         // --- Lighting (dark atmospheric) ---
         // Dim directional light
         {
@@ -17439,6 +19264,46 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(aura);
             ApplyParticlePreset(pe, "Magic");
         }
+
+        // Level-up zone (golden pillar of light, triggers level-up UI)
+        {
+            ECS::Entity lvlUp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lvlUp, "Level Up Zone");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(lvlUp);
+            lt.position = Math::Vector3(0.0f, 1.5f, 0.0f);
+            lt.scale = Math::Vector3(2.0f, 3.0f, 2.0f);
+            m_World->AddComponent<ECS::MeshComponent>(lvlUp, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& lm = m_World->AddComponent<ECS::MaterialComponent>(lvlUp);
+            lm.baseColor = Math::Vector3(1.0f, 0.9f, 0.3f);
+            lm.opacity = 0.15f;
+            lm.alphaMode = ECS::MaterialComponent::AlphaMode::Blend;
+            lm.emissiveColor = Math::Vector3(1.0f, 0.8f, 0.2f);
+            lm.emissiveStrength = 0.3f;
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(lvlUp);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(2.0f, 3.0f, 2.0f);
+            auto& ltag = m_World->AddComponent<ECS::TagComponent>(lvlUp);
+            ltag.tags.push_back("level_up_zone");
+            auto& lnotes = m_World->AddComponent<ECS::NotesComponent>(lvlUp);
+            lnotes.notes = "Level-up zone — spawns when player has enough XP.\n"
+                "Step inside to choose an upgrade (weapon, speed, max HP, etc.).\n"
+                "Hide by default, make visible=true when XP threshold is reached.";
+            lt.visible = false;  // Initially hidden
+        }
+
+        // Wave counter text
+        {
+            ECS::Entity waveText = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(waveText, "Wave Counter");
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(waveText);
+            wt.position = Math::Vector3(0.0f, 5.0f, 5.0f);
+            auto& wtext = m_World->AddComponent<ECS::TextComponent>(waveText);
+            wtext.text = "Wave: 1";
+            wtext.fontSize = 40.0f;
+            wtext.textColor = Math::Vector3(1.0f, 0.8f, 0.2f);
+            auto& wtag = m_World->AddComponent<ECS::TagComponent>(waveText);
+            wtag.tags.push_back("wave_counter");
+        }
     }
 
     else if (templateId == "roguelike") {
@@ -17730,6 +19595,45 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             htext.textColor = Math::Vector3(0.9f, 0.25f, 0.2f);
             auto& htag = m_World->AddComponent<ECS::TagComponent>(hpHud);
             htag.tags.push_back("hud_health");
+        }
+
+        // --- Trap tile (hidden spike trap) ---
+        {
+            ECS::Entity trap = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(trap, "Spike Trap");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(trap);
+            tt.position = Math::Vector3(3.0f * CELL, -3.0f * CELL, 0.0f);  // On a floor tile
+            tt.scale = Math::Vector3(CELL * 0.9f, CELL * 0.9f, 1.0f);
+            auto& tm = m_World->AddComponent<ECS::MaterialComponent>(trap);
+            tm.baseColor = Math::Vector3(0.35f, 0.25f, 0.2f);  // Slightly different floor color
+            m_World->AddComponent<ECS::MeshComponent>(trap, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& tdmg = m_World->AddComponent<ECS::DamageComponent>(trap);
+            tdmg.damage = 3.0f;
+            auto& ttrigger = m_World->AddComponent<ECS::TriggerZoneComponent>(trap);
+            ttrigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            ttrigger.boxSize = Math::Vector3(CELL * 0.8f, CELL * 0.8f, 1.0f);
+            auto& ttag = m_World->AddComponent<ECS::TagComponent>(trap);
+            ttag.tags.push_back("trap");
+        }
+
+        // --- Potion pickup ---
+        {
+            ECS::Entity potion = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(potion, "Health Potion");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(potion);
+            pt.position = Math::Vector3(1.0f * CELL, -1.0f * CELL, 0.0f);
+            pt.scale = Math::Vector3(0.4f, 0.4f, 1.0f);
+            auto& pm = m_World->AddComponent<ECS::MaterialComponent>(potion);
+            pm.baseColor = Math::Vector3(0.8f, 0.15f, 0.2f);
+            pm.emissiveColor = Math::Vector3(0.6f, 0.1f, 0.15f);
+            pm.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(potion, Renderer::MeshFactory::CreateCapsule2D(0.2f, 0.3f));
+            m_World->AddComponent<ECS::Sprite2DComponent>(potion);
+            auto& ppc = m_World->AddComponent<ECS::PickupComponent>(potion);
+            ppc.type = ECS::PickupComponent::PickupType::Health;
+            ppc.value = 5.0f;
+            auto& ptag = m_World->AddComponent<ECS::TagComponent>(potion);
+            ptag.tags.push_back("potion");
         }
 
         // --- Dim overhead light ---
@@ -18054,6 +19958,58 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fireParticle);
             ApplyParticlePreset(pe, "Fire");
         }
+
+        // Soul Pickup (dropped by enemies, currency for leveling)
+        {
+            ECS::Entity souls = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(souls, "Soul Fragment");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(souls);
+            st.position = Math::Vector3(5.0f, 0.5f, 3.0f);
+            st.scale = Math::Vector3(0.25f);
+            m_World->AddComponent<ECS::MeshComponent>(souls, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& sm = m_World->AddComponent<ECS::MaterialComponent>(souls);
+            sm.baseColor = Math::Vector3(0.3f, 0.8f, 1.0f);
+            sm.emissiveColor = Math::Vector3(0.2f, 0.5f, 0.8f);
+            sm.emissiveStrength = 0.8f;
+            auto& spc = m_World->AddComponent<ECS::PickupComponent>(souls);
+            spc.type = ECS::PickupComponent::PickupType::Custom;
+            spc.value = 100.0f;
+            spc.magnetToPlayer = true;
+            spc.magnetRange = 3.0f;
+            auto& stag = m_World->AddComponent<ECS::TagComponent>(souls);
+            stag.tags.push_back("soul");
+            // Gentle bob
+            auto& stw = m_World->AddComponent<ECS::TweenComponent>(souls);
+            stw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(5.0f, 0.5f, 3.0f);
+            bob.endValue = Math::Vector3(5.0f, 0.8f, 3.0f);
+            bob.duration = 2.0f;
+            stw.tweens.push_back(bob);
+        }
+
+        // Bloodstain (corpse run marker — where you died last)
+        {
+            ECS::Entity bloodstain = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bloodstain, "Bloodstain");
+            auto& bt = m_World->AddComponent<ECS::TransformComponent>(bloodstain);
+            bt.position = Math::Vector3(8.0f, 0.06f, 0.0f);
+            bt.scale = Math::Vector3(1.0f, 0.01f, 1.0f);
+            m_World->AddComponent<ECS::MeshComponent>(bloodstain, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& bm = m_World->AddComponent<ECS::MaterialComponent>(bloodstain);
+            bm.baseColor = Math::Vector3(0.6f, 0.1f, 0.05f);
+            bm.emissiveColor = Math::Vector3(0.4f, 0.05f, 0.02f);
+            bm.emissiveStrength = 0.3f;
+            auto& bint = m_World->AddComponent<ECS::InteractableComponent>(bloodstain);
+            bint.promptText = "Retrieve Souls (250)";
+            bint.interactionRange = 2.0f;
+            auto& btag = m_World->AddComponent<ECS::TagComponent>(bloodstain);
+            btag.tags.push_back("bloodstain");
+            bt.visible = false;  // Hidden until player dies
+        }
     }
 
     else if (templateId == "couchcoop") {
@@ -18365,6 +20321,50 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 "Viewport subdivision: P1 left 50%, P2 right 50%.\n";
         }
 
+        // Shared power-up (both players can pick up)
+        {
+            ECS::Entity sharedPickup = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sharedPickup, "Shared Power-up");
+            auto& spt = m_World->AddComponent<ECS::TransformComponent>(sharedPickup);
+            spt.position = Math::Vector3(0.0f, 0.5f, 5.0f);
+            spt.scale = Math::Vector3(0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(sharedPickup, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& spm = m_World->AddComponent<ECS::MaterialComponent>(sharedPickup);
+            spm.baseColor = Math::Vector3(1.0f, 0.8f, 0.0f);
+            spm.emissiveColor = Math::Vector3(0.8f, 0.6f, 0.0f);
+            spm.emissiveStrength = 0.5f;
+            auto& sppc = m_World->AddComponent<ECS::PickupComponent>(sharedPickup);
+            sppc.type = ECS::PickupComponent::PickupType::Powerup;
+            sppc.value = 1.0f;
+            auto& sptw = m_World->AddComponent<ECS::TweenComponent>(sharedPickup);
+            sptw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(0.0f, 0.5f, 5.0f);
+            bob.endValue = Math::Vector3(0.0f, 1.0f, 5.0f);
+            bob.duration = 1.2f;
+            sptw.tweens.push_back(bob);
+        }
+
+        // Treasure chest (cooperative objective — both players must be nearby)
+        {
+            ECS::Entity chest = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(chest, "Treasure Chest");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(chest);
+            ct.position = Math::Vector3(0.0f, 0.5f, -5.0f);
+            ct.scale = Math::Vector3(0.8f, 0.6f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(chest, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& cm = m_World->AddComponent<ECS::MaterialComponent>(chest);
+            cm.baseColor = Math::Vector3(0.5f, 0.35f, 0.15f);
+            auto& cint = m_World->AddComponent<ECS::InteractableComponent>(chest);
+            cint.promptText = "Open (both players needed)";
+            cint.interactionRange = 2.5f;
+            auto& ctag = m_World->AddComponent<ECS::TagComponent>(chest);
+            ctag.tags.push_back("coop_objective");
+        }
+
         // Render settings
         m_RenderSystem->SetShadowsEnabled(true);
         m_RenderSystem->SetAmbientIntensity(0.12f);
@@ -18449,6 +20449,82 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::MeshComponent>(capsule, Renderer::MeshFactory::CreateCapsule(0.4f, 1.2f));
         }
 
+        // Archway (two pillars + lintel — interesting shadow shapes)
+        {
+            ECS::Entity pillarL = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillarL, "Arch Left");
+            auto& plt = m_World->AddComponent<ECS::TransformComponent>(pillarL);
+            plt.position = Math::Vector3(-6.0f, 1.5f, -5.0f);
+            plt.scale = Math::Vector3(0.4f, 3.0f, 0.4f);
+            auto& plm = m_World->AddComponent<ECS::MaterialComponent>(pillarL);
+            plm.baseColor = Math::Vector3(0.6f, 0.55f, 0.5f);
+            plm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(pillarL, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+        {
+            ECS::Entity pillarR = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pillarR, "Arch Right");
+            auto& prt = m_World->AddComponent<ECS::TransformComponent>(pillarR);
+            prt.position = Math::Vector3(-2.0f, 1.5f, -5.0f);
+            prt.scale = Math::Vector3(0.4f, 3.0f, 0.4f);
+            auto& prm = m_World->AddComponent<ECS::MaterialComponent>(pillarR);
+            prm.baseColor = Math::Vector3(0.6f, 0.55f, 0.5f);
+            prm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(pillarR, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+        {
+            ECS::Entity lintel = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lintel, "Arch Lintel");
+            auto& llt = m_World->AddComponent<ECS::TransformComponent>(lintel);
+            llt.position = Math::Vector3(-4.0f, 3.2f, -5.0f);
+            llt.scale = Math::Vector3(4.4f, 0.4f, 0.5f);
+            auto& llm = m_World->AddComponent<ECS::MaterialComponent>(lintel);
+            llm.baseColor = Math::Vector3(0.55f, 0.5f, 0.45f);
+            llm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(lintel, Renderer::MeshFactory::CreateCube(1.0f));
+        }
+
+        // Rotated cube (angled shadow)
+        {
+            ECS::Entity rotCube = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(rotCube, "Rotated Cube");
+            auto& rct = m_World->AddComponent<ECS::TransformComponent>(rotCube);
+            rct.position = Math::Vector3(6.0f, 1.0f, -4.0f);
+            rct.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(45.0f));
+            auto& rcm = m_World->AddComponent<ECS::MaterialComponent>(rotCube);
+            rcm.baseColor = Math::Vector3(0.7f, 0.4f, 0.6f);
+            rcm.castShadows = true;
+            m_World->AddComponent<ECS::MeshComponent>(rotCube, Renderer::MeshFactory::CreateCube(1.5f));
+        }
+
+        // Point light (warm, casts different shadow than directional)
+        {
+            ECS::Entity pointLight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(pointLight, "Point Light");
+            auto& plt = m_World->AddComponent<ECS::TransformComponent>(pointLight);
+            plt.position = Math::Vector3(-4.0f, 3.0f, 3.0f);
+            auto& plc = m_World->AddComponent<ECS::LightComponent>(pointLight);
+            plc.type = ECS::LightType::Point;
+            plc.color = Math::Vector3(1.0f, 0.85f, 0.6f);
+            plc.intensity = 3.0f;
+            plc.range = 12.0f;
+        }
+
+        // Spot light (focused cone shadow)
+        {
+            ECS::Entity spotLight = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spotLight, "Spot Light");
+            auto& slt = m_World->AddComponent<ECS::TransformComponent>(spotLight);
+            slt.position = Math::Vector3(5.0f, 4.0f, -2.0f);
+            slt.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-70.0f));
+            auto& slc = m_World->AddComponent<ECS::LightComponent>(spotLight);
+            slc.type = ECS::LightType::Spot;
+            slc.color = Math::Vector3(0.8f, 0.9f, 1.0f);
+            slc.intensity = 5.0f;
+            slc.range = 15.0f;
+            slc.outerConeAngle = 35.0f;
+        }
+
         // Procedural skybox (daytime)
         {
             Renderer::SkyboxConfig skyConfig;
@@ -18512,6 +20588,43 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
             cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 8.0f; cc.isActive = true;
         }
+        // Enemy entity on path
+        {
+            ECS::Entity enemy = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(enemy, "Creep 1");
+            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            et.position = Math::Vector3(-5.0f, -1.5f, 0);
+            auto& es = m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
+            es.srcWidth = 28; es.srcHeight = 28;
+            es.tint = Math::Vector3(0.8f, 0.2f, 0.15f);
+            es.sortingLayer = 2;
+            auto& eh = m_World->AddComponent<ECS::HealthComponent>(enemy);
+            eh.maxHealth = 20.0f; eh.currentHealth = 20.0f;
+            auto& etag = m_World->AddComponent<ECS::TagComponent>(enemy);
+            etag.tags.push_back("enemy");
+        }
+        // Gold / Wave HUD
+        {
+            ECS::Entity goldUI = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(goldUI, "Gold Display");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(goldUI);
+            gt.position = Math::Vector3(-4.0f, 3.5f, 0);
+            auto& gtext = m_World->AddComponent<ECS::TextComponent>(goldUI);
+            gtext.text = "Gold: 100  Wave: 1/5";
+            gtext.fontSize = 24.0f;
+            gtext.textColor = Math::Vector3(1.0f, 0.85f, 0.0f);
+        }
+        // Lives HUD
+        {
+            ECS::Entity livesUI = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(livesUI, "Lives Display");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(livesUI);
+            lt.position = Math::Vector3(3.0f, 3.5f, 0);
+            auto& ltext = m_World->AddComponent<ECS::TextComponent>(livesUI);
+            ltext.text = "Lives: 10";
+            ltext.fontSize = 24.0f;
+            ltext.textColor = Math::Vector3(1.0f, 0.3f, 0.3f);
+        }
         m_FlashTimelineData = FlashTimelineData{};
         m_FlashTimelineData.name = "TowerDefense";
         m_FlashTimelineData.AddLayer("Background");
@@ -18549,6 +20662,45 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             is.sortingLayer = 1;
             m_World->AddComponent<ECS::BoxColliderComponent>(item);
         }
+        // Background (dressing room)
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Background");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0, 0, -0.1f);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 500; bgs.srcHeight = 400;
+            bgs.tint = Math::Vector3(0.85f, 0.8f, 0.9f);  // Light lavender
+            bgs.sortingLayer = -1;
+        }
+        // Save outfit button
+        {
+            ECS::Entity saveBtn = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(saveBtn, "Save Button");
+            auto& sbt = m_World->AddComponent<ECS::TransformComponent>(saveBtn);
+            sbt.position = Math::Vector3(3.0f, -3.5f, 0);
+            auto& sbs = m_World->AddComponent<ECS::Sprite2DComponent>(saveBtn);
+            sbs.srcWidth = 80; sbs.srcHeight = 32;
+            sbs.tint = Math::Vector3(0.3f, 0.7f, 0.3f);
+            sbs.sortingLayer = 3;
+            m_World->AddComponent<ECS::BoxColliderComponent>(saveBtn);
+            auto& sbtag = m_World->AddComponent<ECS::TagComponent>(saveBtn);
+            sbtag.tags.push_back("save_button");
+        }
+        // Clear button
+        {
+            ECS::Entity clearBtn = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(clearBtn, "Clear Button");
+            auto& cbt = m_World->AddComponent<ECS::TransformComponent>(clearBtn);
+            cbt.position = Math::Vector3(3.0f, -2.5f, 0);
+            auto& cbs = m_World->AddComponent<ECS::Sprite2DComponent>(clearBtn);
+            cbs.srcWidth = 80; cbs.srcHeight = 32;
+            cbs.tint = Math::Vector3(0.7f, 0.3f, 0.3f);
+            cbs.sortingLayer = 3;
+            m_World->AddComponent<ECS::BoxColliderComponent>(clearBtn);
+            auto& cbtag = m_World->AddComponent<ECS::TagComponent>(clearBtn);
+            cbtag.tags.push_back("clear_button");
+        }
         {
             ECS::Entity cam = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
@@ -18583,6 +20735,41 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::BoxColliderComponent>(obj);
             auto& notes = m_World->AddComponent<ECS::NotesComponent>(obj);
             notes.notes = std::string("Interactive object: ") + objects[i];
+        }
+        // Inventory bar at bottom
+        {
+            ECS::Entity invBar = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(invBar, "Inventory Bar");
+            auto& ibt = m_World->AddComponent<ECS::TransformComponent>(invBar);
+            ibt.position = Math::Vector3(0, -3.5f, 0);
+            auto& ibs = m_World->AddComponent<ECS::Sprite2DComponent>(invBar);
+            ibs.srcWidth = 400; ibs.srcHeight = 48;
+            ibs.tint = Math::Vector3(0.2f, 0.2f, 0.25f);
+            ibs.sortingLayer = 3;
+        }
+        // Inventory slots
+        for (i32 i = 0; i < 5; ++i) {
+            ECS::Entity slot = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(slot, "Inv Slot " + std::to_string(i + 1));
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(slot);
+            st.position = Math::Vector3(-2.0f + i * 1.0f, -3.5f, 0);
+            auto& ss = m_World->AddComponent<ECS::Sprite2DComponent>(slot);
+            ss.srcWidth = 40; ss.srcHeight = 40;
+            ss.tint = Math::Vector3(0.35f, 0.35f, 0.4f);
+            ss.sortingLayer = 4;
+            auto& stag = m_World->AddComponent<ECS::TagComponent>(slot);
+            stag.tags.push_back("inv_slot");
+        }
+        // Hint text
+        {
+            ECS::Entity hint = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hint, "Hint Text");
+            auto& ht = m_World->AddComponent<ECS::TransformComponent>(hint);
+            ht.position = Math::Vector3(0, 3.0f, 0);
+            auto& htext = m_World->AddComponent<ECS::TextComponent>(hint);
+            htext.text = "Find the key to unlock the door...";
+            htext.fontSize = 20.0f;
+            htext.textColor = Math::Vector3(0.8f, 0.8f, 0.6f);
         }
         {
             ECS::Entity cam = m_World->CreateEntity();
@@ -18631,6 +20818,67 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ct.position = Math::Vector3(0, 0, 5);
             auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
             cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+        // Background
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Background");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0, 0, -0.1f);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 500; bgs.srcHeight = 400;
+            bgs.tint = Math::Vector3(0.08f, 0.06f, 0.15f);  // Dark purple
+            bgs.sortingLayer = -1;
+        }
+        // Receptor line (judgment line glow)
+        {
+            ECS::Entity line = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(line, "Judgment Line");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(line);
+            lt.position = Math::Vector3(0, -3.0f, 0);
+            auto& ls = m_World->AddComponent<ECS::Sprite2DComponent>(line);
+            ls.srcWidth = 300; ls.srcHeight = 4;
+            ls.tint = Math::Vector3(0.3f, 0.3f, 0.9f);
+            ls.sortingLayer = 0;
+        }
+        // Score text
+        {
+            ECS::Entity score = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(score, "Score");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(score);
+            st.position = Math::Vector3(3.0f, 4.0f, 0);
+            auto& stext = m_World->AddComponent<ECS::TextComponent>(score);
+            stext.text = "Score: 0";
+            stext.fontSize = 28.0f;
+            stext.textColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            auto& stag = m_World->AddComponent<ECS::TagComponent>(score);
+            stag.tags.push_back("score");
+        }
+        // Combo counter
+        {
+            ECS::Entity combo = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(combo, "Combo Counter");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(combo);
+            ct.position = Math::Vector3(-3.0f, 4.0f, 0);
+            auto& ctext = m_World->AddComponent<ECS::TextComponent>(combo);
+            ctext.text = "Combo: 0";
+            ctext.fontSize = 24.0f;
+            ctext.textColor = Math::Vector3(1.0f, 0.8f, 0.2f);
+            auto& ctag = m_World->AddComponent<ECS::TagComponent>(combo);
+            ctag.tags.push_back("combo");
+        }
+        // Judgment text (Perfect/Great/Good/Miss)
+        {
+            ECS::Entity judgment = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(judgment, "Judgment");
+            auto& jt = m_World->AddComponent<ECS::TransformComponent>(judgment);
+            jt.position = Math::Vector3(0, -1.5f, 0);
+            auto& jtext = m_World->AddComponent<ECS::TextComponent>(judgment);
+            jtext.text = "";
+            jtext.fontSize = 36.0f;
+            jtext.textColor = Math::Vector3(0.3f, 1.0f, 0.5f);
+            auto& jtag = m_World->AddComponent<ECS::TagComponent>(judgment);
+            jtag.tags.push_back("judgment");
         }
         m_FlashTimelineData = FlashTimelineData{};
         m_FlashTimelineData.name = "RhythmGame";
