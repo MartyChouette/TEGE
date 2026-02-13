@@ -3369,6 +3369,9 @@ json SerializeUIElement(const GUI::UIElement& e) {
     data["placeholder"] = e.data.placeholder;
     j["data"] = data;
 
+    // Accessibility
+    if (!e.accessibleLabel.empty()) j["accessibleLabel"] = e.accessibleLabel;
+
     // Events
     j["onClickEvent"] = e.onClickEvent;
     j["onValueChangedEvent"] = e.onValueChangedEvent;
@@ -3443,6 +3446,8 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("inputText")) e.data.inputText = d["inputText"].get<std::string>();
         if (d.contains("placeholder")) e.data.placeholder = d["placeholder"].get<std::string>();
     }
+
+    if (j.contains("accessibleLabel")) e.accessibleLabel = j["accessibleLabel"].get<std::string>();
 
     if (j.contains("onClickEvent")) e.onClickEvent = j["onClickEvent"].get<std::string>();
     if (j.contains("onValueChangedEvent")) e.onValueChangedEvent = j["onValueChangedEvent"].get<std::string>();

@@ -4,6 +4,17 @@
 
 ## 2026-02-12
 
+### P2 Roadmap: Player Systems, Physics Debug, Accessibility
+
+**Player App — 5 New Runtime Systems:**
+Wired ParticleSystem (CPU emitter simulation), SubtitleSystem (with DialogueSystem integration and config from RuntimeAccessibilitySettings), AlternativeInputManager (update + overlay), AccessibilityAnnouncer (UISystem focus callback + status bar), and PostProcessing (initialized from swapchain render pass, wired to script bindings). Added RuntimeAccessibilitySettings member with reduced motion wiring to ControllerSystem and font scale to UISystem.
+
+**Physics Debug Visualization:**
+Added `m_ShowColliderWireframes` toggle in View menu. When enabled, draws wireframe overlays for all collider and joint entities: BoxCollider (yellow wireframe box), SphereCollider (green-yellow, 3 orthogonal wire circles), CapsuleCollider (orange, box + end circles per direction axis). Joint lines between connected entities: Distance (white), Hinge (cyan), BallSocket (magenta), Spring (green), Fixed (red), Slider (blue). Uses the existing `drawWireBox`/`drawLine3D` lambda pattern from weather/vegetation volumes.
+
+**Accessibility Data Model + UI Themes:**
+Added `accessibleLabel` field to UIElement (serialized, inspector UI, used by announcer with fallback to element name). Two new UIThemePreset values: `HighContrastDark` (pure white on black, yellow focus, 3px borders) and `HighContrastLight` (pure black on white, orange focus, 3px borders) — both WCAG AAA 7:1+ contrast. Added `fontScale` (f32) to RuntimeAccessibilitySettings and `SetFontScale()` on UISystem — all 5 text render paths in UISystem.cpp multiply resolved font sizes by the scale factor. Wired in Player from accessibility settings.
+
 ### Noise & Streaming Visual Script Nodes + Weather/SceneManager Binding Wiring
 Added 12 new visual script nodes across two new categories:
 - **Noise (6 nodes):** Perlin2D, Simplex2D, Worley2D, FBM2D, Perlin3D, Simplex3D — pure evaluate nodes for procedural generation in visual scripts.

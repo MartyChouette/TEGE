@@ -2503,6 +2503,131 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     drawWireBox(bgDrawList, transform->position, tree->halfExtents, color, thickness);
                 }
             }
+
+            // --- Physics debug visualization: colliders + joints ---
+            if (m_ShowColliderWireframes) {
+                // Wire circle helper (draws N-segment circle in a plane)
+                auto drawWireCircle = [&](ImDrawList* dl, const Math::Vector3& center, f32 radius,
+                                          const Math::Vector3& axisU, const Math::Vector3& axisV,
+                                          ImU32 color, f32 thickness, i32 segments = 24) {
+                    constexpr f32 PI2 = 6.2831853f;
+                    for (i32 i = 0; i < segments; ++i) {
+                        f32 a0 = PI2 * static_cast<f32>(i) / static_cast<f32>(segments);
+                        f32 a1 = PI2 * static_cast<f32>(i + 1) / static_cast<f32>(segments);
+                        Math::Vector3 p0 = center + axisU * (std::cos(a0) * radius) + axisV * (std::sin(a0) * radius);
+                        Math::Vector3 p1 = center + axisU * (std::cos(a1) * radius) + axisV * (std::sin(a1) * radius);
+                        drawLine3D(dl, p0, p1, color, thickness);
+                    }
+                };
+
+                // Box colliders (yellow)
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+                    auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (box && transform) {
+                        bool sel = IsSelected(entity);
+                        ImU32 color = sel ? IM_COL32(255, 220, 50, 220) : IM_COL32(255, 220, 50, 100);
+                        f32 thick = sel ? 2.0f : 1.0f;
+                        Math::Vector3 halfExt = box->size * 0.5f;
+                        drawWireBox(bgDrawList, transform->position + box->center, halfExt, color, thick);
+                    }
+                }
+
+                // Sphere colliders (green-yellow, 3 orthogonal circles)
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>()) {
+                    auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (sphere && transform) {
+                        bool sel = IsSelected(entity);
+                        ImU32 color = sel ? IM_COL32(180, 230, 50, 220) : IM_COL32(180, 230, 50, 100);
+                        f32 thick = sel ? 2.0f : 1.0f;
+                        Math::Vector3 c = transform->position + sphere->center;
+                        f32 r = sphere->radius;
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick); // XY
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick); // XZ
+                        drawWireCircle(bgDrawList, c, r, {0,1,0}, {0,0,1}, color, thick); // YZ
+                    }
+                }
+
+                // Capsule colliders (orange, box approximation + end circles)
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::CapsuleColliderComponent>()) {
+                    auto* capsule = m_World->GetComponent<ECS::CapsuleColliderComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (capsule && transform) {
+                        bool sel = IsSelected(entity);
+                        ImU32 color = sel ? IM_COL32(255, 160, 40, 220) : IM_COL32(255, 160, 40, 100);
+                        f32 thick = sel ? 2.0f : 1.0f;
+                        Math::Vector3 c = transform->position + capsule->center;
+                        f32 r = capsule->radius;
+                        f32 halfH = capsule->height * 0.5f;
+                        // Draw as box approximation
+                        Math::Vector3 halfExt;
+                        Math::Vector3 axisU, axisV;
+                        switch (capsule->direction) {
+                            case ECS::CapsuleColliderComponent::Direction::X:
+                                halfExt = Math::Vector3(halfH, r, r);
+                                axisU = {0,1,0}; axisV = {0,0,1};
+                                drawWireCircle(bgDrawList, c + Math::Vector3(halfH - r, 0, 0), r, axisU, axisV, color, thick, 16);
+                                drawWireCircle(bgDrawList, c - Math::Vector3(halfH - r, 0, 0), r, axisU, axisV, color, thick, 16);
+                                break;
+                            case ECS::CapsuleColliderComponent::Direction::Z:
+                                halfExt = Math::Vector3(r, r, halfH);
+                                axisU = {1,0,0}; axisV = {0,1,0};
+                                drawWireCircle(bgDrawList, c + Math::Vector3(0, 0, halfH - r), r, axisU, axisV, color, thick, 16);
+                                drawWireCircle(bgDrawList, c - Math::Vector3(0, 0, halfH - r), r, axisU, axisV, color, thick, 16);
+                                break;
+                            default: // Y
+                                halfExt = Math::Vector3(r, halfH, r);
+                                axisU = {1,0,0}; axisV = {0,0,1};
+                                drawWireCircle(bgDrawList, c + Math::Vector3(0, halfH - r, 0), r, axisU, axisV, color, thick, 16);
+                                drawWireCircle(bgDrawList, c - Math::Vector3(0, halfH - r, 0), r, axisU, axisV, color, thick, 16);
+                                break;
+                        }
+                        drawWireBox(bgDrawList, c, halfExt, color, thick);
+                    }
+                }
+
+                // Joint visualization — draw lines between connected entities
+                auto drawJointLine = [&](ImDrawList* dl, ECS::Entity eA, ECS::Entity eB,
+                                          const Math::Vector3& anchorA, const Math::Vector3& anchorB,
+                                          ImU32 color) {
+                    auto* tA = m_World->GetComponent<ECS::TransformComponent>(eA);
+                    auto* tB = m_World->GetComponent<ECS::TransformComponent>(eB);
+                    if (!tA || !tB) return;
+                    drawLine3D(dl, tA->position + anchorA, tB->position + anchorB, color, 1.5f);
+                };
+
+                // Distance joints (white)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::DistanceJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::DistanceJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(255, 255, 255, 180));
+                }
+                // Hinge joints (cyan)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::HingeJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::HingeJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(0, 220, 255, 180));
+                }
+                // BallSocket joints (magenta)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::BallSocketJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::BallSocketJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 220, 180));
+                }
+                // Spring joints (green)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SpringJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::SpringJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 220, 50, 180));
+                }
+                // Fixed joints (red)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::FixedJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::FixedJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(220, 50, 50, 180));
+                }
+                // Slider joints (blue)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SliderJointComponent>()) {
+                    auto* j = m_World->GetComponent<ECS::SliderJointComponent>(e);
+                    if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 100, 255, 180));
+                }
+            }
         }
     }
 
@@ -3090,6 +3215,7 @@ void EditorLayer::DrawMenuBar() {
                 SetPanelVisibility(EditorPanel::SceneList, sceneList);
             }
             ImGui::Separator();
+            ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
             ImGui::Separator();
@@ -22701,6 +22827,17 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     char subBuf[128];
     strncpy(subBuf, sel->onSubmitEvent.c_str(), sizeof(subBuf) - 1); subBuf[sizeof(subBuf) - 1] = '\0';
     if (ImGui::InputText("On Submit", subBuf, sizeof(subBuf))) sel->onSubmitEvent = subBuf;
+
+    ImGui::Spacing();
+
+    // --- Accessibility ---
+    ImGui::TextDisabled("Accessibility");
+    char accLabelBuf[256];
+    strncpy(accLabelBuf, sel->accessibleLabel.c_str(), sizeof(accLabelBuf) - 1); accLabelBuf[sizeof(accLabelBuf) - 1] = '\0';
+    if (ImGui::InputText("Accessible Label", accLabelBuf, sizeof(accLabelBuf))) sel->accessibleLabel = accLabelBuf;
+    ImGui::SameLine();
+    ImGui::TextDisabled("(?)");
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen reader label. Falls back to element name if empty.");
 
     // Advanced Anchor (collapsible for power users)
     if (ImGui::TreeNode("Advanced Anchor")) {

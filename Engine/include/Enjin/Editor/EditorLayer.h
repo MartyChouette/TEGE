@@ -539,6 +539,9 @@ private:
     f32 m_FrameTimeAvg = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
 
+    // Physics debug visualization
+    bool m_ShowColliderWireframes = false;
+
     // Grid settings
     bool m_ShowGrid = true;
     f32 m_GridSize = 200.0f;

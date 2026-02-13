@@ -433,7 +433,7 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme, bool
     }
 
     // Button text
-    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
     if (!element.enabled) textColor = ResolveColor(element.style.textColor, theme.textDisabled, 1.0f);
 
@@ -444,7 +444,7 @@ void UISystem::RenderButton(const UIElement& element, const UITheme& theme, bool
 
 void UISystem::RenderLabel(const UIElement& element, const UITheme& theme) {
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
 
     DrawCenteredText(dl, element.computedRect, element.data.text.c_str(),
@@ -592,7 +592,7 @@ void UISystem::RenderCheckbox(const UIElement& element, const UITheme& theme) {
 
     // Label text next to checkbox
     if (!element.data.text.empty()) {
-        f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody);
+        f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
         ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
         UIRect labelRect = element.computedRect;
         labelRect.x = boxRect.x + boxSize + 6.0f;
@@ -632,7 +632,7 @@ void UISystem::RenderToggle(const UIElement& element, const UITheme& theme) {
 
     // Label text next to toggle
     if (!element.data.text.empty()) {
-        f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody);
+        f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
         ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
         UIRect labelRect = element.computedRect;
         labelRect.x = toggleRect.x + toggleW + 6.0f;
@@ -664,7 +664,7 @@ void UISystem::RenderPlaceholder(const UIElement& element, const UITheme& theme)
     const char* typeName = (typeIdx < 17) ? typeNames[typeIdx] : "Unknown";
 
     std::string label = std::string("[") + typeName + "] " + element.name;
-    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeSmall);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeSmall) * m_FontScale;
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textSecondary, 0.7f);
     DrawCenteredText(dl, element.computedRect, label.c_str(),
         ImGui::ColorConvertFloat4ToU32(textColor), 1, 1, fontSize);
@@ -682,7 +682,7 @@ void UISystem::SetFocus(UICanvasComponent& canvas, u32 elementId) {
     if (m_AnnouncerCallback && elementId != 0) {
         const UIElement* el = canvas.GetElement(elementId);
         if (el) {
-            std::string announcement = el->name;
+            std::string announcement = el->accessibleLabel.empty() ? el->name : el->accessibleLabel;
             if (!el->data.text.empty()) announcement += ": " + el->data.text;
             m_AnnouncerCallback(announcement);
         }

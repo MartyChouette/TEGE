@@ -234,10 +234,11 @@ struct PushConstants {
 
 - **`EditorLayer`** - Main editor class with ImGui panels
 - **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
-- **View menu:** Sub-menus for Panels, Settings (Editor Settings, Project Settings), Rendering (Rendering, Post Processing, Retro Effects), Tools. Game View and Scene List are top-level.
+- **View menu:** Sub-menus for Panels, Settings (Editor Settings, Project Settings), Rendering (Rendering, Post Processing, Retro Effects), Tools. Game View and Scene List are top-level. "Show Colliders" toggle for physics debug wireframes.
 - **Panel names:** `EditorSettings` (bit 5), `PostProcessing` (bit 6), `RetroEffects` (bit 7), `Rendering` (bit 10 — skybox + shadows/ambient/cel/RT/display), `SaveDebug` (bit 31 — View > Tools > Save Debug). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
 - **Project Settings panel:** Project mode, Window icon, Physics, Frame rate, Collision Groups, Build Config, Environment (weather/wind/world time/curvature).
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select, marquee rect-pick)
+- **Physics debug wireframes** — `m_ShowColliderWireframes` toggle draws Box (yellow), Sphere (green-yellow, 3 circles), Capsule (orange) collider outlines + joint lines (6 colors by type)
 - **`PlayMode`** - Play/Pause/Stop game preview controls. Integrates `TieredSaveSystem` for save/load during play. On Stop, scene changes persist (objects are not restored to pre-play state); `PlayModeDiff` shows what changed for informational purposes. Camera position is restored on stop
 - **Multi-select:** `m_SelectedEntities` (unordered_set), `m_PrimarySelected` for inspector/gizmo. Methods: `SelectEntity()`, `DeselectEntity()`, `ClearSelection()`, `SelectRange()`, `SelectEntitiesInRect()`
 - **Keyboard shortcuts:** `1/2/3` gizmo modes, `4` local/world, `WASD` fly cam, `Space/E` up, `Q/Ctrl` down, `Shift` sprint, RMB+mouse look, `Delete` delete, `Ctrl+D` duplicate, `F` focus, `Ctrl+click` toggle select, `Shift+click` range select, viewport drag for marquee
@@ -252,10 +253,10 @@ struct PushConstants {
 ### UI System
 
 - **`UICanvasComponent`** — ECS component (namespace `Enjin::GUI`). Holds element tree, design resolution, scale mode, theme
-- **`UIElement`** — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`
+- **`UIElement`** — Single UI element with `UIAnchor` layout, `UIStyleOverride`, `UIWidgetData`, `accessibleLabel` (for screen reader, falls back to name)
 - **`UIWidgetType`**: Panel, Button, Label, Image, ProgressBar, Slider, Checkbox, Toggle
 - **`NineSliceConfig`** — 9-slice sprite config: `texturePath`, `borderLeft/Right/Top/Bottom` (texels)
-- **`UISystem`** — Layout + render + input + focus navigation. `SetTextureResolver()` for Vulkan texture loading. `RenderImage()` resolves textures via the resolver (SVG files auto-route through `SVGLoader`). Focus navigation: Tab/Shift+Tab, DPad/Arrow keys with repeat, Enter/Space/Gamepad-A activation, Left/Right slider adjustment. Focus indicator rendered as outset rounded-rect border using theme `inputFocused` color or per-element `focusColor` override
+- **`UISystem`** — Layout + render + input + focus navigation. `SetTextureResolver()` for Vulkan texture loading. `RenderImage()` resolves textures via the resolver (SVG files auto-route through `SVGLoader`). Focus navigation: Tab/Shift+Tab, DPad/Arrow keys with repeat, Enter/Space/Gamepad-A activation, Left/Right slider adjustment. Focus indicator rendered as outset rounded-rect border using theme `inputFocused` color or per-element `focusColor` override. `SetFontScale(f32)` multiplies all resolved font sizes for accessibility
 - **`DialogueBoxComponent`** — Auto-builds UICanvas elements for dialogue display: panel, speaker label, text label, portrait image, continue indicator, 6 choice buttons. `BuildDialogueBoxUI()` creates the element tree; `SyncDialogueBoxUI()` updates from `DialogueComponent` state each frame. Inspector with box layout, text style, portrait, choice, and continue settings
 - **UI Editor** — Viewport WYSIWYG: click-select, drag-move, resize handles, right-click context menu
 
@@ -275,7 +276,7 @@ struct PushConstants {
 - **`PrefabManager`** - Create/instantiate/save/load `.enjprefab` files with per-instance overrides
 - **`BuildPipeline`** - Full game export: scan → validate → pack `.enjpak` → copy player → manifest
 - **Pack format:** `.enjpak` with magic `ENJPAK10`, per-file CRC32, XOR obfuscation (key: `enjin_default_pack_key_2025`)
-- **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`
+- **Player app** (`Player/src/main.cpp`) - Standalone executable, loads `game.enjpak`. Runtime systems: ParticleSystem, SubtitleSystem, AlternativeInputManager, AccessibilityAnnouncer, PostProcessing, reduced motion wiring, font scaling
 
 ### Scripting
 
@@ -381,7 +382,7 @@ The engine has 120+ completed features across these categories. See `docs/USER_M
 - **Procedural:** 9 generation algorithms (cellular automata, BSP, diamond-square, L-system, WFC, Voronoi, random walker, grammar, prefab assembler), editor panel with preview
 - **Build & Export:** Asset pack pipeline (.enjpak), standalone player app, splitscreen (2P/4P), HTML5 export (canvas, preloader, responsive scaling, Newgrounds-compatible embed)
 - **Tools:** Node graph editor framework, animation graph, dialogue editor, visual script editor, particle editor, profiler, plugin/hot-reload system, shader graph (skeleton), audio event graph (skeleton), particle graph (skeleton)
-- **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer, UICanvas focus navigation (Tab/DPad/Arrow keys with focus indicators)
+- **Accessibility:** 11 editor themes, 8 colorblind modes, remappable input, subtitles, content warnings, reduced motion, keyboard-only navigation (panel focus shortcuts, gizmo nudge), motor accessibility (dwell-click, sticky drag, adjustable thresholds), scene & entity locking (.enjinlock advisory locks), command palette (Ctrl+P, fuzzy search, 25+ commands), alternative input devices (switch access, eye tracking, sip-and-puff, head tracking), audio visual indicators, screen reader announcer, UICanvas focus navigation (Tab/DPad/Arrow keys with focus indicators), accessible labels on UIElement, high contrast UI themes (HighContrastDark/Light, WCAG AAA 7:1+), runtime font scaling
 
 ## Known Performance Issues
 

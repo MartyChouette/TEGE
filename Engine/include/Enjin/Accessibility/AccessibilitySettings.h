@@ -46,6 +46,9 @@ struct RuntimeAccessibilitySettings {
     bool subtitleSpeakerNames = true;
     bool subtitleDirectionIndicators = false;
 
+    // Font scaling (applied to UISystem runtime font sizes)
+    f32 fontScale = 1.0f;  // 0.5 - 3.0
+
     // Input
     u32 sprintMode = 0;   // 0=Hold, 1=Toggle
     u32 crouchMode = 0;   // 0=Hold, 1=Toggle

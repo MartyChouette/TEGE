@@ -168,6 +168,9 @@ struct UIElement {
     // Widget data
     UIWidgetData data;
 
+    // Accessibility
+    std::string accessibleLabel;  // Screen reader label (falls back to name if empty)
+
     // Event callback names (dispatched via UIEventBus)
     std::string onClickEvent;
     std::string onValueChangedEvent;

@@ -38,10 +38,15 @@ public:
     using AnnouncerCallback = std::function<void(const std::string& text)>;
     void SetAnnouncerCallback(AnnouncerCallback cb) { m_AnnouncerCallback = std::move(cb); }
 
+    // Font scale multiplier (applied to all resolved font sizes at render time)
+    void SetFontScale(f32 scale) { m_FontScale = (scale > 0.1f) ? scale : 1.0f; }
+    f32 GetFontScale() const { return m_FontScale; }
+
 private:
     UIEventBus m_EventBus;
     TextureResolver m_TextureResolver;
     AnnouncerCallback m_AnnouncerCallback;
+    f32 m_FontScale = 1.0f;
 
     // Focus navigation state
     f32 m_NavRepeatTimer = 0.0f;

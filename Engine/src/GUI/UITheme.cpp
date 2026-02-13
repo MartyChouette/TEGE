@@ -124,12 +124,96 @@ UITheme UITheme::Fantasy() {
     return t;
 }
 
+UITheme UITheme::HighContrastDark() {
+    UITheme t;
+    t.name = "HighContrastDark";
+
+    // WCAG AAA 7:1+ contrast — pure white text on near-black backgrounds
+    t.primary    = Math::Vector3(0.20f, 0.60f, 1.00f);
+    t.secondary  = Math::Vector3(0.50f, 0.50f, 0.55f);
+    t.background = Math::Vector3(0.00f, 0.00f, 0.00f);
+    t.surface    = Math::Vector3(0.05f, 0.05f, 0.05f);
+    t.error      = Math::Vector3(1.00f, 0.30f, 0.30f);
+
+    t.textPrimary   = Math::Vector3(1.00f, 1.00f, 1.00f);
+    t.textSecondary = Math::Vector3(0.85f, 0.85f, 0.85f);
+    t.textDisabled  = Math::Vector3(0.55f, 0.55f, 0.55f);
+
+    t.buttonDefault  = Math::Vector3(0.20f, 0.60f, 1.00f);
+    t.buttonHovered  = Math::Vector3(0.40f, 0.75f, 1.00f);
+    t.buttonPressed  = Math::Vector3(0.10f, 0.45f, 0.80f);
+    t.buttonDisabled = Math::Vector3(0.20f, 0.20f, 0.20f);
+
+    t.inputBg      = Math::Vector3(0.05f, 0.05f, 0.05f);
+    t.inputBorder  = Math::Vector3(0.80f, 0.80f, 0.80f);
+    t.inputFocused = Math::Vector3(1.00f, 0.85f, 0.00f); // Bright yellow focus
+
+    t.sliderTrack = Math::Vector3(0.15f, 0.15f, 0.15f);
+    t.sliderFill  = Math::Vector3(0.20f, 0.60f, 1.00f);
+    t.sliderThumb = Math::Vector3(1.00f, 1.00f, 1.00f);
+
+    t.checkboxBg      = Math::Vector3(0.05f, 0.05f, 0.05f);
+    t.checkboxChecked  = Math::Vector3(0.20f, 0.60f, 1.00f);
+    t.toggleOffBg      = Math::Vector3(0.25f, 0.25f, 0.25f);
+    t.toggleOnBg       = Math::Vector3(0.20f, 0.60f, 1.00f);
+    t.toggleKnob       = Math::Vector3(1.00f, 1.00f, 1.00f);
+
+    t.borderRadius = 2.0f;
+    t.borderWidth  = 3.0f;   // Thick borders for visibility
+    t.bgAlpha = 1.0f;        // Fully opaque
+    t.focusBorderWidth = 4.0f; // Extra-thick focus indicator
+    return t;
+}
+
+UITheme UITheme::HighContrastLight() {
+    UITheme t;
+    t.name = "HighContrastLight";
+
+    // WCAG AAA 7:1+ contrast — pure black text on pure white backgrounds
+    t.primary    = Math::Vector3(0.00f, 0.30f, 0.70f);
+    t.secondary  = Math::Vector3(0.40f, 0.40f, 0.45f);
+    t.background = Math::Vector3(1.00f, 1.00f, 1.00f);
+    t.surface    = Math::Vector3(0.97f, 0.97f, 0.97f);
+    t.error      = Math::Vector3(0.80f, 0.00f, 0.00f);
+
+    t.textPrimary   = Math::Vector3(0.00f, 0.00f, 0.00f);
+    t.textSecondary = Math::Vector3(0.15f, 0.15f, 0.15f);
+    t.textDisabled  = Math::Vector3(0.45f, 0.45f, 0.45f);
+
+    t.buttonDefault  = Math::Vector3(0.00f, 0.30f, 0.70f);
+    t.buttonHovered  = Math::Vector3(0.00f, 0.40f, 0.85f);
+    t.buttonPressed  = Math::Vector3(0.00f, 0.20f, 0.55f);
+    t.buttonDisabled = Math::Vector3(0.75f, 0.75f, 0.75f);
+
+    t.inputBg      = Math::Vector3(1.00f, 1.00f, 1.00f);
+    t.inputBorder  = Math::Vector3(0.00f, 0.00f, 0.00f);
+    t.inputFocused = Math::Vector3(0.80f, 0.50f, 0.00f); // Bright orange focus
+
+    t.sliderTrack = Math::Vector3(0.80f, 0.80f, 0.80f);
+    t.sliderFill  = Math::Vector3(0.00f, 0.30f, 0.70f);
+    t.sliderThumb = Math::Vector3(0.00f, 0.00f, 0.00f);
+
+    t.checkboxBg      = Math::Vector3(1.00f, 1.00f, 1.00f);
+    t.checkboxChecked  = Math::Vector3(0.00f, 0.30f, 0.70f);
+    t.toggleOffBg      = Math::Vector3(0.65f, 0.65f, 0.65f);
+    t.toggleOnBg       = Math::Vector3(0.00f, 0.30f, 0.70f);
+    t.toggleKnob       = Math::Vector3(0.00f, 0.00f, 0.00f);
+
+    t.borderRadius = 2.0f;
+    t.borderWidth  = 3.0f;   // Thick borders for visibility
+    t.bgAlpha = 1.0f;        // Fully opaque
+    t.focusBorderWidth = 4.0f; // Extra-thick focus indicator
+    return t;
+}
+
 UITheme UITheme::FromPreset(UIThemePreset preset) {
     switch (preset) {
-        case UIThemePreset::Light:      return Light();
-        case UIThemePreset::RetroGreen: return RetroGreen();
-        case UIThemePreset::Fantasy:    return Fantasy();
-        default:                        return Dark();
+        case UIThemePreset::Light:              return Light();
+        case UIThemePreset::RetroGreen:         return RetroGreen();
+        case UIThemePreset::Fantasy:            return Fantasy();
+        case UIThemePreset::HighContrastDark:   return HighContrastDark();
+        case UIThemePreset::HighContrastLight:  return HighContrastLight();
+        default:                               return Dark();
     }
 }
 

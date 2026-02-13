@@ -149,7 +149,7 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - ~~ScriptBindings: `SetBindingsPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
 - ~~VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
 - ~~Player app: `unique_ptr<IPhysicsBackend>` via factory~~ ✅ done (Phase 1)
-- EditorLayer: Physics debug draw via Jolt `DebugRenderer` / Box2D debug draw
+- ~~EditorLayer: Physics debug draw~~ ✅ done (collider wireframes + joint lines via View > Show Colliders toggle)
 - Project Settings UI: Physics Backend dropdown (Auto / Jolt / Box2D)
 - Scene serialization: `physicsBackend` field in `.enjinproject`
 - **Remaining files:** `EditorLayer.cpp` (debug draw), `SceneSerializer.cpp` (backend field)
@@ -359,8 +359,8 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 |---|--------|-------|-----|
 | 1 | **Player App — Physics** | ~~Player doesn't create/update PhysicsWorld or PhysicsWorld2D~~ ✅ Fixed | Player now uses `IPhysicsBackend` via `PhysicsBackendFactory` |
 | 2 | **Player App — Weather/Water** | No WeatherSystem or Water3D init in Player | Create and update in Player loop |
-| 3 | **Player App — Particles** | ParticleSystem not created in Player | Add to Player init/update/render |
-| 4 | **Player App — Post-Processing** | No bloom/vignette/FXAA/film grain/color grading/retro effects | Wire PostProcessing pass in Player render |
+| 3 | ~~**Player App — Particles**~~ | ~~ParticleSystem not created in Player~~ ✅ Fixed | Player now creates and updates ParticleSystem |
+| 4 | ~~**Player App — Post-Processing**~~ | ~~No bloom/vignette/FXAA/film grain/color grading/retro effects~~ ✅ Wired | PostProcessing initialized from swapchain, wired to script bindings |
 | 5 | **Player App — Save System** | TieredSaveSystem not initialized in Player. Save/load silently fails | Init TieredSaveSystem + LocalSaveBackend in Player |
 | 6 | **Build Pipeline — Asset Packing** | BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files | Add glob patterns for all asset types in scan phase |
 | 7 | **Script Engine in Player** | ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player | Wire all SetXxx() calls after system creation |
@@ -462,12 +462,12 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | UICanvas Keyboard/Gamepad Navigation | High | Medium | P1 | ✅ Complete |
 | In-Game Accessibility Menu Template | High | Medium | P1 | ✅ Complete |
 | Focus Indicators for UICanvas | Medium | Low | P1 | ✅ Complete |
-| Wire AlternativeInput to Player/UISystem | Medium | Medium | P2 | Planned |
-| Wire Announcer to UISystem (screen reader) | Medium | Medium | P2 | Planned |
-| Accessible Labels on UIElement | Medium | Low | P2 | Planned |
-| High Contrast UI Theme | Medium | Low | P2 | Planned |
-| Player Font Scaling | Medium | Low | P2 | Planned |
-| Reduced Motion for UI | Medium | Low | P2 | Planned |
+| Wire AlternativeInput to Player/UISystem | Medium | Medium | P2 | ✅ Complete |
+| Wire Announcer to UISystem (screen reader) | Medium | Medium | P2 | ✅ Complete |
+| Accessible Labels on UIElement | Medium | Low | P2 | ✅ Complete |
+| High Contrast UI Theme | Medium | Low | P2 | ✅ Complete |
+| Player Font Scaling | Medium | Low | P2 | ✅ Complete |
+| Reduced Motion for UI | Medium | Low | P2 | ✅ Complete |
 | Dyslexia-Friendly Font/Spacing | Low | Low | P3 | Planned |
 | Colorblind-Safe UI Palettes | Low | Low | P3 | Planned |
 | One-Button / Switch Access for UICanvas | Low | Medium | P3 | Planned |
@@ -1114,10 +1114,10 @@ The following accessibility features exist as infrastructure/settings structs bu
 | ~~**UICanvas Keyboard Navigation**~~ | P1 | Medium | ~~Tab/Shift+Tab between focusable UIElements, Enter/Space activation, arrow key menu navigation. `tabOrder` field on UIElement, focus state machine in UISystem~~ ✅ Complete |
 | ~~**UICanvas Gamepad Navigation**~~ | P1 | Medium | ~~D-pad/analog stick navigation between UIElements, A/B activation. Arrow/DPad/Left Stick navigation with key repeat~~ ✅ Complete |
 | ~~**Focus Indicators**~~ | P1 | Low | ~~Visible focus ring rendering on active UIElement (configurable color/width in UITheme, per-element focusColor override). Rendered in UISystem after widget render~~ ✅ Complete |
-| **Accessible Labels** | P2 | Low | Add `accessibleLabel` and `accessibleDescription` fields to UIElement for screen reader text. Fall back to widget text if not set |
+| ~~**Accessible Labels**~~ | P2 | Low | ~~Add `accessibleLabel` field to UIElement for screen reader text. Falls back to element name if not set. Serialized in SceneSerializer, editable in inspector~~ ✅ Complete |
 | ~~**In-Game Accessibility Menu**~~ | P1 | Medium | ~~Accessibility Menu startup template with subtitle toggle, subtitle size slider, colorblind toggle, reduced motion toggle, input sensitivity slider. Uses focus navigation for keyboard/gamepad control~~ ✅ Complete |
-| **High Contrast UI Theme** | P2 | Low | Add `HighContrast` preset to UIThemePreset with WCAG AAA-compliant contrast ratios, bold borders, no transparency |
-| **Font Scaling for Players** | P2 | Low | Player-controlled font size multiplier in RuntimeAccessibilitySettings, applied to UITheme font sizes at runtime |
+| ~~**High Contrast UI Theme**~~ | P2 | Low | ~~`HighContrastDark` and `HighContrastLight` presets with WCAG AAA 7:1+ contrast ratios, 3px borders, bright focus indicators~~ ✅ Complete |
+| ~~**Font Scaling for Players**~~ | P2 | Low | ~~`fontScale` field on RuntimeAccessibilitySettings, `SetFontScale()` on UISystem — all 5 text render paths multiply by scale factor. Wired in Player from accessibility settings~~ ✅ Complete |
 | **Dyslexia-Friendly Options** | P3 | Low | Dyslexic-friendly font option in UITheme (OpenDyslexic or similar OFL font), increased letter/word spacing controls |
 | **Reduced Motion for UI** | P2 | Low | Honor RuntimeAccessibilitySettings.reducedMotion in UISystem — skip animations, instant transitions, no scroll inertia |
 | **Colorblind-Safe UI Palettes** | P3 | Low | UITheme variants that avoid red/green reliance, use patterns/icons alongside color to convey state (error, success, warning) |

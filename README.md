@@ -65,7 +65,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **70+ Component Types** - Full inspector UI for all components
 - **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
 - **Camera Component** - In-game cameras with projection settings and frustum visualization
-- **Physics** - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB), ground detection
+- **Physics** - Collision detection (sphere-sphere, AABB-AABB, sphere-AABB), ground detection, debug wireframes for colliders and joints
 - **Gravity Zones** - Per-entity gravity override with directional, point, and zero-G modes
 - **Temperature Zones** - Heat/cold environmental effects
 - **Camera Trigger Zones** - Camera override volumes
@@ -75,7 +75,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Ragdoll System** - Bone-to-joint mapping, animation-to-ragdoll blend, auto-settle
 - **LOD System** - Distance-based mesh swapping
 - **Level Streaming** - Chunk-based distance loading with priority queue and async support
-- **Runtime UI** - Anchor-based layout, 8 widget types, event bus, 4 theme presets
+- **Runtime UI** - Anchor-based layout, 8 widget types, event bus, 6 theme presets (incl. high contrast), font scaling, accessible labels
 - **Behavior Tree AI** - 20 node types with visual editor, blackboard system, play-mode debugging
 - **Dialogue Box** - Auto-built UICanvas dialogue display with speaker, portrait, choices
 - **Surface Aligned Controller** - Planet gravity walking on spherical surfaces
@@ -108,6 +108,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection
 - **Screen Reader Support** - Priority-queued text announcer with visual status bar
 - **Audio Visual Indicators** - Colored dot overlays for audio events
+- **High Contrast UI Themes** - HighContrastDark and HighContrastLight presets with WCAG AAA 7:1+ contrast ratios
+- **Font Scaling** - Runtime font size multiplier for UISystem (0.5-3.0x)
+- **Accessible Labels** - Per-element screen reader labels on UICanvas elements
 
 ### Scene Management
 - **Project File Format** - .enjinproject JSON manifest
@@ -136,7 +139,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Asset Packer** - `.enjpak` archive format with compression, XOR obfuscation, and per-file CRC32 checksums
 - **Build Dialog** - Editor UI for configuring and running builds with progress tracking
 - **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
-- **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop
+- **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop with full particle, subtitle, announcer, alternative input, and post-processing support
 
 ### Scripting & Extensibility
 - **AngelScript Integration** - TegeBehavior base class, ~350 API bindings (incl. AI/BT, accessibility, physics 2D, networking), hot-reload

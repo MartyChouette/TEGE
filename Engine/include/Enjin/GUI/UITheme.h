@@ -14,6 +14,8 @@ enum class UIThemePreset : u8 {
     Light,
     RetroGreen,
     Fantasy,
+    HighContrastDark,
+    HighContrastLight,
     Count
 };
 
@@ -78,6 +80,8 @@ struct UITheme {
     static UITheme Light();
     static UITheme RetroGreen();
     static UITheme Fantasy();
+    static UITheme HighContrastDark();
+    static UITheme HighContrastLight();
     static UITheme FromPreset(UIThemePreset preset);
 };
 

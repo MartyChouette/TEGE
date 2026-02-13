@@ -58,6 +58,12 @@
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Gameplay/QuestFlow.h"
 #include "Enjin/Networking/NetworkSystem.h"
+#include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/AlternativeInput.h"
+#include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/Renderer/PostProcessing.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -274,6 +280,16 @@ public:
         m_StreamingManager.SetEnabled(false);
         m_StreamingManager.ClearChunks();
 
+        // Shutdown post-processing
+        if (m_PostProcessing) {
+            m_PostProcessing->Shutdown();
+            m_PostProcessing.reset();
+        }
+
+        // Clear accessibility
+        m_SubtitleSystem.Clear();
+        m_Announcer.Clear();
+
         // Clear script bindings
         Enjin::Scripting::SetBindingsAudio(nullptr);
         Enjin::Scripting::SetBindingsWeather(nullptr);
@@ -448,6 +464,17 @@ public:
         }
         m_DestructibleSystem.Update(deltaTime);
 
+        // Particle emitter simulation
+        m_ParticleSystem.Update(deltaTime, m_World.get());
+
+        // Post-processing time update
+        if (m_PostProcessing) m_PostProcessing->Update(deltaTime);
+
+        // Accessibility systems
+        m_SubtitleSystem.Update(deltaTime);
+        m_AlternativeInput.Update(deltaTime);
+        m_Announcer.Update(deltaTime);
+
         // Networking
         m_NetworkSystem.Update(deltaTime);
 
@@ -542,6 +569,13 @@ public:
                 m_UISystem.Update(m_World.get(),
                     static_cast<Enjin::f32>(extent.width),
                     static_cast<Enjin::f32>(extent.height), 0.0f);
+            }
+
+            // Accessibility overlays
+            if (!m_ShowingSplash) {
+                m_SubtitleSystem.RenderOverlay(extent.width, extent.height);
+                m_AlternativeInput.RenderOverlay();
+                m_Announcer.RenderStatusBar();
             }
 
             m_ImGuiLayer->EndFrame(cmd);
@@ -655,12 +689,44 @@ private:
         Enjin::Scripting::SetBindingsDestructible(&m_DestructibleSystem);
         Enjin::Scripting::SetBindingsStreaming(&m_StreamingManager);
         Enjin::Scripting::SetBindingsSceneManager(&m_SceneManager);
-        Enjin::Scripting::SetBindingsPostProcessing(nullptr); // No post-processing in standalone player
+        // Initialize post-processing (settings object for script bindings)
+        auto ppExtent = m_Renderer->GetSwapchainExtent();
+        m_PostProcessing = std::make_unique<Enjin::Renderer::PostProcessing>();
+        if (m_Renderer && m_Renderer->GetContext()) {
+            if (!m_PostProcessing->Initialize(m_Renderer->GetContext(),
+                    m_Renderer->GetRenderPass(),
+                    ppExtent.width, ppExtent.height, m_Renderer.get())) {
+                ENJIN_LOG_WARN(Player, "PostProcessing init failed — script bindings will have null PP");
+                m_PostProcessing.reset();
+            }
+        }
+        Enjin::Scripting::SetBindingsPostProcessing(m_PostProcessing.get());
         Enjin::Scripting::SetBindingsPhysics2D(m_Physics2D.get());
         Enjin::Scripting::SetBindingsNetworking(&m_NetworkSystem);
 
-        // Wire dialogue system event bus
+        // Wire dialogue system event bus and subtitle system
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
+        m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
+
+        // Configure subtitle system with defaults
+        auto& subConfig = m_SubtitleSystem.GetConfig();
+        subConfig.enabled = m_AccessibilitySettings.subtitlesEnabled;
+        subConfig.captionsEnabled = m_AccessibilitySettings.closedCaptionsEnabled;
+        subConfig.fontSize = m_AccessibilitySettings.subtitleFontSize;
+        subConfig.backgroundOpacity = m_AccessibilitySettings.subtitleBgOpacity;
+        subConfig.showSpeakerNames = m_AccessibilitySettings.subtitleSpeakerNames;
+        subConfig.showDirectionIndicators = m_AccessibilitySettings.subtitleDirectionIndicators;
+
+        // Wire announcer to UISystem for screen reader support
+        m_UISystem.SetAnnouncerCallback([this](const std::string& text) {
+            m_Announcer.Announce(text);
+        });
+
+        // Apply reduced motion setting to controller system
+        m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
+
+        // Apply font scale to UISystem
+        m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
 
         // Wire UISystem texture resolver (basic — images without ImGui descriptor support will be skipped)
         m_UISystem.SetTextureResolver([](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
@@ -815,6 +881,18 @@ private:
     Enjin::Scene::StreamingManager m_StreamingManager;
     Enjin::Scene::SceneManager m_SceneManager;
     Enjin::Networking::NetworkSystem m_NetworkSystem;
+
+    // Particle system (CPU simulation for ParticleEmitterComponent)
+    Enjin::Effects::ParticleSystem m_ParticleSystem;
+
+    // Accessibility systems
+    Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
+    Enjin::Accessibility::AlternativeInputManager m_AlternativeInput;
+    Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
+    Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
+
+    // Post-processing (settings only — full render pipeline deferred)
+    std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
         m_DialogueSystem.Update(m_World.get(), deltaTime);
