@@ -3,7 +3,7 @@
 #ifdef ENJIN_PHYSICS_JOLT
 
 #include "Enjin/Physics/IPhysicsBackend.h"
-#include "Enjin/Physics/SimplePhysics.h"  // For AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo
+#include "Enjin/Physics/PhysicsTypes.h"  // AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>

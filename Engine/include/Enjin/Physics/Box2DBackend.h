@@ -3,7 +3,7 @@
 #ifdef ENJIN_PHYSICS_BOX2D
 
 #include "Enjin/Physics/IPhysicsBackend2D.h"
-#include "Enjin/Physics/Physics2D.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include <unordered_map>
 #include <unordered_set>
 

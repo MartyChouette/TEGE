@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/Physics2D.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
@@ -1529,3 +1531,5 @@ bool PhysicsWorld2D::OverlapBox(const Math::Vector2& center, const Math::Vector2
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

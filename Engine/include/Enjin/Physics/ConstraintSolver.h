@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/World.h"
@@ -70,3 +72,5 @@ private:
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

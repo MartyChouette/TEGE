@@ -3,7 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Entity.h"
-#include "Enjin/Physics/Physics2D.h"  // For Contact2D, RayHit2D
+#include "Enjin/Physics/PhysicsTypes2D.h"  // Contact2D, RayHit2D, Body2DComponent, Joint2DComponent
 #include <vector>
 #include <functional>
 #include <string>

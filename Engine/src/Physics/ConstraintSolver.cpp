@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/ConstraintSolver.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -889,3 +891,5 @@ void ConstraintSolver::SolveSliderJoint(ECS::Entity jointEntity, f32 deltaTime) 
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

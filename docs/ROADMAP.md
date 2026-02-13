@@ -142,7 +142,7 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - Factory: `PhysicsBackendFactory` returns `Box2DBackend` when `ENJIN_PHYSICS_BOX2D=ON` and (type==Box2D or Auto with 2D/Mixed mode)
 - **Files:** `Box2DBackend.h`, `Box2DBackend.cpp`, modified `PhysicsBackendFactory.cpp`
 
-#### Phase 4: Wiring + Migration (mostly done in Phase 1)
+#### Phase 4: Enable Production Backends ✅ COMPLETE
 
 - ~~PlayMode: swap `m_Physics` from `SimplePhysics` to `IPhysicsBackend*`~~ ✅ done (Phase 1)
 - ~~ControllerSystem: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
@@ -150,17 +150,22 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 - ~~VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
 - ~~Player app: `unique_ptr<IPhysicsBackend>` via factory~~ ✅ done (Phase 1)
 - ~~EditorLayer: Physics debug draw~~ ✅ done (collider wireframes + joint lines via View > Show Colliders toggle)
-- Project Settings UI: Physics Backend dropdown (Auto / Jolt / Box2D)
-- Scene serialization: `physicsBackend` field in `.enjinproject`
-- **Remaining files:** `EditorLayer.cpp` (debug draw), `SceneSerializer.cpp` (backend field)
+- ~~Project Settings UI: Physics Backend dropdown (Auto / Jolt / Box2D / Simple)~~ ✅ done — 4 options with availability indicators and resolved name display
+- ~~Jolt/Box2D ON by default in CMake~~ ✅ done
+- ~~PhysicsTypes.h / PhysicsTypes2D.h extracted~~ ✅ done — interfaces no longer depend on SimplePhysics
+- ~~`Simple = 3` added to `PhysicsBackendType`~~ ✅ done
+- ~~Factory handles Simple type, dimension mismatch warnings, fallback logging~~ ✅ done
+- ~~`IsJoltAvailable()` / `IsBox2DAvailable()` / `IsSimpleAvailable()` helpers~~ ✅ done
+- ~~`ResolveBackendName()` for UI display~~ ✅ done
 
-#### Phase 5: Retire SimplePhysics
+#### Phase 5: Retire SimplePhysics Behind Compile Guard ✅ COMPLETE
 
-- Remove `SimplePhysics.h/.cpp`, `PhysicsWorld.h/.cpp`, `Physics2D.h/.cpp`
-- Remove `SpatialHashGrid`, `ConstraintSolver` (Jolt replaces both)
-- Clean up cmake, includes, forward declarations
-- Update stress test to benchmark Jolt/Box2D backends
-- **Files:** Remove from `Engine/include/Enjin/Physics/`, `Engine/src/Physics/`, update `Engine/CMakeLists.txt`
+- ~~`ENJIN_PHYSICS_SIMPLE` CMake option (ON by default)~~ ✅ done
+- ~~All SimplePhysics files guarded: `SimplePhysics.h/.cpp`, `SimplePhysicsBackend.h/.cpp`, `SimplePhysicsBackend2D.h/.cpp`, `ConstraintSolver.h/.cpp`, `Physics2D.h/.cpp`, `PhysicsWorld.h/.cpp`~~ ✅ done
+- ~~Factory fallback paths guarded~~ ✅ done — returns `nullptr` + error log when SIMPLE=OFF
+- ~~Null-safety audit~~ ✅ done — all physics pointer dereferences already guarded
+- ~~StressTest guarded~~ ✅ done — physics benchmarks skipped when SIMPLE=OFF
+- ~~Build verified: Jolt=ON Box2D=ON Simple=ON (all targets) and Simple=OFF (all targets)~~ ✅ done
 
 ---
 

@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-02-13 (Session 3)
+
+### Physics Phase 4-5: Production Backends Enabled, SimplePhysics Retired
+
+Completed the final two phases of the 5-phase physics backend migration. Jolt and Box2D are now ON by default in CMake; SimplePhysics is behind a compile guard and can be disabled entirely.
+
+**Phase 4 — Enable Production Backends:**
+- Extracted shared physics data types into `PhysicsTypes.h` (6 structs: AABB, CollisionResult, Ray, RaycastHit, CollisionEvent, ColliderInfo) and `PhysicsTypes2D.h` (10 types: shapes, Body2DComponent, Joint2DComponent, Contact2D, RayHit2D). Interfaces (`IPhysicsBackend.h`, `IPhysicsBackend2D.h`) no longer depend on SimplePhysics headers.
+- Added `Simple = 3` to `PhysicsBackendType` enum, updated validation bounds in SceneManager and Player.
+- Changed CMake defaults: `ENJIN_PHYSICS_JOLT=ON`, `ENJIN_PHYSICS_BOX2D=ON`.
+- Updated `PhysicsBackendFactory` with `Simple` type handling, dimension mismatch warnings (Box2D for 3D, Jolt for 2D), fallback logging, and helper functions (`IsJoltAvailable()`, `IsBox2DAvailable()`, `IsSimpleAvailable()`, `ResolveBackendName()`).
+- Editor Project Settings physics UI expanded to 4-option combo (Auto/Jolt/Box2D/Simple) with resolved backend name display and compile-time availability indicators.
+- Added null guard on gravity UI when no physics backend is active.
+
+**Phase 5 — Retire SimplePhysics Behind Compile Guard:**
+- Added `ENJIN_PHYSICS_SIMPLE` CMake option (ON by default for backward compat).
+- Wrapped 10 source files with `#ifdef ENJIN_PHYSICS_SIMPLE`: `SimplePhysics.h/.cpp`, `SimplePhysicsBackend.h/.cpp`, `SimplePhysicsBackend2D.h/.cpp`, `ConstraintSolver.h/.cpp`, `Physics2D.h/.cpp`, `PhysicsWorld.h/.cpp`.
+- Factory returns `nullptr` + error log when SIMPLE=OFF and no production backend matches.
+- StressTest physics benchmarks guarded — skipped with info message when SIMPLE=OFF.
+- Null-safety audit: all `m_Physics->` / `m_Physics2D->` dereferences already properly guarded across PlayMode, Player, EditorLayer, ControllerSystem, ScriptBindings, VisualScriptExecutor, NodeRegistry.
+
+**New files:** `PhysicsTypes.h`, `PhysicsTypes2D.h`
+**Modified:** 24 files (headers, sources, CMake, editor UI, factory, tests, docs)
+**Build verified:** Config A (Jolt=ON Box2D=ON Simple=ON) — all 6 targets. Config B (Simple=OFF) — all 6 targets.
+
+---
+
 ## 2026-02-13 (Session 2)
 
 ### Graph System Full Implementations + RT Pipeline Wiring + Plugin SDK + Collaborative Editing

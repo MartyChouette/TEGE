@@ -10,7 +10,8 @@ namespace Physics {
 enum class PhysicsBackendType : std::uint8_t {
     Auto,       // Auto-select based on ProjectMode (Jolt for 3D/Mixed, Box2D for 2D)
     Jolt,       // Jolt Physics (3D)
-    Box2D       // Box2D v3 (2D)
+    Box2D,      // Box2D v3 (2D)
+    Simple      // Built-in SimplePhysics (legacy fallback)
 };
 
 } // namespace Physics

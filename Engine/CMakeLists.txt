@@ -98,8 +98,8 @@ endif()
 # find_package(shaderc REQUIRED)
 # target_link_libraries(EnjinEngine PUBLIC shaderc::shaderc)
 
-# Optional: Jolt Physics backend (3D)
-option(ENJIN_PHYSICS_JOLT "Enable Jolt Physics backend for 3D physics" OFF)
+# Jolt Physics backend (3D) — ON by default
+option(ENJIN_PHYSICS_JOLT "Enable Jolt Physics backend for 3D physics" ON)
 if(ENJIN_PHYSICS_JOLT)
     set(JOLT_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
     set(USE_STATIC_MSVC_RUNTIME_LIBRARY OFF CACHE BOOL "" FORCE)
@@ -117,8 +117,8 @@ if(ENJIN_PHYSICS_JOLT)
     message(STATUS "Jolt Physics enabled")
 endif()
 
-# Optional: Box2D backend (2D)
-option(ENJIN_PHYSICS_BOX2D "Enable Box2D v3 backend for 2D physics" OFF)
+# Box2D backend (2D) — ON by default
+option(ENJIN_PHYSICS_BOX2D "Enable Box2D v3 backend for 2D physics" ON)
 if(ENJIN_PHYSICS_BOX2D)
     set(BOX2D_BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
     set(BOX2D_BUILD_TESTBED OFF CACHE BOOL "" FORCE)
@@ -132,6 +132,13 @@ if(ENJIN_PHYSICS_BOX2D)
     target_link_libraries(EnjinEngine PUBLIC box2d)
     target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_BOX2D)
     message(STATUS "Box2D v3 enabled")
+endif()
+
+# Built-in SimplePhysics fallback (legacy) — can be disabled when Jolt+Box2D are available
+option(ENJIN_PHYSICS_SIMPLE "Enable built-in SimplePhysics fallback (legacy)" ON)
+if(ENJIN_PHYSICS_SIMPLE)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_SIMPLE)
+    message(STATUS "SimplePhysics fallback enabled")
 endif()
 
 # Optional: Steam integration (cloud saves, achievements)

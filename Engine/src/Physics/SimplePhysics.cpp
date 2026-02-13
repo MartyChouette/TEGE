@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/SimplePhysics.h"
 #include "Enjin/Physics/ConstraintSolver.h"
 #include "Enjin/Math/Math.h"
@@ -618,3 +620,5 @@ void SimplePhysics::DetectCollisionEvents() {
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

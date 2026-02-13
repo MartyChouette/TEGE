@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/SimplePhysicsBackend.h"
 
 namespace Enjin {
@@ -70,3 +72,5 @@ ConstraintSolver* SimplePhysicsBackend::GetConstraintSolver() {
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

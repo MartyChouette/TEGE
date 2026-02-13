@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/PhysicsWorld.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
@@ -442,3 +444,5 @@ RigidBody::~RigidBody() {
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

@@ -20,6 +20,7 @@
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Physics/PhysicsBackendType.h"
+#include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -8484,9 +8485,10 @@ void EditorLayer::DrawProjectSettingsPanel() {
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Physics Backend selection
         {
-            const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)" };
+            const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)", "Simple (Legacy)" };
             int currentBackend = static_cast<int>(m_SceneManager.GetPhysicsBackendType());
-            if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 3)) {
+            if (currentBackend > 3) currentBackend = 0;
+            if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 4)) {
                 m_SceneManager.SetPhysicsBackendType(static_cast<Physics::PhysicsBackendType>(currentBackend));
                 if (!m_SceneManager.GetProjectPath().empty()) {
                     m_SceneManager.SaveProject();
@@ -8495,54 +8497,56 @@ void EditorLayer::DrawProjectSettingsPanel() {
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(
                     "Auto: Selects best backend for project mode\n"
-                    "  3D/Mixed -> Jolt (if compiled), else SimplePhysics\n"
-                    "  2D -> Box2D (if compiled), else SimplePhysics\n"
-                    "Jolt: Force Jolt Physics (3D, requires ENJIN_PHYSICS_JOLT)\n"
-                    "Box2D: Force Box2D v3 (2D, requires ENJIN_PHYSICS_BOX2D)");
+                    "  3D/Mixed -> Jolt Physics\n"
+                    "  2D -> Box2D\n"
+                    "Jolt: Force Jolt Physics (3D)\n"
+                    "Box2D: Force Box2D v3 (2D)\n"
+                    "Simple: Built-in legacy physics (fallback)");
             }
 
-            // Info text showing what Auto resolves to
-            if (currentBackend == 0) {
-                auto mode = m_SceneManager.GetProjectMode();
-                const char* resolved = "SimplePhysics (fallback)";
-#ifdef ENJIN_PHYSICS_JOLT
-                if (mode == Scene::ProjectMode::Mode3D || mode == Scene::ProjectMode::Mixed)
-                    resolved = "Jolt Physics";
-#endif
-#ifdef ENJIN_PHYSICS_BOX2D
-                if (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed)
-                    resolved = "Box2D";
-#endif
-                ImGui::TextDisabled("Auto resolves to: %s", resolved);
-            }
+            // Show resolved backend name
+            auto mode = m_SceneManager.GetProjectMode();
+            const char* resolved = Physics::ResolveBackendName(
+                static_cast<Physics::PhysicsBackendType>(currentBackend), mode);
+            ImGui::TextDisabled("Resolves to: %s", resolved);
+
+            // Availability indicators
+            ImGui::TextDisabled("Available: Jolt %s | Box2D %s | Simple %s",
+                Physics::IsJoltAvailable() ? "[YES]" : "[NO]",
+                Physics::IsBox2DAvailable() ? "[YES]" : "[NO]",
+                Physics::IsSimpleAvailable() ? "[YES]" : "[NO]");
 
             ImGui::Spacing();
         }
 
         Physics::IPhysicsBackend* physics = m_PlayMode.GetPhysics();
-        Math::Vector3 gravity = physics->GetGravity();
+        if (physics) {
+            Math::Vector3 gravity = physics->GetGravity();
 
-        f32 grav[3] = { gravity.x, gravity.y, gravity.z };
-        if (ImGui::DragFloat3("Global Gravity", grav, 0.1f, -100.0f, 100.0f)) {
-            physics->SetGravity(Math::Vector3(grav[0], grav[1], grav[2]));
+            f32 grav[3] = { gravity.x, gravity.y, gravity.z };
+            if (ImGui::DragFloat3("Global Gravity", grav, 0.1f, -100.0f, 100.0f)) {
+                physics->SetGravity(Math::Vector3(grav[0], grav[1], grav[2]));
+            }
+
+            // Quick presets
+            ImGui::Text("Presets:");
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Earth")) { physics->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f)); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Moon")) { physics->SetGravity(Math::Vector3(0.0f, -1.62f, 0.0f)); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Mars")) { physics->SetGravity(Math::Vector3(0.0f, -3.72f, 0.0f)); }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Zero")) { physics->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f)); }
+
+            f32 strength = physics->GetGravity().Length();
+            ImGui::TextDisabled("Strength: %.2f m/s^2", strength);
+
+            ImGui::Spacing();
+            ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
+        } else {
+            ImGui::TextDisabled("No physics backend active");
         }
-
-        // Quick presets
-        ImGui::Text("Presets:");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Earth")) { physics->SetGravity(Math::Vector3(0.0f, -9.81f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Moon")) { physics->SetGravity(Math::Vector3(0.0f, -1.62f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Mars")) { physics->SetGravity(Math::Vector3(0.0f, -3.72f, 0.0f)); }
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Zero")) { physics->SetGravity(Math::Vector3(0.0f, 0.0f, 0.0f)); }
-
-        f32 strength = physics->GetGravity().Length();
-        ImGui::TextDisabled("Strength: %.2f m/s^2", strength);
-
-        ImGui::Spacing();
-        ImGui::TextDisabled("Use Gravity Zone components for regional overrides");
     }
 
     if (ImGui::CollapsingHeader("Frame Rate")) {

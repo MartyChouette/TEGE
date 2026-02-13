@@ -3,7 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/ECS/Entity.h"
-#include "Enjin/Physics/SimplePhysics.h"  // For AABB, Ray, RaycastHit, CollisionResult, CollisionEvent
+#include "Enjin/Physics/PhysicsTypes.h"  // AABB, Ray, RaycastHit, CollisionResult, CollisionEvent, ColliderInfo
 #include <vector>
 #include <string>
 

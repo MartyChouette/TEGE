@@ -1,3 +1,5 @@
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/SimplePhysicsBackend2D.h"
 
 namespace Enjin {
@@ -75,3 +77,5 @@ void SimplePhysicsBackend2D::SetCCDEnabled(bool enabled) {
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

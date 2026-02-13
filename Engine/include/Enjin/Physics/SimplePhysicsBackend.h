@@ -1,5 +1,7 @@
 #pragma once
 
+#ifdef ENJIN_PHYSICS_SIMPLE
+
 #include "Enjin/Physics/IPhysicsBackend.h"
 #include "Enjin/Physics/SimplePhysics.h"
 #include <memory>
@@ -51,3 +53,5 @@ private:
 
 } // namespace Physics
 } // namespace Enjin
+
+#endif // ENJIN_PHYSICS_SIMPLE

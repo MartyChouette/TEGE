@@ -13,7 +13,10 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Script.h"
+#include "Enjin/Physics/PhysicsTypes.h"
+#ifdef ENJIN_PHYSICS_SIMPLE
 #include "Enjin/Physics/SimplePhysics.h"
+#endif
 #include "Enjin/Scene/LevelStreaming.h"
 
 #include <cstdio>
@@ -121,6 +124,7 @@ void SpawnInertEntities(ECS::World& world, u32 count, std::mt19937& rng) {
 
 // ─── Benchmark: Physics Update ───────────────────────────────────────────────
 
+#ifdef ENJIN_PHYSICS_SIMPLE
 BenchResult BenchPhysicsUpdate(u32 colliderCount, u32 rigidbodyCount, u32 inertCount, u32 frames) {
     ECS::World world;
     Physics::SimplePhysics physics;
@@ -149,9 +153,11 @@ BenchResult BenchPhysicsUpdate(u32 colliderCount, u32 rigidbodyCount, u32 inertC
 
     return Analyze(samples);
 }
+#endif // ENJIN_PHYSICS_SIMPLE
 
 // ─── Benchmark: Raycast Throughput ───────────────────────────────────────────
 
+#ifdef ENJIN_PHYSICS_SIMPLE
 BenchResult BenchRaycast(u32 colliderCount, u32 raysPerFrame, u32 frames) {
     ECS::World world;
     Physics::SimplePhysics physics;
@@ -188,6 +194,7 @@ BenchResult BenchRaycast(u32 colliderCount, u32 raysPerFrame, u32 frames) {
 
     return Analyze(samples);
 }
+#endif // ENJIN_PHYSICS_SIMPLE
 
 // ─── Benchmark: ECS Entity Creation + Destruction ────────────────────────────
 
@@ -340,6 +347,7 @@ int main(int argc, char* argv[]) {
     std::printf("  %-36s %7s  %9s  %9s  %9s  %9s\n",
         "--------", "---", "---", "---", "---", "---");
 
+#ifdef ENJIN_PHYSICS_SIMPLE
     for (u32 n : tiers) {
         u32 colliders = n;
         u32 rigidbodies = n / 5;  // 20% have rigidbodies
@@ -371,6 +379,9 @@ int main(int argc, char* argv[]) {
         auto r = BenchRaycast(1000, rays, framesPerTier);
         PrintBench(label, r);
     }
+#else
+    std::printf("  (SimplePhysics not compiled — skipping physics benchmarks)\n");
+#endif
 
     // ECS entity churn (create + destroy)
     PrintSection("ECS ENTITY CHURN (create N with 3 components + destroy half)");

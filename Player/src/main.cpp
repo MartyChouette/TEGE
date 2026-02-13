@@ -216,7 +216,7 @@ public:
 
         // Initialize physics with backend from build manifest
         auto backendType = static_cast<Enjin::Physics::PhysicsBackendType>(
-            m_PhysicsBackendType <= 2 ? m_PhysicsBackendType : 0);
+            m_PhysicsBackendType <= 3 ? m_PhysicsBackendType : 0);
         auto projectMode = static_cast<Enjin::Scene::ProjectMode>(
             m_ProjectMode <= 2 ? m_ProjectMode : 1);
         m_Physics = Enjin::Physics::CreatePhysicsBackend(backendType, projectMode);
@@ -986,7 +986,7 @@ private:
     Enjin::u32 m_BackgroundBehavior = 1; // 0=RunNormally, 1=ReduceTo30, 2=Pause
 
     // Physics backend settings (from build manifest)
-    Enjin::u32 m_PhysicsBackendType = 0;  // 0=Auto, 1=Jolt, 2=Box2D
+    Enjin::u32 m_PhysicsBackendType = 0;  // 0=Auto, 1=Jolt, 2=Box2D, 3=Simple
     Enjin::u32 m_ProjectMode = 1;         // 0=2D, 1=3D, 2=Mixed
 
     // Core systems
