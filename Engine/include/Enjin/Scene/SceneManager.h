@@ -10,6 +10,7 @@
 #include <functional>
 
 namespace Enjin {
+namespace Build { class AssetReader; }
 namespace Scene {
 
 // Scene entry in the project manifest
@@ -77,6 +78,9 @@ public:
 
     // Set the world used for scene loading
     void SetWorld(ECS::World* world) { m_World = world; }
+
+    // Set an AssetReader for loading scenes from .enjpak files (Player runtime)
+    void SetAssetReader(Build::AssetReader* reader) { m_AssetReader = reader; }
 
     // --- Project / Manifest ---
 
@@ -180,6 +184,7 @@ public:
 
 private:
     ECS::World* m_World = nullptr;
+    Build::AssetReader* m_AssetReader = nullptr;  // Optional: read scenes from .enjpak
 
     // Project data
     std::string m_ProjectName = "Untitled Project";

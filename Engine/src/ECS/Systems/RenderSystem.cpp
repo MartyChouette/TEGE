@@ -475,6 +475,14 @@ void RenderSystem::Update(f32 deltaTime) {
     // Reset per-frame stats
     ResetFrameCounters();
 
+    // Cache light entities once per frame (reused by UpdateFrameUniforms, SelectShadowLights, etc.)
+    m_CachedLightEntities.clear();
+    if (m_World) {
+        for (auto e : m_World->GetEntitiesWithComponent<LightComponent>()) {
+            m_CachedLightEntities.push_back(e);
+        }
+    }
+
     // Reset per-thread command buffer pools for this frame
     if (m_CmdBufferPool) {
         m_CmdBufferPool->ResetFrame(m_Renderer->GetCurrentFrameIndex());
@@ -1785,15 +1793,16 @@ void RenderSystem::ClassifySceneComposition() {
     m_SceneComposition.spriteCount = static_cast<u32>(m_World->GetEntitiesWithComponent<Sprite2DComponent>().size());
     m_SceneComposition.tilemapCount = static_cast<u32>(m_World->GetEntitiesWithComponent<TilemapComponent>().size());
 
-    // Count 3D meshes (MeshComponent WITHOUT Sprite2DComponent and WITHOUT TilemapComponent)
-    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
-        if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
-        if (m_World->HasComponent<TilemapComponent>(entity)) continue;
-        m_SceneComposition.mesh3DCount++;
+    // Count 3D meshes: total MeshComponent entities minus sprites and tilemaps
+    // (sprites and tilemaps also have MeshComponent, so subtract them)
+    {
+        u32 totalMesh = static_cast<u32>(m_World->GetEntitiesWithComponent<MeshComponent>().size());
+        m_SceneComposition.mesh3DCount = (totalMesh > m_SceneComposition.spriteCount + m_SceneComposition.tilemapCount)
+            ? totalMesh - m_SceneComposition.spriteCount - m_SceneComposition.tilemapCount : 0;
     }
 
     // Check for shadow-casting directional lights
-    for (Entity entity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+    for (Entity entity : m_CachedLightEntities) {
         auto* light = m_World->GetComponent<LightComponent>(entity);
         if (light && light->type == LightType::Directional && light->castShadows) {
             m_SceneComposition.hasShadowCastingLights = true;
@@ -1890,22 +1899,30 @@ void RenderSystem::BuildCullableObjectList() {
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || !mesh->IsValid()) continue;
 
-        // Compute AABB from mesh vertices
-        Renderer::BoundingBox bounds;
-        for (const auto& vertex : mesh->vertices) {
-            bounds.min.x = Math::Min(bounds.min.x, vertex.position.x);
-            bounds.min.y = Math::Min(bounds.min.y, vertex.position.y);
-            bounds.min.z = Math::Min(bounds.min.z, vertex.position.z);
-            bounds.max.x = Math::Max(bounds.max.x, vertex.position.x);
-            bounds.max.y = Math::Max(bounds.max.y, vertex.position.y);
-            bounds.max.z = Math::Max(bounds.max.z, vertex.position.z);
+        // Compute AABB from mesh vertices (cached on MeshComponent to avoid per-frame recomputation)
+        if (mesh->aabbDirty) {
+            Math::Vector3 bMin(1e30f, 1e30f, 1e30f);
+            Math::Vector3 bMax(-1e30f, -1e30f, -1e30f);
+            for (const auto& vertex : mesh->vertices) {
+                bMin.x = Math::Min(bMin.x, vertex.position.x);
+                bMin.y = Math::Min(bMin.y, vertex.position.y);
+                bMin.z = Math::Min(bMin.z, vertex.position.z);
+                bMax.x = Math::Max(bMax.x, vertex.position.x);
+                bMax.y = Math::Max(bMax.y, vertex.position.y);
+                bMax.z = Math::Max(bMax.z, vertex.position.z);
+            }
+            if (bMin.x > bMax.x) {
+                bMin = Math::Vector3(-0.5f);
+                bMax = Math::Vector3(0.5f);
+            }
+            mesh->cachedAABBMin = bMin;
+            mesh->cachedAABBMax = bMax;
+            mesh->aabbDirty = false;
         }
 
-        // Handle empty mesh
-        if (bounds.min.x > bounds.max.x) {
-            bounds.min = Math::Vector3(-0.5f);
-            bounds.max = Math::Vector3(0.5f);
-        }
+        Renderer::BoundingBox bounds;
+        bounds.min = mesh->cachedAABBMin;
+        bounds.max = mesh->cachedAABBMax;
 
         Renderer::CullableObject obj;
         obj.SetBounds(bounds);
@@ -2803,7 +2820,7 @@ void RenderSystem::UpdateFrameUniforms() {
 
     bool hasAnyLight = false;
 
-    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+    for (Entity lightEntity : m_CachedLightEntities) {
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
         TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
         if (!light) continue;
@@ -3802,7 +3819,7 @@ void RenderSystem::RenderShadowPass() {
 
     Math::Vector3 shadowLightDir(0.5f, 0.8f, 0.3f);
 
-    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+    for (Entity lightEntity : m_CachedLightEntities) {
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
         if (!light || light->type != LightType::Directional || !light->castShadows) continue;
 
@@ -3981,7 +3998,7 @@ void RenderSystem::SelectShadowLights() {
     if (!m_Camera) return;
     Math::Vector3 camPos = m_Camera->GetPosition();
 
-    for (Entity lightEntity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+    for (Entity lightEntity : m_CachedLightEntities) {
         LightComponent* light = m_World->GetComponent<LightComponent>(lightEntity);
         TransformComponent* lightTransform = m_World->GetComponent<TransformComponent>(lightEntity);
         if (!light || !light->castShadows || !lightTransform) continue;
@@ -5199,7 +5216,7 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     f32 lightIntensity = 1.0f;
     f32 lightShadowDistance = 100.0f;
     Math::Vector3 lightColor(1.0f, 1.0f, 1.0f);
-    for (Entity entity : m_World->GetEntitiesWithComponent<LightComponent>()) {
+    for (Entity entity : m_CachedLightEntities) {
         auto* light = m_World->GetComponent<LightComponent>(entity);
         if (light && light->type == LightType::Directional) {
             auto* lightTransform = m_World->GetComponent<TransformComponent>(entity);

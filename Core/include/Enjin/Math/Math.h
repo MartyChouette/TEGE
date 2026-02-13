@@ -103,9 +103,18 @@ constexpr ENJIN_FORCE_INLINE f32 Remap(f32 value, f32 fromMin, f32 fromMax, f32 
     return Lerp(toMin, toMax, t);
 }
 
-// Random number generation (basic - use for non-critical randomness)
+// S14: Fast xorshift32 PRNG replaces weak rand()
+inline u32& XorShiftState() {
+    static u32 state = 2463534242u;
+    return state;
+}
+
 ENJIN_FORCE_INLINE f32 Random01() {
-    return static_cast<f32>(std::rand()) / static_cast<f32>(RAND_MAX);
+    u32& s = XorShiftState();
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return static_cast<f32>(s & 0x7FFFFFFF) * (1.0f / 2147483647.0f);
 }
 
 ENJIN_FORCE_INLINE f32 Random(f32 min, f32 max) {
@@ -113,7 +122,12 @@ ENJIN_FORCE_INLINE f32 Random(f32 min, f32 max) {
 }
 
 ENJIN_FORCE_INLINE i32 RandomInt(i32 min, i32 max) {
-    return min + (std::rand() % (max - min + 1));
+    if (max <= min) return min;
+    u32& s = XorShiftState();
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return min + static_cast<i32>(s % static_cast<u32>(max - min + 1));
 }
 
 } // namespace Math

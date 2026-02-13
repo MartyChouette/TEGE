@@ -24,6 +24,11 @@ struct ENJIN_API MeshComponent : public IComponent {
     std::vector<Vertex> vertices;
     std::vector<u32> indices;
 
+    // Cached local-space AABB (computed lazily from vertices, avoids per-frame recomputation)
+    Math::Vector3 cachedAABBMin = Math::Vector3(1.0f, 1.0f, 1.0f);   // min > max signals dirty
+    Math::Vector3 cachedAABBMax = Math::Vector3(-1.0f, -1.0f, -1.0f);
+    bool aabbDirty = true;
+
     bool IsValid() const {
         return !vertices.empty() && !indices.empty();
     }

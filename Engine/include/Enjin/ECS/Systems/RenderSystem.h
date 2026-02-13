@@ -481,6 +481,9 @@ private:
     bool m_ShadowCastersDirty = true;
     void RebuildShadowCasterCache();
 
+    // Per-frame cached light entity list (populated once at start of Update, reused by all sub-functions)
+    std::vector<Entity> m_CachedLightEntities;
+
     // Merged geometry buffer (single VB+IB for all static 3D meshes)
     std::unique_ptr<Renderer::MergedGeometryBuffer> m_GeometryPool;
     bool IsPoolEligible(Entity entity) const;  // Check if entity should use merged pool

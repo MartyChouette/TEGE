@@ -24,10 +24,8 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
 #include "Enjin/Effects/Weather.h"
-#include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/Wind.h"
-#include "Enjin/Effects/RetroEffects.h"
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
@@ -65,6 +63,7 @@
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Assets/DataAsset.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <memory>
@@ -251,8 +250,115 @@ public:
         m_DestructibleSystem.Initialize(m_World.get());
         m_StreamingManager.SetWorld(m_World.get());
         m_SceneManager.SetWorld(m_World.get());
-        // TODO(F5): SceneManager cannot load scenes from .enjpak — needs AssetReader integration
-        //           so that SceneManager::LoadScene() can read packed scene files at runtime.
+        m_SceneManager.SetAssetReader(&m_AssetReader);
+
+        // Populate scene list from packed project manifest
+        {
+            auto projData = m_AssetReader.ReadFile("project.enjinproject");
+            if (!projData.empty()) {
+                try {
+                    std::string projStr(projData.begin(), projData.end());
+                    auto projJson = nlohmann::json::parse(projStr);
+                    if (projJson.contains("scenes") && projJson["scenes"].is_array()) {
+                        for (const auto& sj : projJson["scenes"]) {
+                            Enjin::Scene::SceneEntry entry;
+                            entry.name = sj.value("name", "Unnamed Scene");
+                            entry.path = sj.value("path", "");
+                            entry.buildIndex = sj.value("buildIndex", -1);
+                            entry.isStartScene = sj.value("isStartScene", false);
+                            m_SceneManager.AddScene(entry);
+                        }
+                    }
+                    // Load collision group names
+                    if (projJson.contains("collisionGroups") && projJson["collisionGroups"].is_array()) {
+                        auto& groups = m_SceneManager.GetCollisionGroupNames();
+                        const auto& cg = projJson["collisionGroups"];
+                        for (Enjin::usize i = 0; i < cg.size() && i < 32; ++i) {
+                            groups[i] = cg[i].get<std::string>();
+                        }
+                    }
+                    ENJIN_LOG_INFO(Player, "Loaded %zu scenes from project manifest",
+                        m_SceneManager.GetSceneCount());
+                } catch (const std::exception& e) {
+                    ENJIN_LOG_ERROR(Player, "Failed to parse project manifest: %s", e.what());
+                }
+            } else {
+                ENJIN_LOG_WARN(Player, "No project.enjinproject found in pack — SceneManager scene list empty");
+            }
+        }
+
+        // Load data assets (.enjschema and .enjdata) from pack
+        {
+            auto& registry = Enjin::Assets::DataAssetRegistry::Get();
+            Enjin::u32 schemaCount = 0, assetCount = 0;
+            for (const auto& file : m_AssetReader.ListFiles()) {
+                if (file.size() > 11 && file.substr(file.size() - 11) == ".enjschema") {
+                    auto data = m_AssetReader.ReadFile(file);
+                    if (!data.empty()) {
+                        try {
+                            std::string str(data.begin(), data.end());
+                            auto j = nlohmann::json::parse(str);
+                            Enjin::Assets::DataAssetSchema schema;
+                            schema.name = j.value("name", "");
+                            schema.description = j.value("description", "");
+                            if (j.contains("fields") && j["fields"].is_array()) {
+                                for (const auto& fj : j["fields"]) {
+                                    Enjin::Assets::DataAssetField field;
+                                    field.name = fj.value("name", "");
+                                    field.type = Enjin::Assets::DataFieldTypeFromString(fj.value("type", "String"));
+                                    schema.fields.push_back(field);
+                                }
+                            }
+                            if (!schema.name.empty()) {
+                                registry.RegisterSchema(schema);
+                                schemaCount++;
+                            }
+                        } catch (const std::exception& e) {
+                            ENJIN_LOG_ERROR(Player, "Failed to parse schema '%s': %s", file.c_str(), e.what());
+                        }
+                    }
+                }
+            }
+            for (const auto& file : m_AssetReader.ListFiles()) {
+                if (file.size() > 9 && file.substr(file.size() - 9) == ".enjdata") {
+                    auto data = m_AssetReader.ReadFile(file);
+                    if (!data.empty()) {
+                        try {
+                            std::string str(data.begin(), data.end());
+                            auto j = nlohmann::json::parse(str);
+                            Enjin::Assets::DataAsset asset;
+                            asset.name = j.value("name", "");
+                            asset.schemaName = j.value("schema", "");
+                            asset.filePath = file;
+                            // Parse values map
+                            if (j.contains("values") && j["values"].is_object()) {
+                                for (auto& [key, val] : j["values"].items()) {
+                                    if (val.is_string()) {
+                                        asset.values[key] = val.get<std::string>();
+                                    } else if (val.is_number_float()) {
+                                        asset.values[key] = val.get<Enjin::f32>();
+                                    } else if (val.is_number_integer()) {
+                                        asset.values[key] = val.get<Enjin::i32>();
+                                    } else if (val.is_boolean()) {
+                                        asset.values[key] = val.get<bool>();
+                                    }
+                                }
+                            }
+                            if (!asset.name.empty()) {
+                                registry.CreateAsset(asset);
+                                assetCount++;
+                            }
+                        } catch (const std::exception& e) {
+                            ENJIN_LOG_ERROR(Player, "Failed to parse data asset '%s': %s", file.c_str(), e.what());
+                        }
+                    }
+                }
+            }
+            if (schemaCount > 0 || assetCount > 0) {
+                ENJIN_LOG_INFO(Player, "Loaded %u schemas and %u data assets from pack", schemaCount, assetCount);
+            }
+        }
+
         m_NetworkSystem.SetWorld(m_World.get());
 
         ENJIN_LOG_INFO(Player, "Gameplay systems initialized");
@@ -742,10 +848,19 @@ private:
         // Apply font scale to UISystem
         m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
 
-        // Wire UISystem texture resolver (basic — images without ImGui descriptor support will be skipped)
+        // Wire UISystem texture resolver
+        // TODO(F15): Full image support requires ImGui_ImplVulkan_AddTexture() to create
+        // descriptor sets from Vulkan textures. The Player has m_ImGuiLayer and m_RenderSystem,
+        // but wiring this properly needs:
+        //   1. #include <backends/imgui_impl_vulkan.h>
+        //   2. m_RenderSystem->LoadTexture(path) to get a Texture*
+        //   3. ImGui_ImplVulkan_AddTexture(sampler, imageView, layout) to get VkDescriptorSet
+        //   4. A cache (std::unordered_map<string, VkDescriptorSet>) for reuse
+        //   5. Cleanup of descriptor sets on shutdown
+        // For now, UI images are skipped (panels, buttons, labels, sliders still work).
         m_UISystem.SetTextureResolver([](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
             (void)path; outW = 0; outH = 0;
-            return nullptr; // TODO: Wire through Vulkan ImGui texture descriptor for full image support
+            return nullptr;
         });
 
         // Wire fluid simulation and wind system to renderer
@@ -935,6 +1050,16 @@ private:
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
+
+    // TODO(F11): Water3D — Water3D::Initialize() generates CPU mesh data and wave offsets,
+    //   but there is no Vulkan rendering integration yet (no water render pass, no water shader
+    //   pipeline in RenderSystem). To wire: add Water3D member, init from scene settings,
+    //   call Update(deltaTime) per frame, create a dedicated water mesh entity or custom render
+    //   pass in RenderSystem that uses Water3D::GenerateMesh() and wave uniforms.
+    // TODO(F11): RetroEffects — RetroEffects is a settings/config class (resolution, dither,
+    //   CRT, VHS, fog, color mode). It has no Vulkan rendering integration in RenderSystem or
+    //   PostProcessing yet. To wire: add RetroEffects member, apply settings to push constant
+    //   retro flags and shader uniforms, integrate CRT/VHS as post-process passes.
 
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;

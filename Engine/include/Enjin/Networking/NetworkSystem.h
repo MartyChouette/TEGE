@@ -186,6 +186,9 @@ private:
     f32 m_BandwidthTimer = 0.0f;
     f32 m_UploadKBps = 0.0f;
     f32 m_DownloadKBps = 0.0f;
+
+    // Reusable send buffer to avoid per-packet allocation
+    std::vector<u8> m_SendBuffer;
 };
 
 } // namespace Networking

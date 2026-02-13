@@ -32,6 +32,8 @@
 #include <random>
 
 // Global pointer for visual script save system access (set by PlayMode)
+// TODO: Move this to ExecutionContext so save nodes receive the system via the
+//       execution context rather than relying on a global extern pointer.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
 
 namespace Enjin {

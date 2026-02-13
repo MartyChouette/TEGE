@@ -1061,12 +1061,7 @@ void RegisterAccessibilityBindings(asIScriptEngine* engine);
 // RegisterAllBindings
 // ---------------------------------------------------------------------------
 void RegisterAllBindings(asIScriptEngine* engine) {
-    // Seed random number generator once
-    static bool seeded = false;
-    if (!seeded) {
-        std::srand(static_cast<unsigned int>(std::time(nullptr)));
-        seeded = true;
-    }
+    // S14: Seeding handled by xorshift32 in Math.h — no srand() needed
 
     RegisterMathTypes(engine);
     RegisterEntityTypes(engine);

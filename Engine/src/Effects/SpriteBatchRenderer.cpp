@@ -321,7 +321,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                                   const std::vector<VkDescriptorSet>& descriptorSets,
                                   u32 currentFrame,
                                   ECS::World* world,
-                                  std::function<void(const std::string& texturePath)> textureBindCallback,
+                                  const std::function<void(const std::string& texturePath)>& textureBindCallback,
                                   u32 viewportWidth,
                                   u32 viewportHeight,
                                   bool litMode) {
@@ -339,6 +339,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         i32 sortingLayer;
         i32 orderInLayer;
         const ECS::Sprite2DComponent* sprite;
+        bool isAtlased;  // Precomputed to avoid redundant GetRegion() in sort comparator
     };
 
     std::vector<SpriteEntry> sortedSprites;
@@ -359,6 +360,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         entry.sortingLayer = sprite->sortingLayer;
         entry.orderInLayer = sprite->orderInLayer;
         entry.sprite = sprite;
+        entry.isAtlased = m_Atlas && m_Atlas->GetRegion(sprite->texturePath) != nullptr;
         sortedSprites.push_back(entry);
     }
 
@@ -366,19 +368,16 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
 
     // Sort by sorting layer (ascending), then order in layer (ascending)
     // Tertiary sort groups atlased sprites together (empty key sorts first)
-    SpriteTextureAtlas* atlas = m_Atlas;
     std::sort(sortedSprites.begin(), sortedSprites.end(),
-        [atlas](const SpriteEntry& a, const SpriteEntry& b) {
+        [](const SpriteEntry& a, const SpriteEntry& b) {
             if (a.sortingLayer != b.sortingLayer)
                 return a.sortingLayer < b.sortingLayer;
             if (a.orderInLayer != b.orderInLayer)
                 return a.orderInLayer < b.orderInLayer;
             // Tertiary sort by effective texture key to maximize batching within same layer
-            // Atlased sprites use empty key so they group together
-            bool aAtlased = atlas && atlas->GetRegion(a.sprite->texturePath);
-            bool bAtlased = atlas && atlas->GetRegion(b.sprite->texturePath);
-            if (aAtlased != bAtlased) return aAtlased;  // Atlased first
-            if (aAtlased) return false;  // Both atlased — equal
+            // Atlased sprites use precomputed flag so they group together
+            if (a.isAtlased != b.isAtlased) return a.isAtlased;  // Atlased first
+            if (a.isAtlased) return false;  // Both atlased — equal
             return a.sprite->texturePath < b.sprite->texturePath;
         });
 

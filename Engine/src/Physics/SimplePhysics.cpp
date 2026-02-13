@@ -26,6 +26,8 @@ void SimplePhysics::SetWorld(ECS::World* world) {
 
 void SimplePhysics::RebuildColliderCache() {
     m_CachedColliderEntities.clear();
+    m_CachedAABBs.clear();
+    m_CachedColliderInfos.clear();
 
     // Build union of all entities with any collider type (deduplicated)
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
@@ -41,6 +43,14 @@ void SimplePhysics::RebuildColliderCache() {
             !m_World->HasComponent<ECS::SphereColliderComponent>(entity)) {
             m_CachedColliderEntities.push_back(entity);
         }
+    }
+
+    // Pre-compute AABBs and ColliderInfos for all cached entities
+    m_CachedAABBs.reserve(m_CachedColliderEntities.size());
+    m_CachedColliderInfos.reserve(m_CachedColliderEntities.size());
+    for (ECS::Entity entity : m_CachedColliderEntities) {
+        m_CachedAABBs.push_back(GetEntityAABB(entity));
+        m_CachedColliderInfos.push_back(GetColliderInfo(entity));
     }
 }
 
@@ -118,13 +128,14 @@ void SimplePhysics::Update(f32 deltaTime) {
             u32 entityCatBits = entityCollider.categoryBits;
             u32 entityColMask = entityCollider.collisionMask;
 
-            for (ECS::Entity other : m_CachedColliderEntities) {
+            for (usize idx = 0; idx < m_CachedColliderEntities.size(); ++idx) {
+                ECS::Entity other = m_CachedColliderEntities[idx];
                 if (other == entity) continue;
-                AABB otherBounds = GetEntityAABB(other);
+                const AABB& otherBounds = m_CachedAABBs[idx];
                 if (otherBounds.GetSize().x <= 0) continue;
 
                 // Bilateral collision filter
-                ColliderInfo otherCollider = GetColliderInfo(other);
+                const ColliderInfo& otherCollider = m_CachedColliderInfos[idx];
                 if (!(entityCatBits & otherCollider.collisionMask) || !(otherCollider.categoryBits & entityColMask))
                     continue;
 
@@ -516,12 +527,17 @@ void SimplePhysics::DetectCollisionEvents() {
     m_CurrentCollisionPairs.clear();
 
     // Use the cached collider entity list (already built in Update via RebuildColliderCache)
+    // Build entity-to-index map for O(1) cache lookups by entity ID
+    std::unordered_map<ECS::Entity, usize> entityToIndex;
+    entityToIndex.reserve(m_CachedColliderEntities.size());
+
     // Insert all collider entities into the spatial hash grid for broad-phase
     m_SpatialHash.Clear();
-    for (ECS::Entity entity : m_CachedColliderEntities) {
-        AABB aabb = GetEntityAABB(entity);
+    for (usize idx = 0; idx < m_CachedColliderEntities.size(); ++idx) {
+        entityToIndex[m_CachedColliderEntities[idx]] = idx;
+        const AABB& aabb = m_CachedAABBs[idx];
         if (aabb.GetSize().x > 0) {
-            m_SpatialHash.Insert(entity, aabb);
+            m_SpatialHash.Insert(m_CachedColliderEntities[idx], aabb);
         }
     }
 
@@ -531,16 +547,20 @@ void SimplePhysics::DetectCollisionEvents() {
 
     // Narrow-phase: test candidate pairs
     for (auto& [entityA, entityB] : m_CandidatePairs) {
-        // Get collision filtering
-        ColliderInfo infoA = GetColliderInfo(entityA);
-        ColliderInfo infoB = GetColliderInfo(entityB);
+        // Look up cached collision filtering and AABBs
+        auto itA = entityToIndex.find(entityA);
+        auto itB = entityToIndex.find(entityB);
+        if (itA == entityToIndex.end() || itB == entityToIndex.end()) continue;
+
+        const ColliderInfo& infoA = m_CachedColliderInfos[itA->second];
+        const ColliderInfo& infoB = m_CachedColliderInfos[itB->second];
 
         // Bilateral collision filter
         if (!(infoA.categoryBits & infoB.collisionMask) || !(infoB.categoryBits & infoA.collisionMask)) continue;
 
-        // Check for collision
-        AABB aabbA = GetEntityAABB(entityA);
-        AABB aabbB = GetEntityAABB(entityB);
+        // Check for collision using cached AABBs
+        const AABB& aabbA = m_CachedAABBs[itA->second];
+        const AABB& aabbB = m_CachedAABBs[itB->second];
 
         CollisionResult result;
         if (CheckAABBCollision(aabbA, aabbB, result)) {

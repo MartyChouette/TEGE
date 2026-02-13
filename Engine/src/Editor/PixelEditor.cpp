@@ -951,9 +951,15 @@ bool PixelEditor::ExportAsPrefab(const std::string& outputPath) {
     u32 frameCount = static_cast<u32>(m_AnimFrames.size());
 
     // Layout: horizontal strip
+    // S16: Use size_t for offset calculations to prevent integer overflow
     u32 sheetW = m_Width * frameCount;
     u32 sheetH = m_Height;
-    std::vector<u8> sheetPixels(sheetW * sheetH * 4, 0);
+    size_t totalPixels = static_cast<size_t>(sheetW) * static_cast<size_t>(sheetH) * 4;
+    if (sheetW > 65536 || sheetH > 65536 || totalPixels > 256 * 1024 * 1024) {
+        ENJIN_LOG_ERROR(Editor, "PixelEditor: Sprite sheet too large (%ux%u), aborting export", sheetW, sheetH);
+        return false;
+    }
+    std::vector<u8> sheetPixels(totalPixels, 0);
 
     for (u32 f = 0; f < frameCount; f++) {
         auto savedLayers = m_Layers;
@@ -963,8 +969,8 @@ bool PixelEditor::ExportAsPrefab(const std::string& outputPath) {
         m_Layers = savedLayers;
 
         for (u32 y = 0; y < m_Height; y++) {
-            u32 srcOffset = y * m_Width * 4;
-            u32 dstOffset = (y * sheetW + f * m_Width) * 4;
+            size_t srcOffset = static_cast<size_t>(y) * m_Width * 4;
+            size_t dstOffset = (static_cast<size_t>(y) * sheetW + static_cast<size_t>(f) * m_Width) * 4;
             std::memcpy(&sheetPixels[dstOffset], &framePixels[srcOffset], m_Width * 4);
         }
     }

@@ -178,6 +178,18 @@ std::string FileDialog::OpenFolder(
 #include <cstdio>
 #include <array>
 
+// Shell-escape a string for safe interpolation into single-quoted shell arguments.
+// Wraps the string in single quotes and escapes any embedded single quotes.
+static std::string ShellEscape(const std::string& s) {
+    std::string result = "'";
+    for (char c : s) {
+        if (c == '\'') result += "'\\''";
+        else result += c;
+    }
+    result += "'";
+    return result;
+}
+
 static std::string ExecuteCommand(const std::string& cmd) {
     std::array<char, 4096> buffer;
     std::string result;
@@ -199,12 +211,17 @@ std::string FileDialog::OpenFile(
     const std::vector<FileFilter>& filters,
     const std::string& defaultPath
 ) {
-    std::string cmd = "osascript -e 'POSIX path of (choose file";
+    // Build osascript AppleScript command with shell-escaped user strings
+    std::string script = "POSIX path of (choose file";
     if (!title.empty()) {
-        cmd += " with prompt \"" + title + "\"";
+        // Escape double quotes inside the AppleScript string
+        std::string safeTitle = title;
+        for (size_t p = safeTitle.find('"'); p != std::string::npos; p = safeTitle.find('"', p + 2))
+            safeTitle.replace(p, 1, "\\\"");
+        script += " with prompt \"" + safeTitle + "\"";
     }
     if (!filters.empty()) {
-        cmd += " of type {";
+        script += " of type {";
         bool first = true;
         for (const auto& filter : filters) {
             // Extract extensions (e.g., "*.gltf;*.glb" -> "gltf", "glb")
@@ -218,19 +235,26 @@ std::string FileDialog::OpenFile(
                 size_t end = ext.find_first_of(";* ", dot + 1);
                 std::string e = ext.substr(dot + 1, end != std::string::npos ? end - dot - 1 : std::string::npos);
                 if (!e.empty()) {
-                    if (!first) cmd += ", ";
-                    cmd += "\"" + e + "\"";
+                    if (!first) script += ", ";
+                    // Only allow alphanumeric extension chars to prevent injection
+                    bool safe = true;
+                    for (char c : e) { if (!std::isalnum(static_cast<unsigned char>(c))) { safe = false; break; } }
+                    if (safe) script += "\"" + e + "\"";
                     first = false;
                 }
                 pos = end != std::string::npos ? end + 1 : ext.size();
             }
         }
-        cmd += "}";
+        script += "}";
     }
     if (!defaultPath.empty()) {
-        cmd += " default location POSIX file \"" + defaultPath + "\"";
+        std::string safePath = defaultPath;
+        for (size_t p = safePath.find('"'); p != std::string::npos; p = safePath.find('"', p + 2))
+            safePath.replace(p, 1, "\\\"");
+        script += " default location POSIX file \"" + safePath + "\"";
     }
-    cmd += ")' 2>/dev/null";
+    script += ")";
+    std::string cmd = "osascript -e " + ShellEscape(script) + " 2>/dev/null";
     return ExecuteCommand(cmd);
 }
 
@@ -240,17 +264,25 @@ std::string FileDialog::SaveFile(
     const std::string& defaultPath,
     const std::string& defaultName
 ) {
-    std::string cmd = "osascript -e 'POSIX path of (choose file name";
+    // Build osascript AppleScript command with shell-escaped user strings
+    std::string script = "POSIX path of (choose file name";
+    auto escapeAS = [](const std::string& s) {
+        std::string out = s;
+        for (size_t p = out.find('"'); p != std::string::npos; p = out.find('"', p + 2))
+            out.replace(p, 1, "\\\"");
+        return out;
+    };
     if (!title.empty()) {
-        cmd += " with prompt \"" + title + "\"";
+        script += " with prompt \"" + escapeAS(title) + "\"";
     }
     if (!defaultName.empty()) {
-        cmd += " default name \"" + defaultName + "\"";
+        script += " default name \"" + escapeAS(defaultName) + "\"";
     }
     if (!defaultPath.empty()) {
-        cmd += " default location POSIX file \"" + defaultPath + "\"";
+        script += " default location POSIX file \"" + escapeAS(defaultPath) + "\"";
     }
-    cmd += ")' 2>/dev/null";
+    script += ")";
+    std::string cmd = "osascript -e " + ShellEscape(script) + " 2>/dev/null";
     (void)filters;
     return ExecuteCommand(cmd);
 }
@@ -259,14 +291,22 @@ std::string FileDialog::OpenFolder(
     const std::string& title,
     const std::string& defaultPath
 ) {
-    std::string cmd = "osascript -e 'POSIX path of (choose folder";
+    // Build osascript AppleScript command with shell-escaped user strings
+    std::string script = "POSIX path of (choose folder";
+    auto escapeAS = [](const std::string& s) {
+        std::string out = s;
+        for (size_t p = out.find('"'); p != std::string::npos; p = out.find('"', p + 2))
+            out.replace(p, 1, "\\\"");
+        return out;
+    };
     if (!title.empty()) {
-        cmd += " with prompt \"" + title + "\"";
+        script += " with prompt \"" + escapeAS(title) + "\"";
     }
     if (!defaultPath.empty()) {
-        cmd += " default location POSIX file \"" + defaultPath + "\"";
+        script += " default location POSIX file \"" + escapeAS(defaultPath) + "\"";
     }
-    cmd += ")' 2>/dev/null";
+    script += ")";
+    std::string cmd = "osascript -e " + ShellEscape(script) + " 2>/dev/null";
     return ExecuteCommand(cmd);
 }
 
@@ -276,6 +316,18 @@ std::string FileDialog::OpenFolder(
 #include <cstdio>
 #include <cstdlib>
 #include <array>
+
+// Shell-escape a string for safe interpolation into single-quoted shell arguments.
+// Wraps the string in single quotes and escapes any embedded single quotes.
+static std::string ShellEscape(const std::string& s) {
+    std::string result = "'";
+    for (char c : s) {
+        if (c == '\'') result += "'\\''";
+        else result += c;
+    }
+    result += "'";
+    return result;
+}
 
 static std::string ExecuteCommand(const std::string& cmd) {
     std::array<char, 4096> buffer;
@@ -295,6 +347,14 @@ static std::string ExecuteCommand(const std::string& cmd) {
 }
 
 static bool HasCommand(const char* cmd) {
+    // Validate command name contains only safe characters (alphanumeric, dash, underscore)
+    for (const char* p = cmd; *p; ++p) {
+        char c = *p;
+        if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+              (c >= '0' && c <= '9') || c == '-' || c == '_')) {
+            return false;
+        }
+    }
     std::string check = std::string("which ") + cmd + " >/dev/null 2>&1";
     return std::system(check.c_str()) == 0;
 }
@@ -306,25 +366,25 @@ std::string FileDialog::OpenFile(
 ) {
     if (HasCommand("zenity")) {
         std::string cmd = "zenity --file-selection";
-        if (!title.empty()) cmd += " --title=\"" + title + "\"";
-        if (!defaultPath.empty()) cmd += " --filename=\"" + defaultPath + "/\"";
+        if (!title.empty()) cmd += " --title=" + ShellEscape(title);
+        if (!defaultPath.empty()) cmd += " --filename=" + ShellEscape(defaultPath + "/");
         for (const auto& filter : filters) {
-            cmd += " --file-filter=\"" + filter.name + " | " + filter.extensions + "\"";
+            cmd += " --file-filter=" + ShellEscape(filter.name + " | " + filter.extensions);
         }
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
     if (HasCommand("kdialog")) {
         std::string cmd = "kdialog --getopenfilename";
-        cmd += " \"" + (defaultPath.empty() ? "." : defaultPath) + "\"";
+        cmd += " " + ShellEscape(defaultPath.empty() ? "." : defaultPath);
         if (!filters.empty()) {
-            cmd += " \"";
+            std::string filterStr;
             for (const auto& filter : filters) {
-                cmd += filter.extensions + " ";
+                filterStr += filter.extensions + " ";
             }
-            cmd += "\"";
+            cmd += " " + ShellEscape(filterStr);
         }
-        if (!title.empty()) cmd += " --title \"" + title + "\"";
+        if (!title.empty()) cmd += " --title " + ShellEscape(title);
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
@@ -339,12 +399,12 @@ std::string FileDialog::SaveFile(
 ) {
     if (HasCommand("zenity")) {
         std::string cmd = "zenity --file-selection --save --confirm-overwrite";
-        if (!title.empty()) cmd += " --title=\"" + title + "\"";
+        if (!title.empty()) cmd += " --title=" + ShellEscape(title);
         std::string initPath = defaultPath.empty() ? "." : defaultPath;
         if (!defaultName.empty()) initPath += "/" + defaultName;
-        cmd += " --filename=\"" + initPath + "\"";
+        cmd += " --filename=" + ShellEscape(initPath);
         for (const auto& filter : filters) {
-            cmd += " --file-filter=\"" + filter.name + " | " + filter.extensions + "\"";
+            cmd += " --file-filter=" + ShellEscape(filter.name + " | " + filter.extensions);
         }
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
@@ -353,8 +413,8 @@ std::string FileDialog::SaveFile(
         std::string cmd = "kdialog --getsavefilename";
         std::string initPath = defaultPath.empty() ? "." : defaultPath;
         if (!defaultName.empty()) initPath += "/" + defaultName;
-        cmd += " \"" + initPath + "\"";
-        if (!title.empty()) cmd += " --title \"" + title + "\"";
+        cmd += " " + ShellEscape(initPath);
+        if (!title.empty()) cmd += " --title " + ShellEscape(title);
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
@@ -367,15 +427,15 @@ std::string FileDialog::OpenFolder(
 ) {
     if (HasCommand("zenity")) {
         std::string cmd = "zenity --file-selection --directory";
-        if (!title.empty()) cmd += " --title=\"" + title + "\"";
-        if (!defaultPath.empty()) cmd += " --filename=\"" + defaultPath + "/\"";
+        if (!title.empty()) cmd += " --title=" + ShellEscape(title);
+        if (!defaultPath.empty()) cmd += " --filename=" + ShellEscape(defaultPath + "/");
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }
     if (HasCommand("kdialog")) {
         std::string cmd = "kdialog --getexistingdirectory";
-        cmd += " \"" + (defaultPath.empty() ? "." : defaultPath) + "\"";
-        if (!title.empty()) cmd += " --title \"" + title + "\"";
+        cmd += " " + ShellEscape(defaultPath.empty() ? "." : defaultPath);
+        if (!title.empty()) cmd += " --title " + ShellEscape(title);
         cmd += " 2>/dev/null";
         return ExecuteCommand(cmd);
     }

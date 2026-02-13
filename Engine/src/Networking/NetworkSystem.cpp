@@ -41,6 +41,10 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     m_LobbyPlayers.clear();
     m_LobbyPlayers.push_back(self);
 
+    // Reserve connection storage upfront so push_back never reallocates
+    // (pointers returned by FindConnectionByAddress remain valid)
+    m_Connections.reserve(MAX_PLAYERS + 1);
+
     ENJIN_LOG_INFO(Network, "NetworkSystem: Hosting on port %u as '%s'", port, playerName.c_str());
     return true;
 }
@@ -71,6 +75,7 @@ bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string&
     serverConn.lastSendTime = 0.0f;
     serverConn.lastRecvTime = 0.0f;
     m_Connections.clear();
+    m_Connections.reserve(MAX_PLAYERS + 1);
     m_Connections.push_back(serverConn);
 
     // Send connection request
@@ -86,8 +91,8 @@ void NetworkSystem::Disconnect() {
     if (m_Role == NetworkRole::None) return;
 
     // Send disconnect to all peers
-    std::vector<u8> empty;
-    SendToAll(MessageType::Disconnect, empty);
+    static const std::vector<u8> kEmpty;
+    SendToAll(MessageType::Disconnect, kEmpty);
 
     // If host, notify all clients they're disconnected
     if (m_Role == NetworkRole::Host) {
@@ -376,8 +381,19 @@ void NetworkSystem::ProcessIncomingPackets() {
 }
 
 void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u32 size) {
+    // TODO [S12]: Add authentication (HMAC or challenge-response) to prevent spoofed packets
+    // TODO [S21]: Add replay protection (sequence window or timestamp validation)
+
     u32 offset = 0;
     PacketHeader header = ReadPacketHeader(data, offset, size);
+
+    // S11: Validate payload size matches actual remaining bytes
+    u32 actualPayload = (size > offset) ? size - offset : 0;
+    if (header.payloadSize != actualPayload) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Payload size mismatch (header=%u, actual=%u), dropping packet",
+                       header.payloadSize, actualPayload);
+        return;
+    }
 
     // Update connection tracking
     ConnectionInfo* conn = FindConnectionByAddress(sender);
@@ -605,8 +621,8 @@ void NetworkSystem::HandleDisconnect(const NetworkAddress& sender, PlayerId send
 
 void NetworkSystem::HandleHeartbeat(const NetworkAddress& sender, PlayerId senderId) {
     // Send ack back
-    std::vector<u8> empty;
-    SendPacket(sender, MessageType::HeartbeatAck, empty);
+    static const std::vector<u8> kEmpty;
+    SendPacket(sender, MessageType::HeartbeatAck, kEmpty);
 }
 
 void NetworkSystem::HandlePlayerReady(PlayerId senderId, const u8* payload, u32 size) {
@@ -646,6 +662,12 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
 
     u32 offset = 0;
     u16 count = ReadU16(payload, offset, size);
+
+    // S17: Cap entity count to prevent excessive processing from malicious packets
+    if (count > 1024) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Entity snapshot count %u exceeds cap, dropping", count);
+        return;
+    }
 
     for (u16 i = 0; i < count && offset < size; i++) {
         EntitySnapshot snap;
@@ -866,13 +888,13 @@ void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, con
         conn->lastSendTime = m_Time;
     }
 
-    std::vector<u8> packet;
-    packet.reserve(PACKET_HEADER_SIZE + payload.size());
-    WritePacketHeader(packet, header);
-    packet.insert(packet.end(), payload.begin(), payload.end());
+    m_SendBuffer.clear();
+    m_SendBuffer.reserve(PACKET_HEADER_SIZE + payload.size());
+    WritePacketHeader(m_SendBuffer, header);
+    m_SendBuffer.insert(m_SendBuffer.end(), payload.begin(), payload.end());
 
-    m_Transport.SendTo(addr, packet.data(), static_cast<u32>(packet.size()));
-    m_BytesSentThisSecond += static_cast<u32>(packet.size());
+    m_Transport.SendTo(addr, m_SendBuffer.data(), static_cast<u32>(m_SendBuffer.size()));
+    m_BytesSentThisSecond += static_cast<u32>(m_SendBuffer.size());
 }
 
 void NetworkSystem::SendToAll(MessageType type, const std::vector<u8>& payload, PlayerId exclude) {
@@ -921,10 +943,10 @@ void NetworkSystem::UpdateHeartbeats(f32 dt) {
     if (m_HeartbeatTimer < HEARTBEAT_INTERVAL) return;
     m_HeartbeatTimer -= HEARTBEAT_INTERVAL;
 
-    std::vector<u8> empty;
+    static const std::vector<u8> kEmpty;
     for (auto& conn : m_Connections) {
         if (conn.state == ConnectionState::Connected) {
-            SendPacket(conn.address, MessageType::Heartbeat, empty);
+            SendPacket(conn.address, MessageType::Heartbeat, kEmpty);
         }
     }
 }

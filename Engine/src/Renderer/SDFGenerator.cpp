@@ -13,7 +13,12 @@ static float DistFromOffset(int dx, int dy) {
 void SDFGenerator::ComputeDistanceField(const std::vector<bool>& inside,
                                         uint32_t w, uint32_t h,
                                         std::vector<float>& outDistances) {
-    uint32_t sz = w * h;
+    // S22: Validate dimensions to prevent integer overflow
+    if (w > 4096 || h > 4096) {
+        outDistances.clear();
+        return;
+    }
+    size_t sz = static_cast<size_t>(w) * static_cast<size_t>(h);
 
     std::vector<int> gdx(sz);
     std::vector<int> gdy(sz);
@@ -96,7 +101,10 @@ SDFGenerator::SDFResult SDFGenerator::Generate(const uint8_t* alphaPixels,
 
     if (!alphaPixels || w == 0 || h == 0) return result;
 
-    uint32_t sz = w * h;
+    // S22: Validate dimensions to prevent integer overflow
+    if (w > 4096 || h > 4096) return result;
+
+    size_t sz = static_cast<size_t>(w) * static_cast<size_t>(h);
 
     std::vector<bool> insideMask(sz);
     std::vector<bool> outsideMask(sz);
@@ -122,7 +130,7 @@ SDFGenerator::SDFResult SDFGenerator::Generate(const uint8_t* alphaPixels,
 }
 
 std::vector<uint8_t> SDFGenerator::ToRGBA(const SDFResult& sdf) {
-    uint32_t sz = sdf.width * sdf.height;
+    size_t sz = static_cast<size_t>(sdf.width) * static_cast<size_t>(sdf.height);
     std::vector<uint8_t> rgba(static_cast<size_t>(sz) * 4, static_cast<uint8_t>(255));
 
     if (sdf.distances.empty()) return rgba;

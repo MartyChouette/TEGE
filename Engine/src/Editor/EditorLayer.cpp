@@ -102,6 +102,20 @@
 namespace Enjin {
 namespace Editor {
 
+// S19/S20/S23: Shell-escape a string for safe interpolation into shell commands (Unix only).
+// Wraps the string in single quotes and escapes any embedded single quotes.
+#ifndef _WIN32
+static std::string ShellEscape(const std::string& s) {
+    std::string result = "'";
+    for (char c : s) {
+        if (c == '\'') result += "'\\''";
+        else result += c;
+    }
+    result += "'";
+    return result;
+}
+#endif
+
 // --- Text ellipsis helper for draw-list rendering ---
 // Truncates text with "..." suffix when it exceeds maxWidth pixels.
 // Returns the (possibly truncated) string to render.
@@ -993,6 +1007,7 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
         m_PlayMode.SetWeatherSystem(&m_WeatherSystem);
+        m_PlayMode.SetParticleSystem(&m_ParticleSystem);
         m_PlayMode.SetSceneManager(&m_SceneManager);
 
         // Wire accessibility systems
@@ -12114,7 +12129,8 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
             CloseHandle(pi.hProcess); CloseHandle(pi.hThread);
         }
 #else
-        std::string gitInitCmd = "git init \"" + projRoot.string() + "\"";
+        // S23: Shell-escape project path to prevent command injection
+        std::string gitInitCmd = "git init " + ShellEscape(projRoot.string());
         std::system(gitInitCmd.c_str());
 #endif
 
@@ -18783,44 +18799,52 @@ void EditorLayer::OpenInExternalIDE(const std::string& filePath) {
         break;
     }
 #elif defined(ENJIN_PLATFORM_MACOS)
-    switch (ide) {
-    case 1: // VS Code
-        cmd = "code \"" + filePath + "\" &";
-        break;
-    case 2: // Visual Studio
-        cmd = "open -a \"Visual Studio\" \"" + filePath + "\" &";
-        break;
-    case 3: // Rider
-        cmd = "open -a \"Rider\" \"" + filePath + "\" &";
-        break;
-    case 4: // Custom
-        if (!m_EditorSettings.customIDEPath.empty()) {
-            cmd = "\"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\" &";
+    // S19: Shell-escape paths to prevent command injection
+    {
+        std::string escapedFile = ShellEscape(filePath);
+        switch (ide) {
+        case 1: // VS Code
+            cmd = "code " + escapedFile + " &";
+            break;
+        case 2: // Visual Studio
+            cmd = "open -a 'Visual Studio' " + escapedFile + " &";
+            break;
+        case 3: // Rider
+            cmd = "open -a 'Rider' " + escapedFile + " &";
+            break;
+        case 4: // Custom
+            if (!m_EditorSettings.customIDEPath.empty()) {
+                cmd = ShellEscape(m_EditorSettings.customIDEPath) + " " + escapedFile + " &";
+            }
+            break;
+        default: // Auto - try VS Code
+            cmd = "code " + escapedFile + " &";
+            break;
         }
-        break;
-    default: // Auto - try VS Code
-        cmd = "code \"" + filePath + "\" &";
-        break;
     }
 #else
-    switch (ide) {
-    case 1: // VS Code
-        cmd = "code \"" + filePath + "\" &";
-        break;
-    case 2: // Visual Studio
-        cmd = "code \"" + filePath + "\" &"; // No VS on Linux, fall back to code
-        break;
-    case 3: // Rider
-        cmd = "rider \"" + filePath + "\" &";
-        break;
-    case 4: // Custom
-        if (!m_EditorSettings.customIDEPath.empty()) {
-            cmd = "\"" + m_EditorSettings.customIDEPath + "\" \"" + filePath + "\" &";
+    // S19: Shell-escape paths to prevent command injection
+    {
+        std::string escapedFile = ShellEscape(filePath);
+        switch (ide) {
+        case 1: // VS Code
+            cmd = "code " + escapedFile + " &";
+            break;
+        case 2: // Visual Studio
+            cmd = "code " + escapedFile + " &"; // No VS on Linux, fall back to code
+            break;
+        case 3: // Rider
+            cmd = "rider " + escapedFile + " &";
+            break;
+        case 4: // Custom
+            if (!m_EditorSettings.customIDEPath.empty()) {
+                cmd = ShellEscape(m_EditorSettings.customIDEPath) + " " + escapedFile + " &";
+            }
+            break;
+        default: // Auto - try VS Code
+            cmd = "code " + escapedFile + " &";
+            break;
         }
-        break;
-    default: // Auto - try VS Code
-        cmd = "code \"" + filePath + "\" &";
-        break;
     }
 #endif
 
@@ -21904,11 +21928,13 @@ void EditorLayer::DrawBuildDialog() {
 #ifdef ENJIN_PLATFORM_WINDOWS
             ShellExecuteA(nullptr, "open", m_BuildConfig.outputDir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #elif defined(ENJIN_PLATFORM_MACOS)
-            std::string cmd = "open \"" + m_BuildConfig.outputDir + "\"";
-            std::system(cmd.c_str());
+            // S20: Shell-escape path to prevent command injection
+            { std::string cmd = "open " + ShellEscape(m_BuildConfig.outputDir);
+            std::system(cmd.c_str()); }
 #else
-            std::string cmd = "xdg-open \"" + m_BuildConfig.outputDir + "\"";
-            std::system(cmd.c_str());
+            // S20: Shell-escape path to prevent command injection
+            { std::string cmd = "xdg-open " + ShellEscape(m_BuildConfig.outputDir);
+            std::system(cmd.c_str()); }
 #endif
         }
     }

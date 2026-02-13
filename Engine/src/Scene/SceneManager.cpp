@@ -1,5 +1,6 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
+#include "Enjin/Build/AssetReader.h"
 #include "Enjin/Logging/Log.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
@@ -263,15 +264,28 @@ bool SceneManager::LoadScene(const std::string& name) {
         return false;
     }
 
-    std::string fullPath = ResolvePath(entry->path);
-
     // Notify unload
     if (!m_CurrentSceneName.empty() && m_OnSceneUnloaded) {
         m_OnSceneUnloaded(m_CurrentSceneName);
     }
 
     SceneSerializer serializer(m_World);
-    auto result = serializer.Load(fullPath, true);
+    DeserializationResult result;
+
+    if (m_AssetReader) {
+        // Load from .enjpak via AssetReader (Player runtime)
+        auto data = m_AssetReader->ReadFile(entry->path);
+        if (data.empty()) {
+            ENJIN_LOG_ERROR(Asset, "Failed to read scene from pack: %s", entry->path.c_str());
+            return false;
+        }
+        std::string sceneStr(data.begin(), data.end());
+        result = serializer.LoadFromString(sceneStr, true);
+    } else {
+        // Load from filesystem (Editor)
+        std::string fullPath = ResolvePath(entry->path);
+        result = serializer.Load(fullPath, true);
+    }
 
     if (result.success) {
         m_CurrentSceneName = name;
@@ -318,9 +332,24 @@ bool SceneManager::LoadSceneAdditive(const std::string& name) {
         return false;
     }
 
-    std::string fullPath = ResolvePath(entry->path);
     SceneSerializer serializer(m_World);
-    auto result = serializer.LoadAdditive(fullPath);
+    DeserializationResult result;
+
+    if (m_AssetReader) {
+        // Load from .enjpak via AssetReader (Player runtime)
+        auto data = m_AssetReader->ReadFile(entry->path);
+        if (data.empty()) {
+            ENJIN_LOG_ERROR(Asset, "Failed to read scene additively from pack: %s", entry->path.c_str());
+            return false;
+        }
+        std::string sceneStr(data.begin(), data.end());
+        // LoadFromString with clearExisting=false for additive loading
+        result = serializer.LoadFromString(sceneStr, false);
+    } else {
+        // Load from filesystem (Editor)
+        std::string fullPath = ResolvePath(entry->path);
+        result = serializer.LoadAdditive(fullPath);
+    }
 
     if (result.success) {
         ENJIN_LOG_INFO(Asset, "Loaded scene additive: %s (%zu entities)", name.c_str(), result.entities.size());

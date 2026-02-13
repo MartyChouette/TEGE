@@ -1,14 +1,17 @@
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Math/Math.h"
-#include <cstdlib>
 #include <cmath>
 
 namespace Enjin {
 namespace Effects {
 
-// Random float helper
+// S14: Fast xorshift32 PRNG replaces weak rand()
+static u32 s_WeatherRandState = 1840271613u;
 static f32 RandomFloat(f32 min, f32 max) {
-    f32 r = static_cast<f32>(rand()) / static_cast<f32>(RAND_MAX);
+    s_WeatherRandState ^= s_WeatherRandState << 13;
+    s_WeatherRandState ^= s_WeatherRandState >> 17;
+    s_WeatherRandState ^= s_WeatherRandState << 5;
+    f32 r = static_cast<f32>(s_WeatherRandState & 0x7FFFFFFF) * (1.0f / 2147483647.0f);
     return min + r * (max - min);
 }
 

@@ -249,6 +249,10 @@ private:
     // Per-frame cached list of all entities with any collider type
     std::vector<ECS::Entity> m_CachedColliderEntities;
 
+    // Per-frame cached AABBs and ColliderInfos — parallel to m_CachedColliderEntities
+    std::vector<AABB> m_CachedAABBs;
+    std::vector<ColliderInfo> m_CachedColliderInfos;
+
     // Spatial hash grid for broad-phase collision detection
     SpatialHashGrid m_SpatialHash;
 

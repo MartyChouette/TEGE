@@ -7,6 +7,9 @@
 #include <filesystem>
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <unistd.h>
+#include <sys/wait.h>
 #endif
 
 namespace Enjin {
@@ -134,12 +137,36 @@ bool CompileGLSL(const std::string& source, VkShaderStageFlagBits stage, std::ve
         result = runProcess(cmdLine);
     }
 #else
-    // Unix: use std::system (paths from temp dir, not user-controlled)
-    std::string command = "glslangValidator -V \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
-    result = std::system(command.c_str());
+    // S18: Use fork/exec to avoid shell injection via file paths
+    auto forkExec = [](const char* prog, const std::string& srcStr, const std::string& spvStr) -> int {
+        pid_t pid = fork();
+        if (pid == -1) return -1;
+        if (pid == 0) {
+            // Child: exec with args passed directly (no shell)
+            execlp(prog, prog, "-V", srcStr.c_str(), "-o", spvStr.c_str(), nullptr);
+            _exit(127); // exec failed
+        }
+        int status = 0;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    };
+
+    std::string srcStr = srcPath.string();
+    std::string spvStr = spvPath.string();
+    result = forkExec("glslangValidator", srcStr, spvStr);
     if (result != 0) {
-        command = "glslc \"" + srcPath.string() + "\" -o \"" + spvPath.string() + "\" 2>&1";
-        result = std::system(command.c_str());
+        // glslc uses different flag syntax
+        pid_t pid = fork();
+        if (pid == -1) {
+            result = -1;
+        } else if (pid == 0) {
+            execlp("glslc", "glslc", srcStr.c_str(), "-o", spvStr.c_str(), nullptr);
+            _exit(127);
+        } else {
+            int status = 0;
+            waitpid(pid, &status, 0);
+            result = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+        }
     }
 #endif
 

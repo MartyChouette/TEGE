@@ -428,7 +428,7 @@ f32 Spline::TToDistance(f32 t) const {
 
 f32 Spline::DistanceToT(f32 distance) const {
     UpdateCache();
-    if (m_TotalLength < 0.0001f) {
+    if (m_LengthTable.size() < 2 || m_TotalLength < 0.0001f) {
         return 0.0f;
     }
 

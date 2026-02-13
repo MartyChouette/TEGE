@@ -71,7 +71,7 @@ public:
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
-                std::function<void(const std::string& texturePath)> textureBindCallback,
+                const std::function<void(const std::string& texturePath)>& textureBindCallback,
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0,
                 bool litMode = false);

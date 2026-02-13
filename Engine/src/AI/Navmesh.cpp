@@ -851,7 +851,7 @@ std::vector<u32> TriangulateConvex(const std::vector<Math::Vector3>& vertices) {
     if (vertices.size() < 3) return indices;
 
     // Fan triangulation
-    for (u32 i = 1; i < vertices.size() - 1; ++i) {
+    for (u32 i = 1; i + 1 < static_cast<u32>(vertices.size()); ++i) {
         indices.push_back(0);
         indices.push_back(i);
         indices.push_back(i + 1);

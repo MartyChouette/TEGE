@@ -38,7 +38,7 @@ namespace Enjin {
 namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
-namespace Effects { class WeatherSystem; }
+namespace Effects { class WeatherSystem; class ParticleSystem; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
 namespace Editor {
 
@@ -117,6 +117,7 @@ public:
     void SetAnnouncer(Accessibility::AccessibilityAnnouncer* ann) { m_Announcer = ann; }
     void SetAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings) { m_AccessibilitySettings = settings; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
+    void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
 
     // Play mode diff dialog
@@ -186,6 +187,7 @@ private:
     Accessibility::AccessibilityAnnouncer* m_Announcer = nullptr;
     Accessibility::RuntimeAccessibilitySettings* m_AccessibilitySettings = nullptr;
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
+    Effects::ParticleSystem* m_ParticleSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
 
     // Audio system (owned by PlayMode for script bindings)

@@ -821,7 +821,7 @@ ECS::MeshComponent MeshFactory::CreateTerrain2D(const ECS::Terrain2DComponent& t
     if (terrain.controlPoints.size() < 2) return mesh;
 
     // For each pair of consecutive points, create a quad from surface down to depth
-    for (usize i = 0; i < terrain.controlPoints.size() - 1; ++i) {
+    for (usize i = 0; i + 1 < terrain.controlPoints.size(); ++i) {
         const auto& p0 = terrain.controlPoints[i];
         const auto& p1 = terrain.controlPoints[i + 1];
 

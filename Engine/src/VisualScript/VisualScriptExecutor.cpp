@@ -190,7 +190,9 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
         ctx.script->currentlyExecutingNode = nodeId;
 
         // ===== CALL STACK TRACKING =====
-        {
+        // Only push call stack entries when debugging (breakpoints set) or profiling
+        bool trackCallStack = ctx.script->recordingEnabled || !ctx.script->breakpoints.empty();
+        if (trackCallStack) {
             ECS::VisualScriptComponent::CallStackEntry entry;
             entry.nodeId = nodeId;
             entry.nodeType = nodeType;
@@ -199,7 +201,10 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
         }
 
         // ===== EXECUTION RECORDING =====
-        auto nodeStartTime = std::chrono::high_resolution_clock::now();
+        std::chrono::high_resolution_clock::time_point nodeStartTime;
+        if (ctx.script->recordingEnabled) {
+            nodeStartTime = std::chrono::high_resolution_clock::now();
+        }
 
         // Don't execute pure nodes via flow (they're evaluated on demand)
         if (def->IsPure()) {
@@ -310,8 +315,8 @@ void VisualScriptExecutor::ExecuteFlow(ExecutionContext& ctx, Editor::NodeId nod
 
         m_LastStats.nodesExecuted++;
 
-        // Pop call stack entry after execution
-        if (!ctx.script->callStack.empty()) {
+        // Pop call stack entry after execution (only if we pushed one)
+        if (trackCallStack && !ctx.script->callStack.empty()) {
             ctx.script->callStack.pop_back();
         }
 
@@ -692,6 +697,7 @@ std::vector<ECS::VariableValue> VisualScriptExecutor::GatherInputValues(const Ex
                                                                           const Editor::GraphNode* node,
                                                                           const NodeDefinition* def) {
     std::vector<ECS::VariableValue> inputs;
+    inputs.reserve(8); // Most nodes have fewer than 8 data inputs
 
     for (const auto& pin : node->inputs) {
         // Skip flow pins

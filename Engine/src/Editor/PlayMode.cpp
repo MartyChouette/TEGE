@@ -1,6 +1,7 @@
 #include "Enjin/Editor/PlayMode.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Platform/Input.h"
@@ -235,6 +236,12 @@ void PlayMode::Pause() {
     m_QuestSystem.SetEnabled(false);
     m_FootstepSystem.SetEnabled(false);
     m_CinematicSystem.SetEnabled(false);
+    m_StreamingManager.SetEnabled(false);
+    // NOTE: TweenSystem, VisualScriptSystem, BehaviorTreeSystem, and DialogueSystem
+    // do not have SetEnabled()/SetPaused() methods. They are effectively paused because
+    // PlayMode::Update() only runs the gameplay block when m_State == PlayState::Playing.
+    // TODO: If any of these systems gain background processing or timers, add pause here.
+    // NetworkSystem intentionally keeps running during pause (lobby/connection maintenance).
     Input::SetMouseCaptured(false);
 
     m_State = PlayState::Paused;
@@ -253,6 +260,7 @@ void PlayMode::Resume() {
     m_QuestSystem.SetEnabled(true);
     m_FootstepSystem.SetEnabled(true);
     m_CinematicSystem.SetEnabled(true);
+    m_StreamingManager.SetEnabled(true);
     // Do NOT capture mouse here — only focus mode (F11) captures the mouse.
 
     m_State = PlayState::Playing;
@@ -445,6 +453,16 @@ void PlayMode::Update(f32 deltaTime) {
         m_DestructibleSystem.Update(deltaTime);
         m_EntityEventBus.ProcessDeferred();
 
+        // Weather (needs camera position for particle spawning around player)
+        if (m_WeatherSystem && m_Camera) {
+            m_WeatherSystem->Update(deltaTime, m_Camera->GetPosition());
+        }
+
+        // Particles
+        if (m_ParticleSystem) {
+            m_ParticleSystem->Update(deltaTime, m_World);
+        }
+
         // Audio
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
@@ -518,6 +536,7 @@ void PlayMode::SaveEditorState() {
     ENJIN_LOG_DEBUG(Editor, "Saved editor state (%zu entities, %zu bytes JSON)", entityCount, m_SavedSceneJson.size());
 }
 
+// Kept for potential future "restore scene on stop" feature
 void PlayMode::RestoreEditorState() {
     if (!m_World || !m_Camera) {
         return;

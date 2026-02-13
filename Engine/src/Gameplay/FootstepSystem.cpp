@@ -6,6 +6,15 @@
 namespace Enjin {
 namespace Gameplay {
 
+// S14: Fast xorshift32 PRNG replaces weak rand()
+static u32 s_FootstepRandState = 3741582947u;
+static f32 FootstepRandFloat() {
+    s_FootstepRandState ^= s_FootstepRandState << 13;
+    s_FootstepRandState ^= s_FootstepRandState >> 17;
+    s_FootstepRandState ^= s_FootstepRandState << 5;
+    return static_cast<f32>(s_FootstepRandState & 0x7FFFFFFF) * (1.0f / 2147483647.0f);
+}
+
 void FootstepSystem::Update(ECS::World* world, f32 deltaTime) {
     if (!m_Enabled || !world) return;
 
@@ -68,7 +77,7 @@ void FootstepSystem::Update(ECS::World* world, f32 deltaTime) {
                     audio->clipPath = soundPath;
                     audio->volume = footstep->volume;
                     // Apply random pitch variance
-                    audio->pitch = 1.0f + ((static_cast<f32>(rand()) / RAND_MAX) * 2.0f - 1.0f) * footstep->pitchVariance;
+                    audio->pitch = 1.0f + (FootstepRandFloat() * 2.0f - 1.0f) * footstep->pitchVariance;
                     audio->isPlaying = true;
                 }
             }

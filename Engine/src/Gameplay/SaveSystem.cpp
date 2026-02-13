@@ -35,6 +35,8 @@ std::string SaveSystem::GetSaveDirectory() {
 }
 
 std::string SaveSystem::GetSlotPath(i32 slot) const {
+    // S13: Validate slot range to prevent path manipulation
+    if (slot < 0 || slot >= MAX_SLOTS) return "";
     return GetSaveDirectory() + "slot_" + std::to_string(slot) + ".json";
 }
 
