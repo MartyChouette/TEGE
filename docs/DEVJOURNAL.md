@@ -4,6 +4,13 @@
 
 ## 2026-02-12
 
+### Noise & Streaming Visual Script Nodes + Weather/SceneManager Binding Wiring
+Added 12 new visual script nodes across two new categories:
+- **Noise (6 nodes):** Perlin2D, Simplex2D, Worley2D, FBM2D, Perlin3D, Simplex3D — pure evaluate nodes for procedural generation in visual scripts.
+- **Streaming (6 nodes):** ForceLoad, ForceUnload, GetState, IsLoaded, GetLoadedCount, SetEnabled — level streaming control from visual scripts.
+
+Added `streamingManager` to `ExecutionContext` and wired it through `VisualScriptExecutor` -> `VisualScriptSystem` -> `PlayMode` + `Player`. Wired `SetBindingsWeather` and `SetBindingsSceneManager` in `PlayMode::Play()/Stop()`. Added `Noise` and `Streaming` to the `NodeCategory` enum. Total VS node count now 108+.
+
 ### Rendering Optimization, Frame Pacing, Play Mode Fix, Feature Wiring
 Major optimization and feature wiring pass across 15 files + 1 new file.
 

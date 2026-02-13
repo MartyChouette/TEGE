@@ -52,7 +52,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 - **Animation Graph** - Visual state machine editor for AnimatorComponent with Entry pseudo-node, transitions, parameters
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
-- **Visual Script Editor** - Blueprint-style visual scripting with 76+ nodes, breakpoint debugging, execution profiler
+- **Visual Script Editor** - Blueprint-style visual scripting with 88+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
@@ -150,7 +150,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **90+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, debug
+- **102+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, noise, streaming, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through

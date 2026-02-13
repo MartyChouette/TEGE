@@ -402,7 +402,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 
 | # | System | Issue |
 |---|--------|-------|
-| 31 | Visual Script Nodes | No nodes for weather/water/networking/quest/HUD/cinematic/destructible/physics2D/prefabs/procedural gen (mirrors script binding gaps) |
+| ~~31~~ | ~~Visual Script Nodes~~ | ~~No nodes for weather/water/networking/quest/HUD/cinematic/destructible/physics2D/prefabs/procedural gen~~ ✅ Mostly resolved — Gameplay, Physics 2D, Networking, AI/BT, Accessibility, Noise, Streaming nodes added. Remaining: water, HUD, procedural gen |
 
 ---
 
@@ -487,7 +487,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Wire Level Streaming (trigger volumes + editor + bindings) | High | High | P1 | ✅ Complete |
 | Wire Localization (editor panel + script bindings) | High | Medium | P1 | ✅ Complete |
 | Add IK/Terrain/Skeleton/Flower to Add Component menu | Medium | Low | P2 | ✅ Complete |
-| Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | ✅ Complete (22 Gameplay nodes) |
+| Add missing Visual Script nodes (mirrors binding gaps) | Medium | Medium | P2 | ✅ Complete (22 Gameplay + 6 Noise + 6 Streaming nodes) |
 | Connect graph editor shells (shader/audio/particle/anim) | Low | Very High | P3 | Planned |
 | Default 60 FPS Frame Rate Limit | Low | Low | P1 | ✅ Complete |
 | Tiered Save System (20 slots, 3 tiers) | High | High | P1 | ✅ Complete |
