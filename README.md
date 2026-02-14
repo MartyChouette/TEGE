@@ -44,7 +44,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Undo/Redo** - Command-pattern undo/redo system
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 43 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
+- **Startup Templates** - 44 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
 - **Template Creator** - Save current scene as reusable template with metadata (View > Tools > Template Creator), custom templates stored in templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
@@ -267,7 +267,7 @@ enjin/
 - [x] Play Mode (play/pause/stop)
 - [x] Undo/Redo System
 - [x] Entity Clipboard (Cut/Copy/Paste)
-- [x] Startup Template Selector (43 templates)
+- [x] Startup Template Selector (44 templates)
 
 ### Phase 5: Advanced Rendering ✅
 - [x] PBR Material System (baseColor, metallic, roughness, emissive)

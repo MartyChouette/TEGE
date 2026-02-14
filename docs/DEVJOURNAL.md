@@ -51,6 +51,16 @@ Implemented all 7 open roadmap items that were 80-95% done with specific gaps. A
 
 Files changed: ~15 across Engine/shaders, Engine/src, Engine/include, Player/src, docs
 
+### New Template: "Just the Two of Us"
+
+Added 44th startup template — a 2-player co-op puzzle template inspired by *It Takes Two*:
+- Player A (Teal, WASD) + Player B (Coral, Arrows/Gamepad 2) with horizontal splitscreen
+- 3 cooperative physics puzzles: dual pressure plates + bridge, seesaw + boulder, weight balance scale
+- 2 environment minigames: bowling lane (6 pins, physics ball) + target practice range
+- Walls, pathways, cooperative Victory Chest goal with bob tween
+- Warm sunset skybox, bloom + FXAA, shadows enabled
+- Notes entity with full puzzle descriptions + tip for dynamic splitscreen via Visual Script
+
 ---
 
 ## 2026-02-14 (Session 17)

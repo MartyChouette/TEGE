@@ -12082,6 +12082,7 @@ namespace {
         { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), kTMPL_2D },
         // -- Restored: Multiplayer --
         { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), kTMPL_MULTI },
+        { "justtwo",     "Just the Two of Us","Co-op puzzles + physics\nIt Takes Two inspired",       ImVec4(0.85f, 0.45f, 0.65f, 1.0f), kTMPL_MULTI },
         // -- Restored: Debug/Test --
         { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), kTMPL_3D },
         // -- Restored: Retro & Flash --
@@ -12090,7 +12091,7 @@ namespace {
         { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D },
         { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D },
     };
-    constexpr int s_BuiltinCount = 43;
+    constexpr int s_BuiltinCount = 44;
 } // anonymous namespace
 
 // --------------------------------------------------
@@ -13051,7 +13052,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.gameViewW = 650.0f;
         m_Layout.gameViewH = 650.0f;
     }
-    else if (templateId == "couchcoop") {
+    else if (templateId == "couchcoop" || templateId == "justtwo") {
         m_Layout.leftWidth = 0.14f;
         m_Layout.rightWidth = 0.20f;
         m_Layout.gameViewW = 850.0f;
@@ -20886,6 +20887,510 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
     }
 
+    else if (templateId == "justtwo") {
+        // === JUST THE TWO OF US — Co-op Puzzle Template ===
+        // Inspired by "It Takes Two": cooperative physics puzzles,
+        // environment minigames, seamless unified/splitscreen camera.
+
+        // --- Ground Plane ---
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            gt.scale = Math::Vector3(60.0f, 0.1f, 60.0f);
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+            gmat.roughness = 0.9f;
+            auto& gcol = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
+            gcol.size = Math::Vector3(60.0f, 0.1f, 60.0f);
+        }
+
+        // --- Sun Light ---
+        createLight();
+
+        // --- Player 1 (Teal, WASD) ---
+        ECS::Entity player1 = createPlayer3D("Player A");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player1);
+            pt->position = Math::Vector3(-2.0f, 1.0f, 8.0f);
+            auto* pmat = m_World->GetComponent<ECS::MaterialComponent>(player1);
+            pmat->baseColor = Math::Vector3(0.15f, 0.7f, 0.65f);  // Teal
+
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player1);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.useWASD = true;
+            ctrl.useArrowKeys = false;
+            ctrl.useGamepad = false;
+            ctrl.gamepadIndex = 0;
+
+            auto& rb1 = m_World->AddComponent<ECS::RigidbodyComponent>(player1);
+            rb1.mass = 1.0f;
+            auto& tag1 = m_World->AddComponent<ECS::TagComponent>(player1);
+            tag1.tags.push_back("player");
+            tag1.tags.push_back("player1");
+        }
+
+        // --- Player 2 (Coral, Arrow Keys / Gamepad) ---
+        ECS::Entity player2 = createPlayer3D("Player B");
+        {
+            auto* pt = m_World->GetComponent<ECS::TransformComponent>(player2);
+            pt->position = Math::Vector3(2.0f, 1.0f, 8.0f);
+            auto* pmat = m_World->GetComponent<ECS::MaterialComponent>(player2);
+            pmat->baseColor = Math::Vector3(0.95f, 0.4f, 0.35f);  // Coral
+
+            auto& ctrl = m_World->AddComponent<ECS::ThirdPersonController>(player2);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.useWASD = false;
+            ctrl.useArrowKeys = true;
+            ctrl.useGamepad = true;
+            ctrl.gamepadIndex = 1;
+
+            auto& rb2 = m_World->AddComponent<ECS::RigidbodyComponent>(player2);
+            rb2.mass = 1.0f;
+            auto& tag2 = m_World->AddComponent<ECS::TagComponent>(player2);
+            tag2.tags.push_back("player");
+            tag2.tags.push_back("player2");
+        }
+
+        // Camera 1 (left half) via SetupCameraForController, then override viewport
+        SetupCameraForController(player1, "ThirdPerson");
+        ECS::Entity cam1 = ECS::CameraManager::GetActiveCamera(m_World);
+        if (cam1 != ECS::INVALID_ENTITY) {
+            auto* nc1 = m_World->GetComponent<ECS::NameComponent>(cam1);
+            if (nc1) nc1->name = "Camera A";
+            auto* camC1 = m_World->GetComponent<ECS::CameraComponent>(cam1);
+            if (camC1) {
+                camC1->viewportX = 0.0f;
+                camC1->viewportY = 0.0f;
+                camC1->viewportWidth = 0.5f;
+                camC1->viewportHeight = 1.0f;
+                camC1->fieldOfView = 55.0f;
+            }
+            if (auto* f = m_World->GetComponent<ECS::FollowTargetComponent>(cam1)) {
+                f->target = player1;
+                f->offset = Math::Vector3(0.0f, 6.0f, 7.0f);
+                f->moveSpeed = 4.0f;
+            }
+            if (auto* l = m_World->GetComponent<ECS::LookAtTargetComponent>(cam1)) {
+                l->target = player1;
+            }
+            m_SelectedGameCamera = cam1;
+        }
+
+        // Camera 2 (right half)
+        {
+            ECS::Entity cam2 = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam2, "Camera B");
+            auto& camT2 = m_World->AddComponent<ECS::TransformComponent>(cam2);
+            camT2.position = Math::Vector3(2.0f, 7.0f, 15.0f);
+
+            auto& camC2 = m_World->AddComponent<ECS::CameraComponent>(cam2);
+            camC2.fieldOfView = 55.0f;
+            camC2.nearPlane = 0.1f;
+            camC2.farPlane = 500.0f;
+            camC2.viewportX = 0.5f;
+            camC2.viewportY = 0.0f;
+            camC2.viewportWidth = 0.5f;
+            camC2.viewportHeight = 1.0f;
+
+            auto& follow2 = m_World->AddComponent<ECS::FollowTargetComponent>(cam2);
+            follow2.target = player2;
+            follow2.offset = Math::Vector3(0.0f, 6.0f, 7.0f);
+            follow2.moveSpeed = 4.0f;
+            auto& lookAt2 = m_World->AddComponent<ECS::LookAtTargetComponent>(cam2);
+            lookAt2.target = player2;
+        }
+
+        // ========================================
+        // PUZZLE 1: Dual Pressure Plates + Bridge
+        // Both players must stand on their plate to raise the bridge
+        // ========================================
+        {
+            // Pressure plate A (left)
+            ECS::Entity plateA = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(plateA, "Pressure Plate A");
+            auto& paT = m_World->AddComponent<ECS::TransformComponent>(plateA);
+            paT.position = Math::Vector3(-4.0f, 0.08f, 0.0f);
+            paT.scale = Math::Vector3(1.5f, 0.05f, 1.5f);
+            m_World->AddComponent<ECS::MeshComponent>(plateA, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& paM = m_World->AddComponent<ECS::MaterialComponent>(plateA);
+            paM.baseColor = Math::Vector3(0.15f, 0.7f, 0.65f);  // Teal (matches P1)
+            paM.emissiveColor = Math::Vector3(0.15f, 0.7f, 0.65f);
+            paM.emissiveStrength = 0.3f;
+            auto& paCol = m_World->AddComponent<ECS::BoxColliderComponent>(plateA);
+            paCol.size = Math::Vector3(1.5f, 0.05f, 1.5f);
+            auto& paTag = m_World->AddComponent<ECS::TagComponent>(plateA);
+            paTag.tags.push_back("pressure_plate");
+            paTag.tags.push_back("plate_a");
+
+            // Pressure plate B (right)
+            ECS::Entity plateB = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(plateB, "Pressure Plate B");
+            auto& pbT = m_World->AddComponent<ECS::TransformComponent>(plateB);
+            pbT.position = Math::Vector3(4.0f, 0.08f, 0.0f);
+            pbT.scale = Math::Vector3(1.5f, 0.05f, 1.5f);
+            m_World->AddComponent<ECS::MeshComponent>(plateB, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& pbM = m_World->AddComponent<ECS::MaterialComponent>(plateB);
+            pbM.baseColor = Math::Vector3(0.95f, 0.4f, 0.35f);  // Coral (matches P2)
+            pbM.emissiveColor = Math::Vector3(0.95f, 0.4f, 0.35f);
+            pbM.emissiveStrength = 0.3f;
+            auto& pbCol = m_World->AddComponent<ECS::BoxColliderComponent>(plateB);
+            pbCol.size = Math::Vector3(1.5f, 0.05f, 1.5f);
+            auto& pbTag = m_World->AddComponent<ECS::TagComponent>(plateB);
+            pbTag.tags.push_back("pressure_plate");
+            pbTag.tags.push_back("plate_b");
+
+            // Bridge (starts lowered / blocking)
+            ECS::Entity bridge = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bridge, "Co-op Bridge");
+            auto& brT = m_World->AddComponent<ECS::TransformComponent>(bridge);
+            brT.position = Math::Vector3(0.0f, -0.5f, -3.0f);
+            brT.scale = Math::Vector3(4.0f, 0.15f, 2.0f);
+            m_World->AddComponent<ECS::MeshComponent>(bridge, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& brM = m_World->AddComponent<ECS::MaterialComponent>(bridge);
+            brM.baseColor = Math::Vector3(0.55f, 0.45f, 0.3f);
+            brM.roughness = 0.85f;
+            auto& brCol = m_World->AddComponent<ECS::BoxColliderComponent>(bridge);
+            brCol.size = Math::Vector3(4.0f, 0.15f, 2.0f);
+            auto& brTag = m_World->AddComponent<ECS::TagComponent>(bridge);
+            brTag.tags.push_back("bridge");
+            brTag.tags.push_back("coop_mechanism");
+        }
+
+        // ========================================
+        // PUZZLE 2: Physics Seesaw
+        // One player stands on one end, the other pushes a boulder
+        // ========================================
+        {
+            // Seesaw plank
+            ECS::Entity seesaw = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(seesaw, "Seesaw Plank");
+            auto& ssT = m_World->AddComponent<ECS::TransformComponent>(seesaw);
+            ssT.position = Math::Vector3(-10.0f, 0.6f, -8.0f);
+            ssT.scale = Math::Vector3(6.0f, 0.15f, 1.5f);
+            m_World->AddComponent<ECS::MeshComponent>(seesaw, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& ssM = m_World->AddComponent<ECS::MaterialComponent>(seesaw);
+            ssM.baseColor = Math::Vector3(0.6f, 0.4f, 0.2f);
+            auto& ssRb = m_World->AddComponent<ECS::RigidbodyComponent>(seesaw);
+            ssRb.mass = 3.0f;
+            auto& ssTag = m_World->AddComponent<ECS::TagComponent>(seesaw);
+            ssTag.tags.push_back("seesaw");
+
+            // Seesaw fulcrum (pivot)
+            ECS::Entity fulcrum = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(fulcrum, "Seesaw Fulcrum");
+            auto& fT = m_World->AddComponent<ECS::TransformComponent>(fulcrum);
+            fT.position = Math::Vector3(-10.0f, 0.3f, -8.0f);
+            fT.scale = Math::Vector3(0.5f, 0.6f, 1.5f);
+            m_World->AddComponent<ECS::MeshComponent>(fulcrum, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& fM = m_World->AddComponent<ECS::MaterialComponent>(fulcrum);
+            fM.baseColor = Math::Vector3(0.5f, 0.5f, 0.55f);
+            fM.roughness = 0.6f;
+            auto& fCol = m_World->AddComponent<ECS::BoxColliderComponent>(fulcrum);
+            fCol.size = Math::Vector3(0.5f, 0.6f, 1.5f);
+
+            // Boulder to push
+            ECS::Entity boulder = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(boulder, "Push Boulder");
+            auto& bT = m_World->AddComponent<ECS::TransformComponent>(boulder);
+            bT.position = Math::Vector3(-13.0f, 0.8f, -8.0f);
+            m_World->AddComponent<ECS::MeshComponent>(boulder, Renderer::MeshFactory::CreateSphere(0.7f));
+            auto& bM = m_World->AddComponent<ECS::MaterialComponent>(boulder);
+            bM.baseColor = Math::Vector3(0.45f, 0.42f, 0.4f);
+            bM.roughness = 0.9f;
+            auto& bRb = m_World->AddComponent<ECS::RigidbodyComponent>(boulder);
+            bRb.mass = 5.0f;
+            auto& bCol = m_World->AddComponent<ECS::SphereColliderComponent>(boulder);
+            bCol.radius = 0.7f;
+            auto& bTag = m_World->AddComponent<ECS::TagComponent>(boulder);
+            bTag.tags.push_back("pushable");
+        }
+
+        // ========================================
+        // PUZZLE 3: Weight Balance Scale
+        // Both players must push objects onto a scale to match weight
+        // ========================================
+        {
+            // Scale platform
+            ECS::Entity scale = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(scale, "Weight Scale");
+            auto& scT = m_World->AddComponent<ECS::TransformComponent>(scale);
+            scT.position = Math::Vector3(10.0f, 0.4f, -8.0f);
+            scT.scale = Math::Vector3(3.0f, 0.1f, 3.0f);
+            m_World->AddComponent<ECS::MeshComponent>(scale, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& scM = m_World->AddComponent<ECS::MaterialComponent>(scale);
+            scM.baseColor = Math::Vector3(0.7f, 0.65f, 0.5f);
+            auto& scCol = m_World->AddComponent<ECS::BoxColliderComponent>(scale);
+            scCol.size = Math::Vector3(3.0f, 0.1f, 3.0f);
+            auto& scTag = m_World->AddComponent<ECS::TagComponent>(scale);
+            scTag.tags.push_back("weight_scale");
+
+            // Pushable crates for weighing
+            Math::Vector3 cratePos[] = {
+                Math::Vector3(8.0f, 0.4f, -5.0f),
+                Math::Vector3(12.0f, 0.4f, -5.0f),
+                Math::Vector3(10.0f, 0.4f, -5.0f),
+            };
+            f32 crateMasses[] = { 2.0f, 3.0f, 5.0f };
+            for (int i = 0; i < 3; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Weight Crate %d", i + 1);
+                ECS::Entity crate = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(crate, name);
+                auto& ct = m_World->AddComponent<ECS::TransformComponent>(crate);
+                ct.position = cratePos[i];
+                f32 s = 0.4f + crateMasses[i] * 0.08f;
+                ct.scale = Math::Vector3(s, s, s);
+                m_World->AddComponent<ECS::MeshComponent>(crate, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& cm = m_World->AddComponent<ECS::MaterialComponent>(crate);
+                cm.baseColor = Math::Vector3(0.5f + i * 0.15f, 0.35f, 0.15f);
+                auto& crb = m_World->AddComponent<ECS::RigidbodyComponent>(crate);
+                crb.mass = crateMasses[i];
+                auto& ccol = m_World->AddComponent<ECS::BoxColliderComponent>(crate);
+                ccol.size = Math::Vector3(s, s, s);
+                auto& ctag = m_World->AddComponent<ECS::TagComponent>(crate);
+                ctag.tags.push_back("pushable");
+                ctag.tags.push_back("weight_object");
+            }
+        }
+
+        // ========================================
+        // MINIGAME AREA: Physics Bowling Lane
+        // Side activity — roll a ball to knock down pins
+        // ========================================
+        {
+            // Lane floor
+            ECS::Entity lane = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(lane, "Bowling Lane");
+            auto& lnT = m_World->AddComponent<ECS::TransformComponent>(lane);
+            lnT.position = Math::Vector3(20.0f, 0.05f, 0.0f);
+            lnT.scale = Math::Vector3(3.0f, 0.05f, 12.0f);
+            m_World->AddComponent<ECS::MeshComponent>(lane, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& lnM = m_World->AddComponent<ECS::MaterialComponent>(lane);
+            lnM.baseColor = Math::Vector3(0.7f, 0.55f, 0.3f);
+            lnM.roughness = 0.3f;
+            auto& lnCol = m_World->AddComponent<ECS::BoxColliderComponent>(lane);
+            lnCol.size = Math::Vector3(3.0f, 0.05f, 12.0f);
+
+            // Bowling ball
+            ECS::Entity ball = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ball, "Bowling Ball");
+            auto& blT = m_World->AddComponent<ECS::TransformComponent>(ball);
+            blT.position = Math::Vector3(20.0f, 0.5f, 5.0f);
+            m_World->AddComponent<ECS::MeshComponent>(ball, Renderer::MeshFactory::CreateSphere(0.35f));
+            auto& blM = m_World->AddComponent<ECS::MaterialComponent>(ball);
+            blM.baseColor = Math::Vector3(0.1f, 0.1f, 0.15f);
+            blM.roughness = 0.2f;
+            auto& blRb = m_World->AddComponent<ECS::RigidbodyComponent>(ball);
+            blRb.mass = 4.0f;
+            auto& blSc = m_World->AddComponent<ECS::SphereColliderComponent>(ball);
+            blSc.radius = 0.35f;
+            auto& blTag = m_World->AddComponent<ECS::TagComponent>(ball);
+            blTag.tags.push_back("bowling_ball");
+            blTag.tags.push_back("pushable");
+
+            // Bowling pins (triangle formation)
+            Math::Vector3 pinPos[] = {
+                Math::Vector3(20.0f, 0.4f, -4.0f),
+                Math::Vector3(19.5f, 0.4f, -5.0f), Math::Vector3(20.5f, 0.4f, -5.0f),
+                Math::Vector3(19.0f, 0.4f, -6.0f), Math::Vector3(20.0f, 0.4f, -6.0f), Math::Vector3(21.0f, 0.4f, -6.0f),
+            };
+            for (int i = 0; i < 6; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Pin %d", i + 1);
+                ECS::Entity pin = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(pin, name);
+                auto& pnT = m_World->AddComponent<ECS::TransformComponent>(pin);
+                pnT.position = pinPos[i];
+                pnT.scale = Math::Vector3(0.15f, 0.6f, 0.15f);
+                m_World->AddComponent<ECS::MeshComponent>(pin, Renderer::MeshFactory::CreateCapsule(0.15f, 0.4f));
+                auto& pnM = m_World->AddComponent<ECS::MaterialComponent>(pin);
+                pnM.baseColor = Math::Vector3(0.95f, 0.95f, 0.9f);
+                auto& pnRb = m_World->AddComponent<ECS::RigidbodyComponent>(pin);
+                pnRb.mass = 0.3f;
+                auto& pnTag = m_World->AddComponent<ECS::TagComponent>(pin);
+                pnTag.tags.push_back("bowling_pin");
+            }
+        }
+
+        // ========================================
+        // MINIGAME AREA: Target Practice
+        // Cooperative — one player activates targets, the other aims
+        // ========================================
+        {
+            // Target stand
+            ECS::Entity stand = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(stand, "Target Range");
+            auto& stT = m_World->AddComponent<ECS::TransformComponent>(stand);
+            stT.position = Math::Vector3(-20.0f, 1.5f, -8.0f);
+            stT.scale = Math::Vector3(6.0f, 3.0f, 0.2f);
+            m_World->AddComponent<ECS::MeshComponent>(stand, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& stM = m_World->AddComponent<ECS::MaterialComponent>(stand);
+            stM.baseColor = Math::Vector3(0.4f, 0.3f, 0.2f);
+            auto& stCol = m_World->AddComponent<ECS::BoxColliderComponent>(stand);
+            stCol.size = Math::Vector3(6.0f, 3.0f, 0.2f);
+
+            // 3 targets on the stand
+            for (int i = 0; i < 3; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Target %d", i + 1);
+                ECS::Entity target = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(target, name);
+                auto& tT = m_World->AddComponent<ECS::TransformComponent>(target);
+                tT.position = Math::Vector3(-22.0f + i * 2.0f, 1.5f, -7.8f);
+                m_World->AddComponent<ECS::MeshComponent>(target, Renderer::MeshFactory::CreateSphere(0.4f));
+                auto& tM = m_World->AddComponent<ECS::MaterialComponent>(target);
+                tM.baseColor = Math::Vector3(0.9f, 0.2f, 0.15f);
+                tM.emissiveColor = Math::Vector3(0.9f, 0.2f, 0.15f);
+                tM.emissiveStrength = 0.2f;
+                auto& tInt = m_World->AddComponent<ECS::InteractableComponent>(target);
+                tInt.promptText = "Hit!";
+                tInt.interactionRange = 1.5f;
+                auto& tTag = m_World->AddComponent<ECS::TagComponent>(target);
+                tTag.tags.push_back("target");
+                auto& tHp = m_World->AddComponent<ECS::HealthComponent>(target);
+                tHp.maxHealth = 10.0f;
+                tHp.currentHealth = 10.0f;
+            }
+
+            // Ammo crate (shared resource)
+            ECS::Entity ammo = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ammo, "Ammo Crate");
+            auto& amT = m_World->AddComponent<ECS::TransformComponent>(ammo);
+            amT.position = Math::Vector3(-20.0f, 0.35f, -4.0f);
+            amT.scale = Math::Vector3(0.6f, 0.5f, 0.6f);
+            m_World->AddComponent<ECS::MeshComponent>(ammo, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& amM = m_World->AddComponent<ECS::MaterialComponent>(ammo);
+            amM.baseColor = Math::Vector3(0.25f, 0.35f, 0.2f);
+            auto& amPu = m_World->AddComponent<ECS::PickupComponent>(ammo);
+            amPu.type = ECS::PickupComponent::PickupType::Custom;
+            amPu.customId = "ammo";
+            amPu.value = 10.0f;
+            auto& amTag = m_World->AddComponent<ECS::TagComponent>(ammo);
+            amTag.tags.push_back("pickup");
+        }
+
+        // ========================================
+        // ENVIRONMENT: Decorative walls + pathways
+        // ========================================
+        {
+            // Central puzzle area walls
+            struct WallDef { Math::Vector3 pos; Math::Vector3 scale; };
+            WallDef walls[] = {
+                { Math::Vector3(-8.0f, 1.0f, -3.0f),  Math::Vector3(0.3f, 2.0f, 8.0f) },   // Left wall
+                { Math::Vector3(8.0f, 1.0f, -3.0f),   Math::Vector3(0.3f, 2.0f, 8.0f) },   // Right wall
+                { Math::Vector3(0.0f, 1.0f, -12.0f),  Math::Vector3(16.0f, 2.0f, 0.3f) },  // Back wall
+                { Math::Vector3(0.0f, 0.6f, 3.0f),    Math::Vector3(6.0f, 0.3f, 0.3f) },   // Low fence
+            };
+            for (int i = 0; i < 4; ++i) {
+                char name[32];
+                snprintf(name, sizeof(name), "Wall %d", i + 1);
+                ECS::Entity wall = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(wall, name);
+                auto& wT = m_World->AddComponent<ECS::TransformComponent>(wall);
+                wT.position = walls[i].pos;
+                wT.scale = walls[i].scale;
+                m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+                auto& wM = m_World->AddComponent<ECS::MaterialComponent>(wall);
+                wM.baseColor = Math::Vector3(0.6f, 0.58f, 0.55f);
+                wM.roughness = 0.75f;
+                auto& wCol = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
+                wCol.size = walls[i].scale;
+            }
+        }
+
+        // ========================================
+        // GOAL: Cooperative chest at the end
+        // ========================================
+        {
+            ECS::Entity goal = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(goal, "Victory Chest");
+            auto& gT = m_World->AddComponent<ECS::TransformComponent>(goal);
+            gT.position = Math::Vector3(0.0f, 0.5f, -10.0f);
+            gT.scale = Math::Vector3(1.0f, 0.8f, 0.6f);
+            m_World->AddComponent<ECS::MeshComponent>(goal, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gM = m_World->AddComponent<ECS::MaterialComponent>(goal);
+            gM.baseColor = Math::Vector3(0.85f, 0.7f, 0.15f);
+            gM.emissiveColor = Math::Vector3(0.85f, 0.7f, 0.15f);
+            gM.emissiveStrength = 0.5f;
+            auto& gInt = m_World->AddComponent<ECS::InteractableComponent>(goal);
+            gInt.promptText = "Open together (both players needed)";
+            gInt.interactionRange = 2.5f;
+            auto& gTag = m_World->AddComponent<ECS::TagComponent>(goal);
+            gTag.tags.push_back("coop_objective");
+            gTag.tags.push_back("victory");
+
+            // Bobbing tween
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(goal);
+            tw.autoPlay = true;
+            ECS::TweenEntry bob;
+            bob.property = ECS::TweenProperty::Position;
+            bob.easing = ECS::EasingType::EaseInOutSine;
+            bob.mode = ECS::TweenMode::PingPong;
+            bob.startValue = Math::Vector3(0.0f, 0.5f, -10.0f);
+            bob.endValue = Math::Vector3(0.0f, 0.9f, -10.0f);
+            bob.duration = 1.5f;
+            tw.tweens.push_back(bob);
+        }
+
+        // --- Procedural Skybox (warm sunset) ---
+        {
+            Renderer::SkyboxConfig skyConfig;
+            skyConfig.type = Renderer::SkyboxType::Procedural;
+            skyConfig.topColor = Math::Vector3(0.25f, 0.35f, 0.75f);
+            skyConfig.horizonColor = Math::Vector3(0.95f, 0.65f, 0.4f);
+            skyConfig.bottomColor = Math::Vector3(0.35f, 0.5f, 0.3f);
+            skyConfig.sunDirection = Math::Vector3(0.4f, 0.6f, 0.5f);
+            m_RenderSystem->SetSkybox(skyConfig);
+        }
+
+        // --- Notes ---
+        {
+            ECS::Entity notes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(notes, "Just the Two of Us — Setup Notes");
+            auto& nt = m_World->AddComponent<ECS::TransformComponent>(notes);
+            nt.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+            auto& nc = m_World->AddComponent<ECS::NotesComponent>(notes);
+            nc.notes = "JUST THE TWO OF US (Co-op Puzzle Template)\n"
+                "=============================================\n"
+                "Inspired by 'It Takes Two' — cooperative physics puzzles,\n"
+                "environment minigames, and seamless splitscreen.\n"
+                "\n"
+                "Player A (Teal): WASD controls, left screen half\n"
+                "Player B (Coral): Arrow Keys / Gamepad 2, right screen half\n"
+                "\n"
+                "PUZZLES:\n"
+                "  1. Dual Pressure Plates — both players stand on plates to raise bridge\n"
+                "  2. Physics Seesaw — one player weighs down, other pushes boulder up\n"
+                "  3. Weight Balance — push correct crate combo onto scale\n"
+                "\n"
+                "MINIGAMES:\n"
+                "  - Bowling Lane (east) — roll ball to knock down pins\n"
+                "  - Target Practice (west) — one activates targets, other aims\n"
+                "\n"
+                "GOAL: Both players reach the Victory Chest together.\n"
+                "\n"
+                "Splitscreen: Each player has their own viewport (left/right halves).\n"
+                "Tip: To create a unified camera that splits when players walk apart,\n"
+                "use a Visual Script to detect distance and swap between a single\n"
+                "shared camera (viewportWidth=1.0) and two split cameras.\n";
+        }
+
+        // Render settings
+        m_RenderSystem->SetShadowsEnabled(true);
+        m_RenderSystem->SetAmbientIntensity(0.15f);
+
+        // Post-processing
+        if (m_PostProcessing) {
+            auto& pp = m_PostProcessing->GetSettings();
+            pp.fxaaEnabled = 1;
+            pp.bloomEnabled = 1;
+            pp.bloomIntensity = 0.15f;
+        }
+    }
+
     else if (templateId == "shadowtest") {
         // === SHADOW TEST TEMPLATE ===
         // Bright white ground so shadows are clearly visible
@@ -21620,7 +22125,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
             "uicanvas", "bullethell", "idleclicker", "pointclick", "ps1rpg",
             "visualnovel", "gamemanager", "citybuilder", "fpsarena", "teamsports",
             "towerdefense", "runner", "flower", "fixedcam", "metroidvania",
-            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "shadowtest",
+            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "justtwo", "shadowtest",
             "flash_td", "flash_dress", "flash_escape", "flash_rhythm"
         };
 
