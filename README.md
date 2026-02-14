@@ -74,7 +74,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **70+ Component Types** - Full inspector UI for all components
 - **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
 - **Camera Component** - In-game cameras with projection settings and frustum visualization
-- **Physics** - `IPhysicsBackend` abstraction with Jolt Physics v5.2.0 (3D) and Box2D v3.0.0 (2D) backends enabled by default, plus legacy SimplePhysics fallback (compile-optional via `ENJIN_PHYSICS_SIMPLE`). Collision detection, ground detection, debug wireframes for colliders and joints
+- **Physics** - `IPhysicsBackend` abstraction with Jolt Physics v5.2.0 (3D) and Box2D v3.0.0 (2D) backends enabled by default, plus legacy SimplePhysics fallback (compile-optional via `ENJIN_PHYSICS_SIMPLE`). Collision detection, 2D/3D ground detection for character controllers, debug wireframes for colliders and joints
 - **Gravity Zones** - Per-entity gravity override with directional, point, and zero-G modes
 - **Temperature Zones** - Heat/cold environmental effects
 - **Camera Trigger Zones** - Camera override volumes

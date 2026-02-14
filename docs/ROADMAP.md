@@ -145,7 +145,7 @@ Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplica
 #### Phase 4: Enable Production Backends ✅ COMPLETE
 
 - ~~PlayMode: swap `m_Physics` from `SimplePhysics` to `IPhysicsBackend*`~~ ✅ done (Phase 1)
-- ~~ControllerSystem: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
+- ~~ControllerSystem: `SetPhysics(IPhysicsBackend*)` + `SetPhysics2D(IPhysicsBackend2D*)`~~ ✅ done (Phase 1 + Phase 6) — Platformer2D uses 2D raycasts for ground detection, 2D templates switched to Body2DComponent
 - ~~ScriptBindings: `SetBindingsPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
 - ~~VisualScriptExecutor: `SetPhysics(IPhysicsBackend*)`~~ ✅ done (Phase 1)
 - ~~Player app: `unique_ptr<IPhysicsBackend>` via factory~~ ✅ done (Phase 1)

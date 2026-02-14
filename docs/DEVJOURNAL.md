@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-02-13 (Session 6)
+
+### Wire IPhysicsBackend2D into ControllerSystem
+
+Platformer2D controllers now use 2D physics raycasts for ground detection instead of requiring 3D BoxColliderComponents as a workaround.
+
+- **ControllerSystem.h/cpp:** Added `SetPhysics2D()`, `m_Physics2D` member, and `CheckGround2D()` method that casts a downward 2D raycast via `IPhysicsBackend2D::Raycast()`
+- **UpdatePlatformer2D:** Ground check now tries `CheckGround2D()` first (hits Body2DComponent), then `CheckGround()` (3D), then Y=0 fallback
+- **PlayMode + Player:** Both wire `SetPhysics2D(m_Physics2D.get())` into the controller system
+- **Templates:** Platformer ground/platforms/wall/moving-platform and TopDown2D walls/obstacles switched from `addBoxCollider3D` to `addBoxCollider2D` (Body2DComponent with proper half-extents)
+- Player entities still have NO Body2DComponent — controllers handle movement kinematically
+
+---
+
 ## 2026-02-13 (Session 5)
 
 ### Comprehensive Audit Fix Round — 132 of 152 Findings Resolved
