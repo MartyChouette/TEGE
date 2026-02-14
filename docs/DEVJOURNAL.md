@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-02-14 (Session 9)
+
+### Bug Fixes: Parent-Child Transforms, Weather Transitions, Delete Key
+
+**Parent-Child World Transforms:**
+`ComputeWorldMatrix()` added to `Hierarchy.h` — walks parent chain bottom-up (depth-capped at 64) to compute world matrices. 7 sites in `RenderSystem.cpp` (RenderToTarget, main pass, RenderEntity, RenderEntityShadow, GPU culling x2, RT acceleration structure) updated from local `ToMatrix()` to world matrix. `SpriteBatchRenderer.cpp` extracts world position/rotation/scale from the matrix for child sprites (root sprites keep the original fast path).
+
+**Weather Particle Transition:**
+When weather type changes (e.g., snow→rain from temperature), existing particles now have their lifetime capped to 0.5s for a smooth fade-out instead of lingering with stale size/speed properties.
+
+**Delete Key Shortcut:**
+Changed keyboard guard from `WantCaptureKeyboard` (true when ANY ImGui panel has focus) to `WantTextInput` (true only during text field editing). Delete, Ctrl+D, gizmo keys, and undo/redo now work after clicking in hierarchy/inspector.
+
+### Water & HUD Visual Script Nodes
+
+6 water nodes (SetStyle, SetWaveHeight, SetWaveSpeed, GetWaveHeight, SetOpacity, SetColor) and 2 HUD nodes (SetEnabled, IsEnabled) added. Fixed 2 existing weather VS node stubs (Set Weather, Set Fog) that were no-ops — they now call the weather system. All globals wired in PlayMode.cpp, EditorLayer.cpp, and Player/main.cpp.
+
+### Roadmap Cleanup
+
+All 31 feature accessibility gaps from the 2026-02-10 audit are now resolved and struck through in ROADMAP.md.
+
+---
+
 ## 2026-02-14 (Session 8)
 
 ### UISystem Texture Resolver + Animation Graph Dual-Mode Editor
