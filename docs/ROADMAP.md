@@ -526,9 +526,9 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | IK-driven mesh deformation | Medium | High | P3 | Planned |
 | Fractal terrain & L-system vegetation (advanced) | High | High | P2 | ✅ Complete (fBm terrain with ridged multifractal, hydraulic/thermal erosion, 3D L-system turtle with stochastic rules) |
 | **— Simulation-Driven Geometry —** | | | | |
-| Reaction-diffusion on meshes | Medium | High | P3 | Planned |
-| Cellular automata as geometry | Medium | Medium | P3 | Planned |
-| Slime mold simulation (Physarum) | Medium | Medium | P3 | Planned |
+| ~~Reaction-diffusion on meshes~~ | Medium | High | P3 | ✅ Done |
+| ~~Cellular automata as geometry~~ | Medium | Medium | P3 | ✅ Done |
+| ~~Slime mold simulation (Physarum)~~ | Medium | Medium | P3 | ✅ Done |
 | Fluid simulation as terrain | Medium | Medium | P2 | ✅ Complete (FluidTerrainCoupling: erosion + accumulate modes, bidirectional terrain↔fluid) |
 | Voronoi fracture with persistent physics | High | Medium | P2 | ✅ Complete |
 | **— Simulation & Flow —** | | | | |
@@ -555,7 +555,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Hub application (launcher) | Medium | Very High | P4 | Planned |
 | **— Flash Game Revival —** | | | | |
 | SWF import & conversion | Medium | Very High | P4 | Planned |
-| Flash-style timeline authoring | Medium | High | P3 | Planned |
+| ~~Flash-style timeline authoring~~ | Medium | High | P3 | ✅ Done |
 | AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | Planned |
 | **— Collaboration —** | | | | |
 | Collaborative editing (OT/CRDT) | Medium | Very High | P4 | ✅ Complete (EditorLayer wiring: remote edit callbacks, scene sync, edit recording at 5 points, status indicator) |
@@ -602,7 +602,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 - ~~**Project Hub & Creation Wizard**~~ ✅ (v1) — All 4 tabs (Recent/New/Open/Demos), 38 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done. **v2 redesign planned** — see "Project Hub Redesign & Template Creator" section: 3-action landing (New/Open/Sandbox), template creator with panel checkboxes and auto-thumbnail capture, project name in separate popup, `TEGE_Projects` default directory, software distribution tiers
 - ~~**Undo/Redo**~~ ✅ — Entity operations, visual script node edits, inspector property edits, tilemap paint (per-stroke with cell deduplication), terrain sculpt (heightmap+splatmap snapshot), UI editor edits (move/resize/nudge/delete) all done
 - ~~**Drag and Drop**~~ ✅ — OS file drop, hierarchy reparenting, asset browser to Game View (model/prefab/image/scene/audio/script dispatch), material inspector texture fields, sprite inspector texture fields all done
-- ~~**Asset Import Pipeline**~~ ✅ — Import settings dialog, .enjinasset metadata, asset browser drag-import, and source-app import presets (10 DCC tools with auto-detection) done. Remaining: thumbnails, texture compression
+- ~~**Asset Import Pipeline**~~ ✅ — Import settings dialog, .enjinasset metadata, asset browser drag-import, source-app import presets (10 DCC tools), thumbnails (CPU rasterizer with caching), texture compression (BC1/BC3/BC4/BC5/BC7/ASTC with mipmap gen) — fully complete
 
 ### Source-App Import Presets ✅ COMPLETE
 
@@ -1155,7 +1155,7 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 - **MovieClip mapping** — Convert Flash MovieClip hierarchy to entity hierarchy with nested `AnimatedSprite2DComponent` instances. Symbols → prefabs
 
 ### Flash-Style Authoring Workflow
-- **Frame-based timeline editor** — Flash-like timeline panel with layers, keyframes, and tweens. Extends the existing Animation/Sequencer system with per-frame scrubbing, onion skinning (already implemented in PixelEditor), and shape tweening preview
+- ~~**Frame-based timeline editor**~~ ✅ — `TimelineEditor` class extends Timeline with Flash-style authoring: layers, property tracks, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), auto-key, curve editor with tangent handles, dopesheet view, onion skinning, copy/paste/delete, frame snapping
 - **Vector drawing tools** — Basic shape primitives (rect, ellipse, line, pen/bezier) rendered via SVG pipeline. Export to sprite sheets for runtime. Complements the existing PixelEditor for bitmap art
 - **Symbol library** — Reusable graphic symbols stored as prefabs. Drag from library to stage. Nested symbol editing (like Flash's "Edit Symbol" mode). Built on existing PrefabManager
 
@@ -1356,9 +1356,9 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 ### Simulation-Driven Geometry
 
-- **Reaction-Diffusion on Meshes** — Gray-Scott / Turing pattern simulation running on mesh UV or vertex neighborhoods. Configurable feed/kill rates, diffusion coefficients, and color mapping. Use cases: organic surface patterning (animal skin, coral, lichen), procedural texture generation without UV unwrap. Per-material component with live preview, preset patterns ("Spots", "Stripes", "Labyrinth", "Mitosis"), bake-to-texture export
-- **Cellular Automata as Geometry** — 2D/3D cellular automata (Conway, Brian's Brain, Rule 110, custom rulesets) where live cells become geometry — voxels, marching cubes isosurface, or instanced meshes. Step-through or continuous evolution with configurable tick rate. Use cases: growing crystal structures, evolving architecture, generative art installations. Inspector with rule editor, seed painter, generation history scrubber
-- **Slime Mold Simulation (Physarum)** — Agent-based Physarum polycephalum simulation: thousands of agents deposit/sense/turn on a diffusion trail map. Configurable sensor angle, sensor distance, turn speed, deposit amount, decay rate. Outputs a density field renderable as particles, mesh displacement, or luminous volume. Use cases: organic network generation, procedural road/river layouts, bioluminescent VFX
+- ~~**Reaction-Diffusion on Meshes**~~ ✅ — `ReactionDiffusion` class (Gray-Scott model) with 9 presets (MitosisSpots, CoralGrowth, Fingerprints, Leopard, Labyrinth, WormHoles, BubblePacking, Spirals, Custom). Configurable feed/kill rates, diffusion coefficients, sub-stepping, circular/random seeding, bake-to-RGBA8 texture and heightmap export.
+- ~~**Cellular Automata as Geometry**~~ ✅ — `CellularAutomataGeometry` class with 7 CA rules (GameOfLife, HighLife, DayAndNight, Seeds, BriansBrain, Rule110, Diamoeba, Custom). 3 mesh modes: Voxels (greedy face culling), Marching Cubes (256-entry tables), Point Cloud. Classic pattern stamps (Glider, Pulsar, Gosper Glider Gun).
+- ~~**Slime Mold Simulation (Physarum)**~~ ✅ — `PhysarumSimulation` class with 50K+ agents, trail map diffusion/decay, 5 presets (ClassicSlime, BranchingNetwork, DenseWeb, Tendrils, Pulsating). Food source placement, bilinear trail sampling, bake-to-RGBA8 and heightmap export.
 - ~~**Fluid Simulation as Terrain**~~ ✅ — `FluidTerrainCoupling` system wires FluidSimulation density/velocity grids to TerrainComponent heightmap. Erosion mode (velocity erodes terrain height) and accumulate mode (density builds terrain, e.g. lava). Bidirectional: terrain slope drives fluid flow. Configurable erosion rate, accumulation rate, coupling strength. Files: `FluidTerrainCoupling.h/cpp`
 - ~~**Voronoi Fracture with Persistent Physics**~~ ✅ — VoronoiMeshFracture (Sutherland-Hodgman mesh clipping) produces real mesh fragments. FractureConfigComponent for per-entity config (fragment count, explosion force, persistence, re-fracture depth, pre-fracture with breakable joints, auto-cleanup). DestructibleSystem extended with `CreatePersistentFragments()` — fragments become full ECS entities (Transform+Mesh+Material+Rigidbody+BoxCollider). FIFO fragment entity limit, recursive re-fracture with reduced count per depth level. Editor inspector UI and full serialization
 

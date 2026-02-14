@@ -7198,6 +7198,21 @@ void EditorLayer::DrawAssetBrowserPanel() {
                                      ImVec2(thumbSize, thumbSize));
                         drewThumb = true;
 
+                        // Compression status badge (bottom-right corner)
+                        {
+                            ImVec2 imgMin = ImGui::GetItemRectMin();
+                            ImVec2 imgMax = ImGui::GetItemRectMax();
+                            ImDrawList* dl = ImGui::GetWindowDrawList();
+                            const char* badge = "RAW";
+                            ImU32 badgeCol = IM_COL32(200, 140, 40, 200);
+                            ImU32 badgeBg = IM_COL32(40, 30, 10, 180);
+                            ImVec2 badgeSize = ImGui::CalcTextSize(badge);
+                            f32 px = 3.0f, py = 1.0f;
+                            ImVec2 badgeMin(imgMax.x - badgeSize.x - px * 2, imgMax.y - badgeSize.y - py * 2);
+                            dl->AddRectFilled(badgeMin, imgMax, badgeBg, 3.0f);
+                            dl->AddText(ImVec2(badgeMin.x + px, badgeMin.y + py), badgeCol, badge);
+                        }
+
                         // Hover tooltip: larger preview
                         if (ImGui::IsItemHovered()) {
                             ImGui::BeginTooltip();
@@ -7206,6 +7221,7 @@ void EditorLayer::DrawAssetBrowserPanel() {
                                          ImVec2(previewSize, previewSize));
                             ImGui::Text("%s", entry.name.c_str());
                             ImGui::TextDisabled("%s", FormatFileSize(entry.fileSize).c_str());
+                            ImGui::TextDisabled("Right-click to compress");
                             ImGui::EndTooltip();
                         }
                     }
@@ -7296,6 +7312,32 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::EndDragDropSource();
                 }
+
+                // Right-click context menu
+                if (ImGui::BeginPopupContextItem("##AssetCtxGrid")) {
+                    if (IsImage(entry.extension)) {
+                        if (ImGui::MenuItem("Compress Texture...")) {
+                            m_ShowCompressionSettings = true;
+                            m_CompressionTargetPath = entry.fullPath;
+                            m_CompressionLastResult.clear();
+                            // Recommend format based on extension
+                            bool hasAlpha = (entry.extension == ".png" || entry.extension == ".tga");
+                            m_TextureCompSettings.format = Assets::TextureCompressor::RecommendFormat(
+                                4, hasAlpha, false, false);
+                        }
+                    }
+                    if (IsModel(entry.extension)) {
+                        if (ImGui::MenuItem("Import Model")) {
+                            ImportModel(entry.fullPath);
+                        }
+                    }
+                    if (IsScene(entry.extension)) {
+                        if (ImGui::MenuItem("Open Scene")) {
+                            OpenScene(entry.fullPath);
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
             }
 
             // Filename label below thumbnail (truncated)
@@ -7384,11 +7426,42 @@ void EditorLayer::DrawAssetBrowserPanel() {
                     ImGui::Text("%s", entry.name.c_str());
                     ImGui::EndDragDropSource();
                 }
+
+                // Right-click context menu
+                if (ImGui::BeginPopupContextItem("##AssetCtxList")) {
+                    if (IsImage(entry.extension)) {
+                        if (ImGui::MenuItem("Compress Texture...")) {
+                            m_ShowCompressionSettings = true;
+                            m_CompressionTargetPath = entry.fullPath;
+                            m_CompressionLastResult.clear();
+                            bool hasAlpha = (entry.extension == ".png" || entry.extension == ".tga");
+                            m_TextureCompSettings.format = Assets::TextureCompressor::RecommendFormat(
+                                4, hasAlpha, false, false);
+                        }
+                    }
+                    if (IsModel(entry.extension)) {
+                        if (ImGui::MenuItem("Import Model")) {
+                            ImportModel(entry.fullPath);
+                        }
+                    }
+                    if (IsScene(entry.extension)) {
+                        if (ImGui::MenuItem("Open Scene")) {
+                            OpenScene(entry.fullPath);
+                        }
+                    }
+                    ImGui::EndPopup();
+                }
             }
         }
     }
 
     ImGui::EndChild();
+
+    // Draw compression settings window if open
+    if (m_ShowCompressionSettings) {
+        DrawTextureCompressionWindow();
+    }
+
     ImGui::End();
 }
 
@@ -29468,6 +29541,91 @@ void EditorLayer::CleanupImGuiTextureCache() {
     m_ImGuiTextureCache.clear();
     m_ThumbnailTextures.clear();
     m_ThumbnailGenerator.ClearCache();
+}
+
+void EditorLayer::DrawTextureCompressionWindow() {
+    if (!m_ShowCompressionSettings) return;
+
+    ImGui::SetNextWindowSize(ImVec2(380, 340), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Compress Texture", &m_ShowCompressionSettings)) {
+        // Show target file
+        namespace fs = std::filesystem;
+        fs::path targetPath(m_CompressionTargetPath);
+        ImGui::Text("File: %s", targetPath.filename().string().c_str());
+        ImGui::TextDisabled("%s", m_CompressionTargetPath.c_str());
+        ImGui::Separator();
+
+        // Format combo
+        const char* formatNames[] = {
+            "None", "BC1 (DXT1)", "BC3 (DXT5)", "BC4 (R)", "BC5 (RG)",
+            "BC7 (RGBA)", "ASTC 4x4", "ASTC 6x6", "ASTC 8x8"
+        };
+        int formatIdx = static_cast<int>(m_TextureCompSettings.format);
+        if (ImGui::Combo("Format", &formatIdx, formatNames, 9)) {
+            m_TextureCompSettings.format = static_cast<Assets::CompressedFormat>(formatIdx);
+        }
+
+        // Quality combo
+        const char* qualityNames[] = { "Fast", "Normal", "High" };
+        int qualityIdx = static_cast<int>(m_TextureCompSettings.quality);
+        if (ImGui::Combo("Quality", &qualityIdx, qualityNames, 3)) {
+            m_TextureCompSettings.quality = static_cast<Assets::CompressionQuality>(qualityIdx);
+        }
+
+        ImGui::Checkbox("Generate Mipmaps", &m_TextureCompSettings.generateMipmaps);
+        ImGui::Checkbox("sRGB", &m_TextureCompSettings.sRGB);
+
+        // Compression ratio preview
+        if (m_TextureCompSettings.format != Assets::CompressedFormat::None) {
+            f32 ratio = Assets::TextureCompressor::CompressionRatio(m_TextureCompSettings.format);
+            u32 bpp = Assets::TextureCompressor::BitsPerPixel(m_TextureCompSettings.format);
+            ImGui::Separator();
+            ImGui::Text("Compression Ratio: %.1fx", ratio);
+            ImGui::Text("Bits Per Pixel: %u (from 32)", bpp);
+        }
+
+        ImGui::Separator();
+
+        // Compress button
+        if (m_TextureCompSettings.format != Assets::CompressedFormat::None) {
+            if (ImGui::Button("Compress", ImVec2(120, 0))) {
+                // Load texture data
+                int w = 0, h = 0, ch = 0;
+                stbi_uc* pixels = stbi_load(m_CompressionTargetPath.c_str(), &w, &h, &ch, STBI_rgb_alpha);
+                if (pixels && w > 0 && h > 0) {
+                    auto result = Assets::TextureCompressor::Compress(
+                        pixels, static_cast<u32>(w), static_cast<u32>(h), m_TextureCompSettings);
+                    stbi_image_free(pixels);
+
+                    if (result.valid) {
+                        usize totalCompressed = 0;
+                        for (const auto& mip : result.mipLevels) totalCompressed += mip.data.size();
+                        usize totalUncompressed = static_cast<usize>(w) * h * 4;
+                        m_CompressionLastResult = "Compressed: " + std::to_string(totalUncompressed) +
+                            " -> " + std::to_string(totalCompressed) + " bytes (" +
+                            std::to_string(result.mipLevels.size()) + " mip levels)";
+                    } else {
+                        m_CompressionLastResult = "Compression failed";
+                    }
+                } else {
+                    if (pixels) stbi_image_free(pixels);
+                    m_CompressionLastResult = "Failed to load texture file";
+                }
+            }
+        }
+
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(80, 0))) {
+            m_ShowCompressionSettings = false;
+        }
+
+        // Result message
+        if (!m_CompressionLastResult.empty()) {
+            ImGui::Spacing();
+            ImGui::TextWrapped("%s", m_CompressionLastResult.c_str());
+        }
+    }
+    ImGui::End();
 }
 
 // --- Tilemap viewport brush tool (follows terrain brush pattern) ---

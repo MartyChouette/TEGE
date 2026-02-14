@@ -5,6 +5,7 @@
 1. **[README.md](../README.md)** - Project overview and feature list
 2. **[BUILD.md](BUILD.md)** - Consolidated build guide (all platforms, dependencies, troubleshooting)
 3. **[USER_MANUAL.md](USER_MANUAL.md)** - Editor usage, scripting guide, and workflow reference
+4. **[TUTORIALS.md](TUTORIALS.md)** - 55 hands-on tutorials covering all engine features (foundations, 2D/3D, scripting, game systems, AI, VFX, audio, procedural gen, networking, building, accessibility, advanced topics)
 
 ## Architecture & Design
 
@@ -47,6 +48,12 @@
 | Save System | `Enjin/Gameplay/TieredSaveSystem.h` | 20-slot tiered saves (SceneState/RunState/MetaProgression), auto-save, checkpoints, cloud backends |
 | Save Backends | `Enjin/Gameplay/SaveBackend.h` | ISaveBackend interface + Local/Newgrounds/Steam implementations |
 | Play Mode Diff | `Enjin/Editor/PlayModeDiff.h` | JSON diff of pre/post play scene states, cherry-pick apply dialog |
+| Reaction-Diffusion | `Enjin/Effects/ReactionDiffusion.h` | Gray-Scott model, 9 presets, bake-to-texture/heightmap |
+| Cellular Automata | `Enjin/Effects/CellularAutomataGeometry.h` | 7 CA rules, 3 mesh modes (Voxels/MarchingCubes/PointCloud) |
+| Physarum Sim | `Enjin/Effects/PhysarumSimulation.h` | Agent-based slime mold, 5 presets, trail diffusion/decay |
+| Timeline Editor | `Enjin/Animation/TimelineEditor.h` | Flash-style keyframe editor, layers, Bezier/CatmullRom curves, auto-key |
+| Thumbnails | `Enjin/Assets/ThumbnailGenerator.h` | Asset preview generation with CPU rasterizer and caching |
+| Texture Compression | `Enjin/Assets/TextureCompressor.h` | BCn/ASTC compression with mipmap generation |
 
 ---
 

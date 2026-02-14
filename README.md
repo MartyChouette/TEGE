@@ -146,6 +146,10 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Fluid-Terrain Coupling** - Bidirectional FluidSimulation-to-TerrainComponent coupling with erosion and accumulation modes
 - **Localization** - String tables, CSV/JSON I/O, parameterized strings, LOC() macro
 - **Dialogue Assets** - .enjdlg dialogue files with visual tree editor
+- **Reaction-Diffusion** - Gray-Scott model Turing pattern simulation with 9 presets, bake-to-texture and heightmap export
+- **Cellular Automata Geometry** - 7 CA rules (GameOfLife, BriansBrain, Rule110, etc.) with 3 mesh modes (Voxels, Marching Cubes, Point Cloud)
+- **Physarum Simulation** - Agent-based slime mold network generation with 5 presets, food sources, trail diffusion/decay
+- **Timeline Editor** - Flash-style keyframe animation editor with layers, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), curve editor, onion skinning, auto-key
 
 ### Asset Libraries
 - **Font Library** - 42 curated OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) with editor browser, search, and install
@@ -159,6 +163,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop with full particle, subtitle, announcer, alternative input, and post-processing support
 - **Import Presets** - Source-app import presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp) with auto-detection and per-axis flip toggles
+- **Texture Compression** - CPU-side BCn/ASTC compression (BC1/BC3/BC4/BC5/BC7, ASTC 4x4/6x6/8x8) with mipmap generation and quality presets
+- **Asset Thumbnails** - Auto-generated preview thumbnails for images, 3D models (software rasterizer), and scenes with caching
 - **Binary Distribution** - CMake install rules + CPack config for Windows ZIP packaging, one-command build scripts (package.bat/package.sh)
 
 ### Scripting & Extensibility
@@ -167,7 +173,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
 - **C++ Hot-Reload** - File watching, DLL reload with state save/restore
-- **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes
+- **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes; Flash-style timeline editor with layers, curve editor, and onion skinning
 - **Newgrounds.io API** - Session management, medals, scoreboards, cloud saves for web games
 - **DataAsset System** - Schema definitions with typed instances, JSON I/O, script bindings
 

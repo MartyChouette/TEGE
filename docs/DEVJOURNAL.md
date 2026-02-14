@@ -2,6 +2,38 @@
 
 ---
 
+## 2026-02-14 (Session 11)
+
+### Reaction-Diffusion Simulation
+
+New `ReactionDiffusion` system (`ReactionDiffusion.h/cpp`) implements the Gray-Scott model for Turing pattern generation on 2D grids. 9 presets (MitosisSpots, CoralGrowth, Fingerprints, Leopard, Labyrinth, WormHoles, BubblePacking, Spirals, Custom). Features: configurable feed/kill rates, diffusion coefficients, sub-stepping, circular/random seeding, bake-to-RGBA8 texture and heightmap export. Uses 5-point Laplacian stencil with toroidal boundary conditions.
+
+### Cellular Automata as Geometry
+
+New `CellularAutomataGeometry` system (`CellularAutomataGeometry.h/cpp`) converts CA grids into real-time 3D geometry. 7 rules (GameOfLife, HighLife, DayAndNight, Seeds, BriansBrain, Rule110, Diamoeba, Custom) with birth/survival bitmask configuration. 3 mesh generation modes: Voxels (greedy face culling), Marching Cubes (smooth isosurface with 256-entry edge/triangle tables), Point Cloud (icosphere per cell). Classic pattern stamps: Glider, Pulsar, Gosper Glider Gun.
+
+### Physarum Slime Mold Simulation
+
+New `PhysarumSimulation` system (`PhysarumSimulation.h/cpp`) implements agent-based Physarum polycephalum behavior. 50K+ agents sense, turn, move, and deposit trails on a 2D grid. Trail map diffuses and decays each step, creating organic self-organizing networks. 5 presets (ClassicSlime, BranchingNetwork, DenseWeb, Tendrils, Pulsating). Features: food source placement, circle/ring/point seeding, bilinear trail sampling, bake-to-RGBA8 and heightmap export.
+
+### Flash-Style Timeline Editor
+
+New `TimelineEditor` class (`TimelineEditor.h/cpp`) extends the existing `Timeline.h` system with keyframe authoring workflow. Features: layers (like Flash layers), property tracks with 4 interpolation modes (Constant, Linear, Bezier, Catmull-Rom), auto-key recording, curve editor with tangent handles, dopesheet view, onion skinning, copy/paste/delete keyframes, frame snapping. Animates transform.position, transform.rotation (Quaternion-safe), transform.scale, material.opacity, material.emissiveStrength, light.intensity, light.color, sprite.color.
+
+### Asset Import Pipeline Wiring
+
+Wired `ThumbnailGenerator` and `TextureCompressor` into the editor's asset browser. Thumbnail generation on hover with caching, right-click "Compress Texture..." context menu for image files, compression settings dialog (format, quality, mipmaps, sRGB), compression ratio preview. Texture formats: BC1/BC3/BC4/BC5/BC7 (desktop), ASTC 4x4/6x6/8x8 (mobile).
+
+### Accessibility Runtime Wiring
+
+Verified and completed accessibility settings wiring in Player app. All RuntimeAccessibilitySettings fields now properly applied: colorblind mode to PostProcessing, reduced motion to ControllerSystem/WeatherSystem/ParticleSystem, subtitle settings to SubtitleSystem, font scale to UISystem, dyslexia-friendly spacing. Settings loaded from JSON file on startup.
+
+### Comprehensive Tutorial Book
+
+Created `docs/TUTORIALS.md` — 55 tutorials + 3 appendices covering the entire engine feature set. Organized in 13 parts: Foundations, 2D Development, 3D Development, Scripting, Game Systems, AI/Pathfinding, Visual Effects, Audio, Procedural Generation, Animation/Timeline, Networking, Building/Distribution, Advanced Topics. Includes cross-feature interaction patterns (procedural dungeon+AI, living world, retro flash game, narrative RPG, physics puzzle).
+
+---
+
 ## 2026-02-14 (Session 10)
 
 ### OIDN Denoiser for RT Pipeline

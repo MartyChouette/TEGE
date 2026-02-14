@@ -4,6 +4,8 @@ Enjin is a proprietary, licensable game engine built from scratch using C++20 an
 
 This manual covers everything you need to get started and build games with Enjin.
 
+> **Tutorials:** For hands-on, step-by-step tutorials covering all engine features (55 tutorials from basics to advanced topics), see [TUTORIALS.md](TUTORIALS.md).
+
 ---
 
 ## Table of Contents

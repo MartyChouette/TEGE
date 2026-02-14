@@ -71,6 +71,8 @@
 #include <iostream>
 #include <memory>
 #include <filesystem>
+#include <fstream>
+#include <algorithm>
 
 namespace fs = std::filesystem;
 
@@ -887,7 +889,10 @@ private:
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
 
-        // Configure subtitle system with defaults
+        // Load accessibility settings from accessibility.json next to executable
+        LoadAccessibilitySettings();
+
+        // Configure subtitle system from accessibility settings
         auto& subConfig = m_SubtitleSystem.GetConfig();
         subConfig.enabled = m_AccessibilitySettings.subtitlesEnabled;
         subConfig.captionsEnabled = m_AccessibilitySettings.closedCaptionsEnabled;
@@ -901,11 +906,17 @@ private:
             m_Announcer.Announce(text);
         });
 
-        // Apply reduced motion setting to controller system
+        // Apply reduced motion setting to controller system and UI
         m_ControllerSystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
+        m_UISystem.SetReducedMotion(m_AccessibilitySettings.reducedMotion);
 
         // Apply font scale to UISystem
         m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+
+        // Apply colorblind mode and visual settings to post-processing
+        if (m_PostProcessing) {
+            m_AccessibilitySettings.ApplyToPostProcessing(m_PostProcessing->GetSettings());
+        }
 
         // Wire UISystem texture resolver (loads textures via RenderSystem, registers with ImGui)
         m_UISystem.SetTextureResolver([this](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
@@ -1027,6 +1038,101 @@ private:
 
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
         return true;
+    }
+
+    void LoadAccessibilitySettings() {
+        std::string exeDir = Enjin::Platform::GetExecutableDirectory();
+        std::string settingsPath = (fs::path(exeDir) / "accessibility.json").string();
+
+        // Try loading from pack first, then from file system
+        std::string jsonStr;
+        auto packData = m_AssetReader.ReadFile("accessibility.json");
+        if (!packData.empty()) {
+            jsonStr.assign(packData.begin(), packData.end());
+        } else if (fs::exists(settingsPath)) {
+            std::ifstream file(settingsPath);
+            if (file.is_open()) {
+                jsonStr.assign(std::istreambuf_iterator<char>(file),
+                               std::istreambuf_iterator<char>());
+            }
+        }
+
+        if (jsonStr.empty()) {
+            ENJIN_LOG_INFO(Player, "No accessibility.json found — using defaults");
+            return;
+        }
+
+        try {
+            auto j = nlohmann::json::parse(jsonStr);
+
+            // Visual settings
+            if (j.contains("colorblindMode"))
+                m_AccessibilitySettings.colorblindMode = static_cast<Enjin::Accessibility::ColorblindMode>(
+                    j["colorblindMode"].get<Enjin::u32>());
+            if (j.contains("colorblindStrength"))
+                m_AccessibilitySettings.colorblindStrength = j["colorblindStrength"].get<Enjin::f32>();
+            if (j.contains("screenBrightness"))
+                m_AccessibilitySettings.screenBrightness = j["screenBrightness"].get<Enjin::f32>();
+            if (j.contains("screenContrast"))
+                m_AccessibilitySettings.screenContrast = j["screenContrast"].get<Enjin::f32>();
+
+            // Motion settings
+            if (j.contains("reducedMotion"))
+                m_AccessibilitySettings.reducedMotion = j["reducedMotion"].get<bool>();
+            if (j.contains("disableScreenShake"))
+                m_AccessibilitySettings.disableScreenShake = j["disableScreenShake"].get<bool>();
+            if (j.contains("disableFOVEffects"))
+                m_AccessibilitySettings.disableFOVEffects = j["disableFOVEffects"].get<bool>();
+            if (j.contains("disableFlashingLights"))
+                m_AccessibilitySettings.disableFlashingLights = j["disableFlashingLights"].get<bool>();
+
+            // Subtitle settings
+            if (j.contains("subtitlesEnabled"))
+                m_AccessibilitySettings.subtitlesEnabled = j["subtitlesEnabled"].get<bool>();
+            if (j.contains("closedCaptionsEnabled"))
+                m_AccessibilitySettings.closedCaptionsEnabled = j["closedCaptionsEnabled"].get<bool>();
+            if (j.contains("subtitleFontSize"))
+                m_AccessibilitySettings.subtitleFontSize = j["subtitleFontSize"].get<Enjin::f32>();
+            if (j.contains("subtitleBgOpacity"))
+                m_AccessibilitySettings.subtitleBgOpacity = j["subtitleBgOpacity"].get<Enjin::f32>();
+            if (j.contains("subtitleSpeakerNames"))
+                m_AccessibilitySettings.subtitleSpeakerNames = j["subtitleSpeakerNames"].get<bool>();
+            if (j.contains("subtitleDirectionIndicators"))
+                m_AccessibilitySettings.subtitleDirectionIndicators = j["subtitleDirectionIndicators"].get<bool>();
+
+            // Font scaling
+            if (j.contains("fontScale")) {
+                Enjin::f32 scale = j["fontScale"].get<Enjin::f32>();
+                m_AccessibilitySettings.fontScale = std::clamp(scale, 0.5f, 3.0f);
+            }
+
+            // Dyslexia-friendly settings
+            if (j.contains("dyslexiaFriendly"))
+                m_AccessibilitySettings.dyslexiaFriendly = j["dyslexiaFriendly"].get<bool>();
+            if (j.contains("letterSpacing"))
+                m_AccessibilitySettings.letterSpacing = j["letterSpacing"].get<Enjin::f32>();
+            if (j.contains("wordSpacing"))
+                m_AccessibilitySettings.wordSpacing = j["wordSpacing"].get<Enjin::f32>();
+
+            // Input settings
+            if (j.contains("sprintMode"))
+                m_AccessibilitySettings.sprintMode = j["sprintMode"].get<Enjin::u32>();
+            if (j.contains("crouchMode"))
+                m_AccessibilitySettings.crouchMode = j["crouchMode"].get<Enjin::u32>();
+            if (j.contains("mouseSensitivity"))
+                m_AccessibilitySettings.mouseSensitivity = j["mouseSensitivity"].get<Enjin::f32>();
+            if (j.contains("invertMouseY"))
+                m_AccessibilitySettings.invertMouseY = j["invertMouseY"].get<bool>();
+
+            ENJIN_LOG_INFO(Player, "Loaded accessibility settings (colorblind=%u, reducedMotion=%s, fontScale=%.1f, subtitles=%s, dyslexia=%s)",
+                static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
+                m_AccessibilitySettings.reducedMotion ? "ON" : "OFF",
+                m_AccessibilitySettings.fontScale,
+                m_AccessibilitySettings.subtitlesEnabled ? "ON" : "OFF",
+                m_AccessibilitySettings.dyslexiaFriendly ? "ON" : "OFF");
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Player, "Failed to parse accessibility.json: %s", e.what());
+        }
     }
 
     // Default pack key — matches the build pipeline default

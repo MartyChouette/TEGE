@@ -879,6 +879,13 @@ private:
     std::vector<std::shared_ptr<Renderer::Texture>> m_ThumbnailTextures; // Keep GPU textures alive
     VkDescriptorSet GetAssetThumbnail(const std::string& path);
 
+    // Texture compression settings (asset browser context menu)
+    Assets::TextureCompressionSettings m_TextureCompSettings;
+    bool m_ShowCompressionSettings = false;
+    std::string m_CompressionTargetPath;       // Path of the texture being compressed
+    std::string m_CompressionLastResult;       // Status message after compression
+    void DrawTextureCompressionWindow();
+
     // Sprite frame picker state
     f32 m_SpriteFramePickerW = 32.0f;
     f32 m_SpriteFramePickerH = 32.0f;
