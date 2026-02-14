@@ -12,6 +12,10 @@ public:
     StateMachineSystem() = default;
     ~StateMachineSystem() = default;
 
+    // Enable/disable state machine updates
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+    bool IsEnabled() const { return m_Enabled; }
+
     // Set script engine for state callbacks (optional — callbacks silently skipped if null)
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_ScriptEngine = engine; }
 
@@ -23,6 +27,7 @@ private:
     void InvokeCallback(World* world, Entity entity, const std::string& methodName);
 
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
+    bool m_Enabled = true;
 };
 
 } // namespace ECS

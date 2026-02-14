@@ -13,6 +13,10 @@ public:
     TweenSystem() = default;
     ~TweenSystem() = default;
 
+    // Enable/disable tween updates
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+    bool IsEnabled() const { return m_Enabled; }
+
     // Set script engine for OnComplete callbacks (optional — callbacks silently skipped if null)
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_ScriptEngine = engine; }
 
@@ -28,6 +32,7 @@ private:
     void InvokeCallback(World* world, Entity entity, const std::string& methodName);
 
     Scripting::ScriptEngine* m_ScriptEngine = nullptr;
+    bool m_Enabled = true;
 
     // Reusable per-frame storage (avoids per-frame allocation)
     struct PendingCallback {

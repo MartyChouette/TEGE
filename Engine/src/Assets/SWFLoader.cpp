@@ -7,8 +7,8 @@
 #include <cmath>
 #include <filesystem>
 
-// zlib decompression for compressed SWF (CWS) is optional.
-// Full support requires linking zlib; for now compressed SWFs log a warning.
+// stb_image bundles a zlib decompressor we can use for CWS (zlib-compressed SWF) files
+#include "stb_image.h"
 
 namespace Enjin {
 namespace Assets {
@@ -629,11 +629,43 @@ SWFSound SWFLoader::ParseDefineSound(BitReader& reader, u32 tagLength) {
 
 bool SWFLoader::DecompressZlib(const u8* input, usize inputSize,
                                 std::vector<u8>& output, usize expectedSize) {
-    // Zlib decompression stub — compressed SWFs (CWS) not yet supported
-    // without linking zlib. Only uncompressed SWFs (FWS) are parsed.
-    (void)input; (void)inputSize; (void)output; (void)expectedSize;
-    ENJIN_LOG_WARN(Asset, "SWF zlib decompression not available — only uncompressed SWFs (FWS) supported");
-    return false;
+    if (!input || inputSize == 0 || expectedSize == 0) {
+        ENJIN_LOG_ERROR(Assets, "SWF DecompressZlib: invalid input parameters");
+        return false;
+    }
+
+    // Cap expected size to a reasonable maximum (256 MB) to prevent OOM from malformed files
+    constexpr usize kMaxDecompressedSize = 256u * 1024u * 1024u;
+    if (expectedSize > kMaxDecompressedSize) {
+        ENJIN_LOG_ERROR(Assets, "SWF DecompressZlib: expected size %zu exceeds maximum %zu",
+                        expectedSize, kMaxDecompressedSize);
+        return false;
+    }
+
+    // Resize output buffer to the expected uncompressed size
+    output.resize(expectedSize);
+
+    // Use stb_image's built-in zlib decompressor (stbi_zlib_decode_buffer)
+    // This function expects zlib-format data (with header), which is what CWS uses
+    int result = stbi_zlib_decode_buffer(
+        reinterpret_cast<char*>(output.data()),
+        static_cast<int>(expectedSize),
+        reinterpret_cast<const char*>(input),
+        static_cast<int>(inputSize)
+    );
+
+    if (result < 0) {
+        ENJIN_LOG_ERROR(Assets, "SWF DecompressZlib: decompression failed (stbi error)");
+        output.clear();
+        return false;
+    }
+
+    // Resize to actual decompressed size (may be less than expected)
+    output.resize(static_cast<usize>(result));
+
+    ENJIN_LOG_INFO(Assets, "SWF DecompressZlib: decompressed %zu -> %zu bytes",
+                   inputSize, static_cast<usize>(result));
+    return true;
 }
 
 // ============================================================================

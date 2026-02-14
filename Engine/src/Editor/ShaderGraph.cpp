@@ -601,6 +601,25 @@ void ShaderGraphEditor::DrawInspector() {
             ImGui::DragFloat("Amount", &selected->floatValue, 0.01f, 0.0f, 2.0f);
             break;
 
+        case ShaderNodeType::Parallax: {
+            char texBuf[256];
+            strncpy(texBuf, selected->texturePath.c_str(), sizeof(texBuf) - 1);
+            texBuf[sizeof(texBuf) - 1] = '\0';
+            if (ImGui::InputText("Height Map", texBuf, sizeof(texBuf)))
+                selected->texturePath = texBuf;
+            ImGui::DragFloat("Scale", &selected->floatValue, 0.001f, 0.001f, 0.5f);
+            ImGui::DragFloat("Steps", &selected->vec2Value.x, 1.0f, 4.0f, 64.0f);
+            ImGui::TextDisabled("Inputs: UV, Scale, Steps");
+            break;
+        }
+
+        case ShaderNodeType::Flipbook: {
+            ImGui::DragFloat("Rows", &selected->vec2Value.x, 1.0f, 1.0f, 32.0f);
+            ImGui::DragFloat("Columns", &selected->vec2Value.y, 1.0f, 1.0f, 32.0f);
+            ImGui::TextDisabled("Inputs: UV, Rows, Cols, Frame");
+            break;
+        }
+
         default:
             ImGui::TextDisabled("No editable properties");
             break;
@@ -812,6 +831,7 @@ static const char* NodeOutType(ShaderNodeType type) {
         case ShaderNodeType::CombineVec2:
         case ShaderNodeType::UVTransform:
         case ShaderNodeType::Flipbook:
+        case ShaderNodeType::Parallax:
             return "vec2";
         case ShaderNodeType::Vec3Constant:
         case ShaderNodeType::VertexPosition:
@@ -832,7 +852,6 @@ static const char* NodeOutType(ShaderNodeType type) {
         case ShaderNodeType::SampleTexture2D:
         case ShaderNodeType::SampleCubemap:
         case ShaderNodeType::Blend:
-        case ShaderNodeType::Parallax:
             return "vec4";
         // Arithmetic nodes: type depends on inputs (default float)
         case ShaderNodeType::Add:
@@ -910,7 +929,8 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         if (!node) continue;
         if (node->type == ShaderNodeType::SampleTexture2D ||
             node->type == ShaderNodeType::SampleCubemap ||
-            node->type == ShaderNodeType::TextureParameter) {
+            node->type == ShaderNodeType::TextureParameter ||
+            node->type == ShaderNodeType::Parallax) {
             nodeSamplerBinding[nid] = samplerBinding++;
         }
     }
@@ -1122,12 +1142,53 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
             }
             case ShaderNodeType::Parallax: {
                 auto uv = GetInputExpr(graph, nid, 0, "fragUV");
-                body += "    vec4 " + var + " = vec4(" + uv + ", 0.0, 1.0); // Parallax placeholder\n";
+                auto scale = GetInputExpr(graph, nid, 1, "0.05");
+                auto steps = GetInputExpr(graph, nid, 2, "16.0");
+                // Parallax Occlusion Mapping: steep parallax + occlusion interpolation
+                // Uses height map sampler assigned to this node
+                std::string samplerName = "uSampler_" + std::to_string(nid);
+                if (nodeSamplerBinding.count(nid)) {
+                    body += "    vec2 " + var + ";\n";
+                    body += "    {\n";
+                    body += "        vec3 viewDir = normalize(fragTBN * (uCameraPos - fragWorldPos));\n";
+                    body += "        float numSteps = " + steps + ";\n";
+                    body += "        float layerDepth = 1.0 / max(numSteps, 1.0);\n";
+                    body += "        float currentDepth = 0.0;\n";
+                    body += "        vec2 P = viewDir.xy * " + scale + ";\n";
+                    body += "        vec2 deltaUV = P / max(numSteps, 1.0);\n";
+                    body += "        vec2 curUV = " + uv + ";\n";
+                    body += "        float curHeight = 1.0 - texture(" + samplerName + ", curUV).r;\n";
+                    body += "        for (int i = 0; i < 64 && currentDepth < curHeight; ++i) {\n";
+                    body += "            if (float(i) >= numSteps) break;\n";
+                    body += "            curUV -= deltaUV;\n";
+                    body += "            curHeight = 1.0 - texture(" + samplerName + ", curUV).r;\n";
+                    body += "            currentDepth += layerDepth;\n";
+                    body += "        }\n";
+                    body += "        vec2 prevUV = curUV + deltaUV;\n";
+                    body += "        float afterH = curHeight - currentDepth;\n";
+                    body += "        float beforeH = (1.0 - texture(" + samplerName + ", prevUV).r) - currentDepth + layerDepth;\n";
+                    body += "        float w = afterH / (afterH - beforeH + 0.0001);\n";
+                    body += "        " + var + " = mix(curUV, prevUV, w);\n";
+                    body += "    }\n";
+                } else {
+                    body += "    vec2 " + var + " = " + uv + "; // No height map bound\n";
+                }
                 break;
             }
             case ShaderNodeType::Flipbook: {
                 auto uv = GetInputExpr(graph, nid, 0, "fragUV");
-                body += "    vec2 " + var + " = " + uv + "; // Flipbook placeholder\n";
+                auto rows = GetInputExpr(graph, nid, 1, "1.0");
+                auto cols = GetInputExpr(graph, nid, 2, "1.0");
+                auto frame = GetInputExpr(graph, nid, 3, "0.0");
+                body += "    vec2 " + var + ";\n";
+                body += "    {\n";
+                body += "        float fbRows = max(" + rows + ", 1.0);\n";
+                body += "        float fbCols = max(" + cols + ", 1.0);\n";
+                body += "        float fbFrame = floor(" + frame + ");\n";
+                body += "        float fbCol = mod(fbFrame, fbCols);\n";
+                body += "        float fbRow = floor(fbFrame / fbCols);\n";
+                body += "        " + var + " = (" + uv + " + vec2(fbCol, fbRow)) / vec2(fbCols, fbRows);\n";
+                body += "    }\n";
                 break;
             }
 
@@ -1341,6 +1402,9 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
         "    float parallaxScale;\n"
         "} pc;\n"
         "\n" + samplerDecls +
+        "\n"
+        "vec3 uCameraPos = lighting.cameraPos;\n"
+        "mat3 fragTBN = mat3(1.0); // Placeholder TBN — use tangent attributes for proper POM\n"
         "\n"
         "void main() {\n" +
         body +

@@ -45,6 +45,23 @@ struct ParticleGraphNode {
     f32 spread = 0.5f;
     f32 strength = 1.0f;
 
+    // Renderer properties (Billboard/Mesh/Trail)
+    std::string texturePath;            // Billboard/Trail texture
+    std::string meshPath;               // MeshRenderer mesh path
+    i32 billboardMode = 0;              // 0=Camera-facing, 1=Velocity-stretched
+    i32 sortMode = 0;                   // 0=None, 1=Back-to-front, 2=Front-to-back
+    i32 blendMode = 0;                  // 0=Alpha, 1=Additive, 2=Multiply
+    f32 sizeMultiplier = 1.0f;
+    Math::Vector3 colorTint{1,1,1};
+    Math::Vector3 meshScale{1,1,1};
+    i32 rotationAlignment = 0;          // 0=None, 1=Velocity, 2=Custom axis
+    f32 trailWidth = 0.5f;
+    f32 trailEndWidth = 0.1f;
+    i32 trailTextureMode = 0;           // 0=Stretch, 1=Tile
+    f32 trailMinVertexDistance = 0.1f;
+    Math::Vector3 trailStartColor{1,1,1};
+    Math::Vector3 trailEndColor{1,1,1};
+
     // Curve data (simplified)
     std::vector<Math::Vector2> curve;  // time (0-1) -> value pairs
 };

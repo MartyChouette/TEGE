@@ -54,18 +54,23 @@ public:
 
     // Physics system for physics query nodes
     void SetPhysics(Physics::IPhysicsBackend* physics) { m_Physics = physics; }
+    Physics::IPhysicsBackend* GetPhysics() const { return m_Physics; }
 
     // 2D physics system for 2D physics query nodes
     void SetPhysics2D(Physics::IPhysicsBackend2D* physics2d) { m_Physics2D = physics2d; }
+    Physics::IPhysicsBackend2D* GetPhysics2D() const { return m_Physics2D; }
 
     // Script engine for interop nodes
     void SetScriptEngine(Scripting::ScriptEngine* engine) { m_ScriptEngine = engine; }
+    Scripting::ScriptEngine* GetScriptEngine() const { return m_ScriptEngine; }
 
     // Networking system for multiplayer nodes
     void SetNetworking(Networking::NetworkSystem* net) { m_Networking = net; }
+    Networking::NetworkSystem* GetNetworking() const { return m_Networking; }
 
     // Streaming manager for level streaming nodes
     void SetStreaming(Scene::StreamingManager* sm) { m_Streaming = sm; }
+    Scene::StreamingManager* GetStreaming() const { return m_Streaming; }
 
     // Configuration
     void SetMaxIterations(u32 max) { m_MaxIterations = max; }

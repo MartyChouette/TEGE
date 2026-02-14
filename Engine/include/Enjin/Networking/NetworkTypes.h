@@ -4,6 +4,7 @@
 #include "Enjin/Platform/Types.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Math/Quaternion.h"
+#include "Enjin/Networking/NetworkSecurity.h"
 #include <string>
 #include <vector>
 #include <functional>
@@ -85,7 +86,10 @@ enum class MessageType : u8 {
 
     // Reliability
     Ack,
-    ReliableMessage
+    ReliableMessage,
+
+    // Authentication
+    SessionKeyExchange  // Host sends session key to client during handshake
 };
 
 // ============================================================================
@@ -155,6 +159,13 @@ struct ConnectionInfo {
     u32 packetsReceived = 0;
     u32 packetsLost = 0;
     f32 packetLossRate = 0.0f;
+
+    // Replay protection (per-connection sliding window)
+    ReplayWindow replayWindow;
+
+    // Authentication sequence (monotonically increasing per-connection)
+    u32 authSendSequence = 0;       // Next outgoing auth sequence
+    bool authenticated = false;     // True once session key has been exchanged
 };
 
 // ============================================================================

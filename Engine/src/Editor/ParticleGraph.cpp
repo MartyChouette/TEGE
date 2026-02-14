@@ -486,11 +486,54 @@ void ParticleGraphEditor::DrawInspector() {
             break;
 
         // Renderers
-        case ParticleNodeType::BillboardRenderer:
-        case ParticleNodeType::MeshRenderer:
-        case ParticleNodeType::TrailRenderer:
-            ImGui::TextDisabled("Renderer properties (TODO)");
+        case ParticleNodeType::BillboardRenderer: {
+            char texBuf[256] = {};
+            std::strncpy(texBuf, selected->texturePath.c_str(), sizeof(texBuf) - 1);
+            if (ImGui::InputText("Texture", texBuf, sizeof(texBuf)))
+                selected->texturePath = texBuf;
+            const char* bbModes[] = { "Camera-Facing", "Velocity-Stretched" };
+            ImGui::Combo("Billboard Mode", &selected->billboardMode, bbModes, 2);
+            const char* sortModes[] = { "None", "Back-to-Front", "Front-to-Back" };
+            ImGui::Combo("Sort Mode", &selected->sortMode, sortModes, 3);
+            const char* blendModes[] = { "Alpha", "Additive", "Multiply" };
+            ImGui::Combo("Blend Mode", &selected->blendMode, blendModes, 3);
+            ImGui::DragFloat("Size Multiplier", &selected->sizeMultiplier, 0.01f, 0.01f, 100.0f);
+            ImGui::ColorEdit3("Color Tint", &selected->colorTint.x);
             break;
+        }
+        case ParticleNodeType::MeshRenderer: {
+            char meshBuf[256] = {};
+            std::strncpy(meshBuf, selected->meshPath.c_str(), sizeof(meshBuf) - 1);
+            if (ImGui::InputText("Mesh Path", meshBuf, sizeof(meshBuf)))
+                selected->meshPath = meshBuf;
+            char texBuf2[256] = {};
+            std::strncpy(texBuf2, selected->texturePath.c_str(), sizeof(texBuf2) - 1);
+            if (ImGui::InputText("Texture", texBuf2, sizeof(texBuf2)))
+                selected->texturePath = texBuf2;
+            ImGui::DragFloat3("Scale", &selected->meshScale.x, 0.01f, 0.01f, 100.0f);
+            const char* rotAligns[] = { "None", "Velocity", "Custom Axis" };
+            ImGui::Combo("Rotation Alignment", &selected->rotationAlignment, rotAligns, 3);
+            ImGui::ColorEdit3("Color Tint", &selected->colorTint.x);
+            const char* blendModes2[] = { "Alpha", "Additive", "Multiply" };
+            ImGui::Combo("Blend Mode", &selected->blendMode, blendModes2, 3);
+            break;
+        }
+        case ParticleNodeType::TrailRenderer: {
+            ImGui::DragFloat("Start Width", &selected->trailWidth, 0.01f, 0.01f, 10.0f);
+            ImGui::DragFloat("End Width", &selected->trailEndWidth, 0.01f, 0.0f, 10.0f);
+            char texBuf3[256] = {};
+            std::strncpy(texBuf3, selected->texturePath.c_str(), sizeof(texBuf3) - 1);
+            if (ImGui::InputText("Texture", texBuf3, sizeof(texBuf3)))
+                selected->texturePath = texBuf3;
+            const char* texModes[] = { "Stretch", "Tile" };
+            ImGui::Combo("Texture Mode", &selected->trailTextureMode, texModes, 2);
+            ImGui::DragFloat("Min Vertex Distance", &selected->trailMinVertexDistance, 0.01f, 0.01f, 5.0f);
+            ImGui::ColorEdit3("Start Color", &selected->trailStartColor.x);
+            ImGui::ColorEdit3("End Color", &selected->trailEndColor.x);
+            const char* blendModes3[] = { "Alpha", "Additive", "Multiply" };
+            ImGui::Combo("Blend Mode", &selected->blendMode, blendModes3, 3);
+            break;
+        }
 
         // Control
         case ParticleNodeType::Burst:
@@ -639,7 +682,22 @@ bool ParticleGraphEditor::Save(const std::string& path) const {
                 ", \"startSpeed\": " + std::to_string(n.startSpeed) +
                 ", \"dir\": [" + std::to_string(n.direction.x) + "," + std::to_string(n.direction.y) + "," + std::to_string(n.direction.z) + "]" +
                 ", \"spread\": " + std::to_string(n.spread) +
-                ", \"strength\": " + std::to_string(n.strength);
+                ", \"strength\": " + std::to_string(n.strength) +
+                ", \"texturePath\": \"" + n.texturePath + "\"" +
+                ", \"meshPath\": \"" + n.meshPath + "\"" +
+                ", \"billboardMode\": " + std::to_string(n.billboardMode) +
+                ", \"sortMode\": " + std::to_string(n.sortMode) +
+                ", \"blendMode\": " + std::to_string(n.blendMode) +
+                ", \"sizeMultiplier\": " + std::to_string(n.sizeMultiplier) +
+                ", \"colorTint\": [" + std::to_string(n.colorTint.x) + "," + std::to_string(n.colorTint.y) + "," + std::to_string(n.colorTint.z) + "]" +
+                ", \"meshScale\": [" + std::to_string(n.meshScale.x) + "," + std::to_string(n.meshScale.y) + "," + std::to_string(n.meshScale.z) + "]" +
+                ", \"rotationAlignment\": " + std::to_string(n.rotationAlignment) +
+                ", \"trailWidth\": " + std::to_string(n.trailWidth) +
+                ", \"trailEndWidth\": " + std::to_string(n.trailEndWidth) +
+                ", \"trailTextureMode\": " + std::to_string(n.trailTextureMode) +
+                ", \"trailMinVertexDistance\": " + std::to_string(n.trailMinVertexDistance) +
+                ", \"trailStartColor\": [" + std::to_string(n.trailStartColor.x) + "," + std::to_string(n.trailStartColor.y) + "," + std::to_string(n.trailStartColor.z) + "]" +
+                ", \"trailEndColor\": [" + std::to_string(n.trailEndColor.x) + "," + std::to_string(n.trailEndColor.y) + "," + std::to_string(n.trailEndColor.z) + "]";
 
         if (!n.curve.empty()) {
             json += ", \"curve\": [";
@@ -706,6 +764,29 @@ bool ParticleGraphEditor::Load(const std::string& path) {
                 }
                 n.spread = nj.value("spread", 0.5f);
                 n.strength = nj.value("strength", 1.0f);
+                n.texturePath = nj.value("texturePath", std::string(""));
+                n.meshPath = nj.value("meshPath", std::string(""));
+                n.billboardMode = nj.value("billboardMode", 0);
+                n.sortMode = nj.value("sortMode", 0);
+                n.blendMode = nj.value("blendMode", 0);
+                n.sizeMultiplier = nj.value("sizeMultiplier", 1.0f);
+                if (nj.contains("colorTint") && nj["colorTint"].size() >= 3) {
+                    n.colorTint.x = nj["colorTint"][0]; n.colorTint.y = nj["colorTint"][1]; n.colorTint.z = nj["colorTint"][2];
+                }
+                if (nj.contains("meshScale") && nj["meshScale"].size() >= 3) {
+                    n.meshScale.x = nj["meshScale"][0]; n.meshScale.y = nj["meshScale"][1]; n.meshScale.z = nj["meshScale"][2];
+                }
+                n.rotationAlignment = nj.value("rotationAlignment", 0);
+                n.trailWidth = nj.value("trailWidth", 0.5f);
+                n.trailEndWidth = nj.value("trailEndWidth", 0.1f);
+                n.trailTextureMode = nj.value("trailTextureMode", 0);
+                n.trailMinVertexDistance = nj.value("trailMinVertexDistance", 0.1f);
+                if (nj.contains("trailStartColor") && nj["trailStartColor"].size() >= 3) {
+                    n.trailStartColor.x = nj["trailStartColor"][0]; n.trailStartColor.y = nj["trailStartColor"][1]; n.trailStartColor.z = nj["trailStartColor"][2];
+                }
+                if (nj.contains("trailEndColor") && nj["trailEndColor"].size() >= 3) {
+                    n.trailEndColor.x = nj["trailEndColor"][0]; n.trailEndColor.y = nj["trailEndColor"][1]; n.trailEndColor.z = nj["trailEndColor"][2];
+                }
                 if (nj.contains("curve")) {
                     for (const auto& cp : nj["curve"]) {
                         n.curve.push_back(Math::Vector2(cp[0].get<f32>(), cp[1].get<f32>()));
@@ -909,16 +990,23 @@ ParticleCompileResult ParticleGraphCompiler::Compile(const ParticleGraphData& gr
     for (const auto& node : graph.nodes) {
         switch (node.type) {
             case ParticleNodeType::BillboardRenderer:
-                target.renderMode = RMode::Billboard;
+                target.renderMode = (node.billboardMode == 1) ? RMode::VelocityStretch : RMode::Billboard;
+                if (!node.texturePath.empty()) target.texturePath = node.texturePath;
+                if (node.sizeMultiplier != 1.0f) target.startSize *= node.sizeMultiplier;
+                target.startColor = node.colorTint;
                 break;
 
             case ParticleNodeType::MeshRenderer:
                 target.renderMode = RMode::Billboard;
+                if (!node.texturePath.empty()) target.texturePath = node.texturePath;
+                target.startColor = node.colorTint;
                 result.warnings.push_back("MeshRenderer mapped to Billboard (mesh particle rendering not supported)");
                 break;
 
             case ParticleNodeType::TrailRenderer:
-                result.warnings.push_back("TrailRenderer not supported on ParticleEmitterComponent");
+                target.startColor = node.trailStartColor;
+                target.endColor = node.trailEndColor;
+                result.warnings.push_back("TrailRenderer not supported on ParticleEmitterComponent — colors mapped to start/end");
                 break;
 
             default:

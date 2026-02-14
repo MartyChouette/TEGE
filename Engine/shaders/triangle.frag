@@ -77,6 +77,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved (layout must match)
     vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
+    vec4 shProbeIrradiance; // xyz = SH probe irradiance, w = blend weight (0 or 1)
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];
@@ -675,6 +676,11 @@ void main() {
 
     // Start with ambient
     vec3 result = lighting.ambientColor * lighting.ambientIntensity * albedo;
+
+    // Blend SH light probe irradiance when available
+    if (lighting.shProbeIrradiance.w > 0.0) {
+        result += lighting.shProbeIrradiance.xyz * albedo;
+    }
 
     // Process directional lights
     for (uint i = 0u; i < lighting.directionalLightCount && i < MAX_DIRECTIONAL_LIGHTS; ++i) {

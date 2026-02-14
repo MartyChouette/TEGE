@@ -143,6 +143,9 @@ struct alignas(16) LightingUBO {
     // Sky reflection color for water/ice surfaces (xyz = color, w = reserved)
     alignas(16) Math::Vector4 skyReflectColor;
 
+    // SH light probe irradiance (xyz = RGB irradiance from nearest probe, w = blend weight 0 or 1)
+    alignas(16) Math::Vector4 shProbeIrradiance;
+
     // Light data arrays
     DirectionalLightData directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLightData pointLights[MAX_POINT_LIGHTS];

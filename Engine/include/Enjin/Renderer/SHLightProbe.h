@@ -46,12 +46,15 @@ public:
     void RemoveProbe(u32 probeId);
     void Clear();
 
-    // Bake a single probe (stub: samples ambient light at probe position)
+    // Bake a single probe by sampling all scene lights via SH projection
     void BakeProbe(u32 probeId, ECS::World* world);
     void BakeAll(ECS::World* world);
 
-    // Query irradiance at a world position (trilinear interpolation of nearest probes)
+    // Query irradiance at a world position using default up normal (0,1,0)
     Math::Vector3 GetIrradiance(const Math::Vector3& position) const;
+
+    // Query irradiance at a world position for a given surface normal direction
+    Math::Vector3 GetIrradiance(const Math::Vector3& position, const Math::Vector3& normal) const;
 
     // Probe access
     const std::vector<SHProbe>& GetProbes() const { return m_Probes; }

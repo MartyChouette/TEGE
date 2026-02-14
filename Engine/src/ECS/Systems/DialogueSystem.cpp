@@ -228,7 +228,7 @@ void DialogueSystem::ProcessLegacy(World* world, Entity entity, DialogueComponen
 }
 
 void DialogueSystem::Update(World* world, f32 deltaTime) {
-    if (!world) return;
+    if (!m_Enabled || !world) return;
 
     Entity activeDialogue = INVALID_ENTITY;
 

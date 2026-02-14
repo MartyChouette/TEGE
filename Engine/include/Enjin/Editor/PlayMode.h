@@ -33,6 +33,7 @@
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Effects/Destructible.h"
+#include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Input/InputAction.h"
 #include <string>
 
@@ -113,6 +114,7 @@ public:
 
     Audio::SimpleAudio* GetSimpleAudio() { return &m_SimpleAudio; }
     Effects::DestructibleSystem* GetDestructibleSystem() { return &m_DestructibleSystem; }
+    Effects::InteractiveWaterSystem* GetInteractiveWaterSystem() { return &m_InteractiveWaterSystem; }
     InputSystem::InputActionMap* GetInputActionMap() { return &m_InputMap; }
     Editor::AudioEventGraphRuntime* GetAudioGraphRuntime() { return &m_AudioGraphRuntime; }
 
@@ -212,6 +214,9 @@ private:
     // Destructible system (owned by PlayMode for script bindings)
     Effects::DestructibleSystem m_DestructibleSystem;
 
+    // Interactive water system
+    Effects::InteractiveWaterSystem m_InteractiveWaterSystem;
+
     // Input action map for remappable input
     InputSystem::InputActionMap m_InputMap;
 
@@ -238,11 +243,7 @@ private:
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;
 
-    // Gameplay processing helpers
-    void ProcessContactDamage(ECS::Entity entityA, ECS::Entity entityB);
-    void ProcessPickup(ECS::Entity entityA, ECS::Entity entityB);
-    void UpdateHealthSystems(f32 deltaTime);
-    void FlushDeferredDestroys();
+    // Deferred entity destruction list (shared with GameplayLoop functions)
     std::vector<ECS::Entity> m_DeferredDestroys;
 
     // Play mode diff

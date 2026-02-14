@@ -26,10 +26,10 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 - **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
 - **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser + optional OIDN (Intel Open Image Denoise), real depth buffer wiring, RT composition pass (awaiting compiled SPIR-V)
-- **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and nearest-probe queries
+- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser + OIDN (Intel Open Image Denoise, fully wired), real depth buffer, RT composition pass
+- **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and renderer integration (LightingUBO + ambient blending)
 - **SDF Scene** - CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
-- **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures
+- **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures, fullscreen composite pipeline
 - **Depth of Field** - Bokeh DoF with aperture shapes (circle/hexagon/octagon), focal distance/range, CoC debug visualization
 - **Tilt-Shift** - Miniature/toy-model post-process blur with configurable focus band and falloff
 - **Camera Presets** - 9 built-in presets (Isometric 45/30, TopDown, SideScroller, FPS, TPS, Cinematic, SecurityCam, BirdsEye)

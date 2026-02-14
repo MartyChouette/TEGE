@@ -20,6 +20,10 @@ public:
     DialogueSystem() = default;
     ~DialogueSystem() = default;
 
+    // Enable/disable dialogue updates
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+    bool IsEnabled() const { return m_Enabled; }
+
     // Main update — call every frame during play mode
     void Update(World* world, f32 deltaTime);
 
@@ -54,6 +58,7 @@ public:
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
 
 private:
+    bool m_Enabled = true;
     std::unordered_map<Entity, GUI::DialoguePlayer> m_Players;
     Entity m_ActiveEntity = INVALID_ENTITY;
     EventCallback m_EventCallback;

@@ -63,7 +63,9 @@ public:
 
     // Wind affects rain/snow direction
     void SetWindDirection(const Math::Vector3& dir) { m_WindDirection = dir; }
+    Math::Vector3 GetWindDirection() const { return m_WindDirection; }
     void SetWindStrength(f32 strength) { m_WindStrength = strength; }
+    f32 GetWindStrength() const { return m_WindStrength; }
 
     // Get particles for rendering
     const std::vector<WeatherParticle>& GetParticles() const { return m_Particles; }
@@ -71,7 +73,9 @@ public:
 
     // Area settings (how far from camera to spawn)
     void SetSpawnRadius(f32 radius) { m_SpawnRadius = radius; }
+    f32 GetSpawnRadius() const { return m_SpawnRadius; }
     void SetSpawnHeight(f32 height) { m_SpawnHeight = height; }
+    f32 GetSpawnHeight() const { return m_SpawnHeight; }
 
     // Lightning (for storms)
     bool IsLightningActive() const { return m_LightningActive; }

@@ -20,10 +20,15 @@ public:
     ~ControllerSystem() = default;
 
     void SetWorld(World* world) { m_World = world; }
+    World* GetWorld() const { return m_World; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+    Renderer::Camera* GetCamera() const { return m_Camera; }
     void SetPhysics(Physics::IPhysicsBackend* physics) { m_Physics = physics; }
+    Physics::IPhysicsBackend* GetPhysics() const { return m_Physics; }
     void SetPhysics2D(Physics::IPhysicsBackend2D* physics) { m_Physics2D = physics; }
+    Physics::IPhysicsBackend2D* GetPhysics2D() const { return m_Physics2D; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
+    InputSystem::InputActionMap* GetInputActionMap() const { return m_InputMap; }
 
     // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
     // The game view renders from CameraComponent entities, so this keeps the editor camera untouched.

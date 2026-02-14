@@ -48,7 +48,7 @@ void VisualScriptSystem::Shutdown() {
 // ============================================================================
 
 void VisualScriptSystem::Update(f32 deltaTime) {
-    if (!m_World) return;
+    if (!m_Enabled || !m_World) return;
 
     // Copy entity list before iterating — script execution may destroy entities
     auto entities = m_World->GetEntitiesWithComponent<VisualScriptComponent>();

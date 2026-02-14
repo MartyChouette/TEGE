@@ -466,6 +466,14 @@ void VulkanRenderer::EndFrame() {
 
     SubmitCommandBuffer();
     m_IsFrameStarted = false;
+
+    // Process deferred VSync change (safe: frame fully submitted+presented)
+    if (m_VSyncChangeRequested) {
+        m_VSyncChangeRequested = false;
+        if (m_Swapchain) {
+            m_Swapchain->SetVSyncEnabled(m_VSyncDesiredState);
+        }
+    }
 }
 
 VkCommandBuffer VulkanRenderer::GetCurrentCommandBuffer() const {
@@ -621,6 +629,15 @@ void VulkanRenderer::SubmitCompute() {
         return;
     }
     m_ComputeSubmittedThisFrame = true;
+}
+
+void VulkanRenderer::RequestVSyncChange(bool enabled) {
+    m_VSyncChangeRequested = true;
+    m_VSyncDesiredState = enabled;
+}
+
+bool VulkanRenderer::IsVSyncEnabled() const {
+    return m_Swapchain ? m_Swapchain->IsVSyncEnabled() : false;
 }
 
 } // namespace Renderer

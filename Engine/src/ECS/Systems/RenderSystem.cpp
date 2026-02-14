@@ -1,4 +1,14 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
+// Includes moved from RenderSystem.h (forward-declared there, needed here for full definitions)
+#include "Enjin/Effects/Wind.h"
+#include "Enjin/Effects/WeatherRenderer.h"
+#include "Enjin/Effects/ParticleRenderer.h"
+#include "Enjin/Effects/FluidRenderer.h"
+#include "Enjin/Effects/SpriteBatchRenderer.h"
+#include "Enjin/Effects/SpriteTextureAtlas.h"
+#include "Enjin/Effects/GrassRenderer.h"
+#include "Enjin/Effects/ShrubRenderer.h"
+#include "Enjin/Effects/TreeRenderer.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Material.h"
@@ -282,7 +292,7 @@ void RenderSystem::Initialize() {
     // Initialize OIT, SH light probes, and SDF scene
     m_OITManager = std::make_unique<Renderer::OITManager>();
     auto extent = m_Renderer->GetSwapchainExtent();
-    if (!m_OITManager->Initialize(m_Renderer->GetContext(), extent.width, extent.height)) {
+    if (!m_OITManager->Initialize(m_Renderer->GetContext(), extent.width, extent.height, m_Renderer->GetRenderPass())) {
         ENJIN_LOG_WARN(Renderer, "OITManager init failed, OIT disabled");
         m_OITManager.reset();
     }
@@ -3039,6 +3049,14 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.skyReflectColor = Math::Vector4(skyCol.x, skyCol.y, skyCol.z, 0.0f);
     }
 
+    // Query SH light probe irradiance at camera position
+    if (m_SHLighting && m_SceneComposition.mode == SceneRenderMode::Scene3D && m_Camera) {
+        auto irr = m_SHLighting->GetIrradiance(m_Camera->GetPosition(), Math::Vector3(0.0f, 1.0f, 0.0f));
+        lighting.shProbeIrradiance = Math::Vector4(irr.x, irr.y, irr.z, 1.0f);
+    } else {
+        lighting.shProbeIrradiance = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+    }
+
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
 
     // Upload shadow data SSBO for point/spot light shadows
@@ -5176,6 +5194,18 @@ void RenderSystem::InitializeRayTracing() {
         }
     }
 
+    // Register RT output images with OIDN denoiser so it can perform GPU<->CPU copies
+    if (m_OIDNDenoiser) {
+        if (m_RTShadows)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTShadows->GetOutputView(), m_RTShadows->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTReflections)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTReflections->GetOutputView(), m_RTReflections->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTAO)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTAO->GetOutputView(), m_RTAO->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTGI)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTGI->GetOutputView(), m_RTGI->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+
     // Initialize RT compositor (uses RT descriptor set layout for pipeline compatibility)
     m_RTCompositor = std::make_unique<Renderer::RTCompositor>(ctx);
     if (!m_RTCompositor->Initialize(m_RTDescriptorSetLayout)) {
@@ -5185,6 +5215,11 @@ void RenderSystem::InitializeRayTracing() {
 
     // Create dummy resources and RT light UBOs for descriptor binding
     CreateRTDummyResources();
+
+    // Register dummy image with OIDN so depth/normal/motion view lookups resolve
+    if (m_OIDNDenoiser && m_RTDummyImageView != VK_NULL_HANDLE) {
+        m_OIDNDenoiser->RegisterImageMapping(m_RTDummyImageView, m_RTDummyImage, VK_FORMAT_R8G8B8A8_UNORM);
+    }
 
     ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s)",
                    m_RTShadows ? "yes" : "no", m_RTReflections ? "yes" : "no",

@@ -19,15 +19,20 @@
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Text.h"
-#include "Enjin/Effects/Wind.h"
-#include "Enjin/Effects/WeatherRenderer.h"
-#include "Enjin/Effects/ParticleRenderer.h"
-#include "Enjin/Effects/FluidRenderer.h"
-#include "Enjin/Effects/SpriteBatchRenderer.h"
-#include "Enjin/Effects/SpriteTextureAtlas.h"
-#include "Enjin/Effects/GrassRenderer.h"
-#include "Enjin/Effects/ShrubRenderer.h"
-#include "Enjin/Effects/TreeRenderer.h"
+// Forward declarations for effect renderers and systems (stored as unique_ptr/raw pointer)
+namespace Enjin { namespace Effects {
+    class WindSystem;
+    class WeatherSystem;
+    class WeatherRenderer;
+    class ParticleRenderer;
+    class FluidRenderer;
+    class FluidSimulation;
+    class SpriteBatchRenderer;
+    class SpriteTextureAtlas;
+    class GrassRenderer;
+    class ShrubRenderer;
+    class TreeRenderer;
+}}
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
@@ -145,6 +150,7 @@ public:
     void OnEntityRemoved(Entity entity) override;
 
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+    Renderer::Camera* GetCamera() const { return m_Camera; }
 
     // Editor mode: when true, GPU frustum culling is disabled so all entities
     // are visible in the scene view for editing. The Player leaves this false
@@ -155,7 +161,10 @@ public:
     // Used during play mode — the game view already runs its own shadow pass via
     // RenderShadowPassForCamera(), so the editor viewport shadows are redundant.
     void SetSkipMainPassShadows(bool skip) { m_SkipMainPassShadows = skip; }
+    bool IsSkipMainPassShadows() const { return m_SkipMainPassShadows; }
     void SetSkipMainPassRendering(bool skip) { m_SkipMainPassRendering = skip; }
+    bool IsSkipMainPassRendering() const { return m_SkipMainPassRendering; }
+    bool IsEditorMode() const { return m_IsEditorMode; }
 
     // Render all entities to an offscreen render target using a custom camera
     // Must be called outside of the main render pass (before BeginMainRenderPass)
@@ -174,6 +183,7 @@ public:
     void SetMainPassSplitscreen(const std::vector<ViewportCamera>& viewports) {
         m_MainPassViewports = viewports;
     }
+    const std::vector<ViewportCamera>& GetMainPassViewports() const { return m_MainPassViewports; }
 
     // Run the shadow pass for an offscreen camera (call BEFORE the render target's Begin()).
     // The shadow pass uses its own framebuffer, so it must not be inside another render pass.
@@ -224,9 +234,12 @@ public:
         m_MainPassWeatherIsRain = isRain;
     }
     void ClearMainPassWeather() { m_MainPassWeather = nullptr; }
+    Effects::WeatherSystem* GetMainPassWeather() const { return m_MainPassWeather; }
+    bool GetMainPassWeatherIsRain() const { return m_MainPassWeatherIsRain; }
 
     // Set fluid simulation (for FluidRenderer to read grid data)
     void SetFluidSimulation(Effects::FluidSimulation* sim);
+    Effects::FluidRenderer* GetFluidRenderer() const { return m_FluidRenderer.get(); }
 
     // Weather, grass, and tree renderers (initialized after main pipeline)
     Effects::WeatherRenderer* GetWeatherRenderer() { return m_WeatherRenderer.get(); }
@@ -340,6 +353,7 @@ public:
     // Onion skin ghost rendering (editor viewport only)
     void SetOnionSkinGhosts(const std::vector<Editor::OnionSkinGhost>& ghosts) { m_OnionSkinGhosts = ghosts; }
     void ClearOnionSkinGhosts() { m_OnionSkinGhosts.clear(); }
+    const std::vector<Editor::OnionSkinGhost>& GetOnionSkinGhosts() const { return m_OnionSkinGhosts; }
 
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }

@@ -68,6 +68,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 playerPosition;
     vec4 worldCurvature;
     vec4 skyReflectColor;
+    vec4 shProbeIrradiance;
     DirectionalLight directionalLights[MAX_DIRECTIONAL_LIGHTS];
     PointLight pointLights[MAX_POINT_LIGHTS];
     SpotLight spotLights[MAX_SPOT_LIGHTS];

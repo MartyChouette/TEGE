@@ -122,6 +122,28 @@ layout(binding = 1) uniform PostProcessSettings {
     float _palPad0;
     float _palPad1;
 
+    // Depth of Field
+    uint dofEnabled;
+    float dofFocalDistance;
+    float dofFocalRange;
+    float dofNearBlurStrength;
+    float dofFarBlurStrength;
+    float dofBokehSize;
+    uint dofApertureShape;
+    uint dofDebugCoC;
+
+    // Camera planes
+    float cameraNearPlane;
+    float cameraFarPlane;
+    float _cameraPad0;
+    float _cameraPad1;
+
+    // Tilt-Shift
+    uint tiltShiftEnabled;
+    float tiltShiftFocusY;
+    float tiltShiftBandWidth;
+    float tiltShiftBlurAmount;
+
     // Cel shading outlines
     uint celOutlineEnabled;
     float celOutlineThickness;
@@ -833,6 +855,92 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
     return mix(color, settings.celOutlineColor, edge);
 }
 
+// Linearize Vulkan [0,1] reverse-Z depth to view-space distance
+float linearizeDepth(float d, float near, float far) {
+    return near * far / (far - d * (far - near));
+}
+
+// Depth of Field — 16-tap Poisson disc blur weighted by Circle of Confusion
+vec3 applyDoF(vec3 color, vec2 uv) {
+    float depth = texture(depthTexture, uv).r;
+    float linearDepth = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
+
+    // Circle of Confusion: signed distance from focal plane
+    float coc = (linearDepth - settings.dofFocalDistance) / max(settings.dofFocalRange, 0.001);
+    float cocSign = sign(coc);
+    float cocMag = clamp(abs(coc), 0.0, 1.0);
+
+    // Apply near/far blur strength
+    float blurStrength = (cocSign < 0.0) ? settings.dofNearBlurStrength : settings.dofFarBlurStrength;
+    cocMag *= blurStrength;
+
+    // Debug CoC visualization
+    if (settings.dofDebugCoC != 0u) {
+        if (cocSign < 0.0)
+            return mix(color, vec3(0.0, 0.0, 1.0), cocMag); // Near = blue
+        else if (cocMag < 0.01)
+            return mix(color, vec3(0.0, 1.0, 0.0), 0.5);     // In-focus = green
+        else
+            return mix(color, vec3(1.0, 0.0, 0.0), cocMag); // Far = red
+    }
+
+    if (cocMag < 0.01) return color; // In focus, skip blur
+
+    // 16-tap Poisson disc kernel
+    const vec2 poissonDisk[16] = vec2[](
+        vec2(-0.94201624, -0.39906216), vec2( 0.94558609, -0.76890725),
+        vec2(-0.09418410, -0.92938870), vec2( 0.34495938,  0.29387760),
+        vec2(-0.91588581,  0.45771432), vec2(-0.81544232, -0.87912464),
+        vec2(-0.38277543,  0.27676845), vec2( 0.97484398,  0.75648379),
+        vec2( 0.44323325, -0.97511554), vec2( 0.53742981, -0.47373420),
+        vec2(-0.26496911, -0.41893023), vec2( 0.79197514,  0.19090188),
+        vec2(-0.24188840,  0.99706507), vec2(-0.81409955,  0.91437590),
+        vec2( 0.19984126,  0.78641367), vec2( 0.14383161, -0.14100790)
+    );
+
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    float radius = settings.dofBokehSize * cocMag;
+
+    vec3 result = vec3(0.0);
+    float totalWeight = 0.0;
+    for (int i = 0; i < 16; ++i) {
+        vec2 sampleUV = uv + poissonDisk[i] * texelSize * radius;
+        float sampleDepth = texture(depthTexture, sampleUV).r;
+        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float sampleCoC = abs(sampleLinear - settings.dofFocalDistance) / max(settings.dofFocalRange, 0.001);
+        sampleCoC = clamp(sampleCoC, 0.0, 1.0);
+        // Weight: don't let sharp samples bleed into blurry areas
+        float w = (sampleCoC >= cocMag * 0.5) ? 1.0 : sampleCoC / max(cocMag * 0.5, 0.001);
+        result += texture(sceneTexture, sampleUV).rgb * w;
+        totalWeight += w;
+    }
+    return result / max(totalWeight, 0.001);
+}
+
+// Tilt-Shift — screen-space Y-driven blur with smoothstep band
+vec3 applyTiltShift(vec3 color, vec2 uv) {
+    float dist = abs(uv.y - settings.tiltShiftFocusY);
+    float halfBand = settings.tiltShiftBandWidth * 0.5;
+    float blur = smoothstep(halfBand * 0.5, halfBand, dist);
+    if (blur < 0.01) return color;
+
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    float radius = settings.tiltShiftBlurAmount * blur;
+
+    // 9-tap horizontal+vertical box blur
+    vec3 result = vec3(0.0);
+    float totalWeight = 0.0;
+    for (int x = -2; x <= 2; ++x) {
+        for (int y = -2; y <= 2; ++y) {
+            vec2 offset = vec2(float(x), float(y)) * texelSize * radius;
+            float w = 1.0 - 0.15 * (abs(float(x)) + abs(float(y)));
+            result += texture(sceneTexture, uv + offset).rgb * w;
+            totalWeight += w;
+        }
+    }
+    return result / totalWeight;
+}
+
 void main() {
     vec2 uv = fragUV;
 
@@ -855,6 +963,16 @@ void main() {
         color = applyFXAA(uv);
     } else {
         color = applyChromaticAberration(uv);
+    }
+
+    // Apply Depth of Field (before tone mapping for HDR-correct blur)
+    if (settings.dofEnabled != 0u) {
+        color = applyDoF(color, uv);
+    }
+
+    // Apply Tilt-Shift miniature effect
+    if (settings.tiltShiftEnabled != 0u) {
+        color = applyTiltShift(color, uv);
     }
 
     // Apply tone mapping

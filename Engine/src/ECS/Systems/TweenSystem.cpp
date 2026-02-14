@@ -282,6 +282,8 @@ void TweenSystem::InvokeCallback(World* world, Entity entity, const std::string&
 }
 
 void TweenSystem::Update(World* world, f32 deltaTime) {
+    if (!m_Enabled) return;
+
     // Reuse member vector to avoid per-frame allocation (prevents iterator invalidation
     // if a callback creates or removes tweens)
     m_PendingCallbacks.clear();

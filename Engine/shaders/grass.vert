@@ -56,6 +56,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved
     vec4 skyReflectColor;
+    vec4 shProbeIrradiance;
 } lighting;
 
 layout(location = 0) out vec3 fragWorldPos;

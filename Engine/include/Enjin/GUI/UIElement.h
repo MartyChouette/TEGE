@@ -107,13 +107,35 @@ struct UIWidgetData {
     // Checkbox / Toggle
     bool checked = false;
 
-    // Dropdown (Phase 2+)
+    // Dropdown
     std::vector<std::string> options;
     i32 selectedOption = 0;
+    bool dropdownOpen = false;  // Runtime: is list expanded (not serialized)
 
-    // TextInput (Phase 2+)
+    // TextInput
     std::string inputText;
     std::string placeholder;
+    i32 cursorPos = 0;         // Runtime: cursor position in inputText (not serialized)
+    i32 selectionStart = -1;   // Runtime: selection start (-1 = no selection, not serialized)
+
+    // RadioGroup
+    // Reuses `options` for labels and `selectedOption` for selected index
+
+    // ScrollArea
+    f32 scrollOffset = 0.0f;   // Runtime: current vertical scroll offset (not serialized)
+
+    // Grid
+    i32 gridColumns = 2;       // Number of columns in grid layout
+
+    // TabGroup
+    i32 activeTabIndex = 0;    // Currently active tab index
+
+    // Tooltip
+    f32 tooltipDelay = 0.5f;   // Seconds before tooltip appears on hover
+    std::string tooltipText;   // Text displayed in the tooltip
+
+    // ListView
+    i32 listSelectedIndex = -1; // Currently selected list item (-1 = none)
 
     // SDF rendering (resolution-independent vector art)
     bool sdfMode = false;
@@ -146,7 +168,8 @@ struct UIInteractionState {
 inline bool IsFocusableType(UIWidgetType type) {
     return type == UIWidgetType::Button   || type == UIWidgetType::Slider ||
            type == UIWidgetType::Checkbox || type == UIWidgetType::Toggle ||
-           type == UIWidgetType::Dropdown || type == UIWidgetType::TextInput;
+           type == UIWidgetType::Dropdown || type == UIWidgetType::TextInput ||
+           type == UIWidgetType::RadioGroup || type == UIWidgetType::ListView;
 }
 
 // A single UI element in the canvas

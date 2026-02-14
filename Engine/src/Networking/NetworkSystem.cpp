@@ -1,4 +1,5 @@
 #include "Enjin/Networking/NetworkSystem.h"
+#include "Enjin/Networking/NetworkSecurity.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -31,6 +32,11 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     m_NextPlayerId = 1;
     m_Time = 0.0f;
     m_Tick = 0;
+
+    // Generate session key for HMAC authentication
+    if (m_AuthEnabled) {
+        GenerateSessionKey();
+    }
 
     // Add self to lobby
     LobbyPlayer self;
@@ -116,6 +122,10 @@ void NetworkSystem::Disconnect() {
     m_BytesReceivedThisSecond = 0;
     m_UploadKBps = 0.0f;
     m_DownloadKBps = 0.0f;
+
+    // Clear session key
+    m_SessionKey = {};
+    m_SessionKeyGenerated = false;
 
     ENJIN_LOG_INFO(Network, "NetworkSystem: Disconnected");
 }
@@ -395,8 +405,61 @@ void NetworkSystem::ProcessIncomingPackets() {
 }
 
 void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u32 size) {
-    // TODO [S12]: Add authentication (HMAC or challenge-response) to prevent spoofed packets
-    // TODO [S21]: Add replay protection (sequence window or timestamp validation)
+    // ========================================================================
+    // HMAC VERIFICATION — verify packet integrity before any processing
+    // ========================================================================
+    ConnectionInfo* preConn = FindConnectionByAddress(sender);
+
+    if (m_AuthEnabled && m_SessionKeyGenerated) {
+        // Authenticated packets have a 4-byte auth sequence + 32-byte HMAC appended.
+        // Layout: [PacketHeader | Payload | AuthSequence(4) | HMAC(32)]
+        // However, ConnectionRequest packets from unknown clients are NOT authenticated
+        // (they don't have the session key yet). SessionKeyExchange is also unauthenticated.
+        // We peek at the message type byte to decide.
+        if (size >= PACKET_HEADER_SIZE) {
+            u8 msgTypeByte = data[0];
+            bool isUnauthenticatedMsg = (msgTypeByte == static_cast<u8>(MessageType::ConnectionRequest));
+
+            if (!isUnauthenticatedMsg) {
+                u32 authOverhead = 4 + HMAC_TAG_SIZE;  // auth sequence (4) + HMAC tag (32)
+                if (size < PACKET_HEADER_SIZE + authOverhead) {
+                    ENJIN_LOG_WARN(Network, "NetworkSystem: Packet too small for auth tag, dropping");
+                    return;
+                }
+
+                // Extract auth sequence and HMAC tag from the end
+                u32 authSequence = 0;
+                u32 hmacOffset = size - HMAC_TAG_SIZE;
+                u32 seqOffset = hmacOffset - 4;
+                const u8* hmacTag = data + hmacOffset;
+
+                // Verify HMAC over [data .. data + seqOffset + 4) (everything except the HMAC)
+                u32 signedLen = seqOffset + 4;
+                if (!HMACSHA256::Verify(m_SessionKey.data(), SESSION_KEY_SIZE,
+                                        data, signedLen, hmacTag)) {
+                    ENJIN_LOG_WARN(Network, "NetworkSystem: HMAC verification failed, dropping packet");
+                    return;
+                }
+
+                // Read auth sequence
+                authSequence = (static_cast<u32>(data[seqOffset]) << 24) |
+                               (static_cast<u32>(data[seqOffset + 1]) << 16) |
+                               (static_cast<u32>(data[seqOffset + 2]) << 8) |
+                               (static_cast<u32>(data[seqOffset + 3]));
+
+                // Replay protection — check sliding window
+                if (preConn) {
+                    if (!preConn->replayWindow.Accept(authSequence)) {
+                        ENJIN_LOG_WARN(Network, "NetworkSystem: Replay detected (seq=%u), dropping packet", authSequence);
+                        return;
+                    }
+                }
+
+                // Strip the auth overhead for downstream processing
+                size = seqOffset;
+            }
+        }
+    }
 
     u32 offset = 0;
     PacketHeader header = ReadPacketHeader(data, offset, size);
@@ -441,7 +504,7 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     u32 payloadSize = (size > offset) ? size - offset : 0;
 
     // S10: Validate message type is within valid range before processing
-    if (header.type == 0 || header.type > static_cast<u8>(MessageType::ReliableMessage)) {
+    if (header.type == 0 || header.type > static_cast<u8>(MessageType::SessionKeyExchange)) {
         ENJIN_LOG_WARN(Network, "NetworkSystem: Invalid message type %u, dropping packet", header.type);
         return;
     }
@@ -487,6 +550,9 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
             break;
         case MessageType::RPCCall:
             HandleRPCCall(header.senderId, payload, payloadSize);
+            break;
+        case MessageType::SessionKeyExchange:
+            HandleSessionKeyExchange(sender, payload, payloadSize);
             break;
         default:
             break;
@@ -537,6 +603,11 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
     std::vector<u8> acceptPayload;
     WriteU8(acceptPayload, newId);
     SendPacket(sender, MessageType::ConnectionAccept, acceptPayload);
+
+    // Send session key to the new client for HMAC authentication
+    if (m_AuthEnabled && m_SessionKeyGenerated) {
+        SendSessionKey(sender);
+    }
 
     // Update lobby
     LobbyPlayer lp;
@@ -909,9 +980,16 @@ void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, con
     }
 
     m_SendBuffer.clear();
-    m_SendBuffer.reserve(PACKET_HEADER_SIZE + payload.size());
+    m_SendBuffer.reserve(PACKET_HEADER_SIZE + payload.size() + 4 + HMAC_TAG_SIZE);
     WritePacketHeader(m_SendBuffer, header);
     m_SendBuffer.insert(m_SendBuffer.end(), payload.begin(), payload.end());
+
+    // Append HMAC authentication if enabled
+    // Skip authentication for ConnectionRequest (client doesn't have key yet)
+    if (m_AuthEnabled && m_SessionKeyGenerated &&
+        type != MessageType::ConnectionRequest) {
+        AuthenticateOutgoing(m_SendBuffer, conn);
+    }
 
     m_Transport.SendTo(addr, m_SendBuffer.data(), static_cast<u32>(m_SendBuffer.size()));
     m_BytesSentThisSecond += static_cast<u32>(m_SendBuffer.size());
@@ -1222,6 +1300,103 @@ ConnectionInfo* NetworkSystem::FindConnectionByPlayerId(PlayerId id) {
         if (conn.playerId == id) return &conn;
     }
     return nullptr;
+}
+
+// ============================================================================
+// AUTHENTICATION & REPLAY PROTECTION
+// ============================================================================
+
+void NetworkSystem::GenerateSessionKey() {
+    m_SessionKey = Networking::GenerateSessionKey();
+    m_SessionKeyGenerated = true;
+    ENJIN_LOG_INFO(Network, "NetworkSystem: Session key generated for HMAC authentication");
+}
+
+void NetworkSystem::SendSessionKey(const NetworkAddress& addr) {
+    // Send the 32-byte session key to the client.
+    // This packet itself is NOT authenticated (chicken-and-egg), but it is sent
+    // immediately after ConnectionAccept so the window for interception is small.
+    // For production, consider using Diffie-Hellman key exchange instead.
+    std::vector<u8> payload;
+    payload.reserve(SESSION_KEY_SIZE);
+    for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
+        WriteU8(payload, m_SessionKey[i]);
+    }
+    SendPacket(addr, MessageType::SessionKeyExchange, payload);
+}
+
+void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const u8* payload, u32 size) {
+    if (m_Role != NetworkRole::Client) return;
+    if (size < SESSION_KEY_SIZE) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: SessionKeyExchange payload too small (%u bytes)", size);
+        return;
+    }
+
+    // Read the session key
+    u32 offset = 0;
+    for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
+        m_SessionKey[i] = ReadU8(payload, offset, size);
+    }
+    m_SessionKeyGenerated = true;
+
+    // Mark connection as authenticated
+    ConnectionInfo* conn = FindConnectionByAddress(sender);
+    if (conn) {
+        conn->authenticated = true;
+        conn->replayWindow.Reset();
+    }
+
+    ENJIN_LOG_INFO(Network, "NetworkSystem: Received session key from host, authentication enabled");
+}
+
+bool NetworkSystem::AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo* conn) {
+    // Append auth sequence (4 bytes, big-endian) + HMAC tag (32 bytes)
+    u32 seq = 0;
+    if (conn) {
+        seq = conn->authSendSequence++;
+    }
+
+    // Append sequence number (big-endian)
+    packet.push_back(static_cast<u8>((seq >> 24) & 0xFF));
+    packet.push_back(static_cast<u8>((seq >> 16) & 0xFF));
+    packet.push_back(static_cast<u8>((seq >> 8) & 0xFF));
+    packet.push_back(static_cast<u8>(seq & 0xFF));
+
+    // Compute HMAC-SHA256 over everything up to this point (header + payload + sequence)
+    u8 hmacTag[HMAC_TAG_SIZE];
+    HMACSHA256::Compute(m_SessionKey.data(), SESSION_KEY_SIZE,
+                        packet.data(), static_cast<u32>(packet.size()),
+                        hmacTag);
+
+    // Append HMAC tag
+    packet.insert(packet.end(), hmacTag, hmacTag + HMAC_TAG_SIZE);
+
+    return true;
+}
+
+bool NetworkSystem::VerifyIncoming(const u8* data, u32 size, ConnectionInfo* conn, u32& authSequence) {
+    // Minimum size: some header + 4 (auth seq) + 32 (HMAC)
+    u32 authOverhead = 4 + HMAC_TAG_SIZE;
+    if (size < authOverhead) return false;
+
+    u32 hmacOffset = size - HMAC_TAG_SIZE;
+    u32 seqOffset = hmacOffset - 4;
+    const u8* hmacTag = data + hmacOffset;
+
+    // Verify HMAC over everything except the HMAC tag itself
+    u32 signedLen = seqOffset + 4;
+    if (!HMACSHA256::Verify(m_SessionKey.data(), SESSION_KEY_SIZE,
+                            data, signedLen, hmacTag)) {
+        return false;
+    }
+
+    // Extract auth sequence
+    authSequence = (static_cast<u32>(data[seqOffset]) << 24) |
+                   (static_cast<u32>(data[seqOffset + 1]) << 16) |
+                   (static_cast<u32>(data[seqOffset + 2]) << 8) |
+                   (static_cast<u32>(data[seqOffset + 3]));
+
+    return true;
 }
 
 } // namespace Networking

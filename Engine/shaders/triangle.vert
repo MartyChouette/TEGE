@@ -59,6 +59,7 @@ layout(binding = 1) uniform LightingUBO {
     vec4 playerPosition; // xyz = player world pos, w = step radius
     vec4 worldCurvature; // x = strength, yzw reserved
     vec4 skyReflectColor; // xyz = sky reflection color, w = reserved
+    vec4 shProbeIrradiance; // xyz = SH probe irradiance, w = blend weight
     // Note: light arrays follow but we only need windData in vertex shader
 } lighting;
 

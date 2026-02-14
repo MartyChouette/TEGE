@@ -93,6 +93,10 @@ public:
     f32 GetDownloadKBps() const { return m_DownloadKBps; }
     u32 GetConnectedPlayerCount() const;
 
+    // Security
+    bool IsAuthenticationEnabled() const { return m_AuthEnabled; }
+    void SetAuthenticationEnabled(bool enabled) { m_AuthEnabled = enabled; }
+
 private:
     // ========================================================================
     // INTERNAL
@@ -121,6 +125,13 @@ private:
     void SendPacket(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
     void SendToAll(MessageType type, const std::vector<u8>& payload, PlayerId exclude = INVALID_PLAYER);
     void SendReliable(const NetworkAddress& addr, MessageType type, const std::vector<u8>& payload);
+
+    // Authentication & Replay protection
+    void GenerateSessionKey();
+    void SendSessionKey(const NetworkAddress& addr);
+    void HandleSessionKeyExchange(const NetworkAddress& sender, const u8* payload, u32 size);
+    bool AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo* conn);
+    bool VerifyIncoming(const u8* data, u32 size, ConnectionInfo* conn, u32& authSequence);
 
     // Update ticks
     void UpdateHeartbeats(f32 dt);
@@ -189,6 +200,11 @@ private:
 
     // Reusable send buffer to avoid per-packet allocation
     std::vector<u8> m_SendBuffer;
+
+    // Authentication
+    bool m_AuthEnabled = true;             // HMAC authentication enabled by default
+    SessionKey m_SessionKey = {};          // Shared secret for HMAC-SHA256
+    bool m_SessionKeyGenerated = false;    // True once host generates key
 };
 
 } // namespace Networking

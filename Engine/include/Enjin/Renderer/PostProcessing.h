@@ -174,6 +174,12 @@ struct alignas(16) PostProcessSettings {
     alignas(4) u32 dofApertureShape = 0;        // 0=Circle, 1=Hexagon, 2=Octagon
     alignas(4) u32 dofDebugCoC = 0;             // Visualize circle of confusion
 
+    // Camera planes (for depth linearization)
+    alignas(4) f32 cameraNearPlane = 0.1f;
+    alignas(4) f32 cameraFarPlane = 100.0f;
+    alignas(4) f32 _cameraPad0 = 0.0f;
+    alignas(4) f32 _cameraPad1 = 0.0f;
+
     // Tilt-Shift
     alignas(4) u32 tiltShiftEnabled = 0;
     alignas(4) f32 tiltShiftFocusY = 0.5f;      // Normalized screen Y (0-1)
@@ -245,6 +251,12 @@ public:
     // Update time for animated effects
     void Update(f32 deltaTime) { m_Settings.time += deltaTime; }
 
+    // Set camera planes for depth linearization (DoF/Tilt-Shift)
+    void SetCameraPlanes(f32 nearPlane, f32 farPlane) {
+        m_Settings.cameraNearPlane = nearPlane;
+        m_Settings.cameraFarPlane = farPlane;
+    }
+
     // Get scene render target (render to this instead of swapchain)
     VkImage GetSceneImage() const;
     VkImageView GetSceneImageView() const;
@@ -254,6 +266,16 @@ public:
     // Check if post-processing is initialized
     bool IsInitialized() const { return m_Initialized; }
 
+    // Apply depth-of-field blur to the scene image (CPU-side fallback).
+    // Reads depth buffer + color, computes CoC, applies separable Gaussian blur.
+    // Called automatically by Apply() when dofEnabled is set.
+    void ApplyDepthOfField(VkCommandBuffer cmd);
+
+    // Apply tilt-shift miniature effect to the scene image (CPU-side fallback).
+    // Screen-space Y-driven blur band.
+    // Called automatically by Apply() when tiltShiftEnabled is set.
+    void ApplyTiltShift(VkCommandBuffer cmd);
+
 private:
     bool CreateSceneRenderTarget(u32 width, u32 height);
     bool CreatePipeline();
@@ -261,6 +283,15 @@ private:
     bool CreateUniformBuffer();
     void DestroySceneRenderTarget();
     void UpdateUniformBuffer();
+
+    // CPU-side blur helpers for DoF and Tilt-Shift
+    bool CreateDofStagingBuffers();
+    void DestroyDofStagingBuffers();
+    void GaussianBlurCPU(std::vector<f32>& pixels, u32 w, u32 h, u32 channels,
+                          const std::vector<f32>& blurWeights, std::vector<f32>& temp);
+    void SeparableWeightedBlur(std::vector<f32>& color, const std::vector<f32>& coc,
+                                u32 w, u32 h, u32 channels, f32 maxRadius,
+                                std::vector<f32>& temp);
 
     VulkanContext* m_Context = nullptr;
     VulkanRenderer* m_Renderer = nullptr;
@@ -304,6 +335,17 @@ private:
     VkSampler m_LUTSampler = VK_NULL_HANDLE;
     bool m_LUTLoaded = false;
     void DestroyLUTResources();
+
+    // DoF/Tilt-Shift CPU staging buffers (GPU<->CPU roundtrip for blur)
+    VkBuffer m_DofColorStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_DofColorStagingMemory = VK_NULL_HANDLE;
+    VkBuffer m_DofDepthStagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_DofDepthStagingMemory = VK_NULL_HANDLE;
+    VkBuffer m_DofUploadBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_DofUploadMemory = VK_NULL_HANDLE;
+    usize m_DofColorStagingSize = 0;
+    usize m_DofDepthStagingSize = 0;
+    bool m_DofStagingReady = false;
 };
 
 } // namespace Renderer

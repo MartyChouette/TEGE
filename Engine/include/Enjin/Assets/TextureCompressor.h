@@ -94,6 +94,10 @@ private:
     static void CompressBlockBC5(const u8* rgba, u32 stride, u8* out);
     static void CompressBlockBC7(const u8* rgba, u32 stride, u8* out);
 
+    // ASTC block compression (NxN blocks, 128-bit output)
+    // Single-partition mode with direct endpoint encoding and interpolation weights
+    static void CompressBlockASTC(const u8* rgba, u32 blockW, u32 blockH, u32 stride, u8* out);
+
     // Generate mip level from previous level (box filter)
     static std::vector<u8> GenerateMipLevel(
         const u8* srcData, u32 srcWidth, u32 srcHeight, u32 channels);

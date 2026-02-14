@@ -13,6 +13,10 @@ public:
     BehaviorTreeSystem() = default;
     ~BehaviorTreeSystem() override = default;
 
+    // Enable/disable behavior tree updates
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+    bool IsEnabled() const { return m_Enabled; }
+
     void SetWorld(World* world) { m_World = world; }
 
     void Initialize();
@@ -24,6 +28,7 @@ public:
 private:
     World* m_World = nullptr;
     AI::BehaviorTreeExecutor m_Executor;
+    bool m_Enabled = true;
 };
 
 } // namespace ECS

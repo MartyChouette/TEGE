@@ -5,6 +5,14 @@
 #include "Enjin/Math/Matrix.h"
 #include <vector>
 
+// Forward declarations for ECS integration
+namespace Enjin { namespace ECS {
+    class World;
+    using Entity = u64;
+    struct MeshComponent;
+    struct MaterialComponent;
+} }
+
 namespace Enjin {
 namespace Effects {
 
@@ -78,6 +86,14 @@ public:
     void GenerateMesh(std::vector<Math::Vector3>& positions,
                       std::vector<Math::Vector2>& uvs,
                       std::vector<u32>& indices) const;
+
+    // ECS Integration — build and update water entity mesh for Vulkan rendering
+    // Creates a MeshComponent + MaterialComponent on the given entity
+    void BuildEntityMesh(ECS::World* world, ECS::Entity entity) const;
+
+    // Update existing entity's MeshComponent with current wave animation
+    // Call each frame after Update() to animate vertex positions
+    void UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const;
 
 private:
     Water3DSettings m_Settings;

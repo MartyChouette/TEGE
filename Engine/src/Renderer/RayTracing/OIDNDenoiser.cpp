@@ -2,6 +2,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
+#include <cmath>
 #include <algorithm>
 
 namespace Enjin {
@@ -28,6 +29,25 @@ OIDNDenoiser::OIDNDenoiser(VulkanContext* context)
 
 OIDNDenoiser::~OIDNDenoiser() {
     Shutdown();
+}
+
+// ============================================================================
+// IMAGE MAPPING
+// ============================================================================
+
+void OIDNDenoiser::RegisterImageMapping(VkImageView view, VkImage image, VkFormat format) {
+    if (view == VK_NULL_HANDLE) return;
+    m_ImageMap[view] = {image, format};
+}
+
+VkImage OIDNDenoiser::ResolveImage(VkImageView view) const {
+    auto it = m_ImageMap.find(view);
+    return (it != m_ImageMap.end()) ? it->second.image : VK_NULL_HANDLE;
+}
+
+VkFormat OIDNDenoiser::ResolveFormat(VkImageView view) const {
+    auto it = m_ImageMap.find(view);
+    return (it != m_ImageMap.end()) ? it->second.format : VK_FORMAT_UNDEFINED;
 }
 
 // ============================================================================
@@ -159,40 +179,279 @@ void OIDNDenoiser::DenoiseColor(VkCommandBuffer cmd, VkImageView noisyInput,
 }
 
 // ============================================================================
-// DENOISE IMPLEMENTATION
+// HALF-FLOAT CONVERSION HELPERS
+// ============================================================================
+
+static f32 HalfToFloat(u16 h) {
+    u32 sign = (h >> 15) & 0x1;
+    u32 expo = (h >> 10) & 0x1F;
+    u32 mant = h & 0x3FF;
+    if (expo == 0) {
+        if (mant == 0) return sign ? -0.0f : 0.0f;
+        f32 m = static_cast<f32>(mant) / 1024.0f;
+        f32 val = m * (1.0f / 16384.0f);  // 2^(-14)
+        return sign ? -val : val;
+    }
+    if (expo == 31) {
+        return (mant == 0) ? (sign ? -INFINITY : INFINITY) : NAN;
+    }
+    f32 val = std::ldexp(1.0f + static_cast<f32>(mant) / 1024.0f, static_cast<int>(expo) - 15);
+    return sign ? -val : val;
+}
+
+static u16 FloatToHalf(f32 f) {
+    u32 fi;
+    std::memcpy(&fi, &f, sizeof(f32));
+    u32 sign = (fi >> 31) & 0x1;
+    i32 expo = static_cast<i32>((fi >> 23) & 0xFF) - 127 + 15;
+    u32 mant = fi & 0x7FFFFF;
+    if (expo <= 0) return static_cast<u16>(sign << 15);
+    if (expo >= 31) return static_cast<u16>((sign << 15) | (31 << 10));
+    return static_cast<u16>((sign << 15) | (expo << 10) | (mant >> 13));
+}
+
+// ============================================================================
+// GPU → CPU STAGING CONVERSION
+// ============================================================================
+// Converts the staging buffer content (in GPU pixel format) to the f32 array
+// that OIDN expects. Handles R16F (single-channel) and RGBA16F (4-channel).
+
+void OIDNDenoiser::ConvertStagingToFloat(const void* staging, u32 channels) {
+    usize pixelCount = static_cast<usize>(m_Width) * m_Height;
+
+    if (channels == 1) {
+        // R16F → expand to RGB (OIDN requires 3-channel minimum)
+        const u16* halfPixels = static_cast<const u16*>(staging);
+        for (usize i = 0; i < pixelCount; ++i) {
+            f32 val = HalfToFloat(halfPixels[i]);
+            m_InputBuffer[i * 3 + 0] = val;
+            m_InputBuffer[i * 3 + 1] = val;
+            m_InputBuffer[i * 3 + 2] = val;
+        }
+    } else {
+        // RGBA16F → RGB (OIDN uses 3-channel)
+        const u16* halfPixels = static_cast<const u16*>(staging);
+        for (usize i = 0; i < pixelCount; ++i) {
+            m_InputBuffer[i * 3 + 0] = HalfToFloat(halfPixels[i * 4 + 0]);
+            m_InputBuffer[i * 3 + 1] = HalfToFloat(halfPixels[i * 4 + 1]);
+            m_InputBuffer[i * 3 + 2] = HalfToFloat(halfPixels[i * 4 + 2]);
+        }
+    }
+}
+
+// ============================================================================
+// CPU → GPU STAGING CONVERSION
+// ============================================================================
+// Converts the OIDN f32 output back to the GPU pixel format for upload.
+
+void OIDNDenoiser::ConvertFloatToStaging(void* staging, u32 channels) {
+    usize pixelCount = static_cast<usize>(m_Width) * m_Height;
+
+    if (channels == 1) {
+        // RGB → R16F (take red channel, which equals the denoised single-channel value)
+        u16* halfPixels = static_cast<u16*>(staging);
+        for (usize i = 0; i < pixelCount; ++i) {
+            halfPixels[i] = FloatToHalf(m_OutputBuffer[i * 3 + 0]);
+        }
+    } else {
+        // RGB → RGBA16F (alpha = 1.0)
+        u16* halfPixels = static_cast<u16*>(staging);
+        for (usize i = 0; i < pixelCount; ++i) {
+            halfPixels[i * 4 + 0] = FloatToHalf(m_OutputBuffer[i * 3 + 0]);
+            halfPixels[i * 4 + 1] = FloatToHalf(m_OutputBuffer[i * 3 + 1]);
+            halfPixels[i * 4 + 2] = FloatToHalf(m_OutputBuffer[i * 3 + 2]);
+            halfPixels[i * 4 + 3] = FloatToHalf(1.0f);
+        }
+    }
+}
+
+// ============================================================================
+// GPU IMAGE <-> STAGING BUFFER COPY
+// ============================================================================
+
+void OIDNDenoiser::CopyImageToStaging(VkCommandBuffer cmd, VkImage image, VkFormat format, u32 channels) {
+    if (image == VK_NULL_HANDLE || m_StagingBuffer == VK_NULL_HANDLE) return;
+
+    // Transition image to TRANSFER_SRC
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Copy image to staging buffer
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {m_Width, m_Height, 1};
+
+    vkCmdCopyImageToBuffer(cmd, image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                            m_StagingBuffer, 1, &region);
+
+    // Barrier: make staging buffer readable by host
+    VkBufferMemoryBarrier bufBarrier{};
+    bufBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bufBarrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    bufBarrier.dstAccessMask = VK_ACCESS_HOST_READ_BIT;
+    bufBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufBarrier.buffer = m_StagingBuffer;
+    bufBarrier.offset = 0;
+    bufBarrier.size = m_StagingSize;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        0, 0, nullptr, 1, &bufBarrier, 0, nullptr);
+}
+
+void OIDNDenoiser::CopyStagingToImage(VkCommandBuffer cmd, VkImage image, VkFormat format, u32 channels) {
+    if (image == VK_NULL_HANDLE || m_OutputStagingBuffer == VK_NULL_HANDLE) return;
+
+    // Transition image to TRANSFER_DST
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Host write barrier for upload staging buffer
+    VkBufferMemoryBarrier bufBarrier{};
+    bufBarrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    bufBarrier.srcAccessMask = VK_ACCESS_HOST_WRITE_BIT;
+    bufBarrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    bufBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    bufBarrier.buffer = m_OutputStagingBuffer;
+    bufBarrier.offset = 0;
+    bufBarrier.size = m_StagingSize;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_HOST_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        0, 0, nullptr, 1, &bufBarrier, 0, nullptr);
+
+    // Copy staging buffer to image
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {m_Width, m_Height, 1};
+
+    vkCmdCopyBufferToImage(cmd, m_OutputStagingBuffer, image,
+                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    // Transition image back to GENERAL for shader access
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, 0, nullptr, 1, &barrier);
+}
+
+// ============================================================================
+// DENOISE IMPLEMENTATION (with GPU↔CPU copy)
 // ============================================================================
 
 void OIDNDenoiser::DenoiseImpl(VkCommandBuffer cmd, VkImageView input, VkImageView output,
                                 VkImageView normalView, u32 channels) {
 #ifdef ENJIN_RAYTRACING_OIDN
-    // Note: In a production implementation, this would:
-    // 1. Insert a pipeline barrier (image → transfer src)
-    // 2. vkCmdCopyImageToBuffer to staging buffer
-    // 3. Submit + wait (or use timeline semaphore for async)
-    // 4. Map staging buffer → CPU
-    // 5. Run OIDN filter
-    // 6. Unmap + vkCmdCopyBufferToImage back
-    // 7. Insert pipeline barrier (transfer dst → shader read)
-    //
-    // For now, this is structured to compile and integrate cleanly.
-    // The actual GPU↔CPU copy requires the VkImage handle (not just VkImageView),
-    // which would need a small refactor of the RT effect output accessors.
-    // This placeholder runs OIDN on zero-initialized buffers as a proof of integration.
+    // Resolve VkImageView to VkImage via registered mappings
+    VkImage inputImage = ResolveImage(input);
+    VkImage outputImage = ResolveImage(output);
+    VkFormat inputFormat = ResolveFormat(input);
 
+    if (inputImage == VK_NULL_HANDLE || outputImage == VK_NULL_HANDLE) {
+        // No image mapping registered — fall back to zero-buffer denoising
+        // This happens when RegisterImageMapping() hasn't been called yet
+        usize pixelCount = static_cast<usize>(m_Width) * m_Height;
+        usize bufferChannels = 3;  // OIDN always uses 3-channel (RGB)
+
+        std::fill(m_InputBuffer.begin(), m_InputBuffer.begin() + pixelCount * bufferChannels, 0.0f);
+        std::fill(m_OutputBuffer.begin(), m_OutputBuffer.begin() + pixelCount * bufferChannels, 0.0f);
+
+        OIDNFilter filter = (channels == 1) ? m_SingleFilter : m_ColorFilter;
+        oidnSetFilterImage(filter, "color", m_InputBuffer.data(), OIDN_FORMAT_FLOAT3,
+                           m_Width, m_Height, 0, 0, 0);
+        oidnSetFilterImage(filter, "output", m_OutputBuffer.data(), OIDN_FORMAT_FLOAT3,
+                           m_Width, m_Height, 0, 0, 0);
+        if (m_Config.inputScale > 0.0f) {
+            oidnSetFilterFloat(filter, "inputScale", m_Config.inputScale);
+        }
+        oidnSetFilterBool(filter, "hdr", true);
+        oidnCommitFilter(filter);
+        oidnExecuteFilter(filter);
+
+        const char* errorMsg = nullptr;
+        if (oidnGetDeviceError(m_Device, &errorMsg) != OIDN_ERROR_NONE) {
+            ENJIN_LOG_WARN(Renderer, "OIDN denoise error: %s", errorMsg ? errorMsg : "unknown");
+        }
+        return;
+    }
+
+    // === STEP 1: Copy RT output image to CPU staging buffer ===
+    CopyImageToStaging(cmd, inputImage, inputFormat, channels);
+
+    // === STEP 2: Map staging buffer, convert to OIDN float format ===
+    VkDevice device = m_Context->GetDevice();
+
+    void* mappedInput = nullptr;
+    if (vkMapMemory(device, m_StagingMemory, 0, m_StagingSize, 0, &mappedInput) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "OIDN: Failed to map input staging buffer");
+        return;
+    }
+
+    ConvertStagingToFloat(mappedInput, channels);
+    vkUnmapMemory(device, m_StagingMemory);
+
+    // === STEP 3: Run OIDN filter on CPU ===
     usize pixelCount = static_cast<usize>(m_Width) * m_Height;
-    usize bufferChannels = (channels == 1) ? 3 : 3;  // OIDN always uses 3-channel (RGB)
-
-    // Zero output (placeholder until GPU↔CPU copy is wired)
-    std::fill(m_InputBuffer.begin(), m_InputBuffer.begin() + pixelCount * bufferChannels, 0.0f);
-    std::fill(m_OutputBuffer.begin(), m_OutputBuffer.begin() + pixelCount * bufferChannels, 0.0f);
+    std::fill(m_OutputBuffer.begin(), m_OutputBuffer.begin() + pixelCount * 3, 0.0f);
 
     OIDNFilter filter = (channels == 1) ? m_SingleFilter : m_ColorFilter;
 
-    // Configure filter
     oidnSetFilterImage(filter, "color", m_InputBuffer.data(), OIDN_FORMAT_FLOAT3,
                        m_Width, m_Height, 0, 0, 0);
     oidnSetFilterImage(filter, "output", m_OutputBuffer.data(), OIDN_FORMAT_FLOAT3,
                        m_Width, m_Height, 0, 0, 0);
+
+    // Optionally bind normals auxiliary image
+    if (m_Config.useNormals && normalView != VK_NULL_HANDLE) {
+        VkImage normalImage = ResolveImage(normalView);
+        if (normalImage != VK_NULL_HANDLE) {
+            // Normal data would need its own staging copy — for now, skip
+            // (normal-guided denoising is an optional quality enhancement)
+        }
+    }
 
     if (m_Config.inputScale > 0.0f) {
         oidnSetFilterFloat(filter, "inputScale", m_Config.inputScale);
@@ -202,11 +461,25 @@ void OIDNDenoiser::DenoiseImpl(VkCommandBuffer cmd, VkImageView input, VkImageVi
     oidnCommitFilter(filter);
     oidnExecuteFilter(filter);
 
-    // Check for errors
+    // Check for OIDN errors
     const char* errorMsg = nullptr;
     if (oidnGetDeviceError(m_Device, &errorMsg) != OIDN_ERROR_NONE) {
         ENJIN_LOG_WARN(Renderer, "OIDN denoise error: %s", errorMsg ? errorMsg : "unknown");
     }
+
+    // === STEP 4: Convert denoised output back to GPU format, write to upload buffer ===
+    void* mappedOutput = nullptr;
+    if (vkMapMemory(device, m_OutputStagingMemory, 0, m_StagingSize, 0, &mappedOutput) != VK_SUCCESS) {
+        ENJIN_LOG_WARN(Renderer, "OIDN: Failed to map output staging buffer");
+        return;
+    }
+
+    ConvertFloatToStaging(mappedOutput, channels);
+    vkUnmapMemory(device, m_OutputStagingMemory);
+
+    // === STEP 5: Copy denoised result back to GPU image ===
+    CopyStagingToImage(cmd, outputImage, inputFormat, channels);
+
 #endif
 }
 
@@ -246,6 +519,7 @@ void OIDNDenoiser::Shutdown() {
     m_InputBuffer.clear();
     m_OutputBuffer.clear();
     m_NormalBuffer.clear();
+    m_ImageMap.clear();
     m_Initialized = false;
 }
 

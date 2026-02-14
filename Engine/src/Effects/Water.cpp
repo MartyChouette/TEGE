@@ -1,5 +1,8 @@
 #include "Enjin/Effects/Water.h"
 #include "Enjin/Math/Math.h"
+#include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Material.h"
 
 namespace Enjin {
 namespace Effects {
@@ -102,6 +105,115 @@ void Water3D::GenerateMesh(std::vector<Math::Vector3>& positions,
             indices.push_back(bottomRight);
         }
     }
+}
+
+void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
+    if (!world) return;
+
+    // Generate the mesh data from the CPU simulation
+    std::vector<Math::Vector3> positions;
+    std::vector<Math::Vector2> uvCoords;
+    std::vector<u32> meshIndices;
+    GenerateMesh(positions, uvCoords, meshIndices);
+
+    // Build MeshComponent with full vertex attributes
+    ECS::MeshComponent mesh;
+    mesh.vertices.reserve(positions.size());
+
+    f32 halfWidth = m_Settings.width * 0.5f;
+    f32 halfDepth = m_Settings.depth * 0.5f;
+
+    for (usize i = 0; i < positions.size(); ++i) {
+        ECS::MeshComponent::Vertex v;
+        v.position = positions[i];
+
+        // Compute vertex normal from wave height gradient (finite differences)
+        f32 eps = m_Settings.tileSize * 0.1f;
+        f32 hL = GetWaveHeight(positions[i].x - eps, positions[i].z);
+        f32 hR = GetWaveHeight(positions[i].x + eps, positions[i].z);
+        f32 hD = GetWaveHeight(positions[i].x, positions[i].z - eps);
+        f32 hU = GetWaveHeight(positions[i].x, positions[i].z + eps);
+        Math::Vector3 normal(hL - hR, 2.0f * eps, hD - hU);
+        v.normal = normal.Normalized();
+
+        v.uv = uvCoords[i];
+
+        // Edge distance for shore foam (same pattern as WaterVolumeComponent mesh)
+        f32 relX = (positions[i].x - (m_Settings.position.x - halfWidth)) / m_Settings.width;
+        f32 relZ = (positions[i].z - (m_Settings.position.z - halfDepth)) / m_Settings.depth;
+        f32 distL = relX, distR = 1.0f - relX;
+        f32 distT = relZ, distB = 1.0f - relZ;
+        f32 minEdgeDist = Math::Min(Math::Min(distL, distR), Math::Min(distT, distB));
+        f32 edgeDist = Math::Min(minEdgeDist * 2.0f, 1.0f);
+
+        // Vertex color: shallow/deep blend + edge distance for shader use
+        v.color = Math::Vector4(
+            m_Settings.shallowColor.x,
+            edgeDist,
+            m_Settings.shallowColor.z,
+            m_Settings.opacity
+        );
+
+        // Tangent along X direction
+        v.tangent = Math::Vector4(1.0f, 0.0f, 0.0f, 1.0f);
+
+        mesh.vertices.push_back(v);
+    }
+
+    mesh.indices = meshIndices;
+
+    // Add or replace MeshComponent
+    if (world->HasComponent<ECS::MeshComponent>(entity)) {
+        *world->GetComponent<ECS::MeshComponent>(entity) = std::move(mesh);
+    } else {
+        world->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+    }
+
+    // Create water material if not already present
+    if (!world->HasComponent<ECS::MaterialComponent>(entity)) {
+        ECS::MaterialComponent material;
+        material.baseColor = m_Settings.shallowColor;
+        material.opacity = m_Settings.opacity;
+        material.metallic = 0.3f;
+        material.roughness = 0.1f;
+        material.doubleSided = true;
+        material.castShadows = false;
+        material.alphaMode = ECS::MaterialComponent::AlphaMode::Opaque;
+        world->AddComponent<ECS::MaterialComponent>(entity, material);
+    }
+}
+
+void Water3D::UpdateEntityMesh(ECS::World* world, ECS::Entity entity) const {
+    if (!world) return;
+
+    auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+    if (!mesh || mesh->vertices.empty()) return;
+
+    // Recalculate the vertex positions and UVs from the current wave simulation
+    std::vector<Math::Vector3> positions;
+    std::vector<Math::Vector2> uvCoords;
+    std::vector<u32> meshIndices;
+    GenerateMesh(positions, uvCoords, meshIndices);
+
+    // Update only positions, normals, and UVs (indices don't change)
+    if (positions.size() != mesh->vertices.size()) return;
+
+    f32 eps = m_Settings.tileSize * 0.1f;
+    for (usize i = 0; i < positions.size(); ++i) {
+        mesh->vertices[i].position = positions[i];
+        mesh->vertices[i].uv = uvCoords[i];
+
+        // Recompute normal from wave gradient
+        f32 hL = GetWaveHeight(positions[i].x - eps, positions[i].z);
+        f32 hR = GetWaveHeight(positions[i].x + eps, positions[i].z);
+        f32 hD = GetWaveHeight(positions[i].x, positions[i].z - eps);
+        f32 hU = GetWaveHeight(positions[i].x, positions[i].z + eps);
+        Math::Vector3 normal(hL - hR, 2.0f * eps, hD - hU);
+        mesh->vertices[i].normal = normal.Normalized();
+    }
+
+    // Mark AABB as dirty so frustum culling recalculates
+    mesh->aabbDirty = true;
 }
 
 // 2D Water Implementation

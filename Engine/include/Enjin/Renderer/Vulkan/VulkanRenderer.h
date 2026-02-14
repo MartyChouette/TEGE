@@ -81,6 +81,10 @@ public:
     // Flag set by window resize callback to trigger swapchain recreation
     void SetFramebufferResized(bool resized) { m_FramebufferResized = resized; }
 
+    // Deferred VSync change — safe to call mid-frame, applied at end of EndFrame()
+    void RequestVSyncChange(bool enabled);
+    bool IsVSyncEnabled() const;
+
     // Register a callback to be notified after swapchain recreation (e.g., PostProcessing)
     using ResizeCallback = std::function<void(u32, u32)>;
     void AddResizeCallback(ResizeCallback callback) { m_ResizeCallbacks.push_back(std::move(callback)); }
@@ -124,6 +128,8 @@ private:
     bool m_IsMainRenderPassActive = false;
     bool m_FramebufferResized = false;
     bool m_DeviceLost = false;
+    bool m_VSyncChangeRequested = false;
+    bool m_VSyncDesiredState = false;
 
     std::vector<ResizeCallback> m_ResizeCallbacks;
 

@@ -85,6 +85,16 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     std::sort(canvases.begin(), canvases.end(),
         [](const CanvasEntry& a, const CanvasEntry& b) { return a.sortOrder < b.sortOrder; });
 
+    // Update cursor blink timer
+    m_CursorBlinkTimer += deltaTime;
+    if (m_CursorBlinkTimer >= 1.0f) m_CursorBlinkTimer -= 1.0f;
+    m_CursorVisible = m_CursorBlinkTimer < 0.5f;
+
+    // Update tooltip hover timer
+    if (m_TooltipHoverElementId != 0) {
+        m_TooltipHoverTimer += deltaTime;
+    }
+
     for (auto& entry : canvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
         if (!canvas) continue;
@@ -277,6 +287,285 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                 }
             }
         }
+
+        // Dropdown click — toggle open/close
+        if (element.type == UIWidgetType::Dropdown && mouseClicked) {
+            if (element.data.dropdownOpen) {
+                // Close
+                element.data.dropdownOpen = false;
+                m_OpenDropdownId = 0;
+            } else {
+                // Close any other open dropdown first
+                if (m_OpenDropdownId != 0 && m_OpenDropdownId != element.id) {
+                    for (auto& other : canvas.elements) {
+                        if (other.id == m_OpenDropdownId) {
+                            other.data.dropdownOpen = false;
+                            break;
+                        }
+                    }
+                }
+                element.data.dropdownOpen = true;
+                m_OpenDropdownId = element.id;
+            }
+        }
+
+        // RadioGroup click — select option based on Y position
+        if (element.type == UIWidgetType::RadioGroup && mouseClicked && !element.data.options.empty()) {
+            f32 itemH = element.computedRect.h / static_cast<f32>(element.data.options.size());
+            i32 clickedIdx = static_cast<i32>((mouseY - element.computedRect.y) / itemH);
+            clickedIdx = std::max(0, std::min(clickedIdx, static_cast<i32>(element.data.options.size()) - 1));
+            if (clickedIdx != element.data.selectedOption) {
+                element.data.selectedOption = clickedIdx;
+                if (!element.onValueChangedEvent.empty()) {
+                    UIEventData event;
+                    event.elementId = element.id;
+                    event.eventName = element.onValueChangedEvent;
+                    event.intValue = clickedIdx;
+                    event.stringValue = element.data.options[clickedIdx];
+                    m_EventBus.Dispatch(event);
+                }
+            }
+        }
+
+        // ListView click — select item based on Y position among children
+        if (element.type == UIWidgetType::ListView && mouseClicked && !element.childIds.empty()) {
+            f32 fontSize = ResolveFloat(element.style.fontSize, canvas.theme.fontSizeBody) * m_FontScale;
+            f32 itemH = fontSize + 8.0f;
+            f32 scrollOff = element.data.scrollOffset;
+            i32 clickedIdx = static_cast<i32>((mouseY - element.computedRect.y + scrollOff) / itemH);
+            clickedIdx = std::max(0, std::min(clickedIdx, static_cast<i32>(element.childIds.size()) - 1));
+            if (clickedIdx != element.data.listSelectedIndex) {
+                element.data.listSelectedIndex = clickedIdx;
+                if (!element.onValueChangedEvent.empty()) {
+                    UIEventData event;
+                    event.elementId = element.id;
+                    event.eventName = element.onValueChangedEvent;
+                    event.intValue = clickedIdx;
+                    m_EventBus.Dispatch(event);
+                }
+            }
+        }
+
+        // TabGroup click — select tab from tab bar
+        if (element.type == UIWidgetType::TabGroup && mouseClicked && !element.childIds.empty()) {
+            f32 tabBarH = 30.0f;
+            if (mouseY < element.computedRect.y + tabBarH) {
+                f32 tabW = element.computedRect.w / static_cast<f32>(element.childIds.size());
+                i32 clickedTab = static_cast<i32>((mouseX - element.computedRect.x) / tabW);
+                clickedTab = std::max(0, std::min(clickedTab, static_cast<i32>(element.childIds.size()) - 1));
+                if (clickedTab != element.data.activeTabIndex) {
+                    element.data.activeTabIndex = clickedTab;
+                    if (!element.onValueChangedEvent.empty()) {
+                        UIEventData event;
+                        event.elementId = element.id;
+                        event.eventName = element.onValueChangedEvent;
+                        event.intValue = clickedTab;
+                        m_EventBus.Dispatch(event);
+                    }
+                }
+            }
+        }
+
+        // Tooltip hover tracking
+        if (element.type == UIWidgetType::Tooltip || !element.data.tooltipText.empty()) {
+            // Handled below after loop
+        }
+    }
+
+    // Dropdown list item selection (when open, check clicks in the overlay list area)
+    if (m_OpenDropdownId != 0 && mouseClicked) {
+        bool clickedInList = false;
+        for (auto& element : canvas.elements) {
+            if (element.id != m_OpenDropdownId) continue;
+            if (!element.data.dropdownOpen) break;
+
+            f32 fontSize = ResolveFloat(element.style.fontSize, canvas.theme.fontSizeBody) * m_FontScale;
+            f32 itemH = fontSize + 8.0f;
+            f32 listH = itemH * static_cast<f32>(element.data.options.size());
+            f32 maxListH = itemH * 8.0f;
+            if (listH > maxListH) listH = maxListH;
+
+            UIRect listRect;
+            listRect.x = element.computedRect.x;
+            listRect.y = element.computedRect.y + element.computedRect.h + 2.0f;
+            listRect.w = element.computedRect.w;
+            listRect.h = listH;
+
+            if (listRect.Contains(mouseX, mouseY)) {
+                i32 clickedIdx = static_cast<i32>((mouseY - listRect.y) / itemH);
+                clickedIdx = std::max(0, std::min(clickedIdx, static_cast<i32>(element.data.options.size()) - 1));
+                element.data.selectedOption = clickedIdx;
+                element.data.dropdownOpen = false;
+                m_OpenDropdownId = 0;
+                clickedInList = true;
+
+                if (!element.onValueChangedEvent.empty()) {
+                    UIEventData event;
+                    event.elementId = element.id;
+                    event.eventName = element.onValueChangedEvent;
+                    event.intValue = clickedIdx;
+                    event.stringValue = element.data.options[clickedIdx];
+                    m_EventBus.Dispatch(event);
+                }
+            } else if (!element.computedRect.Contains(mouseX, mouseY)) {
+                // Click outside dropdown and list — close it
+                element.data.dropdownOpen = false;
+                m_OpenDropdownId = 0;
+            }
+            break;
+        }
+    }
+
+    // ScrollArea mouse wheel handling
+    for (auto& element : canvas.elements) {
+        if (element.type == UIWidgetType::ScrollArea && element.visible && element.enabled) {
+            if (element.computedRect.Contains(mouseX, mouseY) && io.MouseWheel != 0.0f) {
+                element.data.scrollOffset -= io.MouseWheel * 30.0f;
+                if (element.data.scrollOffset < 0.0f) element.data.scrollOffset = 0.0f;
+                // Content height computed at render time, clamping done there
+            }
+        }
+        // ListView mouse wheel
+        if (element.type == UIWidgetType::ListView && element.visible && element.enabled) {
+            if (element.computedRect.Contains(mouseX, mouseY) && io.MouseWheel != 0.0f) {
+                element.data.scrollOffset -= io.MouseWheel * 30.0f;
+                if (element.data.scrollOffset < 0.0f) element.data.scrollOffset = 0.0f;
+            }
+        }
+    }
+
+    // Tooltip hover tracking (check all elements for tooltipText)
+    {
+        u32 newTooltipHover = 0;
+        for (const auto& element : canvas.elements) {
+            if (!element.visible || !element.enabled) continue;
+            if (element.data.tooltipText.empty()) continue;
+            if (element.computedRect.Contains(mouseX, mouseY)) {
+                newTooltipHover = element.id;
+                break;
+            }
+        }
+        if (newTooltipHover != m_TooltipHoverElementId) {
+            m_TooltipHoverElementId = newTooltipHover;
+            m_TooltipHoverTimer = 0.0f;
+            m_TooltipMouseX = mouseX;
+            m_TooltipMouseY = mouseY;
+        }
+    }
+
+    // TextInput keyboard handling for focused text input
+    if (canvas.focusedElementId != 0) {
+        UIElement* focused = canvas.GetElement(canvas.focusedElementId);
+        if (focused && focused->type == UIWidgetType::TextInput && focused->enabled) {
+            auto& text = focused->data.inputText;
+            auto& cursor = focused->data.cursorPos;
+            auto& selStart = focused->data.selectionStart;
+
+            // Clamp cursor
+            cursor = std::max(0, std::min(cursor, static_cast<i32>(text.size())));
+
+            // Character input
+            for (i32 c = 0; c < io.InputQueueCharacters.Size; ++c) {
+                ImWchar ch = io.InputQueueCharacters[c];
+                if (ch >= 32 && ch < 127) {
+                    // Delete selection if any
+                    if (selStart >= 0 && selStart != cursor) {
+                        i32 sMin = std::min(selStart, cursor);
+                        i32 sMax = std::max(selStart, cursor);
+                        text.erase(sMin, sMax - sMin);
+                        cursor = sMin;
+                        selStart = -1;
+                    }
+                    text.insert(text.begin() + cursor, static_cast<char>(ch));
+                    cursor++;
+                    m_CursorBlinkTimer = 0.0f;
+                }
+            }
+
+            // Backspace
+            if (ImGui::IsKeyPressed(ImGuiKey_Backspace)) {
+                if (selStart >= 0 && selStart != cursor) {
+                    i32 sMin = std::min(selStart, cursor);
+                    i32 sMax = std::max(selStart, cursor);
+                    text.erase(sMin, sMax - sMin);
+                    cursor = sMin;
+                    selStart = -1;
+                } else if (cursor > 0) {
+                    text.erase(cursor - 1, 1);
+                    cursor--;
+                }
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // Delete
+            if (ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+                if (selStart >= 0 && selStart != cursor) {
+                    i32 sMin = std::min(selStart, cursor);
+                    i32 sMax = std::max(selStart, cursor);
+                    text.erase(sMin, sMax - sMin);
+                    cursor = sMin;
+                    selStart = -1;
+                } else if (cursor < static_cast<i32>(text.size())) {
+                    text.erase(cursor, 1);
+                }
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // Left arrow
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) {
+                if (io.KeyShift) {
+                    if (selStart < 0) selStart = cursor;
+                } else {
+                    selStart = -1;
+                }
+                if (cursor > 0) cursor--;
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // Right arrow
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) {
+                if (io.KeyShift) {
+                    if (selStart < 0) selStart = cursor;
+                } else {
+                    selStart = -1;
+                }
+                if (cursor < static_cast<i32>(text.size())) cursor++;
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // Home
+            if (ImGui::IsKeyPressed(ImGuiKey_Home)) {
+                if (io.KeyShift && selStart < 0) selStart = cursor;
+                else if (!io.KeyShift) selStart = -1;
+                cursor = 0;
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // End
+            if (ImGui::IsKeyPressed(ImGuiKey_End)) {
+                if (io.KeyShift && selStart < 0) selStart = cursor;
+                else if (!io.KeyShift) selStart = -1;
+                cursor = static_cast<i32>(text.size());
+                m_CursorBlinkTimer = 0.0f;
+            }
+
+            // Select All (Ctrl+A)
+            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A)) {
+                selStart = 0;
+                cursor = static_cast<i32>(text.size());
+            }
+
+            // Submit (Enter)
+            if (ImGui::IsKeyPressed(ImGuiKey_Enter)) {
+                if (!focused->onSubmitEvent.empty()) {
+                    UIEventData event;
+                    event.elementId = focused->id;
+                    event.eventName = focused->onSubmitEvent;
+                    event.stringValue = text;
+                    m_EventBus.Dispatch(event);
+                }
+            }
+        }
     }
 
     // Dwell-click processing (Task #40)
@@ -366,29 +655,120 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
     u32 focusedId = canvas.focusedElementId;
 
     // Render root elements, then their children recursively
+    // Note: ScrollArea, Grid, TabGroup, Modal handle their own children
     for (const auto& element : canvas.elements) {
         if (element.parentId == 0 && element.visible) {
-            RenderElement(element, canvas.theme, focusedId);
+            RenderElement(element, canvas.theme, focusedId, canvas);
+
+            // Container widgets render their own children
+            if (element.type == UIWidgetType::ScrollArea ||
+                element.type == UIWidgetType::Grid ||
+                element.type == UIWidgetType::TabGroup ||
+                element.type == UIWidgetType::Modal) {
+                continue;
+            }
 
             // Render children
             for (u32 childId : element.childIds) {
                 const UIElement* child = canvas.GetElement(childId);
                 if (child && child->visible) {
-                    RenderElement(*child, canvas.theme, focusedId);
+                    RenderElement(*child, canvas.theme, focusedId, canvas);
+
+                    // Container children handle their own sub-children
+                    if (child->type == UIWidgetType::ScrollArea ||
+                        child->type == UIWidgetType::Grid ||
+                        child->type == UIWidgetType::TabGroup ||
+                        child->type == UIWidgetType::Modal) {
+                        continue;
+                    }
+
                     // One level of nesting for children's children
                     for (u32 grandchildId : child->childIds) {
                         const UIElement* grandchild = canvas.GetElement(grandchildId);
                         if (grandchild && grandchild->visible) {
-                            RenderElement(*grandchild, canvas.theme, focusedId);
+                            RenderElement(*grandchild, canvas.theme, focusedId, canvas);
                         }
                     }
                 }
             }
         }
     }
+
+    // Render dropdown overlays on top of everything (if any open)
+    if (m_OpenDropdownId != 0) {
+        const UIElement* dropdown = canvas.GetElement(m_OpenDropdownId);
+        if (dropdown && dropdown->visible && dropdown->data.dropdownOpen) {
+            ImDrawList* dl = ImGui::GetForegroundDrawList();
+            const UITheme& theme = canvas.theme;
+            f32 radius = ResolveFloat(dropdown->style.borderRadius, theme.borderRadius);
+            f32 fontSize = ResolveFloat(dropdown->style.fontSize, theme.fontSizeBody) * m_FontScale;
+            f32 itemH = fontSize + 8.0f;
+            f32 listH = itemH * static_cast<f32>(dropdown->data.options.size());
+            f32 maxListH = itemH * 8.0f;
+            if (listH > maxListH) listH = maxListH;
+
+            UIRect listRect;
+            listRect.x = dropdown->computedRect.x;
+            listRect.y = dropdown->computedRect.y + dropdown->computedRect.h + 2.0f;
+            listRect.w = dropdown->computedRect.w;
+            listRect.h = listH;
+
+            // Background
+            ImVec4 bgColor = ImVec4(theme.surface.x, theme.surface.y, theme.surface.z, 0.98f);
+            DrawRoundedRect(dl, listRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+
+            // Border
+            ImVec4 borderColor = ResolveColor(dropdown->style.borderColor, theme.inputBorder, 0.8f);
+            DrawRoundedRectBorder(dl, listRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, 1.0f);
+
+            // Items
+            ImGuiIO& io = ImGui::GetIO();
+            f32 mouseX = io.MousePos.x;
+            f32 mouseY = io.MousePos.y;
+            ImVec4 textColor = ResolveColor(dropdown->style.textColor, theme.textPrimary, 1.0f);
+            ImU32 textCol = ImGui::ColorConvertFloat4ToU32(textColor);
+
+            for (i32 i = 0; i < static_cast<i32>(dropdown->data.options.size()); ++i) {
+                UIRect itemRect;
+                itemRect.x = listRect.x;
+                itemRect.y = listRect.y + static_cast<f32>(i) * itemH;
+                itemRect.w = listRect.w;
+                itemRect.h = itemH;
+
+                if (itemRect.y + itemRect.h > listRect.y + listRect.h) break;
+
+                bool hovered = itemRect.Contains(mouseX, mouseY);
+                bool selected = (i == dropdown->data.selectedOption);
+
+                if (selected) {
+                    ImVec4 selColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.3f);
+                    DrawRoundedRect(dl, itemRect, ImGui::ColorConvertFloat4ToU32(selColor), 0.0f);
+                } else if (hovered) {
+                    ImVec4 hoverColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.15f);
+                    DrawRoundedRect(dl, itemRect, ImGui::ColorConvertFloat4ToU32(hoverColor), 0.0f);
+                }
+
+                UIRect textRect = itemRect;
+                textRect.x += 8.0f;
+                textRect.w -= 16.0f;
+                DrawCenteredText(dl, textRect, dropdown->data.options[i].c_str(),
+                    textCol, 0, 1, fontSize);
+            }
+        }
+    }
+
+    // Render tooltips last (on top of everything)
+    if (m_TooltipHoverElementId != 0) {
+        const UIElement* tooltipOwner = canvas.GetElement(m_TooltipHoverElementId);
+        if (tooltipOwner && !tooltipOwner->data.tooltipText.empty() &&
+            m_TooltipHoverTimer >= tooltipOwner->data.tooltipDelay) {
+            RenderTooltip(*tooltipOwner, canvas.theme);
+        }
+    }
 }
 
-void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId) {
+void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId,
+                             const UICanvasComponent& canvas) {
     bool isFocused = (element.id == focusedId && focusedId != 0);
 
     switch (element.type) {
@@ -400,6 +780,15 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32
         case UIWidgetType::Slider:      RenderSlider(element, theme); break;
         case UIWidgetType::Checkbox:    RenderCheckbox(element, theme); break;
         case UIWidgetType::Toggle:      RenderToggle(element, theme); break;
+        case UIWidgetType::Dropdown:    RenderDropdown(element, theme, isFocused); break;
+        case UIWidgetType::TextInput:   RenderTextInput(element, theme, isFocused); break;
+        case UIWidgetType::RadioGroup:  RenderRadioGroup(element, theme, isFocused); break;
+        case UIWidgetType::ScrollArea:  RenderScrollArea(element, theme, canvas); break;
+        case UIWidgetType::Grid:        RenderGrid(element, theme, canvas, focusedId); break;
+        case UIWidgetType::TabGroup:    RenderTabGroup(element, theme, canvas, focusedId); break;
+        case UIWidgetType::Tooltip:     break; // Tooltips are rendered in RenderCanvas overlay pass
+        case UIWidgetType::Modal:       RenderModal(element, theme, canvas, focusedId); break;
+        case UIWidgetType::ListView:    RenderListView(element, theme, canvas, isFocused); break;
         default:                        RenderPlaceholder(element, theme); break;
     }
 
@@ -714,6 +1103,699 @@ void UISystem::RenderToggle(const UIElement& element, const UITheme& theme) {
     }
 }
 
+// ============================================================================
+// DROPDOWN
+// ============================================================================
+
+void UISystem::RenderDropdown(const UIElement& element, const UITheme& theme, bool focused) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
+
+    // Background
+    Math::Vector3 bgDefault = theme.inputBg;
+    if (element.style.HasBgColor()) bgDefault = element.style.bgColor;
+    Math::Vector3 bgColor = bgDefault;
+    if (element.interaction.hovered || focused || element.data.dropdownOpen) {
+        bgColor = Math::Vector3(bgDefault.x + 0.04f, bgDefault.y + 0.04f, bgDefault.z + 0.04f);
+    }
+    DrawRoundedRect(dl, element.computedRect,
+        ImGui::ColorConvertFloat4ToU32(ImVec4(bgColor.x, bgColor.y, bgColor.z, 1.0f)), radius);
+
+    // Border
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    Math::Vector3 borderCol = (focused || element.data.dropdownOpen) ? theme.inputFocused : theme.inputBorder;
+    ImVec4 borderColor = ImVec4(borderCol.x, borderCol.y, borderCol.z, 0.8f);
+    DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+
+    // Selected text
+    ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+    ImU32 textCol = ImGui::ColorConvertFloat4ToU32(textColor);
+
+    std::string displayText;
+    if (element.data.selectedOption >= 0 &&
+        element.data.selectedOption < static_cast<i32>(element.data.options.size())) {
+        displayText = element.data.options[element.data.selectedOption];
+    } else if (!element.data.placeholder.empty()) {
+        displayText = element.data.placeholder;
+        textCol = ImGui::ColorConvertFloat4ToU32(
+            ResolveColor(element.style.textColor, theme.textSecondary, 0.6f));
+    }
+
+    UIRect textRect = element.computedRect;
+    textRect.x += 8.0f;
+    textRect.w -= 32.0f; // Leave space for arrow
+    DrawCenteredText(dl, textRect, displayText.c_str(), textCol, 0, 1, fontSize);
+
+    // Down arrow
+    f32 arrowSize = fontSize * 0.4f;
+    f32 arrowX = element.computedRect.x + element.computedRect.w - 16.0f;
+    f32 arrowY = element.computedRect.y + element.computedRect.h * 0.5f;
+    ImU32 arrowCol = ImGui::ColorConvertFloat4ToU32(
+        ResolveColor(element.style.textColor, theme.textSecondary, 0.8f));
+
+    if (element.data.dropdownOpen) {
+        // Up arrow when open
+        dl->AddTriangleFilled(
+            ImVec2(arrowX - arrowSize, arrowY + arrowSize * 0.5f),
+            ImVec2(arrowX + arrowSize, arrowY + arrowSize * 0.5f),
+            ImVec2(arrowX, arrowY - arrowSize * 0.5f),
+            arrowCol);
+    } else {
+        // Down arrow when closed
+        dl->AddTriangleFilled(
+            ImVec2(arrowX - arrowSize, arrowY - arrowSize * 0.5f),
+            ImVec2(arrowX + arrowSize, arrowY - arrowSize * 0.5f),
+            ImVec2(arrowX, arrowY + arrowSize * 0.5f),
+            arrowCol);
+    }
+
+    // The dropdown list overlay is rendered in RenderCanvas after all elements
+}
+
+// ============================================================================
+// TEXT INPUT
+// ============================================================================
+
+void UISystem::RenderTextInput(const UIElement& element, const UITheme& theme, bool focused) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
+
+    // Background
+    Math::Vector3 bgDefault = theme.inputBg;
+    if (element.style.HasBgColor()) bgDefault = element.style.bgColor;
+    DrawRoundedRect(dl, element.computedRect,
+        ImGui::ColorConvertFloat4ToU32(ImVec4(bgDefault.x, bgDefault.y, bgDefault.z, 1.0f)), radius);
+
+    // Border (highlight when focused)
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    Math::Vector3 borderCol = focused ? theme.inputFocused : theme.inputBorder;
+    ImVec4 borderColor = ImVec4(borderCol.x, borderCol.y, borderCol.z, focused ? 1.0f : 0.6f);
+    DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+
+    // Content area with padding
+    f32 padX = 8.0f;
+    UIRect contentRect = element.computedRect;
+    contentRect.x += padX;
+    contentRect.w -= padX * 2.0f;
+
+    ImFont* font = ImGui::GetFont();
+    const auto& text = element.data.inputText;
+    i32 cursorPos = element.data.cursorPos;
+    i32 selStart = element.data.selectionStart;
+
+    // Show placeholder if empty and not focused
+    if (text.empty() && !focused && !element.data.placeholder.empty()) {
+        ImVec4 placeholderColor = ResolveColor(Math::Vector3(-1, -1, -1), theme.textSecondary, 0.5f);
+        DrawCenteredText(dl, contentRect, element.data.placeholder.c_str(),
+            ImGui::ColorConvertFloat4ToU32(placeholderColor), 0, 1, fontSize);
+        return;
+    }
+
+    // Calculate text metrics
+    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, text.c_str());
+    f32 textY = contentRect.y + (contentRect.h - textSize.y) * 0.5f;
+
+    // Draw selection highlight
+    if (focused && selStart >= 0 && selStart != cursorPos) {
+        i32 sMin = std::min(selStart, cursorPos);
+        i32 sMax = std::max(selStart, cursorPos);
+        std::string presel(text.begin(), text.begin() + sMin);
+        std::string sel(text.begin() + sMin, text.begin() + sMax);
+        ImVec2 preSelSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, presel.c_str());
+        ImVec2 selSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, sel.c_str());
+
+        UIRect selRect;
+        selRect.x = contentRect.x + preSelSize.x;
+        selRect.y = textY;
+        selRect.w = selSize.x;
+        selRect.h = textSize.y;
+        ImVec4 selColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.35f);
+        DrawRoundedRect(dl, selRect, ImGui::ColorConvertFloat4ToU32(selColor), 0.0f);
+    }
+
+    // Draw text
+    ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+    dl->AddText(font, fontSize, ImVec2(contentRect.x, textY),
+        ImGui::ColorConvertFloat4ToU32(textColor), text.c_str());
+
+    // Draw cursor
+    if (focused && m_CursorVisible) {
+        i32 clampedCursor = std::max(0, std::min(cursorPos, static_cast<i32>(text.size())));
+        std::string preCursor(text.begin(), text.begin() + clampedCursor);
+        ImVec2 preCursorSize = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, preCursor.c_str());
+
+        f32 cursorX = contentRect.x + preCursorSize.x;
+        ImU32 cursorCol = ImGui::ColorConvertFloat4ToU32(
+            ImVec4(theme.textPrimary.x, theme.textPrimary.y, theme.textPrimary.z, 0.9f));
+        dl->AddLine(
+            ImVec2(cursorX, textY),
+            ImVec2(cursorX, textY + textSize.y),
+            cursorCol, 1.5f);
+    }
+}
+
+// ============================================================================
+// RADIO GROUP
+// ============================================================================
+
+void UISystem::RenderRadioGroup(const UIElement& element, const UITheme& theme, bool focused) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
+
+    if (element.data.options.empty()) return;
+
+    f32 itemH = element.computedRect.h / static_cast<f32>(element.data.options.size());
+    f32 radioRadius = std::min(itemH * 0.3f, 8.0f);
+
+    ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+    ImU32 textCol = ImGui::ColorConvertFloat4ToU32(textColor);
+
+    for (i32 i = 0; i < static_cast<i32>(element.data.options.size()); ++i) {
+        f32 itemY = element.computedRect.y + static_cast<f32>(i) * itemH;
+        f32 cx = element.computedRect.x + radioRadius + 6.0f;
+        f32 cy = itemY + itemH * 0.5f;
+
+        bool isSelected = (i == element.data.selectedOption);
+
+        // Outer circle
+        ImU32 outerCol = isSelected
+            ? ImGui::ColorConvertFloat4ToU32(ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 1.0f))
+            : ImGui::ColorConvertFloat4ToU32(ImVec4(theme.inputBorder.x, theme.inputBorder.y, theme.inputBorder.z, 0.8f));
+        dl->AddCircle(ImVec2(cx, cy), radioRadius, outerCol, 0, 1.5f);
+
+        // Inner filled circle for selected
+        if (isSelected) {
+            ImU32 innerCol = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 1.0f));
+            dl->AddCircleFilled(ImVec2(cx, cy), radioRadius * 0.55f, innerCol);
+        }
+
+        // Hover highlight on the radio circle background
+        ImGuiIO& io = ImGui::GetIO();
+        UIRect itemRect;
+        itemRect.x = element.computedRect.x;
+        itemRect.y = itemY;
+        itemRect.w = element.computedRect.w;
+        itemRect.h = itemH;
+        if (itemRect.Contains(io.MousePos.x, io.MousePos.y) && !isSelected) {
+            ImU32 hoverCircle = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.15f));
+            dl->AddCircleFilled(ImVec2(cx, cy), radioRadius + 3.0f, hoverCircle);
+            // Re-draw outer circle on top of hover
+            dl->AddCircle(ImVec2(cx, cy), radioRadius, outerCol, 0, 1.5f);
+        }
+
+        // Label text
+        UIRect labelRect;
+        labelRect.x = cx + radioRadius + 8.0f;
+        labelRect.y = itemY;
+        labelRect.w = element.computedRect.w - (cx - element.computedRect.x) - radioRadius - 8.0f;
+        labelRect.h = itemH;
+        DrawCenteredText(dl, labelRect, element.data.options[i].c_str(), textCol, 0, 1, fontSize);
+    }
+}
+
+// ============================================================================
+// SCROLL AREA
+// ============================================================================
+
+void UISystem::RenderScrollArea(const UIElement& element, const UITheme& theme,
+                                const UICanvasComponent& canvas) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
+
+    // Background panel
+    ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.surface, alpha);
+    DrawRoundedRect(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+
+    // Border
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    if (borderW > 0.0f) {
+        ImVec4 borderColor = ResolveColor(element.style.borderColor, theme.inputBorder, 0.5f);
+        DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+    }
+
+    if (element.childIds.empty()) return;
+
+    // Calculate content height from children
+    f32 contentH = 0.0f;
+    for (u32 childId : element.childIds) {
+        const UIElement* child = canvas.GetElement(childId);
+        if (child && child->visible) {
+            f32 childBottom = (child->computedRect.y + child->computedRect.h) - element.computedRect.y;
+            if (childBottom > contentH) contentH = childBottom;
+        }
+    }
+
+    // Clamp scroll offset
+    f32& scrollOff = const_cast<UIElement&>(element).data.scrollOffset;
+    f32 maxScroll = std::max(0.0f, contentH - element.computedRect.h);
+    scrollOff = std::max(0.0f, std::min(scrollOff, maxScroll));
+
+    // Set up clip rect
+    dl->PushClipRect(
+        ImVec2(element.computedRect.x, element.computedRect.y),
+        ImVec2(element.computedRect.x + element.computedRect.w,
+               element.computedRect.y + element.computedRect.h), true);
+
+    // Render children with scroll offset
+    for (u32 childId : element.childIds) {
+        const UIElement* child = canvas.GetElement(childId);
+        if (!child || !child->visible) continue;
+
+        // Create a temporary element with offset rect for rendering
+        UIElement shifted = *child;
+        shifted.computedRect.y -= scrollOff;
+
+        // Skip if fully outside clip region
+        if (shifted.computedRect.y + shifted.computedRect.h < element.computedRect.y ||
+            shifted.computedRect.y > element.computedRect.y + element.computedRect.h) {
+            continue;
+        }
+
+        RenderElement(shifted, theme, 0, canvas);
+    }
+
+    dl->PopClipRect();
+
+    // Draw scrollbar if content exceeds bounds
+    if (contentH > element.computedRect.h && maxScroll > 0.0f) {
+        f32 scrollbarW = 6.0f;
+        f32 trackH = element.computedRect.h;
+        f32 thumbRatio = element.computedRect.h / contentH;
+        f32 thumbH = std::max(20.0f, trackH * thumbRatio);
+        f32 scrollRatio = scrollOff / maxScroll;
+        f32 thumbY = element.computedRect.y + scrollRatio * (trackH - thumbH);
+
+        // Track
+        UIRect trackRect;
+        trackRect.x = element.computedRect.x + element.computedRect.w - scrollbarW - 2.0f;
+        trackRect.y = element.computedRect.y;
+        trackRect.w = scrollbarW;
+        trackRect.h = trackH;
+        DrawRoundedRect(dl, trackRect,
+            ImGui::ColorConvertFloat4ToU32(ImVec4(theme.sliderTrack.x, theme.sliderTrack.y, theme.sliderTrack.z, 0.3f)),
+            scrollbarW * 0.5f);
+
+        // Thumb
+        UIRect thumbRect;
+        thumbRect.x = trackRect.x;
+        thumbRect.y = thumbY;
+        thumbRect.w = scrollbarW;
+        thumbRect.h = thumbH;
+        f32 thumbAlpha = element.interaction.hovered ? 0.8f : 0.5f;
+        DrawRoundedRect(dl, thumbRect,
+            ImGui::ColorConvertFloat4ToU32(ImVec4(theme.sliderThumb.x, theme.sliderThumb.y, theme.sliderThumb.z, thumbAlpha)),
+            scrollbarW * 0.5f);
+    }
+}
+
+// ============================================================================
+// GRID
+// ============================================================================
+
+void UISystem::RenderGrid(const UIElement& element, const UITheme& theme,
+                          const UICanvasComponent& canvas, u32 focusedId) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 alpha  = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
+
+    // Optional background
+    if (element.style.HasBgColor()) {
+        ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.surface, alpha);
+        DrawRoundedRect(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+    }
+
+    if (element.childIds.empty()) return;
+
+    i32 cols = std::max(1, element.data.gridColumns);
+    f32 cellW = element.computedRect.w / static_cast<f32>(cols);
+    f32 spacing = theme.spacing;
+
+    // Calculate cell height from first child's height, or use a reasonable default
+    f32 cellH = 0.0f;
+    for (u32 childId : element.childIds) {
+        const UIElement* child = canvas.GetElement(childId);
+        if (child && child->visible) {
+            cellH = child->computedRect.h;
+            break;
+        }
+    }
+    if (cellH <= 0.0f) cellH = cellW; // Square cells as fallback
+
+    for (i32 i = 0; i < static_cast<i32>(element.childIds.size()); ++i) {
+        const UIElement* child = canvas.GetElement(element.childIds[i]);
+        if (!child || !child->visible) continue;
+
+        i32 col = i % cols;
+        i32 row = i / cols;
+
+        // Override child position into grid cell
+        UIElement positioned = *child;
+        positioned.computedRect.x = element.computedRect.x + static_cast<f32>(col) * cellW + spacing * 0.5f;
+        positioned.computedRect.y = element.computedRect.y + static_cast<f32>(row) * (cellH + spacing);
+        positioned.computedRect.w = cellW - spacing;
+        // Keep original height
+
+        RenderElement(positioned, theme, focusedId, canvas);
+    }
+}
+
+// ============================================================================
+// TAB GROUP
+// ============================================================================
+
+void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
+                              const UICanvasComponent& canvas, u32 focusedId) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
+
+    if (element.childIds.empty()) return;
+
+    f32 tabBarH = 30.0f;
+    i32 numTabs = static_cast<i32>(element.childIds.size());
+    f32 tabW = element.computedRect.w / static_cast<f32>(numTabs);
+
+    // Tab bar background
+    UIRect tabBarRect;
+    tabBarRect.x = element.computedRect.x;
+    tabBarRect.y = element.computedRect.y;
+    tabBarRect.w = element.computedRect.w;
+    tabBarRect.h = tabBarH;
+    ImVec4 tabBarBg = ImVec4(theme.surface.x, theme.surface.y, theme.surface.z, 1.0f);
+    DrawRoundedRect(dl, tabBarRect, ImGui::ColorConvertFloat4ToU32(tabBarBg), radius);
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 mouseX = io.MousePos.x;
+    f32 mouseY = io.MousePos.y;
+
+    // Render tab buttons
+    for (i32 i = 0; i < numTabs; ++i) {
+        UIRect tabRect;
+        tabRect.x = element.computedRect.x + static_cast<f32>(i) * tabW;
+        tabRect.y = element.computedRect.y;
+        tabRect.w = tabW;
+        tabRect.h = tabBarH;
+
+        bool isActive = (i == element.data.activeTabIndex);
+        bool isHovered = tabRect.Contains(mouseX, mouseY);
+
+        // Tab background
+        if (isActive) {
+            ImVec4 activeColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.2f);
+            DrawRoundedRect(dl, tabRect, ImGui::ColorConvertFloat4ToU32(activeColor), radius);
+            // Active indicator bar at bottom
+            UIRect indicator;
+            indicator.x = tabRect.x + 2.0f;
+            indicator.y = tabRect.y + tabBarH - 3.0f;
+            indicator.w = tabRect.w - 4.0f;
+            indicator.h = 3.0f;
+            ImU32 indicatorCol = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 1.0f));
+            DrawRoundedRect(dl, indicator, indicatorCol, 1.5f);
+        } else if (isHovered) {
+            ImVec4 hoverColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.08f);
+            DrawRoundedRect(dl, tabRect, ImGui::ColorConvertFloat4ToU32(hoverColor), radius);
+        }
+
+        // Tab label — use child element name
+        const UIElement* child = canvas.GetElement(element.childIds[i]);
+        std::string tabLabel = child ? child->name : std::string("Tab ") + std::to_string(i + 1);
+
+        ImVec4 textColor = isActive
+            ? ResolveColor(element.style.textColor, theme.textPrimary, 1.0f)
+            : ResolveColor(element.style.textColor, theme.textSecondary, 0.8f);
+        DrawCenteredText(dl, tabRect, tabLabel.c_str(),
+            ImGui::ColorConvertFloat4ToU32(textColor), 1, 1, fontSize);
+    }
+
+    // Content area — render only the active tab's child
+    UIRect contentRect;
+    contentRect.x = element.computedRect.x;
+    contentRect.y = element.computedRect.y + tabBarH;
+    contentRect.w = element.computedRect.w;
+    contentRect.h = element.computedRect.h - tabBarH;
+
+    // Content area background
+    ImVec4 contentBg = ResolveColor(element.style.bgColor, theme.surface, 0.5f);
+    DrawRoundedRect(dl, contentRect, ImGui::ColorConvertFloat4ToU32(contentBg), 0.0f);
+
+    // Border around entire tab group
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    if (borderW > 0.0f) {
+        ImVec4 borderColor = ResolveColor(element.style.borderColor, theme.inputBorder, 0.4f);
+        DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+    }
+
+    // Render active tab's child element and its sub-children
+    i32 activeIdx = std::max(0, std::min(element.data.activeTabIndex, numTabs - 1));
+    u32 activeChildId = element.childIds[activeIdx];
+    const UIElement* activeChild = canvas.GetElement(activeChildId);
+    if (activeChild && activeChild->visible) {
+        RenderElement(*activeChild, theme, focusedId, canvas);
+        // Render grandchildren of active tab
+        for (u32 grandchildId : activeChild->childIds) {
+            const UIElement* grandchild = canvas.GetElement(grandchildId);
+            if (grandchild && grandchild->visible) {
+                RenderElement(*grandchild, theme, focusedId, canvas);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// TOOLTIP
+// ============================================================================
+
+void UISystem::RenderTooltip(const UIElement& element, const UITheme& theme) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeSmall) * m_FontScale;
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+
+    const std::string& tipText = element.data.tooltipText;
+    if (tipText.empty()) return;
+
+    ImFont* font = ImGui::GetFont();
+    ImVec2 textSize = font->CalcTextSizeA(fontSize, FLT_MAX, 300.0f, tipText.c_str());
+
+    f32 padX = 8.0f;
+    f32 padY = 4.0f;
+    f32 tipW = textSize.x + padX * 2.0f;
+    f32 tipH = textSize.y + padY * 2.0f;
+
+    // Position near the element, offset below and slightly right
+    f32 tipX = m_TooltipMouseX + 12.0f;
+    f32 tipY = m_TooltipMouseY + 18.0f;
+
+    // Clamp to viewport
+    ImGuiIO& io = ImGui::GetIO();
+    if (tipX + tipW > io.DisplaySize.x) tipX = io.DisplaySize.x - tipW - 4.0f;
+    if (tipY + tipH > io.DisplaySize.y) tipY = m_TooltipMouseY - tipH - 4.0f;
+    if (tipX < 0.0f) tipX = 4.0f;
+    if (tipY < 0.0f) tipY = 4.0f;
+
+    UIRect tipRect;
+    tipRect.x = tipX;
+    tipRect.y = tipY;
+    tipRect.w = tipW;
+    tipRect.h = tipH;
+
+    // Shadow
+    UIRect shadowRect = tipRect;
+    shadowRect.x += 2.0f;
+    shadowRect.y += 2.0f;
+    DrawRoundedRect(dl, shadowRect, IM_COL32(0, 0, 0, 80), radius);
+
+    // Background
+    ImVec4 bgColor = ImVec4(theme.surface.x + 0.05f, theme.surface.y + 0.05f, theme.surface.z + 0.05f, 0.95f);
+    DrawRoundedRect(dl, tipRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+
+    // Border
+    ImVec4 borderColor = ImVec4(theme.inputBorder.x, theme.inputBorder.y, theme.inputBorder.z, 0.6f);
+    DrawRoundedRectBorder(dl, tipRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, 1.0f);
+
+    // Text
+    ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+    dl->AddText(font, fontSize, ImVec2(tipX + padX, tipY + padY),
+        ImGui::ColorConvertFloat4ToU32(textColor), tipText.c_str(), nullptr, 300.0f);
+}
+
+// ============================================================================
+// MODAL
+// ============================================================================
+
+void UISystem::RenderModal(const UIElement& element, const UITheme& theme,
+                           const UICanvasComponent& canvas, u32 focusedId) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+
+    // Full-screen semi-transparent dim overlay
+    ImGuiIO& io = ImGui::GetIO();
+    dl->AddRectFilled(
+        ImVec2(0.0f, 0.0f),
+        ImVec2(io.DisplaySize.x, io.DisplaySize.y),
+        IM_COL32(0, 0, 0, 140));
+
+    // Modal panel background (centered)
+    f32 alpha = ResolveFloat(element.style.bgAlpha, theme.bgAlpha);
+    ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.surface, alpha);
+
+    // Shadow
+    UIRect shadowRect = element.computedRect;
+    shadowRect.x += 4.0f;
+    shadowRect.y += 4.0f;
+    DrawRoundedRect(dl, shadowRect, IM_COL32(0, 0, 0, 100), radius + 2.0f);
+
+    // Main panel
+    DrawRoundedRect(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+
+    // Border
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    if (borderW > 0.0f) {
+        ImVec4 borderColor = ResolveColor(element.style.borderColor, theme.inputBorder, 0.6f);
+        DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+    }
+
+    // Title text
+    if (!element.data.text.empty()) {
+        f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeHeading) * m_FontScale;
+        ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+        UIRect titleRect = element.computedRect;
+        titleRect.h = fontSize + 16.0f;
+        DrawCenteredText(dl, titleRect, element.data.text.c_str(),
+            ImGui::ColorConvertFloat4ToU32(textColor), 1, 1, fontSize);
+    }
+
+    // Render children on top of modal panel
+    for (u32 childId : element.childIds) {
+        const UIElement* child = canvas.GetElement(childId);
+        if (child && child->visible) {
+            RenderElement(*child, theme, focusedId, canvas);
+            // Render grandchildren
+            for (u32 grandchildId : child->childIds) {
+                const UIElement* grandchild = canvas.GetElement(grandchildId);
+                if (grandchild && grandchild->visible) {
+                    RenderElement(*grandchild, theme, focusedId, canvas);
+                }
+            }
+        }
+    }
+}
+
+// ============================================================================
+// LIST VIEW
+// ============================================================================
+
+void UISystem::RenderListView(const UIElement& element, const UITheme& theme,
+                              const UICanvasComponent& canvas, bool focused) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius);
+    f32 fontSize = ResolveFloat(element.style.fontSize, theme.fontSizeBody) * m_FontScale;
+
+    // Background
+    ImVec4 bgColor = ResolveColor(element.style.bgColor, theme.inputBg, 1.0f);
+    DrawRoundedRect(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(bgColor), radius);
+
+    // Border
+    f32 borderW = ResolveFloat(element.style.borderWidth, theme.borderWidth);
+    Math::Vector3 borderCol = focused ? theme.inputFocused : theme.inputBorder;
+    ImVec4 borderColor = ImVec4(borderCol.x, borderCol.y, borderCol.z, focused ? 0.8f : 0.5f);
+    DrawRoundedRectBorder(dl, element.computedRect, ImGui::ColorConvertFloat4ToU32(borderColor), radius, borderW);
+
+    if (element.childIds.empty()) return;
+
+    f32 itemH = fontSize + 8.0f;
+    f32& scrollOff = const_cast<UIElement&>(element).data.scrollOffset;
+    f32 contentH = static_cast<f32>(element.childIds.size()) * itemH;
+    f32 maxScroll = std::max(0.0f, contentH - element.computedRect.h);
+    scrollOff = std::max(0.0f, std::min(scrollOff, maxScroll));
+
+    // Clip children
+    dl->PushClipRect(
+        ImVec2(element.computedRect.x, element.computedRect.y),
+        ImVec2(element.computedRect.x + element.computedRect.w,
+               element.computedRect.y + element.computedRect.h), true);
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 mouseX = io.MousePos.x;
+    f32 mouseY = io.MousePos.y;
+
+    ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
+    ImU32 textCol = ImGui::ColorConvertFloat4ToU32(textColor);
+
+    for (i32 i = 0; i < static_cast<i32>(element.childIds.size()); ++i) {
+        UIRect itemRect;
+        itemRect.x = element.computedRect.x;
+        itemRect.y = element.computedRect.y + static_cast<f32>(i) * itemH - scrollOff;
+        itemRect.w = element.computedRect.w;
+        itemRect.h = itemH;
+
+        // Skip if outside clip region
+        if (itemRect.y + itemRect.h < element.computedRect.y ||
+            itemRect.y > element.computedRect.y + element.computedRect.h) {
+            continue;
+        }
+
+        bool isSelected = (i == element.data.listSelectedIndex);
+        bool isHovered = itemRect.Contains(mouseX, mouseY);
+
+        // Selection highlight
+        if (isSelected) {
+            ImVec4 selColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.3f);
+            DrawRoundedRect(dl, itemRect, ImGui::ColorConvertFloat4ToU32(selColor), 0.0f);
+        } else if (isHovered) {
+            ImVec4 hoverColor = ImVec4(theme.primary.x, theme.primary.y, theme.primary.z, 0.1f);
+            DrawRoundedRect(dl, itemRect, ImGui::ColorConvertFloat4ToU32(hoverColor), 0.0f);
+        }
+
+        // Separator line between items
+        if (i > 0) {
+            ImU32 sepCol = ImGui::ColorConvertFloat4ToU32(
+                ImVec4(theme.inputBorder.x, theme.inputBorder.y, theme.inputBorder.z, 0.2f));
+            dl->AddLine(
+                ImVec2(itemRect.x + 4.0f, itemRect.y),
+                ImVec2(itemRect.x + itemRect.w - 4.0f, itemRect.y),
+                sepCol, 1.0f);
+        }
+
+        // Render child element content — use child name as fallback text
+        const UIElement* child = canvas.GetElement(element.childIds[i]);
+        if (child) {
+            std::string label = child->data.text.empty() ? child->name : child->data.text;
+            UIRect textRect = itemRect;
+            textRect.x += 8.0f;
+            textRect.w -= 16.0f;
+            DrawCenteredText(dl, textRect, label.c_str(), textCol, 0, 1, fontSize);
+        }
+    }
+
+    dl->PopClipRect();
+
+    // Scrollbar
+    if (contentH > element.computedRect.h && maxScroll > 0.0f) {
+        f32 scrollbarW = 5.0f;
+        f32 trackH = element.computedRect.h;
+        f32 thumbRatio = element.computedRect.h / contentH;
+        f32 thumbH = std::max(16.0f, trackH * thumbRatio);
+        f32 scrollRatio = scrollOff / maxScroll;
+        f32 thumbY = element.computedRect.y + scrollRatio * (trackH - thumbH);
+
+        UIRect thumbRect;
+        thumbRect.x = element.computedRect.x + element.computedRect.w - scrollbarW - 2.0f;
+        thumbRect.y = thumbY;
+        thumbRect.w = scrollbarW;
+        thumbRect.h = thumbH;
+        f32 thumbAlpha = element.interaction.hovered ? 0.7f : 0.4f;
+        DrawRoundedRect(dl, thumbRect,
+            ImGui::ColorConvertFloat4ToU32(ImVec4(theme.sliderThumb.x, theme.sliderThumb.y, theme.sliderThumb.z, thumbAlpha)),
+            scrollbarW * 0.5f);
+    }
+}
+
 void UISystem::RenderPlaceholder(const UIElement& element, const UITheme& theme) {
     // Phase 2+ widgets render as a labeled panel placeholder
     ImDrawList* dl = ImGui::GetForegroundDrawList();
@@ -783,6 +1865,30 @@ void UISystem::SetFocus(UICanvasComponent& canvas, u32 elementId) {
                 }
                 case UIWidgetType::Label:
                     if (!el->data.text.empty()) announcement += ": " + el->data.text;
+                    break;
+                case UIWidgetType::Dropdown:
+                    if (el->data.selectedOption >= 0 &&
+                        el->data.selectedOption < static_cast<i32>(el->data.options.size())) {
+                        announcement += ": " + el->data.options[el->data.selectedOption];
+                    }
+                    announcement += ", Dropdown";
+                    break;
+                case UIWidgetType::TextInput:
+                    if (!el->data.inputText.empty()) announcement += ": " + el->data.inputText;
+                    announcement += ", Text field";
+                    break;
+                case UIWidgetType::RadioGroup:
+                    if (el->data.selectedOption >= 0 &&
+                        el->data.selectedOption < static_cast<i32>(el->data.options.size())) {
+                        announcement += ": " + el->data.options[el->data.selectedOption] + " selected";
+                    }
+                    announcement += ", Radio group";
+                    break;
+                case UIWidgetType::ListView:
+                    announcement += ", List view";
+                    if (el->data.listSelectedIndex >= 0) {
+                        announcement += ", item " + std::to_string(el->data.listSelectedIndex + 1) + " selected";
+                    }
                     break;
                 default:
                     if (!el->data.text.empty()) announcement += ": " + el->data.text;
@@ -983,6 +2089,33 @@ void UISystem::ActivateFocusedElement(UICanvasComponent& canvas) {
             event.eventName = element->onValueChangedEvent;
             event.boolValue = element->data.checked;
             m_EventBus.Dispatch(event);
+        }
+    } else if (element->type == UIWidgetType::Dropdown) {
+        // Toggle dropdown open/close on activation
+        if (element->data.dropdownOpen) {
+            element->data.dropdownOpen = false;
+            m_OpenDropdownId = 0;
+        } else {
+            // Close any other open dropdown
+            if (m_OpenDropdownId != 0 && m_OpenDropdownId != element->id) {
+                UIElement* other = canvas.GetElement(m_OpenDropdownId);
+                if (other) other->data.dropdownOpen = false;
+            }
+            element->data.dropdownOpen = true;
+            m_OpenDropdownId = element->id;
+        }
+    } else if (element->type == UIWidgetType::RadioGroup) {
+        // Cycle to next option
+        if (!element->data.options.empty()) {
+            element->data.selectedOption = (element->data.selectedOption + 1) % static_cast<i32>(element->data.options.size());
+            if (!element->onValueChangedEvent.empty()) {
+                UIEventData event;
+                event.elementId = element->id;
+                event.eventName = element->onValueChangedEvent;
+                event.intValue = element->data.selectedOption;
+                event.stringValue = element->data.options[element->data.selectedOption];
+                m_EventBus.Dispatch(event);
+            }
         }
     }
 }

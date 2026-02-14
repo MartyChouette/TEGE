@@ -96,13 +96,26 @@ private:
     static constexpr f32 NAV_REPEAT_DELAY = 0.4f;  // Initial delay before repeat
     static constexpr f32 NAV_REPEAT_RATE  = 0.1f;  // Repeat interval
 
+    // Dropdown state
+    u32 m_OpenDropdownId = 0;  // ID of currently open dropdown (0 = none)
+
+    // TextInput state
+    f32 m_CursorBlinkTimer = 0.0f;  // Cursor blink phase timer
+    bool m_CursorVisible = true;     // Cursor blink state
+
+    // Tooltip state
+    u32 m_TooltipHoverElementId = 0;  // Element being hovered for tooltip
+    f32 m_TooltipHoverTimer = 0.0f;    // How long element has been hovered
+    f32 m_TooltipMouseX = 0.0f;       // Mouse position when hovering started
+    f32 m_TooltipMouseY = 0.0f;
+
     // Layout pass: compute rects for all elements in a canvas
     void ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH);
     void ComputeElementRect(UIElement& element, const UIRect& parentRect, f32 scaleFactor);
 
     // Render pass: draw all visible elements
     void RenderCanvas(const UICanvasComponent& canvas);
-    void RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId);
+    void RenderElement(const UIElement& element, const UITheme& theme, u32 focusedId, const UICanvasComponent& canvas);
 
     // Individual widget renderers
     void RenderPanel(const UIElement& element, const UITheme& theme);
@@ -113,6 +126,15 @@ private:
     void RenderSlider(const UIElement& element, const UITheme& theme);
     void RenderCheckbox(const UIElement& element, const UITheme& theme);
     void RenderToggle(const UIElement& element, const UITheme& theme);
+    void RenderDropdown(const UIElement& element, const UITheme& theme, bool focused);
+    void RenderTextInput(const UIElement& element, const UITheme& theme, bool focused);
+    void RenderRadioGroup(const UIElement& element, const UITheme& theme, bool focused);
+    void RenderScrollArea(const UIElement& element, const UITheme& theme, const UICanvasComponent& canvas);
+    void RenderGrid(const UIElement& element, const UITheme& theme, const UICanvasComponent& canvas, u32 focusedId);
+    void RenderTabGroup(const UIElement& element, const UITheme& theme, const UICanvasComponent& canvas, u32 focusedId);
+    void RenderTooltip(const UIElement& element, const UITheme& theme);
+    void RenderModal(const UIElement& element, const UITheme& theme, const UICanvasComponent& canvas, u32 focusedId);
+    void RenderListView(const UIElement& element, const UITheme& theme, const UICanvasComponent& canvas, bool focused);
     void RenderPlaceholder(const UIElement& element, const UITheme& theme);
 
     // Focus indicator rendering

@@ -5,6 +5,7 @@
 #include "Enjin/Renderer/RayTracing/IDenoiser.h"
 #include <vulkan/vulkan.h>
 #include <vector>
+#include <unordered_map>
 
 #ifdef ENJIN_RAYTRACING_OIDN
 #include <OpenImageDenoise/oidn.h>
@@ -60,7 +61,28 @@ public:
     // Query availability at compile time
     static bool IsAvailable();
 
+    // Register a VkImageView -> VkImage mapping so the denoiser can perform
+    // GPU<->CPU copies. Call this for each RT effect output (shadow, AO, etc.)
+    // and for the normals/depth images before denoising.
+    void RegisterImageMapping(VkImageView view, VkImage image, VkFormat format);
+
 private:
+    // Resolve a VkImageView to its backing VkImage (returns VK_NULL_HANDLE if unknown)
+    VkImage ResolveImage(VkImageView view) const;
+    VkFormat ResolveFormat(VkImageView view) const;
+
+    // Execute GPU->CPU copy, OIDN filter, CPU->GPU copy for a given image
+    void CopyImageToStaging(VkCommandBuffer cmd, VkImage image, VkFormat format, u32 channels);
+    void CopyStagingToImage(VkCommandBuffer cmd, VkImage image, VkFormat format, u32 channels);
+    void ConvertStagingToFloat(const void* staging, u32 channels);
+    void ConvertFloatToStaging(void* staging, u32 channels);
+
+    // Image view -> image mapping
+    struct ImageInfo {
+        VkImage image = VK_NULL_HANDLE;
+        VkFormat format = VK_FORMAT_UNDEFINED;
+    };
+    std::unordered_map<VkImageView, ImageInfo> m_ImageMap;
     void CreateStagingBuffers();
     void DestroyStagingBuffers();
 

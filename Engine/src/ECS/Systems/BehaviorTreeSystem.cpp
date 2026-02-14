@@ -34,7 +34,7 @@ void BehaviorTreeSystem::Shutdown() {
 }
 
 void BehaviorTreeSystem::Update(f32 deltaTime) {
-    if (!m_World) return;
+    if (!m_Enabled || !m_World) return;
 
     auto entities = m_World->GetEntitiesWithComponent<BehaviorTreeComponent>();
     for (auto entity : entities) {

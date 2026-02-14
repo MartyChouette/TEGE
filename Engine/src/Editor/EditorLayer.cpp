@@ -57,6 +57,8 @@
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
+#include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Effects/Weather.h"
 #include "Enjin/Assets/SceneImporter.h"
 #include "Enjin/Assets/FontLibrary.h"
 #include "Enjin/Assets/AssetLibrary.h"
@@ -81,6 +83,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Effects/VoronoiMeshFracture.h"
+#include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Math/Math.h"
 #include <stb_image.h>
 #include <imgui.h>
@@ -758,6 +761,18 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Scene::StreamingPortalComponent>(e); },
             "streamingPortal", DimensionTag::Only3D},
 
+        // -- Effects --
+        {"Interactive Water", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Effects::InteractiveWaterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Effects::InteractiveWaterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Effects::InteractiveWaterComponent>(e); },
+            "interactiveWater", DimensionTag::Only3D},
+        {"Water Interactor", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Effects::WaterInteractorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Effects::WaterInteractorComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Effects::WaterInteractorComponent>(e); },
+            "waterInteractor", DimensionTag::Only3D},
+
         // -- Other --
         {"Tags", "Other", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TagComponent>(e); },
@@ -1081,8 +1096,6 @@ void EditorLayer::SetRenderSystem(ECS::RenderSystem* renderSystem) {
 }
 
 void EditorLayer::StartPlayMode() {
-    // NOTE: VSync switching disabled for now - causes swapchain sync issues
-    // TODO: Properly sync renderer state after swapchain recreation
     Scripting::SetBindingsWeather(&m_WeatherSystem);
     Scripting::SetBindingsSceneManager(&m_SceneManager);
     s_VisualScriptWater = &m_Water3D;
@@ -1185,8 +1198,10 @@ void EditorLayer::Update(f32 deltaTime) {
                 m_FocusMode = false;
                 Input::SetMouseCaptured(false);
             }
-            // NOTE: VSync restore disabled for now - causes swapchain sync issues
-            // TODO: Properly sync renderer state after swapchain recreation
+            // Restore VSync state from settings
+            if (m_Renderer) {
+                m_Renderer->RequestVSyncChange(m_EditorSettings.editorVSync);
+            }
         }
     }
 
@@ -2162,6 +2177,10 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
 
     // Apply post-processing: read from scene RT, write to game view RT
     if (usePostProcessing) {
+        // Pass camera planes for depth linearization (DoF/Tilt-Shift)
+        if (m_Camera) {
+            m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
+        }
         m_GameViewRenderTarget->Begin(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
         m_GameViewRenderTarget->End(commandBuffer);
@@ -4793,6 +4812,76 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<Scene::StreamingPortalComponent>(m_PrimarySelected)) {
             DrawStreamingPortalComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<Effects::InteractiveWaterComponent>(m_PrimarySelected)) {
+            bool waterOpen = ImGui::CollapsingHeader("[~] Interactive Water", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("InteractiveWaterCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<Effects::InteractiveWaterComponent>(m_PrimarySelected, "interactiveWater", "Interactive Water");
+                    ImGui::EndPopup();
+                } else {
+                    ImGui::EndPopup();
+                }
+            }
+            if (waterOpen) {
+                auto* iw = m_World->GetComponent<Effects::InteractiveWaterComponent>(m_PrimarySelected);
+                if (iw) {
+                    ImGui::Text("Grid");
+                    ImGui::DragInt("Resolution", &iw->gridResolution, 1, 16, 256);
+                    ImGui::DragFloat("Grid Size", &iw->gridSize, 0.1f, 1.0f, 200.0f);
+                    ImGui::DragFloat("Base Height", &iw->baseHeight, 0.1f, -100.0f, 100.0f);
+                    ImGui::Separator();
+                    ImGui::Text("Wave Simulation");
+                    ImGui::DragFloat("Wave Speed", &iw->waveSpeed, 0.05f, 0.0f, 20.0f);
+                    ImGui::DragFloat("Damping", &iw->damping, 0.001f, 0.9f, 0.999f);
+                    ImGui::DragFloat("Tension", &iw->tension, 0.01f, 0.0f, 1.0f);
+                    ImGui::Separator();
+                    ImGui::Text("Appearance");
+                    ImGui::ColorEdit3("Shallow Color", &iw->shallowColor.x);
+                    ImGui::ColorEdit3("Deep Color", &iw->deepColor.x);
+                    ImGui::ColorEdit3("Foam Color", &iw->foamColor.x);
+                    ImGui::DragFloat("Opacity", &iw->opacity, 0.01f, 0.0f, 1.0f);
+                    ImGui::DragFloat("Depth Threshold", &iw->depthColorThreshold, 0.1f, 0.0f, 20.0f);
+                    ImGui::DragFloat("Foam Threshold", &iw->foamThreshold, 0.01f, 0.0f, 2.0f);
+                    ImGui::DragFloat("UV Tiling", &iw->uvTiling, 0.1f, 0.1f, 20.0f);
+                    ImGui::DragFloat("UV Scroll Speed", &iw->uvScrollSpeed, 0.001f, 0.0f, 1.0f);
+                    ImGui::Separator();
+                    ImGui::Text("Interaction");
+                    ImGui::DragFloat("Interaction Radius", &iw->interactionRadius, 0.1f, 0.1f, 10.0f);
+                    ImGui::DragFloat("Interaction Strength", &iw->interactionStrength, 0.01f, 0.0f, 5.0f);
+                    ImGui::Checkbox("Enable Buoyancy", &iw->enableBuoyancy);
+                    if (iw->enableBuoyancy) {
+                        ImGui::DragFloat("Buoyancy Force", &iw->buoyancyForce, 0.1f, 0.0f, 50.0f);
+                        ImGui::DragFloat("Water Drag", &iw->waterDrag, 0.01f, 0.0f, 5.0f);
+                    }
+                    ImGui::Separator();
+                    const char* boundaryModes[] = { "Absorbing", "Reflecting" };
+                    int bm = static_cast<int>(iw->boundaryMode);
+                    if (ImGui::Combo("Boundary Mode", &bm, boundaryModes, 2)) {
+                        iw->boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(bm);
+                    }
+                }
+            }
+        }
+        if (m_World->HasComponent<Effects::WaterInteractorComponent>(m_PrimarySelected)) {
+            bool interactorOpen = ImGui::CollapsingHeader("[~] Water Interactor", ImGuiTreeNodeFlags_DefaultOpen);
+            if (ImGui::BeginPopupContextItem("WaterInteractorCtx")) {
+                if (ImGui::MenuItem("Remove Component")) {
+                    RemoveComponentWithUndo<Effects::WaterInteractorComponent>(m_PrimarySelected, "waterInteractor", "Water Interactor");
+                    ImGui::EndPopup();
+                } else {
+                    ImGui::EndPopup();
+                }
+            }
+            if (interactorOpen) {
+                auto* wi = m_World->GetComponent<Effects::WaterInteractorComponent>(m_PrimarySelected);
+                if (wi) {
+                    ImGui::DragFloat("Splash Multiplier", &wi->splashMultiplier, 0.1f, 0.0f, 10.0f);
+                    ImGui::DragFloat("Wake Width", &wi->wakeWidth, 0.1f, 0.0f, 5.0f);
+                    ImGui::Checkbox("Generate Wake", &wi->generateWake);
+                    ImGui::Checkbox("Apply Buoyancy", &wi->applyBuoyancy);
+                }
+            }
         }
         if (m_World->HasComponent<ECS::AnimatorComponent>(m_PrimarySelected)) {
             // Animator component inspector (inline)
@@ -7688,13 +7777,10 @@ void EditorLayer::DrawEditorSettingsPanel() {
         if (isUncapped) {
             ImGui::BeginDisabled();
         }
-        // VSync checkbox - disabled for now due to swapchain sync issues
-        // TODO: Fix VSync toggle by properly syncing renderer state
-        ImGui::BeginDisabled();
-        ImGui::Checkbox("VSync (Disabled)", &m_EditorSettings.editorVSync);
-        ImGui::EndDisabled();
-        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("VSync toggling temporarily disabled - restart editor to change");
+        if (ImGui::Checkbox("VSync", &m_EditorSettings.editorVSync)) {
+            if (m_Renderer) {
+                m_Renderer->RequestVSyncChange(m_EditorSettings.editorVSync);
+            }
         }
         if (isUncapped) {
             ImGui::EndDisabled();
@@ -29895,6 +29981,42 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
     ImGui::SameLine();
     if (ImGui::SmallButton("+Toggle")) canvas->AddElement(GUI::UIWidgetType::Toggle, "Toggle");
 
+    if (ImGui::SmallButton("+Dropdown")) {
+        u32 ddId = canvas->AddElement(GUI::UIWidgetType::Dropdown, "Dropdown");
+        auto* dd = canvas->GetElement(ddId);
+        if (dd) { dd->data.options = {"Option 1", "Option 2", "Option 3"}; dd->data.placeholder = "Select..."; }
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+TextInput")) {
+        u32 tiId = canvas->AddElement(GUI::UIWidgetType::TextInput, "TextInput");
+        auto* ti = canvas->GetElement(tiId);
+        if (ti) ti->data.placeholder = "Type here...";
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+Radio")) {
+        u32 rgId = canvas->AddElement(GUI::UIWidgetType::RadioGroup, "RadioGroup");
+        auto* rg = canvas->GetElement(rgId);
+        if (rg) rg->data.options = {"Option A", "Option B", "Option C"};
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+ListView")) canvas->AddElement(GUI::UIWidgetType::ListView, "ListView");
+
+    if (ImGui::SmallButton("+ScrollArea")) canvas->AddElement(GUI::UIWidgetType::ScrollArea, "ScrollArea");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+Grid")) {
+        u32 gId = canvas->AddElement(GUI::UIWidgetType::Grid, "Grid");
+        auto* g = canvas->GetElement(gId);
+        if (g) g->data.gridColumns = 3;
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+TabGroup")) canvas->AddElement(GUI::UIWidgetType::TabGroup, "TabGroup");
+    ImGui::SameLine();
+    if (ImGui::SmallButton("+Modal")) {
+        u32 mId = canvas->AddElement(GUI::UIWidgetType::Modal, "Modal");
+        auto* m = canvas->GetElement(mId);
+        if (m) { m->data.text = "Modal Title"; m->visible = false; }
+    }
+
     // Templates
     if (ImGui::SmallButton("Main Menu Template")) {
         auto tmpl = GUI::UITemplates::CreateMainMenu("My Game");
@@ -30030,6 +30152,97 @@ void EditorLayer::DrawUICanvasComponent(ECS::Entity entity) {
 
     if (sel->type == GUI::UIWidgetType::Checkbox || sel->type == GUI::UIWidgetType::Toggle) {
         ImGui::Checkbox("Checked", &sel->data.checked);
+    }
+
+    // Dropdown
+    if (sel->type == GUI::UIWidgetType::Dropdown) {
+        ImGui::TextDisabled("Dropdown");
+        ImGui::DragInt("Selected##DD", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
+        char placeBuf[128];
+        strncpy(placeBuf, sel->data.placeholder.c_str(), sizeof(placeBuf) - 1); placeBuf[sizeof(placeBuf) - 1] = '\0';
+        if (ImGui::InputText("Placeholder##DD", placeBuf, sizeof(placeBuf))) sel->data.placeholder = placeBuf;
+
+        ImGui::Text("Options (%d):", static_cast<int>(sel->data.options.size()));
+        for (int i = 0; i < static_cast<int>(sel->data.options.size()); ++i) {
+            char optBuf[128];
+            strncpy(optBuf, sel->data.options[i].c_str(), sizeof(optBuf) - 1); optBuf[sizeof(optBuf) - 1] = '\0';
+            char label[32]; snprintf(label, sizeof(label), "##opt%d", i);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 30.0f);
+            if (ImGui::InputText(label, optBuf, sizeof(optBuf))) sel->data.options[i] = optBuf;
+            ImGui::SameLine();
+            char delLabel[32]; snprintf(delLabel, sizeof(delLabel), "X##opt%d", i);
+            if (ImGui::SmallButton(delLabel)) { sel->data.options.erase(sel->data.options.begin() + i); --i; }
+        }
+        if (ImGui::SmallButton("+ Add Option")) sel->data.options.push_back("New Option");
+    }
+
+    // TextInput
+    if (sel->type == GUI::UIWidgetType::TextInput) {
+        ImGui::TextDisabled("Text Input");
+        char inputBuf[256];
+        strncpy(inputBuf, sel->data.inputText.c_str(), sizeof(inputBuf) - 1); inputBuf[sizeof(inputBuf) - 1] = '\0';
+        if (ImGui::InputText("Input Text##TI", inputBuf, sizeof(inputBuf))) sel->data.inputText = inputBuf;
+        char placeBuf2[128];
+        strncpy(placeBuf2, sel->data.placeholder.c_str(), sizeof(placeBuf2) - 1); placeBuf2[sizeof(placeBuf2) - 1] = '\0';
+        if (ImGui::InputText("Placeholder##TI", placeBuf2, sizeof(placeBuf2))) sel->data.placeholder = placeBuf2;
+    }
+
+    // RadioGroup
+    if (sel->type == GUI::UIWidgetType::RadioGroup) {
+        ImGui::TextDisabled("Radio Group");
+        ImGui::DragInt("Selected##RG", &sel->data.selectedOption, 1, 0, std::max(0, static_cast<int>(sel->data.options.size()) - 1));
+        ImGui::Text("Options (%d):", static_cast<int>(sel->data.options.size()));
+        for (int i = 0; i < static_cast<int>(sel->data.options.size()); ++i) {
+            char optBuf[128];
+            strncpy(optBuf, sel->data.options[i].c_str(), sizeof(optBuf) - 1); optBuf[sizeof(optBuf) - 1] = '\0';
+            char label[32]; snprintf(label, sizeof(label), "##ropt%d", i);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 30.0f);
+            if (ImGui::InputText(label, optBuf, sizeof(optBuf))) sel->data.options[i] = optBuf;
+            ImGui::SameLine();
+            char delLabel[32]; snprintf(delLabel, sizeof(delLabel), "X##ropt%d", i);
+            if (ImGui::SmallButton(delLabel)) { sel->data.options.erase(sel->data.options.begin() + i); --i; }
+        }
+        if (ImGui::SmallButton("+ Add Radio Option")) sel->data.options.push_back("New Option");
+    }
+
+    // Grid
+    if (sel->type == GUI::UIWidgetType::Grid) {
+        ImGui::TextDisabled("Grid Layout");
+        ImGui::DragInt("Columns", &sel->data.gridColumns, 1, 1, 12);
+    }
+
+    // TabGroup
+    if (sel->type == GUI::UIWidgetType::TabGroup) {
+        ImGui::TextDisabled("Tab Group");
+        ImGui::DragInt("Active Tab", &sel->data.activeTabIndex, 1, 0,
+            std::max(0, static_cast<int>(sel->childIds.size()) - 1));
+        ImGui::TextDisabled("Add child elements as tab pages");
+    }
+
+    // Tooltip
+    if (sel->type == GUI::UIWidgetType::Tooltip || !sel->data.tooltipText.empty()) {
+        ImGui::TextDisabled("Tooltip");
+        char tipBuf[256];
+        strncpy(tipBuf, sel->data.tooltipText.c_str(), sizeof(tipBuf) - 1); tipBuf[sizeof(tipBuf) - 1] = '\0';
+        if (ImGui::InputText("Tooltip Text", tipBuf, sizeof(tipBuf))) sel->data.tooltipText = tipBuf;
+        ImGui::DragFloat("Tooltip Delay", &sel->data.tooltipDelay, 0.05f, 0.0f, 5.0f, "%.2f s");
+    }
+
+    // Modal
+    if (sel->type == GUI::UIWidgetType::Modal) {
+        ImGui::TextDisabled("Modal Dialog");
+        char modalTextBuf[256];
+        strncpy(modalTextBuf, sel->data.text.c_str(), sizeof(modalTextBuf) - 1); modalTextBuf[sizeof(modalTextBuf) - 1] = '\0';
+        if (ImGui::InputText("Title##Modal", modalTextBuf, sizeof(modalTextBuf))) sel->data.text = modalTextBuf;
+        ImGui::TextDisabled("Toggle visible to show/hide");
+    }
+
+    // ListView
+    if (sel->type == GUI::UIWidgetType::ListView) {
+        ImGui::TextDisabled("List View");
+        ImGui::DragInt("Selected Item", &sel->data.listSelectedIndex, 1, -1,
+            std::max(0, static_cast<int>(sel->childIds.size()) - 1));
+        ImGui::TextDisabled("Add child elements as list items");
     }
 
     ImGui::Spacing();
@@ -35020,9 +35233,13 @@ void EditorLayer::DrawPlayModeDiffDialog() {
                 if (ed.isPrefabInstance && ed.action == DiffAction::Modified) {
                     ImGui::Separator();
                     if (ImGui::SmallButton("Apply to Prefab")) {
-                        // Apply modified components back to the prefab file
-                        ENJIN_LOG_INFO(Editor, "Apply to Prefab: %s (TODO: implement prefab write)",
-                                       ed.prefabPath.c_str());
+                        auto& pm = Assets::PrefabManager::Get();
+                        auto prefab = pm.CreateFromEntity(m_World, ed.entity, ed.entityName);
+                        if (prefab && pm.SavePrefab(*prefab, ed.prefabPath)) {
+                            ENJIN_LOG_INFO(Editor, "Applied changes to prefab: %s", ed.prefabPath.c_str());
+                        } else {
+                            ENJIN_LOG_ERROR(Editor, "Failed to apply prefab: %s", ed.prefabPath.c_str());
+                        }
                     }
                     ImGui::SameLine();
                     if (ImGui::SmallButton("Unpack as New Object")) {

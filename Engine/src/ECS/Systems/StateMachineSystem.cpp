@@ -28,7 +28,7 @@ void StateMachineSystem::InvokeCallback(World* world, Entity entity, const std::
 }
 
 void StateMachineSystem::Update(World* world, f32 deltaTime) {
-    if (!world) return;
+    if (!m_Enabled || !world) return;
 
     auto entities = world->GetEntitiesWithComponent<StateMachineComponent>();
     for (auto entity : entities) {

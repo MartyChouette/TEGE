@@ -18,6 +18,10 @@ public:
     VisualScriptSystem() = default;
     ~VisualScriptSystem() override = default;
 
+    // Enable/disable visual script updates
+    void SetEnabled(bool enabled) { m_Enabled = enabled; }
+    bool IsEnabled() const { return m_Enabled; }
+
     // Set the world to operate on
     void SetWorld(World* world) { m_World = world; }
 
@@ -64,6 +68,7 @@ public:
 private:
     World* m_World = nullptr;
     VisualScript::VisualScriptExecutor m_Executor;
+    bool m_Enabled = true;
 
     // Track first update to call OnStart
     bool m_FirstUpdate = true;

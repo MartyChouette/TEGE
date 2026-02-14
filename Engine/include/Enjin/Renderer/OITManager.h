@@ -35,7 +35,7 @@ public:
     ~OITManager();
 
     // Lifecycle
-    bool Initialize(VulkanContext* context, u32 width, u32 height);
+    bool Initialize(VulkanContext* context, u32 width, u32 height, VkRenderPass opaqueRenderPass = VK_NULL_HANDLE);
     void Shutdown();
 
     // Resize handling (recreates textures)
@@ -65,9 +65,22 @@ public:
     VkImageView GetAccumulationView() const { return m_AccumulationView; }
     VkImageView GetRevealageView() const { return m_RevealageView; }
 
+    // Get OIT render pass (caller uses this to begin transparent geometry rendering)
+    VkRenderPass GetTransparentRenderPass() const { return m_TransparentRenderPass; }
+    VkFramebuffer GetTransparentFramebuffer() const { return m_TransparentFramebuffer; }
+
+    // Access images for external copy/barrier operations
+    VkImage GetAccumulationImage() const { return m_AccumulationImage; }
+    VkImage GetRevealageImage() const { return m_RevealageImage; }
+
 private:
     bool CreateTextures(u32 width, u32 height);
     void DestroyTextures();
+    bool CreateTransparentRenderPass();
+    bool CreateTransparentFramebuffer();
+    bool CreateCompositePipeline(VkRenderPass opaqueRenderPass);
+    bool CreateCompositeDescriptorSets();
+    void DestroyRenderResources();
 
     VulkanContext* m_Context = nullptr;
     OITConfig m_Config;
@@ -82,6 +95,19 @@ private:
     VkDeviceMemory m_RevealageMemory = VK_NULL_HANDLE;
     VkImageView m_RevealageView = VK_NULL_HANDLE;
 
+    // Transparent geometry render pass (MRT: accumulation + revealage)
+    VkRenderPass m_TransparentRenderPass = VK_NULL_HANDLE;
+    VkFramebuffer m_TransparentFramebuffer = VK_NULL_HANDLE;
+
+    // Composite pass resources (fullscreen quad to blend OIT over opaque scene)
+    VkPipeline m_CompositePipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_CompositePipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_CompositeDescLayout = VK_NULL_HANDLE;
+    VkDescriptorPool m_CompositeDescPool = VK_NULL_HANDLE;
+    VkDescriptorSet m_CompositeDescSet = VK_NULL_HANDLE;
+    VkSampler m_Sampler = VK_NULL_HANDLE;
+
+    VkRenderPass m_OpaqueRenderPass = VK_NULL_HANDLE;  // Not owned — the swapchain render pass
     u32 m_Width = 0;
     u32 m_Height = 0;
     bool m_Initialized = false;

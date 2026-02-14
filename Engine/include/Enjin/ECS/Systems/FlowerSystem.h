@@ -31,9 +31,13 @@ public:
     ~FlowerSystem() = default;
 
     void SetWorld(World* world) { m_World = world; }
+    World* GetWorld() const { return m_World; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
+    Renderer::Camera* GetCamera() const { return m_Camera; }
     void SetRenderSystem(RenderSystem* rs) { m_RenderSystem = rs; }
+    RenderSystem* GetRenderSystem() const { return m_RenderSystem; }
     void SetWindSystem(Effects::WindSystem* wind) { m_WindSystem = wind; }
+    Effects::WindSystem* GetWindSystem() const { return m_WindSystem; }
     void SetEnabled(bool enabled) { m_Enabled = enabled; }
     bool IsEnabled() const { return m_Enabled; }
 

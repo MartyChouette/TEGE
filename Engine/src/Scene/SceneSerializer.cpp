@@ -37,6 +37,7 @@
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
 
@@ -2856,6 +2857,77 @@ Scene::StreamingPortalComponent DeserializeStreamingPortalComponent(const json& 
     return sp;
 }
 
+json SerializeInteractiveWaterComponent(const Effects::InteractiveWaterComponent& iw) {
+    json j;
+    j["gridResolution"] = iw.gridResolution;
+    j["gridSize"] = RF(iw.gridSize);
+    j["baseHeight"] = RF(iw.baseHeight);
+    j["waveSpeed"] = RF(iw.waveSpeed);
+    j["damping"] = RF(iw.damping);
+    j["tension"] = RF(iw.tension);
+    j["shallowColor"] = {RF(iw.shallowColor.x), RF(iw.shallowColor.y), RF(iw.shallowColor.z)};
+    j["deepColor"] = {RF(iw.deepColor.x), RF(iw.deepColor.y), RF(iw.deepColor.z)};
+    j["foamColor"] = {RF(iw.foamColor.x), RF(iw.foamColor.y), RF(iw.foamColor.z)};
+    j["depthColorThreshold"] = RF(iw.depthColorThreshold);
+    j["foamThreshold"] = RF(iw.foamThreshold);
+    j["opacity"] = RF(iw.opacity);
+    j["uvScrollSpeed"] = RF(iw.uvScrollSpeed);
+    j["uvTiling"] = RF(iw.uvTiling);
+    j["interactionRadius"] = RF(iw.interactionRadius);
+    j["interactionStrength"] = RF(iw.interactionStrength);
+    j["enableBuoyancy"] = iw.enableBuoyancy;
+    j["buoyancyForce"] = RF(iw.buoyancyForce);
+    j["waterDrag"] = RF(iw.waterDrag);
+    j["boundaryMode"] = static_cast<int>(iw.boundaryMode);
+    return j;
+}
+
+Effects::InteractiveWaterComponent DeserializeInteractiveWaterComponent(const json& j) {
+    Effects::InteractiveWaterComponent iw;
+    if (j.contains("gridResolution")) iw.gridResolution = j["gridResolution"].get<i32>();
+    if (j.contains("gridSize")) iw.gridSize = j["gridSize"].get<f32>();
+    if (j.contains("baseHeight")) iw.baseHeight = j["baseHeight"].get<f32>();
+    if (j.contains("waveSpeed")) iw.waveSpeed = j["waveSpeed"].get<f32>();
+    if (j.contains("damping")) iw.damping = j["damping"].get<f32>();
+    if (j.contains("tension")) iw.tension = j["tension"].get<f32>();
+    if (j.contains("shallowColor") && j["shallowColor"].is_array() && j["shallowColor"].size() >= 3)
+        iw.shallowColor = Math::Vector3(j["shallowColor"][0].get<f32>(), j["shallowColor"][1].get<f32>(), j["shallowColor"][2].get<f32>());
+    if (j.contains("deepColor") && j["deepColor"].is_array() && j["deepColor"].size() >= 3)
+        iw.deepColor = Math::Vector3(j["deepColor"][0].get<f32>(), j["deepColor"][1].get<f32>(), j["deepColor"][2].get<f32>());
+    if (j.contains("foamColor") && j["foamColor"].is_array() && j["foamColor"].size() >= 3)
+        iw.foamColor = Math::Vector3(j["foamColor"][0].get<f32>(), j["foamColor"][1].get<f32>(), j["foamColor"][2].get<f32>());
+    if (j.contains("depthColorThreshold")) iw.depthColorThreshold = j["depthColorThreshold"].get<f32>();
+    if (j.contains("foamThreshold")) iw.foamThreshold = j["foamThreshold"].get<f32>();
+    if (j.contains("opacity")) iw.opacity = j["opacity"].get<f32>();
+    if (j.contains("uvScrollSpeed")) iw.uvScrollSpeed = j["uvScrollSpeed"].get<f32>();
+    if (j.contains("uvTiling")) iw.uvTiling = j["uvTiling"].get<f32>();
+    if (j.contains("interactionRadius")) iw.interactionRadius = j["interactionRadius"].get<f32>();
+    if (j.contains("interactionStrength")) iw.interactionStrength = j["interactionStrength"].get<f32>();
+    if (j.contains("enableBuoyancy")) iw.enableBuoyancy = JB(j["enableBuoyancy"]);
+    if (j.contains("buoyancyForce")) iw.buoyancyForce = j["buoyancyForce"].get<f32>();
+    if (j.contains("waterDrag")) iw.waterDrag = j["waterDrag"].get<f32>();
+    if (j.contains("boundaryMode")) iw.boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(j["boundaryMode"].get<int>());
+    return iw;
+}
+
+json SerializeWaterInteractorComponent(const Effects::WaterInteractorComponent& wi) {
+    json j;
+    j["splashMultiplier"] = RF(wi.splashMultiplier);
+    j["wakeWidth"] = RF(wi.wakeWidth);
+    j["generateWake"] = wi.generateWake;
+    j["applyBuoyancy"] = wi.applyBuoyancy;
+    return j;
+}
+
+Effects::WaterInteractorComponent DeserializeWaterInteractorComponent(const json& j) {
+    Effects::WaterInteractorComponent wi;
+    if (j.contains("splashMultiplier")) wi.splashMultiplier = j["splashMultiplier"].get<f32>();
+    if (j.contains("wakeWidth")) wi.wakeWidth = j["wakeWidth"].get<f32>();
+    if (j.contains("generateWake")) wi.generateWake = JB(j["generateWake"]);
+    if (j.contains("applyBuoyancy")) wi.applyBuoyancy = JB(j["applyBuoyancy"]);
+    return wi;
+}
+
 json SerializeTimerComponent(const ECS::TimerComponent& t) {
     json j;
     j["duration"] = RF(t.duration);
@@ -3466,6 +3538,11 @@ json SerializeUIElement(const GUI::UIElement& e) {
     data["selectedOption"] = RF(e.data.selectedOption);
     data["inputText"] = e.data.inputText;
     data["placeholder"] = e.data.placeholder;
+    data["gridColumns"] = RF(e.data.gridColumns);
+    data["activeTabIndex"] = RF(e.data.activeTabIndex);
+    data["tooltipDelay"] = RF(e.data.tooltipDelay);
+    if (!e.data.tooltipText.empty()) data["tooltipText"] = e.data.tooltipText;
+    data["listSelectedIndex"] = RF(e.data.listSelectedIndex);
     j["data"] = data;
 
     // Accessibility
@@ -3544,6 +3621,11 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("selectedOption")) e.data.selectedOption = d["selectedOption"].get<i32>();
         if (d.contains("inputText")) e.data.inputText = d["inputText"].get<std::string>();
         if (d.contains("placeholder")) e.data.placeholder = d["placeholder"].get<std::string>();
+        if (d.contains("gridColumns")) e.data.gridColumns = d["gridColumns"].get<i32>();
+        if (d.contains("activeTabIndex")) e.data.activeTabIndex = d["activeTabIndex"].get<i32>();
+        if (d.contains("tooltipDelay")) e.data.tooltipDelay = d["tooltipDelay"].get<f32>();
+        if (d.contains("tooltipText")) e.data.tooltipText = d["tooltipText"].get<std::string>();
+        if (d.contains("listSelectedIndex")) e.data.listSelectedIndex = d["listSelectedIndex"].get<i32>();
     }
 
     if (j.contains("accessibleLabel")) e.accessibleLabel = j["accessibleLabel"].get<std::string>();
@@ -5142,6 +5224,14 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
             }
 
+            // Interactive Water
+            if (m_World->HasComponent<Effects::InteractiveWaterComponent>(entity)) {
+                entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*m_World->GetComponent<Effects::InteractiveWaterComponent>(entity));
+            }
+            if (m_World->HasComponent<Effects::WaterInteractorComponent>(entity)) {
+                entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*m_World->GetComponent<Effects::WaterInteractorComponent>(entity));
+            }
+
             // Inventory & Save Data
             if (m_World->HasComponent<ECS::InventoryComponent>(entity)) {
                 entityJson["inventory"] = SerializeInventoryComponent(*m_World->GetComponent<ECS::InventoryComponent>(entity));
@@ -6272,6 +6362,14 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
                 entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*m_World->GetComponent<Scene::StreamingPortalComponent>(entity));
             }
 
+            // Interactive Water
+            if (m_World->HasComponent<Effects::InteractiveWaterComponent>(entity)) {
+                entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*m_World->GetComponent<Effects::InteractiveWaterComponent>(entity));
+            }
+            if (m_World->HasComponent<Effects::WaterInteractorComponent>(entity)) {
+                entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*m_World->GetComponent<Effects::WaterInteractorComponent>(entity));
+            }
+
             // Inventory & Save Data
             if (m_World->HasComponent<ECS::InventoryComponent>(entity)) {
                 entityJson["inventory"] = SerializeInventoryComponent(*m_World->GetComponent<ECS::InventoryComponent>(entity));
@@ -7205,6 +7303,10 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["streamingVolume"] = SerializeStreamingVolumeComponent(*world->GetComponent<Scene::StreamingVolumeComponent>(entity));
         if (world->HasComponent<Scene::StreamingPortalComponent>(entity))
             entityJson["streamingPortal"] = SerializeStreamingPortalComponent(*world->GetComponent<Scene::StreamingPortalComponent>(entity));
+        if (world->HasComponent<Effects::InteractiveWaterComponent>(entity))
+            entityJson["interactiveWater"] = SerializeInteractiveWaterComponent(*world->GetComponent<Effects::InteractiveWaterComponent>(entity));
+        if (world->HasComponent<Effects::WaterInteractorComponent>(entity))
+            entityJson["waterInteractor"] = SerializeWaterInteractorComponent(*world->GetComponent<Effects::WaterInteractorComponent>(entity));
         if (world->HasComponent<ECS::TimerComponent>(entity))
             entityJson["timer"] = SerializeTimerComponent(*world->GetComponent<ECS::TimerComponent>(entity));
         if (world->HasComponent<ECS::InventoryComponent>(entity))
@@ -7731,6 +7833,10 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeStreamingVolumeComponent(*world->GetComponent<Scene::StreamingVolumeComponent>(entity));
         else if (key == "streamingPortal" && world->HasComponent<Scene::StreamingPortalComponent>(entity))
             j = SerializeStreamingPortalComponent(*world->GetComponent<Scene::StreamingPortalComponent>(entity));
+        else if (key == "interactiveWater" && world->HasComponent<Effects::InteractiveWaterComponent>(entity))
+            j = SerializeInteractiveWaterComponent(*world->GetComponent<Effects::InteractiveWaterComponent>(entity));
+        else if (key == "waterInteractor" && world->HasComponent<Effects::WaterInteractorComponent>(entity))
+            j = SerializeWaterInteractorComponent(*world->GetComponent<Effects::WaterInteractorComponent>(entity));
         else if (key == "timer" && world->HasComponent<ECS::TimerComponent>(entity))
             j = SerializeTimerComponent(*world->GetComponent<ECS::TimerComponent>(entity));
         else if (key == "inventory" && world->HasComponent<ECS::InventoryComponent>(entity))
@@ -7885,6 +7991,8 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "spawnPoint") { world->AddComponent<ECS::SpawnPointComponent>(entity, DeserializeSpawnPointComponent(j)); return true; }
         if (key == "streamingVolume") { world->AddComponent<Scene::StreamingVolumeComponent>(entity, DeserializeStreamingVolumeComponent(j)); return true; }
         if (key == "streamingPortal") { world->AddComponent<Scene::StreamingPortalComponent>(entity, DeserializeStreamingPortalComponent(j)); return true; }
+        if (key == "interactiveWater") { world->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(j)); return true; }
+        if (key == "waterInteractor") { world->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(j)); return true; }
         if (key == "timer") { world->AddComponent<ECS::TimerComponent>(entity, DeserializeTimerComponent(j)); return true; }
         if (key == "inventory") { world->AddComponent<ECS::InventoryComponent>(entity, DeserializeInventoryComponent(j)); return true; }
         if (key == "saveData") { world->AddComponent<ECS::SaveDataComponent>(entity, DeserializeSaveDataComponent(j)); return true; }

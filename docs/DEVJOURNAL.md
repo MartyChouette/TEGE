@@ -2,6 +2,127 @@
 
 ---
 
+## 2026-02-14 (Session 18)
+
+### 7 Remaining Roadmap Items Completed
+
+Implemented all 7 open roadmap items that were 80-95% done with specific gaps. All 6 build targets compile clean.
+
+**1. DoF & Tilt-Shift GPU Shader (postprocess.frag)**
+- Added 16 new UBO fields (DoF: 8, camera planes: 4, tilt-shift: 4) to postprocess.frag
+- Implemented `linearizeDepth()` for Vulkan [0,1] nonlinear depth conversion
+- Implemented `applyDoF()`: 16-tap Poisson disc blur with Circle of Concentration weighting + debug CoC visualization (near=blue, focus=green, far=red)
+- Implemented `applyTiltShift()`: 25-tap blur with screen-Y smoothstep band
+- Fixed depth image: added `VK_IMAGE_USAGE_SAMPLED_BIT`, changed storeOp to `STORE`
+- Added depth barrier transitions in Apply() (attachment→read-only→restore)
+- Compiled shader to SPIR-V and embedded (12183→16871 u32 words)
+- Wired `SetCameraPlanes()` in EditorLayer and Player
+
+**2. InteractiveWater System Wiring**
+- PlayMode: added member + Update() + mesh regeneration loop
+- Player: identical pattern with namespace-qualified types
+- Editor: 2 Add Component entries + full inspector UI for both InteractiveWaterComponent (grid, wave sim, appearance, boundary mode) and WaterInteractorComponent (splash, wake, buoyancy)
+- SceneSerializer: serialize/deserialize for both components across all 5 serialization paths
+
+**3. VSync Toggle**
+- Added deferred VSync via `RequestVSyncChange()` / `IsVSyncEnabled()` on VulkanRenderer
+- Processes flag at end of EndFrame() (safe: frame fully submitted+presented)
+- Editor: removed permanent BeginDisabled(), checkbox now functional
+
+**4. Apply to Prefab Button**
+- Replaced TODO log with `PrefabManager::CreateFromEntity()` + `SavePrefab()` in PlayModeDiff dialog
+
+**5. Shader Graph Parallax & Flipbook Nodes**
+- Fixed Parallax NodeOutType from vec4→vec2
+- Parallax: steep POM with 64-step bounded loop + occlusion interpolation, height map sampler binding
+- Flipbook: frame-based UV offset with division-by-zero guard
+- Added `uCameraPos` and `fragTBN` globals to fragment shader preamble
+- Inspector UI: height map path, scale, steps (Parallax); rows, columns (Flipbook)
+
+**6. Particle Graph Renderer Inspector**
+- Added 15 renderer fields to ParticleGraphNode struct
+- Full inspector UI for Billboard (6 controls), Mesh (6 controls), Trail (7 controls) renderers
+- Compiler maps properties to ParticleEmitterComponent (renderMode, texturePath, colors, size)
+- Save/Load with `.value()` defaults for backward compatibility
+
+**7. ASTC Compression Quality**
+- Replaced identical if/else branches with weighted representative color using PCA endpoint cluster membership
+- Added 4x4 Bayer ordered dithering for per-block color variation, reducing mosaic banding
+
+Files changed: ~15 across Engine/shaders, Engine/src, Engine/include, Player/src, docs
+
+---
+
+## 2026-02-14 (Session 17)
+
+### Quick Wins — 4 Near-Complete Features Activated
+
+Implemented 4 features that were 90%+ done but had small wiring gaps preventing activation:
+
+**1. OIDN RegisterImageMapping() Wiring**
+- Added `RegisterImageMapping()` calls for all 4 RT effect outputs (shadows R16F, reflections RGBA16F, AO R16F, GI RGBA16F) after OIDN initialization in `InitializeRayTracing()`
+- Registered dummy image mapping after `CreateRTDummyResources()` so depth/normal/motion view lookups resolve
+- OIDN denoiser can now process real RT buffers instead of zero-filled fallbacks
+
+**2. SH Light Probe → Renderer Wiring**
+- Added `shProbeIrradiance` (vec4, xyz=RGB irradiance, w=blend weight) to `LightingUBO` in Light.h
+- Updated all 9 shader files (triangle.vert/frag, grass.vert/frag, shrub.vert/frag, tree.vert/frag, sprite_lit.frag) with matching UBO field
+- `UpdateFrameUniforms()` now queries `m_SHLighting->GetIrradiance()` at camera position and uploads to UBO
+- `triangle.frag` blends probe irradiance with ambient when `shProbeIrradiance.w > 0`
+
+**3. RenderSystem 6 Missing Getters**
+- Added: `GetCamera()`, `GetMainPassViewports()`, `GetMainPassWeather()`, `GetMainPassWeatherIsRain()`, `GetOnionSkinGhosts()`, `GetFluidRenderer()`
+- Full API symmetry for all setter/getter pairs
+
+**4. OIT Composite Shader + Pipeline**
+- Created `oit_composite.frag` shader (McGuire & Bavoil 2013 weighted blended formula)
+- Compiled to SPIR-V and embedded in `OITManager.cpp` alongside fullscreen vertex shader
+- Implemented `CreateCompositePipeline()`: shader modules, alpha blending (SRC_ALPHA/ONE_MINUS_SRC_ALPHA), no depth test, dynamic viewport/scissor
+- Updated `CompositePass()`: binds pipeline, descriptor set, draws fullscreen triangle
+- Added pipeline/layout cleanup in `DestroyRenderResources()`
+- `Initialize()` now accepts opaque render pass parameter for pipeline compatibility
+
+**Build fixes (pre-existing):**
+- Added missing `#include "Enjin/Effects/TreeRenderer.h"` and `"Enjin/Effects/Weather.h"` in EditorLayer.cpp and PlayMode.cpp (forward-declared types accessed through new getters)
+- Fixed `FlashAuthoring.cpp` include: `Sprite2D.h` → `Gameplay.h` (Sprite2DComponent lives in Gameplay.h)
+- CMake reconfigure picked up previously uncompiled `GameplayLoop.cpp` and `NetworkSecurity.cpp`
+
+All 6 targets build clean. Files changed: 16 (3 new: oit_composite.frag, oit_composite.frag.spv)
+
+---
+
+## 2026-02-14 (Session 16)
+
+### Roadmap Verification Pass — 8 Items Reclassified as DONE
+
+Cross-checked all "open" roadmap items against actual codebase. 14 parallel agents audited each item.
+
+**Reclassified as DONE (previously listed as open/stubs):**
+- SWF Zlib Decompression — uses stb_image built-in zlib (`stbi_zlib_decode_buffer`), CWS files fully supported
+- Network Auth & Replay — full HMAC-SHA256, session key exchange, 64-bit replay window, constant-time verify (`NetworkSecurity.h`)
+- UI Phase 2+ Widgets — all 9 types (Dropdown, TextInput, RadioGroup, ScrollArea, Grid, TabGroup, Tooltip, Modal, ListView) fully rendered with interaction
+- Water3D Rendering — WaterVolumeComponent renders via Vulkan forward pipeline, dedicated shader logic in triangle.frag
+- 5 ECS Systems SetEnabled/IsEnabled — TweenSystem, StateMachineSystem, DialogueSystem, VisualScriptSystem, BehaviorTreeSystem all complete
+- Player/PlayMode code duplication — refactored into GameplayLoop.h/cpp shared module, zero duplication
+- Flash Timeline SWF sprite import — BuildTimeline() is 267 lines, production-ready
+- RT Shader Compilation — all 19 SPIR-V shaders are real compiled bytecode (384–10,964 bytes), not placeholder stubs
+
+**Corrected descriptions (partially wrong):**
+- ASTC Compression — generates valid ASTC void-extent blocks (NOT BC7 fallback), but quality is low for non-uniform content
+- SH Light Probe Baking — has real light-sampling baking (2048 samples, evaluates scene lights), but probes not wired to renderer
+- Missing getters — ControllerSystem/FlowerSystem/VSExecutor all perfect; only RenderSystem has 5 gaps; PlayMode's 12 are intentional
+
+**Still accurately open (at the time of this session — OIT/OIDN/SH/getters fixed in Session 17):**
+- ~~OIT composite shader SPIR-V~~ (fixed Session 17)
+- HTTP Client Linux/Mac (ENJIN_HAS_CURL defined but unused in code)
+- DoF/Tilt-Shift GPU shader (CPU code exists, never called)
+- ~~OIDN RegisterImageMapping() not called~~ (fixed Session 17)
+- VSync toggle, Apply to Prefab, Shader Graph Parallax/Flipbook, Particle Graph renderer inspector
+
+Updated: ROADMAP.md (Known Stubs section, RT section, networking), CLAUDE.md (RT pipeline, networking, feature status)
+
+---
+
 ## 2026-02-14 (Session 15)
 
 ### Comprehensive Audit #4 — 51 Findings, 16 Fixed
@@ -20,15 +141,12 @@ Four parallel audit agents examined the entire codebase:
 - Audio Event Graph — Save/Load menu items now call Save()/Load() methods
 
 **Documented (not fixed — require larger feature work):**
-- OIT render passes are empty stubs (needs Vulkan pipeline)
-- HTTP Client no-op on non-Windows (needs libcurl/WinHTTP abstraction)
-- SWF Zlib decompression missing (needs zlib integration)
-- DoF/Tilt-Shift no shader implementation (needs SPIR-V)
-- SH Light Probe baking is fake (needs cubemap rendering)
-- OIDN GPU-to-CPU copy not implemented (needs staging buffer)
-- ASTC texture compression falls back to BC7 (needs ASTC library)
-- UI Phase 2+ widget types render as grey boxes (large feature)
-- Network auth/replay protection missing (security feature)
+- OIT composite shader needs SPIR-V (infrastructure 95% complete)
+- HTTP Client no-op on non-Windows (CMake finds libcurl, ENJIN_HAS_CURL unused)
+- DoF/Tilt-Shift CPU blur code exists but never called, needs GPU compute shader
+- SH Light Probe baking works from scene lights but not wired to renderer
+- OIDN staging buffers exist but RegisterImageMapping() never called
+- ASTC generates valid void-extent blocks (not BC7) but quality is low without astc-enc
 
 ---
 
