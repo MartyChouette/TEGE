@@ -135,6 +135,17 @@ if(WIN32)
     target_link_libraries(EnjinCore PUBLIC winmm)  # timeBeginPeriod/timeEndPeriod for precise frame pacing
 elseif(UNIX AND NOT APPLE)
     target_compile_definitions(EnjinCore PUBLIC ENJIN_PLATFORM_LINUX)
+    # Linux system libraries
+    find_package(Threads REQUIRED)
+    target_link_libraries(EnjinCore PUBLIC
+        Threads::Threads     # pthread
+        ${CMAKE_DL_LIBS}     # dlopen/dlsym for plugin system
+    )
+    # X11 — needed if GLFW uses X11 backend (GLFW links it, but we may need headers)
+    find_package(X11 QUIET)
+    if(X11_FOUND)
+        target_include_directories(EnjinCore PUBLIC ${X11_INCLUDE_DIR})
+    endif()
 elseif(APPLE)
     target_compile_definitions(EnjinCore PUBLIC ENJIN_PLATFORM_MACOS)
 endif()

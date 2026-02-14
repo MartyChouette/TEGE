@@ -16,7 +16,8 @@ enum class BuildTarget : u8 {
     macOS,
     Android,
     iOS,
-    WebGL
+    WebGL,
+    NintendoSwitch   // Nintendo Switch (NVN graphics API)
 };
 
 // Texture compression format
@@ -98,6 +99,7 @@ inline const char* BuildTargetToString(BuildTarget target) {
         case BuildTarget::Android: return "Android";
         case BuildTarget::iOS:     return "iOS";
         case BuildTarget::WebGL:   return "WebGL";
+        case BuildTarget::NintendoSwitch: return "Nintendo Switch";
     }
     return "Unknown";
 }
@@ -113,6 +115,8 @@ inline TextureCompression GetPreferredCompression(BuildTarget target) {
             return TextureCompression::ASTC;
         case BuildTarget::iOS:
             return TextureCompression::ASTC;
+        case BuildTarget::NintendoSwitch:
+            return TextureCompression::ASTC;  // Tegra X1 supports ASTC
     }
     return TextureCompression::None;
 }

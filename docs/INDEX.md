@@ -54,6 +54,20 @@
 | Timeline Editor | `Enjin/Animation/TimelineEditor.h` | Flash-style keyframe editor, layers, Bezier/CatmullRom curves, auto-key |
 | Thumbnails | `Enjin/Assets/ThumbnailGenerator.h` | Asset preview generation with CPU rasterizer and caching |
 | Texture Compression | `Enjin/Assets/TextureCompressor.h` | BCn/ASTC compression with mipmap generation |
+| SWF Converter | `Enjin/Assets/SWFConverter.h` | SWF→ECS entity conversion (shapes, MovieClips, timelines) |
+| AS3 Transpiler | `Enjin/Scripting/AS3Transpiler.h` | Pattern-based ActionScript→AngelScript source transpilation |
+| Flash API Shim | `Enjin/Scripting/FlashAPIShim.h` | ~40 AngelScript bindings emulating Flash APIs |
+| Fourier Mesh | `Enjin/Effects/FourierMesh.h` | DFT contour decomposition, progressive reconstruction, 3D extrusion |
+| 4D Projection | `Enjin/Effects/Projection4D.h` | 5 polytopes, 6 rotation planes, stereographic 4D→3D projection |
+| Inverse Rendering | `Enjin/Renderer/InverseRendering.h` | CPU gradient descent scene parameter optimization |
+| Adaptive Quality | `Enjin/Renderer/AdaptiveQuality.h` | FPS-based auto-adjustment (5 quality levels, render scale) |
+| Linux Platform | `Enjin/Platform/LinuxPlatform.h` | XDG paths, zenity/kdialog dialogs, fork/exec |
+| Steam Deck | `Enjin/Platform/SteamDeck.h` | Deck detection, adaptive quality, gyro, suspend/resume |
+| Steam Input | `Enjin/Platform/SteamInput.h` | Steam Input API stubs (ENJIN_STEAM guarded) |
+| NVN Backend | `Enjin/Renderer/NVN/NVNBackend.h` | Nintendo Switch 1 render backend stub |
+| Colorblind Palette | `Enjin/Accessibility/ColorblindPalette.h` | 9 palettes with pattern+icon alongside color |
+| Font Library (Accessibility) | `Enjin/Accessibility/FontLibrary.h` | FontFamily enum (Default/Mono/OpenDyslexic), spacing config |
+| AppImage Builder | `Enjin/Build/AppImageBuilder.h` | Linux AppImage packaging with .desktop generation |
 
 ---
 

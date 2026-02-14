@@ -178,6 +178,75 @@ struct FlashEvent {
 };
 
 // ============================================================================
+// Global Flash API Functions (for AngelScript bindings)
+// ============================================================================
+// These are the flat function-style bindings registered into AngelScript,
+// mapping Flash DisplayObject/MovieClip/Stage/Math/Sound/Timer APIs to
+// engine systems via the shared s_BindingsWorld pointer.
+
+namespace FlashAPI {
+
+// --- DisplayObject / MovieClip ---
+f32 Flash_GetX(u64 entity);
+void Flash_SetX(u64 entity, f32 x);
+f32 Flash_GetY(u64 entity);
+void Flash_SetY(u64 entity, f32 y);
+f32 Flash_GetScaleX(u64 entity);
+void Flash_SetScaleX(u64 entity, f32 sx);
+f32 Flash_GetScaleY(u64 entity);
+void Flash_SetScaleY(u64 entity, f32 sy);
+f32 Flash_GetRotation(u64 entity);
+void Flash_SetRotation(u64 entity, f32 degrees);
+f32 Flash_GetAlpha(u64 entity);
+void Flash_SetAlpha(u64 entity, f32 alpha);
+bool Flash_GetVisible(u64 entity);
+void Flash_SetVisible(u64 entity, bool visible);
+void Flash_GotoAndPlay(u64 entity, i32 frame);
+void Flash_GotoAndStop(u64 entity, i32 frame);
+void Flash_Play(u64 entity);
+void Flash_Stop(u64 entity);
+i32 Flash_GetCurrentFrame(u64 entity);
+i32 Flash_GetTotalFrames(u64 entity);
+u64 Flash_GetChildByName(u64 entity, const std::string& name);
+
+// --- Stage ---
+f32 Flash_GetStageWidth();
+f32 Flash_GetStageHeight();
+f32 Flash_GetFrameRate();
+
+// --- Mouse / Keyboard ---
+f32 Flash_GetMouseX();
+f32 Flash_GetMouseY();
+bool Flash_IsKeyDown(i32 keyCode);
+
+// --- TextField ---
+void Flash_SetText(u64 entity, const std::string& text);
+std::string Flash_GetText(u64 entity);
+
+// --- Math ---
+f32 Flash_MathRandom();
+f32 Flash_MathFloor(f32 x);
+f32 Flash_MathCeil(f32 x);
+f32 Flash_MathRound(f32 x);
+f32 Flash_MathAbs(f32 x);
+f32 Flash_MathSqrt(f32 x);
+f32 Flash_MathSin(f32 x);
+f32 Flash_MathCos(f32 x);
+f32 Flash_MathAtan2(f32 y, f32 x);
+
+// --- Sound ---
+void Flash_PlaySound(const std::string& name);
+void Flash_StopSound(const std::string& name);
+void Flash_SetVolume(const std::string& name, f32 vol);
+
+// --- Timer ---
+u32 Flash_SetTimeout(f32 ms);
+u32 Flash_SetInterval(f32 ms);
+void Flash_ClearInterval(u32 id);
+
+} // namespace FlashAPI
+
+// ============================================================================
 // Registration function — call during engine startup
 // ============================================================================
 

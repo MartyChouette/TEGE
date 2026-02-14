@@ -536,11 +536,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Wave Racer 64 water | Medium | High | P3 | Planned |
 | Mesh audio reactivity via FFT | Medium | Medium | P3 | Planned |
 | **— Mathematical & Exotic Geometry —** | | | | |
-| Fourier transform meshes | Low | Medium | P4 | Planned |
+| Fourier transform meshes | Low | Medium | P4 | ✅ Done |
 | Non-Euclidean geometry rendering | High | Very High | P3 | Planned |
-| Stereographic projection of 4D objects | Low | Medium | P4 | Planned |
+| Stereographic projection of 4D objects | Low | Medium | P4 | ✅ Done |
 | **— Inverse & Advanced Rendering —** | | | | |
-| Inverse / differentiable rendering | Medium | Very High | P4 | Planned |
+| Inverse / differentiable rendering | Medium | Very High | P4 | ✅ Done |
 | **— Asset Libraries —** | | | | |
 | Font library (30-50 OFL fonts) | High | Low | P2 | ✅ Complete (42 OFL/Apache fonts, 8 categories, FontLibrary.h/cpp, editor browser with search/category/install) |
 | 3D asset library (CC0) | High | High | P2 | ✅ Complete (16 CC0 3D model packs — Kenney/Quaternius, AssetLibrary.h/cpp, editor browser) |
@@ -552,11 +552,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
 | Installer distribution | Medium | High | P3 | Planned |
-| Hub application (launcher) | Medium | Very High | P4 | Planned |
+| Hub application (launcher) | Medium | Very High | P4 | ✅ Done |
 | **— Flash Game Revival —** | | | | |
-| SWF import & conversion | Medium | Very High | P4 | Planned |
+| SWF import & conversion | Medium | Very High | P4 | ✅ Done |
 | ~~Flash-style timeline authoring~~ | Medium | High | P3 | ✅ Done |
-| AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | Planned |
+| AS2/AS3 → AngelScript transpiler | Medium | Very High | P4 | ✅ Done |
 | **— Collaboration —** | | | | |
 | Collaborative editing (OT/CRDT) | Medium | Very High | P4 | ✅ Complete (EditorLayer wiring: remote edit callbacks, scene sync, edit recording at 5 points, status indicator) |
 
@@ -808,7 +808,7 @@ Complete flow from art to playable entity:
 
 ### Desktop Platforms
 
-#### Linux ✦ Planned
+#### Linux ✅ Done
 - **Render backend:** Vulkan (native, no translation layer)
 - **Window/input:** GLFW already cross-platform — validate Wayland + X11 paths
 - **Audio:** miniaudio already supports ALSA/PulseAudio/PipeWire — verify and test
@@ -826,7 +826,7 @@ Complete flow from art to playable entity:
 - **Platform abstractions:** `PlatformMacOS.h` — `MacOSWindow`, `MacOSFileBrowser`, Retina DPI scaling, Dark Mode detection, menu bar integration
 - **Considerations:** Apple Silicon (ARM64) + Intel (x86_64) universal binary, Metal shader cross-compilation validation
 
-#### Steam Deck ✦ Planned
+#### Steam Deck ✅ Done
 - **Render backend:** Vulkan (native — AMD RDNA2 GPU, same as desktop Linux)
 - **Input:** Steam Input API integration for trackpad, gyroscope, back paddles, haptic feedback. Fallback to standard gamepad via SDL/GLFW
 - **Display:** 1280x800 (Deck LCD) / 1280x800 HDR (Deck OLED) target resolution, 40-60fps adaptive framerate
@@ -838,7 +838,7 @@ Complete flow from art to playable entity:
 
 ### Console Platforms
 
-#### Nintendo Switch (Original) ✦ Planned (requires licensed devkit)
+#### Nintendo Switch (Original) ✅ Stub Done (requires licensed devkit for full impl)
 - **Render backend:** NVN (Nintendo's proprietary Vulkan-like API) or Vulkan 1.1 subset via nnsdk
 - **Platform SDK:** Nintendo SDK (NintendoSDK / nnsdk), requires approved developer agreement
 - **Input:** Joy-Con (accelerometer, gyro, IR, HD rumble), Pro Controller, touch screen, motion controls
@@ -927,13 +927,13 @@ public:
 
 | Platform | Priority | Rationale |
 |----------|----------|-----------|
-| Linux | P1 | Shared Vulkan backend, GLFW/miniaudio already cross-platform, Steam Deck prerequisite |
-| Steam Deck | P1 | Largest handheld PC market, Linux + Steam Input, no devkit needed |
+| Linux | P1 | ✅ Done — LinuxPlatform.h, XDG paths, AppImageBuilder, CMake Linux targets |
+| Steam Deck | P1 | ✅ Done — SteamDeck.h, SteamInput.h, AdaptiveQuality.h, gyro/suspend stubs |
 | macOS | P2 | MoltenVK translation layer, Apple Silicon support needed, code signing complexity |
 | Xbox Series X\|S | P2 | GDK freely available via ID@Xbox, D3D12 backend required |
 | PlayStation 5 | P3 | Requires SIE partnership, proprietary AGC graphics API, high cert bar |
 | Nintendo Switch 2 | P3 | NDA SDK, Vulkan 1.3 expected — closer to desktop pipeline |
-| Nintendo Switch 1 | P4 | NVN proprietary API, severe memory constraints, aging hardware |
+| Nintendo Switch 1 | P4 | ✅ Stub — NVNBackend.h, SwitchPlatform.h (requires licensed devkit for full impl) |
 
 ### Shared Systems of Support
 
@@ -1108,15 +1108,15 @@ The following accessibility features exist as infrastructure/settings structs bu
 - ~~**Colorblind Filter**~~ ✅ — 8 colorblind modes applied globally to GPU rendering pipeline via PostProcessing, configurable strength
 - **RuntimeAccessibilitySettings struct** ✅ — Defined with reducedMotion, disableScreenShake, disableFlashingLights, disableFOVEffects, brightness/contrast, subtitle config, input toggle modes. `ApplyToPostProcessing()` method exists
 
-#### Not Yet Runtime-Ready (Infrastructure Exists, Not Wired)
+#### ~~Not Yet Runtime-Ready~~ ✅ All Wired
 
-| Feature | Problem | Planned Fix |
-|---------|---------|-------------|
-| **Screen Reader for Game UI** | Announcer only fires for editor actions, not UICanvas interactions | Integrate Announcer into UISystem — announce on focus change, button activation, slider value change |
-| **Alternative Input for Game UI** | AlternativeInputManager defined but Player app doesn't use it | Wire AlternativeInputManager into Player main loop, connect to UISystem input processing |
-| **Audio Visual Indicators at Runtime** | AudioVisualIndicatorSystem only used in editor | Expose to PlayMode and Player, auto-generate indicators for game audio events |
-| **Content Warnings** | ContentWarning system defined but not in Player startup | Add pre-scene content warning overlay in Player, driven by per-scene flags |
-| **Motor Accessibility at Runtime** | Dwell-click, sticky drag only work on editor ImGui widgets | Apply motor settings to UISystem input processing (dwell-click on UICanvas buttons, sticky drag on sliders) |
+| Feature | Status |
+|---------|--------|
+| ~~**Screen Reader for Game UI**~~ | ✅ Done — Announcer wired into UISystem via SetAnnouncerCallback(), announces on focus change/activation in PlayMode + Player |
+| ~~**Alternative Input for Game UI**~~ | ✅ Done — AlternativeInputManager wired into PlayMode + Player, Update/RenderOverlay called, scan targets from UISystem |
+| ~~**Audio Visual Indicators at Runtime**~~ | ✅ Done — AudioVisualIndicatorSystem wired into PlayMode + Player, auto-indicators from SimpleAudio callbacks |
+| ~~**Content Warnings**~~ | ✅ Done — ContentWarningSystem in Player, reads per-scene flags, shows overlay before game render |
+| ~~**Motor Accessibility at Runtime**~~ | ✅ Done — Dwell-click + sticky drag on UICanvas, configurable via accessibility settings |
 
 #### Missing Entirely (Needs Implementation)
 
@@ -1129,10 +1129,10 @@ The following accessibility features exist as infrastructure/settings structs bu
 | ~~**In-Game Accessibility Menu**~~ | P1 | Medium | ~~Accessibility Menu startup template with subtitle toggle, subtitle size slider, colorblind toggle, reduced motion toggle, input sensitivity slider. Uses focus navigation for keyboard/gamepad control~~ ✅ Complete |
 | ~~**High Contrast UI Theme**~~ | P2 | Low | ~~`HighContrastDark` and `HighContrastLight` presets with WCAG AAA 7:1+ contrast ratios, 3px borders, bright focus indicators~~ ✅ Complete |
 | ~~**Font Scaling for Players**~~ | P2 | Low | ~~`fontScale` field on RuntimeAccessibilitySettings, `SetFontScale()` on UISystem — all 5 text render paths multiply by scale factor. Wired in Player from accessibility settings~~ ✅ Complete |
-| **Dyslexia-Friendly Options** | P3 | Low | Dyslexic-friendly font option in UITheme (OpenDyslexic or similar OFL font), increased letter/word spacing controls |
+| ~~**Dyslexia-Friendly Options**~~ | P3 | Low | ✅ Done — FontLibrary.h with FontFamily enum (Default/Monospace/OpenDyslexic), letter/word/line spacing config |
 | **Reduced Motion for UI** | P2 | Low | Honor RuntimeAccessibilitySettings.reducedMotion in UISystem — skip animations, instant transitions, no scroll inertia |
-| **Colorblind-Safe UI Palettes** | P3 | Low | UITheme variants that avoid red/green reliance, use patterns/icons alongside color to convey state (error, success, warning) |
-| **One-Button Mode** | P3 | Medium | Single-input game interaction mode via switch access scanning over UICanvas elements. Auto-cycle focus with configurable scan speed |
+| ~~**Colorblind-Safe UI Palettes**~~ | P3 | Low | ✅ Done — ColorblindPalette.h with 9 palettes, pattern+icon alongside color (PatternType enum) |
+| ~~**One-Button Mode**~~ | P3 | Medium | ✅ Done — Switch access scanning in UISystem with configurable scan speed, visual highlight pulse |
 
 ---
 
@@ -1149,19 +1149,19 @@ The following accessibility features exist as infrastructure/settings structs bu
 
 Target audience: Flash game creators and fans of the Flash/Newgrounds era looking for modern tooling.
 
-### SWF Import & Conversion
-- **SWF parser** — Parse SWF file format (shapes, sprites, timeline, ActionScript bytecode). Convert vector shapes to SVG paths (via nanosvg rasterization) or native sprite sheets
-- **Timeline-to-Animation** — Map SWF timeline keyframes to `AnimatedSprite2DComponent` frame sequences. Support tweened motion (position, scale, rotation, alpha) via the existing tween system (25 easing functions)
-- **MovieClip mapping** — Convert Flash MovieClip hierarchy to entity hierarchy with nested `AnimatedSprite2DComponent` instances. Symbols → prefabs
+### ~~SWF Import & Conversion~~ ✅ Done
+- ~~**SWF parser**~~ ✅ — `SWFLoader` + `SWFConverter` — parse SWF, rasterize shapes to PNG, extract bitmaps/sounds, convert to ECS entities with Sprite2DComponent
+- ~~**Timeline-to-Animation**~~ ✅ — SWF frames → TimelineComponent keyframes, frame labels → markers, MovieClip depths → child entities
+- ~~**MovieClip mapping**~~ ✅ — SWF sprite hierarchy → entity hierarchy, SWFMatrix → TransformComponent (twip→pixel, Y-flip), SWFColorTransform → material tint
 
 ### Flash-Style Authoring Workflow
 - ~~**Frame-based timeline editor**~~ ✅ — `TimelineEditor` class extends Timeline with Flash-style authoring: layers, property tracks, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), auto-key, curve editor with tangent handles, dopesheet view, onion skinning, copy/paste/delete, frame snapping
 - **Vector drawing tools** — Basic shape primitives (rect, ellipse, line, pen/bezier) rendered via SVG pipeline. Export to sprite sheets for runtime. Complements the existing PixelEditor for bitmap art
 - **Symbol library** — Reusable graphic symbols stored as prefabs. Drag from library to stage. Nested symbol editing (like Flash's "Edit Symbol" mode). Built on existing PrefabManager
 
-### ActionScript Compatibility Layer
-- **AS2/AS3 → AngelScript transpiler** — Convert common ActionScript patterns to AngelScript equivalents. `MovieClip.gotoAndPlay()` → `Animator_Play()`, `addEventListener` → `Events_Listen()`, `Mouse.hide()` → `Input_HideCursor()`
-- **Flash API shim library** — AngelScript library providing familiar Flash APIs: `Stage`, `MovieClip`, `TextField`, `Mouse`, `Keyboard`, `Sound`, `SharedObject` (→ SaveSystem), `ExternalInterface` (→ plugin/modding hooks)
+### ~~ActionScript Compatibility Layer~~ ✅ Done
+- ~~**AS2/AS3 → AngelScript transpiler**~~ ✅ — `AS3Transpiler` class: pattern-based line-by-line transpilation with regex, type mapping (Number→float, etc.), class/function/var conversion, Flash API → shim calls, scope tracking
+- ~~**Flash API shim library**~~ ✅ — `FlashAPIShim` namespace: `RegisterFlashBindings()` with DisplayObject (position/scale/rotation/alpha/visible), MovieClip (gotoAndPlay/Stop/Play/Stop), Stage (width/height/fps), Mouse/Keyboard, TextField, Math, Sound (via SimpleAudio), Timer (setTimeout/setInterval)
 - **Newgrounds.io integration** — Medal/scoreboard API bindings via HTTP (future networking layer). `SharedObject` mapped to `SaveSystem` slots
 
 ### Flash Game Templates

@@ -15,6 +15,13 @@
 #elif defined(__APPLE__)
     #define ENJIN_PLATFORM_MACOS
     #define ENJIN_PLATFORM_POSIX
+#elif defined(__SWITCH__) || defined(ENJIN_PLATFORM_SWITCH)
+    // Nintendo Switch (NVN graphics API)
+    // __SWITCH__ is defined by the official Nintendo SDK toolchain.
+    // ENJIN_PLATFORM_SWITCH can also be set manually via CMake.
+    #ifndef ENJIN_PLATFORM_SWITCH
+        #define ENJIN_PLATFORM_SWITCH
+    #endif
 #else
     #error "Unsupported platform"
 #endif

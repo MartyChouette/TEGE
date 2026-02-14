@@ -62,8 +62,12 @@
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
+#include "Enjin/Accessibility/AudioVisualIndicator.h"
+#include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/Accessibility/FontLibrary.h"
+#include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
@@ -418,7 +422,10 @@ public:
 
         // Clear accessibility
         m_SubtitleSystem.Clear();
+        m_AlternativeInput.ClearScanTargets();
+        m_AudioIndicators.Clear();
         m_Announcer.Clear();
+        m_SimpleAudio.SetOnSoundPlayed(nullptr);
 
         // Clear script bindings
         Enjin::Scripting::SetBindingsSubtitles(nullptr);
@@ -525,8 +532,9 @@ public:
             }
         }
 
-        // Skip gameplay updates when paused
+        // Skip gameplay updates when paused or content warning is shown (Task #39)
         if (m_GameMenu.IsMenuOpen()) return;
+        if (m_ContentWarnings.IsVisible()) return;
 
         // --- Physics (must run first) ---
         if (m_Physics) m_Physics->Update(deltaTime);
@@ -626,6 +634,7 @@ public:
         // Accessibility systems
         m_SubtitleSystem.Update(deltaTime);
         m_AlternativeInput.Update(deltaTime);
+        m_AudioIndicators.Update(deltaTime);
         m_Announcer.Update(deltaTime);
 
         // Networking
@@ -738,9 +747,15 @@ public:
 
             // Accessibility overlays
             if (!m_ShowingSplash) {
-                m_SubtitleSystem.RenderOverlay(extent.width, extent.height);
-                m_AlternativeInput.RenderOverlay();
-                m_Announcer.RenderStatusBar();
+                // Content warning overlay blocks game rendering (Task #39)
+                if (m_ContentWarnings.IsVisible()) {
+                    m_ContentWarnings.RenderWarningOverlay(extent.width, extent.height);
+                } else {
+                    m_SubtitleSystem.RenderOverlay(extent.width, extent.height);
+                    m_AlternativeInput.RenderOverlay();
+                    m_AudioIndicators.RenderOverlay(extent.width, extent.height);
+                    m_Announcer.RenderStatusBar();
+                }
             }
 
             m_ImGuiLayer->EndFrame(cmd);
@@ -901,9 +916,9 @@ private:
         subConfig.showSpeakerNames = m_AccessibilitySettings.subtitleSpeakerNames;
         subConfig.showDirectionIndicators = m_AccessibilitySettings.subtitleDirectionIndicators;
 
-        // Wire announcer to UISystem for screen reader support
+        // Wire announcer to UISystem for screen reader support (Task #36)
         m_UISystem.SetAnnouncerCallback([this](const std::string& text) {
-            m_Announcer.Announce(text);
+            m_Announcer.Announce(text, Enjin::Accessibility::AnnouncePriority::Normal);
         });
 
         // Apply reduced motion setting to controller system and UI
@@ -912,6 +927,39 @@ private:
 
         // Apply font scale to UISystem
         m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
+
+        // Apply motor accessibility to UISystem (Task #34, #40)
+        m_UISystem.SetSwitchAccessEnabled(m_AccessibilitySettings.switchAccessEnabled,
+                                           m_AccessibilitySettings.switchScanSpeed);
+        m_UISystem.SetDwellClickEnabled(m_AccessibilitySettings.dwellClickEnabled,
+                                         m_AccessibilitySettings.dwellClickTime);
+        m_UISystem.SetStickyDragEnabled(m_AccessibilitySettings.stickyDragEnabled);
+
+        // Configure audio visual indicators (Task #38)
+        m_AudioIndicators.GetConfig().enabled = m_AccessibilitySettings.audioIndicatorsEnabled;
+
+        // Wire SimpleAudio callback for audio visual indicators
+        if (m_AudioIndicators.GetConfig().enabled) {
+            m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+                m_AudioIndicators.ShowIndicator(soundName,
+                    Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
+            });
+        }
+
+        // Apply font library settings (Task #35)
+        if (m_AccessibilitySettings.dyslexiaFriendly) {
+            m_FontLibrary.SetFont(Enjin::Accessibility::FontFamily::OpenDyslexic);
+        } else if (m_AccessibilitySettings.fontFamily != Enjin::Accessibility::FontFamily::Default) {
+            m_FontLibrary.SetFont(m_AccessibilitySettings.fontFamily);
+        }
+        {
+            Enjin::Accessibility::FontLibraryConfig flConfig;
+            flConfig.selectedFamily = m_AccessibilitySettings.fontFamily;
+            flConfig.letterSpacing = m_AccessibilitySettings.letterSpacing;
+            flConfig.wordSpacing = m_AccessibilitySettings.wordSpacing;
+            flConfig.lineSpacing = m_AccessibilitySettings.lineSpacing;
+            m_FontLibrary.SetConfig(flConfig);
+        }
 
         // Apply colorblind mode and visual settings to post-processing
         if (m_PostProcessing) {
@@ -1036,6 +1084,30 @@ private:
                 m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
 
+        // Read content warning flags from scene JSON if present (Task #39)
+        try {
+            auto sceneJson = nlohmann::json::parse(sceneStr);
+            if (sceneJson.contains("contentWarnings")) {
+                auto& cw = sceneJson["contentWarnings"];
+                Enjin::Accessibility::SceneContentFlags flags;
+                if (cw.contains("flags")) {
+                    flags.flags = static_cast<Enjin::Accessibility::ContentWarningType>(
+                        cw["flags"].get<Enjin::u32>());
+                }
+                if (cw.contains("customWarnings") && cw["customWarnings"].is_array()) {
+                    for (const auto& w : cw["customWarnings"]) {
+                        flags.customWarnings.push_back(w.get<std::string>());
+                    }
+                }
+                m_ContentWarnings.SetSceneFlags(flags);
+                if (m_ContentWarnings.HasWarnings()) {
+                    ENJIN_LOG_INFO(Player, "Scene has content warnings — showing overlay");
+                }
+            }
+        } catch (const std::exception&) {
+            // JSON parse failure for content warnings is non-fatal
+        }
+
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
         return true;
     }
@@ -1113,6 +1185,58 @@ private:
                 m_AccessibilitySettings.letterSpacing = j["letterSpacing"].get<Enjin::f32>();
             if (j.contains("wordSpacing"))
                 m_AccessibilitySettings.wordSpacing = j["wordSpacing"].get<Enjin::f32>();
+            if (j.contains("lineSpacing"))
+                m_AccessibilitySettings.lineSpacing = std::clamp(j["lineSpacing"].get<Enjin::f32>(), 1.0f, 3.0f);
+            if (j.contains("fontFamily")) {
+                Enjin::u32 ff = j["fontFamily"].get<Enjin::u32>();
+                if (ff <= 2) m_AccessibilitySettings.fontFamily = static_cast<Enjin::Accessibility::FontFamily>(ff);
+            }
+
+            // Motor accessibility settings (Task #40)
+            if (j.contains("dwellClickEnabled"))
+                m_AccessibilitySettings.dwellClickEnabled = j["dwellClickEnabled"].get<bool>();
+            if (j.contains("dwellClickTime"))
+                m_AccessibilitySettings.dwellClickTime = std::clamp(j["dwellClickTime"].get<Enjin::f32>(), 0.3f, 3.0f);
+            if (j.contains("stickyDragEnabled"))
+                m_AccessibilitySettings.stickyDragEnabled = j["stickyDragEnabled"].get<bool>();
+            if (j.contains("switchAccessEnabled"))
+                m_AccessibilitySettings.switchAccessEnabled = j["switchAccessEnabled"].get<bool>();
+            if (j.contains("switchScanSpeed"))
+                m_AccessibilitySettings.switchScanSpeed = std::clamp(j["switchScanSpeed"].get<Enjin::f32>(), 0.5f, 5.0f);
+
+            // Audio visual indicators (Task #38)
+            if (j.contains("audioIndicatorsEnabled"))
+                m_AccessibilitySettings.audioIndicatorsEnabled = j["audioIndicatorsEnabled"].get<bool>();
+
+            // Alternative input device settings (Task #37)
+            if (j.contains("alternativeInput")) {
+                auto& ai = j["alternativeInput"];
+                if (ai.contains("switchAccess")) {
+                    auto& sa = ai["switchAccess"];
+                    auto config = m_AlternativeInput.GetSwitchConfig();
+                    if (sa.contains("enabled")) config.enabled = sa["enabled"].get<bool>();
+                    if (sa.contains("scanSpeed")) config.scanSpeed = sa["scanSpeed"].get<Enjin::f32>();
+                    if (sa.contains("switchCount")) config.switchCount = sa["switchCount"].get<Enjin::i32>();
+                    m_AlternativeInput.SetSwitchConfig(config);
+                }
+                if (ai.contains("eyeTracking")) {
+                    auto& et = ai["eyeTracking"];
+                    auto config = m_AlternativeInput.GetEyeTrackingConfig();
+                    if (et.contains("enabled")) config.enabled = et["enabled"].get<bool>();
+                    if (et.contains("dwellTime")) config.dwellTime = et["dwellTime"].get<Enjin::f32>();
+                    if (et.contains("smoothingFactor")) config.smoothingFactor = et["smoothingFactor"].get<Enjin::f32>();
+                    m_AlternativeInput.SetEyeTrackingConfig(config);
+                }
+                if (ai.contains("headTracking")) {
+                    auto& ht = ai["headTracking"];
+                    auto config = m_AlternativeInput.GetHeadTrackingConfig();
+                    if (ht.contains("enabled")) config.enabled = ht["enabled"].get<bool>();
+                    if (ht.contains("sensitivity")) config.sensitivity = ht["sensitivity"].get<Enjin::f32>();
+                    if (ht.contains("invertX")) config.invertX = ht["invertX"].get<bool>();
+                    if (ht.contains("invertY")) config.invertY = ht["invertY"].get<bool>();
+                    m_AlternativeInput.SetHeadTrackingConfig(config);
+                }
+            }
 
             // Input settings
             if (j.contains("sprintMode"))
@@ -1124,12 +1248,16 @@ private:
             if (j.contains("invertMouseY"))
                 m_AccessibilitySettings.invertMouseY = j["invertMouseY"].get<bool>();
 
-            ENJIN_LOG_INFO(Player, "Loaded accessibility settings (colorblind=%u, reducedMotion=%s, fontScale=%.1f, subtitles=%s, dyslexia=%s)",
+            ENJIN_LOG_INFO(Player, "Loaded accessibility settings (colorblind=%u, reducedMotion=%s, fontScale=%.1f, subtitles=%s, dyslexia=%s, dwellClick=%s, stickyDrag=%s, switchAccess=%s, audioIndicators=%s)",
                 static_cast<Enjin::u32>(m_AccessibilitySettings.colorblindMode),
                 m_AccessibilitySettings.reducedMotion ? "ON" : "OFF",
                 m_AccessibilitySettings.fontScale,
                 m_AccessibilitySettings.subtitlesEnabled ? "ON" : "OFF",
-                m_AccessibilitySettings.dyslexiaFriendly ? "ON" : "OFF");
+                m_AccessibilitySettings.dyslexiaFriendly ? "ON" : "OFF",
+                m_AccessibilitySettings.dwellClickEnabled ? "ON" : "OFF",
+                m_AccessibilitySettings.stickyDragEnabled ? "ON" : "OFF",
+                m_AccessibilitySettings.switchAccessEnabled ? "ON" : "OFF",
+                m_AccessibilitySettings.audioIndicatorsEnabled ? "ON" : "OFF");
         } catch (const std::exception& e) {
             ENJIN_LOG_WARN(Player, "Failed to parse accessibility.json: %s", e.what());
         }
@@ -1247,8 +1375,11 @@ private:
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;
     Enjin::Accessibility::AlternativeInputManager m_AlternativeInput;
+    Enjin::Accessibility::AudioVisualIndicatorSystem m_AudioIndicators;
+    Enjin::Accessibility::ContentWarningSystem m_ContentWarnings;
     Enjin::Accessibility::AccessibilityAnnouncer m_Announcer;
     Enjin::Accessibility::RuntimeAccessibilitySettings m_AccessibilitySettings;
+    Enjin::Accessibility::FontLibrary m_FontLibrary;
 
     // Post-processing (settings only — full render pipeline deferred)
     std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;

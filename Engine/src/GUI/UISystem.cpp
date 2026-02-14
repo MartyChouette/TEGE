@@ -172,6 +172,39 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
     f32 mouseY = io.MousePos.y;
     bool mouseDown = io.MouseDown[0];
     bool mouseClicked = ImGui::IsMouseClicked(0);
+    bool mouseReleased = ImGui::IsMouseReleased(0);
+
+    // Sticky drag: continue adjusting slider even when mouse leaves element bounds
+    if (m_StickyDragEnabled && m_StickyDragActive && m_StickyDragElementId != 0) {
+        if (mouseReleased) {
+            // Release sticky drag
+            m_StickyDragActive = false;
+            m_StickyDragElementId = 0;
+        } else if (mouseDown) {
+            // Continue adjusting the slider
+            UIElement* dragElement = canvas.GetElement(m_StickyDragElementId);
+            if (dragElement && dragElement->type == UIWidgetType::Slider) {
+                dragElement->interaction.active = true;
+                f32 relX = (mouseX - dragElement->computedRect.x) / dragElement->computedRect.w;
+                relX = std::max(0.0f, std::min(1.0f, relX));
+                f32 newValue = dragElement->data.sliderMin + relX * (dragElement->data.sliderMax - dragElement->data.sliderMin);
+                if (newValue != dragElement->data.sliderValue) {
+                    dragElement->data.sliderValue = newValue;
+                    if (!dragElement->onValueChangedEvent.empty()) {
+                        UIEventData event;
+                        event.elementId = dragElement->id;
+                        event.eventName = dragElement->onValueChangedEvent;
+                        event.floatValue = newValue;
+                        m_EventBus.Dispatch(event);
+                    }
+                }
+            }
+            return; // Skip normal input while sticky-dragging
+        }
+    }
+
+    // Track which element the mouse is hovering for dwell-click
+    u32 hoveredFocusableId = 0;
 
     // Iterate elements in reverse order (front-to-back for hit testing)
     for (i32 i = static_cast<i32>(canvas.elements.size()) - 1; i >= 0; --i) {
@@ -187,9 +220,14 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
 
         if (!hit) continue;
 
+        // Track hovered focusable element for dwell-click
+        if (IsElementFocusable(element) && hoveredFocusableId == 0) {
+            hoveredFocusableId = element.id;
+        }
+
         // Set focus on mouse click for focusable elements
         if (mouseClicked && IsElementFocusable(element)) {
-            canvas.focusedElementId = element.id;
+            SetFocus(canvas, element.id);
         }
 
         // Button click
@@ -218,6 +256,13 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
         // Slider drag
         if (element.type == UIWidgetType::Slider && mouseDown) {
             element.interaction.active = true;
+
+            // Start sticky drag if enabled
+            if (m_StickyDragEnabled && mouseClicked) {
+                m_StickyDragActive = true;
+                m_StickyDragElementId = element.id;
+            }
+
             f32 relX = (mouseX - element.computedRect.x) / element.computedRect.w;
             relX = std::max(0.0f, std::min(1.0f, relX));
             f32 newValue = element.data.sliderMin + relX * (element.data.sliderMax - element.data.sliderMin);
@@ -231,6 +276,23 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                     m_EventBus.Dispatch(event);
                 }
             }
+        }
+    }
+
+    // Dwell-click processing (Task #40)
+    if (m_DwellClickEnabled) {
+        if (hoveredFocusableId != 0 && hoveredFocusableId == m_DwellHoverElementId) {
+            m_DwellHoverTimer += io.DeltaTime;
+            if (m_DwellHoverTimer >= m_DwellClickTime) {
+                // Auto-activate after dwell
+                SetFocus(canvas, hoveredFocusableId);
+                ActivateFocusedElement(canvas);
+                m_DwellHoverTimer = 0.0f;
+                m_DwellHoverElementId = 0;
+            }
+        } else {
+            m_DwellHoverElementId = hoveredFocusableId;
+            m_DwellHoverTimer = 0.0f;
         }
     }
 }
@@ -343,7 +405,17 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32
 
     // Draw focus indicator on top of widget
     if (isFocused) {
-        RenderFocusIndicator(element, theme);
+        if (m_SwitchAccessEnabled) {
+            RenderScanIndicator(element, theme);
+        } else {
+            RenderFocusIndicator(element, theme);
+        }
+    }
+
+    // Dwell-click progress ring
+    if (m_DwellClickEnabled && element.id == m_DwellHoverElementId && m_DwellHoverTimer > 0.0f) {
+        f32 progress = m_DwellHoverTimer / m_DwellClickTime;
+        RenderDwellProgress(element, progress);
     }
 }
 
@@ -678,12 +750,53 @@ void UISystem::SetFocus(UICanvasComponent& canvas, u32 elementId) {
     if (canvas.focusedElementId == elementId) return;
     canvas.focusedElementId = elementId;
 
-    // Announce focus change for screen readers
+    // Announce focus change for screen readers (Task #36: rich announcements)
     if (m_AnnouncerCallback && elementId != 0) {
         const UIElement* el = canvas.GetElement(elementId);
         if (el) {
             std::string announcement = el->accessibleLabel.empty() ? el->name : el->accessibleLabel;
-            if (!el->data.text.empty()) announcement += ": " + el->data.text;
+
+            // Append widget type and state context
+            switch (el->type) {
+                case UIWidgetType::Button:
+                    if (!el->data.text.empty()) announcement += ": " + el->data.text;
+                    announcement += ", Button";
+                    break;
+                case UIWidgetType::Slider: {
+                    f32 range = el->data.sliderMax - el->data.sliderMin;
+                    i32 pct = (range > 0.0f)
+                        ? static_cast<i32>(((el->data.sliderValue - el->data.sliderMin) / range) * 100.0f)
+                        : 0;
+                    announcement += ", Slider at " + std::to_string(pct) + "%";
+                    break;
+                }
+                case UIWidgetType::Checkbox:
+                    announcement += el->data.checked ? ", Checkbox checked" : ", Checkbox unchecked";
+                    break;
+                case UIWidgetType::Toggle:
+                    announcement += el->data.checked ? ", Toggle on" : ", Toggle off";
+                    break;
+                case UIWidgetType::ProgressBar: {
+                    i32 pct = static_cast<i32>(el->data.progressValue * 100.0f);
+                    announcement += ", ProgressBar at " + std::to_string(pct) + "%";
+                    break;
+                }
+                case UIWidgetType::Label:
+                    if (!el->data.text.empty()) announcement += ": " + el->data.text;
+                    break;
+                default:
+                    if (!el->data.text.empty()) announcement += ": " + el->data.text;
+                    break;
+            }
+
+            // Append parent context if available
+            if (el->parentId != 0) {
+                const UIElement* parent = canvas.GetElement(el->parentId);
+                if (parent && !parent->name.empty()) {
+                    announcement += ", in " + parent->name;
+                }
+            }
+
             m_AnnouncerCallback(announcement);
         }
     }
@@ -723,21 +836,47 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
 
     // Switch access auto-scan mode: cycle focus automatically, single input to select
     if (m_SwitchAccessEnabled) {
+        m_SwitchPulsePhase += deltaTime * 4.0f;
+        if (m_SwitchPulsePhase > 6.2832f) m_SwitchPulsePhase -= 6.2832f;
+
         m_SwitchScanTimer += deltaTime;
         if (m_SwitchScanTimer >= m_SwitchScanSpeed) {
             m_SwitchScanTimer -= m_SwitchScanSpeed;
             // Advance focus to next element
             auto focusable = BuildTabOrder(canvas);
             if (!focusable.empty()) {
-                i32 currentIdx = -1;
-                for (i32 i = 0; i < static_cast<i32>(focusable.size()); i++) {
-                    if (focusable[i]->id == canvas.focusedElementId) { currentIdx = i; break; }
-                }
-                i32 nextIdx = (currentIdx + 1) % static_cast<i32>(focusable.size());
-                canvas.focusedElementId = focusable[nextIdx]->id;
+                m_SwitchScanIndex = (m_SwitchScanIndex + 1) % static_cast<i32>(focusable.size());
+                canvas.focusedElementId = focusable[m_SwitchScanIndex]->id;
+
+                // Build rich announcement: label + widget type context
                 if (m_AnnouncerCallback) {
-                    const auto& el = *focusable[nextIdx];
-                    m_AnnouncerCallback(el.accessibleLabel.empty() ? el.name : el.accessibleLabel);
+                    const auto& el = *focusable[m_SwitchScanIndex];
+                    std::string announcement = el.accessibleLabel.empty() ? el.name : el.accessibleLabel;
+
+                    // Append widget type context
+                    switch (el.type) {
+                        case UIWidgetType::Button:
+                            announcement += ", Button";
+                            break;
+                        case UIWidgetType::Slider: {
+                            f32 range = el.data.sliderMax - el.data.sliderMin;
+                            i32 pct = (range > 0.0f)
+                                ? static_cast<i32>(((el.data.sliderValue - el.data.sliderMin) / range) * 100.0f)
+                                : 0;
+                            announcement += ", Slider at " + std::to_string(pct) + "%";
+                            break;
+                        }
+                        case UIWidgetType::Checkbox:
+                            announcement += el.data.checked ? ", Checkbox checked" : ", Checkbox unchecked";
+                            break;
+                        case UIWidgetType::Toggle:
+                            announcement += el.data.checked ? ", Toggle on" : ", Toggle off";
+                            break;
+                        default:
+                            break;
+                    }
+
+                    m_AnnouncerCallback(announcement);
                 }
             }
         }
@@ -887,6 +1026,90 @@ void UISystem::RenderFocusIndicator(const UIElement& element, const UITheme& the
     ImU32 color = ImGui::ColorConvertFloat4ToU32(
         ImVec4(focusColor.x, focusColor.y, focusColor.z, 0.85f));
     DrawRoundedRectBorder(dl, focusRect, color, radius, focusWidth);
+}
+
+// ============================================================================
+// SWITCH ACCESS SCAN INDICATOR (Task #34)
+// ============================================================================
+
+void UISystem::RenderScanIndicator(const UIElement& element, const UITheme& theme) {
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius) + 3.0f;
+
+    // Animated pulse: border thickness oscillates between 2.5 and 4.5
+    f32 pulse = 0.5f + 0.5f * std::sin(m_SwitchPulsePhase);
+    f32 thickness = 2.5f + pulse * 2.0f;
+
+    // Use a bright scanning color (cyan-blue)
+    f32 alpha = 0.7f + pulse * 0.3f;
+    ImU32 scanColor = ImGui::ColorConvertFloat4ToU32(
+        ImVec4(0.3f, 0.8f, 1.0f, alpha));
+
+    // Outer glow (larger, semi-transparent)
+    f32 glowOutset = thickness + 2.0f;
+    UIRect glowRect;
+    glowRect.x = element.computedRect.x - glowOutset;
+    glowRect.y = element.computedRect.y - glowOutset;
+    glowRect.w = element.computedRect.w + glowOutset * 2.0f;
+    glowRect.h = element.computedRect.h + glowOutset * 2.0f;
+    ImU32 glowColor = ImGui::ColorConvertFloat4ToU32(
+        ImVec4(0.3f, 0.8f, 1.0f, pulse * 0.25f));
+    DrawRoundedRectBorder(dl, glowRect, glowColor, radius + 2.0f, 2.0f);
+
+    // Main border
+    f32 outset = thickness;
+    UIRect scanRect;
+    scanRect.x = element.computedRect.x - outset;
+    scanRect.y = element.computedRect.y - outset;
+    scanRect.w = element.computedRect.w + outset * 2.0f;
+    scanRect.h = element.computedRect.h + outset * 2.0f;
+    DrawRoundedRectBorder(dl, scanRect, scanColor, radius, thickness);
+
+    // "SCAN" label indicator at top-right
+    const char* scanLabel = "[SCAN]";
+    ImVec2 labelSize = ImGui::CalcTextSize(scanLabel);
+    f32 labelX = scanRect.x + scanRect.w - labelSize.x - 2.0f;
+    f32 labelY = scanRect.y - labelSize.y - 2.0f;
+    if (labelY >= 0.0f) {
+        dl->AddRectFilled(
+            ImVec2(labelX - 3.0f, labelY - 1.0f),
+            ImVec2(labelX + labelSize.x + 3.0f, labelY + labelSize.y + 1.0f),
+            IM_COL32(20, 60, 100, static_cast<u8>(200 * alpha)), 3.0f);
+        dl->AddText(ImVec2(labelX, labelY),
+            IM_COL32(100, 200, 255, static_cast<u8>(255 * alpha)), scanLabel);
+    }
+}
+
+// ============================================================================
+// DWELL-CLICK PROGRESS INDICATOR (Task #40)
+// ============================================================================
+
+void UISystem::RenderDwellProgress(const UIElement& element, f32 progress) {
+    if (progress <= 0.0f || progress > 1.0f) return;
+
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+
+    // Draw a circular progress indicator at the top-right of the element
+    f32 cx = element.computedRect.x + element.computedRect.w - 8.0f;
+    f32 cy = element.computedRect.y + 8.0f;
+    f32 radius = 8.0f;
+
+    // Background circle
+    dl->AddCircleFilled(ImVec2(cx, cy), radius, IM_COL32(0, 0, 0, 150), 16);
+
+    // Progress arc
+    f32 startAngle = -1.5708f; // -PI/2 (top)
+    f32 endAngle = startAngle + progress * 6.2832f;
+    i32 segments = static_cast<i32>(progress * 20.0f) + 1;
+    for (i32 i = 0; i < segments; ++i) {
+        f32 a0 = startAngle + (static_cast<f32>(i) / static_cast<f32>(segments)) * progress * 6.2832f;
+        f32 a1 = startAngle + (static_cast<f32>(i + 1) / static_cast<f32>(segments)) * progress * 6.2832f;
+        if (a1 > endAngle) a1 = endAngle;
+        dl->AddLine(
+            ImVec2(cx + std::cos(a0) * radius, cy + std::sin(a0) * radius),
+            ImVec2(cx + std::cos(a1) * radius, cy + std::sin(a1) * radius),
+            IM_COL32(50, 200, 255, 240), 2.5f);
+    }
 }
 
 // ============================================================================

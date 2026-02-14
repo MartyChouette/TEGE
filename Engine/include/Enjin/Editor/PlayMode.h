@@ -41,7 +41,8 @@ namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
 namespace Effects { class WeatherSystem; class ParticleSystem; }
-namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; }
+namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; class AlternativeInputManager; class AudioVisualIndicatorSystem; class ContentWarningSystem; }
+namespace GUI { class UISystem; }
 namespace Editor {
 
 // Play mode state
@@ -120,6 +121,10 @@ public:
     void SetSubtitleSystem(Accessibility::SubtitleSystem* subs) { m_SubtitleSystem = subs; }
     void SetAnnouncer(Accessibility::AccessibilityAnnouncer* ann) { m_Announcer = ann; }
     void SetAccessibilitySettings(Accessibility::RuntimeAccessibilitySettings* settings) { m_AccessibilitySettings = settings; }
+    void SetAlternativeInput(Accessibility::AlternativeInputManager* altInput) { m_AlternativeInput = altInput; }
+    void SetAudioIndicators(Accessibility::AudioVisualIndicatorSystem* indicators) { m_AudioIndicators = indicators; }
+    void SetContentWarnings(Accessibility::ContentWarningSystem* warnings) { m_ContentWarnings = warnings; }
+    void SetUISystem(GUI::UISystem* uiSystem) { m_UISystem = uiSystem; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
     void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
@@ -193,6 +198,10 @@ private:
     Accessibility::SubtitleSystem* m_SubtitleSystem = nullptr;
     Accessibility::AccessibilityAnnouncer* m_Announcer = nullptr;
     Accessibility::RuntimeAccessibilitySettings* m_AccessibilitySettings = nullptr;
+    Accessibility::AlternativeInputManager* m_AlternativeInput = nullptr;
+    Accessibility::AudioVisualIndicatorSystem* m_AudioIndicators = nullptr;
+    Accessibility::ContentWarningSystem* m_ContentWarnings = nullptr;
+    GUI::UISystem* m_UISystem = nullptr;
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
     Effects::ParticleSystem* m_ParticleSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;

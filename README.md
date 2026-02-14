@@ -122,7 +122,11 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Accessible Labels** - Per-element screen reader labels on UICanvas elements
 - **Dyslexia Mode** - Configurable letter/word/line spacing for improved readability
 - **Colorblind-Safe Theme** - Blue/orange palette universally distinguishable across all color vision types
+- **Colorblind-Safe UI Palettes** - 9 palettes with patterns (Stripes/Dots/Crosshatch/Chevron) + icons alongside color
 - **Switch Access** - One-button auto-scan mode for UICanvas focus navigation
+- **OpenDyslexic Font** - FontLibrary with Default/Monospace/OpenDyslexic families, letter/word/line spacing controls
+- **Motor Accessibility Runtime** - Dwell-click and sticky drag on UICanvas elements, configurable timings
+- **Content Warnings in Player** - Pre-scene dismissable warning overlay driven by per-scene content flags
 
 ### Scene Management
 - **Project File Format** - .enjinproject JSON manifest
@@ -150,6 +154,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Cellular Automata Geometry** - 7 CA rules (GameOfLife, BriansBrain, Rule110, etc.) with 3 mesh modes (Voxels, Marching Cubes, Point Cloud)
 - **Physarum Simulation** - Agent-based slime mold network generation with 5 presets, food sources, trail diffusion/decay
 - **Timeline Editor** - Flash-style keyframe animation editor with layers, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), curve editor, onion skinning, auto-key
+- **Fourier Transform Meshes** - DFT decomposition of 2D contours, progressive reconstruction animation, 3D extrusion from contour
+- **4D Stereographic Projection** - 5 polytopes (Tesseract, 5-Cell, 16-Cell, 24-Cell, 120-Cell), 6 rotation planes, wireframe mesh generation
+- **Inverse/Differentiable Rendering** - CPU-based scene parameter optimization via gradient descent with finite differences
 
 ### Asset Libraries
 - **Font Library** - 42 curated OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) with editor browser, search, and install
@@ -166,6 +173,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Texture Compression** - CPU-side BCn/ASTC compression (BC1/BC3/BC4/BC5/BC7, ASTC 4x4/6x6/8x8) with mipmap generation and quality presets
 - **Asset Thumbnails** - Auto-generated preview thumbnails for images, 3D models (software rasterizer), and scenes with caching
 - **Binary Distribution** - CMake install rules + CPack config for Windows ZIP packaging, one-command build scripts (package.bat/package.sh)
+- **Linux AppImage** - AppImageBuilder for Linux packaging with .desktop file generation
+- **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
 - **AngelScript Integration** - TegeBehavior base class, ~390 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins), hot-reload
@@ -176,6 +185,15 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes; Flash-style timeline editor with layers, curve editor, and onion skinning
 - **Newgrounds.io API** - Session management, medals, scoreboards, cloud saves for web games
 - **DataAsset System** - Schema definitions with typed instances, JSON I/O, script bindings
+- **Flash API Shim** - ~40 AngelScript bindings emulating Flash APIs (DisplayObject, MovieClip, Stage, Mouse, TextField, Sound, Timer)
+- **AS2/AS3 Transpiler** - Pattern-based ActionScript to AngelScript conversion (type mapping, class syntax, Flash API calls)
+- **SWF Converter** - SWF binary import to ECS entities (shapes→sprites, MovieClips→entity hierarchy with timeline)
+
+### Platform Support
+- **Linux** - LinuxPlatform helpers (XDG paths, zenity dialogs, fork/exec), AppImage packaging, CMake Linux targets
+- **Steam Deck** - Auto-detection, adaptive quality, gyro input stubs, suspend/resume lifecycle, Steam Input API stubs
+- **Nintendo Switch 1** - NVN render backend stub, Joy-Con/touch/docked mode stubs (requires licensed devkit)
+- **Hub Application** - Standalone project launcher with project manager, engine version manager, template browser
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code

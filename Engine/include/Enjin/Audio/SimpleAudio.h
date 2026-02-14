@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <string>
 #include <unordered_map>
+#include <functional>
 #include <memory>
 
 namespace Enjin {
@@ -97,6 +98,11 @@ public:
     // Update ECS audio sources
     void UpdateAudioSources(f32 deltaTime);
 
+    // Callback for accessibility audio visual indicators (Task #38)
+    // Called whenever a sound is played, with the clip filepath as label
+    using SoundPlayedCallback = std::function<void(const std::string& soundName)>;
+    void SetOnSoundPlayed(SoundPlayedCallback cb) { m_OnSoundPlayed = std::move(cb); }
+
 private:
     f32 Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const;
 
@@ -130,6 +136,9 @@ private:
     SoundHandle m_NextSoundHandle = 1;
 
     bool m_Initialized = false;
+
+    // Accessibility callback
+    SoundPlayedCallback m_OnSoundPlayed;
 };
 
 } // namespace Audio

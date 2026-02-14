@@ -24,6 +24,13 @@ enum class ColorblindMode : u32 {
     Achromatopsia = 7
 };
 
+// Font family for accessibility text rendering
+enum class FontFamily : u8 {
+    Default = 0,
+    Monospace,
+    OpenDyslexic
+};
+
 // Runtime accessibility settings that games can expose to players
 struct RuntimeAccessibilitySettings {
     // Visual
@@ -53,6 +60,18 @@ struct RuntimeAccessibilitySettings {
     bool dyslexiaFriendly = false;
     f32 letterSpacing = 0.0f;   // Extra pixels between characters
     f32 wordSpacing = 0.0f;     // Extra pixels between words
+    f32 lineSpacing = 1.0f;     // Line height multiplier (1.0-3.0)
+    FontFamily fontFamily = FontFamily::Default;
+
+    // Motor accessibility
+    bool dwellClickEnabled = false;  // Hover to auto-click
+    f32 dwellClickTime = 1.0f;      // Seconds to hover before auto-click (0.3-3.0)
+    bool stickyDragEnabled = false;  // Sliders lock once drag starts
+    bool switchAccessEnabled = false; // One-button scanning mode
+    f32 switchScanSpeed = 1.5f;      // Seconds per element (0.5-5.0)
+
+    // Audio visual indicators
+    bool audioIndicatorsEnabled = false;
 
     // Input
     u32 sprintMode = 0;   // 0=Hold, 1=Toggle

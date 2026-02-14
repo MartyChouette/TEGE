@@ -2,6 +2,64 @@
 
 ---
 
+## 2026-02-14 (Session 12)
+
+### Linux Platform Support
+New `LinuxPlatform.h/cpp` with XDG path helpers (GetXDGConfigDir/DataDir/CacheDir), zenity/kdialog file dialogs, fork/exec process creation. Updated `Paths.h/cpp` with Linux-specific implementations using /proc/self/exe and XDG directories. `AppImageBuilder.h/cpp` generates AppDir structure and .desktop files for AppImage packaging. CMake Linux targets with pthread, dl, X11/wayland conditionals.
+
+### Steam Deck Support
+`SteamDeck.h/cpp` with auto-detection (SteamDeck env var / /sys/devices), adaptive quality recommendations based on thermal state, suspend/resume lifecycle hooks, gyro input stubs. `SteamInput.h/cpp` with Steam Input API stubs (ENJIN_STEAM guarded) for controller configuration, action sets, haptic feedback. `AdaptiveQuality.h/cpp` with 5 quality levels, FPS-based auto-adjustment, render scale/shadow/particle recommendations.
+
+### Colorblind-Safe UI Palettes
+`ColorblindPalette.h/cpp` with 9 palettes matching all colorblind modes. Each PaletteEntry has color + PatternType (None/Stripes/Dots/Crosshatch/Chevron) + icon string. GetPalette(ColorblindMode) returns full 6-color palette (primary, secondary, success, warning, error, info) with universally distinguishable patterns.
+
+### One-Button Mode for UICanvas
+Enhanced UISystem with switch access scanning — auto-cycles focus through focusable elements at configurable speed when m_SwitchAccessEnabled. Visual highlight pulse on scanned element. Single key press (Enter/Space) activates. m_SwitchScanIndex and m_SwitchScanTimer state tracked in UISystem.
+
+### OpenDyslexic Font Option
+`FontLibrary.h/cpp` with FontFamily enum (Default/Monospace/OpenDyslexic), FontLibraryConfig for letter/word/line spacing multipliers. Integrated with RuntimeAccessibilitySettings (fontFamily + spacing fields). Placeholder for embedded OpenDyslexic font data.
+
+### Screen Reader Game UI Wiring
+Announcer wired into UISystem via SetAnnouncerCallback() in both PlayMode::Play() and Player::Initialize(). Announces element type + label on focus change, activation events for buttons/checkboxes/sliders.
+
+### Alternative Input Runtime Wiring
+AlternativeInputManager added as members in PlayMode and Player. Update/RenderOverlay called per frame. Config loaded from accessibility.json. Scan targets connected from UISystem's focusable elements.
+
+### Audio Visual Indicators Runtime
+AudioVisualIndicatorSystem wired into PlayMode and Player with Update/RenderOverlay. Config loaded from accessibility.json. Auto-indicators triggered from SimpleAudio play callbacks.
+
+### Content Warnings in Player
+ContentWarningSystem in Player reads per-scene content flags from scene JSON. Shows dismissable overlay before game rendering. Any key press dismisses.
+
+### Motor Accessibility UICanvas
+Dwell-click and sticky drag support added to UISystem. m_DwellClickEnabled and m_DwellClickTime members track hover time on focusable elements. Exceeding dwell time triggers activation. Sticky drag locks sliders until explicit release. Config loaded from accessibility settings in PlayMode and Player.
+
+### SWF Import & Conversion
+`SWFConverter.h/cpp` converts parsed SWFDocument to ECS entities. Rasterizes shapes to PNG via SWFLoader::RasterizeShape(), creates Sprite2DComponent entities. MovieClip hierarchy → entity hierarchy with TimelineComponent keyframes. SWFMatrix → TransformComponent (twip→pixel, Y-down→Y-up). SWFColorTransform → material tint. Import options: rasterScale, importSounds, importTimelines.
+
+### AS2/AS3 → AngelScript Transpiler
+`AS3Transpiler.h/cpp` with pattern-based line-by-line transpilation. 15+ transformations: class extends→colon, typed vars/params, Number→float type mapping, MovieClip API→Flash shim calls, addEventListener→Events_Listen, trace→Print, package stripping, for-each conversion. Brace-tracking for scope. TranspileResult with stats.
+
+### Flash API Shim Library
+`FlashAPIShim.h/cpp` with RegisterFlashBindings() providing ~40 bound functions: DisplayObject (position/scale/rotation/alpha/visible), MovieClip (gotoAndPlay/Stop/currentFrame/totalFrames), Stage (stageWidth/Height/frameRate), Mouse/Keyboard input, TextField, Math (random/floor/ceil/etc.), Sound (play/stop/volume via SimpleAudio), Timer (setTimeout/setInterval/clearInterval).
+
+### Nintendo Switch 1 NVN Backend Stub
+`NVNBackend.h/cpp` stub implementing RenderBackend interface. All methods return false/nullptr with ENJIN_LOG_WARN. `SwitchPlatform.h/cpp` with Joy-Con detection, handheld/docked mode, touch screen, performance mode stubs. `ENJIN_PLATFORM_SWITCH` detection added to Platform.h. NVNCapabilities with Tegra X1 specs.
+
+### Hub Application
+New `Hub/` directory with standalone launcher executable. HubApplication class with project manager (scan/create/open), engine version manager, template browser, settings. `Hub/CMakeLists.txt` builds with GLFW + ImGui (OpenGL backend). ProjectEntry/EngineVersion/TemplateEntry data structures.
+
+### Exotic Rendering — Fourier Transform Meshes
+`FourierMesh.h/cpp` with DFT decomposition of 2D contour points. Fourier coefficients (amplitude, frequency, phase). Reconstruct(t, numTerms) evaluates series at parameter. GenerateApproximation for full contour. Animate() smoothly adds terms. GenerateMeshFromContour() triangulates 2D and extrudes to 3D.
+
+### Exotic Rendering — 4D Stereographic Projection
+`Projection4D.h/cpp` for visualizing 4D polytopes. Vector4D, Matrix4D with 6 rotation planes (XY/XZ/XW/YZ/YW/ZW). StereographicProject 4D→3D. 5 built-in polytopes: Tesseract (16v/32e), 5-Cell (5v/10e), 16-Cell (8v/24e), 24-Cell (24v/96e), 120-Cell (600v/1200e). AnimateRotation, GenerateWireframeMesh.
+
+### Exotic Rendering — Inverse/Differentiable Rendering
+`InverseRendering.h/cpp` for scene parameter optimization via gradient descent. OptimizableParam enum (light/material/camera params). ComputeLoss (MSE), ComputeGradient (finite differences), OptimizationStep. CPU-based: render, perturb, render, compute gradient. Per-pixel error map visualization.
+
+---
+
 ## 2026-02-14 (Session 11)
 
 ### Reaction-Diffusion Simulation

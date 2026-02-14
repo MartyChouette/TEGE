@@ -142,10 +142,16 @@ private:
     std::string TransformStringOps(const std::string& source);
     std::string WrapInBehavior(const std::string& source, const std::string& className);
 
+    // Array literal transforms: [1,2,3] → array<int> = {1,2,3}
+    std::string TransformArrayLiterals(const std::string& source);
+
     // Helpers
     void InitDefaultMappings();
     u32 CountLines(const std::string& s);
 };
+
+// Type alias for task-level naming compatibility
+using ActionScriptTranspiler = AS3Transpiler;
 
 } // namespace Scripting
 } // namespace Enjin

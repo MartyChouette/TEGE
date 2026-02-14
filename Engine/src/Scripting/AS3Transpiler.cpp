@@ -237,6 +237,85 @@ void AS3Transpiler::InitDefaultMappings() {
         "Math_Atan2(",
         "Math.atan2 -> Math_Atan2"
     });
+    m_Mappings.push_back({
+        "Math\\.round\\(",
+        "Math_Round(",
+        "Math.round -> Math_Round"
+    });
+    m_Mappings.push_back({
+        "Math\\.sin\\(",
+        "Math_Sin(",
+        "Math.sin -> Math_Sin"
+    });
+    m_Mappings.push_back({
+        "Math\\.cos\\(",
+        "Math_Cos(",
+        "Math.cos -> Math_Cos"
+    });
+    m_Mappings.push_back({
+        "Math\\.min\\(",
+        "Math_Min(",
+        "Math.min -> Math_Min"
+    });
+    m_Mappings.push_back({
+        "Math\\.max\\(",
+        "Math_Max(",
+        "Math.max -> Math_Max"
+    });
+    m_Mappings.push_back({
+        "Math\\.pow\\(",
+        "Math_Pow(",
+        "Math.pow -> Math_Pow"
+    });
+    m_Mappings.push_back({
+        "Math\\.PI\\b",
+        "3.14159265f",
+        "Math.PI -> float literal"
+    });
+
+    // --- Flash API shim functions (MovieClip) ---
+    m_Mappings.push_back({
+        "(\\w+)\\.alpha\\s*=\\s*(.+?);",
+        "Flash_SetAlpha($1_entity, $2);",
+        "mc.alpha = val -> Flash_SetAlpha", false, true
+    });
+    m_Mappings.push_back({
+        "(\\w+)\\.visible\\s*=\\s*(.+?);",
+        "Flash_SetVisible($1_entity, $2);",
+        "mc.visible = val -> Flash_SetVisible", false, true
+    });
+    m_Mappings.push_back({
+        "(\\w+)\\.scaleX\\s*=\\s*(.+?);",
+        "Flash_SetScaleX($1_entity, $2);",
+        "mc.scaleX = val -> Flash_SetScaleX", false, true
+    });
+    m_Mappings.push_back({
+        "(\\w+)\\.scaleY\\s*=\\s*(.+?);",
+        "Flash_SetScaleY($1_entity, $2);",
+        "mc.scaleY = val -> Flash_SetScaleY", false, true
+    });
+
+    // --- Timer ---
+    m_Mappings.push_back({
+        "setTimeout\\(",
+        "Flash_SetTimeout(",
+        "setTimeout -> Flash_SetTimeout"
+    });
+    m_Mappings.push_back({
+        "setInterval\\(",
+        "Flash_SetInterval(",
+        "setInterval -> Flash_SetInterval"
+    });
+    m_Mappings.push_back({
+        "clearInterval\\(",
+        "Flash_ClearInterval(",
+        "clearInterval -> Flash_ClearInterval"
+    });
+    m_Mappings.push_back({
+        "clearTimeout\\(",
+        "Flash_ClearInterval(",
+        "clearTimeout -> Flash_ClearInterval"
+    });
 
     // --- Utility ---
     m_Mappings.push_back({
@@ -573,6 +652,23 @@ std::string AS3Transpiler::TransformStringOps(const std::string& source) {
     return result;
 }
 
+std::string AS3Transpiler::TransformArrayLiterals(const std::string& source) {
+    std::string result = source;
+    // Transform: var x:Array = [1,2,3] -> array<int> x = {1,2,3}
+    // Transform: new Array(a,b,c) -> array<int> = {a,b,c}
+    {
+        std::regex re("new\\s+Array\\(([^)]*)\\)");
+        result = std::regex_replace(result, re, "{$1}");
+    }
+    // Transform standalone array literal assignments: = [items] -> = {items}
+    // Only match right side of assignment to avoid breaking array access like arr[0]
+    {
+        std::regex re("=\\s*\\[([^\\]]*?)\\]\\s*;");
+        result = std::regex_replace(result, re, "= {$1};");
+    }
+    return result;
+}
+
 std::string AS3Transpiler::WrapInBehavior(const std::string& source, const std::string& className) {
     std::ostringstream wrapped;
     wrapped << "// Auto-transpiled from ActionScript\n";
@@ -626,6 +722,7 @@ TranspileResult AS3Transpiler::Transpile(const std::string& asSource,
     code = TransformTypes(code);
     code = TransformLoops(code);
     code = TransformStringOps(code);
+    code = TransformArrayLiterals(code);
 
     u32 matchCount = 0;
     code = ApplyAPIMappings(code, matchCount);

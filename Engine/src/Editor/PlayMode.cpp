@@ -10,6 +10,13 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/Accessibility/AlternativeInput.h"
+#include "Enjin/Accessibility/AudioVisualIndicator.h"
+#include "Enjin/Accessibility/ContentWarning.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/Accessibility/AccessibilitySettings.h"
+#include "Enjin/GUI/UISystem.h"
 
 // Extern for visual script node access to systems
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
@@ -192,6 +199,34 @@ void PlayMode::Play() {
         });
     }
 
+    // Wire announcer to UISystem for screen reader support (Task #36)
+    if (m_UISystem && m_Announcer) {
+        m_UISystem->SetAnnouncerCallback([this](const std::string& text) {
+            m_Announcer->Announce(text, Accessibility::AnnouncePriority::Normal);
+        });
+    }
+
+    // Apply motor accessibility settings to UISystem (Task #34, #40)
+    if (m_UISystem && m_AccessibilitySettings) {
+        m_UISystem->SetSwitchAccessEnabled(m_AccessibilitySettings->switchAccessEnabled,
+                                            m_AccessibilitySettings->switchScanSpeed);
+        m_UISystem->SetDwellClickEnabled(m_AccessibilitySettings->dwellClickEnabled,
+                                          m_AccessibilitySettings->dwellClickTime);
+        m_UISystem->SetStickyDragEnabled(m_AccessibilitySettings->stickyDragEnabled);
+        m_UISystem->SetReducedMotion(m_AccessibilitySettings->reducedMotion);
+        m_UISystem->SetFontScale(m_AccessibilitySettings->fontScale);
+    }
+
+    // Wire audio visual indicators to SimpleAudio callbacks (Task #38)
+    if (m_AudioIndicators && m_AudioIndicators->GetConfig().enabled) {
+        m_SimpleAudio.SetOnSoundPlayed([this](const std::string& soundName) {
+            if (m_AudioIndicators) {
+                m_AudioIndicators->ShowIndicator(soundName,
+                    Enjin::Math::Vector3(0.4f, 0.8f, 1.0f), 1.5f);
+            }
+        });
+    }
+
     // Wire EntityEventBus and SubtitleSystem to DialogueSystem
     m_DialogueSystem.SetEventBus(&m_EntityEventBus);
     m_DialogueSystem.SetSubtitleSystem(m_SubtitleSystem);
@@ -357,6 +392,15 @@ void PlayMode::Stop() {
     Scripting::SetBindingsPluginSystem(nullptr);
     Scripting::SetBindingsAudioGraphRuntime(nullptr);
 
+    // Clear accessibility wiring
+    if (m_UISystem) {
+        m_UISystem->SetAnnouncerCallback(nullptr);
+        m_UISystem->SetSwitchAccessEnabled(false);
+        m_UISystem->SetDwellClickEnabled(false);
+        m_UISystem->SetStickyDragEnabled(false);
+    }
+    m_SimpleAudio.SetOnSoundPlayed(nullptr);
+
     // Disable network system (but don't disconnect — lobby persists)
     m_NetworkSystem.SetEnabled(false);
 
@@ -511,6 +555,12 @@ void PlayMode::Update(f32 deltaTime) {
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);
+
+        // Accessibility systems update (Tasks #37, #38)
+        if (m_AlternativeInput) m_AlternativeInput->Update(deltaTime);
+        if (m_AudioIndicators) m_AudioIndicators->Update(deltaTime);
+        if (m_Announcer) m_Announcer->Update(deltaTime);
+        if (m_SubtitleSystem) m_SubtitleSystem->Update(deltaTime);
 
         // Networking
         {

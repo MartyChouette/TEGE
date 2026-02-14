@@ -244,6 +244,18 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
 #endif
 
     ENJIN_LOG_DEBUG(Audio, "Playing sound (handle: %u, clip: %u, vol: %.2f)", handle, clip, volume);
+
+    // Notify accessibility audio visual indicator system (Task #38)
+    if (m_OnSoundPlayed) {
+        // Extract filename from filepath for a clean label
+        const auto& filepath = clipIt->second.filepath;
+        auto lastSlash = filepath.find_last_of("/\\");
+        std::string label = (lastSlash != std::string::npos)
+            ? filepath.substr(lastSlash + 1)
+            : filepath;
+        m_OnSoundPlayed(label);
+    }
+
     return handle;
 }
 

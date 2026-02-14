@@ -50,8 +50,21 @@ public:
     void SetSwitchAccessEnabled(bool enabled, f32 scanSpeed = 1.5f) {
         m_SwitchAccessEnabled = enabled;
         m_SwitchScanSpeed = (scanSpeed > 0.1f) ? scanSpeed : 1.5f;
+        if (!enabled) { m_SwitchScanIndex = -1; m_SwitchScanTimer = 0.0f; }
     }
     bool GetSwitchAccessEnabled() const { return m_SwitchAccessEnabled; }
+
+    // Dwell-click: hover over focusable element to auto-activate
+    void SetDwellClickEnabled(bool enabled, f32 dwellTime = 1.0f) {
+        m_DwellClickEnabled = enabled;
+        m_DwellClickTime = (dwellTime > 0.1f) ? dwellTime : 1.0f;
+    }
+    bool GetDwellClickEnabled() const { return m_DwellClickEnabled; }
+    f32 GetDwellClickTime() const { return m_DwellClickTime; }
+
+    // Sticky drag: once a slider drag starts, it stays locked until explicit release
+    void SetStickyDragEnabled(bool enabled) { m_StickyDragEnabled = enabled; }
+    bool GetStickyDragEnabled() const { return m_StickyDragEnabled; }
 
 private:
     UIEventBus m_EventBus;
@@ -64,6 +77,19 @@ private:
     bool m_SwitchAccessEnabled = false;
     f32 m_SwitchScanSpeed = 1.5f;  // Seconds per element
     f32 m_SwitchScanTimer = 0.0f;
+    i32 m_SwitchScanIndex = -1;    // Current scanned element index (-1 = none)
+    f32 m_SwitchPulsePhase = 0.0f; // Animated pulse phase for scan indicator
+
+    // Dwell-click state (motor accessibility)
+    bool m_DwellClickEnabled = false;
+    f32 m_DwellClickTime = 1.0f;     // Seconds to hover before auto-click
+    f32 m_DwellHoverTimer = 0.0f;    // Current hover duration
+    u32 m_DwellHoverElementId = 0;   // Element being hovered for dwell
+
+    // Sticky drag state (motor accessibility)
+    bool m_StickyDragEnabled = false;
+    bool m_StickyDragActive = false;   // Currently locked in a drag
+    u32 m_StickyDragElementId = 0;     // Element being dragged
 
     // Focus navigation state
     f32 m_NavRepeatTimer = 0.0f;
@@ -91,6 +117,12 @@ private:
 
     // Focus indicator rendering
     void RenderFocusIndicator(const UIElement& element, const UITheme& theme);
+
+    // Switch access scanning indicator (thicker border, animated pulse)
+    void RenderScanIndicator(const UIElement& element, const UITheme& theme);
+
+    // Dwell-click progress indicator
+    void RenderDwellProgress(const UIElement& element, f32 progress);
 
     // Nine-slice rendering helper
     void DrawNineSlice(ImDrawList* dl, const UIRect& rect, void* texId,

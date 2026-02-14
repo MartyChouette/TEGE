@@ -17,6 +17,7 @@ endif()
 # Build options
 option(ENJIN_BUILD_EDITOR "Build the Enjin Editor" ON)
 option(ENJIN_BUILD_PLAYER "Build the standalone game player" ON)
+option(ENJIN_BUILD_HUB "Build the Enjin Hub launcher" OFF)
 option(ENJIN_BUILD_TESTS "Build unit tests" OFF)
 option(ENJIN_BUILD_EXAMPLES "Build example projects" OFF)
 
@@ -47,6 +48,10 @@ if(ENJIN_BUILD_PLAYER)
     add_subdirectory(Player)
 endif()
 
+if(ENJIN_BUILD_HUB)
+    add_subdirectory(Hub)
+endif()
+
 if(ENJIN_BUILD_EXAMPLES)
     add_subdirectory(Examples)
 endif()
@@ -60,12 +65,15 @@ endif()
 # Binary Distribution - Install Rules
 # =============================================================================
 
-# Install editor and player executables
+# Install editor, player, and hub executables
 if(ENJIN_BUILD_EDITOR)
     install(TARGETS EnjinEditor RUNTIME DESTINATION bin)
 endif()
 if(ENJIN_BUILD_PLAYER)
     install(TARGETS EnjinPlayer RUNTIME DESTINATION bin)
+endif()
+if(ENJIN_BUILD_HUB)
+    install(TARGETS EnjinHub RUNTIME DESTINATION bin)
 endif()
 
 # Install shader files
@@ -107,8 +115,14 @@ elseif(APPLE)
     set(CPACK_GENERATOR "TGZ")
     set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-macos")
 else()
-    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_GENERATOR "TGZ;DEB")
     set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-linux-x64")
+
+    # DEB package metadata
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Enjin Engine")
+    set(CPACK_DEBIAN_PACKAGE_SECTION "games")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libvulkan1, libglfw3 (>= 3.3)")
+    set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://enjin.dev")
 endif()
 
 include(CPack)
