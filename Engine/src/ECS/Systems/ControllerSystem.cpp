@@ -515,7 +515,7 @@ bool ControllerSystem::CheckGround2D(const Math::Vector3& position, f32& groundY
         Physics::RayHit2D hit;
         Math::Vector2 origin(position.x, position.y);
         Math::Vector2 direction(0.0f, -1.0f);
-        if (m_Physics2D->Raycast(origin, direction, 1.0f, hit)) {
+        if (m_Physics2D->Raycast(origin, direction, 2.0f, hit)) {
             groundY = hit.point.y;
             return true;
         }
@@ -679,14 +679,21 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
 
     // Ground check via physics raycast (2D preferred for 2D controllers, then 3D fallback, then Y=0)
     f32 groundY = 0.0f;
-    bool groundHit = CheckGround2D(transform.position, groundY) || CheckGround(transform.position, groundY);
-    if (groundHit && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
-        transform.position.y = groundY;
+    bool ground2D = CheckGround2D(transform.position, groundY);
+    bool groundHit = ground2D || CheckGround(transform.position, groundY);
+    // For 2D raycasts, the hit point is the surface top. Add a standing offset so
+    // the player center is above the surface (matches the old Y=0 fallback behavior).
+    constexpr f32 kStandingOffset = 0.5f;
+    f32 standingY = ground2D ? (groundY + kStandingOffset) : groundY;
+    if (groundHit && transform.position.y <= standingY && ctrl.velocity.y <= 0.0f) {
+        transform.position.y = standingY;
         ctrl.velocity.y = 0.0f;
         ctrl.isGrounded = true;
         ctrl.isJumping = false;
         ctrl.isFalling = false;
-    } else if (ctrl.velocity.y < 0.0f) {
+    } else if (!groundHit || transform.position.y > standingY + 0.1f) {
+        // No ground detected below, or player is above the ground surface —
+        // start falling (handles walking off ledges where velocity.y is still 0)
         ctrl.isGrounded = false;
     }
 
