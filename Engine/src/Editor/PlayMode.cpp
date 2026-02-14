@@ -39,6 +39,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_ControllerSystem.SetWorld(world);
     m_ControllerSystem.SetCamera(camera);
     m_ControllerSystem.SetPhysics(m_Physics.get());
+    m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
     m_ControllerSystem.SetInputActionMap(&m_InputMap);
     m_ControllerSystem.SetEnabled(false);
 

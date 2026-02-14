@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Physics/IPhysicsBackend.h"
+#include "Enjin/Physics/IPhysicsBackend2D.h"
 #include "Enjin/Input/InputAction.h"
 #include "Enjin/ECS/Components/GravityZone.h"
 
@@ -21,6 +22,7 @@ public:
     void SetWorld(World* world) { m_World = world; }
     void SetCamera(Renderer::Camera* camera) { m_Camera = camera; }
     void SetPhysics(Physics::IPhysicsBackend* physics) { m_Physics = physics; }
+    void SetPhysics2D(Physics::IPhysicsBackend2D* physics) { m_Physics2D = physics; }
     void SetInputActionMap(InputSystem::InputActionMap* map) { m_InputMap = map; }
 
     // When set, controllers write to this entity's TransformComponent instead of the editor Camera.
@@ -56,6 +58,7 @@ private:
     bool IsCrouchPressed();
     bool IsDashPressed();
     bool CheckGround(const Math::Vector3& position, f32& groundY);
+    bool CheckGround2D(const Math::Vector3& position, f32& groundY);
 
     // Grid movement: returns true if grid movement handled the position update (caller should skip free movement)
     bool UpdateGridMovement(CharacterControllerBase& controller, TransformComponent& transform,
@@ -67,6 +70,7 @@ private:
     World* m_World = nullptr;
     Renderer::Camera* m_Camera = nullptr;
     Physics::IPhysicsBackend* m_Physics = nullptr;
+    Physics::IPhysicsBackend2D* m_Physics2D = nullptr;
     InputSystem::InputActionMap* m_InputMap = nullptr;
     Entity m_GameCameraEntity = INVALID_ENTITY;
     bool m_Enabled = false;  // Disabled by default (editor mode)

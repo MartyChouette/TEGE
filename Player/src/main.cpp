@@ -230,6 +230,7 @@ public:
         m_ControllerSystem.SetWorld(m_World.get());
         m_ControllerSystem.SetCamera(m_Camera.get());
         m_ControllerSystem.SetPhysics(m_Physics.get());
+        m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
         m_ControllerSystem.SetInputActionMap(&m_InputMap);
 
         m_FlowerSystem.SetWorld(m_World.get());

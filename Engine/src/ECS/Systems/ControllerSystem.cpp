@@ -1,4 +1,5 @@
 #include "Enjin/ECS/Systems/ControllerSystem.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/Platform/Input.h"
@@ -509,6 +510,19 @@ bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) 
     return false;
 }
 
+bool ControllerSystem::CheckGround2D(const Math::Vector3& position, f32& groundY) {
+    if (m_Physics2D) {
+        Physics::RayHit2D hit;
+        Math::Vector2 origin(position.x, position.y);
+        Math::Vector2 direction(0.0f, -1.0f);
+        if (m_Physics2D->Raycast(origin, direction, 1.0f, hit)) {
+            groundY = hit.point.y;
+            return true;
+        }
+    }
+    return false;
+}
+
 bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, TransformComponent& transform,
                                           const Math::Vector2& input, f32 dt) {
     if (!ctrl.gridMovement) return false;
@@ -663,9 +677,10 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
     transform.position.x += ctrl.velocity.x * dt;
     transform.position.y += ctrl.velocity.y * dt;
 
-    // Ground check via physics raycast with Y=0 fallback
+    // Ground check via physics raycast (2D preferred for 2D controllers, then 3D fallback, then Y=0)
     f32 groundY = 0.0f;
-    if (CheckGround(transform.position, groundY) && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
+    bool groundHit = CheckGround2D(transform.position, groundY) || CheckGround(transform.position, groundY);
+    if (groundHit && transform.position.y <= groundY && ctrl.velocity.y <= 0.0f) {
         transform.position.y = groundY;
         ctrl.velocity.y = 0.0f;
         ctrl.isGrounded = true;
@@ -675,11 +690,11 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
         ctrl.isGrounded = false;
     }
 
-    // Update rotation to face movement direction
+    // Flip sprite horizontally via scale.x (2D mirror, not 3D rotation)
     if (ctrl.facingDirection < 0) {
-        transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(180.0f));
+        transform.scale.x = -Math::Abs(transform.scale.x);
     } else {
-        transform.rotation = Math::Quaternion();
+        transform.scale.x = Math::Abs(transform.scale.x);
     }
 }
 

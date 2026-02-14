@@ -21,6 +21,7 @@
 #include "Enjin/Editor/PlayModeDiff.h"
 #include "Enjin/Physics/PhysicsBackendType.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
@@ -316,6 +317,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PerFrameColliderComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PerFrameColliderComponent>(e); },
             "perFrameCollider", DimensionTag::Only2D},
+        {"Body 2D", "Physics", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<Physics::Body2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<Physics::Body2DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<Physics::Body2DComponent>(e); },
+            "body2D", DimensionTag::Only2D},
         {"Trigger Zone", "Physics", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::TriggerZoneComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::TriggerZoneComponent>(e); },
@@ -2699,6 +2705,28 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     }
                 }
 
+                // Body2D colliders (cyan)
+                for (ECS::Entity entity : m_World->GetEntitiesWithComponent<Physics::Body2DComponent>()) {
+                    auto* body2d = m_World->GetComponent<Physics::Body2DComponent>(entity);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+                    if (body2d && transform) {
+                        bool sel = IsSelected(entity);
+                        ImU32 color = sel ? IM_COL32(50, 220, 255, 220) : IM_COL32(50, 220, 255, 100);
+                        f32 thick = sel ? 2.0f : 1.0f;
+                        Math::Vector3 pos = transform->position;
+                        if (body2d->shapeType == Physics::Shape2DType::Box) {
+                            Math::Vector3 offset(body2d->box.offset.x, body2d->box.offset.y, 0.0f);
+                            Math::Vector3 halfExt(body2d->box.halfExtents.x, body2d->box.halfExtents.y, 0.01f);
+                            drawWireBox(bgDrawList, pos + offset, halfExt, color, thick);
+                        } else if (body2d->shapeType == Physics::Shape2DType::Circle) {
+                            Math::Vector3 offset(body2d->circle.offset.x, body2d->circle.offset.y, 0.0f);
+                            Math::Vector3 c = pos + offset;
+                            f32 r = body2d->circle.radius;
+                            drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick, 24);
+                        }
+                    }
+                }
+
                 // Joint visualization — draw lines between connected entities
                 auto drawJointLine = [&](ImDrawList* dl, ECS::Entity eA, ECS::Entity eB,
                                           const Math::Vector3& anchorA, const Math::Vector3& anchorB,
@@ -4580,6 +4608,9 @@ void EditorLayer::DrawInspectorPanel() {
         }
         if (m_World->HasComponent<ECS::PerFrameColliderComponent>(m_PrimarySelected)) {
             DrawPerFrameColliderComponent(m_PrimarySelected);
+        }
+        if (m_World->HasComponent<Physics::Body2DComponent>(m_PrimarySelected)) {
+            DrawBody2DComponent(m_PrimarySelected);
         }
         if (m_World->HasComponent<ECS::TriggerZoneComponent>(m_PrimarySelected)) {
             DrawTriggerZoneComponent(m_PrimarySelected);
@@ -12718,9 +12749,10 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         templateId.substr(0, 6) == "flash_") {
         if (m_CameraController) {
             m_CameraController->SetOrbitDistance(15.0f);
-            m_CameraController->SetViewPreset(Renderer::ViewPreset::Front);
+            m_CameraController->SetViewPreset(Renderer::ViewPreset::Back);
             m_CameraController->SetOrthoSize(10.0f);
         }
+        m_ShowColliderWireframes = true;
     }
 
         // Handle custom templates
@@ -12737,32 +12769,34 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
     }
 
     if (templateId == "blank") {
-        // Just a directional light so the scene isn't dark
-        ECS::Entity light = m_World->CreateEntity();
-        m_World->AddComponent<ECS::NameComponent>(light, "Directional Light");
-        auto& lightTransform = m_World->AddComponent<ECS::TransformComponent>(light);
-        lightTransform.position = Math::Vector3(0.0f, 10.0f, 0.0f);
-        lightTransform.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
-        auto& lightComp = m_World->AddComponent<ECS::LightComponent>(light);
-        lightComp.type = ECS::LightType::Directional;
-        lightComp.intensity = 1.0f;
-
-        // Skybox
+        // Directional light so the scene isn't completely dark
         {
-            Renderer::SkyboxConfig skyConfig;
-            skyConfig.type = Renderer::SkyboxType::Procedural;
-            skyConfig.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
-            skyConfig.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
-            skyConfig.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
-            skyConfig.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
-            m_RenderSystem->SetSkybox(skyConfig);
+            ECS::Entity sun = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sun, "Directional Light");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(sun);
+            t.position = Math::Vector3(0.0f, 10.0f, 0.0f);
+            t.rotation = Math::Quaternion(Math::Vector3(1, 0, 0), Math::Radians(-45.0f));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(sun);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(1.0f, 0.98f, 0.95f);
+            lc.intensity = 1.0f;
+            lc.castShadows = true;
+        }
+
+        // Procedural skybox
+        {
+            Renderer::SkyboxConfig sky;
+            sky.type = Renderer::SkyboxType::Procedural;
+            sky.topColor = Math::Vector3(0.1f, 0.3f, 0.8f);
+            sky.horizonColor = Math::Vector3(0.5f, 0.7f, 1.0f);
+            sky.bottomColor = Math::Vector3(0.8f, 0.85f, 0.9f);
+            sky.sunDirection = Math::Vector3(0.0f, 1.0f, 0.0f);
+            m_RenderSystem->SetSkybox(sky);
         }
 
         // Render settings
         m_RenderSystem->SetShadowsEnabled(true);
         m_RenderSystem->SetAmbientIntensity(0.15f);
-
-        // Post-processing
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
@@ -12771,7 +12805,44 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         return;
     }
 
-    // --- Common setup: ground plane ---
+    // --- Collider helpers: auto-sized to match mesh primitive ---
+    // 3D colliders — match the mesh shape
+    auto addBoxCollider3D = [&](ECS::Entity e, f32 w, f32 h, f32 d) {
+        auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(e);
+        col.size = Math::Vector3(w, h, d);
+    };
+    auto addSphereCollider3D = [&](ECS::Entity e, f32 radius) {
+        auto& col = m_World->AddComponent<ECS::SphereColliderComponent>(e);
+        col.radius = radius;
+    };
+    auto addCapsuleCollider3D = [&](ECS::Entity e, f32 radius, f32 height) {
+        auto& col = m_World->AddComponent<ECS::CapsuleColliderComponent>(e);
+        col.radius = radius;
+        col.height = height;
+    };
+
+    // 2D colliders — Box2D Body2DComponent
+    auto addBoxCollider2D = [&](ECS::Entity e, f32 halfW, f32 halfH, bool isStatic = true) {
+        auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+        col.shapeType = Physics::Shape2DType::Box;
+        col.box.halfExtents = Math::Vector2(halfW, halfH);
+        col.isStatic = isStatic;
+    };
+    auto addCircleCollider2D = [&](ECS::Entity e, f32 radius, bool isStatic = false) {
+        auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+        col.shapeType = Physics::Shape2DType::Circle;
+        col.circle.radius = radius;
+        col.isStatic = isStatic;
+    };
+    // Capsule2D → Box approximation (Box2D has no capsule shape)
+    auto addCapsuleCollider2D = [&](ECS::Entity e, f32 radius, f32 height, bool isStatic = false) {
+        auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+        col.shapeType = Physics::Shape2DType::Box;
+        col.box.halfExtents = Math::Vector2(radius, height * 0.5f);
+        col.isStatic = isStatic;
+    };
+
+    // --- Common setup: ground plane (3D) ---
     auto createGround = [&]() -> ECS::Entity {
         ECS::Entity ground = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
@@ -12781,12 +12852,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
         gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
         gmat.roughness = 0.9f;
-
-        // Create a simple cube mesh for the ground
         m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
-
-        auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
-        col.size = Math::Vector3(50.0f, 0.1f, 50.0f);
+        addBoxCollider3D(ground, 50.0f, 0.1f, 50.0f);
         return ground;
     };
 
@@ -12804,7 +12871,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         return light;
     };
 
-    // --- Common: 3D player entity with capsule mesh ---
+    // --- Common: 3D player with capsule mesh + matching capsule collider ---
     auto createPlayer3D = [&](const std::string& name) -> ECS::Entity {
         ECS::Entity player = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(player, name);
@@ -12813,10 +12880,17 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
         pmat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
         m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+        addCapsuleCollider3D(player, 0.3f, 1.0f);
         return player;
     };
 
-    // --- 2D player entity with capsule2D mesh ---
+    // --- 2D player with capsule2D mesh (NO physics body) ---
+    // NOTE: No Sprite2DComponent — entities without textures must render via the
+    // 3D mesh pipeline. SpriteBatchRenderer ignores MeshComponent geometry and
+    // requires a texture to be visible. Only add Sprite2DComponent when a texture is set.
+    // NOTE: No Body2DComponent on the player — the character controller handles movement directly.
+    // Adding Body2DComponent would cause Box2D to also simulate the body, conflicting
+    // with the controller. Ground/wall entities use Body2DComponent for 2D raycast detection.
     auto createPlayer2D = [&](const std::string& name) -> ECS::Entity {
         ECS::Entity player = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(player, name);
@@ -12825,63 +12899,83 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
         pmat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
         m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
-        m_World->AddComponent<ECS::Sprite2DComponent>(player);
         return player;
     };
 
     createLight();
 
     if (templateId == "platformer") {
-        // 2D ground
+        // Ground
         {
             ECS::Entity ground = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
-            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
-            gt.position = Math::Vector3(0.0f, -1.0f, 0.0f);
-            gt.scale = Math::Vector3(20.0f, 1.0f, 1.0f);
-            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
-            gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
-            gmat.roughness = 0.9f;
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(ground);
+            t.position = Math::Vector3(0.0f, -1.0f, 0.0f);
+            t.scale = Math::Vector3(24.0f, 1.0f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            mat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+            mat.roughness = 0.9f;
             m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
-            col.size = Math::Vector3(20.0f, 1.0f, 1.0f);
+            addBoxCollider2D(ground, 12.0f, 0.5f);
         }
-        ECS::Entity player = createPlayer2D("Player");
-        auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
-        ctrl.moveSpeed = 5.0f;
-        ctrl.jumpForce = 10.0f;
-        ctrl.enableWallJump = true;
-        ctrl.coyoteTime = 0.15f;
-        SetupCameraForController(player, "Platformer2D");
 
-        // Floating platforms
+        // Player
+        ECS::Entity player = createPlayer2D("Player");
         {
-            const Math::Vector3 pos[] = { {-4.0f, 1.5f, 0.0f}, {2.0f, 3.0f, 0.0f}, {7.0f, 4.5f, 0.0f} };
-            for (int i = 0; i < 3; ++i) {
-                ECS::Entity plat = m_World->CreateEntity();
-                m_World->AddComponent<ECS::NameComponent>(plat, "Platform " + std::to_string(i + 1));
-                auto& pt = m_World->AddComponent<ECS::TransformComponent>(plat);
-                pt.position = pos[i];
-                pt.scale = Math::Vector3(3.0f, 0.4f, 1.0f);
-                auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(plat);
-                pmat.baseColor = Math::Vector3(0.5f, 0.4f, 0.3f);
-                m_World->AddComponent<ECS::MeshComponent>(plat, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                auto& pcol = m_World->AddComponent<ECS::BoxColliderComponent>(plat);
-                pcol.size = Math::Vector3(3.0f, 0.4f, 1.0f);
+            auto& ctrl = m_World->AddComponent<ECS::Platformer2DController>(player);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.jumpForce = 10.0f;
+            ctrl.enableWallJump = true;
+            ctrl.coyoteTime = 0.15f;
+            m_World->AddComponent<ECS::HealthComponent>(player);
+        }
+
+        // Game camera with 2D follow
+        {
+            SetupCameraForController(player, "Platformer2D");
+            ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (cam != ECS::INVALID_ENTITY) {
+                auto& follow = m_World->AddComponent<ECS::Camera2DBoundsComponent>(cam);
+                follow.followTarget = player;
+                follow.followSmoothing = 5.0f;
+                follow.lookAheadDistance = 2.0f;
+                follow.deadZoneSize = Math::Vector2(1.0f, 0.5f);
             }
         }
 
-        // Coin with tween bob
+        // Floating platforms
+        {
+            const Math::Vector3 pos[] = { {-4.0f, 1.5f, 0.0f}, {2.0f, 3.0f, 0.0f}, {7.0f, 5.0f, 0.0f} };
+            const Math::Vector3 col[] = { {0.5f, 0.4f, 0.3f}, {0.45f, 0.38f, 0.28f}, {0.55f, 0.42f, 0.32f} };
+            for (int i = 0; i < 3; ++i) {
+                ECS::Entity plat = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(plat, "Platform " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(plat);
+                t.position = pos[i];
+                t.scale = Math::Vector3(3.0f, 0.4f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(plat);
+                mat.baseColor = col[i];
+                m_World->AddComponent<ECS::MeshComponent>(plat, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                addBoxCollider2D(plat, 1.5f, 0.2f);
+            }
+        }
+
+        // Coin pickup with bobbing tween
         {
             ECS::Entity coin = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(coin, "Coin");
-            auto& ct = m_World->AddComponent<ECS::TransformComponent>(coin);
-            ct.position = Math::Vector3(2.0f, 4.0f, 0.0f);
-            auto& cmat = m_World->AddComponent<ECS::MaterialComponent>(coin);
-            cmat.baseColor = Math::Vector3(1.0f, 0.84f, 0.0f);
-            cmat.metallic = 0.9f;
-            cmat.roughness = 0.3f;
-            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateSphere(0.3f));
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(coin);
+            t.position = Math::Vector3(2.0f, 4.0f, 0.0f);
+            t.scale = Math::Vector3(0.5f, 0.5f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(coin);
+            mat.baseColor = Math::Vector3(1.0f, 0.84f, 0.0f);
+            mat.emissiveColor = Math::Vector3(1.0f, 0.7f, 0.0f);
+            mat.emissiveStrength = 0.3f;
+            m_World->AddComponent<ECS::MeshComponent>(coin, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& pick = m_World->AddComponent<ECS::PickupComponent>(coin);
+            pick.type = ECS::PickupComponent::PickupType::Custom;
+            pick.customId = "coin";
+            pick.value = 1.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(coin);
             tw.autoPlay = true;
             ECS::TweenEntry bob;
@@ -12895,47 +12989,32 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             tw.tweens.push_back(bob);
         }
 
-        // Torch with sparks
+        // Wall-jump wall
         {
-            ECS::Entity torch = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(torch, "Torch");
-            auto& tt = m_World->AddComponent<ECS::TransformComponent>(torch);
-            tt.position = Math::Vector3(5.0f, 0.5f, 0.0f);
-            tt.scale = Math::Vector3(0.2f, 0.8f, 0.2f);
-            auto& tmat = m_World->AddComponent<ECS::MaterialComponent>(torch);
-            tmat.baseColor = Math::Vector3(0.4f, 0.25f, 0.1f);
-            m_World->AddComponent<ECS::MeshComponent>(torch, Renderer::MeshFactory::CreateCube(1.0f));
-            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(torch);
-            ApplyParticlePreset(pe, "Sparks");
+            ECS::Entity wall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wall, "Wall Jump Wall");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(wall);
+            t.position = Math::Vector3(-8.0f, 3.0f, 0.0f);
+            t.scale = Math::Vector3(0.4f, 7.0f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+            mat.baseColor = Math::Vector3(0.45f, 0.4f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            addBoxCollider2D(wall, 0.2f, 3.5f);
         }
 
-        // Wall-jump wall (vertical surface)
+        // Moving platform
         {
-            ECS::Entity wallJump = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(wallJump, "Wall Jump Wall");
-            auto& wjt = m_World->AddComponent<ECS::TransformComponent>(wallJump);
-            wjt.position = Math::Vector3(-8.0f, 3.0f, 0.0f);
-            wjt.scale = Math::Vector3(0.4f, 6.0f, 1.0f);
-            auto& wjmat = m_World->AddComponent<ECS::MaterialComponent>(wallJump);
-            wjmat.baseColor = Math::Vector3(0.45f, 0.4f, 0.5f);
-            m_World->AddComponent<ECS::MeshComponent>(wallJump, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-            auto& wjcol = m_World->AddComponent<ECS::BoxColliderComponent>(wallJump);
-            wjcol.size = Math::Vector3(0.4f, 6.0f, 1.0f);
-        }
-
-        // Moving platform with tween
-        {
-            ECS::Entity movPlat = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(movPlat, "Moving Platform");
-            auto& mpt = m_World->AddComponent<ECS::TransformComponent>(movPlat);
-            mpt.position = Math::Vector3(-3.0f, 5.5f, 0.0f);
-            mpt.scale = Math::Vector3(2.5f, 0.3f, 1.0f);
-            auto& mpmat = m_World->AddComponent<ECS::MaterialComponent>(movPlat);
-            mpmat.baseColor = Math::Vector3(0.3f, 0.55f, 0.3f);
-            m_World->AddComponent<ECS::MeshComponent>(movPlat, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-            auto& mpcol = m_World->AddComponent<ECS::BoxColliderComponent>(movPlat);
-            mpcol.size = Math::Vector3(2.5f, 0.3f, 1.0f);
-            auto& tw = m_World->AddComponent<ECS::TweenComponent>(movPlat);
+            ECS::Entity mp = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(mp, "Moving Platform");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(mp);
+            t.position = Math::Vector3(-3.0f, 5.5f, 0.0f);
+            t.scale = Math::Vector3(2.5f, 0.3f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(mp);
+            mat.baseColor = Math::Vector3(0.3f, 0.55f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(mp, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            addBoxCollider2D(mp, 1.25f, 0.15f);
+            auto& tw = m_World->AddComponent<ECS::TweenComponent>(mp);
+            tw.autoPlay = true;
             ECS::TweenEntry move;
             move.property = ECS::TweenProperty::Position;
             move.easing = ECS::EasingType::EaseInOutSine;
@@ -12943,31 +13022,78 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             move.startValue = Math::Vector3(-3.0f, 5.5f, 0.0f);
             move.endValue = Math::Vector3(4.0f, 5.5f, 0.0f);
             move.duration = 3.0f;
+            move.useCurrentAsStart = false;
             tw.tweens.push_back(move);
         }
 
-        // Enemy (patrolling)
+        // Torch with sparks
+        {
+            ECS::Entity torch = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(torch, "Torch");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(torch);
+            t.position = Math::Vector3(5.0f, 0.5f, 0.0f);
+            t.scale = Math::Vector3(0.3f, 0.8f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(torch);
+            mat.baseColor = Math::Vector3(0.4f, 0.25f, 0.1f);
+            mat.emissiveColor = Math::Vector3(1.0f, 0.5f, 0.1f);
+            mat.emissiveStrength = 0.4f;
+            m_World->AddComponent<ECS::MeshComponent>(torch, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(torch);
+            ApplyParticlePreset(pe, "Sparks");
+        }
+
+        // Enemy - patrolling slime
         {
             ECS::Entity enemy = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(enemy, "Slime");
-            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
-            et.position = Math::Vector3(6.0f, 0.0f, 0.0f);
-            et.scale = Math::Vector3(1.0f, 0.6f, 1.0f);
-            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
-            emat.baseColor = Math::Vector3(0.4f, 0.8f, 0.3f);
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(enemy);
+            t.position = Math::Vector3(6.0f, 0.0f, 0.0f);
+            t.scale = Math::Vector3(1.0f, 0.6f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+            mat.baseColor = Math::Vector3(0.4f, 0.8f, 0.3f);
             m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.5f, 0.6f));
-            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
             auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
             hp.maxHealth = 20.0f;
             hp.currentHealth = 20.0f;
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+            dmg.damage = 10.0f;
             auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
             ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
-            ai.patrolPoints = { Math::Vector3(3,0,0), Math::Vector3(8,0,0) };
+            ai.patrolPoints = { Math::Vector3(3, 0, 0), Math::Vector3(9, 0, 0) };
             ai.moveSpeed = 2.0f;
+            ai.is2D = true;
+        }
+
+        // Spikes hazard
+        {
+            ECS::Entity spikes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spikes, "Spikes");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(spikes);
+            t.position = Math::Vector3(-2.0f, -0.3f, 0.0f);
+            t.scale = Math::Vector3(2.0f, 0.4f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(spikes);
+            mat.baseColor = Math::Vector3(0.6f, 0.15f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(spikes, Renderer::MeshFactory::CreateTriangle(1.0f));
+            auto& dmg = m_World->AddComponent<ECS::DamageComponent>(spikes);
+            dmg.damage = 25.0f;
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(spikes);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(1.0f, 0.2f);
+            col.isStatic = true;
+            col.isSensor = true; // Triggers damage, no physical response
+        }
+
+        // Notes entity
+        {
+            ECS::Entity notes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(notes, "Template Notes");
+            m_World->AddComponent<ECS::TransformComponent>(notes);
+            auto& n = m_World->AddComponent<ECS::NotesComponent>(notes);
+            n.notes = "2D Platformer Template\n\nFeatures:\n- Platformer2DController with wall jump + coyote time\n- Floating platforms with colliders\n- Moving platform (tween)\n- Coin pickup with bobbing animation\n- Patrolling slime enemy with health + damage\n- Spike hazard\n- Torch with spark particles\n\nControls: Arrow keys/WASD to move, Space to jump";
         }
 
         m_RenderSystem->SetShadowsEnabled(false);
-        m_RenderSystem->SetAmbientIntensity(0.2f);
+        m_RenderSystem->SetAmbientIntensity(0.25f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
@@ -12978,69 +13104,99 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         {
             ECS::Entity ground = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
-            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
-            gt.position = Math::Vector3(0.0f, 0.0f, -0.1f);
-            gt.scale = Math::Vector3(30.0f, 30.0f, 1.0f);
-            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
-            gmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
-            gmat.roughness = 0.9f;
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(ground);
+            t.position = Math::Vector3(0.0f, 0.0f, -0.1f);
+            t.scale = Math::Vector3(30.0f, 30.0f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            mat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
+            mat.roughness = 0.9f;
             m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-            auto& col = m_World->AddComponent<ECS::BoxColliderComponent>(ground);
-            col.size = Math::Vector3(30.0f, 30.0f, 0.1f);
         }
+
+        // Player
         ECS::Entity player = createPlayer2D("Player");
-        auto& ctrl = m_World->AddComponent<ECS::TopDown2DController>(player);
-        ctrl.moveSpeed = 5.0f;
-        ctrl.enableDash = true;
-        m_World->AddComponent<ECS::HealthComponent>(player);
-        SetupCameraForController(player, "TopDown2D");
+        {
+            auto& ctrl = m_World->AddComponent<ECS::TopDown2DController>(player);
+            ctrl.moveSpeed = 5.0f;
+            ctrl.enableDash = true;
+            auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
+            hp.maxHealth = 100.0f;
+            hp.currentHealth = 100.0f;
+        }
+
+        // Game camera with 2D follow
+        {
+            SetupCameraForController(player, "TopDown2D");
+            ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
+            if (cam != ECS::INVALID_ENTITY) {
+                auto& follow = m_World->AddComponent<ECS::Camera2DBoundsComponent>(cam);
+                follow.followTarget = player;
+                follow.followSmoothing = 6.0f;
+                follow.deadZoneSize = Math::Vector2(1.5f, 1.5f);
+            }
+        }
 
         // Arena walls
         {
-            const Math::Vector3 wPos[] = { {0,15,0}, {0,-15,0}, {15,0,0}, {-15,0,0} };
-            const Math::Vector3 wScl[] = { {30,0.5f,1}, {30,0.5f,1}, {0.5f,30,1}, {0.5f,30,1} };
+            const Math::Vector3 wPos[] = { {0, 15, 0}, {0, -15, 0}, {15, 0, 0}, {-15, 0, 0} };
+            const Math::Vector3 wScl[] = { {30, 0.5f, 1}, {30, 0.5f, 1}, {0.5f, 30, 1}, {0.5f, 30, 1} };
             const char* wNames[] = { "Wall Top", "Wall Bottom", "Wall Right", "Wall Left" };
             for (int i = 0; i < 4; ++i) {
                 ECS::Entity wall = m_World->CreateEntity();
                 m_World->AddComponent<ECS::NameComponent>(wall, wNames[i]);
-                auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
-                wt.position = wPos[i];
-                wt.scale = wScl[i];
-                auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
-                wmat.baseColor = Math::Vector3(0.4f, 0.35f, 0.3f);
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(wall);
+                t.position = wPos[i];
+                t.scale = wScl[i];
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+                mat.baseColor = Math::Vector3(0.4f, 0.35f, 0.3f);
                 m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                auto& wcol = m_World->AddComponent<ECS::BoxColliderComponent>(wall);
-                wcol.size = wScl[i];
+                addBoxCollider2D(wall, wScl[i].x * 0.5f, wScl[i].y * 0.5f);
             }
         }
 
-        // Enemy
+        // Enemies - two patrolling
         {
-            ECS::Entity enemy = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(enemy, "Enemy");
-            auto& et = m_World->AddComponent<ECS::TransformComponent>(enemy);
-            et.position = Math::Vector3(5.0f, 5.0f, 0.0f);
-            auto& emat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
-            emat.baseColor = Math::Vector3(0.9f, 0.2f, 0.2f);
-            m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.4f));
-            m_World->AddComponent<ECS::Sprite2DComponent>(enemy);
-            auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
-            hp.maxHealth = 50.0f;
-            hp.currentHealth = 50.0f;
-            auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
-            ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
-            ai.patrolPoints = { Math::Vector3(5,5,0), Math::Vector3(5,-5,0), Math::Vector3(-5,-5,0), Math::Vector3(-5,5,0) };
+            const Math::Vector3 ePos[] = { {5, 5, 0}, {-6, -4, 0} };
+            const Math::Vector3 eCol[] = { {0.9f, 0.2f, 0.2f}, {0.8f, 0.3f, 0.1f} };
+            const char* eNames[] = { "Enemy Scout", "Enemy Brute" };
+            for (int i = 0; i < 2; ++i) {
+                ECS::Entity enemy = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(enemy, eNames[i]);
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(enemy);
+                t.position = ePos[i];
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
+                mat.baseColor = eCol[i];
+                m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.5f, 1.0f));
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
+                hp.maxHealth = i == 0 ? 30.0f : 60.0f;
+                hp.currentHealth = hp.maxHealth;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
+                dmg.damage = i == 0 ? 10.0f : 20.0f;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+                ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                ai.moveSpeed = i == 0 ? 3.0f : 1.5f;
+                ai.is2D = true;
+                ai.patrolPoints = i == 0
+                    ? std::vector<Math::Vector3>{ {5, 5, 0}, {5, -5, 0}, {-5, -5, 0}, {-5, 5, 0} }
+                    : std::vector<Math::Vector3>{ {-6, -4, 0}, {6, -4, 0} };
+            }
         }
 
         // Health pickup
         {
             ECS::Entity pickup = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(pickup, "Health Pickup");
-            auto& pt = m_World->AddComponent<ECS::TransformComponent>(pickup);
-            pt.position = Math::Vector3(-4.0f, -3.0f, 0.0f);
-            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(pickup);
-            pmat.baseColor = Math::Vector3(0.2f, 0.9f, 0.3f);
-            m_World->AddComponent<ECS::MeshComponent>(pickup, Renderer::MeshFactory::CreateSphere(0.4f));
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(pickup);
+            t.position = Math::Vector3(-4.0f, -3.0f, 0.0f);
+            t.scale = Math::Vector3(0.8f, 0.8f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(pickup);
+            mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.3f);
+            mat.emissiveColor = Math::Vector3(0.2f, 0.9f, 0.3f);
+            mat.emissiveStrength = 0.3f;
+            m_World->AddComponent<ECS::MeshComponent>(pickup, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& pick = m_World->AddComponent<ECS::PickupComponent>(pickup);
+            pick.type = ECS::PickupComponent::PickupType::Health;
+            pick.value = 25.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(pickup);
             tw.autoPlay = true;
             ECS::TweenEntry bob;
@@ -13052,48 +13208,51 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             bob.duration = 1.2f;
             bob.useCurrentAsStart = false;
             tw.tweens.push_back(bob);
-            auto& pick = m_World->AddComponent<ECS::PickupComponent>(pickup);
-            pick.type = ECS::PickupComponent::PickupType::Health;
-            pick.value = 25.0f;
         }
 
-        // Obstacles (crates and barrel)
+        // Obstacles
         {
-            const Math::Vector3 oPos[] = { {-6,2,0}, {3,-7,0}, {8,4,0} };
-            const Math::Vector3 oScl[] = { {2,2,1}, {1.5f,1.5f,1}, {1.8f,1.8f,1} };
+            const Math::Vector3 oPos[] = { {-6, 2, 0}, {3, -7, 0}, {8, 4, 0} };
+            const Math::Vector3 oScl[] = { {2, 2, 1}, {1.5f, 1.5f, 1}, {1.8f, 1.8f, 1} };
             const char* oNames[] = { "Crate", "Barrel", "Crate 2" };
-            const Math::Vector3 oCol[] = { {0.55f,0.4f,0.25f}, {0.45f,0.35f,0.2f}, {0.5f,0.38f,0.22f} };
+            const Math::Vector3 oColors[] = { {0.55f, 0.4f, 0.25f}, {0.45f, 0.35f, 0.2f}, {0.5f, 0.38f, 0.22f} };
             for (int i = 0; i < 3; ++i) {
                 ECS::Entity obs = m_World->CreateEntity();
                 m_World->AddComponent<ECS::NameComponent>(obs, oNames[i]);
-                auto& ot = m_World->AddComponent<ECS::TransformComponent>(obs);
-                ot.position = oPos[i];
-                ot.scale = oScl[i];
-                auto& omat = m_World->AddComponent<ECS::MaterialComponent>(obs);
-                omat.baseColor = oCol[i];
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(obs);
+                t.position = oPos[i];
+                t.scale = oScl[i];
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(obs);
+                mat.baseColor = oColors[i];
                 m_World->AddComponent<ECS::MeshComponent>(obs, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                m_World->AddComponent<ECS::Sprite2DComponent>(obs);
-                auto& ocol = m_World->AddComponent<ECS::BoxColliderComponent>(obs);
-                ocol.size = oScl[i];
+                addBoxCollider2D(obs, oScl[i].x * 0.5f, oScl[i].y * 0.5f);
             }
         }
 
         // Speed boost power-up
         {
-            ECS::Entity speedPU = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(speedPU, "Speed Boost");
-            auto& spt = m_World->AddComponent<ECS::TransformComponent>(speedPU);
-            spt.position = Math::Vector3(0.0f, 8.0f, 0.0f);
-            auto& spmat = m_World->AddComponent<ECS::MaterialComponent>(speedPU);
-            spmat.baseColor = Math::Vector3(0.2f, 0.6f, 1.0f);
-            spmat.emissiveColor = Math::Vector3(0.2f, 0.6f, 1.0f);
-            spmat.emissiveStrength = 0.6f;
-            m_World->AddComponent<ECS::MeshComponent>(speedPU, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
-            m_World->AddComponent<ECS::Sprite2DComponent>(speedPU);
-            auto& pk = m_World->AddComponent<ECS::PickupComponent>(speedPU);
-            pk.type = ECS::PickupComponent::PickupType::Powerup;
-            pk.customId = "Speed Boost";
-            pk.value = 1.0f;
+            ECS::Entity boost = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(boost, "Speed Boost");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(boost);
+            t.position = Math::Vector3(0.0f, 8.0f, 0.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(boost);
+            mat.baseColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+            mat.emissiveColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+            mat.emissiveStrength = 0.6f;
+            m_World->AddComponent<ECS::MeshComponent>(boost, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
+            auto& pick = m_World->AddComponent<ECS::PickupComponent>(boost);
+            pick.type = ECS::PickupComponent::PickupType::Powerup;
+            pick.customId = "speed_boost";
+            pick.value = 1.0f;
+        }
+
+        // Notes
+        {
+            ECS::Entity notes = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(notes, "Template Notes");
+            m_World->AddComponent<ECS::TransformComponent>(notes);
+            auto& n = m_World->AddComponent<ECS::NotesComponent>(notes);
+            n.notes = "2D Top-Down Action Template\n\nFeatures:\n- TopDown2DController with dash\n- Walled arena with colliders\n- 2 patrol enemies (scout + brute)\n- Health pickup with bobbing tween\n- Speed boost power-up\n- Destructible crates\n- Camera follows player\n\nControls: WASD to move, Shift to dash";
         }
 
         m_RenderSystem->SetShadowsEnabled(false);
@@ -22733,6 +22892,67 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
         }
 
         DrawCollisionFilteringUI(col->categoryBits, col->collisionMask);
+    }
+}
+
+void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Body 2D", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("Body2DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<Physics::Body2DComponent>(entity, "body2D", "Body 2D");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* body = m_World->GetComponent<Physics::Body2DComponent>(entity);
+        if (!body) return;
+
+        // Shape type
+        const char* shapeNames[] = { "Circle", "Box", "Polygon" };
+        int shapeIdx = static_cast<int>(body->shapeType);
+        if (ImGui::Combo("Shape", &shapeIdx, shapeNames, 3)) {
+            body->shapeType = static_cast<Physics::Shape2DType>(shapeIdx);
+        }
+
+        // Shape-specific properties
+        if (body->shapeType == Physics::Shape2DType::Circle) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Radius", &body->circle.radius, 0.05f, 0.01f, 100.0f);
+            f32 off[2] = { body->circle.offset.x, body->circle.offset.y };
+            if (ImGui::DragFloat2("Offset", off, 0.1f)) {
+                body->circle.offset = Math::Vector2(off[0], off[1]);
+            }
+        } else if (body->shapeType == Physics::Shape2DType::Box) {
+            f32 he[2] = { body->box.halfExtents.x, body->box.halfExtents.y };
+            if (ImGui::DragFloat2("Half Extents", he, 0.05f, 0.01f, 100.0f)) {
+                body->box.halfExtents = Math::Vector2(he[0], he[1]);
+            }
+            f32 off[2] = { body->box.offset.x, body->box.offset.y };
+            if (ImGui::DragFloat2("Offset##BoxOff", off, 0.1f)) {
+                body->box.offset = Math::Vector2(off[0], off[1]);
+            }
+            InspectorUndo::DragFloat(m_UndoRedo, "Rotation##BoxRot", &body->box.rotation, 0.01f, -3.15f, 3.15f);
+        }
+
+        ImGui::Separator();
+
+        // Body properties
+        InspectorUndo::Checkbox(m_UndoRedo, "Static", &body->isStatic);
+        InspectorUndo::Checkbox(m_UndoRedo, "Sensor", &body->isSensor);
+        InspectorUndo::Checkbox(m_UndoRedo, "Fixed Rotation", &body->fixedRotation);
+        InspectorUndo::DragFloat(m_UndoRedo, "Gravity Scale", &body->gravityScale, 0.1f, -10.0f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Linear Damping", &body->linearDamping, 0.05f, 0.0f, 20.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Angular Damping", &body->angularDamping, 0.05f, 0.0f, 20.0f);
+
+        if (ImGui::TreeNode("Physics Material")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Friction", &body->material.friction, 0.05f, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Restitution", &body->material.restitution, 0.05f, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Density", &body->material.density, 0.1f, 0.01f, 100.0f);
+            ImGui::TreePop();
+        }
+
+        DrawCollisionFilteringUI(body->categoryBits, body->collisionMask);
     }
 }
 
