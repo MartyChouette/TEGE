@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-02-14 (Session 8)
+
+### UISystem Texture Resolver + Animation Graph Dual-Mode Editor
+
+**UISystem Texture Resolver in Player:**
+Wired `GetImGuiTexture()` cache in Player app so UICanvas Image widgets render textures in standalone builds. Pattern mirrors the Editor: `RenderSystem::LoadTexture()` → `ImGui_ImplVulkan_AddTexture()` → cache by path. Cleanup in `Shutdown()` via `ImGui_ImplVulkan_RemoveTexture()`.
+
+**Animation Graph → AnimatorComponent:**
+Extended `AnimationGraphEditor` from SM-only to dual-mode: when entity has `AnimatorComponent`, the editor targets its `AnimationStateMachine` (animation clips); otherwise falls back to `StateMachineComponent` (game logic SM).
+
+Animator mode features:
+- **Animation clip dropdown** from `SkeletalAnimator::GetAnimations()` (or text input if no clips loaded)
+- **Speed slider**, play mode combo (Once/Loop/PingPong)
+- **Transition inspector** with blend time, exit time, `TransitionCondition` types (Bool/Float/Int/Trigger)
+- **ASM parameter system** — Bool/Float/Int parameters with add/edit UI
+- **Play mode** — current state display, set-trigger button, state node highlighting
+- All CRUD: add/delete states, create/delete transitions, rename states (re-keys map + updates references)
+- Toolbar shows `[Animator]` / `[State Machine]` mode indicator
+
+SM mode preserved unchanged (script callbacks, SMTransitionCondition types, SendTrigger).
+
+---
+
 ## 2026-02-14 (Session 7)
 
 ### Player App Wiring Gaps Fixed

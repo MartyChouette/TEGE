@@ -401,7 +401,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | ~~27~~ | ~~Shader Graph~~ | ~~Editor shell exists but generates no actual shader code~~ ✅ Full GLSL code generation with topological sort, 54 node types |
 | ~~28~~ | ~~Audio Event Graph~~ | ~~Editor shell exists but doesn't connect to AudioSystem~~ ✅ Full runtime execution via SimpleAudio, 4 AS + 3 VS bindings |
 | ~~29~~ | ~~Particle Graph~~ | ~~Editor shell exists but doesn't connect to ParticleSystem~~ ✅ Full compiler to ParticleEmitterComponent |
-| 30 | Animation Graph | Editor shell exists but doesn't drive AnimatorComponent |
+| ~~30~~ | ~~Animation Graph~~ | ~~Editor shell exists but doesn't drive AnimatorComponent~~ ✅ Dual-mode editor: AnimatorComponent (clip dropdown, speed, blend/exit time, ASM parameters) + StateMachineComponent (game logic SM) |
 
 ### LOW
 
