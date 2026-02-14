@@ -65,10 +65,13 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
+- **Newgrounds Game Page** - Themed HTML5 export template with medal sidebar, scoreboard, embed codes, and NG.io API integration
 - **Command Palette** - Ctrl+P fuzzy-search popup with 25+ commands for quick access
 - **Project Hub** - Startup wizard with template browser, recent projects, and project creation flow
 - **Entity Icons** - Bracket-tag icons in hierarchy by component type ([C] Camera, [L] Light, [M] Mesh, etc.)
 - **Empty State Patterns** - Helpful empty-state messages with call-to-action buttons in all panels
+- **Collaborative Editing** - Real-time multi-user scene editing with OT protocol, peer cursors, conflict resolution, lock enforcement
+- **Symbol Library** - Reusable graphic symbols as prefabs with nested editing, category browser, update propagation, Flash timeline sync
 
 ### Entity-Component System
 - **70+ Component Types** - Full inspector UI for all components
@@ -114,7 +117,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Motor Accessibility** - Adjustable click/drag thresholds, dwell-click, sticky drag, motor impaired preset
 - **Command Palette** - Ctrl+P for keyboard-driven command access
 - **Alternative Input** - Switch access, eye tracking, sip-and-puff, head tracking support
-- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection, collaborative editing integration (remote edit callbacks, scene sync, status indicator)
+- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection, collaborative editing UI (peer cursors, conflict dialog, session management)
 - **Screen Reader Support** - Priority-queued text announcer with visual status bar
 - **Audio Visual Indicators** - Colored dot overlays for audio events
 - **High Contrast UI Themes** - HighContrastDark and HighContrastLight presets with WCAG AAA 7:1+ contrast ratios

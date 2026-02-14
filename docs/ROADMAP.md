@@ -1140,7 +1140,7 @@ The following accessibility features exist as infrastructure/settings structs bu
 
 - ~~**Git Integration**~~ ✅ — Built-in git panel (stage, commit, push, pull, branch, merge), visual scene diff (structured JSON), optional `git init` on project creation
 - ~~**Scene & Entity Locking**~~ ✅ — SceneLockManager with advisory `.enjinlock` JSON sidecar files: entity-level locking (Lock/Unlock in hierarchy context menu), user/machine identification (auto-detected from environment), visual indicators ([X] locked by other = red overlay, [=] locked by self), inspector lock warning banner, automatic lock file cleanup (deleted when no locks remain), 5-second auto-refresh. Scene-level locking API (LockScene/UnlockScene). All locks released on scene close/shutdown
-- **Collaborative Editing** — Real-time or turn-based with session locks. Future: OT/CRDT-based scene sync with entity-level conflict resolution
+- ~~**Collaborative Editing**~~ ✅ — CollaborativeEditingUI wires OT-based system into editor: host/join panel, remote op handlers (8 op types applied to local scene), peer cursor visualization, conflict resolution dialog, lock enforcement, scene sync on join
 - ~~**Clean Git Serialization**~~ ✅ — Deterministic scene files (sorted keys, stable ordering, no floating-point drift)
 
 ---
@@ -1157,7 +1157,7 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 ### Flash-Style Authoring Workflow
 - ~~**Frame-based timeline editor**~~ ✅ — `TimelineEditor` class extends Timeline with Flash-style authoring: layers, property tracks, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), auto-key, curve editor with tangent handles, dopesheet view, onion skinning, copy/paste/delete, frame snapping
 - **Vector drawing tools** — Basic shape primitives (rect, ellipse, line, pen/bezier) rendered via SVG pipeline. Export to sprite sheets for runtime. Complements the existing PixelEditor for bitmap art
-- **Symbol library** — Reusable graphic symbols stored as prefabs. Drag from library to stage. Nested symbol editing (like Flash's "Edit Symbol" mode). Built on existing PrefabManager
+- ~~**Symbol library**~~ ✅ — SymbolLibrary.h/cpp: catalog-based system with grid browser, category tabs, search, nested editing (isolated World), prefab bridge, FlashTimeline integration, thumbnail previews
 
 ### ~~ActionScript Compatibility Layer~~ ✅ Done
 - ~~**AS2/AS3 → AngelScript transpiler**~~ ✅ — `AS3Transpiler` class: pattern-based line-by-line transpilation with regex, type mapping (Number→float, etc.), class/function/var conversion, Flash API → shim calls, scope tracking
@@ -1166,7 +1166,7 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 
 ### Flash Game Templates
 - ~~**Starter templates**~~ ✅ — Pre-built project templates for common Flash game genres: point-and-click adventure, dress-up game, tower defense, bullet hell, rhythm game, escape room, idle/clicker. All included in the 43 built-in templates and polished with HUD elements, enemies, inventory, and gameplay setups
-- **Newgrounds-style game page** — Built-in HTML5 export template with play button, preloader, fullscreen toggle, and embed code generation
+- ~~**Newgrounds-style game page**~~ ✅ — NewgroundsGamePage.h/cpp: dark-theme game page with medal sidebar, scoreboard, NG.io API init, toast notifications, responsive layout, embed codes
 
 ### WebAssembly Export (Prerequisite)
 - **WebGPU/WebAssembly target** — Compile engine to WASM with WebGPU renderer backend. Required for browser-based game distribution

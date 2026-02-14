@@ -77,6 +77,9 @@
 | Spline IK Deformer | `Enjin/Effects/SplineIKDeformer.h` | FABRIK solver, Verlet physics, tube/ribbon mesh generation for tentacles/ropes |
 | Interactive Water | `Enjin/Effects/InteractiveWater.h` | Spring-damper wave propagation, splashes/wakes, buoyancy, boundary modes |
 | Audio Reactive | `Enjin/Effects/AudioReactive.h` | Cooley-Tukey FFT, bass/mid/treble bands, per-vertex mesh displacement |
+| Collaborative Editing UI | `Enjin/Editor/CollaborativeEditingUI.h` | OT protocol UI, peer cursors, conflict resolution, session management |
+| Symbol Library | `Enjin/Editor/SymbolLibrary.h` | Reusable graphic symbols as prefabs, nested editing, category browser, update propagation |
+| Newgrounds Game Page | `Enjin/Build/NewgroundsGamePage.h` | Themed HTML5 export template with medal sidebar, scoreboard, embed codes |
 
 ---
 

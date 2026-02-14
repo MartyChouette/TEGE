@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-02-14 (Session 14)
+
+### Collaborative Editing UI
+New `CollaborativeEditingUI.h/cpp` (122+936 lines). Wires the existing CollaborativeEditingSystem into the editor with full UI and scene integration. Host/Join session panel with IP/port inputs, peer list with colored dots and latency, connection status display. Remote operation handlers that apply 8 op types (Create/Delete/Rename/SetComponent/RemoveComponent/ModifyTransform/SetParent/Lock) to the local scene via SceneSerializer. Peer cursor visualization with colored selection rings and name labels in viewport. Conflict resolution modal dialog showing both versions with Accept Local/Remote/Merge buttons. Lock enforcement (CanEditEntity checks SceneLockManager). Scene sync callbacks for full-scene JSON serialization on join.
+
+### Symbol Library Manager
+New `SymbolLibrary.h/cpp` (223+1160 lines). Catalog-based symbol management system built on PrefabManager + VectorDrawingEditor. SymbolEntry with id, name, category, type (VectorDrawing/EntityPrefab/SpriteSheet/Custom), tags, thumbnail, use count. Symbol CRUD: create from entity hierarchy or vector drawing, delete, rename. Instantiation via PrefabManager. Nested symbol editing: isolated ECS::World for editing symbol contents, breadcrumb navigation back to main scene. Symbol browser panel with grid/list view toggle, category tabs, search bar, thumbnail preview (128x128). Update propagation: modifying a symbol updates all PrefabInstanceComponent instances. FlashTimeline integration via SyncToTimeline(). Catalog persisted as symbols/catalog.json.
+
+### Newgrounds-Style Game Page
+New `NewgroundsGamePage.h/cpp` (93+1752 lines). Enhanced HTML5 export producing a full Newgrounds-aesthetic game page. GamePageConfig with title, author, description, tags, thumbnail, NG app ID + encryption key, medal/scoreboard toggles, theme colors, canvas size, controls text. Generated page: dark theme (#1a1a2e bg, #e94560 accent), header with title + author + version, centered canvas with glow border, right sidebar with medal progress (locked/unlocked icons with grayscale filter) and scoreboard (top 10), controls section, description panel, responsive layout. CSS: custom properties, flexbox, card components, toast notifications, @media collapse at 900px. JavaScript: NG.io API init, medal fetch/display/unlock toasts, scoreboard fetch/post, fullscreen toggle, preloader with "Click to Play" audio resume. Embed codes: standard iframe + Newgrounds container div. XSS protection on all user text. ImGui config panel for build dialog.
+
+---
+
 ## 2026-02-14 (Session 13)
 
 ### Non-Euclidean Geometry Rendering
