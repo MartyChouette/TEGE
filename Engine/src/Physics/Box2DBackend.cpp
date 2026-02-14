@@ -269,6 +269,19 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
             }
             break;
         }
+        case Shape2DType::Capsule: {
+            f32 r = std::max(body2d->capsule.radius, 0.01f);
+            f32 h = std::max(body2d->capsule.height, r * 2.0f + 0.01f);
+            // b2Capsule: two semicircle centers + radius
+            // Height is total including caps, so center-to-center = height - 2*radius
+            f32 halfSegment = (h - 2.0f * r) * 0.5f;
+            b2Capsule capsule;
+            capsule.center1 = { body2d->capsule.offset.x, body2d->capsule.offset.y + halfSegment };
+            capsule.center2 = { body2d->capsule.offset.x, body2d->capsule.offset.y - halfSegment };
+            capsule.radius = r;
+            b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
+            break;
+        }
     }
 
     m_EntityToBody[entity] = bodyId;

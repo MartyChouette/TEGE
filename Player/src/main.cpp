@@ -609,6 +609,10 @@ public:
         // Save system (auto-save timer)
         m_TieredSaveSystem.Update(deltaTime, m_World.get(), m_StartScene);
 
+        // Health system (regen, invulnerability, death) and deferred entity destruction
+        UpdateHealthSystems(deltaTime);
+        FlushDeferredDestroys();
+
         // Resource regeneration
         if (m_World) {
             for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::ResourceComponent>()) {
@@ -907,6 +911,8 @@ private:
             m_Physics2D->SetOnCollisionEnter([this](const Enjin::Physics::Contact2D& c) {
                 m_VisualScriptSystem.OnCollisionEnter(c.entityA, c.entityB, 0.0f);
                 m_VisualScriptSystem.OnCollisionEnter(c.entityB, c.entityA, 0.0f);
+                ProcessContactDamage(c.entityA, c.entityB);
+                ProcessPickup(c.entityA, c.entityB);
             });
             m_Physics2D->SetOnCollisionExit([this](const Enjin::Physics::Contact2D& c) {
                 m_VisualScriptSystem.OnCollisionExit(c.entityA, c.entityB, 0.0f);
@@ -915,6 +921,8 @@ private:
             m_Physics2D->SetOnSensorEnter([this](const Enjin::Physics::Contact2D& c) {
                 m_VisualScriptSystem.OnTriggerEnter(c.entityA, c.entityB, 0.0f);
                 m_VisualScriptSystem.OnTriggerEnter(c.entityB, c.entityA, 0.0f);
+                ProcessContactDamage(c.entityA, c.entityB);
+                ProcessPickup(c.entityA, c.entityB);
             });
             m_Physics2D->SetOnSensorExit([this](const Enjin::Physics::Contact2D& c) {
                 m_VisualScriptSystem.OnTriggerExit(c.entityA, c.entityB, 0.0f);
@@ -979,6 +987,7 @@ private:
     static constexpr const char* PACK_KEY = "enjin_default_pack_key_2025";
 
     bool m_Initialized = false;
+    std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Splash screen
     bool m_ShowingSplash = false;
@@ -1227,6 +1236,121 @@ private:
 
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(3);
+    }
+
+    // ========================================================================
+    // Gameplay Processing — Contact Damage, Pickups, Health
+    // ========================================================================
+
+    void ProcessContactDamage(Enjin::ECS::Entity entityA, Enjin::ECS::Entity entityB) {
+        if (!m_World) return;
+        auto tryDamage = [this](Enjin::ECS::Entity damager, Enjin::ECS::Entity target) {
+            auto* dmg = m_World->GetComponent<Enjin::ECS::DamageComponent>(damager);
+            auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(target);
+            if (!dmg || !hp || hp->isDead) return;
+            if (dmg->damageOnce) {
+                for (auto e : dmg->damagedEntities) { if (e == target) return; }
+                dmg->damagedEntities.push_back(target);
+            }
+            if (hp->isInvulnerable || hp->invulnerabilityTimer > 0.0f) return;
+            Enjin::f32 remaining = dmg->damage;
+            if (hp->currentShield > 0.0f) {
+                Enjin::f32 absorbed = std::min(remaining, hp->currentShield);
+                hp->currentShield -= absorbed;
+                remaining -= absorbed;
+            }
+            hp->currentHealth -= remaining;
+            hp->timeSinceLastDamage = 0.0f;
+            if (hp->invulnerabilityTime > 0.0f) hp->invulnerabilityTimer = hp->invulnerabilityTime;
+            if (dmg->knockbackForce > 0.0f) {
+                auto* ctrl = m_World->GetComponent<Enjin::ECS::Platformer2DController>(target);
+                auto* dmgT = m_World->GetComponent<Enjin::ECS::TransformComponent>(damager);
+                auto* tgtT = m_World->GetComponent<Enjin::ECS::TransformComponent>(target);
+                if (ctrl && dmgT && tgtT) {
+                    Enjin::f32 dir = (tgtT->position.x > dmgT->position.x) ? 1.0f : -1.0f;
+                    ctrl->velocity.x = dir * dmg->knockbackForce;
+                    ctrl->velocity.y = dmg->knockbackForce * 0.5f;
+                    ctrl->isGrounded = false;
+                }
+            }
+            if (hp->currentHealth <= 0.0f) { hp->currentHealth = 0.0f; hp->isDead = true; }
+            if (dmg->destroyOnHit) m_DeferredDestroys.push_back(damager);
+        };
+        tryDamage(entityA, entityB);
+        tryDamage(entityB, entityA);
+    }
+
+    void ProcessPickup(Enjin::ECS::Entity entityA, Enjin::ECS::Entity entityB) {
+        if (!m_World) return;
+        auto tryPickup = [this](Enjin::ECS::Entity pickupEntity, Enjin::ECS::Entity collector) {
+            auto* pickup = m_World->GetComponent<Enjin::ECS::PickupComponent>(pickupEntity);
+            if (!pickup || pickup->isCollected) return;
+            bool isPlayer = m_World->GetComponent<Enjin::ECS::Platformer2DController>(collector) != nullptr ||
+                            m_World->GetComponent<Enjin::ECS::TopDown2DController>(collector) != nullptr ||
+                            m_World->GetComponent<Enjin::ECS::FirstPersonController>(collector) != nullptr ||
+                            m_World->GetComponent<Enjin::ECS::ThirdPersonController>(collector) != nullptr;
+            if (!isPlayer) return;
+            if (pickup->type == Enjin::ECS::PickupComponent::PickupType::Health) {
+                auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(collector);
+                if (hp) hp->currentHealth = std::min(hp->currentHealth + pickup->value, hp->maxHealth);
+            }
+            pickup->isCollected = true;
+            if (pickup->destroyOnPickup && !pickup->canRespawn) {
+                m_DeferredDestroys.push_back(pickupEntity);
+            } else if (pickup->destroyOnPickup) {
+                auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(pickupEntity);
+                if (transform) transform->visible = false;
+                pickup->respawnTimer = pickup->respawnTime;
+            }
+        };
+        tryPickup(entityA, entityB);
+        tryPickup(entityB, entityA);
+    }
+
+    void UpdateHealthSystems(Enjin::f32 deltaTime) {
+        if (!m_World) return;
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::HealthComponent>()) {
+            auto* hp = m_World->GetComponent<Enjin::ECS::HealthComponent>(entity);
+            if (!hp) continue;
+            if (hp->invulnerabilityTimer > 0.0f) hp->invulnerabilityTimer -= deltaTime;
+            hp->timeSinceLastDamage += deltaTime;
+            if (!hp->isDead && hp->regenRate > 0.0f && hp->timeSinceLastDamage >= hp->regenDelay)
+                hp->currentHealth = std::min(hp->currentHealth + hp->regenRate * deltaTime, hp->maxHealth);
+            if (!hp->isDead && hp->shieldRegenRate > 0.0f && hp->timeSinceLastDamage >= hp->shieldRegenDelay)
+                hp->currentShield = std::min(hp->currentShield + hp->shieldRegenRate * deltaTime, hp->maxShield);
+            if (hp->isDead) {
+                auto* ctrl = m_World->GetComponent<Enjin::ECS::Platformer2DController>(entity);
+                if (ctrl) {
+                    hp->isDead = false; hp->currentHealth = hp->maxHealth; hp->currentShield = hp->maxShield;
+                    hp->invulnerabilityTimer = 1.0f;
+                    auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                    if (transform) transform->position = Enjin::Math::Vector3(0.0f, 2.0f, 0.0f);
+                    ctrl->velocity = Enjin::Math::Vector3(0.0f);
+                    ctrl->isGrounded = false;
+                } else {
+                    m_DeferredDestroys.push_back(entity);
+                }
+            }
+        }
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::PickupComponent>()) {
+            auto* pickup = m_World->GetComponent<Enjin::ECS::PickupComponent>(entity);
+            if (!pickup || !pickup->isCollected || !pickup->canRespawn) continue;
+            pickup->respawnTimer -= deltaTime;
+            if (pickup->respawnTimer <= 0.0f) {
+                pickup->isCollected = false;
+                auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                if (transform) transform->visible = true;
+            }
+        }
+    }
+
+    void FlushDeferredDestroys() {
+        if (!m_World || m_DeferredDestroys.empty()) return;
+        for (auto entity : m_DeferredDestroys) {
+            if (m_World->GetComponent<Enjin::ECS::TransformComponent>(entity))
+                m_World->DestroyEntity(entity);
+        }
+        m_DeferredDestroys.clear();
     }
 };
 

@@ -12574,6 +12574,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_Layout.bottomHeight = 0.18f;
         m_Layout.gameViewW = 700.0f;
         m_Layout.gameViewH = 450.0f;
+        // Open Game View window, keep Inspector, close Stats overlay
+        m_Layout.panels = m_Layout.panels | EditorPanel::GameView;
+        m_ShowStatsOverlay = false;
     }
     else if (templateId == "isometric" || templateId == "citybuilder" || templateId == "towerdefense") {
         m_Layout.leftWidth = 0.16f;
@@ -12749,7 +12752,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         templateId.substr(0, 6) == "flash_") {
         if (m_CameraController) {
             m_CameraController->SetOrbitDistance(15.0f);
-            m_CameraController->SetViewPreset(Renderer::ViewPreset::Back);
+            // Front preset: camera at +Z looking along -Z, matching the game camera orientation
+            m_CameraController->SetViewPreset(Renderer::ViewPreset::Front);
             m_CameraController->SetOrthoSize(10.0f);
         }
         m_ShowColliderWireframes = true;
@@ -13069,7 +13073,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ECS::Entity spikes = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(spikes, "Spikes");
             auto& t = m_World->AddComponent<ECS::TransformComponent>(spikes);
-            t.position = Math::Vector3(-2.0f, -0.3f, 0.0f);
+            t.position = Math::Vector3(-2.0f, -0.4f, 0.0f);
             t.scale = Math::Vector3(2.0f, 0.4f, 1.0f);
             auto& mat = m_World->AddComponent<ECS::MaterialComponent>(spikes);
             mat.baseColor = Math::Vector3(0.6f, 0.15f, 0.15f);
@@ -22910,9 +22914,9 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
         if (!body) return;
 
         // Shape type
-        const char* shapeNames[] = { "Circle", "Box", "Polygon" };
+        const char* shapeNames[] = { "Circle", "Box", "Polygon", "Capsule" };
         int shapeIdx = static_cast<int>(body->shapeType);
-        if (ImGui::Combo("Shape", &shapeIdx, shapeNames, 3)) {
+        if (ImGui::Combo("Shape", &shapeIdx, shapeNames, 4)) {
             body->shapeType = static_cast<Physics::Shape2DType>(shapeIdx);
         }
 
@@ -22933,6 +22937,13 @@ void EditorLayer::DrawBody2DComponent(ECS::Entity entity) {
                 body->box.offset = Math::Vector2(off[0], off[1]);
             }
             InspectorUndo::DragFloat(m_UndoRedo, "Rotation##BoxRot", &body->box.rotation, 0.01f, -3.15f, 3.15f);
+        } else if (body->shapeType == Physics::Shape2DType::Capsule) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Radius##Cap", &body->capsule.radius, 0.05f, 0.01f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Height##Cap", &body->capsule.height, 0.05f, 0.01f, 100.0f);
+            f32 off[2] = { body->capsule.offset.x, body->capsule.offset.y };
+            if (ImGui::DragFloat2("Offset##CapOff", off, 0.1f)) {
+                body->capsule.offset = Math::Vector2(off[0], off[1]);
+            }
         }
 
         ImGui::Separator();

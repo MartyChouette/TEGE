@@ -488,9 +488,17 @@ bool AISystem::MoveAlongPath(TransformComponent& transform, AIControllerComponen
 void AISystem::MoveTowards(TransformComponent& transform, AIControllerComponent& ai,
                             const Math::Vector3& target, f32 speed, f32 dt) {
     Math::Vector3 toTarget = target - transform.position;
-    toTarget.y = 0.0f; // Stay on ground plane
 
-    f32 dist = Math::Sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
+    f32 dist;
+    if (ai.is2D) {
+        // 2D mode: move on XY plane
+        toTarget.z = 0.0f;
+        dist = Math::Sqrt(toTarget.x * toTarget.x + toTarget.y * toTarget.y);
+    } else {
+        // 3D mode: move on XZ plane (stay on ground)
+        toTarget.y = 0.0f;
+        dist = Math::Sqrt(toTarget.x * toTarget.x + toTarget.z * toTarget.z);
+    }
     if (dist < 0.001f) return;
 
     Math::Vector3 direction = toTarget * (1.0f / dist);
@@ -505,11 +513,23 @@ void AISystem::MoveTowards(TransformComponent& transform, AIControllerComponent&
     f32 moveAmount = effectiveSpeed * dt;
     if (moveAmount > dist) moveAmount = dist;
 
-    transform.position.x += direction.x * moveAmount;
-    transform.position.z += direction.z * moveAmount;
-
-    // Face movement direction
-    FaceTarget(transform, target, ai.turnSpeed, dt);
+    if (ai.is2D) {
+        transform.position.x += direction.x * moveAmount;
+        transform.position.y += direction.y * moveAmount;
+        // 2D facing: flip scale.x based on movement direction
+        if (Math::Abs(direction.x) > 0.1f) {
+            if (direction.x < 0) {
+                transform.scale.x = -Math::Abs(transform.scale.x);
+            } else {
+                transform.scale.x = Math::Abs(transform.scale.x);
+            }
+        }
+    } else {
+        transform.position.x += direction.x * moveAmount;
+        transform.position.z += direction.z * moveAmount;
+        // 3D facing: rotate around Y axis
+        FaceTarget(transform, target, ai.turnSpeed, dt);
+    }
 }
 
 void AISystem::FaceTarget(TransformComponent& transform, const Math::Vector3& target,

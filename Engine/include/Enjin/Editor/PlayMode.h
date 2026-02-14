@@ -229,6 +229,13 @@ private:
     Math::Quaternion m_SavedCameraRot;
     f32 m_SavedCameraFov = 45.0f;
 
+    // Gameplay processing helpers
+    void ProcessContactDamage(ECS::Entity entityA, ECS::Entity entityB);
+    void ProcessPickup(ECS::Entity entityA, ECS::Entity entityB);
+    void UpdateHealthSystems(f32 deltaTime);
+    void FlushDeferredDestroys();
+    std::vector<ECS::Entity> m_DeferredDestroys;
+
     // Play mode diff
     PlayModeDiff m_PlayModeDiff;
     bool m_ShowDiffDialog = false;

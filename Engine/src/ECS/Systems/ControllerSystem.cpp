@@ -510,17 +510,89 @@ bool ControllerSystem::CheckGround(const Math::Vector3& position, f32& groundY) 
     return false;
 }
 
-bool ControllerSystem::CheckGround2D(const Math::Vector3& position, f32& groundY) {
-    if (m_Physics2D) {
+bool ControllerSystem::CheckGround2D(const Math::Vector3& position, f32& groundY, Entity& groundEntity,
+                                     f32 capsuleRadius, f32 capsuleHalfHeight) {
+    if (!m_Physics2D) return false;
+
+    // Multi-ray capsule ground check: cast 3 downward rays from the capsule bottom
+    // (center, left edge, right edge) to match the capsule's curved underside.
+    // Use the highest hit to ensure the capsule sits on top of geometry.
+    f32 radius = capsuleRadius;
+    f32 halfHeight = capsuleHalfHeight;
+
+    // Bottom of capsule = position.y - halfHeight + radius (center of bottom semicircle)
+    f32 bottomCenterY = position.y - halfHeight + radius;
+    Math::Vector2 direction(0.0f, -1.0f);
+    constexpr f32 kRayLength = 2.0f;
+
+    bool found = false;
+    f32 bestGroundY = -1e9f;
+    Entity bestEntity = INVALID_ENTITY;
+
+    // Cast from 3 points along the capsule bottom: left, center, right
+    f32 offsets[3] = { -radius * 0.9f, 0.0f, radius * 0.9f };
+    for (int i = 0; i < 3; ++i) {
         Physics::RayHit2D hit;
-        Math::Vector2 origin(position.x, position.y);
-        Math::Vector2 direction(0.0f, -1.0f);
-        if (m_Physics2D->Raycast(origin, direction, 2.0f, hit)) {
-            groundY = hit.point.y;
-            return true;
+        Math::Vector2 origin(position.x + offsets[i], bottomCenterY);
+        if (m_Physics2D->Raycast(origin, direction, kRayLength, hit)) {
+            if (hit.normal.y > 0.5f && hit.point.y > bestGroundY) {
+                bestGroundY = hit.point.y;
+                bestEntity = hit.entity;
+                found = true;
+            }
         }
     }
-    return false;
+
+    if (found) {
+        groundY = bestGroundY;
+        groundEntity = bestEntity;
+    }
+    return found;
+}
+
+bool ControllerSystem::CheckWall2D(const Math::Vector3& position, f32 moveDirX, f32& wallX,
+                                   f32 capsuleRadius, f32 capsuleHalfHeight) {
+    if (!m_Physics2D || moveDirX == 0.0f) return false;
+
+    // Multi-ray capsule wall check: cast 3 horizontal rays from the capsule side
+    // (top, middle, bottom) to detect walls along the full height.
+    f32 radius = capsuleRadius;
+    f32 halfHeight = capsuleHalfHeight;
+
+    f32 sign = moveDirX > 0.0f ? 1.0f : -1.0f;
+    Math::Vector2 direction(sign, 0.0f);
+    // Cast distance = radius + small margin (detect walls at capsule edge)
+    f32 checkDist = radius + 0.15f;
+
+    bool found = false;
+    f32 nearestWallX = sign > 0 ? 1e9f : -1e9f;
+
+    // Cast from top, middle, and bottom of the capsule body
+    f32 yOffsets[3] = {
+        position.y + halfHeight - radius,   // Top of capsule body
+        position.y,                          // Middle
+        position.y - halfHeight + radius     // Bottom of capsule body
+    };
+
+    for (int i = 0; i < 3; ++i) {
+        Physics::RayHit2D hit;
+        Math::Vector2 origin(position.x, yOffsets[i]);
+        if (m_Physics2D->Raycast(origin, direction, checkDist, hit)) {
+            if (Math::Abs(hit.normal.x) > 0.5f) {
+                // Take the nearest wall hit
+                if ((sign > 0 && hit.point.x < nearestWallX) ||
+                    (sign < 0 && hit.point.x > nearestWallX)) {
+                    nearestWallX = hit.point.x;
+                    found = true;
+                }
+            }
+        }
+    }
+
+    if (found) {
+        wallX = nearestWallX;
+    }
+    return found;
 }
 
 bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, TransformComponent& transform,
@@ -673,18 +745,44 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
         ctrl.velocity.y = Math::Max(ctrl.velocity.y, -ctrl.wallSlideSpeed);
     }
 
-    // Apply velocity to position
-    transform.position.x += ctrl.velocity.x * dt;
+    // Celeste-style: move X and Y axes independently with per-axis collision checks.
+    // Capsule collision dimensions from the controller
+    f32 capsuleRadius = ctrl.collisionRadius;
+    f32 capsuleHalfHeight = ctrl.collisionHeight * 0.5f;
+
+    // Step 1: Apply X movement, then check for walls
+    f32 moveX = ctrl.velocity.x * dt;
+    if (moveX != 0.0f) {
+        f32 wallX = 0.0f;
+        // Tentatively apply X movement
+        transform.position.x += moveX;
+        // Check for wall collision at new position
+        if (CheckWall2D(transform.position, moveX, wallX, capsuleRadius, capsuleHalfHeight)) {
+            // Wall detected — clamp position to wall surface with capsule radius offset
+            if (moveX > 0.0f) {
+                transform.position.x = wallX - capsuleRadius;
+            } else {
+                transform.position.x = wallX + capsuleRadius;
+            }
+            ctrl.velocity.x = 0.0f;
+            // Wall detection for wall slide/jump
+            ctrl.isWallSliding = ctrl.enableWallSlide && !ctrl.isGrounded;
+        } else {
+            ctrl.isWallSliding = false;
+        }
+    }
+
+    // Step 2: Apply Y movement, then check for ground
     transform.position.y += ctrl.velocity.y * dt;
 
     // Ground check via physics raycast (2D preferred for 2D controllers, then 3D fallback, then Y=0)
     f32 groundY = 0.0f;
-    bool ground2D = CheckGround2D(transform.position, groundY);
+    Entity groundEntity = INVALID_ENTITY;
+    bool ground2D = CheckGround2D(transform.position, groundY, groundEntity, capsuleRadius, capsuleHalfHeight);
     bool groundHit = ground2D || CheckGround(transform.position, groundY);
-    // For 2D raycasts, the hit point is the surface top. Add a standing offset so
-    // the player center is above the surface (matches the old Y=0 fallback behavior).
-    constexpr f32 kStandingOffset = 0.5f;
-    f32 standingY = ground2D ? (groundY + kStandingOffset) : groundY;
+    // For 2D raycasts, the hit point is the surface top. Standing offset = capsule half-height
+    // so the capsule bottom sits on the surface.
+    f32 standingY = ground2D ? (groundY + capsuleHalfHeight) : groundY;
     if (groundHit && transform.position.y <= standingY && ctrl.velocity.y <= 0.0f) {
         transform.position.y = standingY;
         ctrl.velocity.y = 0.0f;
@@ -695,6 +793,25 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
         // No ground detected below, or player is above the ground surface —
         // start falling (handles walking off ledges where velocity.y is still 0)
         ctrl.isGrounded = false;
+    }
+
+    // Celeste-style platform carrying: if riding a moving entity, apply its position delta
+    if (ctrl.isGrounded && groundEntity != INVALID_ENTITY && m_World) {
+        auto* platTransform = m_World->GetComponent<TransformComponent>(groundEntity);
+        if (platTransform) {
+            if (ctrl.ridingEntity == groundEntity) {
+                // Same platform as last frame — apply its movement delta to the player
+                Math::Vector3 platDelta = platTransform->position - ctrl.ridingEntityLastPos;
+                transform.position.x += platDelta.x;
+                transform.position.y += platDelta.y;
+            }
+            // Track this platform for next frame
+            ctrl.ridingEntity = groundEntity;
+            ctrl.ridingEntityLastPos = platTransform->position;
+        }
+    } else {
+        // Not riding anything
+        ctrl.ridingEntity = INVALID_ENTITY;
     }
 
     // Flip sprite horizontally via scale.x (2D mirror, not 3D rotation)

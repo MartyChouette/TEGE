@@ -12,7 +12,8 @@ namespace Physics {
 enum class Shape2DType : u8 {
     Circle,
     Box,
-    Polygon
+    Polygon,
+    Capsule
 };
 
 // Physics material
@@ -39,12 +40,19 @@ struct PolygonShape2D {
     Math::Vector2 offset;
 };
 
+struct CapsuleShape2D {
+    f32 radius = 0.3f;
+    f32 height = 1.0f;             // Total height (including semicircle caps)
+    Math::Vector2 offset;
+};
+
 // 2D body component (add alongside existing RigidbodyComponent for 2D mode)
 struct ENJIN_API Body2DComponent {
     Shape2DType shapeType = Shape2DType::Box;
     CircleShape2D circle;
     BoxShape2D box;
     PolygonShape2D polygon;
+    CapsuleShape2D capsule;
 
     PhysicsMaterial2D material;
 

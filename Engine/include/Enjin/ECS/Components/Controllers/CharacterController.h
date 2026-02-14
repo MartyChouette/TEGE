@@ -55,6 +55,10 @@ struct Platformer2DController : public CharacterControllerBase {
     // Ground detection
     f32 groundCheckDistance = 0.1f;
 
+    // Collision capsule (used for multi-ray ground/wall checks)
+    f32 collisionRadius = 0.3f;    // Capsule radius (half-width)
+    f32 collisionHeight = 1.0f;    // Total capsule height including caps
+
     // Movement feel
     f32 acceleration = 50.0f;
     f32 deceleration = 40.0f;
@@ -81,6 +85,10 @@ struct Platformer2DController : public CharacterControllerBase {
     bool isJumping = false;
     bool isFalling = false;
     bool isWallSliding = false;
+
+    // Moving platform carry (Celeste-style: track ground entity position delta)
+    Entity ridingEntity = INVALID_ENTITY;
+    Math::Vector3 ridingEntityLastPos = Math::Vector3(0.0f);
 };
 
 // 2D Top-Down Controller (overhead view, 8-directional movement)

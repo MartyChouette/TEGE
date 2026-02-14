@@ -353,6 +353,9 @@ struct AIControllerComponent {
     f32 fleeSpeed = 6.0f;             // Speed when fleeing
     f32 fleeDistance = 15.0f;          // How far to flee before returning to idle
 
+    // 2D mode: move on XY plane (not XZ), flip scale.x for facing instead of Y-rotation
+    bool is2D = false;
+
     // State timers
     f32 stateTimer = 0.0f;
 

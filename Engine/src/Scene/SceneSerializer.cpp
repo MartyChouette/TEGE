@@ -37,6 +37,7 @@
 #include "Enjin/Accessibility/ContentWarning.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/Logging/Log.h"
 
 #include <nlohmann/json.hpp>
@@ -1318,6 +1319,71 @@ ECS::PolygonCollider2DComponent DeserializePolygonCollider2DComponent(const json
     if (j.contains("categoryBits")) poly.categoryBits = j["categoryBits"].get<u32>();
     if (j.contains("collisionMask")) poly.collisionMask = j["collisionMask"].get<u32>();
     return poly;
+}
+
+// Body2D component
+json SerializeBody2DComponent(const Physics::Body2DComponent& body) {
+    json j;
+    j["shapeType"] = static_cast<int>(body.shapeType);
+    // Circle
+    j["circleRadius"] = RF(body.circle.radius);
+    j["circleOffset"] = json::array({RF(body.circle.offset.x), RF(body.circle.offset.y)});
+    // Box
+    j["boxHalfExtents"] = json::array({RF(body.box.halfExtents.x), RF(body.box.halfExtents.y)});
+    j["boxOffset"] = json::array({RF(body.box.offset.x), RF(body.box.offset.y)});
+    j["boxRotation"] = RF(body.box.rotation);
+    // Capsule
+    j["capsuleRadius"] = RF(body.capsule.radius);
+    j["capsuleHeight"] = RF(body.capsule.height);
+    j["capsuleOffset"] = json::array({RF(body.capsule.offset.x), RF(body.capsule.offset.y)});
+    // Body properties
+    j["isStatic"] = body.isStatic;
+    j["isSensor"] = body.isSensor;
+    j["fixedRotation"] = body.fixedRotation;
+    j["gravityScale"] = RF(body.gravityScale);
+    j["linearDamping"] = RF(body.linearDamping);
+    j["angularDamping"] = RF(body.angularDamping);
+    // Material
+    j["friction"] = RF(body.material.friction);
+    j["restitution"] = RF(body.material.restitution);
+    j["density"] = RF(body.material.density);
+    // Collision filtering
+    j["categoryBits"] = body.categoryBits;
+    j["collisionMask"] = body.collisionMask;
+    return j;
+}
+
+Physics::Body2DComponent DeserializeBody2DComponent(const json& j) {
+    Physics::Body2DComponent body;
+    if (j.contains("shapeType")) body.shapeType = static_cast<Physics::Shape2DType>(j["shapeType"].get<int>());
+    if (j.contains("circleRadius")) body.circle.radius = j["circleRadius"].get<f32>();
+    if (j.contains("circleOffset") && j["circleOffset"].is_array() && j["circleOffset"].size() >= 2) {
+        body.circle.offset = Math::Vector2(j["circleOffset"][0].get<f32>(), j["circleOffset"][1].get<f32>());
+    }
+    if (j.contains("boxHalfExtents") && j["boxHalfExtents"].is_array() && j["boxHalfExtents"].size() >= 2) {
+        body.box.halfExtents = Math::Vector2(j["boxHalfExtents"][0].get<f32>(), j["boxHalfExtents"][1].get<f32>());
+    }
+    if (j.contains("boxOffset") && j["boxOffset"].is_array() && j["boxOffset"].size() >= 2) {
+        body.box.offset = Math::Vector2(j["boxOffset"][0].get<f32>(), j["boxOffset"][1].get<f32>());
+    }
+    if (j.contains("boxRotation")) body.box.rotation = j["boxRotation"].get<f32>();
+    if (j.contains("capsuleRadius")) body.capsule.radius = j["capsuleRadius"].get<f32>();
+    if (j.contains("capsuleHeight")) body.capsule.height = j["capsuleHeight"].get<f32>();
+    if (j.contains("capsuleOffset") && j["capsuleOffset"].is_array() && j["capsuleOffset"].size() >= 2) {
+        body.capsule.offset = Math::Vector2(j["capsuleOffset"][0].get<f32>(), j["capsuleOffset"][1].get<f32>());
+    }
+    if (j.contains("isStatic")) body.isStatic = JB(j["isStatic"]);
+    if (j.contains("isSensor")) body.isSensor = JB(j["isSensor"]);
+    if (j.contains("fixedRotation")) body.fixedRotation = JB(j["fixedRotation"]);
+    if (j.contains("gravityScale")) body.gravityScale = j["gravityScale"].get<f32>();
+    if (j.contains("linearDamping")) body.linearDamping = j["linearDamping"].get<f32>();
+    if (j.contains("angularDamping")) body.angularDamping = j["angularDamping"].get<f32>();
+    if (j.contains("friction")) body.material.friction = j["friction"].get<f32>();
+    if (j.contains("restitution")) body.material.restitution = j["restitution"].get<f32>();
+    if (j.contains("density")) body.material.density = j["density"].get<f32>();
+    if (j.contains("categoryBits")) body.categoryBits = j["categoryBits"].get<u32>();
+    if (j.contains("collisionMask")) body.collisionMask = j["collisionMask"].get<u32>();
+    return body;
 }
 
 // Network components
@@ -4950,6 +5016,9 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
             if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
                 entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
             }
+            if (m_World->HasComponent<Physics::Body2DComponent>(entity)) {
+                entityJson["body2D"] = SerializeBody2DComponent(*m_World->GetComponent<Physics::Body2DComponent>(entity));
+            }
             if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
                 entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
             }
@@ -5551,6 +5620,9 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (entityJson.contains("polygonCollider2D")) {
                 m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
             }
+            if (entityJson.contains("body2D")) {
+                m_World->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
+            }
             if (entityJson.contains("perFrameCollider")) {
                 m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
             }
@@ -6073,6 +6145,9 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             }
             if (m_World->HasComponent<ECS::PolygonCollider2DComponent>(entity)) {
                 entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*m_World->GetComponent<ECS::PolygonCollider2DComponent>(entity));
+            }
+            if (m_World->HasComponent<Physics::Body2DComponent>(entity)) {
+                entityJson["body2D"] = SerializeBody2DComponent(*m_World->GetComponent<Physics::Body2DComponent>(entity));
             }
             if (m_World->HasComponent<ECS::PerFrameColliderComponent>(entity)) {
                 entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*m_World->GetComponent<ECS::PerFrameColliderComponent>(entity));
@@ -6637,6 +6712,9 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (entityJson.contains("polygonCollider2D")) {
                 m_World->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
             }
+            if (entityJson.contains("body2D")) {
+                m_World->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
+            }
             if (entityJson.contains("perFrameCollider")) {
                 m_World->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
             }
@@ -7052,6 +7130,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["boxCollider"] = SerializeBoxColliderComponent(*world->GetComponent<ECS::BoxColliderComponent>(entity));
         if (world->HasComponent<ECS::PolygonCollider2DComponent>(entity))
             entityJson["polygonCollider2D"] = SerializePolygonCollider2DComponent(*world->GetComponent<ECS::PolygonCollider2DComponent>(entity));
+        if (world->HasComponent<Physics::Body2DComponent>(entity))
+            entityJson["body2D"] = SerializeBody2DComponent(*world->GetComponent<Physics::Body2DComponent>(entity));
         if (world->HasComponent<ECS::PerFrameColliderComponent>(entity))
             entityJson["perFrameCollider"] = SerializePerFrameColliderComponent(*world->GetComponent<ECS::PerFrameColliderComponent>(entity));
         if (world->HasComponent<ECS::SphereColliderComponent>(entity))
@@ -7356,6 +7436,8 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
             world->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(entityJson["boxCollider"]));
         if (entityJson.contains("polygonCollider2D"))
             world->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(entityJson["polygonCollider2D"]));
+        if (entityJson.contains("body2D"))
+            world->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(entityJson["body2D"]));
         if (entityJson.contains("perFrameCollider"))
             world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(entityJson["perFrameCollider"]));
         if (entityJson.contains("sphereCollider"))
@@ -7766,6 +7848,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "rigidbody") { world->AddComponent<ECS::RigidbodyComponent>(entity, DeserializeRigidbodyComponent(j)); return true; }
         if (key == "boxCollider") { world->AddComponent<ECS::BoxColliderComponent>(entity, DeserializeBoxColliderComponent(j)); return true; }
         if (key == "polygonCollider2D") { world->AddComponent<ECS::PolygonCollider2DComponent>(entity, DeserializePolygonCollider2DComponent(j)); return true; }
+        if (key == "body2D") { world->AddComponent<Physics::Body2DComponent>(entity, DeserializeBody2DComponent(j)); return true; }
         if (key == "perFrameCollider") { world->AddComponent<ECS::PerFrameColliderComponent>(entity, DeserializePerFrameColliderComponent(j)); return true; }
         if (key == "sphereCollider") { world->AddComponent<ECS::SphereColliderComponent>(entity, DeserializeSphereColliderComponent(j)); return true; }
         if (key == "capsuleCollider") { world->AddComponent<ECS::CapsuleColliderComponent>(entity, DeserializeCapsuleColliderComponent(j)); return true; }

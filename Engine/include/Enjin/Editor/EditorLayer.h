@@ -423,6 +423,7 @@ private:
     void DrawMovingPlatformComponent(ECS::Entity entity);
     void DrawPerFrameColliderComponent(ECS::Entity entity);
     void DrawPolygonCollider2DComponent(ECS::Entity entity);
+    void DrawBody2DComponent(ECS::Entity entity);
 
     // Networking components
     void DrawNetworkIdentityComponent(ECS::Entity entity);
