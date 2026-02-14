@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-02-14 (Session 13)
+
+### Non-Euclidean Geometry Rendering
+New `NonEuclidean.h/cpp` (176+423 lines). `PortalComponent` with linked portal pairs, recursion depth, seamless transitions, momentum preservation. `PortalRenderer` performs stencil-buffer recursive portal rendering — for each visible portal, computes virtual camera through the portal pair (180-degree rotation + relative offset), applies oblique near-plane clipping to prevent seeing behind the destination. `SpaceWarpComponent` with 4 space types: Euclidean, Hyperbolic, Spherical, Toroidal. `NonEuclideanSystem` processes warp zones — hyperbolic translation via Poincare disk model, spherical via great circle arcs, toroidal seamless wrapping.
+
+### Metaball / Blob Rendering
+New `Metaballs.h/cpp` (153+668 lines). `MetaballComponent` per entity with radius, strength, threshold, groupId, color. `MetaballSystem` evaluates scalar field f(p) = sum(strength_i * r_i^2 / |p - c_i|^2), runs marching cubes on a 3D grid (16-64 resolution) to extract isosurface, computes gradient-based normals via central differences, blends colors by field contribution weights. Full marching cubes lookup tables (256 edge + triangle entries). Auto-centers grid on group centroid. Configurable update rate.
+
+### Voxel Cone Tracing (VXGI)
+New `VoxelConeTracing.h/cpp` (214+716 lines). `VoxelGrid` with mip chain generation — voxelizes scene by conservative triangle-AABB rasterization, injects direct lighting, averages 2x2x2 blocks for coarser mips. `ConeTracer` traces cones through the mip pyramid: samples at increasing mip levels as cone diameter grows. Computes diffuse GI (6 hemisphere cones), specular GI (1 reflection cone, aperture from roughness), ambient occlusion, and volumetric god rays. `VXGIConfig` with resolution (64/128/256), cone spread, trace distance, indirect multiplier.
+
+### SDF Rendering (3D Vector Art)
+New `SDFRenderer.h/cpp` (176+1037 lines). `MeshToSDF` converts polygon meshes to voxelized signed distance fields via closest-point-on-triangle computation with pseudo-normal sign determination. Trilinear-interpolated SDF evaluation. `SDFTextRenderer` generates resolution-independent text via 8SSEDT (8-point Sequential Signed Distance Transform) from binary glyph bitmaps — supports outline, drop shadow, smoothing. `SDFMeshRenderer` with sphere tracing (ray marching through SDF) and marching cubes isosurface extraction. SDF volume blending for smooth CSG.
+
+### Framebuffer Feedback Effects
+New `FramebufferFeedback.h/cpp` (149+502 lines). CPU-side RGBA8 ping-pong compositing. 8 presets: Echo (fading trails), Melt (downward UV shift), InfiniteMirror (recursive scale-down), VHSTracking (scanline offset + color bleed), Kaleidoscope (rotational symmetry), Phosphor (CRT persistence), DreamSequence (wavy distortion + glow). Full UV transform pipeline: offset, rotation, scale around pivot. 5 blend modes (Alpha, Additive, Multiply, Screen, Max). Post effects: blur, saturation, brightness, color tint per iteration.
+
+### Screen-Space Distortion System
+New `ScreenDistortion.h/cpp` (181+430 lines). 7 distortion types: HeatHaze, Shockwave, Underwater, PortalEdge, Ripple, BarrelFisheye, Custom (texture-based). Per-entity `DistortionSourceComponent` with strength, radius, frequency, speed, falloff. One-shot shockwave trigger with expanding radius, auto-destroy. `ScreenDistortionSystem` composites all sources into a `DistortionField` (2D UV offset grid), then remaps source pixels via bilinear sampling. Downscaled compute option.
+
+### IK-Driven Mesh Deformation
+New `SplineIKDeformer.h/cpp` (131+631 lines). `SplineIKComponent` with joint chain, FABRIK IK solver, Verlet physics simulation (gravity, damping, stiffness). Distance constraint solver with configurable iterations. Catmull-Rom spline subdivision for smooth joint interpolation. Two mesh modes: Tube (radial extrusion with taper) and Ribbon (flat strip). Joint rotation computation via LookRotation. Use cases: tentacles, ropes, tails, vines.
+
+### Interactive Water (Wave Racer 64 Style)
+New `InteractiveWater.h/cpp` (200+483 lines). Grid-based height-field water simulation with spring-damper wave propagation. `InteractiveWaterComponent` with configurable grid resolution (16-256), wave speed, damping, tension, shallow/deep/foam color blend. Object interaction: `WaterInteractorComponent` entities generate splashes and V-shaped wakes. Bilinear water height sampling for buoyancy. Absorbing/reflecting boundary modes. Animated UV scrolling, shoreline foam detection. Mesh generation with computed normals and vertex colors.
+
+### Mesh Audio Reactivity via FFT
+New `AudioReactive.h/cpp` (316+624 lines). `FFTAnalyzer` implements Cooley-Tukey radix-2 in-place FFT with Hanning window and bit-reversal permutation. Exponentially smoothed spectrum. Bass/mid/treble frequency band energy extraction. `AudioReactiveComponent` with 4 displacement axes (Normal, Radial, YUp, Custom) and 4 mapping modes (Uniform, HeightBased, RadialBased, UVBased). `MeshDisplacer` applies per-vertex displacement with normal recomputation. Test audio signal generator for preview. Smooth animation with configurable response/return speeds.
+
+---
+
 ## 2026-02-14 (Session 12)
 
 ### Linux Platform Support

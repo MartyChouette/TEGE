@@ -157,6 +157,15 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Fourier Transform Meshes** - DFT decomposition of 2D contours, progressive reconstruction animation, 3D extrusion from contour
 - **4D Stereographic Projection** - 5 polytopes (Tesseract, 5-Cell, 16-Cell, 24-Cell, 120-Cell), 6 rotation planes, wireframe mesh generation
 - **Inverse/Differentiable Rendering** - CPU-based scene parameter optimization via gradient descent with finite differences
+- **Non-Euclidean Geometry** - Portal rendering with stencil-buffer recursion, hyperbolic/spherical/toroidal space warping, oblique near-plane clipping
+- **Metaball / Blob Rendering** - Implicit surface field evaluation with marching cubes mesh extraction, gradient-based normals, per-group color blending
+- **Voxel Cone Tracing (VXGI)** - Voxel grid with mip chain, conservative triangle rasterization, cone-traced diffuse/specular GI, AO, and volumetric god rays
+- **SDF Rendering** - Mesh-to-SDF conversion, sphere tracing, marching cubes isosurface extraction, 8SSEDT text rendering with outline/shadow, SDF volume blending
+- **Framebuffer Feedback Effects** - Ping-pong compositing with 8 presets (Echo, Melt, InfiniteMirror, VHS, Kaleidoscope, Phosphor, DreamSequence), 5 blend modes
+- **Screen-Space Distortion** - 7 distortion types (HeatHaze, Shockwave, Underwater, PortalEdge, Ripple, BarrelFisheye, Custom), composited UV offset field
+- **IK-Driven Mesh Deformation** - FABRIK solver with Verlet physics, Catmull-Rom spline subdivision, tube/ribbon mesh generation for tentacles/ropes/tails
+- **Interactive Water** - Grid-based spring-damper wave propagation, object splashes and V-wakes, buoyancy, shallow/deep/foam color blending, boundary modes
+- **Mesh Audio Reactivity** - Cooley-Tukey radix-2 FFT, bass/mid/treble band analysis, per-vertex displacement with 4 mapping modes and 4 displacement axes
 
 ### Asset Libraries
 - **Font Library** - 42 curated OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) with editor browser, search, and install

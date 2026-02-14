@@ -68,6 +68,15 @@
 | Colorblind Palette | `Enjin/Accessibility/ColorblindPalette.h` | 9 palettes with pattern+icon alongside color |
 | Font Library (Accessibility) | `Enjin/Accessibility/FontLibrary.h` | FontFamily enum (Default/Mono/OpenDyslexic), spacing config |
 | AppImage Builder | `Enjin/Build/AppImageBuilder.h` | Linux AppImage packaging with .desktop generation |
+| Non-Euclidean | `Enjin/Effects/NonEuclidean.h` | Portal rendering (stencil recursion), hyperbolic/spherical/toroidal space warping |
+| Metaballs | `Enjin/Effects/Metaballs.h` | Implicit surface field, marching cubes mesh extraction, per-group color blending |
+| Voxel Cone Tracing | `Enjin/Renderer/VoxelConeTracing.h` | VXGI: voxel grid + mip chain, cone-traced diffuse/specular GI, AO, god rays |
+| SDF Renderer | `Enjin/Renderer/SDFRenderer.h` | Mesh-to-SDF, sphere tracing, isosurface extraction, 8SSEDT text rendering |
+| Framebuffer Feedback | `Enjin/Effects/FramebufferFeedback.h` | Ping-pong compositing, 8 presets (Echo/Melt/VHS/Kaleidoscope/etc.), 5 blend modes |
+| Screen Distortion | `Enjin/Effects/ScreenDistortion.h` | 7 distortion types (HeatHaze/Shockwave/Underwater/etc.), composited UV offset field |
+| Spline IK Deformer | `Enjin/Effects/SplineIKDeformer.h` | FABRIK solver, Verlet physics, tube/ribbon mesh generation for tentacles/ropes |
+| Interactive Water | `Enjin/Effects/InteractiveWater.h` | Spring-damper wave propagation, splashes/wakes, buoyancy, boundary modes |
+| Audio Reactive | `Enjin/Effects/AudioReactive.h` | Cooley-Tukey FFT, bass/mid/treble bands, per-vertex mesh displacement |
 
 ---
 

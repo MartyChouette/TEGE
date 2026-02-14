@@ -515,15 +515,15 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | **— Artistic Rendering —** | | | | |
 | Parallax occlusion mapping (advanced) | Medium | Medium | P2 | ✅ Complete |
 | Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | ✅ Complete (ditherGradient on MaterialComponent, 2-8 bands, 6 dither patterns, surfaceParam1 push constant) |
-| Metaball / blob rendering | Medium | High | P3 | Planned |
+| Metaball / blob rendering | Medium | High | P3 | ✅ Done |
 | Spherical harmonics lighting | High | High | P2 | ✅ Complete |
-| Beam tracing and cone tracing (VXGI) | High | Very High | P3 | Planned |
+| Beam tracing and cone tracing (VXGI) | High | Very High | P3 | ✅ Done |
 | SDF ray marching | High | High | P2 | ✅ Complete |
-| SDF rendering (3D vector art) | Medium | High | P3 | Planned |
+| SDF rendering (3D vector art) | Medium | High | P3 | ✅ Done |
 | Order-independent transparency (depth peeling) | Medium | Medium | P2 | ✅ Complete |
-| Framebuffer feedback effects | Medium | Low | P3 | Planned |
-| Screen-space distortion as primary aesthetic | Medium | Medium | P3 | Planned |
-| IK-driven mesh deformation | Medium | High | P3 | Planned |
+| Framebuffer feedback effects | Medium | Low | P3 | ✅ Done |
+| Screen-space distortion as primary aesthetic | Medium | Medium | P3 | ✅ Done |
+| IK-driven mesh deformation | Medium | High | P3 | ✅ Done |
 | Fractal terrain & L-system vegetation (advanced) | High | High | P2 | ✅ Complete (fBm terrain with ridged multifractal, hydraulic/thermal erosion, 3D L-system turtle with stochastic rules) |
 | **— Simulation-Driven Geometry —** | | | | |
 | ~~Reaction-diffusion on meshes~~ | Medium | High | P3 | ✅ Done |
@@ -533,11 +533,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Voronoi fracture with persistent physics | High | Medium | P2 | ✅ Complete |
 | **— Simulation & Flow —** | | | | |
 | Curl noise flow fields | High | Medium | P2 | ✅ Complete |
-| Wave Racer 64 water | Medium | High | P3 | Planned |
-| Mesh audio reactivity via FFT | Medium | Medium | P3 | Planned |
+| Wave Racer 64 water | Medium | High | P3 | ✅ Done |
+| Mesh audio reactivity via FFT | Medium | Medium | P3 | ✅ Done |
 | **— Mathematical & Exotic Geometry —** | | | | |
 | Fourier transform meshes | Low | Medium | P4 | ✅ Done |
-| Non-Euclidean geometry rendering | High | Very High | P3 | Planned |
+| Non-Euclidean geometry rendering | High | Very High | P3 | ✅ Done |
 | Stereographic projection of 4D objects | Low | Medium | P4 | ✅ Done |
 | **— Inverse & Advanced Rendering —** | | | | |
 | Inverse / differentiable rendering | Medium | Very High | P4 | ✅ Done |
