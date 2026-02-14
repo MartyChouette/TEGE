@@ -23,6 +23,7 @@
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include <imgui.h>
+#include <backends/imgui_impl_vulkan.h>
 #include "Enjin/Effects/Weather.h"
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/Wind.h"
@@ -442,6 +443,12 @@ public:
         m_TieredSaveSystem.SaveMeta();
 
         Enjin::Audio::AudioManager::Get().Shutdown();
+
+        // Clean up ImGui texture descriptors before ImGui shutdown
+        for (auto& [path, ds] : m_ImGuiTextureCache) {
+            if (ds != VK_NULL_HANDLE) ImGui_ImplVulkan_RemoveTexture(ds);
+        }
+        m_ImGuiTextureCache.clear();
 
         if (m_ImGuiLayer) {
             m_ImGuiLayer->Shutdown();
@@ -894,19 +901,15 @@ private:
         // Apply font scale to UISystem
         m_UISystem.SetFontScale(m_AccessibilitySettings.fontScale);
 
-        // Wire UISystem texture resolver
-        // TODO(F15): Full image support requires ImGui_ImplVulkan_AddTexture() to create
-        // descriptor sets from Vulkan textures. The Player has m_ImGuiLayer and m_RenderSystem,
-        // but wiring this properly needs:
-        //   1. #include <backends/imgui_impl_vulkan.h>
-        //   2. m_RenderSystem->LoadTexture(path) to get a Texture*
-        //   3. ImGui_ImplVulkan_AddTexture(sampler, imageView, layout) to get VkDescriptorSet
-        //   4. A cache (std::unordered_map<string, VkDescriptorSet>) for reuse
-        //   5. Cleanup of descriptor sets on shutdown
-        // For now, UI images are skipped (panels, buttons, labels, sliders still work).
-        m_UISystem.SetTextureResolver([](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
-            (void)path; outW = 0; outH = 0;
-            return nullptr;
+        // Wire UISystem texture resolver (loads textures via RenderSystem, registers with ImGui)
+        m_UISystem.SetTextureResolver([this](const std::string& path, Enjin::u32& outW, Enjin::u32& outH) -> void* {
+            if (path.empty() || !m_RenderSystem) return nullptr;
+            auto tex = m_RenderSystem->LoadTexture(path);
+            if (!tex || !tex->IsValid()) return nullptr;
+            outW = tex->GetWidth();
+            outH = tex->GetHeight();
+            VkDescriptorSet ds = GetImGuiTexture(path);
+            return reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(ds));
         });
 
         // Wire fluid simulation and wind system to renderer
@@ -1137,6 +1140,21 @@ private:
 
     // Post-processing (settings only — full render pipeline deferred)
     std::unique_ptr<Enjin::Renderer::PostProcessing> m_PostProcessing;
+
+    // ImGui texture descriptor cache for UISystem texture resolver
+    std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;
+
+    VkDescriptorSet GetImGuiTexture(const std::string& path) {
+        if (path.empty() || !m_RenderSystem) return VK_NULL_HANDLE;
+        auto it = m_ImGuiTextureCache.find(path);
+        if (it != m_ImGuiTextureCache.end()) return it->second;
+        auto tex = m_RenderSystem->LoadTexture(path);
+        if (!tex || !tex->IsValid()) return VK_NULL_HANDLE;
+        VkDescriptorSet ds = ImGui_ImplVulkan_AddTexture(
+            tex->GetSampler(), tex->GetImageView(), VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        if (ds != VK_NULL_HANDLE) m_ImGuiTextureCache[path] = ds;
+        return ds;
+    }
 
     void UpdateDialogue(Enjin::f32 deltaTime) {
         m_DialogueSystem.Update(m_World.get(), deltaTime);

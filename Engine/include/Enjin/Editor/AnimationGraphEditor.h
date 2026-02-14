@@ -4,6 +4,7 @@
 #include "Enjin/Editor/NodeGraph.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/Editor/EditorSettings.h"
 #include <string>
 
@@ -42,6 +43,8 @@ private:
 
     // Draw the sidebar inspector panel
     void DrawInspector(bool isPlaying);
+    void DrawInspectorAnimatorMode(NodeId selectedNode, LinkId selectedLink, bool isPlaying);
+    void DrawInspectorSMMode(NodeId selectedNode, LinkId selectedLink, bool isPlaying);
 
     // Draw toolbar (add state, auto layout, fit all)
     void DrawToolbar();
@@ -73,6 +76,10 @@ private:
 
     // Track whether we need to re-sync
     bool m_NeedsSync = true;
+
+    // True when editing AnimatorComponent's AnimationStateMachine (animation clips),
+    // false when editing StateMachineComponent (game logic SM)
+    bool m_IsAnimatorMode = false;
 
     // New state name buffer
     char m_NewStateName[128] = "NewState";
