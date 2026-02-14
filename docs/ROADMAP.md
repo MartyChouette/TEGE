@@ -1423,4 +1423,43 @@ Goal: Ship a curated, commercially licensable library so users have beautiful as
 
 ---
 
-*Last updated: 2026-02-10 — Added Feature Accessibility Audit (31 walled-off systems: Player app missing 5 runtime systems, build pipeline not packing 5 asset types, 12 systems lacking script bindings, Level Streaming + Localization disconnected, Newgrounds bindings dead code, 4 components missing from menu, graph shells not connected). Prioritized all items in Implementation Priority Matrix. Added Runtime Game Accessibility audit. Added Tiered Save System, Play Mode Diff Dialog, Save UI, save system AS/VS bindings. Project Hub v2 complete.*
+---
+
+## Known Stubs & Incomplete Features (Audit #4, 2026-02-14)
+
+These are documented limitations that require larger feature work. Sorted by priority.
+
+### HIGH (require significant implementation)
+
+| Feature | Files | Status | Notes |
+|---------|-------|--------|-------|
+| OIT Render Passes | `OITManager.cpp` | Empty stubs | Textures created correctly, but Begin/End/Composite passes are no-ops. Needs Vulkan pipeline work. |
+| HTTP Client (Linux/Mac) | `HTTPClient.cpp` | No-op on non-Windows | Get/Post/PostForm return failure. Affects Newgrounds, feedback, plugin repos. Needs libcurl or cross-platform abstraction. |
+| SWF Zlib Decompression | `SWFLoader.cpp` | DecompressZlib returns false | Most real SWF files are CWS (zlib-compressed). Needs zlib integration. |
+| Network Auth & Replay | `NetworkSystem.cpp` | No HMAC/challenge-response | Packets can be spoofed or replayed. Needs security layer. |
+
+### MEDIUM (infrastructure gaps)
+
+| Feature | Files | Status | Notes |
+|---------|-------|--------|-------|
+| DoF & Tilt-Shift | `PostProcessing.cpp` | UBO fields exist, no shader | Editor UI exposes sliders, scene settings serialize, but zero visual effect. Needs SPIR-V. |
+| SH Light Probe Baking | `SHLightProbe.cpp` | Hardcoded warm ambient L0 | No cubemap rendering or ray casts. All probes produce identical results. |
+| OIDN GPU→CPU Copy | `OIDNDenoiser.cpp` | Processes zero data | Staging buffer not implemented. SVGF denoiser (primary) works correctly. |
+| ASTC Compression | `TextureCompressor.cpp` | Falls back to BC7 | All ASTC formats silently use BC7. Needs ASTC encoder library for mobile/Switch. |
+| UI Phase 2+ Widgets | `UISystem.cpp` | Grey box placeholders | 9 widget types (Dropdown, TextInput, RadioGroup, etc.) render as labeled panels. |
+| Water3D Rendering | `Water.h/cpp` | CPU mesh only | No Vulkan integration for water plane rendering. CPU simulation works. |
+
+### LOW (cosmetic/documentation)
+
+| Item | Notes |
+|------|-------|
+| Missing getter/setter pairs | 12 setters without getters in PlayMode, 7 in RenderSystem, 5 in ControllerSystem/FlowerSystem/VSExecutor |
+| 5 ECS systems lack SetEnabled/IsEnabled | TweenSystem, StateMachineSystem, DialogueSystem, VisualScriptSystem, BehaviorTreeSystem |
+| Player/PlayMode code duplication | ~195 lines shared (ProcessContactDamage, ProcessPickup, etc.) — candidate for shared GameplayLoop module |
+| VSync toggle disabled | Checkbox greyed out with "restart editor" tooltip |
+| Apply to Prefab button | PlayMode diff dialog button logs TODO |
+| Shader Graph Parallax/Flipbook nodes | Generate passthrough GLSL |
+| Particle Graph renderer inspector | Shows "TODO" with no editable fields |
+| Flash Timeline SWF sprite import | Logs "not yet implemented" |
+
+*Last updated: 2026-02-14 — Comprehensive Audit #4 (51 findings: 4 HIGH, 12 MEDIUM, 27 LOW, 8 PASS). 16 fixes applied (binding cleanup, serializer guards, VS accessibility wiring, Water3D player wiring, audio graph save/load, dead code removal). Physics backend verified clean (Jolt 3D, Box2D 2D, SimplePhysics guarded).*
