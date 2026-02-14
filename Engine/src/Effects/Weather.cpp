@@ -34,6 +34,15 @@ void WeatherSystem::SetWeather(WeatherType type, f32 transitionTime) {
     m_TargetWeather = type;
     m_TransitionDuration = transitionTime;
     m_TransitionProgress = 0.0f;
+
+    // Cap existing particle lifetimes so old weather fades out quickly
+    // instead of lingering (e.g., snow particles living 10s during rain transition)
+    constexpr f32 kFadeOutTime = 0.5f;
+    for (u32 i = 0; i < m_ActiveParticles; ++i) {
+        if (m_Particles[i].lifetime > kFadeOutTime) {
+            m_Particles[i].lifetime = kFadeOutTime;
+        }
+    }
 }
 
 void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {

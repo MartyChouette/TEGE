@@ -3,8 +3,10 @@
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/Logging/Log.h"
 #include <cstring>
+#include <cmath>
 #include <array>
 #include <algorithm>
 #include <filesystem>
@@ -478,14 +480,28 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             currentTexture = effectiveKey;
         }
 
-        // Build instance data from sprite + transform
+        // Build instance data from sprite + world transform (includes parent chain)
         SpriteInstanceData inst{};
-        inst.position = transform->position;
-        inst.sizeX = sprite->size.x;
-        inst.sizeY = sprite->size.y;
 
-        // Extract Z-axis rotation from quaternion (radians) — avoids full Euler decomposition
-        inst.rotation = transform->rotation.GetRotationZ();
+        auto* parentComp = world->GetComponent<ECS::ParentComponent>(entry.entity);
+        if (parentComp && parentComp->parent != ECS::INVALID_ENTITY) {
+            // Entity has a parent — compute world matrix and extract position/rotation/scale
+            // Matrix4 is column-major flat: m[0-3]=col0, m[4-7]=col1, m[12-14]=translation
+            Math::Matrix4 worldMat = ECS::ComputeWorldMatrix(world, entry.entity);
+            inst.position = Math::Vector3(worldMat.m[12], worldMat.m[13], worldMat.m[14]);
+            inst.rotation = std::atan2(worldMat.m[1], worldMat.m[0]);
+            // Extract scale from column lengths
+            f32 scaleX = std::sqrt(worldMat.m[0] * worldMat.m[0] + worldMat.m[1] * worldMat.m[1]);
+            f32 scaleY = std::sqrt(worldMat.m[4] * worldMat.m[4] + worldMat.m[5] * worldMat.m[5]);
+            inst.sizeX = sprite->size.x * scaleX;
+            inst.sizeY = sprite->size.y * scaleY;
+        } else {
+            // Root entity — fast path (no parent chain walk, same as original behavior)
+            inst.position = transform->position;
+            inst.sizeX = sprite->size.x;
+            inst.sizeY = sprite->size.y;
+            inst.rotation = transform->rotation.GetRotationZ();
+        }
 
         // Compute UV coordinates from sprite source rectangle
         if (sprite->srcWidth > 0 && sprite->srcHeight > 0 &&

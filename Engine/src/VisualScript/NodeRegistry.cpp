@@ -16,7 +16,9 @@
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/ObjectPool.h"
 #include "Enjin/Effects/Weather.h"
+#include "Enjin/Effects/Water.h"
 #include "Enjin/Effects/Destructible.h"
+#include "Enjin/Gameplay/HUDSystem.h"
 #include "Enjin/Assets/Prefab.h"
 #include "Enjin/GUI/UICanvas.h"
 #include "Enjin/GUI/Localization.h"
@@ -44,6 +46,15 @@ Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr
 
 // Global pointer for visual script plugin system access (set by EditorLayer)
 Enjin::Plugin::PluginSystem* s_VisualScriptPluginSystem = nullptr;
+
+// Global pointer for visual script weather system access (set by PlayMode)
+Enjin::Effects::WeatherSystem* s_VisualScriptWeather = nullptr;
+
+// Global pointer for visual script water system access (set by PlayMode)
+Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;
+
+// Global pointer for visual script HUD system access (set by PlayMode)
+Enjin::Gameplay::HUDSystem* s_VisualScriptHUD = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -3571,11 +3582,15 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
             i32 type = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
                 ? std::get<i32>(inputs[1]) : 0;
             f32 transition = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
                 ? std::get<f32>(inputs[2]) : 2.0f;
-            // Weather system accessed via script bindings static pointer
+            if (s_VisualScriptWeather && type >= 0 && type <= 6) {
+                s_VisualScriptWeather->SetWeather(static_cast<Effects::WeatherType>(type), transition);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
@@ -3598,7 +3613,16 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // Fog nodes are placeholders until WeatherSystem VS bridge is set
+            extern Effects::WeatherSystem* s_VisualScriptWeather;
+            f32 density = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.5f;
+            f32 start = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 20.0f;
+            f32 end = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 100.0f;
+            if (s_VisualScriptWeather) {
+                s_VisualScriptWeather->SetFogDensity(density);
+                s_VisualScriptWeather->SetFogStart(start);
+                s_VisualScriptWeather->SetFogEnd(end);
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }
@@ -6191,6 +6215,183 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 s_VisualScriptPluginSystem->UnloadPlugin(name);
             }
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // WATER
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterSetStyle;
+        def.displayName = "Set Water Style";
+        def.description = "Change water rendering style (0=Flat, 1=Animated, 2=VertexWave, 3=Reflective, 4=Refractive)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Int("Style", PK::Input, 2) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"water", "style", "wave", "flat", "reflective"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::Water3D* s_VisualScriptWater;
+            i32 style = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1])) ? std::get<i32>(inputs[1]) : 2;
+            if (s_VisualScriptWater && style >= 0 && style <= 4) {
+                s_VisualScriptWater->GetSettings().style = static_cast<Effects::WaterStyle>(style);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterSetWaveHeight;
+        def.displayName = "Set Wave Height";
+        def.description = "Set the water wave displacement height";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Float("Height", PK::Input, 0.3f) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"water", "wave", "height"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::Water3D* s_VisualScriptWater;
+            f32 h = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.3f;
+            if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().waveHeight = h;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterSetWaveSpeed;
+        def.displayName = "Set Wave Speed";
+        def.description = "Set the water wave animation speed";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Float("Speed", PK::Input, 1.0f) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"water", "wave", "speed"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::Water3D* s_VisualScriptWater;
+            f32 s = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 1.0f;
+            if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().waveSpeed = s;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterGetWaveHeight;
+        def.displayName = "Get Wave Height At";
+        def.description = "Sample water wave height at world X/Z position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { Float("X", PK::Input, 0.0f), Float("Z", PK::Input, 0.0f) };
+        def.outputs = { Float("Height", PK::Output, 0.0f) };
+        def.flags = NodeDefFlags::Pure;
+        def.keywords = {"water", "wave", "height", "sample", "query"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Effects::Water3D* s_VisualScriptWater;
+            f32 x = (inputs.size() > 0 && std::holds_alternative<f32>(inputs[0])) ? std::get<f32>(inputs[0]) : 0.0f;
+            f32 z = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.0f;
+            if (s_VisualScriptWater) return s_VisualScriptWater->GetWaveHeight(x, z);
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterSetOpacity;
+        def.displayName = "Set Water Opacity";
+        def.description = "Set water surface opacity (0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Float("Opacity", PK::Input, 0.7f) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"water", "opacity", "transparent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::Water3D* s_VisualScriptWater;
+            f32 o = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) ? std::get<f32>(inputs[1]) : 0.7f;
+            if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().opacity = Math::Clamp(o, 0.0f, 1.0f);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::WaterSetColor;
+        def.displayName = "Set Water Color";
+        def.description = "Set the shallow water color (RGB)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Vec3("Color", PK::Input, Math::Vector3(0.1f, 0.4f, 0.5f)) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"water", "color", "tint"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::Water3D* s_VisualScriptWater;
+            Math::Vector3 c(0.1f, 0.4f, 0.5f);
+            if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) c = std::get<Math::Vector3>(inputs[1]);
+            if (s_VisualScriptWater) s_VisualScriptWater->GetSettings().shallowColor = c;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // HUD
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetEnabled;
+        def.displayName = "Set HUD Enabled";
+        def.description = "Enable or disable the HUD overlay";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.7f, 0.3f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"hud", "enable", "disable", "overlay", "ui"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Gameplay::HUDSystem* s_VisualScriptHUD;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptHUD) s_VisualScriptHUD->SetEnabled(enabled);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDIsEnabled;
+        def.displayName = "Is HUD Enabled";
+        def.description = "Check if the HUD overlay is currently enabled";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.7f, 0.3f);
+        def.inputs = {};
+        def.outputs = { Bool("Enabled", PK::Output, false) };
+        def.flags = NodeDefFlags::Pure;
+        def.keywords = {"hud", "enabled", "active", "check"};
+        def.evaluate = [](const ExecutionContext& ctx, const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Gameplay::HUDSystem* s_VisualScriptHUD;
+            if (s_VisualScriptHUD) return s_VisualScriptHUD->IsEnabled();
+            return false;
         };
         RegisterNode(def);
     }

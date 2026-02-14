@@ -356,7 +356,7 @@ Ideas for "simple creation of complex games":
 
 ## Feature Accessibility Audit — Walled-Off Systems
 
-Comprehensive audit (2026-02-10) of all engine features to identify systems that are built but unreachable by game developers. **31 gaps found** across 12 categories.
+Comprehensive audit (2026-02-10) of all engine features to identify systems that are built but unreachable by game developers. **31 gaps found** across 12 categories — **all 31 resolved** ✅
 
 ### CRITICAL — Features Built But Broken/Unreachable
 
@@ -367,37 +367,37 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 3 | ~~**Player App — Particles**~~ | ~~ParticleSystem not created in Player~~ ✅ Fixed | Player now creates and updates ParticleSystem |
 | 4 | ~~**Player App — Post-Processing**~~ | ~~No bloom/vignette/FXAA/film grain/color grading/retro effects~~ ✅ Wired | PostProcessing initialized from swapchain, wired to script bindings |
 | 5 | ~~**Player App — Save System**~~ | ~~TieredSaveSystem not initialized in Player~~ ✅ Fixed | Default LocalSaveBackend, LoadMeta/SaveMeta, Update, script bindings, VS extern all wired |
-| 6 | **Build Pipeline — Asset Packing** | BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files | Add glob patterns for all asset types in scan phase |
-| 7 | **Script Engine in Player** | ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player | Wire all SetXxx() calls after system creation |
-| 8 | **UI System — No Script Bindings** | UICanvas/UISystem have zero AngelScript or Visual Script bindings | Add ~20 UI script functions |
-| 9 | **Level Streaming** | Fully implemented but no trigger volumes, no editor UI, no script bindings | Add StreamingVolume component + editor + bindings |
-| 10 | **Localization System** | LocalizationManager complete but no editor panel, no runtime script bindings | Add Localization editor panel + script bindings |
-| 11 | **Newgrounds Bindings** | RegisterNewgroundsBindings() fully written but never called | Add call in ScriptEngine::Initialize() |
+| 6 | ~~**Build Pipeline — Asset Packing**~~ | ~~BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files~~ ✅ Fixed | All asset types packed (.as, .wav/mp3/ogg/flac, .enjdlg, .enjprefab, .enjdata/.enjschema, .csv, .gltf/.glb/.fbx/.obj, .svg) |
+| 7 | ~~**Script Engine in Player**~~ | ~~ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player~~ ✅ Fixed | All SetXxx() calls wired after system creation |
+| 8 | ~~**UI System — No Script Bindings**~~ | ~~UICanvas/UISystem have zero AngelScript or Visual Script bindings~~ ✅ Fixed | UI canvas bindings + focus management + VS nodes added |
+| 9 | ~~**Level Streaming**~~ | ~~Fully implemented but no trigger volumes, no editor UI, no script bindings~~ ✅ Fixed | StreamingVolume/Portal serialization, inspector UI, 6 AS + 6 VS bindings |
+| 10 | ~~**Localization System**~~ | ~~LocalizationManager complete but no editor panel, no runtime script bindings~~ ✅ Fixed | 5 AS bindings + 1 VS node added |
+| 11 | ~~**Newgrounds Bindings**~~ | ~~RegisterNewgroundsBindings() fully written but never called~~ ✅ Fixed | Called in RegisterAllBindings() |
 
 ### HIGH — Systems Partially Walled Off (No Script Bindings)
 
 | # | System | Missing |
 |---|--------|---------|
-| 12 | Weather | No AS/VS bindings — can't start/stop rain/snow/storms from game code |
-| 13 | Water | No AS/VS bindings — can't configure water planes from scripts |
-| 14 | Particles | No AS/VS bindings — can't spawn/stop particle effects from code |
+| ~~12~~ | ~~Weather~~ | ~~No AS/VS bindings~~ ✅ 6 AS + 2 VS bindings added |
+| ~~13~~ | ~~Water~~ | ~~No AS/VS bindings~~ ✅ 6 VS nodes added (SetStyle/WaveHeight/WaveSpeed/GetWaveHeight/Opacity/Color) |
+| ~~14~~ | ~~Particles~~ | ~~No AS/VS bindings~~ ✅ 10 AS + 3 VS bindings added |
 | ~~15~~ | ~~Networking~~ | ~~No AS/VS bindings~~ ✅ 20 AS + 6 VS bindings added |
-| 16 | Quest System | No AS/VS bindings — can't start/complete/query quests from scripts |
-| 17 | HUD System | No AS/VS bindings — can't show/hide/update HUD from scripts |
-| 18 | Cinematic System | No AS/VS bindings — can't trigger camera sequences from code |
-| 19 | Destructible System | No AS/VS bindings — can't trigger destruction from scripts |
+| ~~16~~ | ~~Quest System~~ | ~~No AS/VS bindings~~ ✅ 4 AS + 3 VS bindings added |
+| ~~17~~ | ~~HUD System~~ | ~~No AS/VS bindings~~ ✅ 2 VS nodes added (SetEnabled/IsEnabled) |
+| ~~18~~ | ~~Cinematic System~~ | ~~No AS/VS bindings~~ ✅ 2 AS + 2 VS bindings added |
+| ~~19~~ | ~~Destructible System~~ | ~~No AS/VS bindings~~ ✅ 1 AS + 1 VS binding added |
 | ~~20~~ | ~~Physics 2D~~ | ~~No AS/VS bindings~~ ✅ 15 AS + 5 VS bindings added |
-| 21 | Prefab System | No AS/VS bindings — can't instantiate prefabs at runtime |
-| 22 | Procedural Generation | No AS/VS bindings — 9 algorithms exist but can't be invoked from code |
+| ~~21~~ | ~~Prefab System~~ | ~~No AS/VS bindings~~ ✅ 4 AS + 1 VS binding added |
+| ~~22~~ | ~~Procedural Generation~~ | ~~No AS/VS bindings~~ ✅ ~15 AS + 9 VS bindings added |
 
 ### MEDIUM — Missing Editor Exposure
 
 | # | System | Issue |
 |---|--------|-------|
-| 23 | IKComponent | Not in Add Component menu |
-| 24 | TerrainComponent | Not in Add Component menu (only via terrain editor) |
-| 25 | SkeletonComponent | Not in Add Component menu |
-| 26 | FlowerComponent | Not in Add Component menu (only via vegetation system) |
+| ~~23~~ | ~~IKComponent~~ | ~~Not in Add Component menu~~ ✅ Added |
+| ~~24~~ | ~~TerrainComponent~~ | ~~Not in Add Component menu~~ ✅ Added (Terrain + Terrain2D) |
+| ~~25~~ | ~~SkeletonComponent~~ | ~~Not in Add Component menu~~ ✅ Added |
+| ~~26~~ | ~~FlowerComponent~~ | ~~Not in Add Component menu~~ ✅ Added (FlowerStem + FlowerPetal) |
 | ~~27~~ | ~~Shader Graph~~ | ~~Editor shell exists but generates no actual shader code~~ ✅ Full GLSL code generation with topological sort, 54 node types |
 | ~~28~~ | ~~Audio Event Graph~~ | ~~Editor shell exists but doesn't connect to AudioSystem~~ ✅ Full runtime execution via SimpleAudio, 4 AS + 3 VS bindings |
 | ~~29~~ | ~~Particle Graph~~ | ~~Editor shell exists but doesn't connect to ParticleSystem~~ ✅ Full compiler to ParticleEmitterComponent |
@@ -407,7 +407,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 
 | # | System | Issue |
 |---|--------|-------|
-| ~~31~~ | ~~Visual Script Nodes~~ | ~~No nodes for weather/water/networking/quest/HUD/cinematic/destructible/physics2D/prefabs/procedural gen~~ ✅ Mostly resolved — Gameplay, Physics 2D, Networking, AI/BT, Accessibility, Noise, Streaming nodes added. Remaining: water, HUD, procedural gen |
+| ~~31~~ | ~~Visual Script Nodes~~ | ~~No nodes for weather/water/networking/quest/HUD/cinematic/destructible/physics2D/prefabs/procedural gen~~ ✅ Complete — 126+ nodes across all categories including Gameplay, Physics 2D, Networking, AI/BT, Accessibility, Noise, Streaming, Water, HUD, Procedural Gen |
 
 ---
 

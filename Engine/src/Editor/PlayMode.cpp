@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Effects/Water.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Platform/Input.h"
@@ -10,8 +11,11 @@
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 
-// Extern for visual script node access to save system
+// Extern for visual script node access to systems
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
+extern Enjin::Effects::Water3D* s_VisualScriptWater;
+extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
 
 namespace Enjin {
 namespace Editor {
@@ -152,6 +156,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem instance yet — null-safe
     Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
+    s_VisualScriptWeather = m_WeatherSystem;
+    s_VisualScriptHUD = &m_HUDSystem;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
@@ -328,6 +334,9 @@ void PlayMode::Stop() {
 
     // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
+    s_VisualScriptWeather = nullptr;
+    s_VisualScriptWater = nullptr;
+    s_VisualScriptHUD = nullptr;
     Scripting::SetBindingsSubtitles(nullptr);
     Scripting::SetBindingsAnnouncer(nullptr);
     Scripting::SetBindingsAccessibilitySettings(nullptr);

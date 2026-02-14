@@ -381,10 +381,12 @@ public:
         // Destroy pooled objects before shutting down scripts
         m_ObjectPool.DestroyAll(m_World.get());
 
-        // Clear visual script save system extern
+        // Clear visual script system externs
         {
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
             s_VisualScriptSaveSystem = nullptr;
+            s_VisualScriptHUD = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -871,10 +873,14 @@ private:
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
 
-        // Wire visual script save system extern (for VS save/load/checkpoint/meta nodes)
+        // Wire visual script system externs (for VS nodes)
         {
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
+            extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
+            s_VisualScriptWeather = &m_WeatherSystem;
+            s_VisualScriptHUD = &m_HUDSystem;
         }
 
         // Wire dialogue system event bus and subtitle system

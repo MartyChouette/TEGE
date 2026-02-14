@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/ECS/Entity.h"
 #include "Enjin/ECS/World.h"
+#include "Enjin/ECS/Components/Transform.h"
 #include <vector>
 #include <algorithm>
 
@@ -104,6 +105,28 @@ inline bool HasParent(World* world, Entity child) {
 
 inline bool IsRoot(World* world, Entity entity) {
     return !HasParent(world, entity);
+}
+
+// Compute the world-space model matrix for an entity by walking up the parent chain.
+// Multiplies local transforms bottom-up: Grandparent * Parent * Child.
+// Returns local matrix for root entities (no parent). Depth-capped at 64 to prevent infinite loops.
+inline Math::Matrix4 ComputeWorldMatrix(World* world, Entity entity) {
+    auto* transform = world->GetComponent<TransformComponent>(entity);
+    if (!transform) return Math::Matrix4::Identity();
+
+    Math::Matrix4 result = transform->ToMatrix();
+
+    auto* pc = world->GetComponent<ParentComponent>(entity);
+    u32 depth = 0;
+    while (pc && pc->parent != INVALID_ENTITY && depth < 64) {
+        auto* parentTransform = world->GetComponent<TransformComponent>(pc->parent);
+        if (!parentTransform) break;
+        result = parentTransform->ToMatrix() * result;
+        pc = world->GetComponent<ParentComponent>(pc->parent);
+        ++depth;
+    }
+
+    return result;
 }
 
 } // namespace ECS

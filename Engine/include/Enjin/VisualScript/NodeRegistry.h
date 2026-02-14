@@ -340,6 +340,18 @@ constexpr const char* PluginIsLoaded  = "Plugin_IsLoaded";
 constexpr const char* PluginLoad      = "Plugin_Load";
 constexpr const char* PluginUnload    = "Plugin_Unload";
 
+// Water
+constexpr const char* WaterSetStyle          = "Water_SetStyle";
+constexpr const char* WaterSetWaveHeight     = "Water_SetWaveHeight";
+constexpr const char* WaterSetWaveSpeed      = "Water_SetWaveSpeed";
+constexpr const char* WaterGetWaveHeight     = "Water_GetWaveHeight";
+constexpr const char* WaterSetOpacity        = "Water_SetOpacity";
+constexpr const char* WaterSetColor          = "Water_SetColor";
+
+// HUD
+constexpr const char* HUDSetEnabled  = "HUD_SetEnabled";
+constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

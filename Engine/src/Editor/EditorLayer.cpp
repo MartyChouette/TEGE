@@ -107,6 +107,9 @@
 #include <cmath>
 #include <algorithm>
 
+// Extern for VS node access to Water3D (owned by EditorLayer, wired on play start)
+extern Enjin::Effects::Water3D* s_VisualScriptWater;
+
 namespace Enjin {
 namespace Editor {
 
@@ -1079,6 +1082,7 @@ void EditorLayer::StartPlayMode() {
     // TODO: Properly sync renderer state after swapchain recreation
     Scripting::SetBindingsWeather(&m_WeatherSystem);
     Scripting::SetBindingsSceneManager(&m_SceneManager);
+    s_VisualScriptWater = &m_Water3D;
     m_CachedPlayerEntity = ECS::INVALID_ENTITY; // Invalidate cache for new play session
     m_PlayMode.Play();
 }
@@ -1308,7 +1312,11 @@ void EditorLayer::Update(f32 deltaTime) {
     // Gizmo mode shortcuts (1=translate, 2=rotate, 3=scale, 4=toggle space)
     // Using number keys to avoid conflict with WASD camera movement
     // Skip during play mode so keys go to game controllers
-    if (!WantsKeyboardInput() && m_PlayMode.IsStopped()) {
+    // Use WantTextInput (not WantCaptureKeyboard) so shortcuts work when panels
+    // have focus but no text field is being edited. WantCaptureKeyboard is true whenever
+    // any ImGui window is focused, which blocks Delete/Ctrl+D/gizmo keys after clicking
+    // in the hierarchy or any other panel.
+    if (!ImGui::GetIO().WantTextInput && m_PlayMode.IsStopped()) {
         if (Input::IsKeyPressed(KeyCode::Num1)) {
             m_GizmoOperation = GizmoOperation::Translate;
         }

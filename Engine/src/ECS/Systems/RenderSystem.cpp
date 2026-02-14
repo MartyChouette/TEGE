@@ -1,5 +1,6 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Name.h"
@@ -1192,10 +1193,10 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
             // Update per-entity material UBO
             UpdateMaterialBuffer(entity);
 
-            // Push constants
+            // Push constants (world matrix includes parent chain)
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
             Renderer::PushConstants pushConstants{};
-            pushConstants.model = transform->ToMatrix();
+            pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
@@ -1541,10 +1542,10 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
 
             UpdateMaterialBuffer(entity);
 
-            // Build push constants (same logic as RenderToTarget)
+            // Build push constants (world matrix includes parent chain)
             TransformComponent* transform = m_World->GetComponent<TransformComponent>(entity);
             Renderer::PushConstants pushConstants{};
-            pushConstants.model = transform->ToMatrix();
+            pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
             MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
             Renderer::Texture* boundTexture = nullptr;
@@ -1955,7 +1956,7 @@ void RenderSystem::BuildCullableObjectList() {
 
         Renderer::CullableObject obj;
         obj.SetBounds(bounds);
-        obj.transform = xform->ToMatrix();
+        obj.transform = ECS::ComputeWorldMatrix(m_World, entity);
         obj.meshIndex = static_cast<u32>(entity); // Use entity ID as mesh index for now
         obj.indexCount = static_cast<u32>(mesh->indices.size());
 
@@ -2043,7 +2044,7 @@ void RenderSystem::UploadObjectData() {
         if (idx >= m_ObjectDataCPU.size()) break;
 
         ObjectDataGPU& obj = m_ObjectDataCPU[idx];
-        obj.model = xform->ToMatrix();
+        obj.model = ECS::ComputeWorldMatrix(m_World, entity);
 
         auto* material = m_World->GetComponent<MaterialComponent>(entity);
         if (material) {
@@ -3424,9 +3425,9 @@ void RenderSystem::RenderEntity(Entity entity) {
     // Update per-entity material UBO
     UpdateMaterialBuffer(entity);
 
-    // Push model matrix and material for this entity
+    // Push model matrix and material for this entity (world matrix includes parent chain)
     Renderer::PushConstants pushConstants{};
-    pushConstants.model = transform->ToMatrix();
+    pushConstants.model = ECS::ComputeWorldMatrix(m_World, entity);
 
     // Set material data
     MaterialComponent* material = m_World->GetComponent<MaterialComponent>(entity);
@@ -3963,7 +3964,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
     // The shadow vertex shader reads this from push constants (first 64 bytes),
     // avoiding the HOST_COHERENT UBO race condition.
     Renderer::PushConstants pushConstants{};
-    pushConstants.model = m_CurrentCascadeVP * transform->ToMatrix();
+    pushConstants.model = m_CurrentCascadeVP * ECS::ComputeWorldMatrix(m_World, entity);
 
     vkCmdPushConstants(commandBuffer, m_ShadowPipeline->GetLayout(),
         VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(Renderer::PushConstants), &pushConstants);
@@ -5221,8 +5222,8 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
             vertAddr, static_cast<u32>(mesh->vertices.size()), sizeof(MeshComponent::Vertex),
             idxAddr, static_cast<u32>(mesh->indices.size()));
 
-        // Build model matrix
-        Math::Matrix4 model = transform->ToMatrix();
+        // Build world model matrix (includes parent chain)
+        Math::Matrix4 model = ECS::ComputeWorldMatrix(m_World, entity);
 
         m_ASManager->AddInstance(blasId, model, static_cast<u32>(entity));
     }
