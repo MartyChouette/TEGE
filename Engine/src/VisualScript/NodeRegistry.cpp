@@ -31,6 +31,8 @@
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Plugin/PluginSystem.h"
+#include "Enjin/Accessibility/SubtitleSystem.h"
+#include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -55,6 +57,12 @@ Enjin::Effects::Water3D* s_VisualScriptWater = nullptr;
 
 // Global pointer for visual script HUD system access (set by PlayMode)
 Enjin::Gameplay::HUDSystem* s_VisualScriptHUD = nullptr;
+
+// Global pointer for visual script subtitle system access (set by PlayMode)
+Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem = nullptr;
+
+// Global pointer for visual script announcer access (set by PlayMode)
+Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -5182,9 +5190,19 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // Subtitle display requires SubtitleSystem pointer; placeholder execution
-            (void)ctx;
-            (void)inputs;
+            extern Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
+            if (s_VisualScriptSubtitleSystem) {
+                std::string text = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                    ? std::get<std::string>(inputs[1]) : "";
+                std::string speaker = (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                    ? std::get<std::string>(inputs[2]) : "";
+                f32 duration = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    ? std::get<f32>(inputs[3]) : 3.0f;
+                if (!text.empty()) {
+                    s_VisualScriptSubtitleSystem->ShowSubtitle(text, speaker,
+                        Math::Vector3(1.0f, 1.0f, 1.0f), duration);
+                }
+            }
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
@@ -5207,9 +5225,14 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // Announcer requires AccessibilityAnnouncer pointer; placeholder execution
-            (void)ctx;
-            (void)inputs;
+            extern Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
+            if (s_VisualScriptAnnouncer) {
+                std::string text = (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1]))
+                    ? std::get<std::string>(inputs[1]) : "";
+                if (!text.empty()) {
+                    s_VisualScriptAnnouncer->Announce(text, Accessibility::AnnouncePriority::Normal);
+                }
+            }
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
@@ -5232,9 +5255,12 @@ void NodeRegistry::RegisterBuiltinNodes() {
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
-            // Colorblind mode requires RuntimeAccessibilitySettings pointer; placeholder
-            (void)ctx;
-            (void)inputs;
+            // TODO: Colorblind mode requires PostProcessSettings access which is
+            //       context-dependent (Editor vs Player). Wire when a global
+            //       s_VisualScriptPostProcessing pointer is available.
+            i32 mode = (inputs.size() > 1 && std::holds_alternative<i32>(inputs[1]))
+                ? std::get<i32>(inputs[1]) : 0;
+            (void)mode;
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

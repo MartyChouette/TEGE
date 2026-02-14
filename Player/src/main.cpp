@@ -30,6 +30,7 @@
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
+#include "Enjin/Effects/Water.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
@@ -390,9 +391,17 @@ public:
         // Clear visual script system externs
         {
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
+            extern Enjin::Effects::Water3D* s_VisualScriptWater;
             extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+            extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
+            extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             s_VisualScriptSaveSystem = nullptr;
+            s_VisualScriptWeather = nullptr;
+            s_VisualScriptWater = nullptr;
             s_VisualScriptHUD = nullptr;
+            s_VisualScriptSubtitleSystem = nullptr;
+            s_VisualScriptAnnouncer = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -428,6 +437,18 @@ public:
         m_SimpleAudio.SetOnSoundPlayed(nullptr);
 
         // Clear script bindings
+        Enjin::Scripting::SetBindingsWorld(nullptr);
+        Enjin::Scripting::SetBindingsRenderSystem(nullptr);
+        Enjin::Scripting::SetBindingsPhysics(nullptr);
+        Enjin::Scripting::SetBindingsDialogueSystem(nullptr);
+        Enjin::Scripting::SetBindingsSaveSystem(nullptr);
+        Enjin::Scripting::SetBindingsCoroutineScheduler(nullptr);
+        Enjin::Scripting::SetBindingsEventBus(nullptr);
+        Enjin::Scripting::SetBindingsScriptEngine(nullptr);
+        Enjin::Scripting::SetBindingsQuestSystem(nullptr);
+        Enjin::Scripting::SetBindingsCinematicSystem(nullptr);
+        Enjin::Scripting::SetBindingsObjectPool(nullptr);
+        Enjin::Scripting::SetBindingsFlower(nullptr);
         Enjin::Scripting::SetBindingsSubtitles(nullptr);
         Enjin::Scripting::SetBindingsAnnouncer(nullptr);
         Enjin::Scripting::SetBindingsAccessibilitySettings(nullptr);
@@ -894,10 +915,16 @@ private:
         {
             extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
             extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
+            extern Enjin::Effects::Water3D* s_VisualScriptWater;
             extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+            extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
+            extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
+            s_VisualScriptWater = &m_Water3D;
             s_VisualScriptHUD = &m_HUDSystem;
+            s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
+            s_VisualScriptAnnouncer = &m_Announcer;
         }
 
         // Wire dialogue system event bus and subtitle system
@@ -1359,11 +1386,10 @@ private:
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
-    // TODO(F11): Water3D — Water3D::Initialize() generates CPU mesh data and wave offsets,
-    //   but there is no Vulkan rendering integration yet (no water render pass, no water shader
-    //   pipeline in RenderSystem). To wire: add Water3D member, init from scene settings,
-    //   call Update(deltaTime) per frame, create a dedicated water mesh entity or custom render
-    //   pass in RenderSystem that uses Water3D::GenerateMesh() and wave uniforms.
+    // Water3D — settings object for VS node access; rendering integration pending (no water
+    // render pass or shader pipeline in RenderSystem yet).
+    Enjin::Effects::Water3D m_Water3D;
+
     // TODO(F11): RetroEffects — RetroEffects is a settings/config class (resolution, dither,
     //   CRT, VHS, fog, color mode). It has no Vulkan rendering integration in RenderSystem or
     //   PostProcessing yet. To wire: add RetroEffects member, apply settings to push constant

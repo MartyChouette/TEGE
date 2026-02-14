@@ -118,8 +118,12 @@ void AudioEventGraphEditor::Render() {
                 m_Graph->nextLinkId = 1;
                 m_SelectedNodeId = 0;
             }
-            ImGui::MenuItem("Save", "Ctrl+S");  // TODO: implement
-            ImGui::MenuItem("Load");             // TODO: implement
+            if (ImGui::MenuItem("Save", "Ctrl+S")) {
+                Save("audio_event_graph.enjaudiopkg");
+            }
+            if (ImGui::MenuItem("Load")) {
+                Load("audio_event_graph.enjaudiopkg");
+            }
             ImGui::EndMenu();
         }
         ImGui::EndMenuBar();

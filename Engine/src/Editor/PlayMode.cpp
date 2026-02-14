@@ -23,6 +23,8 @@ extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
 extern Enjin::Effects::WeatherSystem* s_VisualScriptWeather;
 extern Enjin::Effects::Water3D* s_VisualScriptWater;
 extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
+extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
+extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
 
 namespace Enjin {
 namespace Editor {
@@ -165,6 +167,8 @@ void PlayMode::Play() {
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
     s_VisualScriptHUD = &m_HUDSystem;
+    s_VisualScriptSubtitleSystem = m_SubtitleSystem;
+    s_VisualScriptAnnouncer = m_Announcer;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
@@ -372,6 +376,15 @@ void PlayMode::Stop() {
     s_VisualScriptWeather = nullptr;
     s_VisualScriptWater = nullptr;
     s_VisualScriptHUD = nullptr;
+    s_VisualScriptSubtitleSystem = nullptr;
+    s_VisualScriptAnnouncer = nullptr;
+    Scripting::SetBindingsWorld(nullptr);
+    Scripting::SetBindingsRenderSystem(nullptr);
+    Scripting::SetBindingsDialogueSystem(nullptr);
+    Scripting::SetBindingsCoroutineScheduler(nullptr);
+    Scripting::SetBindingsEventBus(nullptr);
+    Scripting::SetBindingsScriptEngine(nullptr);
+    Scripting::SetBindingsPostProcessing(nullptr);
     Scripting::SetBindingsSubtitles(nullptr);
     Scripting::SetBindingsAnnouncer(nullptr);
     Scripting::SetBindingsAccessibilitySettings(nullptr);

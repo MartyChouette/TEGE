@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-02-14 (Session 15)
+
+### Comprehensive Audit #4 — 51 Findings, 16 Fixed
+Four parallel audit agents examined the entire codebase:
+
+**Physics Backend Audit: PASS** — Jolt handles all 3D physics, Box2D handles all 2D physics, all SimplePhysics code properly guarded by `ENJIN_PHYSICS_SIMPLE`. Factory defaults correct, wiring complete in both PlayMode and Player.
+
+**Fixes Applied (16):**
+- PlayMode::Stop() — Added 7 missing SetBindings*(nullptr) calls (World, RenderSystem, DialogueSystem, CoroutineScheduler, EventBus, ScriptEngine, PostProcessing)
+- Player::Shutdown() — Added 12 missing SetBindings*(nullptr) calls + s_VisualScriptWeather cleanup
+- SceneSerializer — Added .contains() guards on 3 deserialization sites (NameComponent, TransformComponent, MeshComponent vertices)
+- Dead Weather::WeatherSystem — Wrapped in #if 0 (superseded by Effects::WeatherSystem)
+- VS Accessibility nodes — ShowSubtitle and AnnouncerAnnounce now call actual SubtitleSystem/Announcer via global pointers
+- PlayMode — Wired s_VisualScriptSubtitleSystem and s_VisualScriptAnnouncer in Play()/Stop()
+- Player — Added Water3D member, wired s_VisualScriptWater/SubtitleSystem/Announcer
+- Audio Event Graph — Save/Load menu items now call Save()/Load() methods
+
+**Documented (not fixed — require larger feature work):**
+- OIT render passes are empty stubs (needs Vulkan pipeline)
+- HTTP Client no-op on non-Windows (needs libcurl/WinHTTP abstraction)
+- SWF Zlib decompression missing (needs zlib integration)
+- DoF/Tilt-Shift no shader implementation (needs SPIR-V)
+- SH Light Probe baking is fake (needs cubemap rendering)
+- OIDN GPU-to-CPU copy not implemented (needs staging buffer)
+- ASTC texture compression falls back to BC7 (needs ASTC library)
+- UI Phase 2+ widget types render as grey boxes (large feature)
+- Network auth/replay protection missing (security feature)
+
+---
+
 ## 2026-02-14 (Session 14)
 
 ### Collaborative Editing UI

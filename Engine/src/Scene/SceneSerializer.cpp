@@ -278,15 +278,15 @@ json SerializeCameraComponent(const ECS::CameraComponent& camera) {
 // Deserialize components
 ECS::NameComponent DeserializeNameComponent(const json& j) {
     ECS::NameComponent name;
-    name.name = j["name"].get<std::string>();
+    if (j.contains("name")) name.name = j["name"].get<std::string>();
     return name;
 }
 
 ECS::TransformComponent DeserializeTransformComponent(const json& j) {
     ECS::TransformComponent transform;
-    transform.position = DeserializeVector3(j["position"]);
-    transform.rotation = DeserializeQuaternion(j["rotation"]);
-    transform.scale = DeserializeVector3(j["scale"]);
+    if (j.contains("position")) transform.position = DeserializeVector3(j["position"]);
+    if (j.contains("rotation")) transform.rotation = DeserializeQuaternion(j["rotation"]);
+    if (j.contains("scale")) transform.scale = DeserializeVector3(j["scale"]);
     if (j.contains("visible")) transform.visible = JB(j["visible"]);
     return transform;
 }
@@ -353,9 +353,9 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
     if (j.contains("vertices") && j["vertices"].is_array()) {
         for (const auto& v : j["vertices"]) {
             ECS::MeshComponent::Vertex vertex;
-            vertex.position = DeserializeVector3(v["position"]);
-            vertex.normal = DeserializeVector3(v["normal"]);
-            vertex.uv = DeserializeVector2(v["uv"]);
+            if (v.contains("position")) vertex.position = DeserializeVector3(v["position"]);
+            if (v.contains("normal")) vertex.normal = DeserializeVector3(v["normal"]);
+            if (v.contains("uv")) vertex.uv = DeserializeVector2(v["uv"]);
             if (v.contains("color")) {
                 vertex.color = DeserializeVector4(v["color"]);
             }
