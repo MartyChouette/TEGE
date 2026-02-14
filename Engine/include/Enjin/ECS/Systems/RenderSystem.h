@@ -52,6 +52,7 @@ namespace Enjin { namespace Renderer {
     class RTGlobalIllumination;
     class PathTracer;
     class SVGFDenoiser;
+    class OIDNDenoiser;
     class RTCompositor;
     class OITManager;
     class SHLightingSystem;
@@ -318,7 +319,12 @@ public:
     Renderer::RTGlobalIllumination* GetRTGI() { return m_RTGI.get(); }
     Renderer::PathTracer* GetPathTracer() { return m_PathTracer.get(); }
     Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
+    Renderer::OIDNDenoiser* GetOIDNDenoiser() { return m_OIDNDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
+
+    // Denoiser type selection: 0=SVGF, 1=OIDN
+    u32 GetDenoiserType() const { return m_DenoiserType; }
+    void SetDenoiserType(u32 type) { m_DenoiserType = type; }
 
     // Order-Independent Transparency
     bool IsOITEnabled() const { return m_OITEnabled; }
@@ -670,7 +676,9 @@ private:
     std::unique_ptr<Renderer::RTGlobalIllumination> m_RTGI;
     std::unique_ptr<Renderer::PathTracer> m_PathTracer;
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;
+    std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
+    u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN
 
     // RT descriptor set layout and pool
     VkDescriptorSetLayout m_RTDescriptorSetLayout = VK_NULL_HANDLE;

@@ -82,6 +82,7 @@ public:
     void OnEntityRemoved(ECS::Entity entity);
 
     const FluidGridData* GetGridData(ECS::Entity entity) const;
+    FluidGridData* GetMutableGridData(ECS::Entity entity);
 
 private:
     std::unordered_map<ECS::Entity, FluidGridData> m_Grids;

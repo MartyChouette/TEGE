@@ -76,6 +76,11 @@ struct MaterialComponent {
     // Cel shading opt-out (per-material)
     bool excludeFromCelShading = false;
 
+    // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
+    bool ditherGradient = false;
+    u8 ditherGradientBands = 4;        // 2-8 color quantization bands
+    u8 ditherGradientPattern = 0;      // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
+
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
     struct TextureKey {
@@ -172,6 +177,13 @@ struct alignas(16) MaterialGPU {
         // Shadow dither pattern packed into bits 29-31 (3 bits)
         gpu.flags |= (static_cast<i32>(mat.shadowDitherPattern & 0x7) << 29);
 
+        // Dithered gradient: forces flat shading flag.
+        // surfaceParam1 encoding happens in PushConstants (RenderSystem) since
+        // MaterialGPU doesn't include surfaceParam fields.
+        if (mat.ditherGradient) {
+            gpu.flags |= (1 << 20);  // Force flat shading
+        }
+
         return gpu;
     }
 
@@ -187,6 +199,9 @@ struct alignas(16) MaterialGPU {
     static constexpr i32 FLAG_AFFINE_TEXTURING = (1 << 21);
     static constexpr i32 FLAG_VERTEX_SNAPPING = (1 << 22);
     static constexpr i32 FLAG_STIPPLE_TRANSPARENCY = (1 << 23);
+
+    // Dithered gradient: encoded in surfaceParam1 (values > 1.0 = dither gradient mode)
+    // surfaceParam1 = 100.0 + bands + pattern * 0.1
 };
 
 } // namespace ECS

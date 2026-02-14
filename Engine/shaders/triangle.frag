@@ -789,6 +789,37 @@ void main() {
         }
     }
 
+    // Dithered gradient: quantize lighting into bands with dither transitions
+    // Encoded in surfaceParam1 when > 1.0: surfaceParam1 = 100 + bands + pattern * 0.1
+    bool isDitherGradient = false;
+    if ((material.flags & FLAG_FLAT_SHADING) != 0 && material.surfaceParam1 > 1.5) {
+        isDitherGradient = true;
+        float encoded = material.surfaceParam1 - 100.0;
+        float bands = floor(encoded);  // 2-8
+        int pattern = int(floor((encoded - bands) * 10.0 + 0.5));  // 0-5
+
+        // Compute luminance of the lit result
+        float lum = dot(result, vec3(0.2126, 0.7152, 0.0722));
+
+        // Quantize to discrete bands
+        float quantized = floor(lum * bands + 0.5) / bands;
+        float nextBand = min(quantized + 1.0 / bands, 1.0);
+
+        // Dither at band boundaries: interpolate between adjacent bands
+        float t = fract(lum * bands);  // position within current band (0-1)
+        float dither = getDitherThreshold(ivec2(gl_FragCoord.xy), pattern);
+
+        // Select band based on dither threshold
+        float finalLum = (t > dither) ? nextBand : quantized;
+
+        // Apply the quantized luminance while preserving hue
+        if (lum > 0.001) {
+            result *= finalLum / lum;
+        } else {
+            result = vec3(finalLum);
+        }
+    }
+
     // Water surface: fresnel-like reflective sheen with freeze transition
     if ((material.flags & FLAG_WATER_SURFACE) != 0) {
         float NdotV = max(dot(normal, viewDir), 0.0);
@@ -841,8 +872,8 @@ void main() {
         }
     }
 
-    // Artistic surface: environment reflection + rim light (non-water entities only)
-    if ((material.flags & FLAG_WATER_SURFACE) == 0 &&
+    // Artistic surface: environment reflection + rim light (non-water, non-dither-gradient entities)
+    if ((material.flags & FLAG_WATER_SURFACE) == 0 && !isDitherGradient &&
         (material.surfaceParam1 > 0.0 || material.surfaceParam3 > 0.0)) {
         float reflectivity = material.surfaceParam1;
         float fresnelPow   = material.surfaceParam2;

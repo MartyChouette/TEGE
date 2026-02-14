@@ -55,3 +55,60 @@ if(ENJIN_BUILD_TESTS)
     enable_testing()
     add_subdirectory(Tests)
 endif()
+
+# =============================================================================
+# Binary Distribution - Install Rules
+# =============================================================================
+
+# Install editor and player executables
+if(ENJIN_BUILD_EDITOR)
+    install(TARGETS EnjinEditor RUNTIME DESTINATION bin)
+endif()
+if(ENJIN_BUILD_PLAYER)
+    install(TARGETS EnjinPlayer RUNTIME DESTINATION bin)
+endif()
+
+# Install shader files
+install(DIRECTORY Engine/shaders/ DESTINATION share/enjin/shaders
+    FILES_MATCHING PATTERN "*.vert" PATTERN "*.frag" PATTERN "*.comp" PATTERN "*.glsl"
+    PATTERN "*.spv" PATTERN "*.rgen" PATTERN "*.rmiss" PATTERN "*.rchit")
+
+# Install documentation
+install(DIRECTORY docs/ DESTINATION share/doc/enjin
+    FILES_MATCHING PATTERN "*.md")
+
+# Install project templates directory
+if(EXISTS "${CMAKE_SOURCE_DIR}/templates")
+    install(DIRECTORY templates/ DESTINATION share/enjin/templates)
+endif()
+
+# Install third-party font directory
+if(EXISTS "${CMAKE_SOURCE_DIR}/fonts")
+    install(DIRECTORY fonts/ DESTINATION share/enjin/fonts)
+endif()
+
+# =============================================================================
+# CPack Configuration
+# =============================================================================
+
+set(CPACK_PACKAGE_NAME "Enjin")
+set(CPACK_PACKAGE_VENDOR "Enjin Engine")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Enjin Game Engine - C++20 Vulkan-powered game engine with editor")
+set(CPACK_PACKAGE_VERSION_MAJOR ${PROJECT_VERSION_MAJOR})
+set(CPACK_PACKAGE_VERSION_MINOR ${PROJECT_VERSION_MINOR})
+set(CPACK_PACKAGE_VERSION_PATCH ${PROJECT_VERSION_PATCH})
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Enjin")
+
+# Platform-specific generators
+if(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+    set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-win64")
+elseif(APPLE)
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-macos")
+else()
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-linux-x64")
+endif()
+
+include(CPack)

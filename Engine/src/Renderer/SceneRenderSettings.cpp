@@ -7,6 +7,8 @@
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
+#include <algorithm>
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include <nlohmann/json.hpp>
 #include <cmath>
@@ -86,6 +88,10 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
             s.rtDenoiserEnabled = true;
             s.rtDenoiserIterations = denoiser->GetConfig().atrousIterations;
             s.rtDenoiserTemporalAlpha = denoiser->GetConfig().temporalAlpha;
+        }
+        s.rtDenoiserType = rs->GetDenoiserType();
+        if (auto* oidn = rs->GetOIDNDenoiser()) {
+            s.rtOIDNQuality = static_cast<u32>(oidn->GetConfig().quality);
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             s.rtShadowStrength = compositor->GetConfig().shadowStrength;
@@ -284,6 +290,10 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         if (auto* denoiser = rs->GetSVGFDenoiser()) {
             denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
             denoiser->GetConfig().temporalAlpha = rtDenoiserTemporalAlpha;
+        }
+        rs->SetDenoiserType(rtDenoiserType);
+        if (auto* oidn = rs->GetOIDNDenoiser()) {
+            oidn->GetConfig().quality = static_cast<Renderer::OIDNQuality>(std::min(rtOIDNQuality, 2u));
         }
         if (auto* compositor = rs->GetRTCompositor()) {
             compositor->GetConfig().shadowStrength = rtShadowStrength;
@@ -624,8 +634,10 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
     j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
     j["rtDenoiserEnabled"]             = s.rtDenoiserEnabled;
+    j["rtDenoiserType"]                = s.rtDenoiserType;
     j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
     j["rtDenoiserTemporalAlpha"]       = RF(s.rtDenoiserTemporalAlpha);
+    j["rtOIDNQuality"]                 = s.rtOIDNQuality;
     j["rtShadowStrength"]              = RF(s.rtShadowStrength);
     j["rtReflectionStrength"]          = RF(s.rtReflectionStrength);
     j["rtAOStrength"]                  = RF(s.rtAOStrength);
@@ -809,8 +821,10 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
     if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
     if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = j["rtDenoiserEnabled"].get<bool>();
+    if (j.contains("rtDenoiserType"))                 s.rtDenoiserType                 = j["rtDenoiserType"].get<u32>();
     if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();
     if (j.contains("rtDenoiserTemporalAlpha"))        s.rtDenoiserTemporalAlpha        = j["rtDenoiserTemporalAlpha"].get<f32>();
+    if (j.contains("rtOIDNQuality"))                  s.rtOIDNQuality                  = j["rtOIDNQuality"].get<u32>();
     if (j.contains("rtShadowStrength"))               s.rtShadowStrength               = j["rtShadowStrength"].get<f32>();
     if (j.contains("rtReflectionStrength"))            s.rtReflectionStrength            = j["rtReflectionStrength"].get<f32>();
     if (j.contains("rtAOStrength"))                   s.rtAOStrength                   = j["rtAOStrength"].get<f32>();

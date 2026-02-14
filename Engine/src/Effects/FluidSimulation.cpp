@@ -155,6 +155,11 @@ const FluidGridData* FluidSimulation::GetGridData(ECS::Entity entity) const {
     return it != m_Grids.end() ? &it->second : nullptr;
 }
 
+FluidGridData* FluidSimulation::GetMutableGridData(ECS::Entity entity) {
+    auto it = m_Grids.find(entity);
+    return it != m_Grids.end() ? &it->second : nullptr;
+}
+
 // ============================================================================
 // 2D Stable Fluids
 // ============================================================================

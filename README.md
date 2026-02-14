@@ -7,7 +7,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
 - **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
-- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), receiveShadows toggle
+- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), receiveShadows toggle, dithered gradient banding (2-8 bands, 6 dither patterns)
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes)
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** - Rain, snow, fog, storms with toggleable lightning
@@ -26,7 +26,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 - **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
 - **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser, real depth buffer wiring, RT composition pass (awaiting compiled SPIR-V)
+- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser + optional OIDN (Intel Open Image Denoise), real depth buffer wiring, RT composition pass (awaiting compiled SPIR-V)
 - **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and nearest-probe queries
 - **SDF Scene** - CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
 - **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures
@@ -45,7 +45,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
 - **Startup Templates** - 43 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
-- **Custom Templates** - Save/load from templates/ directory
+- **Template Creator** - Save current scene as reusable template with metadata (View > Tools > Template Creator), custom templates stored in templates/ directory
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
@@ -143,8 +143,14 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Raw Mouse Input** - Bypass OS mouse acceleration with smoothing options
 - **Destructible Environments** - 4 fracture patterns (Voronoi, Grid, Radial, Shatter) with debris physics
 - **2D Physics** - Circle, box, polygon shapes with 5 joint types, CCD, SAT collision
+- **Fluid-Terrain Coupling** - Bidirectional FluidSimulation-to-TerrainComponent coupling with erosion and accumulation modes
 - **Localization** - String tables, CSV/JSON I/O, parameterized strings, LOC() macro
 - **Dialogue Assets** - .enjdlg dialogue files with visual tree editor
+
+### Asset Libraries
+- **Font Library** - 42 curated OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) with editor browser, search, and install
+- **3D Asset Library** - 16 CC0 3D model packs (Kenney, Quaternius) across Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi
+- **2D Asset Library** - 15 CC0 2D sprite/tileset/UI packs across UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures
 
 ### Build & Distribution
 - **Build Pipeline** - Scan project → validate assets → compress/obfuscate → pack into `.enjpak` with CRC32 integrity verification
@@ -152,6 +158,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Build Dialog** - Editor UI for configuring and running builds with progress tracking
 - **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
 - **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop with full particle, subtitle, announcer, alternative input, and post-processing support
+- **Import Presets** - Source-app import presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp) with auto-detection and per-axis flip toggles
+- **Binary Distribution** - CMake install rules + CPack config for Windows ZIP packaging, one-command build scripts (package.bat/package.sh)
 
 ### Scripting & Extensibility
 - **AngelScript Integration** - TegeBehavior base class, ~390 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins), hot-reload
@@ -266,7 +274,7 @@ enjin/
 - [x] Enemy AI Behaviors (patrol, chase, flee, attack patterns)
 - [x] AI State Machines (FSM with transitions)
 - [x] 2D Procedural Level Generation (prefab-based)
-- [x] 3D Procedural Level Generation (room/corridor system)
+- [x] 3D Procedural Level Generation (room/corridor system, fractal terrain, advanced L-system)
 - [x] Navmesh Generation & Pathfinding (A*)
 
 ### Phase 9: Gameplay Systems ✅
@@ -307,7 +315,7 @@ enjin/
 - [x] Vector Drawing Editor (SVG)
 - [x] HTML5 Export
 - [x] Newgrounds.io API Integration
-- [x] Procedural Generation (9 algorithms + graph editor)
+- [x] Procedural Generation (9+ algorithms incl. fractal terrain + erosion + 3D L-system, graph editor)
 - [x] Destructible Environments
 - [x] 2D Physics System
 - [x] Localization System

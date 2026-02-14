@@ -30,6 +30,7 @@
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Renderer/SceneRenderSettings.h"
@@ -41,6 +42,8 @@
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Assets/ThumbnailGenerator.h"
 #include "Enjin/Assets/TextureCompressor.h"
+#include "Enjin/Assets/FontLibrary.h"
+#include "Enjin/Assets/AssetLibrary.h"
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/GUI/DialogueTree.h"
 #include "Enjin/Editor/AnimationGraphEditor.h"
@@ -59,6 +62,7 @@
 #include "Enjin/Editor/FlashTimeline.h"
 #include "Enjin/Editor/VectorDrawingEditor.h"
 #include "Enjin/Editor/FeedbackSystem.h"
+#include "Enjin/Editor/TemplateCreator.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
 #include "Enjin/Build/HTML5Exporter.h"
@@ -316,6 +320,7 @@ private:
     void DrawTemperatureZoneComponent(ECS::Entity entity);
     void DrawGravityZoneComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
+    void DrawFluidTerrainCoupling(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -693,6 +698,10 @@ private:
     // Scene management
     Scene::SceneManager m_SceneManager;
 
+    // Asset libraries (font + 2D/3D catalogs)
+    Assets::FontLibrary m_FontLibrary;
+    Assets::AssetLibrary m_AssetLibrary;
+
     // Effects systems (global, rendered in game view)
     Effects::WindSystem m_WindSystem;
     Effects::WeatherSystem m_WeatherSystem;
@@ -704,6 +713,9 @@ private:
 
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;
+
+    // Fluid-terrain coupling (erosion/deposition from fluid to terrain heightmap)
+    Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
 
     // Curl noise flow field system
     std::unique_ptr<Effects::CurlNoiseSystem> m_CurlNoiseSystem;
@@ -1074,6 +1086,20 @@ private:
     void UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY);
     void UIEditorDesignToScreen(f32 designX, f32 designY, f32& screenX, f32& screenY);
     UIEditDragMode UIEditorHitTestHandles(f32 localX, f32 localY, const GUI::UIRect& rect);
+
+    // Template Creator tool
+    bool m_ShowTemplateCreator = false;
+    char m_TmplName[128] = "My Template";
+    char m_TmplDescription[512] = "";
+    char m_TmplAuthor[128] = "";
+    i32 m_TmplCategory = 0;    // index into category list
+    f32 m_TmplAccentColor[4] = { 0.3f, 0.6f, 1.0f, 1.0f };
+    char m_TmplThumbnailPath[512] = "";
+    std::vector<Editor::TemplateMetadata> m_ScannedTemplates;
+    bool m_TmplNeedsRescan = true;
+    i32 m_TmplDeleteConfirm = -1; // index of template pending delete confirmation
+
+    void DrawTemplateCreatorWindow();
 };
 
 } // namespace Editor

@@ -505,7 +505,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Wire plugin/audio graph/input action bindings in PlayMode | Medium | Low | P1 | ✅ Complete |
 | Pack graph assets in BuildPipeline | Medium | Low | P2 | ✅ Complete (.enjshader/.enjaudiopkg/.enjparticle) |
 | Quaternion GetRotationZ/GetForward/GetRight/GetUp helpers | High | Low | P1 | ✅ Complete (eliminates ToEuler/ToMatrix in 19+ hot paths) |
-| OIDN integration | Medium | Medium | P3 | Planned |
+| OIDN integration | Medium | Medium | P3 | ✅ Complete (OIDNDenoiser as SVGF alternative, CMake ENJIN_RAYTRACING_OIDN, editor denoiser type selector) |
 | **— Rendering & Camera —** | | | | |
 | Camera presets (iso, side-scroller, etc.) | Medium | Low | P2 | ✅ Complete |
 | Tilt-shift / miniature effect | Low | Medium | P3 | ✅ Complete |
@@ -514,7 +514,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Full-screen stippling & dither | Medium | Low | P3 | ✅ Complete |
 | **— Artistic Rendering —** | | | | |
 | Parallax occlusion mapping (advanced) | Medium | Medium | P2 | ✅ Complete |
-| Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | Planned |
+| Flat-shaded low-poly with dithered gradients | Medium | Medium | P3 | ✅ Complete (ditherGradient on MaterialComponent, 2-8 bands, 6 dither patterns, surfaceParam1 push constant) |
 | Metaball / blob rendering | Medium | High | P3 | Planned |
 | Spherical harmonics lighting | High | High | P2 | ✅ Complete |
 | Beam tracing and cone tracing (VXGI) | High | Very High | P3 | Planned |
@@ -524,12 +524,12 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Framebuffer feedback effects | Medium | Low | P3 | Planned |
 | Screen-space distortion as primary aesthetic | Medium | Medium | P3 | Planned |
 | IK-driven mesh deformation | Medium | High | P3 | Planned |
-| Fractal terrain & L-system vegetation (advanced) | High | High | P2 | Planned |
+| Fractal terrain & L-system vegetation (advanced) | High | High | P2 | ✅ Complete (fBm terrain with ridged multifractal, hydraulic/thermal erosion, 3D L-system turtle with stochastic rules) |
 | **— Simulation-Driven Geometry —** | | | | |
 | Reaction-diffusion on meshes | Medium | High | P3 | Planned |
 | Cellular automata as geometry | Medium | Medium | P3 | Planned |
 | Slime mold simulation (Physarum) | Medium | Medium | P3 | Planned |
-| Fluid simulation as terrain | Medium | Medium | P2 | Planned |
+| Fluid simulation as terrain | Medium | Medium | P2 | ✅ Complete (FluidTerrainCoupling: erosion + accumulate modes, bidirectional terrain↔fluid) |
 | Voronoi fracture with persistent physics | High | Medium | P2 | ✅ Complete |
 | **— Simulation & Flow —** | | | | |
 | Curl noise flow fields | High | Medium | P2 | ✅ Complete |
@@ -542,15 +542,15 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | **— Inverse & Advanced Rendering —** | | | | |
 | Inverse / differentiable rendering | Medium | Very High | P4 | Planned |
 | **— Asset Libraries —** | | | | |
-| Font library (30-50 OFL fonts) | High | Low | P2 | Planned |
-| 3D asset library (CC0) | High | High | P2 | Planned |
-| 2D asset library (CC0) | High | Medium | P2 | Planned |
+| Font library (30-50 OFL fonts) | High | Low | P2 | ✅ Complete (42 OFL/Apache fonts, 8 categories, FontLibrary.h/cpp, editor browser with search/category/install) |
+| 3D asset library (CC0) | High | High | P2 | ✅ Complete (16 CC0 3D model packs — Kenney/Quaternius, AssetLibrary.h/cpp, editor browser) |
+| 2D asset library (CC0) | High | Medium | P2 | ✅ Complete (15 CC0 2D sprite/tileset/UI packs, 14 categories, editor browser) |
 | **— Editor & Project —** | | | | |
 | Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22→43 templates, all polished +50%) |
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
-| Template creator tool | Medium | Medium | P3 | Planned |
-| Source-app import presets | Medium | High | P3 | Planned |
-| Pre-built binary distribution | High | Medium | P2 | Planned |
+| Template creator tool | Medium | Medium | P3 | ✅ Complete (TemplateCreator.h/cpp, save/load/scan/delete, View > Tools > Template Creator, templates/ directory) |
+| Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
+| Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
 | Installer distribution | Medium | High | P3 | Planned |
 | Hub application (launcher) | Medium | Very High | P4 | Planned |
 | **— Flash Game Revival —** | | | | |
@@ -602,11 +602,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 - ~~**Project Hub & Creation Wizard**~~ ✅ (v1) — All 4 tabs (Recent/New/Open/Demos), 38 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done. **v2 redesign planned** — see "Project Hub Redesign & Template Creator" section: 3-action landing (New/Open/Sandbox), template creator with panel checkboxes and auto-thumbnail capture, project name in separate popup, `TEGE_Projects` default directory, software distribution tiers
 - ~~**Undo/Redo**~~ ✅ — Entity operations, visual script node edits, inspector property edits, tilemap paint (per-stroke with cell deduplication), terrain sculpt (heightmap+splatmap snapshot), UI editor edits (move/resize/nudge/delete) all done
 - ~~**Drag and Drop**~~ ✅ — OS file drop, hierarchy reparenting, asset browser to Game View (model/prefab/image/scene/audio/script dispatch), material inspector texture fields, sprite inspector texture fields all done
-- **Asset Import Pipeline** — Import settings dialog, .enjinasset metadata, and asset browser drag-import done. Remaining: thumbnails, texture compression, source-app import presets
+- ~~**Asset Import Pipeline**~~ ✅ — Import settings dialog, .enjinasset metadata, asset browser drag-import, and source-app import presets (10 DCC tools with auto-detection) done. Remaining: thumbnails, texture compression
 
-### Planned: Source-App Import Presets
+### Source-App Import Presets ✅ COMPLETE
 
-Smart import presets for common DCC tools with automatic axis/scale/material fixups:
+Smart import presets for common DCC tools with automatic axis/scale/material fixups. Editor dialog with auto-detection from file metadata, per-axis flip toggles, and texture search paths.
 
 - **Blender** — Z-up → Y-up axis swap, -X forward convention, scale factor (Blender default 1.0 = 1m), auto-detect .blend material names for PBR slot mapping
 - **Maya** — Y-up (native match), cm-to-m scale conversion (0.01), FBX ASCII vs binary handling, Lambert/Phong → PBR material approximation
@@ -785,8 +785,8 @@ Complete flow from art to playable entity:
   - CellularAutomata (cave generation, Moore neighborhood birth/death rules)
   - RandomWalker (dungeon carving, directional bias, turn chance)
   - BSPGenerator (Binary Space Partition room-corridor dungeons, recursive splitting)
-  - DiamondSquare (heightmap terrain, midpoint displacement, roughness control)
-  - LSystemGenerator (string rewriting with turtle graphics interpretation, F/+/-/[/] commands)
+  - DiamondSquare (heightmap terrain, midpoint displacement, roughness control) + FractalTerrain (fBm octave stacking, ridged multifractal, hydraulic erosion via droplet simulation, thermal erosion via talus angle)
+  - LSystemGenerator (string rewriting with turtle graphics interpretation, F/+/-/[/] commands; advanced 3D turtle with yaw/pitch/roll, stochastic rules, branch radius decay)
   - WaveFunctionCollapse (tile-based with adjacency constraints, entropy-based collapse, backtracking)
   - VoronoiGenerator (Euclidean/Manhattan/Chebyshev distance, region ID grid)
   - GrammarGenerator (shape grammars for buildings, weighted rule selection)
@@ -983,7 +983,7 @@ Hybrid rendering pipeline: rasterization for primary visibility (existing Vulkan
 | **Scene Settings** | 24 RT config fields with full JSON serialization | ✅ Complete |
 | **Caustics** | Photon mapping or path traced caustics for glass/water | Planned |
 | **RT Translucency** | Subsurface scattering via random walk in medium | Planned |
-| **OIDN integration** | Intel Open Image Denoise for cross-platform neural denoising | Planned |
+| **OIDN integration** | Intel Open Image Denoise for cross-platform neural denoising | ✅ Complete (OIDNDenoiser.h/cpp, CMake ENJIN_RAYTRACING_OIDN, editor denoiser type selector) |
 
 ### Files
 
@@ -1080,7 +1080,7 @@ Only runs for `SceneRenderMode::Scene3D`. 2D/2.5D scenes skip the RT pipeline en
 1. **Compile RT shaders** — Compile 20 GLSL shaders to SPIR-V with `glslangValidator --target-env vulkan1.2`
 2. **Embed SPIR-V** — Replace placeholder stubs in `RTShaderData.h` with compiled bytecode
 3. ~~**Wire composition + denoising**~~ ✅ — `CompositeRTResults()` wired after denoising, real depth buffer on binding 2, `DenoiseRTOutputs()` replaced with real SVGF calls, camera change detection for path tracer reset
-4. **OIDN integration** — Intel Open Image Denoise as alternative cross-platform neural denoiser
+4. ~~**OIDN integration**~~ ✅ — Intel Open Image Denoise as alternative cross-platform neural denoiser. `OIDNDenoiser.h/cpp`, `ENJIN_RAYTRACING_OIDN` CMake option, editor denoiser type selector
 5. **OptiX integration** — NVIDIA OptiX AI Denoiser for best quality on NVIDIA GPUs
 
 ---
@@ -1175,7 +1175,7 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 
 ---
 
-## Project Hub Redesign & Template Creator
+## Project Hub Redesign & Template Creator (Partially Complete)
 
 ### Terminology (Clarified Hierarchy)
 
@@ -1213,7 +1213,9 @@ Replace the current 4-tab flat layout (Recent / New / Open / Demos) with a clear
 - **Open Project** → Project browser with recent project list + "Browse..." button. Shows any valid `.enjinproject` directory. Can be linked/aliased from anywhere on disk (like Unity Hub). Quick-filter search bar, sort by name/date/size
 - **Sandbox** → Starts an unnamed, unsaved session using the Template Creator. User picks which panels are visible, optionally loads a template scene, and starts working. Session is disposable by default — prompt to save on close. If saved, becomes a named project. Good for quick prototyping, testing, learning
 
-### Template Creator
+### Template Creator ✅ COMPLETE (Core)
+
+Core template creator implemented: `TemplateCreator.h/cpp` with `SaveTemplate()`, `LoadTemplate()`, `ScanTemplates()`, `DeleteTemplate()`. Editor UI at View > Tools > Template Creator with metadata editing (name, description, category), save/load/delete. Custom templates stored in `templates/` directory. Original detailed plan below for future enhancements:
 
 A dedicated tool (accessible from Sandbox flow + Tools menu) for creating and editing templates:
 
@@ -1291,11 +1293,11 @@ The engine is currently source-built (clone + cmake + build). Future distributio
 - No installer, no registry entries, fully portable
 - Target audience: engine developers, contributors
 
-**Tier 2: Pre-Built Binary Distribution (Planned)**
-- GitHub Releases with versioned `.zip` archives per platform
+**Tier 2: Pre-Built Binary Distribution ✅ COMPLETE**
+- CMake install rules + CPack config in root CMakeLists.txt for Windows ZIP packaging
+- `scripts/package.bat` (Windows) and `scripts/package.sh` (Linux/macOS) for one-command builds
 - Extract-and-run — no installer needed (portable)
 - Includes `EnjinEditor.exe`, `EnjinPlayer.exe`, `glslangValidator`, sample templates
-- First-run wizard asks for `TEGE_Projects` directory
 - Target audience: game developers who don't need to modify the engine
 
 **Tier 3: Installer Distribution (Future)**
@@ -1350,14 +1352,14 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 ### Procedural & Terrain
 
-- **Fractal Terrain and L-System Vegetation** — Fractal terrain generation (diamond-square, fBm, ridged multifractal) with erosion simulation (hydraulic, thermal). L-system vegetation beyond current implementation: parameterized grammars, stochastic branching, seasonal variation, wind animation. Goal: one-click "Generate Forest" with artistic control over density, species mix, age distribution
+- ~~**Fractal Terrain and L-System Vegetation**~~ ✅ — Fractal terrain generation (fBm octave stacking, ridged multifractal) with erosion simulation (hydraulic via droplet simulation, thermal via talus angle). 3D L-system with full turtle interpreter (yaw/pitch/roll), stochastic production rules, branch radius decay. Added to `ProceduralAlgorithms.h/cpp`. Remaining: one-click "Generate Forest" with density/species/age controls, seasonal variation, wind animation
 
 ### Simulation-Driven Geometry
 
 - **Reaction-Diffusion on Meshes** — Gray-Scott / Turing pattern simulation running on mesh UV or vertex neighborhoods. Configurable feed/kill rates, diffusion coefficients, and color mapping. Use cases: organic surface patterning (animal skin, coral, lichen), procedural texture generation without UV unwrap. Per-material component with live preview, preset patterns ("Spots", "Stripes", "Labyrinth", "Mitosis"), bake-to-texture export
 - **Cellular Automata as Geometry** — 2D/3D cellular automata (Conway, Brian's Brain, Rule 110, custom rulesets) where live cells become geometry — voxels, marching cubes isosurface, or instanced meshes. Step-through or continuous evolution with configurable tick rate. Use cases: growing crystal structures, evolving architecture, generative art installations. Inspector with rule editor, seed painter, generation history scrubber
 - **Slime Mold Simulation (Physarum)** — Agent-based Physarum polycephalum simulation: thousands of agents deposit/sense/turn on a diffusion trail map. Configurable sensor angle, sensor distance, turn speed, deposit amount, decay rate. Outputs a density field renderable as particles, mesh displacement, or luminous volume. Use cases: organic network generation, procedural road/river layouts, bioluminescent VFX
-- **Fluid Simulation as Terrain** — Use fluid sim (existing Stable Fluids solver) output as a heightmap source for terrain. Fluid velocity/density fields drive real-time terrain deformation — rising water carves valleys, lava flow builds ridges. Bidirectional: terrain slope feeds back into fluid flow direction. Configurable erosion rate, deposition, hardness. Use cases: geological time-lapse, dynamic lava landscapes, water erosion sculpting
+- ~~**Fluid Simulation as Terrain**~~ ✅ — `FluidTerrainCoupling` system wires FluidSimulation density/velocity grids to TerrainComponent heightmap. Erosion mode (velocity erodes terrain height) and accumulate mode (density builds terrain, e.g. lava). Bidirectional: terrain slope drives fluid flow. Configurable erosion rate, accumulation rate, coupling strength. Files: `FluidTerrainCoupling.h/cpp`
 - ~~**Voronoi Fracture with Persistent Physics**~~ ✅ — VoronoiMeshFracture (Sutherland-Hodgman mesh clipping) produces real mesh fragments. FractureConfigComponent for per-entity config (fragment count, explosion force, persistence, re-fracture depth, pre-fracture with breakable joints, auto-cleanup). DestructibleSystem extended with `CreatePersistentFragments()` — fragments become full ECS entities (Transform+Mesh+Material+Rigidbody+BoxCollider). FIFO fragment entity limit, recursive re-fracture with reduced count per depth level. Editor inspector UI and full serialization
 
 ### Simulation & Flow
@@ -1382,32 +1384,26 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 Goal: Ship a curated, commercially licensable library so users have beautiful assets out of the box — important for a licensable engine.
 
-### Font Library
+### Font Library ✅ COMPLETE
 
-- **Curated collection of beautiful, commercially licensable fonts** — OFL (SIL Open Font License) and Apache 2.0 licensed fonts that can be freely redistributed with the engine and in games built with it
+42 curated OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). `FontLibrary.h/cpp` + `AssetLibrary.h/cpp`. Editor browser in Editor Settings > Fonts with search, category filter, and install status.
+
 - Categories: Sans-serif (UI/HUD), Serif (narrative/books), Monospace (code/terminal), Display/decorative (titles/logos), Handwriting/script, Pixel/retro, Fantasy/medieval, Sci-fi/futuristic
-- Embedded as engine assets with one-click apply in text/UI components
-- Font preview panel in editor with size/weight preview, character set coverage indicator
-- Target: 30-50 high-quality fonts covering all major game genres
 - Sources: Google Fonts (OFL), Font Squirrel (verified commercial licenses), The League of Moveable Type
 
-### 3D Asset Library
+### 3D Asset Library ✅ COMPLETE
 
-- **Commercially licensable 3D model collection** — CC0 (public domain) and CC-BY assets that can be redistributed with the engine
-- Categories: Architecture (modular building kits), Nature (trees, rocks, plants), Props (furniture, crates, barrels), Characters (base meshes, rigged), Vehicles, Weapons/tools, Food/items, Sci-fi/fantasy
-- PBR-ready with base color, normal, roughness/metallic textures
-- Multiple LOD levels per asset
-- Consistent art style options: realistic, stylized/low-poly, pixel-art-3D
-- Drag-and-drop from Asset Browser with auto-import (materials, textures, colliders)
-- Sources: Kenney.nl (CC0), Quaternius (CC0), Poly Pizza, Sketchfab (CC0 filtered), custom commissions under CC0
+16 CC0 3D model packs (Kenney, Quaternius) with editor browser. `AssetLibrary.h/cpp`.
 
-### 2D Asset Library
+- Categories: Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi
+- Sources: Kenney.nl (CC0), Quaternius (CC0)
 
-- **Commercially licensable 2D sprite/texture collection** — CC0 and CC-BY licensed
-- Categories: UI elements (buttons, frames, icons, cursors), Tilesets (platformer, RPG, top-down), Character sprites (animated walk/idle/attack cycles), Backgrounds (parallax layers), VFX sprites (explosions, magic, smoke), Portraits/dialogue art
-- Compatible with existing sprite sheet importer and texture atlas
-- Multiple art styles: pixel art (multiple resolutions), hand-drawn, vector/flat, anime-inspired
-- Sources: Kenney.nl (CC0), OpenGameArt.org (curated CC0), itch.io asset packs (with license verification), custom commissions under CC0
+### 2D Asset Library ✅ COMPLETE
+
+15 CC0 2D sprite/tileset/UI packs with editor browser. Uses shared `AssetLibrary.h/cpp`.
+
+- Categories: UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures, Characters, Props, Architecture, Nature, Vehicles, Weapons, Dungeon, Sci-Fi
+- Sources: Kenney.nl (CC0), OpenGameArt.org (curated CC0)
 
 ### Licensing Strategy
 

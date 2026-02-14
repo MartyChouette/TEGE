@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-02-14 (Session 10)
+
+### OIDN Denoiser for RT Pipeline
+
+Added Intel Open Image Denoise as an alternative to the existing SVGF compute denoiser for the ray tracing pipeline. New `OIDNDenoiser` class (`OIDNDenoiser.h/cpp`) wraps the OIDN library with the same interface as `SVGFDenoiser`. CMake option `ENJIN_RAYTRACING_OIDN` (OFF by default) controls compilation. Editor UI in the Rendering panel adds a denoiser type selector (SVGF / OIDN) when RT is enabled.
+
+### Dithered Gradient Rendering
+
+Per-material flat-shaded banded lighting with dither transitions between bands. New fields on `MaterialComponent`: `ditherGradient` (bool), `ditherGradientBands` (2-8), `ditherGradientPattern` (6 patterns). Encoded in `surfaceParam1` push constant. The fragment shader quantizes luminance into discrete bands and applies the selected dither pattern at band boundaries for a stylized low-poly aesthetic.
+
+### Font Library
+
+Curated catalog of 42 OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). New files: `FontLibrary.h/cpp` and `AssetLibrary.h/cpp`. Editor UI: font browser in Editor Settings > Fonts with search bar, category filter dropdown, and install status indicators.
+
+### 2D/3D Asset Library
+
+Curated CC0 asset catalog: 16 3D model packs (Kenney, Quaternius) and 15 2D sprite/tileset/UI packs. 14 categories: Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi, UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures. Uses the same `AssetLibrary.h/cpp` framework as the font library. Editor UI: asset browser with search, category filter, and download/install workflow.
+
+### Fractal Terrain & Advanced L-System
+
+Extended `ProceduralAlgorithms.h/cpp` with two new algorithms:
+- **Fractal Terrain:** fBm terrain generation with octave stacking and ridged multifractal variant. Hydraulic erosion via droplet simulation (configurable iterations, sediment capacity, evaporation). Thermal erosion via talus angle (material slumps when slope exceeds threshold).
+- **Advanced L-System:** Full 3D turtle interpreter with yaw/pitch/roll commands, stochastic production rules (weighted random rule selection), and branch radius decay for realistic tree/plant generation.
+
+### Fluid Simulation as Terrain
+
+New `FluidTerrainCoupling` system (`FluidTerrainCoupling.h/cpp`) wires `FluidSimulation` density/velocity grids to `TerrainComponent` heightmaps. Two modes: erosion mode (fluid velocity erodes terrain height) and accumulate mode (fluid density builds terrain, e.g., lava cooling). Bidirectional coupling: terrain slope drives fluid flow direction. Configurable erosion rate, accumulation rate, and coupling strength.
+
+### Source-App Import Presets UI
+
+Editor dialog for model import presets targeting 10 DCC tools: Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp. Auto-detection from file metadata (FBX `Creator` field, glTF `generator` field). Per-axis flip toggles, texture search paths, and material slot remapping. Backend code already existed; this wires the UI.
+
+### Template Creator Tool
+
+Save current scene as a reusable startup template. New `TemplateCreator` class (`TemplateCreator.h/cpp`) with `SaveTemplate()`, `LoadTemplate()`, `ScanTemplates()`, `DeleteTemplate()`. Editor UI at View > Tools > Template Creator with metadata editing (name, description, category), save/load/delete buttons, and template list. Custom templates stored in `templates/` directory alongside the editor.
+
+### Binary Distribution
+
+CMake install rules and CPack configuration added to root `CMakeLists.txt` for Windows ZIP packaging. New scripts: `scripts/package.bat` (Windows) and `scripts/package.sh` (Linux/macOS) for one-command Release builds with packaging.
+
+---
+
 ## 2026-02-14 (Session 9)
 
 ### Bug Fixes: Parent-Child Transforms, Weather Transitions, Delete Key

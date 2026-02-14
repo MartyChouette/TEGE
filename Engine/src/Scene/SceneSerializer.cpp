@@ -177,6 +177,9 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["fresnelPower"] = material.fresnelPower;
     j["rimLightStrength"] = material.rimLightStrength;
     j["excludeFromCelShading"] = material.excludeFromCelShading;
+    j["ditherGradient"] = material.ditherGradient;
+    j["ditherGradientBands"] = material.ditherGradientBands;
+    j["ditherGradientPattern"] = material.ditherGradientPattern;
     return j;
 }
 
@@ -338,6 +341,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
     if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = JB(j["excludeFromCelShading"]);
+    if (j.contains("ditherGradient")) material.ditherGradient = JB(j["ditherGradient"]);
+    if (j.contains("ditherGradientBands")) material.ditherGradientBands = j["ditherGradientBands"].get<u8>();
+    if (j.contains("ditherGradientPattern")) material.ditherGradientPattern = j["ditherGradientPattern"].get<u8>();
     return material;
 }
 

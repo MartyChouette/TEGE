@@ -51,12 +51,15 @@
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
 #include "Enjin/Assets/SceneImporter.h"
+#include "Enjin/Assets/FontLibrary.h"
+#include "Enjin/Assets/AssetLibrary.h"
 #include "Enjin/Assets/AssetMetadata.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Renderer/MeshFactory.h"
@@ -2089,6 +2092,9 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Update fluid simulation
     m_FluidSimulation.Update(m_LastDeltaTime, m_World);
 
+    // Update fluid-terrain coupling (erosion/deposition)
+    m_FluidTerrainCoupling.Update(m_LastDeltaTime, m_World, m_FluidSimulation);
+
     // Update curl noise flow fields
     if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(m_LastDeltaTime);
 
@@ -2466,6 +2472,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     if (m_ParticleGraphEditor.IsOpen()) {
         m_ParticleGraphEditor.Render();
+    }
+
+    // Template Creator window
+    if (m_ShowTemplateCreator) {
+        DrawTemplateCreatorWindow();
     }
 
     // Clear the force flag after one frame
@@ -3361,6 +3372,10 @@ void EditorLayer::DrawMenuBar() {
                         m_ParticleGraphEditor.SetGraph(&m_ParticleGraphData);
                         m_ParticleGraphEditor.SetOpen(pgOpen);
                     }
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
+                    if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
@@ -4566,6 +4581,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Fluid Volume component
         if (m_World->HasComponent<ECS::FluidVolumeComponent>(m_PrimarySelected)) {
             DrawFluidVolumeComponent(m_PrimarySelected);
+
+            // Show coupling UI when entity also has a terrain
+            if (m_World->HasComponent<ECS::TerrainComponent>(m_PrimarySelected)) {
+                DrawFluidTerrainCoupling(m_PrimarySelected);
+            }
         }
 
         // Notes component
@@ -5466,6 +5486,21 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         }
 
         InspectorUndo::Checkbox(m_UndoRedo, "Exclude From Cel Shading##Mat", &material->excludeFromCelShading);
+
+        // Dithered gradient rendering
+        InspectorUndo::Checkbox(m_UndoRedo, "Dithered Gradient##Mat", &material->ditherGradient);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Low-poly flat shading with banded lighting and dither transitions");
+        if (material->ditherGradient) {
+            int bands = static_cast<int>(material->ditherGradientBands);
+            if (ImGui::SliderInt("Gradient Bands##DG", &bands, 2, 8)) {
+                material->ditherGradientBands = static_cast<u8>(bands);
+            }
+            const char* patterns[] = { "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone", "Crosshatch", "Overlook" };
+            int pat = static_cast<int>(material->ditherGradientPattern);
+            if (ImGui::Combo("Dither Pattern##DG", &pat, patterns, 6)) {
+                material->ditherGradientPattern = static_cast<u8>(pat);
+            }
+        }
 
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
@@ -6819,6 +6854,45 @@ void EditorLayer::DrawFluidVolumeComponent(ECS::Entity entity) {
 
         if (ImGui::Button("Remove##FluidVolume")) {
             RemoveComponentWithUndo<ECS::FluidVolumeComponent>(entity, "fluidVolume", "Fluid Volume");
+        }
+    }
+}
+
+void EditorLayer::DrawFluidTerrainCoupling(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("Fluid Terrain Coupling")) {
+        auto& config = m_FluidTerrainCoupling.GetConfig();
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Enabled##FluidTerrain", &config.enabled);
+
+        // Mode toggle
+        bool accumulate = config.accumulateMode;
+        const char* modes[] = { "Erosion", "Accumulate (Lava)" };
+        int modeIdx = accumulate ? 1 : 0;
+        if (InspectorUndo::Combo(m_UndoRedo, "Mode##FluidTerrain", &modeIdx, modes, 2)) {
+            config.accumulateMode = (modeIdx == 1);
+        }
+
+        ImGui::Separator();
+        ImGui::Text("Erosion / Deposition");
+        InspectorUndo::DragFloat(m_UndoRedo, "Erosion Rate##FluidTerrain", &config.erosionRate, 0.001f, 0.0f, 1.0f, "%.4f");
+        InspectorUndo::DragFloat(m_UndoRedo, "Deposition Rate##FluidTerrain", &config.depositionRate, 0.001f, 0.0f, 1.0f, "%.4f");
+        InspectorUndo::DragFloat(m_UndoRedo, "Hardness##FluidTerrain", &config.hardness, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Height Scale##FluidTerrain", &config.heightScale, 0.1f, 0.01f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Erosion/Frame##FluidTerrain", &config.maxErosionPerFrame, 0.01f, 0.01f, 10.0f);
+
+        ImGui::Separator();
+        ImGui::Text("Bidirectional Feedback");
+        InspectorUndo::Checkbox(m_UndoRedo, "Bidirectional##FluidTerrain", &config.bidirectional);
+        if (config.bidirectional) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Slope Vel Scale##FluidTerrain", &config.slopeVelocityScale, 0.1f, 0.0f, 50.0f);
+        }
+
+        // Info text
+        ImGui::Separator();
+        if (config.accumulateMode) {
+            ImGui::TextWrapped("Fluid density adds height to terrain (lava/mud building)");
+        } else {
+            ImGui::TextWrapped("Fast-moving fluid erodes terrain; slow-moving fluid deposits sediment");
         }
     }
 }
@@ -8461,6 +8535,66 @@ void EditorLayer::DrawEditorSettingsPanel() {
             fontConfig.monoFontSize = monoSize;
             m_ImGuiLayer->ReloadFonts(fontConfig);
         }
+
+        ImGui::Separator();
+        ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "Font Library (%zu fonts)", m_FontLibrary.GetCatalog().size());
+        ImGui::TextWrapped("Curated OFL/Apache fonts for games. Place .ttf files in the fonts/ directory.");
+
+        static char fontSearchBuf[128] = "";
+        ImGui::InputTextWithHint("##FontSearch", "Search fonts...", fontSearchBuf, sizeof(fontSearchBuf));
+        static int selectedFontCategory = -1;
+        const char* fontCatNames[] = { "All", "Sans-Serif", "Serif", "Monospace", "Display", "Handwriting", "Pixel", "Fantasy", "Sci-Fi" };
+        ImGui::Combo("Category##FontLib", &selectedFontCategory, fontCatNames, 9);
+
+        auto displayList = (strlen(fontSearchBuf) > 0)
+            ? m_FontLibrary.Search(fontSearchBuf)
+            : (selectedFontCategory > 0
+                ? m_FontLibrary.GetByCategory(static_cast<Assets::FontCategory>(selectedFontCategory - 1))
+                : [&]() {
+                    std::vector<const Assets::FontEntry*> all;
+                    for (auto& e : m_FontLibrary.GetCatalog()) all.push_back(&e);
+                    return all;
+                }());
+
+        if (ImGui::BeginChild("FontList", ImVec2(0, 200), true)) {
+            for (auto* font : displayList) {
+                bool installed = m_FontLibrary.IsFontInstalled(font->id);
+                ImGui::PushID(font->id.c_str());
+                if (installed)
+                    ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "[OK]");
+                else
+                    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "[--]");
+                ImGui::SameLine();
+                ImGui::Text("%s", font->name.c_str());
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%s, %s)", Assets::FontLibrary::GetCategoryName(font->category),
+                    Assets::FontLibrary::GetLicenseName(font->license));
+                if (ImGui::IsItemHovered()) {
+                    ImGui::BeginTooltip();
+                    ImGui::Text("%s", font->name.c_str());
+                    ImGui::TextWrapped("%s", font->description.c_str());
+                    ImGui::Text("Designer: %s", font->designer.c_str());
+                    ImGui::Text("License: %s", Assets::FontLibrary::GetLicenseName(font->license));
+                    ImGui::Text("Weights: %u | Italic: %s | Bold: %s",
+                        font->weightCount, font->hasItalic ? "Yes" : "No", font->hasBold ? "Yes" : "No");
+                    if (installed)
+                        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Installed: %s", m_FontLibrary.GetFontPath(font->id).c_str());
+                    else
+                        ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "Not installed — download from: %s", font->sourceUrl.c_str());
+                    ImGui::EndTooltip();
+                }
+                if (installed) {
+                    ImGui::SameLine();
+                    std::string btnLabel = "Use as Body##" + font->id;
+                    if (ImGui::SmallButton(btnLabel.c_str())) {
+                        std::string path = m_FontLibrary.GetFontPath(font->id);
+                        strncpy(bodyFontPath, path.c_str(), sizeof(bodyFontPath) - 1);
+                    }
+                }
+                ImGui::PopID();
+            }
+        }
+        ImGui::EndChild();
     }
 
     ImGui::End();
@@ -10198,19 +10332,48 @@ void EditorLayer::DrawRenderingPanel() {
                     }
 
                     // Denoiser settings
-                    if (auto* denoiser = m_RenderSystem->GetSVGFDenoiser()) {
-                        auto& cfg = denoiser->GetConfig();
-                        if (ImGui::TreeNode("SVGF Denoiser")) {
-                            ImGui::SliderFloat("Temporal Alpha", &cfg.temporalAlpha, 0.01f, 0.5f, "%.3f");
-                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more temporal history (smoother but more ghosting)");
-                            int iterations = static_cast<int>(cfg.atrousIterations);
-                            if (ImGui::SliderInt("A-Trous Iterations", &iterations, 1, 8)) {
-                                cfg.atrousIterations = static_cast<u32>(iterations);
+                    {
+                        int denoiserType = static_cast<int>(m_RenderSystem->GetDenoiserType());
+                        const char* denoiserNames[] = { "SVGF (GPU)", "OIDN (Intel)" };
+                        int maxDenoiser = (m_RenderSystem->GetOIDNDenoiser()) ? 1 : 0;
+                        if (ImGui::Combo("Denoiser", &denoiserType, denoiserNames, maxDenoiser + 1)) {
+                            m_RenderSystem->SetDenoiserType(static_cast<u32>(denoiserType));
+                        }
+                    }
+
+                    // SVGF settings
+                    if (m_RenderSystem->GetDenoiserType() == 0) {
+                        if (auto* denoiser = m_RenderSystem->GetSVGFDenoiser()) {
+                            auto& cfg = denoiser->GetConfig();
+                            if (ImGui::TreeNode("SVGF Settings")) {
+                                ImGui::SliderFloat("Temporal Alpha", &cfg.temporalAlpha, 0.01f, 0.5f, "%.3f");
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Lower = more temporal history (smoother but more ghosting)");
+                                int iterations = static_cast<int>(cfg.atrousIterations);
+                                if (ImGui::SliderInt("A-Trous Iterations", &iterations, 1, 8)) {
+                                    cfg.atrousIterations = static_cast<u32>(iterations);
+                                }
+                                if (ImGui::Button("Reset History##SVGF")) {
+                                    denoiser->ResetHistory();
+                                }
+                                ImGui::TreePop();
                             }
-                            if (ImGui::Button("Reset History##SVGF")) {
-                                denoiser->ResetHistory();
+                        }
+                    }
+
+                    // OIDN settings
+                    if (m_RenderSystem->GetDenoiserType() == 1) {
+                        if (auto* oidn = m_RenderSystem->GetOIDNDenoiser()) {
+                            auto& cfg = oidn->GetConfig();
+                            if (ImGui::TreeNode("OIDN Settings")) {
+                                int quality = static_cast<int>(cfg.quality);
+                                const char* qualityNames[] = { "Fast", "Default", "High" };
+                                if (ImGui::Combo("Quality", &quality, qualityNames, 3)) {
+                                    cfg.quality = static_cast<Renderer::OIDNQuality>(quality);
+                                }
+                                ImGui::SliderFloat("Input Scale", &cfg.inputScale, 0.0f, 10.0f, "%.2f");
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = auto-detect, >0 = manual scale for HDR input");
+                                ImGui::TreePop();
                             }
-                            ImGui::TreePop();
                         }
                     }
                 }
@@ -21136,6 +21299,184 @@ void EditorLayer::LoadCustomTemplates() {
     }
 }
 
+void EditorLayer::DrawTemplateCreatorWindow() {
+    ImGui::SetNextWindowSize(ImVec2(520, 600), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Template Creator", &m_ShowTemplateCreator)) {
+        ImGui::End();
+        return;
+    }
+
+    // Rescan custom templates when needed
+    if (m_TmplNeedsRescan) {
+        m_ScannedTemplates = Editor::TemplateCreator::ScanTemplates("templates");
+        m_TmplNeedsRescan = false;
+        m_TmplDeleteConfirm = -1;
+    }
+
+    // --- Save Section ---
+    if (ImGui::CollapsingHeader("Save Current Scene as Template", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputText("Name", m_TmplName, sizeof(m_TmplName));
+        ImGui::InputTextMultiline("Description", m_TmplDescription, sizeof(m_TmplDescription),
+                                  ImVec2(-1, 60));
+        ImGui::InputText("Author", m_TmplAuthor, sizeof(m_TmplAuthor));
+
+        const char* categoryNames[] = { "2D", "3D", "Multiplayer", "Tools" };
+        ImGui::Combo("Category", &m_TmplCategory, categoryNames, IM_ARRAYSIZE(categoryNames));
+
+        ImGui::ColorEdit4("Accent Color", m_TmplAccentColor,
+                          ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_AlphaPreview);
+
+        ImGui::InputText("Thumbnail (PNG)", m_TmplThumbnailPath, sizeof(m_TmplThumbnailPath));
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Optional path to a PNG thumbnail image for this template");
+        }
+
+        ImGui::Spacing();
+
+        bool canSave = m_World && m_TmplName[0] != '\0';
+        if (!canSave) ImGui::BeginDisabled();
+
+        if (ImGui::Button("Save as Template", ImVec2(-1, 32))) {
+            const char* categoryNames2[] = { "2D", "3D", "Multiplayer", "Tools" };
+            Editor::TemplateMetadata meta;
+            meta.name = m_TmplName;
+            meta.description = m_TmplDescription;
+            meta.author = m_TmplAuthor;
+            meta.category = categoryNames2[m_TmplCategory];
+            meta.accentColor = Math::Vector4(m_TmplAccentColor[0], m_TmplAccentColor[1],
+                                             m_TmplAccentColor[2], m_TmplAccentColor[3]);
+            meta.thumbnailPath = m_TmplThumbnailPath;
+
+            Scene::SceneSerializer serializer(m_World);
+            if (Editor::TemplateCreator::SaveTemplate("templates", meta, m_World, serializer)) {
+                m_ConsoleLog.push_back("[Template] Saved: " + meta.name);
+                m_TmplNeedsRescan = true;
+            } else {
+                m_ConsoleLog.push_back("[Template] ERROR: Failed to save template");
+            }
+        }
+
+        if (!canSave) ImGui::EndDisabled();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // --- Existing Templates Section ---
+    if (ImGui::CollapsingHeader("Custom Templates", ImGuiTreeNodeFlags_DefaultOpen)) {
+        if (m_ScannedTemplates.empty()) {
+            ImGui::TextDisabled("No custom templates found in 'templates/' directory.");
+        }
+
+        for (i32 i = 0; i < static_cast<i32>(m_ScannedTemplates.size()); ++i) {
+            const auto& tmpl = m_ScannedTemplates[i];
+            ImGui::PushID(i);
+
+            // Accent color bar
+            ImVec4 accent(tmpl.accentColor.x, tmpl.accentColor.y,
+                          tmpl.accentColor.z, tmpl.accentColor.w);
+            ImGui::PushStyleColor(ImGuiCol_Header, accent);
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                ImVec4(accent.x * 1.2f, accent.y * 1.2f, accent.z * 1.2f, accent.w));
+
+            bool nodeOpen = ImGui::TreeNode("##tmpl", "%s", tmpl.name.c_str());
+
+            ImGui::PopStyleColor(2);
+
+            // Category badge
+            if (!tmpl.category.empty()) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("[%s]", tmpl.category.c_str());
+            }
+
+            if (nodeOpen) {
+                if (!tmpl.description.empty()) {
+                    ImGui::TextWrapped("%s", tmpl.description.c_str());
+                }
+                if (!tmpl.author.empty()) {
+                    ImGui::TextDisabled("Author: %s", tmpl.author.c_str());
+                }
+                ImGui::TextDisabled("ID: %s", tmpl.id.c_str());
+
+                ImGui::Spacing();
+
+                if (ImGui::Button("Load", ImVec2(80, 0))) {
+                    if (m_World) {
+                        Editor::TemplateMetadata loadedMeta;
+                        std::string templatePath = (std::filesystem::path("templates") / tmpl.id).string();
+                        Scene::SceneSerializer serializer(m_World);
+                        if (Editor::TemplateCreator::LoadTemplate(templatePath, m_World, serializer, loadedMeta)) {
+                            m_ConsoleLog.push_back("[Template] Loaded: " + loadedMeta.name);
+                            m_CurrentScenePath.clear();
+                        } else {
+                            m_ConsoleLog.push_back("[Template] ERROR: Failed to load template");
+                        }
+                    }
+                }
+
+                ImGui::SameLine();
+
+                // Delete with confirmation
+                if (m_TmplDeleteConfirm == i) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.7f, 0.15f, 0.15f, 1.0f));
+                    if (ImGui::Button("Confirm Delete", ImVec2(120, 0))) {
+                        if (Editor::TemplateCreator::DeleteTemplate("templates", tmpl.id)) {
+                            m_ConsoleLog.push_back("[Template] Deleted: " + tmpl.name);
+                            m_TmplNeedsRescan = true;
+                        }
+                        m_TmplDeleteConfirm = -1;
+                    }
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    if (ImGui::Button("Cancel##del", ImVec2(60, 0))) {
+                        m_TmplDeleteConfirm = -1;
+                    }
+                } else {
+                    if (ImGui::Button("Delete", ImVec2(80, 0))) {
+                        m_TmplDeleteConfirm = i;
+                    }
+                }
+
+                ImGui::TreePop();
+            }
+
+            ImGui::PopID();
+        }
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // --- Builtin Templates (read-only list) ---
+    if (ImGui::CollapsingHeader("Built-in Templates (read-only)")) {
+        ImGui::TextDisabled("These templates ship with the engine and cannot be modified.");
+        ImGui::Spacing();
+
+        // List the builtin template names (same ones used in the Project Hub wizard)
+        const char* builtinNames[] = {
+            "empty", "platformer", "topdown2d", "thirdperson", "firstperson",
+            "isometric", "rpg_village", "narrative", "savesystem", "visualscript",
+            "uicanvas", "bullethell", "idleclicker", "pointclick", "ps1rpg",
+            "visualnovel", "gamemanager", "citybuilder", "fpsarena", "teamsports",
+            "towerdefense", "runner", "flower", "fixedcam", "metroidvania",
+            "vampsurvivor", "roguelike", "soulslike", "couchcoop", "shadowtest",
+            "flash_td", "flash_dress", "flash_escape", "flash_rhythm"
+        };
+
+        for (const char* name : builtinNames) {
+            ImGui::BulletText("%s", name);
+        }
+    }
+
+    if (ImGui::Button("Refresh", ImVec2(-1, 0))) {
+        m_TmplNeedsRescan = true;
+    }
+
+    ImGui::End();
+}
+
 void EditorLayer::ImportModel(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot import model: no world loaded");
@@ -21247,6 +21588,21 @@ void EditorLayer::DrawImportDialog() {
                 Assets::SourceAppPreset preset = Assets::GetSourceAppPreset(newApp);
                 m_ImportDialogOptions.scale = preset.scale;
                 m_ImportDialogScaleFromPreset = true;
+            }
+        }
+
+        // Show read-only preset values when a specific source app is selected
+        {
+            Assets::SourceApp selectedApp = m_ImportDialogOptions.sourceApp;
+            if (selectedApp != Assets::SourceApp::Auto && selectedApp != Assets::SourceApp::Custom) {
+                Assets::SourceAppPreset preset = Assets::GetSourceAppPreset(selectedApp);
+                ImGui::Indent(16.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
+                ImGui::Text("Preset scale: %.4f", preset.scale);
+                ImGui::Text("Z-up to Y-up: %s", preset.zUpToYUp ? "Yes" : "No");
+                ImGui::Text("Left to right hand: %s", preset.leftToRight ? "Yes" : "No");
+                ImGui::PopStyleColor();
+                ImGui::Unindent(16.0f);
             }
         }
 

@@ -201,10 +201,12 @@ struct SceneRenderSettings {
     u32 rtPathTracerMaxBounces = 4;
     u32 rtPathTracerTargetSPP = 1024;
 
-    // Denoiser (SVGF)
+    // Denoiser
     bool rtDenoiserEnabled = true;
-    u32 rtDenoiserIterations = 5;
-    f32 rtDenoiserTemporalAlpha = 0.05f;
+    u32 rtDenoiserType = 0;             // 0=SVGF, 1=OIDN
+    u32 rtDenoiserIterations = 5;       // SVGF: a-trous iterations
+    f32 rtDenoiserTemporalAlpha = 0.05f; // SVGF: temporal blend factor
+    u32 rtOIDNQuality = 1;              // OIDN: 0=Fast, 1=Default, 2=High
 
     // Composite strengths
     f32 rtShadowStrength = 1.0f;

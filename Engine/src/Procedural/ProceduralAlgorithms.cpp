@@ -1,8 +1,10 @@
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include "Enjin/Procedural/LevelGenerator.h"
 #include "Enjin/Math/Math.h"
+#include "Enjin/Math/Noise.h"
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 #include <stack>
 
 namespace Enjin {
@@ -1240,6 +1242,604 @@ PrefabAssembler::Result PrefabAssembler::Generate(const Params& params) {
     }
 
     result.placements.shrink_to_fit();
+    return result;
+}
+
+// ============================================================================
+// FBMTerrain
+// ============================================================================
+
+FBMTerrain::Result FBMTerrain::Generate(const Params& params) {
+    Result result;
+
+    if (params.width == 0 || params.height == 0) {
+        return result;
+    }
+
+    result.width = params.width;
+    result.height = params.height;
+
+    u32 totalCells = params.width * params.height;
+    result.heightmap.resize(totalCells, 0.0f);
+
+    // Clamp octaves to valid range
+    u32 octaves = params.octaves;
+    if (octaves < 1) octaves = 1;
+    if (octaves > 12) octaves = 12;
+
+    u32 seed = params.seed;
+    if (seed == 0) {
+        // Use a deterministic default so results are reproducible
+        seed = 48271u;
+    }
+
+    f32 rawMin =  Math::FLOAT_MAX;
+    f32 rawMax =  Math::FLOAT_MIN;
+
+    // Generate the heightmap
+    for (u32 y = 0; y < params.height; ++y) {
+        for (u32 x = 0; x < params.width; ++x) {
+            // Normalize coordinates to [0, 1] range, then scale by frequency
+            f32 nx = static_cast<f32>(x) / static_cast<f32>(params.width);
+            f32 ny = static_cast<f32>(y) / static_cast<f32>(params.height);
+
+            f32 value = 0.0f;
+
+            if (params.mode == NoiseMode::Standard) {
+                // Classic fBm: sum of octaved Perlin noise
+                f32 amplitude = 1.0f;
+                f32 freq = params.frequency;
+                f32 maxAmplitude = 0.0f;
+
+                for (u32 o = 0; o < octaves; ++o) {
+                    value += amplitude * Math::PerlinNoise2D(
+                        nx * freq, ny * freq, seed + o);
+                    maxAmplitude += amplitude;
+                    amplitude *= params.gain;
+                    freq *= params.lacunarity;
+                }
+
+                // Normalize to [-1, 1] range
+                if (maxAmplitude > 0.0f) {
+                    value /= maxAmplitude;
+                }
+            } else {
+                // Ridged multifractal: abs(noise) inverted, with power term
+                f32 amplitude = 1.0f;
+                f32 freq = params.frequency;
+                f32 weight = 1.0f;
+
+                for (u32 o = 0; o < octaves; ++o) {
+                    f32 signal = Math::PerlinNoise2D(
+                        nx * freq, ny * freq, seed + o);
+
+                    // Create ridges: invert the absolute value
+                    signal = params.ridgedOffset - Math::Abs(signal);
+
+                    // Sharpen ridges with power term
+                    signal = Math::Pow(Math::Abs(signal), params.ridgedPower);
+
+                    // Weight by previous octave's contribution for detail clustering
+                    signal *= weight;
+                    weight = Math::Clamp(signal * params.gain * 2.0f, 0.0f, 1.0f);
+
+                    value += signal * amplitude;
+                    freq *= params.lacunarity;
+                    amplitude *= params.gain;
+                }
+            }
+
+            result.heightmap[y * params.width + x] = value;
+
+            if (value < rawMin) rawMin = value;
+            if (value > rawMax) rawMax = value;
+        }
+    }
+
+    result.minValue = rawMin;
+    result.maxValue = rawMax;
+
+    // Normalize heightmap to [0, 1]
+    f32 range = rawMax - rawMin;
+    if (range > Math::EPSILON) {
+        f32 invRange = 1.0f / range;
+        for (u32 i = 0; i < totalCells; ++i) {
+            result.heightmap[i] = (result.heightmap[i] - rawMin) * invRange;
+        }
+    } else {
+        // Flat terrain
+        for (u32 i = 0; i < totalCells; ++i) {
+            result.heightmap[i] = 0.5f;
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
+// HydraulicErosion
+// ============================================================================
+
+namespace {
+
+// Bilinear interpolation of heightmap at fractional position
+f32 SampleHeight(const std::vector<f32>& heightmap, u32 width, u32 height, f32 x, f32 y) {
+    // Clamp to valid range
+    if (x < 0.0f) x = 0.0f;
+    if (y < 0.0f) y = 0.0f;
+    if (x >= static_cast<f32>(width) - 1.001f) x = static_cast<f32>(width) - 1.001f;
+    if (y >= static_cast<f32>(height) - 1.001f) y = static_cast<f32>(height) - 1.001f;
+
+    i32 ix = static_cast<i32>(x);
+    i32 iy = static_cast<i32>(y);
+    f32 fx = x - static_cast<f32>(ix);
+    f32 fy = y - static_cast<f32>(iy);
+
+    i32 ix1 = ix + 1;
+    i32 iy1 = iy + 1;
+    if (ix1 >= static_cast<i32>(width))  ix1 = static_cast<i32>(width) - 1;
+    if (iy1 >= static_cast<i32>(height)) iy1 = static_cast<i32>(height) - 1;
+
+    f32 h00 = heightmap[iy  * width + ix];
+    f32 h10 = heightmap[iy  * width + ix1];
+    f32 h01 = heightmap[iy1 * width + ix];
+    f32 h11 = heightmap[iy1 * width + ix1];
+
+    f32 h0 = h00 * (1.0f - fx) + h10 * fx;
+    f32 h1 = h01 * (1.0f - fx) + h11 * fx;
+
+    return h0 * (1.0f - fy) + h1 * fy;
+}
+
+// Compute gradient at fractional position using bilinear interpolation
+void ComputeGradient(const std::vector<f32>& heightmap, u32 width, u32 height,
+                     f32 x, f32 y, f32& gradX, f32& gradY) {
+    i32 ix = static_cast<i32>(x);
+    i32 iy = static_cast<i32>(y);
+    f32 fx = x - static_cast<f32>(ix);
+    f32 fy = y - static_cast<f32>(iy);
+
+    // Clamp indices
+    if (ix < 0) ix = 0;
+    if (iy < 0) iy = 0;
+    if (ix >= static_cast<i32>(width) - 1)  ix = static_cast<i32>(width) - 2;
+    if (iy >= static_cast<i32>(height) - 1) iy = static_cast<i32>(height) - 2;
+
+    i32 ix1 = ix + 1;
+    i32 iy1 = iy + 1;
+
+    f32 h00 = heightmap[iy  * width + ix];
+    f32 h10 = heightmap[iy  * width + ix1];
+    f32 h01 = heightmap[iy1 * width + ix];
+    f32 h11 = heightmap[iy1 * width + ix1];
+
+    // Gradient from bilinear interpolation partial derivatives
+    gradX = (h10 - h00) * (1.0f - fy) + (h11 - h01) * fy;
+    gradY = (h01 - h00) * (1.0f - fx) + (h11 - h10) * fx;
+}
+
+} // anonymous namespace
+
+void HydraulicErosion::Erode(std::vector<f32>& heightmap, u32 width, u32 height,
+                              const Params& params) {
+    if (width < 3 || height < 3) return;
+    if (heightmap.size() != static_cast<usize>(width) * height) return;
+
+    LCGRandom rng(params.seed);
+
+    // Precompute erosion brush weights for the given radius
+    u32 erosionRadius = params.erosionRadius;
+    if (erosionRadius < 1) erosionRadius = 1;
+    if (erosionRadius > 5) erosionRadius = 5;
+
+    // Build erosion brush: list of (dx, dy, weight) offsets
+    struct BrushEntry {
+        i32 dx, dy;
+        f32 weight;
+    };
+    std::vector<BrushEntry> brush;
+    f32 totalBrushWeight = 0.0f;
+
+    for (i32 by = -static_cast<i32>(erosionRadius); by <= static_cast<i32>(erosionRadius); ++by) {
+        for (i32 bx = -static_cast<i32>(erosionRadius); bx <= static_cast<i32>(erosionRadius); ++bx) {
+            f32 dist = Math::Sqrt(static_cast<f32>(bx * bx + by * by));
+            if (dist <= static_cast<f32>(erosionRadius)) {
+                f32 w = Math::Max(0.0f, static_cast<f32>(erosionRadius) - dist);
+                brush.push_back({bx, by, w});
+                totalBrushWeight += w;
+            }
+        }
+    }
+
+    // Normalize brush weights
+    if (totalBrushWeight > 0.0f) {
+        for (auto& b : brush) {
+            b.weight /= totalBrushWeight;
+        }
+    }
+
+    // Simulate water droplets
+    for (u32 iter = 0; iter < params.iterations; ++iter) {
+        // Spawn droplet at random position
+        f32 posX = rng.FloatRange(1.0f, static_cast<f32>(width) - 2.0f);
+        f32 posY = rng.FloatRange(1.0f, static_cast<f32>(height) - 2.0f);
+        f32 dirX = 0.0f;
+        f32 dirY = 0.0f;
+        f32 speed = 1.0f;
+        f32 water = 1.0f;
+        f32 sediment = 0.0f;
+
+        for (u32 step = 0; step < params.dropLifetime; ++step) {
+            i32 cellX = static_cast<i32>(posX);
+            i32 cellY = static_cast<i32>(posY);
+
+            // Check bounds (leave 1-cell border)
+            if (cellX < 1 || cellX >= static_cast<i32>(width) - 1 ||
+                cellY < 1 || cellY >= static_cast<i32>(height) - 1) {
+                break;
+            }
+
+            // Sample current height
+            f32 currentHeight = SampleHeight(heightmap, width, height, posX, posY);
+
+            // Compute gradient for flow direction
+            f32 gradX, gradY;
+            ComputeGradient(heightmap, width, height, posX, posY, gradX, gradY);
+
+            // Update direction with inertia
+            dirX = dirX * params.inertia - gradX * (1.0f - params.inertia);
+            dirY = dirY * params.inertia - gradY * (1.0f - params.inertia);
+
+            // Normalize direction
+            f32 dirLen = Math::Sqrt(dirX * dirX + dirY * dirY);
+            if (dirLen < Math::EPSILON) {
+                // Pick random direction if on flat area
+                f32 angle = rng.Float() * Math::PI_2;
+                dirX = Math::Cos(angle);
+                dirY = Math::Sin(angle);
+            } else {
+                dirX /= dirLen;
+                dirY /= dirLen;
+            }
+
+            // Move to new position
+            f32 newPosX = posX + dirX;
+            f32 newPosY = posY + dirY;
+
+            // Check bounds
+            if (newPosX < 1.0f || newPosX >= static_cast<f32>(width) - 2.0f ||
+                newPosY < 1.0f || newPosY >= static_cast<f32>(height) - 2.0f) {
+                break;
+            }
+
+            f32 newHeight = SampleHeight(heightmap, width, height, newPosX, newPosY);
+            f32 heightDiff = newHeight - currentHeight;
+
+            // Calculate sediment capacity based on slope, speed and water
+            f32 slopeAngle = Math::Max(-heightDiff, params.minSlope);
+            f32 capacity = slopeAngle * speed * water * params.sedimentCapacity;
+
+            if (sediment > capacity || heightDiff > 0.0f) {
+                // Deposit sediment
+                f32 depositAmount;
+                if (heightDiff > 0.0f) {
+                    // Moving uphill: deposit at most the height difference
+                    depositAmount = Math::Min(sediment, heightDiff);
+                } else {
+                    // Moving downhill but over capacity: deposit fraction of excess
+                    depositAmount = (sediment - capacity) * params.depositRate;
+                }
+
+                sediment -= depositAmount;
+
+                // Distribute deposit to nearby cells using erosion brush
+                for (const auto& b : brush) {
+                    i32 bx = cellX + b.dx;
+                    i32 by = cellY + b.dy;
+                    if (bx >= 0 && bx < static_cast<i32>(width) &&
+                        by >= 0 && by < static_cast<i32>(height)) {
+                        heightmap[by * width + bx] += depositAmount * b.weight;
+                    }
+                }
+            } else {
+                // Erode terrain
+                f32 erodeAmount = Math::Min((capacity - sediment) * params.erosionRate,
+                                            -heightDiff);
+                erodeAmount = Math::Max(erodeAmount, 0.0f);
+
+                sediment += erodeAmount;
+
+                // Distribute erosion to nearby cells using erosion brush
+                for (const auto& b : brush) {
+                    i32 bx = cellX + b.dx;
+                    i32 by = cellY + b.dy;
+                    if (bx >= 0 && bx < static_cast<i32>(width) &&
+                        by >= 0 && by < static_cast<i32>(height)) {
+                        heightmap[by * width + bx] -= erodeAmount * b.weight;
+                    }
+                }
+            }
+
+            // Update speed: accelerate downhill, decelerate uphill
+            speed = Math::Sqrt(Math::Max(speed * speed - heightDiff * params.gravity, 0.01f));
+
+            // Evaporate water
+            water *= (1.0f - params.evaporateRate);
+
+            posX = newPosX;
+            posY = newPosY;
+
+            // Stop if water is too low
+            if (water < 0.001f) break;
+        }
+    }
+}
+
+// ============================================================================
+// ThermalErosion
+// ============================================================================
+
+void ThermalErosion::Erode(std::vector<f32>& heightmap, u32 width, u32 height,
+                            const Params& params) {
+    if (width < 3 || height < 3) return;
+    if (heightmap.size() != static_cast<usize>(width) * height) return;
+
+    f32 talusThreshold = params.talusAngle;
+    if (talusThreshold < 0.001f) talusThreshold = 0.001f;
+
+    f32 rate = Math::Clamp(params.erosionRate, 0.0f, 0.5f);
+
+    // 4-connected neighbors (Von Neumann neighborhood)
+    const i32 dx[4] = { 0, 1, 0, -1 };
+    const i32 dy[4] = { -1, 0, 1, 0 };
+
+    // Temporary buffer to accumulate changes per iteration
+    std::vector<f32> delta(static_cast<usize>(width) * height, 0.0f);
+
+    for (u32 iter = 0; iter < params.iterations; ++iter) {
+        // Reset delta buffer
+        std::memset(delta.data(), 0, delta.size() * sizeof(f32));
+
+        for (u32 y = 1; y < height - 1; ++y) {
+            for (u32 x = 1; x < width - 1; ++x) {
+                u32 idx = y * width + x;
+                f32 h = heightmap[idx];
+
+                // Calculate total excess height difference to neighbors below talus
+                f32 totalDiff = 0.0f;
+                f32 maxDiff = 0.0f;
+
+                // First pass: find total and max height differences exceeding talus
+                f32 diffs[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+                for (u32 n = 0; n < 4; ++n) {
+                    u32 nx = static_cast<u32>(static_cast<i32>(x) + dx[n]);
+                    u32 ny = static_cast<u32>(static_cast<i32>(y) + dy[n]);
+                    u32 nIdx = ny * width + nx;
+                    f32 diff = h - heightmap[nIdx];
+
+                    if (diff > talusThreshold) {
+                        diffs[n] = diff - talusThreshold;
+                        totalDiff += diffs[n];
+                        if (diff > maxDiff) maxDiff = diff;
+                    }
+                }
+
+                // Second pass: distribute material proportionally
+                if (totalDiff > 0.0f) {
+                    // Amount to remove from this cell, proportional to max excess
+                    f32 removeAmount = (maxDiff - talusThreshold) * rate * 0.5f;
+
+                    for (u32 n = 0; n < 4; ++n) {
+                        if (diffs[n] > 0.0f) {
+                            f32 fraction = diffs[n] / totalDiff;
+                            f32 transfer = removeAmount * fraction;
+
+                            u32 nx = static_cast<u32>(static_cast<i32>(x) + dx[n]);
+                            u32 ny = static_cast<u32>(static_cast<i32>(y) + dy[n]);
+                            u32 nIdx = ny * width + nx;
+
+                            delta[idx] -= transfer;
+                            delta[nIdx] += transfer;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Apply accumulated changes
+        for (u32 i = 0; i < static_cast<u32>(heightmap.size()); ++i) {
+            heightmap[i] += delta[i];
+        }
+    }
+}
+
+// ============================================================================
+// LSystem3D
+// ============================================================================
+
+LSystem3D::Result LSystem3D::Generate(const Params& params) {
+    Result result;
+    result.boundsMin = Math::Vector3(Math::FLOAT_MAX, Math::FLOAT_MAX, Math::FLOAT_MAX);
+    result.boundsMax = Math::Vector3(Math::FLOAT_MIN, Math::FLOAT_MIN, Math::FLOAT_MIN);
+
+    if (params.axiom.empty()) {
+        result.boundsMin = Math::Vector3(0.0f, 0.0f, 0.0f);
+        result.boundsMax = Math::Vector3(0.0f, 0.0f, 0.0f);
+        return result;
+    }
+
+    LCGRandom rng(params.seed);
+
+    // ---- String rewriting phase ----
+    std::string current = params.axiom;
+    for (u32 iter = 0; iter < params.iterations; ++iter) {
+        std::string next;
+        next.reserve(current.size() * 2);
+
+        for (char c : current) {
+            // Check stochastic rules first (they override deterministic ones)
+            auto stochIt = params.stochasticRules.find(c);
+            if (stochIt != params.stochasticRules.end() && !stochIt->second.options.empty()) {
+                const auto& options = stochIt->second.options;
+
+                // Weighted random selection
+                f32 totalWeight = 0.0f;
+                for (const auto& opt : options) {
+                    totalWeight += opt.second;
+                }
+
+                f32 roll = rng.Float() * totalWeight;
+                f32 cumulative = 0.0f;
+                const std::string* chosen = &options[0].first;
+                for (const auto& opt : options) {
+                    cumulative += opt.second;
+                    if (roll < cumulative) {
+                        chosen = &opt.first;
+                        break;
+                    }
+                }
+                next += *chosen;
+            } else {
+                // Check deterministic rules
+                auto detIt = params.rules.find(c);
+                if (detIt != params.rules.end()) {
+                    next += detIt->second;
+                } else {
+                    next += c;
+                }
+            }
+        }
+        current = std::move(next);
+    }
+
+    // ---- 3D turtle interpretation phase ----
+    struct TurtleState {
+        Math::Vector3 position;
+        Math::Vector3 heading;    // Forward direction
+        Math::Vector3 up;         // Up direction
+        Math::Vector3 left;       // Left direction
+        f32 radius;
+    };
+
+    TurtleState turtle;
+    turtle.position = Math::Vector3(0.0f, 0.0f, 0.0f);
+    turtle.heading  = Math::Vector3(0.0f, 1.0f, 0.0f);  // Start growing upward (+Y)
+    turtle.up       = Math::Vector3(0.0f, 0.0f, -1.0f);  // Backward Z is "up" in screen sense
+    turtle.left     = Math::Vector3(-1.0f, 0.0f, 0.0f);  // Left
+    turtle.radius   = params.initialRadius;
+
+    std::stack<TurtleState> stateStack;
+
+    f32 angleRad = Math::Radians(params.angle);
+    f32 step = params.stepLength;
+
+    // Helper: rotate vector around an arbitrary axis by angle (Rodrigues' formula)
+    auto rotateAroundAxis = [](const Math::Vector3& v, const Math::Vector3& axis, f32 angle) -> Math::Vector3 {
+        f32 cosA = Math::Cos(angle);
+        f32 sinA = Math::Sin(angle);
+        // v * cos(a) + (axis x v) * sin(a) + axis * (axis . v) * (1 - cos(a))
+        Math::Vector3 cross = axis.Cross(v);
+        f32 dot = axis.Dot(v);
+        return v * cosA + cross * sinA + axis * (dot * (1.0f - cosA));
+    };
+
+    auto updateBounds = [&](const Math::Vector3& p) {
+        if (p.x < result.boundsMin.x) result.boundsMin.x = p.x;
+        if (p.y < result.boundsMin.y) result.boundsMin.y = p.y;
+        if (p.z < result.boundsMin.z) result.boundsMin.z = p.z;
+        if (p.x > result.boundsMax.x) result.boundsMax.x = p.x;
+        if (p.y > result.boundsMax.y) result.boundsMax.y = p.y;
+        if (p.z > result.boundsMax.z) result.boundsMax.z = p.z;
+    };
+
+    updateBounds(turtle.position);
+
+    for (usize ci = 0; ci < current.size(); ++ci) {
+        char c = current[ci];
+
+        switch (c) {
+            case 'F': {
+                // Move forward and draw
+                Math::Vector3 start = turtle.position;
+                turtle.position = turtle.position + turtle.heading * step;
+
+                LineSegment3D seg;
+                seg.start = start;
+                seg.end = turtle.position;
+                seg.radius = turtle.radius;
+                result.segments.push_back(seg);
+
+                updateBounds(turtle.position);
+                break;
+            }
+            case 'f': {
+                // Move forward without drawing
+                turtle.position = turtle.position + turtle.heading * step;
+                updateBounds(turtle.position);
+                break;
+            }
+            case '+': {
+                // Yaw left: rotate heading and left around up axis
+                turtle.heading = rotateAroundAxis(turtle.heading, turtle.up, angleRad);
+                turtle.left    = rotateAroundAxis(turtle.left,    turtle.up, angleRad);
+                break;
+            }
+            case '-': {
+                // Yaw right: rotate heading and left around up axis (negative angle)
+                turtle.heading = rotateAroundAxis(turtle.heading, turtle.up, -angleRad);
+                turtle.left    = rotateAroundAxis(turtle.left,    turtle.up, -angleRad);
+                break;
+            }
+            case '^': {
+                // Pitch up: rotate heading and up around left axis
+                turtle.heading = rotateAroundAxis(turtle.heading, turtle.left, angleRad);
+                turtle.up      = rotateAroundAxis(turtle.up,      turtle.left, angleRad);
+                break;
+            }
+            case '&': {
+                // Pitch down: rotate heading and up around left axis (negative angle)
+                turtle.heading = rotateAroundAxis(turtle.heading, turtle.left, -angleRad);
+                turtle.up      = rotateAroundAxis(turtle.up,      turtle.left, -angleRad);
+                break;
+            }
+            case '/': {
+                // Roll left: rotate up and left around heading axis
+                turtle.up   = rotateAroundAxis(turtle.up,   turtle.heading, angleRad);
+                turtle.left = rotateAroundAxis(turtle.left,  turtle.heading, angleRad);
+                break;
+            }
+            case '\\': {
+                // Roll right: rotate up and left around heading axis (negative angle)
+                turtle.up   = rotateAroundAxis(turtle.up,   turtle.heading, -angleRad);
+                turtle.left = rotateAroundAxis(turtle.left,  turtle.heading, -angleRad);
+                break;
+            }
+            case '[': {
+                // Push state and decay radius
+                stateStack.push(turtle);
+                turtle.radius *= params.radiusDecay;
+                break;
+            }
+            case ']': {
+                // Pop state
+                if (!stateStack.empty()) {
+                    turtle = stateStack.top();
+                    stateStack.pop();
+                }
+                break;
+            }
+            default:
+                // Other symbols are ignored during interpretation
+                break;
+        }
+    }
+
+    // Handle case where no segments were generated
+    if (result.segments.empty()) {
+        result.boundsMin = Math::Vector3(0.0f, 0.0f, 0.0f);
+        result.boundsMax = Math::Vector3(0.0f, 0.0f, 0.0f);
+    }
+
     return result;
 }
 

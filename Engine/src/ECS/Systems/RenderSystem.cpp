@@ -32,6 +32,7 @@
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
@@ -1290,6 +1291,12 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 pushConstants.surfaceParam1 = material->reflectivity;
                 pushConstants.surfaceParam2 = material->fresnelPower;
                 pushConstants.surfaceParam3 = material->rimLightStrength;
+                // Dithered gradient: encode bands + pattern into surfaceParam1
+                if (material->ditherGradient) {
+                    pushConstants.flags |= (1 << 20); // Force flat shading
+                    pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
+                        + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1637,6 +1644,12 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 pushConstants.surfaceParam1 = material->reflectivity;
                 pushConstants.surfaceParam2 = material->fresnelPower;
                 pushConstants.surfaceParam3 = material->rimLightStrength;
+                // Dithered gradient: encode bands + pattern into surfaceParam1
+                if (material->ditherGradient) {
+                    pushConstants.flags |= (1 << 20); // Force flat shading
+                    pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
+                        + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -3524,6 +3537,12 @@ void RenderSystem::RenderEntity(Entity entity) {
         pushConstants.surfaceParam1 = material->reflectivity;
         pushConstants.surfaceParam2 = material->fresnelPower;
         pushConstants.surfaceParam3 = material->rimLightStrength;
+        // Dithered gradient: encode bands + pattern into surfaceParam1
+        if (material->ditherGradient) {
+            pushConstants.flags |= (1 << 20); // Force flat shading
+            pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
+                + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
+        }
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -5141,11 +5160,20 @@ void RenderSystem::InitializeRayTracing() {
         m_PathTracer.reset();
     }
 
-    // Initialize SVGF denoiser
+    // Initialize SVGF denoiser (always available as fallback)
     m_SVGFDenoiser = std::make_unique<Renderer::SVGFDenoiser>(ctx);
     if (!m_SVGFDenoiser->Initialize(width, height)) {
         ENJIN_LOG_WARN(Renderer, "SVGF Denoiser initialization failed");
         m_SVGFDenoiser.reset();
+    }
+
+    // Initialize OIDN denoiser (optional, compile-guarded)
+    if (Renderer::OIDNDenoiser::IsAvailable()) {
+        m_OIDNDenoiser = std::make_unique<Renderer::OIDNDenoiser>(ctx);
+        if (!m_OIDNDenoiser->Initialize(width, height)) {
+            ENJIN_LOG_WARN(Renderer, "OIDN Denoiser initialization failed — SVGF will be used");
+            m_OIDNDenoiser.reset();
+        }
     }
 
     // Initialize RT compositor (uses RT descriptor set layout for pipeline compatibility)
@@ -5166,6 +5194,7 @@ void RenderSystem::InitializeRayTracing() {
 
 void RenderSystem::ShutdownRayTracing() {
     m_RTCompositor.reset();
+    m_OIDNDenoiser.reset();
     m_SVGFDenoiser.reset();
     m_PathTracer.reset();
     m_RTGI.reset();
@@ -5343,7 +5372,16 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
 }
 
 void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
-    if (!m_RTEnabled || !m_SVGFDenoiser || m_RTMode == 1) return;
+    if (!m_RTEnabled || m_RTMode == 1) return;
+
+    // Select active denoiser based on type setting
+    Renderer::IDenoiser* denoiser = nullptr;
+    if (m_DenoiserType == 1 && m_OIDNDenoiser) {
+        denoiser = m_OIDNDenoiser.get();
+    } else if (m_SVGFDenoiser) {
+        denoiser = m_SVGFDenoiser.get();
+    }
+    if (!denoiser) return;
 
     // Use real depth from swapchain; normals + motion vectors still use dummy
     // (spatial denoising still works without motion vectors — just no temporal accumulation)
@@ -5355,25 +5393,25 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
 
     // Denoise shadow output (single channel R16F)
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
-        m_SVGFDenoiser->DenoiseSingleChannel(cmd,
+        denoiser->DenoiseSingleChannel(cmd,
             m_RTShadows->GetOutputView(), depthView, normalView, motionView,
             m_RTShadows->GetOutputView());
     }
     // Denoise AO output (single channel R16F)
     if (m_RTAO && m_RTAO->GetConfig().enabled) {
-        m_SVGFDenoiser->DenoiseSingleChannel(cmd,
+        denoiser->DenoiseSingleChannel(cmd,
             m_RTAO->GetOutputView(), depthView, normalView, motionView,
             m_RTAO->GetOutputView());
     }
     // Denoise reflections (RGBA16F)
     if (m_RTReflections && m_RTReflections->GetConfig().enabled) {
-        m_SVGFDenoiser->DenoiseColor(cmd,
+        denoiser->DenoiseColor(cmd,
             m_RTReflections->GetOutputView(), depthView, normalView, motionView,
             m_RTReflections->GetOutputView());
     }
     // Denoise GI (RGBA16F)
     if (m_RTGI && m_RTGI->GetConfig().enabled) {
-        m_SVGFDenoiser->DenoiseColor(cmd,
+        denoiser->DenoiseColor(cmd,
             m_RTGI->GetOutputView(), depthView, normalView, motionView,
             m_RTGI->GetOutputView());
     }
