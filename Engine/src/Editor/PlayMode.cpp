@@ -420,7 +420,7 @@ void PlayMode::Update(f32 deltaTime) {
             if (m_Physics2D) m_Physics2D->Update(deltaTime);
         }
 
-        // Dispatch collision events to visual scripts
+        // Dispatch 3D collision events to visual scripts and gameplay systems
         if (m_Physics) {
             const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
             for (const auto& evt : collisionEvents) {
@@ -428,6 +428,8 @@ void PlayMode::Update(f32 deltaTime) {
                     if (evt.type == Physics::CollisionEvent::Type::Enter) {
                         m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+                        ProcessContactDamage(evt.entityA, evt.entityB);
+                        ProcessPickup(evt.entityA, evt.entityB);
                     } else {
                         m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
@@ -436,6 +438,8 @@ void PlayMode::Update(f32 deltaTime) {
                     if (evt.type == Physics::CollisionEvent::Type::Enter) {
                         m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
+                        ProcessContactDamage(evt.entityA, evt.entityB);
+                        ProcessPickup(evt.entityA, evt.entityB);
                     } else {
                         m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);

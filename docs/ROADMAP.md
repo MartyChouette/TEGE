@@ -363,10 +363,10 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | # | System | Issue | Fix |
 |---|--------|-------|-----|
 | 1 | **Player App — Physics** | ~~Player doesn't create/update PhysicsWorld or PhysicsWorld2D~~ ✅ Fixed | Player now uses `IPhysicsBackend` via `PhysicsBackendFactory` |
-| 2 | **Player App — Weather/Water** | No WeatherSystem or Water3D init in Player | Create and update in Player loop |
+| 2 | ~~**Player App — Weather/Water**~~ | ~~No WeatherSystem or Water3D init in Player~~ ✅ Fixed | WeatherSystem initialized, updated, wired to script bindings. Water3D blocked on Vulkan render pass integration (no water shader pipeline yet) |
 | 3 | ~~**Player App — Particles**~~ | ~~ParticleSystem not created in Player~~ ✅ Fixed | Player now creates and updates ParticleSystem |
 | 4 | ~~**Player App — Post-Processing**~~ | ~~No bloom/vignette/FXAA/film grain/color grading/retro effects~~ ✅ Wired | PostProcessing initialized from swapchain, wired to script bindings |
-| 5 | **Player App — Save System** | TieredSaveSystem not initialized in Player. Save/load silently fails | Init TieredSaveSystem + LocalSaveBackend in Player |
+| 5 | ~~**Player App — Save System**~~ | ~~TieredSaveSystem not initialized in Player~~ ✅ Fixed | Default LocalSaveBackend, LoadMeta/SaveMeta, Update, script bindings, VS extern all wired |
 | 6 | **Build Pipeline — Asset Packing** | BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files | Add glob patterns for all asset types in scan phase |
 | 7 | **Script Engine in Player** | ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player | Wire all SetXxx() calls after system creation |
 | 8 | **UI System — No Script Bindings** | UICanvas/UISystem have zero AngelScript or Visual Script bindings | Add ~20 UI script functions |

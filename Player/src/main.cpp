@@ -377,6 +377,15 @@ public:
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
 
+        // Destroy pooled objects before shutting down scripts
+        m_ObjectPool.DestroyAll(m_World.get());
+
+        // Clear visual script save system extern
+        {
+            extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            s_VisualScriptSaveSystem = nullptr;
+        }
+
         // Shutdown gameplay systems before world is destroyed
         m_VisualScriptSystem.Shutdown();
         m_BehaviorTreeSystem.Shutdown();
@@ -386,6 +395,7 @@ public:
         m_HUDSystem.SetEnabled(false);
         m_QuestSystem.SetEnabled(false);
         m_FootstepSystem.SetEnabled(false);
+        m_CinematicSystem.SetEnabled(false);
 
         // Shutdown script-bound systems
         m_AudioGraphRuntime.Shutdown();
@@ -511,7 +521,7 @@ public:
         if (m_Physics) m_Physics->Update(deltaTime);
         if (m_Physics2D) m_Physics2D->Update(deltaTime);
 
-        // Dispatch collision events to visual scripts
+        // Dispatch 3D collision events to visual scripts and gameplay systems
         if (m_Physics) {
             const auto& collisionEvents = m_Physics->GetPendingCollisionEvents();
             for (const auto& evt : collisionEvents) {
@@ -519,6 +529,8 @@ public:
                     if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
                         m_VisualScriptSystem.OnTriggerEnter(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnTriggerEnter(evt.entityB, evt.entityA, deltaTime);
+                        ProcessContactDamage(evt.entityA, evt.entityB);
+                        ProcessPickup(evt.entityA, evt.entityB);
                     } else {
                         m_VisualScriptSystem.OnTriggerExit(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnTriggerExit(evt.entityB, evt.entityA, deltaTime);
@@ -527,6 +539,8 @@ public:
                     if (evt.type == Enjin::Physics::CollisionEvent::Type::Enter) {
                         m_VisualScriptSystem.OnCollisionEnter(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnCollisionEnter(evt.entityB, evt.entityA, deltaTime);
+                        ProcessContactDamage(evt.entityA, evt.entityB);
+                        ProcessPickup(evt.entityA, evt.entityB);
                     } else {
                         m_VisualScriptSystem.OnCollisionExit(evt.entityA, evt.entityB, deltaTime);
                         m_VisualScriptSystem.OnCollisionExit(evt.entityB, evt.entityA, deltaTime);
@@ -696,6 +710,14 @@ public:
                 DrawDialogueOverlay();
             }
 
+            // HUD widgets (health bars, etc.)
+            if (!m_ShowingSplash && m_World) {
+                m_HUDSystem.Update(m_World.get(), m_Camera.get(),
+                    0.0f, 0.0f,
+                    static_cast<Enjin::f32>(extent.width),
+                    static_cast<Enjin::f32>(extent.height));
+            }
+
             // Runtime UI canvases
             if (!m_ShowingSplash && m_World) {
                 m_UISystem.Update(m_World.get(),
@@ -842,6 +864,12 @@ private:
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
 
+        // Wire visual script save system extern (for VS save/load/checkpoint/meta nodes)
+        {
+            extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
+            s_VisualScriptSaveSystem = &m_TieredSaveSystem;
+        }
+
         // Wire dialogue system event bus and subtitle system
         m_DialogueSystem.SetEventBus(&m_EntityEventBus);
         m_DialogueSystem.SetSubtitleSystem(&m_SubtitleSystem);
@@ -895,7 +923,16 @@ private:
         m_HUDSystem.SetEnabled(true);
         m_QuestSystem.SetEnabled(true);
         m_FootstepSystem.SetEnabled(true);
+        m_CinematicSystem.SetEnabled(true);
         m_StreamingManager.SetEnabled(true);
+
+        // Initialize quest flow runtime state
+        if (m_World) {
+            for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::QuestFlowComponent>()) {
+                auto* qf = m_World->GetComponent<Enjin::ECS::QuestFlowComponent>(entity);
+                if (qf) qf->ResetRuntimeState();
+            }
+        }
 
         // Find game camera entity for controller system
         if (m_World) {

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-02-14 (Session 7)
+
+### Player App Wiring Gaps Fixed
+
+Comprehensive comparison of PlayMode vs Player revealed 7 wiring gaps. All fixed:
+
+- **`s_VisualScriptSaveSystem` extern** — VS save/load/checkpoint/meta nodes now work in Player (was silently null)
+- **HUDSystem::Update()** — HUD widgets (health bars, etc.) now render in Player Render() loop
+- **QuestFlow ResetRuntimeState()** — Quest flow graphs properly initialized on scene load
+- **CinematicSystem.SetEnabled(true)** — Cinematics now enabled in Player
+- **3D collision → damage/pickup** — 3D physics collision enter events now trigger ProcessContactDamage and ProcessPickup in both PlayMode and Player (was only wired for 2D callbacks)
+- **ObjectPool.DestroyAll()** — Pooled objects properly cleaned up on Player shutdown
+- **CinematicSystem disabled on shutdown** — Clean disable on exit
+
+Also updated ROADMAP.md: marked Player Weather/Save items as resolved.
+
+---
+
 ## 2026-02-13 (Session 6)
 
 ### Wire IPhysicsBackend2D into ControllerSystem
