@@ -68,11 +68,17 @@ private:
     std::string GetCategoryString(LogCategory category) const;
     std::string GetTimestamp() const;
 
-    LogLevel m_MinLogLevel = LogLevel::Trace;
+    static constexpr usize MAX_LOG_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+
+    LogLevel m_MinLogLevel = LogLevel::Info;
     bool m_CategoryEnabled[static_cast<usize>(LogCategory::Count)] = { true };
     std::mutex m_Mutex;
     std::unique_ptr<std::ofstream> m_LogFile;
+    std::string m_LogFilePath;
+    usize m_CurrentFileSize = 0;
     bool m_Initialized = false;
+
+    void RotateLogFile();
 };
 
 } // namespace Enjin

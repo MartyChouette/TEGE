@@ -3,6 +3,7 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Mesh.h"
 #include "Enjin/ECS/Components/Material.h"
+#include <algorithm>
 
 namespace Enjin {
 namespace Effects {
@@ -283,18 +284,17 @@ void WaterInteraction::SpawnRipple(const RippleSettings& settings) {
 }
 
 void WaterInteraction::Update(f32 deltaTime) {
-    // Update ripples
-    for (auto it = m_Ripples.begin(); it != m_Ripples.end();) {
-        it->progress += deltaTime / 2.0f;  // 2 second duration
-        it->currentRadius = it->progress * 5.0f;  // Expand radius
-        it->amplitude *= (1.0f - deltaTime);  // Fade out
-
-        if (it->progress >= 1.0f) {
-            it = m_Ripples.erase(it);
-        } else {
-            ++it;
-        }
+    // Update all ripples in a single pass
+    for (auto& r : m_Ripples) {
+        r.progress += deltaTime / 2.0f;  // 2 second duration
+        r.currentRadius = r.progress * 5.0f;  // Expand radius
+        r.amplitude *= (1.0f - deltaTime);  // Fade out
     }
+    // Remove expired ripples in O(N) instead of O(N^2) iterator-erase
+    m_Ripples.erase(
+        std::remove_if(m_Ripples.begin(), m_Ripples.end(),
+            [](const ActiveRipple& r) { return r.progress >= 1.0f; }),
+        m_Ripples.end());
 }
 
 } // namespace Effects

@@ -635,6 +635,7 @@ private:
         void Reset() { textureKey = {}; boneBuffer = nullptr; }
     };
     LastBoundState m_LastBound;
+    bool m_GeometryPoolBound = false;  // Track if geometry pool buffers are bound this pass
     std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
     std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
 

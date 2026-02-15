@@ -412,6 +412,7 @@ bool VulkanRenderer::BeginFrame() {
 
     VkCommandBufferBeginInfo beginInfo{};
     beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
     if (vkBeginCommandBuffer(m_CommandBuffers[m_CurrentFrame], &beginInfo) != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to begin recording command buffer");
@@ -516,10 +517,8 @@ void VulkanRenderer::OnWindowResize(u32 width, u32 height) {
     // Resize images-in-flight tracking to match new swapchain image count
     m_ImagesInFlight.assign(m_Swapchain->GetImageCount(), VK_NULL_HANDLE);
 
-    // Recreate command buffers
-    vkFreeCommandBuffers(m_Context->GetDevice(), m_CommandPool,
-        static_cast<u32>(m_CommandBuffers.size()), m_CommandBuffers.data());
-    CreateCommandBuffers();
+    // Command buffers do not depend on swapchain dimensions — reuse existing ones
+    // (they are reset implicitly on vkBeginCommandBuffer each frame)
 
     m_FramebufferResized = false;
 

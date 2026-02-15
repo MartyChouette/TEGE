@@ -178,6 +178,9 @@ bool VulkanContext::SelectPhysicalDevice() {
     vkGetPhysicalDeviceProperties(bestDevice, &properties);
     ENJIN_LOG_INFO(Renderer, "Selected physical device: %s", properties.deviceName);
 
+    // Cache memory properties (avoids repeated vkGetPhysicalDeviceMemoryProperties calls)
+    vkGetPhysicalDeviceMemoryProperties(bestDevice, &m_MemoryProperties);
+
     // Query ray tracing capabilities
     m_RTCapabilities = RTCapabilities::Query(bestDevice);
 
@@ -360,12 +363,10 @@ void VulkanContext::SetPresentQueueFamily(u32 queueFamily) {
 }
 
 u32 VulkanContext::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) const {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(m_PhysicalDevice, &memProperties);
-
-    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
+    // Use cached memory properties instead of querying the driver each time
+    for (u32 i = 0; i < m_MemoryProperties.memoryTypeCount; ++i) {
         if ((typeFilter & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            (m_MemoryProperties.memoryTypes[i].propertyFlags & properties) == properties) {
             return i;
         }
     }

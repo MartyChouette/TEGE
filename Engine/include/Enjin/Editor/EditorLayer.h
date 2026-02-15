@@ -1182,6 +1182,9 @@ private:
     // Hierarchy search/filter
     char m_HierarchySearchBuf[128] = "";
 
+    // Cached GPU device name (queried once, never changes at runtime)
+    std::string m_CachedGPUName;
+
     // Entity delete confirmation
     bool m_ShowDeleteConfirm = false;
     std::vector<ECS::Entity> m_PendingDeleteEntities;

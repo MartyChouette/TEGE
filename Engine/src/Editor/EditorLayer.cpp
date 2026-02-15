@@ -1252,23 +1252,24 @@ void EditorLayer::Update(f32 deltaTime) {
     if (validCount == 0) { m_FrameTimeMin = 0.0f; m_FrameTimeMax = 0.0f; }
     m_FrameTimeAvg = validCount > 0 ? sum / static_cast<f32>(validCount) : 0.0f;
 
-    // Compute percentiles (P50, P95, P99) via partial sort
-    if (validCount >= 2) {
-        f32 sorted[FRAME_TIME_HISTORY_SIZE];
-        u32 n = 0;
-        for (usize i = 0; i < FRAME_TIME_HISTORY_SIZE; ++i) {
-            if (m_FrameTimeHistory[i] > 0.0f) sorted[n++] = m_FrameTimeHistory[i];
-        }
-        std::sort(sorted, sorted + n);
-        m_FrameTimeP50 = sorted[n * 50 / 100];
-        m_FrameTimeP95 = sorted[n * 95 / 100];
-        m_FrameTimeP99 = sorted[std::min(n * 99 / 100, n - 1)];
-    }
-
     // Update performance metrics periodically (every 0.5s)
     m_PerfUpdateTimer += deltaTime;
     if (m_PerfUpdateTimer >= 0.5f) {
         m_PerfUpdateTimer = 0.0f;
+
+        // Compute percentiles (P50, P95, P99) via sort — only every 0.5s, not every frame
+        if (validCount >= 2) {
+            f32 sorted[FRAME_TIME_HISTORY_SIZE];
+            u32 n = 0;
+            for (usize i = 0; i < FRAME_TIME_HISTORY_SIZE; ++i) {
+                if (m_FrameTimeHistory[i] > 0.0f) sorted[n++] = m_FrameTimeHistory[i];
+            }
+            std::sort(sorted, sorted + n);
+            m_FrameTimeP50 = sorted[n * 50 / 100];
+            m_FrameTimeP95 = sorted[n * 95 / 100];
+            m_FrameTimeP99 = sorted[std::min(n * 99 / 100, n - 1)];
+        }
+
         Editor::PerformanceStats::UpdateSystemMemory(m_PerfMetrics);
         if (m_Renderer && m_Renderer->GetContext()) {
             Editor::PerformanceStats::QueryGPUMemory(m_Renderer->GetContext(), m_PerfMetrics);
@@ -1296,9 +1297,6 @@ void EditorLayer::Update(f32 deltaTime) {
         m_LockRefreshTimer = 0.0f;
         m_SceneLockManager.Refresh();
     }
-
-    // Update collaborative editing system
-    m_CollabSystem.Update(deltaTime);
 
     // Dwell-click: auto-click after hovering in place
     if (m_EditorSettings.dwellClickEnabled && !m_PlayMode.IsPlaying()) {
@@ -4397,11 +4395,11 @@ void EditorLayer::DrawEntityNode(ECS::Entity entity, const std::string& name) {
     const char* icon = GetEntityIcon(m_World, entity);
     bool entityLockedByOther = m_SceneLockManager.IsEntityLockedByOther(entity);
     bool entityLockedByMe = m_SceneLockManager.IsEntityLocked(entity) && !entityLockedByOther;
-    std::string label = std::string(icon);
-    if (entityLockedByOther) label += "[X] ";
-    else if (entityLockedByMe) label += "[=] ";
-    label += name;
-    bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", label.c_str());
+    char labelBuf[256];
+    snprintf(labelBuf, sizeof(labelBuf), "%s%s%s", icon,
+        entityLockedByOther ? "[X] " : (entityLockedByMe ? "[=] " : ""),
+        name.c_str());
+    bool opened = ImGui::TreeNodeEx((void*)(uintptr_t)entity, flags, "%s", labelBuf);
 
     // Dim locked-by-other entities
     if (entityLockedByOther) {
@@ -11244,12 +11242,15 @@ void EditorLayer::DrawStatsOverlay() {
             ImGui::Text("Yaw: %.1f  Pitch: %.1f", m_CameraController->GetYaw(), m_CameraController->GetPitch());
         }
 
-        // GPU info (if available from renderer)
+        // GPU info (cached — device name never changes at runtime)
         if (m_Renderer && m_Renderer->GetContext()) {
             ImGui::Separator();
-            VkPhysicalDeviceProperties props;
-            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
-            ImGui::Text("GPU: %s", props.deviceName);
+            if (m_CachedGPUName.empty()) {
+                VkPhysicalDeviceProperties props;
+                vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+                m_CachedGPUName = props.deviceName;
+            }
+            ImGui::Text("GPU: %s", m_CachedGPUName.c_str());
         }
 
         // Memory stats

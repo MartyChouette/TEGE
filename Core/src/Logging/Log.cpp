@@ -29,11 +29,15 @@ void Logger::Initialize(const std::string& logFile) {
         // Always initialize console logging, even if file logging is unavailable.
         m_Initialized = true;
 
-        m_LogFile = std::make_unique<std::ofstream>(logFile, std::ios::app);
+        m_LogFilePath = logFile;
+
+        // Truncate on startup — fresh log each session
+        m_LogFile = std::make_unique<std::ofstream>(logFile, std::ios::trunc);
         if (!m_LogFile->is_open()) {
             std::cerr << "Failed to open log file: " << logFile << " (continuing with console logging only)" << std::endl;
             m_LogFile.reset();
         }
+        m_CurrentFileSize = 0;
     }
 
     // IMPORTANT: do not call Info() while holding m_Mutex (it locks internally).
@@ -121,6 +125,10 @@ void Logger::Log(LogLevel level, LogCategory category, const char* file, u32 lin
     if (m_LogFile && m_LogFile->is_open()) {
         *m_LogFile << logEntry;
         m_LogFile->flush();
+        m_CurrentFileSize += logEntry.size();
+        if (m_CurrentFileSize >= MAX_LOG_FILE_SIZE) {
+            RotateLogFile();
+        }
     }
 }
 
@@ -212,6 +220,25 @@ std::string Logger::GetTimestamp() const {
     std::stringstream ss;
     ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
     return ss.str();
+}
+
+void Logger::RotateLogFile() {
+    if (!m_LogFile || m_LogFilePath.empty()) return;
+
+    m_LogFile->close();
+
+    // Rename current log to .old (overwrite any previous .old)
+    std::string oldPath = m_LogFilePath + ".old";
+    std::remove(oldPath.c_str());
+    std::rename(m_LogFilePath.c_str(), oldPath.c_str());
+
+    // Open a fresh log
+    m_LogFile = std::make_unique<std::ofstream>(m_LogFilePath, std::ios::trunc);
+    m_CurrentFileSize = 0;
+
+    if (m_LogFile->is_open()) {
+        *m_LogFile << "[" << GetTimestamp() << "] [INFO ] [CORE  ] Log rotated (previous log saved as " << oldPath << ")" << std::endl;
+    }
 }
 
 } // namespace Enjin

@@ -52,10 +52,24 @@ bool VulkanBuffer::Create(usize size, VkBufferUsageFlags usageFlags, bool hostVi
         return false;
     }
 
+    // Persistently map host-visible + host-coherent buffers to avoid per-upload kernel transitions
+    if (m_HostVisible) {
+        VkResult mapResult = vkMapMemory(m_Context->GetDevice(), m_Memory, 0, m_Size, 0, &m_PersistentMapped);
+        if (mapResult != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to persistently map buffer, will use per-upload mapping");
+            m_PersistentMapped = nullptr;
+        }
+    }
+
     return true;
 }
 
 void VulkanBuffer::Destroy() {
+    // Unmap persistent mapping
+    if (m_PersistentMapped) {
+        vkUnmapMemory(m_Context->GetDevice(), m_Memory);
+        m_PersistentMapped = nullptr;
+    }
     if (m_MappedData) {
         Unmap();
     }
@@ -84,6 +98,12 @@ bool VulkanBuffer::UploadData(const void* data, usize size, usize offset) {
     }
 
     if (m_HostVisible) {
+        // Use persistently mapped pointer if available (avoids vkMapMemory/vkUnmapMemory per upload)
+        if (m_PersistentMapped) {
+            std::memcpy(static_cast<u8*>(m_PersistentMapped) + offset, data, size);
+            return true;
+        }
+        // Fallback to map/unmap cycle
         void* mapped = Map();
         if (!mapped) {
             return false;
@@ -126,18 +146,8 @@ void VulkanBuffer::Unmap() {
 }
 
 u32 VulkanBuffer::FindMemoryType(u32 typeFilter, VkMemoryPropertyFlags properties) {
-    VkPhysicalDeviceMemoryProperties memProperties;
-    vkGetPhysicalDeviceMemoryProperties(m_Context->GetPhysicalDevice(), &memProperties);
-
-    for (u32 i = 0; i < memProperties.memoryTypeCount; ++i) {
-        if ((typeFilter & (1 << i)) &&
-            (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
-            return i;
-        }
-    }
-
-    ENJIN_LOG_ERROR(Renderer, "Failed to find suitable memory type");
-    return UINT32_MAX;
+    // Delegate to VulkanContext's cached memory properties
+    return m_Context->FindMemoryType(typeFilter, properties);
 }
 
 VkDeviceAddress VulkanBuffer::GetDeviceAddress() const {

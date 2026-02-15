@@ -84,6 +84,9 @@ protected:
     // Fence-based wait function registered by VulkanRenderer
     std::function<void()> m_FenceWaitFn;
 
+    // Cached physical device memory properties (populated during SelectPhysicalDevice)
+    VkPhysicalDeviceMemoryProperties m_MemoryProperties{};
+
     // Ray tracing capabilities (populated during SelectPhysicalDevice)
     RTCapabilities m_RTCapabilities;
 

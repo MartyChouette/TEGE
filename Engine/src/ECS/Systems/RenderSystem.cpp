@@ -921,7 +921,7 @@ void RenderSystem::Update(f32 deltaTime) {
             vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 
             // Reset descriptor cache for each viewport
-            m_LastBound.Reset();
+            m_LastBound.Reset(); m_GeometryPoolBound = false;
 
             for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
                 auto* xform = m_World->GetComponent<TransformComponent>(entity);
@@ -1039,7 +1039,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Single-pass LOD update + render — iterates renderable entities once
     // Reset last-bound state so no stale descriptor data carries from a previous pass
-    m_LastBound.Reset();
+    m_LastBound.Reset(); m_GeometryPoolBound = false;
     {
         Math::Vector3 camPos;
         bool doLOD = (m_Camera != nullptr);
@@ -1162,7 +1162,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
     RenderSkybox(commandBuffer, &viewport, &scissor);
 
     // Reset descriptor cache for this render pass
-    m_LastBound.Reset();
+    m_LastBound.Reset(); m_GeometryPoolBound = false;
 
     // Bind pipeline and descriptor set ONCE before the entity loop (not per-entity)
     m_Pipeline->Bind(commandBuffer);
@@ -1408,7 +1408,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 sizeof(Renderer::PushConstants), &pushConstants);
 
             if (renderData.poolAlloc.valid && m_GeometryPool) {
-                m_GeometryPool->BindBuffers(commandBuffer);
+                if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                                  renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
             } else {
@@ -1417,6 +1417,7 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
                 vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+                m_GeometryPoolBound = false;
             }
             m_DrawCallCount++;
             m_TriangleCount += renderData.indexCount / 3;
@@ -1531,7 +1532,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
         RenderSkybox(commandBuffer, &vkViewport, &scissor);
 
         // Reset descriptor cache for each viewport
-        m_LastBound.Reset();
+        m_LastBound.Reset(); m_GeometryPoolBound = false;
 
         // Bind pipeline, descriptor set, viewport, and scissor once per viewport
         m_Pipeline->Bind(commandBuffer);
@@ -1755,7 +1756,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 sizeof(Renderer::PushConstants), &pushConstants);
 
             if (renderData.poolAlloc.valid && m_GeometryPool) {
-                m_GeometryPool->BindBuffers(commandBuffer);
+                if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
                 vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                                  renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
             } else {
@@ -1764,6 +1765,7 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
                 vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
                 vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+                m_GeometryPoolBound = false;
             }
             m_DrawCallCount++;
             m_TriangleCount += renderData.indexCount / 3;
@@ -2137,7 +2139,7 @@ void RenderSystem::DrawIndirect(VkCommandBuffer commandBuffer) {
     if (indirectBuffer == VK_NULL_HANDLE || drawCountBuffer == VK_NULL_HANDLE) return;
 
     // Bind the merged geometry pool (single VB + IB for all static meshes)
-    m_GeometryPool->BindBuffers(commandBuffer);
+    if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
 
     // Issue a single indirect draw call for all visible static meshes
     vkCmdDrawIndexedIndirectCount(
@@ -3691,7 +3693,10 @@ void RenderSystem::RenderEntity(Entity entity) {
 
     // Bind and draw — pool-allocated entities use merged buffer with offsets
     if (renderData.poolAlloc.valid && m_GeometryPool) {
-        m_GeometryPool->BindBuffers(commandBuffer);
+        if (!m_GeometryPoolBound) {
+            m_GeometryPool->BindBuffers(commandBuffer);
+            m_GeometryPoolBound = true;
+        }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
     } else {
@@ -3700,6 +3705,7 @@ void RenderSystem::RenderEntity(Entity entity) {
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+        m_GeometryPoolBound = false;  // Non-pool entity invalidates pool binding
     }
     m_DrawCallCount++;
     m_TriangleCount += renderData.indexCount / 3;
@@ -3749,7 +3755,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
 
     // Bind and draw
     if (renderData.poolAlloc.valid && m_GeometryPool) {
-        m_GeometryPool->BindBuffers(commandBuffer);
+        if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
     } else if (renderData.vertexBuffer && renderData.indexBuffer) {
@@ -3766,7 +3772,7 @@ void RenderSystem::RenderEntityGhost(Entity entity, const Math::Matrix4& modelMa
 void RenderSystem::RenderOnionSkinGhosts() {
     if (m_OnionSkinGhosts.empty() || !m_IsEditorMode) return;
 
-    m_LastBound.Reset();  // Reset descriptor cache for ghost pass
+    m_LastBound.Reset(); m_GeometryPoolBound = false;  // Reset descriptor cache for ghost pass
 
     for (const auto& ghost : m_OnionSkinGhosts) {
         // Build model matrix from ghost transform
@@ -3789,22 +3795,12 @@ void RenderSystem::RenderSprites() {
     u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
 
     // Render tilemaps first (layer -1000, behind sprites) via the per-entity path
-    // Tilemaps are complex meshes that don't benefit from instance batching
-    {
-        struct TilemapEntry {
-            Entity entity;
-        };
-        std::vector<TilemapEntry> tilemaps;
-        tilemaps.reserve(32);
-        for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
-            auto* xformTM = m_World->GetComponent<TransformComponent>(entity);
-            if (!xformTM || !xformTM->visible) continue;
-            if (!m_World->GetComponent<MeshComponent>(entity)) continue;
-            tilemaps.push_back({ entity });
-        }
-        for (const auto& entry : tilemaps) {
-            RenderEntity(entry.entity);
-        }
+    // Tilemaps are complex meshes that don't benefit from instance batching — render directly
+    for (Entity entity : m_World->GetEntitiesWithComponent<TilemapComponent>()) {
+        auto* xformTM = m_World->GetComponent<TransformComponent>(entity);
+        if (!xformTM || !xformTM->visible) continue;
+        if (!m_World->GetComponent<MeshComponent>(entity)) continue;
+        RenderEntity(entity);
     }
 
     // Render sprites via batch renderer (instanced draw calls grouped by texture)
@@ -4012,7 +4008,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
 
     // Bind and draw — pool-allocated entities use merged buffer with offsets
     if (renderData.poolAlloc.valid && m_GeometryPool) {
-        m_GeometryPool->BindBuffers(commandBuffer);
+        if (!m_GeometryPoolBound) { m_GeometryPool->BindBuffers(commandBuffer); m_GeometryPoolBound = true; }
         vkCmdDrawIndexed(commandBuffer, renderData.poolAlloc.indexCount, 1,
                          renderData.poolAlloc.indexOffset, renderData.poolAlloc.vertexOffset, 0);
     } else {
@@ -4021,6 +4017,7 @@ void RenderSystem::RenderEntityShadow(Entity entity, VkCommandBuffer commandBuff
         vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
         vkCmdBindIndexBuffer(commandBuffer, renderData.indexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
         vkCmdDrawIndexed(commandBuffer, renderData.indexCount, 1, 0, 0, 0);
+        m_GeometryPoolBound = false;
     }
 }
 

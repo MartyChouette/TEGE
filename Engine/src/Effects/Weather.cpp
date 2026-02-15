@@ -243,6 +243,12 @@ void Weather2D::Update(f32 deltaTime, const Math::Vector2& cameraPos, const Math
     (void)cameraPos;
     m_ScreenSize = screenSize;
 
+    // Early-out for weather types that produce no visible particles
+    if (m_Weather != WeatherType::Rain && m_Weather != WeatherType::HeavyRain &&
+        m_Weather != WeatherType::Snow && m_Weather != WeatherType::Storm) {
+        return;
+    }
+
     // P-17: Combined position update + velocity update in a single pass
     f32 rainSpeed = 300.0f;
     f32 snowSpeed = 50.0f;

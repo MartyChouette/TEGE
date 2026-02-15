@@ -60,6 +60,7 @@ private:
     VkBufferUsageFlags m_UsageFlags = 0;
     bool m_HostVisible = false;
     void* m_MappedData = nullptr;
+    void* m_PersistentMapped = nullptr;  // Persistently mapped pointer for host-visible buffers
 };
 
 } // namespace Renderer
