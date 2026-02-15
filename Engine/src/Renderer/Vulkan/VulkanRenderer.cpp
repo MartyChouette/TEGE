@@ -85,11 +85,18 @@ bool VulkanRenderer::Initialize(Window* window) {
     // Create async compute resources (optional — falls back to graphics queue)
     CreateComputeResources();
 
+    // Register fence-based wait so subsystems use WaitForGPU() instead of vkDeviceWaitIdle
+    m_Context->SetFenceWaitFunction([this]() { WaitForAllFrames(); });
+
     ENJIN_LOG_INFO(Renderer, "Vulkan renderer initialized successfully");
     return true;
 }
 
 void VulkanRenderer::Shutdown() {
+    if (m_Context) {
+        // Clear fence-wait registration before destroying fences
+        m_Context->SetFenceWaitFunction(nullptr);
+    }
     if (m_Context && m_Context->GetDevice() != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }

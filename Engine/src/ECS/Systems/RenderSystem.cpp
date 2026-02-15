@@ -309,9 +309,9 @@ void RenderSystem::Shutdown() {
         return;
     }
 
-    // Wait for GPU to finish
+    // Wait for GPU to finish (fence-based when renderer is active)
     if (m_Renderer && m_Renderer->GetContext()) {
-        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        m_Renderer->GetContext()->WaitForGPU();
     }
 
     // Clean up descriptor pool

@@ -31,7 +31,7 @@ void Skybox::Shutdown() {
     VkDevice device = m_Context->GetDevice();
     if (device == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device);
+    m_Context->WaitForGPU();
     DestroyImage();
 
     if (m_Sampler != VK_NULL_HANDLE) {

@@ -12,7 +12,7 @@ These issues cause frame hitches and should be addressed first.
 
 #### 1. ~~GPU Synchronization Blocking~~ ✅ RESOLVED
 
-Replaced `vkDeviceWaitIdle()` with per-frame fence waits. Pipeline recreation deferred to next frame start.
+Replaced `vkDeviceWaitIdle()` with `VulkanContext::WaitForGPU()` — fence-based wait registered by VulkanRenderer (waits on in-flight fences only, fast graphics-queue-only). 18 subsystems migrated. Falls back to `vkDeviceWaitIdle` only during device teardown. ECS World thread safety added: recursive mutex on structural ops, deferred entity destruction queue flushed at Update() start.
 
 #### 2. ~~Entity Iteration Inefficiency~~ ✅ RESOLVED
 

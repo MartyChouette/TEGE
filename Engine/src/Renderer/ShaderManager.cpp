@@ -73,8 +73,8 @@ bool ShaderManager::ReloadShader(const std::string& shaderId) {
         return false;
     }
 
-    // Wait for GPU to finish using the old shader
-    vkDeviceWaitIdle(m_Context->GetDevice());
+    // Wait for GPU to finish using the old shader (fence-based when renderer is active)
+    m_Context->WaitForGPU();
 
     // Destroy old shader
     entry.shader->Destroy();
@@ -120,7 +120,7 @@ void ShaderManager::Update() {
 void ShaderManager::UnloadShader(const std::string& shaderId) {
     auto it = m_Shaders.find(shaderId);
     if (it != m_Shaders.end()) {
-        vkDeviceWaitIdle(m_Context->GetDevice());
+        m_Context->WaitForGPU();
         m_Shaders.erase(it);
         ENJIN_LOG_INFO(Renderer, "Unloaded shader: %s", shaderId.c_str());
     }
@@ -128,7 +128,7 @@ void ShaderManager::UnloadShader(const std::string& shaderId) {
 
 void ShaderManager::UnloadAll() {
     if (m_Context && m_Context->GetDevice()) {
-        vkDeviceWaitIdle(m_Context->GetDevice());
+        m_Context->WaitForGPU();
     }
     m_Shaders.clear();
     ENJIN_LOG_INFO(Renderer, "Unloaded all shaders");

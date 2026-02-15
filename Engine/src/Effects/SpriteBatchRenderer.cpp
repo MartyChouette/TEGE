@@ -48,7 +48,7 @@ void SpriteBatchRenderer::Shutdown() {
     if (!m_Initialized) return;
 
     if (m_Renderer && m_Renderer->GetContext()) {
-        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        m_Renderer->GetContext()->WaitForGPU();
     }
 
     m_LitPipeline.reset();

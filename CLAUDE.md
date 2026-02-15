@@ -106,7 +106,7 @@ See `docs/ARCHITECTURE.md` for detailed system architecture.
 
 ### ECS (Entity-Component-System)
 
-- **`ECS::World`** - Manages entities and components
+- **`ECS::World`** - Manages entities and components. Thread-safe: structural ops (Create/Destroy/Add/Remove/Clear) guarded by recursive mutex. `DestroyEntity()` is deferred — queued and flushed at `Update()` start. `DestroyEntityImmediate()` for rare cases needing instant removal. `IsValid()` returns false for pending-destruction entities. `Lock()`/`Unlock()` for external batch operations.
 - **`ECS::Entity`** - Just a u64 ID
 - **Key Components:**
   - `TransformComponent` - position, rotation (Euler), scale, `visible` bool
@@ -407,7 +407,7 @@ The engine has 145+ completed features across these categories. See `docs/USER_M
 
 Key bottlenecks identified in codebase audits — see `docs/ROADMAP.md` for remaining plans.
 
-- **P0 (all resolved):** ~~`vkDeviceWaitIdle()` GPU stalls~~ (replaced with per-frame fences), ~~`GetAllEntities()` + filter~~ (replaced with `GetEntitiesWithComponent<T>()`), ~~shadow pass iteration~~ (shadow caster caching), ~~play mode double-draw~~ (main pass skip + offscreen-only rendering), ~~frame jitter on Windows~~ (`timeBeginPeriod(1)` for 1ms sleep resolution + 2ms spin margin)
+- **P0 (all resolved):** ~~`vkDeviceWaitIdle()` GPU stalls~~ (replaced with `VulkanContext::WaitForGPU()` — fence-based wait registered by VulkanRenderer, 18 subsystems migrated), ~~`GetAllEntities()` + filter~~ (replaced with `GetEntitiesWithComponent<T>()`), ~~shadow pass iteration~~ (shadow caster caching), ~~play mode double-draw~~ (main pass skip + offscreen-only rendering), ~~frame jitter on Windows~~ (`timeBeginPeriod(1)` for 1ms sleep resolution + 2ms spin margin)
 - **P1 (all resolved):** ~~Per-entity texture lookups~~ (cached texture pointers on MaterialComponent), ~~per-entity descriptor writes~~ (last-bound tracking + material sort), ~~offscreen path unsorted entity list~~ (sorted render list built before main pass skip)
 - **P2 (all resolved):** ~~Redundant per-entity `GetComponent()` calls~~ (multi-component query + `GetColliderInfo()` helper + Has+Get merged to single Get+null-check), ~~string-based entity lookups in scripts~~ (name cache on World with lazy rebuild), ~~vector allocations without `reserve()` in FlowerSystem~~ (reserve before spawn loops), ~~`std::map` in DialogueTree/Gameplay~~ (switched to `unordered_map`)
 - **P3 (all resolved):** ~~O(N²) collision detection~~ (spatial hash grid broad-phase), ~~`GetAllEntities()` in physics hot paths~~ (per-frame collider cache for ground check/raycast/overlap), ~~gravity zone query per rigidbody~~ (hoisted outside loop), ~~6 redundant ScriptComponent queries per frame~~ (single cached query shared by Update/FixedUpdate/LateUpdate), ~~player entity scan every frame~~ (cached with invalidation), ~~O(N) streaming queue duplicate checks~~ (hash set)

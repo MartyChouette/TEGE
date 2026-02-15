@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-02-14 (Session 21)
+
+### 2 Stability Fixes
+
+**1. Replace vkDeviceWaitIdle with fence-based WaitForGPU (18 subsystems)**
+Added `VulkanContext::WaitForGPU()` with registered fence-wait from VulkanRenderer. When the renderer is active, waits on in-flight fences only (fast, graphics-queue-only). Falls back to `vkDeviceWaitIdle` during init/shutdown when no renderer exists. Replaced 18 `vkDeviceWaitIdle` calls across ShaderManager (3), ShadowMap (2), PointLightShadowMap (1), SpotLightShadowMap (1), Skybox (1), RenderSystem (1), WeatherRenderer (1), ParticleRenderer (1), GrassRenderer (1), TreeRenderer (1), SpriteBatchRenderer (1), ShrubRenderer (1), FluidRenderer (1), ImGuiLayer (1), PostProcessing (1). Only VulkanContext::Shutdown and VulkanRenderer::Shutdown retain direct `vkDeviceWaitIdle` (device teardown). Files: `VulkanContext.h`, `VulkanRenderer.cpp`, + 15 renderer/effect files.
+
+**2. ECS World Thread Safety + Deferred Entity Destruction**
+Added `std::recursive_mutex` to `ECS::World` guarding structural modifications (CreateEntity, DestroyEntity, AddComponent, RemoveComponent, Clear). `DestroyEntity()` is now deferred — entities are queued and actually destroyed at the start of `Update()` via `FlushPendingDestructions()`. Added `DestroyEntityImmediate()` for cases requiring immediate destruction, `IsPendingDestruction()` query, and `Lock()`/`Unlock()` for external batch operations. `IsValid()` returns false for entities pending destruction. Files: `World.h`, `World.cpp`.
+
+Files changed: 19 across Engine/src, Engine/include
+
+---
+
 ## 2026-02-14 (Session 20)
 
 ### 4 Features Implemented

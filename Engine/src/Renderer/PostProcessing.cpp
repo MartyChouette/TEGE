@@ -2964,7 +2964,7 @@ void PostProcessing::Shutdown() {
     }
 
     VkDevice device = m_Context->GetDevice();
-    vkDeviceWaitIdle(device);
+    m_Context->WaitForGPU();
 
     // Clean up pipeline
     if (m_Pipeline != VK_NULL_HANDLE) {

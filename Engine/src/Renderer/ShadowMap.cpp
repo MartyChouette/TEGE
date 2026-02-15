@@ -63,7 +63,7 @@ void ShadowMap::Shutdown() {
     VkDevice device = m_Context->GetDevice();
     if (device == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device);
+    m_Context->WaitForGPU();
 
     for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
         if (m_CascadeFramebuffers[i] != VK_NULL_HANDLE) {
@@ -347,7 +347,7 @@ void ShadowMap::DestroyDepthResources() {
     VkDevice device = m_Context->GetDevice();
     if (device == VK_NULL_HANDLE) return;
 
-    vkDeviceWaitIdle(device);
+    m_Context->WaitForGPU();
 
     for (u32 i = 0; i < MAX_SHADOW_CASCADES; ++i) {
         if (m_CascadeFramebuffers[i] != VK_NULL_HANDLE) {

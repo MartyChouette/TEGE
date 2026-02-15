@@ -148,9 +148,9 @@ void ImGuiLayer::Shutdown() {
         return;
     }
 
-    // Wait for device to be idle before cleanup
+    // Wait for GPU to finish before cleanup (fence-based when renderer is active)
     if (m_Renderer && m_Renderer->GetContext()) {
-        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        m_Renderer->GetContext()->WaitForGPU();
     }
 
     ImGui_ImplVulkan_Shutdown();

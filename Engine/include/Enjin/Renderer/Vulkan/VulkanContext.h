@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 #include <vector>
 #include <atomic>
+#include <functional>
 
 namespace Enjin {
 namespace Renderer {
@@ -42,6 +43,17 @@ public:
     void TrackDeallocation(usize bytes) { m_TotalGPUAllocatedBytes.fetch_sub(bytes, std::memory_order_relaxed); }
     usize GetTotalGPUAllocatedBytes() const { return m_TotalGPUAllocatedBytes.load(std::memory_order_relaxed); }
 
+    // Fence-based GPU synchronization (preferred over vkDeviceWaitIdle for mid-frame use).
+    // When a VulkanRenderer is active, waits on in-flight fences (fast, graphics-queue-only).
+    // Falls back to vkDeviceWaitIdle when no renderer is registered (init/shutdown).
+    void WaitForGPU() {
+        if (m_FenceWaitFn) m_FenceWaitFn();
+        else if (m_Device != VK_NULL_HANDLE) vkDeviceWaitIdle(m_Device);
+    }
+
+    // Called by VulkanRenderer to register its fence-based wait
+    void SetFenceWaitFunction(std::function<void()> fn) { m_FenceWaitFn = std::move(fn); }
+
     // Ray tracing capabilities
     const RTCapabilities& GetRTCapabilities() const { return m_RTCapabilities; }
     bool IsRayTracingSupported() const { return m_RTCapabilities.supported; }
@@ -68,6 +80,9 @@ protected:
     u32 m_ComputeQueueFamily = UINT32_MAX;
 
     std::atomic<usize> m_TotalGPUAllocatedBytes{0};
+
+    // Fence-based wait function registered by VulkanRenderer
+    std::function<void()> m_FenceWaitFn;
 
     // Ray tracing capabilities (populated during SelectPhysicalDevice)
     RTCapabilities m_RTCapabilities;

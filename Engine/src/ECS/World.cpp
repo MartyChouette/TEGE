@@ -2,6 +2,7 @@
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/Logging/Log.h"
+#include <algorithm>
 
 /**
  * @file World.cpp
@@ -22,10 +23,28 @@ World::~World() {
 }
 
 Entity World::CreateEntity() {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     return m_EntityManager.CreateEntity();
 }
 
 void World::DestroyEntity(Entity entity) {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    if (!m_EntityManager.IsValid(entity)) {
+        return;
+    }
+    // Avoid duplicate queue entries
+    for (Entity e : m_PendingDestructions) {
+        if (e == entity) return;
+    }
+    m_PendingDestructions.push_back(entity);
+}
+
+void World::DestroyEntityImmediate(Entity entity) {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    DestroyEntityInternal(entity);
+}
+
+void World::DestroyEntityInternal(Entity entity) {
     if (!m_EntityManager.IsValid(entity)) {
         return;
     }
@@ -62,15 +81,44 @@ void World::DestroyEntity(Entity entity) {
     m_NameCacheDirty = true;
 }
 
+void World::FlushPendingDestructions() {
+    if (m_PendingDestructions.empty()) return;
+
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    // Move to local to allow new destructions during flush
+    std::vector<Entity> pending = std::move(m_PendingDestructions);
+    m_PendingDestructions.clear();
+
+    for (Entity entity : pending) {
+        DestroyEntityInternal(entity);
+    }
+}
+
 bool World::IsValid(Entity entity) const {
-    return m_EntityManager.IsValid(entity);
+    if (!m_EntityManager.IsValid(entity)) return false;
+    // Entities queued for deferred destruction are not considered valid
+    for (Entity e : m_PendingDestructions) {
+        if (e == entity) return false;
+    }
+    return true;
+}
+
+bool World::IsPendingDestruction(Entity entity) const {
+    for (Entity e : m_PendingDestructions) {
+        if (e == entity) return true;
+    }
+    return false;
 }
 
 void World::Update(f32 deltaTime) {
+    // Flush deferred destructions before system updates
+    FlushPendingDestructions();
     m_SystemManager->Update(deltaTime);
 }
 
 void World::Clear() {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
+    m_PendingDestructions.clear();
     m_ComponentStorages.clear();
     m_EntityManager.Reset();
     m_NameCache.clear();

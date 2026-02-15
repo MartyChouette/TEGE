@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <memory>
 #include <string>
+#include <mutex>
+#include <vector>
 
 /**
  * @file World.h
@@ -20,9 +22,15 @@ namespace ECS {
 
 /**
  * @brief The World class manages the entire ECS state
- * 
+ *
  * It acts as the container for all entities, components, and systems.
  * It provides methods to create/destroy entities and access components.
+ *
+ * Thread safety: Structural modifications (Create/Destroy/Add/Remove/Clear)
+ * are guarded by a recursive mutex. Read operations (Get/Has/GetEntities)
+ * are lock-free for performance. DestroyEntity is deferred — entities are
+ * queued and actually destroyed at the start of Update() to prevent
+ * iterator invalidation during system iteration.
  */
 class ENJIN_API World {
 public:
@@ -36,21 +44,42 @@ public:
     Entity CreateEntity();
 
     /**
-     * @brief Destroy an entity and all its components
-     * @param entity The entity to destroy
+     * @brief Queue an entity for deferred destruction
+     * @param entity The entity to destroy (actual destruction happens in Update)
      */
     void DestroyEntity(Entity entity);
 
     /**
-     * @brief Check if an entity is valid
+     * @brief Immediately destroy an entity (use with caution — not safe during iteration)
+     * @param entity The entity to destroy
+     */
+    void DestroyEntityImmediate(Entity entity);
+
+    /**
+     * @brief Flush all pending entity destructions
+     * Called automatically at the start of Update(). Can also be called manually
+     * between system updates when it's safe to modify entity lists.
+     */
+    void FlushPendingDestructions();
+
+    /**
+     * @brief Check if an entity is valid (not destroyed or pending destruction)
      * @param entity The entity to check
      * @return true if valid, false otherwise
      */
     bool IsValid(Entity entity) const;
 
+    /**
+     * @brief Check if an entity is pending deferred destruction
+     * @param entity The entity to check
+     * @return true if queued for destruction
+     */
+    bool IsPendingDestruction(Entity entity) const;
+
     // Component management
     template<typename T>
     T& AddComponent(Entity entity, const T& component = T{}) {
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
             *storage->Get(entity) = component;
@@ -64,6 +93,7 @@ public:
 
     template<typename T>
     void RemoveComponent(Entity entity) {
+        std::lock_guard<std::recursive_mutex> lock(m_Mutex);
         auto storage = GetOrCreateStorage<T>();
         if (storage->Has(entity)) {
             storage->Remove(entity);
@@ -110,7 +140,7 @@ public:
     /**
      * @brief Clear all entities and components
      */
-    void Clear(); // Clear all entities and components
+    void Clear();
 
     /**
      * @brief Get all entities that have a specific component type
@@ -182,8 +212,16 @@ public:
      */
     usize GetEntityCount() const { return m_EntityManager.GetEntityCount(); }
 
+    /**
+     * @brief Lock the world for external batch operations (prevents structural modifications)
+     * Use sparingly — prefer DestroyEntity (deferred) over DestroyEntityImmediate
+     */
+    void Lock() { m_Mutex.lock(); }
+    void Unlock() { m_Mutex.unlock(); }
+
 private:
     void RebuildNameCache();
+    void DestroyEntityInternal(Entity entity);
 
     // Type-erased component storage wrapper
     struct StorageBase {
@@ -242,6 +280,12 @@ private:
     // Name cache for O(1) entity lookup by name
     std::unordered_map<std::string, Entity> m_NameCache;
     bool m_NameCacheDirty = true;
+
+    // Thread safety: guards structural modifications (Create/Destroy/Add/Remove/Clear)
+    mutable std::recursive_mutex m_Mutex;
+
+    // Deferred entity destruction queue (flushed at start of Update)
+    std::vector<Entity> m_PendingDestructions;
 };
 
 } // namespace ECS
