@@ -317,9 +317,9 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("emissiveTexturePath")) {
         material.emissiveTexturePath = j["emissiveTexturePath"].get<std::string>();
     }
-    material.doubleSided = j.value("doubleSided", false);
-    material.castShadows = j.value("castShadows", true);
-    material.receiveShadows = j.value("receiveShadows", true);
+    material.doubleSided = j.contains("doubleSided") ? JB(j["doubleSided"]) : false;
+    material.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : true;
+    material.receiveShadows = j.contains("receiveShadows") ? JB(j["receiveShadows"]) : true;
     if (j.contains("alphaMode")) { i32 v = j["alphaMode"].get<i32>(); if (v >= 0 && v <= 2) material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(v); }
     material.alphaCutoff = j.value("alphaCutoff", 0.5f);
     // Height/parallax mapping (optional, added in later versions)
@@ -394,7 +394,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
     light.quadraticAttenuation = j.value("quadraticAttenuation", 0.032f);
     light.innerConeAngle = j.value("innerConeAngle", 12.5f);
     light.outerConeAngle = j.value("outerConeAngle", 17.5f);
-    light.castShadows = j.value("castShadows", false);
+    light.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : false;
     // Note: old scenes may contain "shadowMapResolution" â€” silently ignored
     return light;
 }
@@ -433,9 +433,9 @@ ECS::CameraComponent DeserializeCameraComponent(const json& j) {
     camera.farPlane = j.value("farPlane", 1000.0f);
     camera.orthoSize = j.value("orthoSize", 10.0f);
     camera.priority = j.value("priority", 0);
-    camera.isActive = j.value("isActive", true);
-    camera.clearDepth = j.value("clearDepth", true);
-    camera.clearColor = j.value("clearColor", true);
+    camera.isActive = j.contains("isActive") ? JB(j["isActive"]) : true;
+    camera.clearDepth = j.contains("clearDepth") ? JB(j["clearDepth"]) : true;
+    camera.clearColor = j.contains("clearColor") ? JB(j["clearColor"]) : true;
     if (j.contains("backgroundColor")) camera.backgroundColor = DeserializeVector3(j["backgroundColor"]);
     camera.viewportX = j.value("viewportX", 0.0f);
     camera.viewportY = j.value("viewportY", 0.0f);
@@ -795,6 +795,10 @@ json SerializeControllerBase(const ECS::CharacterControllerBase& base) {
     j["gridMovement"] = base.gridMovement;
     j["gridCellSize"] = RF(base.gridCellSize);
     j["gridMoveSpeed"] = RF(base.gridMoveSpeed);
+    j["gridOrigin"] = SerializeVector3(base.gridOrigin);
+    j["gridMoveStart"] = SerializeVector3(base.gridMoveStart);
+    j["gridMoveTarget"] = SerializeVector3(base.gridMoveTarget);
+    j["gridMoving"] = base.gridMoving;
     return j;
 }
 
@@ -811,6 +815,10 @@ void DeserializeControllerBase(const json& j, ECS::CharacterControllerBase& base
     if (j.contains("gridMovement")) base.gridMovement = JB(j["gridMovement"]);
     if (j.contains("gridCellSize")) base.gridCellSize = j["gridCellSize"].get<f32>();
     if (j.contains("gridMoveSpeed")) base.gridMoveSpeed = j["gridMoveSpeed"].get<f32>();
+    if (j.contains("gridOrigin")) base.gridOrigin = DeserializeVector3(j["gridOrigin"]);
+    if (j.contains("gridMoveStart")) base.gridMoveStart = DeserializeVector3(j["gridMoveStart"]);
+    if (j.contains("gridMoveTarget")) base.gridMoveTarget = DeserializeVector3(j["gridMoveTarget"]);
+    if (j.contains("gridMoving")) base.gridMoving = JB(j["gridMoving"]);
 }
 
 json SerializePlatformer2D(const ECS::Platformer2DController& ctrl) {
@@ -1150,6 +1158,7 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
     j["is3D"] = RF(audio.is3D);
     j["spatialBlend"] = RF(audio.spatialBlend);
     j["rolloff"] = static_cast<u8>(audio.rolloff);
+    j["channel"] = static_cast<u8>(audio.channel);
     j["priority"] = audio.priority;
     return j;
 }
@@ -1166,6 +1175,7 @@ ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     if (j.contains("is3D")) audio.is3D = JB(j["is3D"]);
     if (j.contains("spatialBlend")) audio.spatialBlend = j["spatialBlend"].get<f32>();
     if (j.contains("rolloff")) { u8 v = j["rolloff"].get<u8>(); if (v <= 2) audio.rolloff = static_cast<ECS::AudioSourceComponent::Rolloff>(v); }
+    if (j.contains("channel")) { u8 v = j["channel"].get<u8>(); if (v < static_cast<u8>(ECS::AudioChannel::Count)) audio.channel = static_cast<ECS::AudioChannel>(v); }
     if (j.contains("priority")) audio.priority = j["priority"].get<i32>();
     return audio;
 }
@@ -2551,7 +2561,7 @@ static json SerializeBlackboardValue(const AI::BlackboardValue& val) {
 
 static AI::BlackboardValue DeserializeBlackboardValue(const json& j) {
     std::string type = j.value("type", "string");
-    if (type == "bool") return j.value("value", false);
+    if (type == "bool") return j.contains("value") ? JB(j["value"]) : false;
     if (type == "int") return j.value("value", 0);
     if (type == "float") return j.value("value", 0.0f);
     if (type == "vector3") return DeserializeVector3(j["value"]);
@@ -3423,7 +3433,7 @@ ECS::QuestStateComponent DeserializeQuestStateComponent(const json& j) {
     if (j.contains("objectiveFlags") && j["objectiveFlags"].is_array()) {
         for (const auto& fj : j["objectiveFlags"]) {
             std::string name = fj.value("name", "");
-            bool complete = fj.value("complete", false);
+            bool complete = fj.contains("complete") ? JB(fj["complete"]) : false;
             q.objectiveFlags.push_back({name, complete});
         }
     }

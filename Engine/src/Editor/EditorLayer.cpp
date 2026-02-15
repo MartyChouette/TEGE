@@ -24854,11 +24854,37 @@ void EditorLayer::DrawAudioSourceComponent(ECS::Entity entity) {
         InspectorUndo::DragFloat(m_UndoRedo, "Volume", &audio->volume, 0.01f, 0.0f, 1.0f);
         InspectorUndo::DragFloat(m_UndoRedo, "Pitch", &audio->pitch, 0.01f, 0.1f, 3.0f);
 
+        // Audio channel dropdown
+        {
+            const char* channelNames[] = {"SFX", "Music", "UI", "Voice"};
+            int channelIdx = static_cast<int>(audio->channel);
+            if (channelIdx < 0 || channelIdx >= 4) channelIdx = 0;
+            if (InspectorUndo::Combo(m_UndoRedo, "Channel", &channelIdx, channelNames, 4)) {
+                audio->channel = static_cast<ECS::AudioChannel>(channelIdx);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("SFX: in-world sounds\nMusic: background score (always 2D)\nUI: menu sounds (always 2D)\nVoice: dialogue");
+            }
+        }
+
         InspectorUndo::Checkbox(m_UndoRedo, "Play On Awake", &audio->playOnAwake);
         InspectorUndo::Checkbox(m_UndoRedo, "Loop", &audio->loop);
-        InspectorUndo::Checkbox(m_UndoRedo, "3D Sound", &audio->is3D);
 
-        if (audio->is3D) {
+        // Music and UI channels force 2D — show is3D only for SFX and Voice
+        bool channelForces2D = audio->channel == ECS::AudioChannel::Music || audio->channel == ECS::AudioChannel::UI;
+        if (channelForces2D) {
+            ImGui::BeginDisabled();
+            bool forced2D = false;
+            ImGui::Checkbox("3D Sound", &forced2D);
+            ImGui::EndDisabled();
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
+                ImGui::SetTooltip("Music and UI channels are always non-diegetic (2D)");
+            }
+        } else {
+            InspectorUndo::Checkbox(m_UndoRedo, "3D Sound", &audio->is3D);
+        }
+
+        if (audio->is3D && !channelForces2D) {
             InspectorUndo::DragFloat(m_UndoRedo, "Spatial Blend", &audio->spatialBlend, 0.05f, 0.0f, 1.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Min Distance", &audio->minDistance, 0.5f, 0.1f, 100.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Max Distance", &audio->maxDistance, 5.0f, audio->minDistance, 1000.0f);

@@ -16,6 +16,16 @@ namespace Audio {
 using AudioClipHandle = u32;
 constexpr AudioClipHandle INVALID_AUDIO_CLIP = 0;
 
+// Audio channel — controls volume mixing and diegetic behavior
+// SFX/Music are typically diegetic (in-world) or non-diegetic (score/UI) respectively
+enum class AudioChannel : u8 {
+    SFX = 0,     // Sound effects (diegetic — in-world sounds, respects 3D spatialization)
+    Music = 1,   // Background music / score (non-diegetic — always 2D, ignores listener position)
+    UI = 2,      // UI / menu sounds (non-diegetic — always 2D, typically short one-shots)
+    Voice = 3,   // Dialogue / voice lines (can be diegetic or non-diegetic depending on is3D)
+    Count
+};
+
 // Sound instance (playing sound)
 struct SoundInstance {
     AudioClipHandle clip = INVALID_AUDIO_CLIP;
@@ -24,6 +34,7 @@ struct SoundInstance {
     f32 pan = 0.0f;        // -1 = left, 0 = center, 1 = right
     bool loop = false;
     bool is3D = false;
+    AudioChannel channel = AudioChannel::SFX;
     Math::Vector3 position;
     f32 minDistance = 1.0f;
     f32 maxDistance = 500.0f;
@@ -31,6 +42,9 @@ struct SoundInstance {
     // State
     bool isPlaying = false;
     f32 playbackPosition = 0.0f;
+
+    // Opaque pointer to ma_sound (owned by this instance, heap-allocated)
+    void* maSound = nullptr;
 };
 
 // SoundHandle may already be defined by AudioSystem.h — guard against redefinition
@@ -40,12 +54,10 @@ using SoundHandle = u32;
 constexpr SoundHandle INVALID_SOUND = 0;
 #endif
 
-// Simple audio manager
-// Note: This is a stub that can be extended with actual audio playback
-// (miniaudio, OpenAL, FMOD, etc.)
+// Simple audio manager — uses miniaudio for cross-platform audio playback
 class ENJIN_API SimpleAudio {
 public:
-    SimpleAudio() = default;
+    SimpleAudio();
     ~SimpleAudio();
 
     bool Initialize();
@@ -65,15 +77,17 @@ public:
     // S-L1: Remove clips that have no active sound instances referencing them
     void CleanupUnusedClips();
 
-    // Play a sound
-    SoundHandle Play(AudioClipHandle clip, f32 volume = 1.0f, f32 pitch = 1.0f, bool loop = false);
+    // Play a 2D sound (no spatialization)
+    SoundHandle Play(AudioClipHandle clip, f32 volume = 1.0f, f32 pitch = 1.0f, bool loop = false,
+                     AudioChannel channel = AudioChannel::SFX);
 
-    // Play 3D sound at position
+    // Play 3D sound at position (diegetic — attenuates with distance)
     SoundHandle Play3D(AudioClipHandle clip, const Math::Vector3& position,
-                       f32 volume = 1.0f, f32 minDist = 1.0f, f32 maxDist = 500.0f);
+                       f32 volume = 1.0f, f32 minDist = 1.0f, f32 maxDist = 500.0f,
+                       AudioChannel channel = AudioChannel::SFX);
 
     // Play one-shot (fire and forget)
-    void PlayOneShot(AudioClipHandle clip, f32 volume = 1.0f);
+    void PlayOneShot(AudioClipHandle clip, f32 volume = 1.0f, AudioChannel channel = AudioChannel::SFX);
     void PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& position, f32 volume = 1.0f);
 
     // Control playing sounds
@@ -88,9 +102,16 @@ public:
     // Query
     bool IsPlaying(SoundHandle sound) const;
 
-    // Master volume
-    void SetMasterVolume(f32 volume) { m_MasterVolume = Math::Clamp(volume, 0.0f, 1.0f); }
+    // Master volume (affects all channels)
+    void SetMasterVolume(f32 volume);
     f32 GetMasterVolume() const { return m_MasterVolume; }
+
+    // Per-channel volume (multiplied with master volume)
+    void SetChannelVolume(AudioChannel channel, f32 volume);
+    f32 GetChannelVolume(AudioChannel channel) const;
+
+    // Stop all sounds on a specific channel
+    void StopChannel(AudioChannel channel);
 
     // Update (call every frame to update 3D audio, fade-outs, etc.)
     void Update(f32 deltaTime);
@@ -105,6 +126,12 @@ public:
 
 private:
     f32 Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const;
+    f32 EffectiveVolume(f32 instanceVolume, AudioChannel channel) const;
+    void CleanupSound(SoundInstance& sound);
+
+    // pImpl for miniaudio engine
+    struct Impl;
+    std::unique_ptr<Impl> m_Impl;
 
     ECS::World* m_World = nullptr;
 
@@ -114,6 +141,7 @@ private:
     Math::Vector3 m_ListenerUp = Math::Vector3(0, 1, 0);
 
     f32 m_MasterVolume = 1.0f;
+    f32 m_ChannelVolumes[static_cast<usize>(AudioChannel::Count)] = {1.0f, 1.0f, 1.0f, 1.0f};
 
     // Loaded audio clip data
     struct AudioClipData {

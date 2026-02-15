@@ -157,11 +157,13 @@ constexpr const char* Damage        = "Component_Damage";
 constexpr const char* HasComponent  = "Component_Has";
 
 // Audio
-constexpr const char* AudioPlay           = "Audio_Play";
-constexpr const char* AudioStop           = "Audio_Stop";
-constexpr const char* AudioIsPlaying      = "Audio_IsPlaying";
-constexpr const char* AudioSetVolume      = "Audio_SetVolume";
-constexpr const char* WaitForAudioComplete = "Audio_WaitComplete";
+constexpr const char* AudioPlay              = "Audio_Play";
+constexpr const char* AudioStop              = "Audio_Stop";
+constexpr const char* AudioIsPlaying         = "Audio_IsPlaying";
+constexpr const char* AudioSetVolume         = "Audio_SetVolume";
+constexpr const char* AudioSetChannelVolume  = "Audio_SetChannelVolume";
+constexpr const char* AudioStopChannel       = "Audio_StopChannel";
+constexpr const char* WaitForAudioComplete   = "Audio_WaitComplete";
 
 // Animation
 constexpr const char* AnimatorPlay             = "Animator_Play";

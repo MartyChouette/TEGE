@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-02-15 (Session 24)
+
+### SimpleAudio Rewrite, Audio Channels, Logging Performance, Tolerant Bool Deserialization
+
+**1. SimpleAudio Miniaudio Backend**
+Rewrote SimpleAudio from a Windows-only `PlaySoundA` stub to a real cross-platform audio backend using miniaudio (pImpl pattern). `ma_engine` manages device lifecycle; per-sound `ma_sound` instances handle 2D/3D playback with proper volume, pitch, looping, and 3D spatialization (position, min/max distance, inverse attenuation model). Supports WAV, MP3, FLAC, and Vorbis natively. Created dedicated `MiniaudioImpl.cpp` as a single translation unit for `MINIAUDIO_IMPLEMENTATION` (shared by SimpleAudio.cpp and MiniaudioBackend.cpp).
+
+**2. Audio Channel System (Diegetic vs Non-Diegetic)**
+Added `AudioChannel` enum (SFX, Music, UI, Voice) with independent per-channel volume controls. Music and UI channels force non-diegetic (2D) playback regardless of `is3D` setting — no spatialization, no listener attenuation. SFX channel is diegetic (in-world, respects 3D). Voice channel respects `is3D` for flexible diegetic/non-diegetic dialogue. Effective volume = instance volume * channel volume * master volume. `SetChannelVolume()` live-updates all active sounds on that channel. Added `StopChannel()` for stopping all sounds on a channel (e.g., stop all music). Full wiring: AudioSourceComponent `channel` field, inspector dropdown with tooltip, serialization, 3 AS bindings (`Audio_SetChannelVolume/GetChannelVolume/StopChannel`), 4 channel constants, 2 VS nodes (`Set Channel Volume`, `Stop Audio Channel`), wired in PlayMode + Player via `s_VisualScriptAudio` global.
+
+**3. Logging Performance**
+Eliminated all heap allocations from the hot logging path: `std::stringstream` → `snprintf` into stack buffers, `std::string` returns → `const char*`, `GetTimestamp()` → `FormatTimestamp(char*, usize)`, `std::cout/cerr` → `fwrite`. Added 6 missing log category strings (AI, Assets, Procedural, Animation, Build, Player).
+
+**4. Tolerant Bool Deserialization**
+Added `JB()` helper in SceneRenderSettings.cpp and SceneSerializer.cpp that handles both JSON booleans and numbers (backward compat for scenes that serialized bools as floats via `RF()`). Applied to all ~35 bool fields in render settings deserialization plus material, light, camera, controller, blackboard, and quest components. Fixed VHS serialization: `vhsScreenTear`/`vhsInterlacing` now serialize as native booleans instead of `RF()` floats.
+
+**5. Grid Movement Serialization**
+Added `gridOrigin`, `gridMoveStart`, `gridMoveTarget`, `gridMoving` to controller base serialize/deserialize — grid state now persists across save/load.
+
+**6. Controller/UI Performance**
+ControllerSystem: early-out on `!isEnabled` before fetching transform (all 7 controller types). UISystem: canvas sort vector promoted to member `m_CachedCanvases` (avoids per-frame allocation). AudioSystem: entity iteration uses `GetEntitiesWithComponent<AudioSourceComponent>()`.
+
+Files changed: ~20 across Engine/src/Audio, Engine/src/Editor, Engine/src/Scene, Engine/src/Scripting, Engine/src/VisualScript, Engine/include, Core/src/Logging, Player/src
+
+---
+
 ## 2026-02-15 (Session 23)
 
 ### Lighting Pipeline Fix, Editor UX Audit, TopDown2D Controller

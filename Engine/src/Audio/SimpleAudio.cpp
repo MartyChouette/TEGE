@@ -6,14 +6,20 @@
 #include <fstream>
 #include <unordered_set>
 
-#ifdef _WIN32
-#include <Windows.h>
-#include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
-#endif
+#include "miniaudio.h"
 
 namespace Enjin {
 namespace Audio {
+
+// pImpl holding the ma_engine
+struct SimpleAudio::Impl {
+    ma_engine engine{};
+    bool initialized = false;
+};
+
+SimpleAudio::SimpleAudio()
+    : m_Impl(std::make_unique<Impl>()) {
+}
 
 SimpleAudio::~SimpleAudio() {
     Shutdown();
@@ -22,8 +28,17 @@ SimpleAudio::~SimpleAudio() {
 bool SimpleAudio::Initialize() {
     if (m_Initialized) return true;
 
-    ENJIN_LOG_INFO(Audio, "SimpleAudio initialized");
+    ma_result result = ma_engine_init(nullptr, &m_Impl->engine);
+    if (result != MA_SUCCESS) {
+        ENJIN_LOG_ERROR(Audio, "Failed to initialize miniaudio engine (error %d)", result);
+        // Fall back to initialized-but-silent mode so the rest of the engine works
+        m_Initialized = true;
+        return true;
+    }
+
+    m_Impl->initialized = true;
     m_Initialized = true;
+    ENJIN_LOG_INFO(Audio, "SimpleAudio initialized (miniaudio backend)");
     return true;
 }
 
@@ -32,7 +47,11 @@ void SimpleAudio::Shutdown() {
 
     StopAll();
     m_Clips.clear();
-    m_Sounds.clear();
+
+    if (m_Impl && m_Impl->initialized) {
+        ma_engine_uninit(&m_Impl->engine);
+        m_Impl->initialized = false;
+    }
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Audio, "SimpleAudio shutdown");
@@ -42,110 +61,31 @@ void SimpleAudio::SetListenerPosition(const Math::Vector3& position, const Math:
     m_ListenerPosition = position;
     m_ListenerForward = forward;
     m_ListenerUp = up;
+
+    if (m_Impl && m_Impl->initialized) {
+        ma_engine_listener_set_position(&m_Impl->engine, 0, position.x, position.y, position.z);
+        ma_engine_listener_set_direction(&m_Impl->engine, 0, forward.x, forward.y, forward.z);
+        ma_engine_listener_set_world_up(&m_Impl->engine, 0, up.x, up.y, up.z);
+    }
 }
 
 bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
+    // With miniaudio, we don't need to manually parse WAV — ma_sound_init_from_file handles it.
+    // Just verify the file exists and store the path.
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
-        ENJIN_LOG_ERROR(Audio, "Failed to open WAV file: %s", filepath.c_str());
+        ENJIN_LOG_ERROR(Audio, "Audio file not found: %s", filepath.c_str());
         return false;
     }
 
-    // Read RIFF header
-    char riffHeader[4];
-    file.read(riffHeader, 4);
-    if (std::memcmp(riffHeader, "RIFF", 4) != 0) {
-        ENJIN_LOG_ERROR(Audio, "Not a valid WAV file (no RIFF header): %s", filepath.c_str());
-        return false;
-    }
-
-    u32 fileSize;
-    file.read(reinterpret_cast<char*>(&fileSize), 4);
-
-    char waveHeader[4];
-    file.read(waveHeader, 4);
-    if (std::memcmp(waveHeader, "WAVE", 4) != 0) {
-        ENJIN_LOG_ERROR(Audio, "Not a valid WAV file (no WAVE header): %s", filepath.c_str());
-        return false;
-    }
-
-    // Find fmt and data chunks
-    bool foundFmt = false;
-    bool foundData = false;
-
-    while (!file.eof() && !(foundFmt && foundData)) {
-        char chunkId[4];
-        u32 chunkSize;
-        file.read(chunkId, 4);
-        file.read(reinterpret_cast<char*>(&chunkSize), 4);
-
-        if (!file.good()) break;
-
-        // Cap chunk size to 100MB to prevent OOM on malformed files
-        constexpr u32 MAX_CHUNK_SIZE = 100 * 1024 * 1024;
-        if (chunkSize > MAX_CHUNK_SIZE) {
-            ENJIN_LOG_ERROR(Audio, "WAV chunk size too large (%u bytes): %s", chunkSize, filepath.c_str());
-            return false;
-        }
-
-        if (std::memcmp(chunkId, "fmt ", 4) == 0) {
-            u16 audioFormat;
-            file.read(reinterpret_cast<char*>(&audioFormat), 2);
-            file.read(reinterpret_cast<char*>(&clip.channels), 2);
-            file.read(reinterpret_cast<char*>(&clip.sampleRate), 4);
-
-            u32 byteRate;
-            u16 blockAlign;
-            file.read(reinterpret_cast<char*>(&byteRate), 4);
-            file.read(reinterpret_cast<char*>(&blockAlign), 2);
-            file.read(reinterpret_cast<char*>(&clip.bitsPerSample), 2);
-
-            // Skip any extra fmt data
-            if (chunkSize > 16) {
-                file.seekg(chunkSize - 16, std::ios::cur);
-            }
-
-            if (audioFormat != 1) {
-                ENJIN_LOG_WARN(Audio, "WAV file is not PCM format (format=%u): %s", audioFormat, filepath.c_str());
-            }
-
-            // S-M3/S-M4: Validate format fields to prevent division by zero
-            if (clip.bitsPerSample == 0 || clip.channels == 0 || clip.sampleRate == 0) {
-                ENJIN_LOG_ERROR(Audio, "WAV invalid format (bps=%u, ch=%u, sr=%u): %s",
-                    clip.bitsPerSample, clip.channels, clip.sampleRate, filepath.c_str());
-                return false;
-            }
-
-            foundFmt = true;
-        } else if (std::memcmp(chunkId, "data", 4) == 0) {
-            clip.pcmData.resize(chunkSize);
-            file.read(reinterpret_cast<char*>(clip.pcmData.data()), chunkSize);
-            foundData = true;
-        } else {
-            // Skip unknown chunk
-            file.seekg(chunkSize, std::ios::cur);
-        }
-    }
-
-    if (!foundFmt || !foundData) {
-        ENJIN_LOG_ERROR(Audio, "Invalid WAV file (missing fmt or data chunk): %s", filepath.c_str());
-        return false;
-    }
-
-    // Calculate duration
-    u32 bytesPerSample = clip.bitsPerSample / 8;
-    u32 bytesPerFrame = bytesPerSample * clip.channels;
-    if (bytesPerFrame > 0 && clip.sampleRate > 0) {
-        u32 totalFrames = static_cast<u32>(clip.pcmData.size()) / bytesPerFrame;
-        clip.duration = static_cast<f32>(totalFrames) / static_cast<f32>(clip.sampleRate);
-    }
-
+    // Get file size for duration estimate (miniaudio will decode it properly)
+    file.seekg(0, std::ios::end);
+    auto fileSize = file.tellg();
     clip.loaded = true;
     clip.filepath = filepath;
+    clip.duration = 0.0f; // Will be determined by miniaudio at play time
 
-    ENJIN_LOG_INFO(Audio, "Loaded WAV: %s (%.1fs, %uHz, %uch, %ubit)",
-        filepath.c_str(), clip.duration, clip.sampleRate, clip.channels, clip.bitsPerSample);
-
+    ENJIN_LOG_INFO(Audio, "Registered audio file: %s (%lld bytes)", filepath.c_str(), (long long)fileSize);
     return true;
 }
 
@@ -158,19 +98,17 @@ AudioClipHandle SimpleAudio::LoadClip(const std::string& filepath) {
     }
 
     AudioClipHandle handle = m_NextClipHandle++;
-    // S-H9: Skip handle 0 on wraparound (0 is INVALID_AUDIO_CLIP)
     if (m_NextClipHandle == 0) m_NextClipHandle = 1;
     AudioClipData clipData;
     clipData.filepath = filepath;
 
-    // Try to load WAV data
-    if (filepath.size() > 4) {
-        std::string ext = filepath.substr(filepath.size() - 4);
-        if (ext == ".wav" || ext == ".WAV") {
-            LoadWAV(filepath, clipData);
-        } else {
-            ENJIN_LOG_WARN(Audio, "Unsupported audio format (only WAV supported): %s", filepath.c_str());
-        }
+    // Verify file exists (miniaudio supports WAV, MP3, FLAC, and Vorbis natively)
+    std::ifstream testFile(filepath, std::ios::binary);
+    if (testFile.is_open()) {
+        clipData.loaded = true;
+        testFile.close();
+    } else {
+        ENJIN_LOG_WARN(Audio, "Audio file not found: %s", filepath.c_str());
     }
 
     m_Clips[handle] = std::move(clipData);
@@ -183,8 +121,8 @@ void SimpleAudio::UnloadClip(AudioClipHandle clip) {
     if (it != m_Clips.end()) {
         // Stop any sounds using this clip
         for (auto& [handle, sound] : m_Sounds) {
-            if (sound.clip == clip) {
-                sound.isPlaying = false;
+            if (sound.clip == clip && sound.isPlaying) {
+                CleanupSound(sound);
             }
         }
 
@@ -194,7 +132,6 @@ void SimpleAudio::UnloadClip(AudioClipHandle clip) {
 }
 
 void SimpleAudio::CleanupUnusedClips() {
-    // S-L1: Build set of clips referenced by active sounds, then erase unreferenced clips
     std::unordered_set<AudioClipHandle> referencedClips;
     for (const auto& [handle, sound] : m_Sounds) {
         referencedClips.insert(sound.clip);
@@ -210,7 +147,19 @@ void SimpleAudio::CleanupUnusedClips() {
     }
 }
 
-SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool loop) {
+void SimpleAudio::CleanupSound(SoundInstance& sound) {
+    if (sound.maSound) {
+        auto* maS = static_cast<ma_sound*>(sound.maSound);
+        ma_sound_stop(maS);
+        ma_sound_uninit(maS);
+        delete maS;
+        sound.maSound = nullptr;
+    }
+    sound.isPlaying = false;
+}
+
+SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool loop,
+                              AudioChannel channel) {
     auto clipIt = m_Clips.find(clip);
     if (clipIt == m_Clips.end()) {
         ENJIN_LOG_WARN(Audio, "Tried to play invalid clip: %u", clip);
@@ -218,7 +167,6 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     }
 
     SoundHandle handle = m_NextSoundHandle++;
-    // S-H9: Skip handle 0 on wraparound (0 is INVALID_SOUND)
     if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
     SoundInstance sound;
@@ -227,27 +175,40 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
     sound.pitch = pitch;
     sound.loop = loop;
     sound.is3D = false;
+    sound.channel = channel;
     sound.isPlaying = true;
+
+    // Create miniaudio sound from file
+    if (m_Impl && m_Impl->initialized && clipIt->second.loaded) {
+        auto* maS = new ma_sound();
+        ma_uint32 flags = MA_SOUND_FLAG_NO_SPATIALIZATION; // 2D sound — no listener attenuation
+        ma_result result = ma_sound_init_from_file(
+            &m_Impl->engine,
+            clipIt->second.filepath.c_str(),
+            flags,
+            nullptr, nullptr,
+            maS
+        );
+
+        if (result == MA_SUCCESS) {
+            ma_sound_set_volume(maS, EffectiveVolume(volume, channel));
+            ma_sound_set_pitch(maS, pitch);
+            ma_sound_set_looping(maS, loop ? MA_TRUE : MA_FALSE);
+            ma_sound_start(maS);
+            sound.maSound = maS;
+        } else {
+            ENJIN_LOG_ERROR(Audio, "Failed to play audio '%s' (error %d)",
+                clipIt->second.filepath.c_str(), result);
+            delete maS;
+        }
+    }
 
     m_Sounds[handle] = sound;
 
-#ifdef _WIN32
-    // Use Windows PlaySound API for simple WAV playback
-    const auto& clipData = clipIt->second;
-    if (clipData.loaded && !clipData.pcmData.empty()) {
-        // PlaySound from memory requires the full WAV file, not just PCM data
-        // Use PlaySound from file for simplicity
-        DWORD flags = SND_FILENAME | SND_ASYNC | SND_NODEFAULT;
-        if (loop) flags |= SND_LOOP;
-        PlaySoundA(clipData.filepath.c_str(), nullptr, flags);
-    }
-#endif
-
     ENJIN_LOG_DEBUG(Audio, "Playing sound (handle: %u, clip: %u, vol: %.2f)", handle, clip, volume);
 
-    // Notify accessibility audio visual indicator system (Task #38)
+    // Notify accessibility audio visual indicator system
     if (m_OnSoundPlayed) {
-        // Extract filename from filepath for a clean label
         const auto& filepath = clipIt->second.filepath;
         auto lastSlash = filepath.find_last_of("/\\");
         std::string label = (lastSlash != std::string::npos)
@@ -260,45 +221,70 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
 }
 
 SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& position,
-                                 f32 volume, f32 minDist, f32 maxDist) {
+                                 f32 volume, f32 minDist, f32 maxDist,
+                                 AudioChannel channel) {
     auto clipIt = m_Clips.find(clip);
     if (clipIt == m_Clips.end()) {
         return INVALID_SOUND;
     }
 
     SoundHandle handle = m_NextSoundHandle++;
-    // S-H9: Skip handle 0 on wraparound (0 is INVALID_SOUND)
     if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
     SoundInstance sound;
     sound.clip = clip;
     sound.volume = volume;
     sound.is3D = true;
+    sound.channel = channel;
     sound.position = position;
     sound.minDistance = minDist;
     sound.maxDistance = maxDist;
     sound.isPlaying = true;
 
+    // Create miniaudio 3D spatialized sound
+    if (m_Impl && m_Impl->initialized && clipIt->second.loaded) {
+        auto* maS = new ma_sound();
+        ma_result result = ma_sound_init_from_file(
+            &m_Impl->engine,
+            clipIt->second.filepath.c_str(),
+            0, // No flags — spatialization enabled by default
+            nullptr, nullptr,
+            maS
+        );
+
+        if (result == MA_SUCCESS) {
+            ma_sound_set_volume(maS, EffectiveVolume(volume, channel));
+            ma_sound_set_position(maS, position.x, position.y, position.z);
+            ma_sound_set_min_distance(maS, minDist);
+            ma_sound_set_max_distance(maS, maxDist);
+            ma_sound_set_attenuation_model(maS, ma_attenuation_model_inverse);
+            ma_sound_start(maS);
+            sound.maSound = maS;
+        } else {
+            ENJIN_LOG_ERROR(Audio, "Failed to play 3D audio '%s' (error %d)",
+                clipIt->second.filepath.c_str(), result);
+            delete maS;
+        }
+    }
+
     m_Sounds[handle] = sound;
 
-    // Calculate spatial volume
-    f32 spatialVolume = Calculate3DVolume(position, minDist, maxDist) * volume * m_MasterVolume;
-
-#ifdef _WIN32
-    const auto& clipData = clipIt->second;
-    if (clipData.loaded && spatialVolume > 0.01f) {
-        PlaySoundA(clipData.filepath.c_str(), nullptr, SND_FILENAME | SND_ASYNC | SND_NODEFAULT);
-    }
-#else
-    (void)spatialVolume;
-#endif
-
     ENJIN_LOG_DEBUG(Audio, "Playing 3D sound at (%.1f, %.1f, %.1f)", position.x, position.y, position.z);
+
+    if (m_OnSoundPlayed) {
+        const auto& filepath = clipIt->second.filepath;
+        auto lastSlash = filepath.find_last_of("/\\");
+        std::string label = (lastSlash != std::string::npos)
+            ? filepath.substr(lastSlash + 1)
+            : filepath;
+        m_OnSoundPlayed(label);
+    }
+
     return handle;
 }
 
-void SimpleAudio::PlayOneShot(AudioClipHandle clip, f32 volume) {
-    Play(clip, volume, 1.0f, false);
+void SimpleAudio::PlayOneShot(AudioClipHandle clip, f32 volume, AudioChannel channel) {
+    Play(clip, volume, 1.0f, false, channel);
 }
 
 void SimpleAudio::PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& position, f32 volume) {
@@ -308,33 +294,30 @@ void SimpleAudio::PlayOneShot3D(AudioClipHandle clip, const Math::Vector3& posit
 void SimpleAudio::Stop(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
-        it->second.isPlaying = false;
+        CleanupSound(it->second);
         m_Sounds.erase(it);
     }
-
-#ifdef _WIN32
-    // Stop currently playing sound
-    PlaySoundA(nullptr, nullptr, 0);
-#endif
 }
 
 void SimpleAudio::StopAll() {
-#ifdef _WIN32
-    PlaySoundA(nullptr, nullptr, 0);
-#endif
+    for (auto& [handle, sound] : m_Sounds) {
+        CleanupSound(sound);
+    }
     m_Sounds.clear();
 }
 
 void SimpleAudio::Pause(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
-    if (it != m_Sounds.end()) {
+    if (it != m_Sounds.end() && it->second.maSound) {
+        ma_sound_stop(static_cast<ma_sound*>(it->second.maSound));
         it->second.isPlaying = false;
     }
 }
 
 void SimpleAudio::Resume(SoundHandle sound) {
     auto it = m_Sounds.find(sound);
-    if (it != m_Sounds.end()) {
+    if (it != m_Sounds.end() && it->second.maSound) {
+        ma_sound_start(static_cast<ma_sound*>(it->second.maSound));
         it->second.isPlaying = true;
     }
 }
@@ -343,6 +326,10 @@ void SimpleAudio::SetVolume(SoundHandle sound, f32 volume) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.volume = Math::Clamp(volume, 0.0f, 1.0f);
+        if (it->second.maSound) {
+            ma_sound_set_volume(static_cast<ma_sound*>(it->second.maSound),
+                EffectiveVolume(it->second.volume, it->second.channel));
+        }
     }
 }
 
@@ -350,6 +337,9 @@ void SimpleAudio::SetPitch(SoundHandle sound, f32 pitch) {
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.pitch = Math::Clamp(pitch, 0.1f, 3.0f);
+        if (it->second.maSound) {
+            ma_sound_set_pitch(static_cast<ma_sound*>(it->second.maSound), it->second.pitch);
+        }
     }
 }
 
@@ -357,41 +347,89 @@ void SimpleAudio::SetPosition(SoundHandle sound, const Math::Vector3& position) 
     auto it = m_Sounds.find(sound);
     if (it != m_Sounds.end()) {
         it->second.position = position;
+        if (it->second.maSound) {
+            ma_sound_set_position(static_cast<ma_sound*>(it->second.maSound),
+                position.x, position.y, position.z);
+        }
     }
 }
 
 bool SimpleAudio::IsPlaying(SoundHandle sound) const {
     auto it = m_Sounds.find(sound);
-    return it != m_Sounds.end() && it->second.isPlaying;
+    if (it == m_Sounds.end()) return false;
+
+    // Check miniaudio state if available
+    if (it->second.maSound) {
+        return ma_sound_is_playing(static_cast<ma_sound*>(it->second.maSound)) != 0;
+    }
+    return it->second.isPlaying;
+}
+
+void SimpleAudio::SetMasterVolume(f32 volume) {
+    m_MasterVolume = Math::Clamp(volume, 0.0f, 1.0f);
+    // Update all active sounds with new effective volume
+    for (auto& [handle, sound] : m_Sounds) {
+        if (sound.maSound) {
+            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound),
+                EffectiveVolume(sound.volume, sound.channel));
+        }
+    }
+}
+
+void SimpleAudio::SetChannelVolume(AudioChannel channel, f32 volume) {
+    auto idx = static_cast<usize>(channel);
+    if (idx >= static_cast<usize>(AudioChannel::Count)) return;
+    m_ChannelVolumes[idx] = Math::Clamp(volume, 0.0f, 1.0f);
+    // Update all active sounds on this channel
+    for (auto& [handle, sound] : m_Sounds) {
+        if (sound.channel == channel && sound.maSound) {
+            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound),
+                EffectiveVolume(sound.volume, channel));
+        }
+    }
+}
+
+f32 SimpleAudio::GetChannelVolume(AudioChannel channel) const {
+    auto idx = static_cast<usize>(channel);
+    if (idx >= static_cast<usize>(AudioChannel::Count)) return 1.0f;
+    return m_ChannelVolumes[idx];
+}
+
+void SimpleAudio::StopChannel(AudioChannel channel) {
+    std::vector<SoundHandle> toRemove;
+    for (auto& [handle, sound] : m_Sounds) {
+        if (sound.channel == channel) {
+            CleanupSound(sound);
+            toRemove.push_back(handle);
+        }
+    }
+    for (SoundHandle h : toRemove) {
+        m_Sounds.erase(h);
+    }
+}
+
+f32 SimpleAudio::EffectiveVolume(f32 instanceVolume, AudioChannel channel) const {
+    auto idx = static_cast<usize>(channel);
+    f32 channelVol = (idx < static_cast<usize>(AudioChannel::Count)) ? m_ChannelVolumes[idx] : 1.0f;
+    return instanceVolume * channelVol * m_MasterVolume;
 }
 
 void SimpleAudio::Update(f32 deltaTime) {
     std::vector<SoundHandle> toRemove;
 
     for (auto& [handle, sound] : m_Sounds) {
-        if (!sound.isPlaying) continue;
-
-        sound.playbackPosition += deltaTime * sound.pitch;
-
-        // Check if sound has finished using actual clip duration
-        auto clipIt = m_Clips.find(sound.clip);
-        f32 clipDuration = 10.0f; // Default fallback
-        if (clipIt != m_Clips.end() && clipIt->second.loaded) {
-            clipDuration = clipIt->second.duration;
-        }
-
-        if (!sound.loop && sound.playbackPosition >= clipDuration) {
+        if (!sound.isPlaying && !sound.maSound) {
             toRemove.push_back(handle);
-        } else if (sound.loop && sound.playbackPosition >= clipDuration) {
-            sound.playbackPosition -= clipDuration;
+            continue;
         }
 
-        // Update 3D volume attenuation
-        if (sound.is3D) {
-            f32 spatialVolume = Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance);
-            // Volume attenuation is tracked for query purposes
-            // Real-time volume changes would need a more advanced backend (XAudio2, etc.)
-            (void)spatialVolume;
+        // Check if miniaudio sound has finished
+        if (sound.maSound) {
+            auto* maS = static_cast<ma_sound*>(sound.maSound);
+            if (ma_sound_at_end(maS)) {
+                CleanupSound(sound);
+                toRemove.push_back(handle);
+            }
         }
     }
 
@@ -414,11 +452,16 @@ void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
         if (audio->playOnAwake && !audio->isPlaying && !audio->awakeTriggered) {
             if (!audio->clipPath.empty()) {
                 AudioClipHandle clip = LoadClip(audio->clipPath);
+                // Map ECS::AudioChannel to Audio::AudioChannel (same enum values)
+                auto ch = static_cast<AudioChannel>(static_cast<u8>(audio->channel));
+                // Music and UI channels force non-diegetic (2D) playback
+                bool diegetic3D = audio->is3D &&
+                    ch != AudioChannel::Music && ch != AudioChannel::UI;
                 SoundHandle snd;
-                if (audio->is3D) {
-                    snd = Play3D(clip, position, audio->volume, audio->minDistance, audio->maxDistance);
+                if (diegetic3D) {
+                    snd = Play3D(clip, position, audio->volume, audio->minDistance, audio->maxDistance, ch);
                 } else {
-                    snd = Play(clip, audio->volume, audio->pitch, audio->loop);
+                    snd = Play(clip, audio->volume, audio->pitch, audio->loop, ch);
                 }
                 audio->soundHandle = snd;
                 audio->isPlaying = true;
@@ -453,7 +496,6 @@ f32 SimpleAudio::Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f
         return 0.0f;
     }
 
-    // Linear falloff
     return 1.0f - (distance - minDist) / (maxDist - minDist);
 }
 

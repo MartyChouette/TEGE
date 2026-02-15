@@ -192,6 +192,16 @@ struct TriggerZoneComponent {
 // AUDIO
 // ============================================================================
 
+// Audio channel — controls diegetic vs non-diegetic behavior and independent volume
+// Matches Audio::AudioChannel enum values (kept here to avoid header dependency)
+enum class AudioChannel : u8 {
+    SFX = 0,     // Sound effects (diegetic — in-world, respects 3D spatialization)
+    Music = 1,   // Background music / score (non-diegetic — always 2D, ignores listener)
+    UI = 2,      // Menu / interface sounds (non-diegetic — always 2D, short one-shots)
+    Voice = 3,   // Dialogue / voice (diegetic or non-diegetic depending on is3D)
+    Count
+};
+
 // Audio Source - plays sounds
 struct AudioSourceComponent {
     std::string clipPath;          // Path to audio file
@@ -203,6 +213,10 @@ struct AudioSourceComponent {
     bool playOnAwake = false;
     bool loop = false;
     bool is3D = true;              // Spatial audio vs 2D
+
+    // Audio channel (SFX, Music, UI, Voice)
+    // Music and UI channels force non-diegetic playback (2D, no spatialization)
+    AudioChannel channel = AudioChannel::SFX;
 
     // Spatial blend (0 = 2D, 1 = 3D)
     f32 spatialBlend = 1.0f;

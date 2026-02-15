@@ -18,6 +18,14 @@ using json = nlohmann::json;
 namespace Enjin {
 namespace Renderer {
 
+// Tolerant bool deserialization — handles both JSON booleans and numbers
+// (needed for backward compat with scenes that used RF() on bool fields)
+static bool JB(const json& val) {
+    if (val.is_boolean()) return val.get<bool>();
+    if (val.is_number()) return val.get<double>() != 0.0;
+    return false;
+}
+
 // ---------------------------------------------------------------------------
 // CaptureFromRuntime — read live rendering state into a config struct
 // ---------------------------------------------------------------------------
@@ -563,9 +571,9 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["vhsColorBleed"]         = RF(s.vhsColorBleed);
     j["vhsNoiseIntensity"]     = RF(s.vhsNoiseIntensity);
     j["vhsBlueShift"]          = RF(s.vhsBlueShift);
-    j["vhsScreenTear"]         = RF(s.vhsScreenTear);
+    j["vhsScreenTear"]         = s.vhsScreenTear;
     j["vhsTearOffset"]         = RF(s.vhsTearOffset);
-    j["vhsInterlacing"]        = RF(s.vhsInterlacing);
+    j["vhsInterlacing"]        = s.vhsInterlacing;
 
     // Palette lock
     j["paletteEnabled"]    = s.paletteEnabled;
@@ -649,16 +657,16 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
 SceneRenderSettings DeserializeRenderSettings(const json& j) {
     SceneRenderSettings s;
 
-    if (j.contains("useProjectDefaults")) s.useProjectDefaults = j["useProjectDefaults"].get<bool>();
+    if (j.contains("useProjectDefaults")) s.useProjectDefaults = JB(j["useProjectDefaults"]);
 
     // RenderSystem
-    if (j.contains("shadowsEnabled"))    s.shadowsEnabled    = j["shadowsEnabled"].get<bool>();
+    if (j.contains("shadowsEnabled"))    s.shadowsEnabled    = JB(j["shadowsEnabled"]);
     if (j.contains("shadowResolution")) s.shadowResolution  = j["shadowResolution"].get<u32>();
     if (j.contains("shadowDistance"))   s.shadowDistance     = j["shadowDistance"].get<f32>();
     if (j.contains("shadowStrength"))   s.shadowStrength     = j["shadowStrength"].get<f32>();
     if (j.contains("shadowSoftness"))   s.shadowSoftness     = j["shadowSoftness"].get<f32>();
-    if (j.contains("backfaceCulling"))   s.backfaceCulling   = j["backfaceCulling"].get<bool>();
-    if (j.contains("wireframe"))         s.wireframe         = j["wireframe"].get<bool>();
+    if (j.contains("backfaceCulling"))   s.backfaceCulling   = JB(j["backfaceCulling"]);
+    if (j.contains("wireframe"))         s.wireframe         = JB(j["wireframe"]);
     if (j.contains("ambientIntensity"))  s.ambientIntensity  = j["ambientIntensity"].get<f32>();
     if (j.contains("ambientColor"))      s.ambientColor      = DeserializeVec3(j["ambientColor"], s.ambientColor);
     if (j.contains("fogDensity"))        s.fogDensity        = j["fogDensity"].get<f32>();
@@ -668,7 +676,7 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("fogColor"))          s.fogColor          = DeserializeVec3(j["fogColor"], s.fogColor);
     if (j.contains("snowIntensity"))     s.snowIntensity     = j["snowIntensity"].get<f32>();
     if (j.contains("worldCurvature"))    s.worldCurvature    = j["worldCurvature"].get<f32>();
-    if (j.contains("rainActive"))        s.rainActive        = j["rainActive"].get<bool>();
+    if (j.contains("rainActive"))        s.rainActive        = JB(j["rainActive"]);
 
     // Tone mapping
     if (j.contains("toneMappingMode"))   s.toneMappingMode   = j["toneMappingMode"].get<u32>();
@@ -677,18 +685,18 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("whitePoint"))        s.whitePoint        = j["whitePoint"].get<f32>();
 
     // Bloom
-    if (j.contains("bloomEnabled"))      s.bloomEnabled      = j["bloomEnabled"].get<bool>();
+    if (j.contains("bloomEnabled"))      s.bloomEnabled      = JB(j["bloomEnabled"]);
     if (j.contains("bloomThreshold"))    s.bloomThreshold    = j["bloomThreshold"].get<f32>();
     if (j.contains("bloomIntensity"))    s.bloomIntensity    = j["bloomIntensity"].get<f32>();
     if (j.contains("bloomRadius"))       s.bloomRadius       = j["bloomRadius"].get<f32>();
 
     // Vignette
-    if (j.contains("vignetteEnabled"))     s.vignetteEnabled     = j["vignetteEnabled"].get<bool>();
+    if (j.contains("vignetteEnabled"))     s.vignetteEnabled     = JB(j["vignetteEnabled"]);
     if (j.contains("vignetteIntensity"))   s.vignetteIntensity   = j["vignetteIntensity"].get<f32>();
     if (j.contains("vignetteSmoothness"))  s.vignetteSmoothness  = j["vignetteSmoothness"].get<f32>();
 
     // Chromatic aberration
-    if (j.contains("chromaticAberrationEnabled"))   s.chromaticAberrationEnabled   = j["chromaticAberrationEnabled"].get<bool>();
+    if (j.contains("chromaticAberrationEnabled"))   s.chromaticAberrationEnabled   = JB(j["chromaticAberrationEnabled"]);
     if (j.contains("chromaticAberrationIntensity")) s.chromaticAberrationIntensity = j["chromaticAberrationIntensity"].get<f32>();
 
     // Color grading
@@ -698,50 +706,50 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("brightness"))        s.brightness        = j["brightness"].get<f32>();
 
     // Film grain
-    if (j.contains("filmGrainEnabled"))    s.filmGrainEnabled    = j["filmGrainEnabled"].get<bool>();
+    if (j.contains("filmGrainEnabled"))    s.filmGrainEnabled    = JB(j["filmGrainEnabled"]);
     if (j.contains("filmGrainIntensity"))  s.filmGrainIntensity  = j["filmGrainIntensity"].get<f32>();
 
     // FXAA
-    if (j.contains("fxaaEnabled"))       s.fxaaEnabled       = j["fxaaEnabled"].get<bool>();
+    if (j.contains("fxaaEnabled"))       s.fxaaEnabled       = JB(j["fxaaEnabled"]);
     if (j.contains("fxaaSpanMax"))       s.fxaaSpanMax       = j["fxaaSpanMax"].get<f32>();
     if (j.contains("fxaaReduceMin"))     s.fxaaReduceMin     = j["fxaaReduceMin"].get<f32>();
     if (j.contains("fxaaReduceMul"))     s.fxaaReduceMul     = j["fxaaReduceMul"].get<f32>();
 
     // Retro: Dithering
-    if (j.contains("ditherEnabled"))     s.ditherEnabled     = j["ditherEnabled"].get<bool>();
+    if (j.contains("ditherEnabled"))     s.ditherEnabled     = JB(j["ditherEnabled"]);
     if (j.contains("ditherPattern"))     s.ditherPattern     = j["ditherPattern"].get<u32>();
     if (j.contains("ditherStrength"))    s.ditherStrength    = j["ditherStrength"].get<f32>();
 
     // Retro: Color quantization
-    if (j.contains("colorQuantEnabled")) s.colorQuantEnabled = j["colorQuantEnabled"].get<bool>();
+    if (j.contains("colorQuantEnabled")) s.colorQuantEnabled = JB(j["colorQuantEnabled"]);
     if (j.contains("colorBitDepth"))     s.colorBitDepth     = j["colorBitDepth"].get<u32>();
 
     // Retro: Resolution downscaling
-    if (j.contains("resDownscaleEnabled")) s.resDownscaleEnabled = j["resDownscaleEnabled"].get<bool>();
+    if (j.contains("resDownscaleEnabled")) s.resDownscaleEnabled = JB(j["resDownscaleEnabled"]);
     if (j.contains("internalWidth"))       s.internalWidth       = j["internalWidth"].get<u32>();
     if (j.contains("internalHeight"))      s.internalHeight      = j["internalHeight"].get<u32>();
-    if (j.contains("usePointFiltering"))   s.usePointFiltering   = j["usePointFiltering"].get<bool>();
+    if (j.contains("usePointFiltering"))   s.usePointFiltering   = JB(j["usePointFiltering"]);
 
     // CRT scanlines
-    if (j.contains("crtEnabled"))          s.crtEnabled          = j["crtEnabled"].get<bool>();
+    if (j.contains("crtEnabled"))          s.crtEnabled          = JB(j["crtEnabled"]);
     if (j.contains("scanlineIntensity"))   s.scanlineIntensity   = j["scanlineIntensity"].get<f32>();
     if (j.contains("scanlineWidth"))       s.scanlineWidth       = j["scanlineWidth"].get<f32>();
     if (j.contains("crtCurvature"))        s.crtCurvature        = j["crtCurvature"].get<f32>();
 
     // LUT
-    if (j.contains("lutEnabled"))        s.lutEnabled        = j["lutEnabled"].get<bool>();
+    if (j.contains("lutEnabled"))        s.lutEnabled        = JB(j["lutEnabled"]);
     if (j.contains("lutStrength"))       s.lutStrength       = j["lutStrength"].get<f32>();
     if (j.contains("lutSize"))           s.lutSize           = j["lutSize"].get<u32>();
 
     // CRT Phosphor
-    if (j.contains("crtPhosphorEnabled"))  s.crtPhosphorEnabled  = j["crtPhosphorEnabled"].get<bool>();
+    if (j.contains("crtPhosphorEnabled"))  s.crtPhosphorEnabled  = JB(j["crtPhosphorEnabled"]);
     if (j.contains("crtMaskType"))         s.crtMaskType         = j["crtMaskType"].get<u32>();
     if (j.contains("crtMaskPitch"))        s.crtMaskPitch        = j["crtMaskPitch"].get<f32>();
     if (j.contains("crtBloomRadius"))      s.crtBloomRadius      = j["crtBloomRadius"].get<f32>();
     if (j.contains("crtBloomStrength"))    s.crtBloomStrength    = j["crtBloomStrength"].get<f32>();
 
     // VHS
-    if (j.contains("vhsEnabled"))            s.vhsEnabled            = j["vhsEnabled"].get<bool>();
+    if (j.contains("vhsEnabled"))            s.vhsEnabled            = JB(j["vhsEnabled"]);
     if (j.contains("vhsTrackingIntensity"))  s.vhsTrackingIntensity  = j["vhsTrackingIntensity"].get<f32>();
     if (j.contains("vhsTrackingSpeed"))      s.vhsTrackingSpeed      = j["vhsTrackingSpeed"].get<f32>();
     if (j.contains("vhsWobbleIntensity"))    s.vhsWobbleIntensity    = j["vhsWobbleIntensity"].get<f32>();
@@ -749,16 +757,16 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("vhsColorBleed"))         s.vhsColorBleed         = j["vhsColorBleed"].get<f32>();
     if (j.contains("vhsNoiseIntensity"))     s.vhsNoiseIntensity     = j["vhsNoiseIntensity"].get<f32>();
     if (j.contains("vhsBlueShift"))          s.vhsBlueShift          = j["vhsBlueShift"].get<f32>();
-    if (j.contains("vhsScreenTear"))         s.vhsScreenTear         = j["vhsScreenTear"].get<bool>();
+    if (j.contains("vhsScreenTear"))         s.vhsScreenTear         = JB(j["vhsScreenTear"]);
     if (j.contains("vhsTearOffset"))         s.vhsTearOffset         = j["vhsTearOffset"].get<f32>();
-    if (j.contains("vhsInterlacing"))        s.vhsInterlacing        = j["vhsInterlacing"].get<bool>();
+    if (j.contains("vhsInterlacing"))        s.vhsInterlacing        = JB(j["vhsInterlacing"]);
 
     // Palette lock
-    if (j.contains("paletteEnabled"))    s.paletteEnabled    = j["paletteEnabled"].get<bool>();
+    if (j.contains("paletteEnabled"))    s.paletteEnabled    = JB(j["paletteEnabled"]);
     if (j.contains("paletteColors"))     s.paletteColors     = j["paletteColors"].get<u32>();
 
     // Stipple
-    if (j.contains("stippleEnabled"))    s.stippleEnabled    = j["stippleEnabled"].get<bool>();
+    if (j.contains("stippleEnabled"))    s.stippleEnabled    = JB(j["stippleEnabled"]);
     if (j.contains("stipplePatternMask")) s.stipplePatternMask = j["stipplePatternMask"].get<u32>();
     if (j.contains("stipplePattern"))     s.stipplePatternMask = 1u << j["stipplePattern"].get<u32>(); // migrate old single-pattern
     if (j.contains("stippleColorMode"))  s.stippleColorMode  = j["stippleColorMode"].get<u32>();
@@ -769,58 +777,58 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("stippleBgColor"))    s.stippleBgColor    = DeserializeVec3(j["stippleBgColor"], s.stippleBgColor);
 
     // Global retro overrides
-    if (j.contains("globalFlatShading"))          s.globalFlatShading          = j["globalFlatShading"].get<bool>();
-    if (j.contains("globalAffineTexturing"))      s.globalAffineTexturing      = j["globalAffineTexturing"].get<bool>();
-    if (j.contains("globalVertexSnapping"))       s.globalVertexSnapping       = j["globalVertexSnapping"].get<bool>();
-    if (j.contains("globalStippleTransparency"))  s.globalStippleTransparency  = j["globalStippleTransparency"].get<bool>();
-    if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = j["globalUVQuantize"].get<bool>();
-    if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = j["globalGouraudOnly"].get<bool>();
+    if (j.contains("globalFlatShading"))          s.globalFlatShading          = JB(j["globalFlatShading"]);
+    if (j.contains("globalAffineTexturing"))      s.globalAffineTexturing      = JB(j["globalAffineTexturing"]);
+    if (j.contains("globalVertexSnapping"))       s.globalVertexSnapping       = JB(j["globalVertexSnapping"]);
+    if (j.contains("globalStippleTransparency"))  s.globalStippleTransparency  = JB(j["globalStippleTransparency"]);
+    if (j.contains("globalUVQuantize"))           s.globalUVQuantize           = JB(j["globalUVQuantize"]);
+    if (j.contains("globalGouraudOnly"))          s.globalGouraudOnly          = JB(j["globalGouraudOnly"]);
     if (j.contains("globalVertexSnapResolution")) s.globalVertexSnapResolution = j["globalVertexSnapResolution"].get<u32>();
 
     // Depth of Field
-    if (j.contains("dofEnabled"))            s.dofEnabled            = j["dofEnabled"].get<bool>();
+    if (j.contains("dofEnabled"))            s.dofEnabled            = JB(j["dofEnabled"]);
     if (j.contains("dofFocalDistance"))       s.dofFocalDistance      = j["dofFocalDistance"].get<f32>();
     if (j.contains("dofFocalRange"))         s.dofFocalRange         = j["dofFocalRange"].get<f32>();
     if (j.contains("dofNearBlurStrength"))   s.dofNearBlurStrength   = j["dofNearBlurStrength"].get<f32>();
     if (j.contains("dofFarBlurStrength"))    s.dofFarBlurStrength    = j["dofFarBlurStrength"].get<f32>();
     if (j.contains("dofBokehSize"))          s.dofBokehSize          = j["dofBokehSize"].get<f32>();
     if (j.contains("dofApertureShape"))      s.dofApertureShape      = j["dofApertureShape"].get<u32>();
-    if (j.contains("dofDebugCoC"))           s.dofDebugCoC           = j["dofDebugCoC"].get<bool>();
+    if (j.contains("dofDebugCoC"))           s.dofDebugCoC           = JB(j["dofDebugCoC"]);
 
     // Tilt-Shift
-    if (j.contains("tiltShiftEnabled"))      s.tiltShiftEnabled      = j["tiltShiftEnabled"].get<bool>();
+    if (j.contains("tiltShiftEnabled"))      s.tiltShiftEnabled      = JB(j["tiltShiftEnabled"]);
     if (j.contains("tiltShiftFocusY"))       s.tiltShiftFocusY       = j["tiltShiftFocusY"].get<f32>();
     if (j.contains("tiltShiftBandWidth"))    s.tiltShiftBandWidth    = j["tiltShiftBandWidth"].get<f32>();
     if (j.contains("tiltShiftBlurAmount"))   s.tiltShiftBlurAmount   = j["tiltShiftBlurAmount"].get<f32>();
 
     // Cel Shading
-    if (j.contains("celShadingEnabled"))     s.celShadingEnabled     = j["celShadingEnabled"].get<bool>();
+    if (j.contains("celShadingEnabled"))     s.celShadingEnabled     = JB(j["celShadingEnabled"]);
     if (j.contains("celDiffuseBands"))       s.celDiffuseBands       = j["celDiffuseBands"].get<f32>();
     if (j.contains("celSpecularCutoff"))     s.celSpecularCutoff     = j["celSpecularCutoff"].get<f32>();
-    if (j.contains("celOutlineEnabled"))     s.celOutlineEnabled     = j["celOutlineEnabled"].get<bool>();
+    if (j.contains("celOutlineEnabled"))     s.celOutlineEnabled     = JB(j["celOutlineEnabled"]);
     if (j.contains("celOutlineThickness"))   s.celOutlineThickness   = j["celOutlineThickness"].get<f32>();
     if (j.contains("celOutlineThreshold"))   s.celOutlineThreshold   = j["celOutlineThreshold"].get<f32>();
     if (j.contains("celOutlineColor"))       s.celOutlineColor       = DeserializeVec3(j["celOutlineColor"], s.celOutlineColor);
 
     // Ray Tracing
-    if (j.contains("rtEnabled"))                      s.rtEnabled                      = j["rtEnabled"].get<bool>();
+    if (j.contains("rtEnabled"))                      s.rtEnabled                      = JB(j["rtEnabled"]);
     if (j.contains("rtMode"))                         s.rtMode                         = j["rtMode"].get<u32>();
-    if (j.contains("rtShadowsEnabled"))               s.rtShadowsEnabled               = j["rtShadowsEnabled"].get<bool>();
+    if (j.contains("rtShadowsEnabled"))               s.rtShadowsEnabled               = JB(j["rtShadowsEnabled"]);
     if (j.contains("rtShadowMaxDistance"))             s.rtShadowMaxDistance             = j["rtShadowMaxDistance"].get<f32>();
     if (j.contains("rtShadowRadius"))                 s.rtShadowRadius                 = j["rtShadowRadius"].get<f32>();
-    if (j.contains("rtReflectionsEnabled"))            s.rtReflectionsEnabled            = j["rtReflectionsEnabled"].get<bool>();
+    if (j.contains("rtReflectionsEnabled"))            s.rtReflectionsEnabled            = JB(j["rtReflectionsEnabled"]);
     if (j.contains("rtReflectionMaxDistance"))         s.rtReflectionMaxDistance         = j["rtReflectionMaxDistance"].get<f32>();
     if (j.contains("rtReflectionRoughnessThreshold")) s.rtReflectionRoughnessThreshold = j["rtReflectionRoughnessThreshold"].get<f32>();
-    if (j.contains("rtAOEnabled"))                    s.rtAOEnabled                    = j["rtAOEnabled"].get<bool>();
+    if (j.contains("rtAOEnabled"))                    s.rtAOEnabled                    = JB(j["rtAOEnabled"]);
     if (j.contains("rtAORadius"))                     s.rtAORadius                     = j["rtAORadius"].get<f32>();
     if (j.contains("rtAOPower"))                      s.rtAOPower                      = j["rtAOPower"].get<f32>();
-    if (j.contains("rtGIEnabled"))                    s.rtGIEnabled                    = j["rtGIEnabled"].get<bool>();
+    if (j.contains("rtGIEnabled"))                    s.rtGIEnabled                    = JB(j["rtGIEnabled"]);
     if (j.contains("rtGIMaxDistance"))                 s.rtGIMaxDistance                 = j["rtGIMaxDistance"].get<f32>();
     if (j.contains("rtGIIntensity"))                  s.rtGIIntensity                  = j["rtGIIntensity"].get<f32>();
     if (j.contains("rtGIBounces"))                    s.rtGIBounces                    = j["rtGIBounces"].get<u32>();
     if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
     if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
-    if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = j["rtDenoiserEnabled"].get<bool>();
+    if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = JB(j["rtDenoiserEnabled"]);
     if (j.contains("rtDenoiserType"))                 s.rtDenoiserType                 = j["rtDenoiserType"].get<u32>();
     if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();
     if (j.contains("rtDenoiserTemporalAlpha"))        s.rtDenoiserTemporalAlpha        = j["rtDenoiserTemporalAlpha"].get<f32>();

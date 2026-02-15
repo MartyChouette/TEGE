@@ -69,20 +69,15 @@ static void DrawCenteredText(ImDrawList* dl, const UIRect& rect, const char* tex
 void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     if (!world || vpW <= 0 || vpH <= 0) return;
 
-    // Collect all canvas entities and sort by sortOrder
-    struct CanvasEntry {
-        ECS::Entity entity;
-        i32 sortOrder;
-    };
-
-    std::vector<CanvasEntry> canvases;
+    // Collect all canvas entities and sort by sortOrder (reuses member vector)
+    m_CachedCanvases.clear();
     for (ECS::Entity entity : world->GetEntitiesWithComponent<UICanvasComponent>()) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entity);
         if (!canvas || !canvas->visible) continue;
-        canvases.push_back({entity, canvas->sortOrder});
+        m_CachedCanvases.push_back({entity, canvas->sortOrder});
     }
 
-    std::sort(canvases.begin(), canvases.end(),
+    std::sort(m_CachedCanvases.begin(), m_CachedCanvases.end(),
         [](const CanvasEntry& a, const CanvasEntry& b) { return a.sortOrder < b.sortOrder; });
 
     // Update cursor blink timer (skip animation when reduced motion is on)
@@ -99,7 +94,7 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
         m_TooltipHoverTimer += m_ReducedMotion ? 999.0f : deltaTime;
     }
 
-    for (auto& entry : canvases) {
+    for (auto& entry : m_CachedCanvases) {
         auto* canvas = world->GetComponent<UICanvasComponent>(entry.entity);
         if (!canvas) continue;
 

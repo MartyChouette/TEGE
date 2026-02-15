@@ -64,9 +64,9 @@ private:
     Logger(const Logger&) = delete;
     Logger& operator=(const Logger&) = delete;
 
-    std::string GetLogLevelString(LogLevel level) const;
-    std::string GetCategoryString(LogCategory category) const;
-    std::string GetTimestamp() const;
+    const char* GetLogLevelString(LogLevel level) const;
+    const char* GetCategoryString(LogCategory category) const;
+    void FormatTimestamp(char* buf, usize bufSize) const;
 
     static constexpr usize MAX_LOG_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 

@@ -43,6 +43,9 @@
 //       execution context rather than relying on a global extern pointer.
 Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem = nullptr;
 
+// Global pointer for visual script SimpleAudio access (set by PlayMode)
+Enjin::Audio::SimpleAudio* s_VisualScriptAudio = nullptr;
+
 // Global pointer for visual script audio event graph runtime access (set by PlayMode)
 Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime = nullptr;
 
@@ -2642,6 +2645,71 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 if (audio) {
                     audio->volume = volume;
                 }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Set Channel Volume
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioSetChannelVolume;
+        def.displayName = "Set Channel Volume";
+        def.description = "Set volume for an audio channel (0=SFX, 1=Music, 2=UI, 3=Voice)";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            Int("Channel", PK::Input, 0),
+            Float("Volume", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "channel", "volume", "music", "sfx", "ui", "voice", "mix"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 channel = 0;
+            if (inputs.size() > 0 && std::holds_alternative<i32>(inputs[0])) {
+                channel = std::get<i32>(inputs[0]);
+            }
+            f32 volume = 1.0f;
+            if (inputs.size() > 1) {
+                if (std::holds_alternative<f32>(inputs[1])) volume = std::get<f32>(inputs[1]);
+                else if (std::holds_alternative<i32>(inputs[1])) volume = static_cast<f32>(std::get<i32>(inputs[1]));
+            }
+            if (s_VisualScriptAudio && channel >= 0 && channel < 4) {
+                s_VisualScriptAudio->SetChannelVolume(static_cast<Audio::AudioChannel>(channel),
+                    Math::Clamp(volume, 0.0f, 1.0f));
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Audio Stop Channel
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::AudioStopChannel;
+        def.displayName = "Stop Audio Channel";
+        def.description = "Stop all sounds on a channel (0=SFX, 1=Music, 2=UI, 3=Voice)";
+        def.category = NodeCategory::Audio;
+        def.headerColor = Math::Vector3(0.6f, 0.2f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            Int("Channel", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"audio", "channel", "stop", "music", "sfx", "silence"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            i32 channel = 0;
+            if (inputs.size() > 0 && std::holds_alternative<i32>(inputs[0])) {
+                channel = std::get<i32>(inputs[0]);
+            }
+            if (s_VisualScriptAudio && channel >= 0 && channel < 4) {
+                s_VisualScriptAudio->StopChannel(static_cast<Audio::AudioChannel>(channel));
             }
             ctx.nextFlowIndex = 0;
         };

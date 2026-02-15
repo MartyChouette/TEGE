@@ -21,6 +21,12 @@ extern ECS::World* s_BindingsWorld;
 
 static Audio::SimpleAudio* s_BindingsAudio = nullptr;
 
+// Channel constants for AngelScript
+static const u8 s_ChannelSFX   = 0;
+static const u8 s_ChannelMusic = 1;
+static const u8 s_ChannelUI    = 2;
+static const u8 s_ChannelVoice = 3;
+
 namespace Enjin {
 namespace Scripting {
 void SetBindingsAudio(Audio::SimpleAudio* audio) { s_BindingsAudio = audio; }
@@ -46,12 +52,17 @@ static void Audio_Play(u64 entityId) {
         return;
     }
 
-    if (asc->is3D) {
+    auto ch = static_cast<Audio::AudioChannel>(static_cast<u8>(asc->channel));
+    // Music and UI channels force non-diegetic (2D) playback
+    bool diegetic3D = asc->is3D &&
+        ch != Audio::AudioChannel::Music && ch != Audio::AudioChannel::UI;
+
+    if (diegetic3D) {
         auto* tc = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         Vector3 pos = tc ? tc->position : Vector3();
-        asc->soundHandle = s_BindingsAudio->Play3D(clip, pos, asc->volume, asc->minDistance, asc->maxDistance);
+        asc->soundHandle = s_BindingsAudio->Play3D(clip, pos, asc->volume, asc->minDistance, asc->maxDistance, ch);
     } else {
-        asc->soundHandle = s_BindingsAudio->Play(clip, asc->volume, asc->pitch, asc->loop);
+        asc->soundHandle = s_BindingsAudio->Play(clip, asc->volume, asc->pitch, asc->loop, ch);
     }
     asc->isPlaying = true;
 }
@@ -140,6 +151,22 @@ static f32 Audio_GetMasterVolume() {
     return s_BindingsAudio->GetMasterVolume();
 }
 
+// Channel volume: 0=SFX, 1=Music, 2=UI, 3=Voice
+static void Audio_SetChannelVolume(u8 channel, f32 volume) {
+    if (!s_BindingsAudio || channel >= static_cast<u8>(Audio::AudioChannel::Count)) return;
+    s_BindingsAudio->SetChannelVolume(static_cast<Audio::AudioChannel>(channel), volume);
+}
+
+static f32 Audio_GetChannelVolume(u8 channel) {
+    if (!s_BindingsAudio || channel >= static_cast<u8>(Audio::AudioChannel::Count)) return 1.0f;
+    return s_BindingsAudio->GetChannelVolume(static_cast<Audio::AudioChannel>(channel));
+}
+
+static void Audio_StopChannel(u8 channel) {
+    if (!s_BindingsAudio || channel >= static_cast<u8>(Audio::AudioChannel::Count)) return;
+    s_BindingsAudio->StopChannel(static_cast<Audio::AudioChannel>(channel));
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -183,6 +210,25 @@ void RegisterAudioBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "float Audio_GetMasterVolume()",
         asFUNCTION(Audio_GetMasterVolume), asCALL_CDECL));
+
+    // Channel volume (0=SFX, 1=Music, 2=UI, 3=Voice)
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Audio_SetChannelVolume(uint8, float)",
+        asFUNCTION(Audio_SetChannelVolume), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float Audio_GetChannelVolume(uint8)",
+        asFUNCTION(Audio_GetChannelVolume), asCALL_CDECL));
+
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void Audio_StopChannel(uint8)",
+        asFUNCTION(Audio_StopChannel), asCALL_CDECL));
+
+    // Channel constants for convenience
+    AS_CHECK(engine->RegisterGlobalProperty("const uint8 AUDIO_CHANNEL_SFX", const_cast<u8*>(&s_ChannelSFX)));
+    AS_CHECK(engine->RegisterGlobalProperty("const uint8 AUDIO_CHANNEL_MUSIC", const_cast<u8*>(&s_ChannelMusic)));
+    AS_CHECK(engine->RegisterGlobalProperty("const uint8 AUDIO_CHANNEL_UI", const_cast<u8*>(&s_ChannelUI)));
+    AS_CHECK(engine->RegisterGlobalProperty("const uint8 AUDIO_CHANNEL_VOICE", const_cast<u8*>(&s_ChannelVoice)));
 }
 
 } // namespace Scripting

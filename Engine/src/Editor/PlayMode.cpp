@@ -28,6 +28,7 @@ extern Enjin::Effects::Water3D* s_VisualScriptWater;
 extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
 extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
 extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
+extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
 
 namespace Enjin {
 namespace Editor {
@@ -175,6 +176,7 @@ void PlayMode::Play() {
     s_VisualScriptHUD = &m_HUDSystem;
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
+    s_VisualScriptAudio = &m_SimpleAudio;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
@@ -368,6 +370,7 @@ void PlayMode::Stop() {
     s_VisualScriptHUD = nullptr;
     s_VisualScriptSubtitleSystem = nullptr;
     s_VisualScriptAnnouncer = nullptr;
+    s_VisualScriptAudio = nullptr;
     Scripting::SetBindingsWorld(nullptr);
     Scripting::SetBindingsRenderSystem(nullptr);
     Scripting::SetBindingsDialogueSystem(nullptr);

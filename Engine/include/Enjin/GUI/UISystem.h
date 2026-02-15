@@ -103,6 +103,10 @@ private:
     f32 m_CursorBlinkTimer = 0.0f;  // Cursor blink phase timer
     bool m_CursorVisible = true;     // Cursor blink state
 
+    // Cached canvas sort list (avoids per-frame allocation)
+    struct CanvasEntry { ECS::Entity entity; i32 sortOrder; };
+    std::vector<CanvasEntry> m_CachedCanvases;
+
     // Tooltip state
     u32 m_TooltipHoverElementId = 0;  // Element being hovered for tooltip
     f32 m_TooltipHoverTimer = 0.0f;    // How long element has been hovered

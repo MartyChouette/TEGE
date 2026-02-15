@@ -65,7 +65,7 @@ public:
         }
 
         // --- Update audio sources ---
-        for (Entity entity : entities) {
+        for (Entity entity : m_World->GetEntitiesWithComponent<AudioSourceComponent>()) {
             if (!m_World->IsValid(entity)) continue;
             if (!m_World->HasComponent<AudioSourceComponent>(entity)) continue;
 

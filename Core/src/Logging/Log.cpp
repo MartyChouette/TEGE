@@ -1,9 +1,8 @@
 #include "Enjin/Logging/Log.h"
 #include <cstdarg>
+#include <cstdio>
 #include <ctime>
 #include <iostream>
-#include <iomanip>
-#include <sstream>
 #include <cstring>
 
 namespace Enjin {
@@ -104,28 +103,29 @@ void Logger::Log(LogLevel level, LogCategory category, const char* file, u32 lin
         filename = lastSlash + 1;
     }
 
-    // Format log entry
-    std::stringstream ss;
-    ss << "[" << GetTimestamp() << "] "
-       << "[" << GetLogLevelString(level) << "] "
-       << "[" << GetCategoryString(category) << "] "
-       << filename << ":" << line << " (" << function << ") "
-       << buffer << std::endl;
+    // Format log entry into stack buffer (no heap allocation)
+    char timestamp[32];
+    FormatTimestamp(timestamp, sizeof(timestamp));
 
-    std::string logEntry = ss.str();
+    char logEntry[4608];
+    int len = snprintf(logEntry, sizeof(logEntry), "[%s] [%s] [%s] %s:%u (%s) %s\n",
+        timestamp, GetLogLevelString(level), GetCategoryString(category),
+        filename, line, function, buffer);
+    if (len < 0) len = 0;
+    if (len >= static_cast<int>(sizeof(logEntry))) len = static_cast<int>(sizeof(logEntry)) - 1;
 
     // Output to console
     if (level >= LogLevel::Error) {
-        std::cerr << logEntry;
+        fwrite(logEntry, 1, static_cast<size_t>(len), stderr);
     } else {
-        std::cout << logEntry;
+        fwrite(logEntry, 1, static_cast<size_t>(len), stdout);
     }
 
     // Output to file
     if (m_LogFile && m_LogFile->is_open()) {
-        *m_LogFile << logEntry;
+        m_LogFile->write(logEntry, len);
         m_LogFile->flush();
-        m_CurrentFileSize += logEntry.size();
+        m_CurrentFileSize += static_cast<usize>(len);
         if (m_CurrentFileSize >= MAX_LOG_FILE_SIZE) {
             RotateLogFile();
         }
@@ -186,7 +186,7 @@ void Logger::Fatal(LogCategory category, const char* file, u32 line, const char*
     Log(LogLevel::Fatal, category, file, line, function, "%s", buffer);
 }
 
-std::string Logger::GetLogLevelString(LogLevel level) const {
+const char* Logger::GetLogLevelString(LogLevel level) const {
     switch (level) {
         case LogLevel::Trace: return "TRACE";
         case LogLevel::Debug: return "DEBUG";
@@ -194,32 +194,39 @@ std::string Logger::GetLogLevelString(LogLevel level) const {
         case LogLevel::Warn:  return "WARN ";
         case LogLevel::Error: return "ERROR";
         case LogLevel::Fatal: return "FATAL";
-        default: return "UNKNOWN";
+        default: return "?????";
     }
 }
 
-std::string Logger::GetCategoryString(LogCategory category) const {
+const char* Logger::GetCategoryString(LogCategory category) const {
     switch (category) {
-        case LogCategory::Core:     return "CORE  ";
-        case LogCategory::Renderer: return "RENDER";
-        case LogCategory::Physics:  return "PHYS  ";
-        case LogCategory::Audio:    return "AUDIO ";
-        case LogCategory::Asset:    return "ASSET ";
-        case LogCategory::Script:   return "SCRIPT";
-        case LogCategory::Editor:   return "EDITOR";
-        case LogCategory::Game:     return "GAME  ";
-        case LogCategory::Network:  return "NET   ";
-        default: return "UNKNOWN";
+        case LogCategory::Core:       return "CORE  ";
+        case LogCategory::Renderer:   return "RENDER";
+        case LogCategory::Physics:    return "PHYS  ";
+        case LogCategory::Audio:      return "AUDIO ";
+        case LogCategory::Asset:      return "ASSET ";
+        case LogCategory::Script:     return "SCRIPT";
+        case LogCategory::Editor:     return "EDITOR";
+        case LogCategory::Game:       return "GAME  ";
+        case LogCategory::AI:         return "AI    ";
+        case LogCategory::Assets:     return "ASSETS";
+        case LogCategory::Procedural: return "PROCGN";
+        case LogCategory::Animation:  return "ANIM  ";
+        case LogCategory::Build:      return "BUILD ";
+        case LogCategory::Player:     return "PLAYER";
+        case LogCategory::Network:    return "NET   ";
+        default: return "??????";
     }
 }
 
-std::string Logger::GetTimestamp() const {
+void Logger::FormatTimestamp(char* buf, usize bufSize) const {
     auto now = std::time(nullptr);
-    auto tm = *std::localtime(&now);
-    
-    std::stringstream ss;
-    ss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S");
-    return ss.str();
+    auto* tm = std::localtime(&now);
+    if (tm) {
+        std::strftime(buf, bufSize, "%Y-%m-%d %H:%M:%S", tm);
+    } else {
+        snprintf(buf, bufSize, "0000-00-00 00:00:00");
+    }
 }
 
 void Logger::RotateLogFile() {
@@ -237,7 +244,11 @@ void Logger::RotateLogFile() {
     m_CurrentFileSize = 0;
 
     if (m_LogFile->is_open()) {
-        *m_LogFile << "[" << GetTimestamp() << "] [INFO ] [CORE  ] Log rotated (previous log saved as " << oldPath << ")" << std::endl;
+        char ts[32];
+        FormatTimestamp(ts, sizeof(ts));
+        char msg[256];
+        int n = snprintf(msg, sizeof(msg), "[%s] [INFO ] [CORE  ] Log rotated (previous log saved as %s)\n", ts, oldPath.c_str());
+        if (n > 0) m_LogFile->write(msg, n);
     }
 }
 

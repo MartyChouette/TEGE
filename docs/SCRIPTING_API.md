@@ -70,6 +70,8 @@ Complete reference for all functions callable from AngelScript via `TegeBehavior
 `Audio_Play(uint64)`, `Audio_PlayAtPosition(string, Vector3)`, `Audio_Stop(uint64)`, `Audio_StopAll()`
 `Audio_SetVolume/SetPitch(uint64, float)`, `Audio_IsPlaying(uint64)`
 `Audio_SetMasterVolume/GetMasterVolume(float)`
+`Audio_SetChannelVolume(uint8, float)`, `Audio_GetChannelVolume(uint8)`, `Audio_StopChannel(uint8)`
+Channel constants: `AUDIO_CHANNEL_SFX=0`, `AUDIO_CHANNEL_MUSIC=1`, `AUDIO_CHANNEL_UI=2`, `AUDIO_CHANNEL_VOICE=3`
 
 ## Component Access
 

@@ -104,8 +104,9 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Inverse Kinematics** - LookAt IK, FABRIK chain solving, interaction IK
 
 ### Audio
-- **Cross-Platform Audio** - miniaudio backend (WAV, MP3, FLAC)
+- **Cross-Platform Audio** - miniaudio backend (WAV, MP3, FLAC, Vorbis)
 - **3D Spatialization** - Positional audio with distance attenuation models
+- **Audio Channels** - SFX/Music/UI/Voice with independent volume (Music/UI force non-diegetic 2D)
 - **Multi-Channel Mixing** - Multiple simultaneous sounds
 - **Category Volumes** - Separate master, SFX, music, ambient, voice volumes
 - **Scene Serialization** - AudioSource and AudioListener components saved/loaded with scenes

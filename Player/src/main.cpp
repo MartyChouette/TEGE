@@ -400,12 +400,14 @@ public:
             extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
+            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
             s_VisualScriptHUD = nullptr;
             s_VisualScriptSubtitleSystem = nullptr;
             s_VisualScriptAnnouncer = nullptr;
+            s_VisualScriptAudio = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -920,12 +922,14 @@ private:
             extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
+            extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
             s_VisualScriptHUD = &m_HUDSystem;
             s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
             s_VisualScriptAnnouncer = &m_Announcer;
+            s_VisualScriptAudio = &m_SimpleAudio;
         }
 
         // Wire dialogue system event bus and subtitle system
