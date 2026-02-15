@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-02-15 (Session 25)
+
+### Post-Process Volumes with Spatial Blending, PP Pipeline Optimization
+
+**1. Post-Process Volume Component**
+New `PostProcessVolumeComponent` with Box/Sphere shapes, priority-based blending, smoothstep falloff at edges via `blendRadius`, global volumes (apply everywhere), and selective override mask (19 bits covering all PP effect groups). `BlendPostProcessSettings()` lerps all ~80 PP settings fields grouped by override mask. `ContainsPoint()` and `GetBlendWeight()` handle both shapes with signed-distance-to-surface + smoothstep transition.
+
+**2. PP Pipeline Optimization**
+Added `HasAnyActiveEffects()` and `NeedsDepthBuffer()` helpers to `PostProcessSettings`. When no effects are active, the entire PP pass is skipped (no intermediate RT, no barriers, no fullscreen draw). When depth-dependent effects (DoF/TiltShift/CelOutline) are all disabled, the 2 depth image barriers are skipped (2 of 4 barriers eliminated).
+
+**3. Volume Evaluation & Editor Integration**
+`EvaluatePostProcessVolumes()` runs each frame before the PP pass: queries all active volumes, computes blend weights from camera position, sorts by priority, blends settings sequentially. Full inspector UI with shape/extents/blend radius/weight/priority, override group checkboxes, and embedded PP settings tree. Purple wireframe visualization for volume bounds (box or sphere) with outer blend radius indicator. Add Component menu entry under "Effects".
+
+**4. Serialization**
+Full round-trip serialization of all ~80 PostProcessSettings fields via `SerializePPSettings()`/`DeserializePPSettings()`. Wired into all 3 serialize and 4 deserialize paths plus the per-component dispatch.
+
+**5. Player + Scripting**
+Player `EvaluatePostProcessVolumes()` mirrors editor behavior. 10 AngelScript bindings (`PPVolume_SetActive/IsActive/SetWeight/GetWeight/SetBlendRadius/GetBlendRadius/SetPriority/GetPriority/SetGlobal/IsGlobal`). 4 Visual Script nodes (`PPVolume_SetActive/SetWeight/SetBlendRadius/SetPriority`).
+
+Files changed: ~10 across Engine/include/Enjin/ECS/Components, Engine/include/Enjin/Renderer, Engine/include/Enjin/Editor, Engine/include/Enjin/VisualScript, Engine/src/Editor, Engine/src/Renderer, Engine/src/Scene, Engine/src/Scripting, Engine/src/VisualScript, Player/src
+
+---
+
 ## 2026-02-15 (Session 24)
 
 ### SimpleAudio Rewrite, Audio Channels, Logging Performance, Tolerant Bool Deserialization

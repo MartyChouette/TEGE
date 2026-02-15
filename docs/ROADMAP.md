@@ -665,6 +665,11 @@ Import dialog enhancements:
 - **Editor Frustum Culling Fix** — GPU frustum culling now disabled in editor mode (`SetEditorMode(true)`) so all entities are visible in the scene view for editing. Player builds retain frustum culling against the game camera. Guards on `BuildCullableObjectList()`, culling dispatch, and all `IsVisible()` skip checks
 - **Inspector Undo/Redo** — `InspectorUndo.h` with `PropertyEditCommand<T>` template and drop-in ImGui widget wrappers (DragFloat, DragFloat3, SliderFloat, SliderInt, DragInt, ColorEdit3, Checkbox, Combo, InputText, InputTextMultiline). Continuous widgets snapshot on `IsItemActivated()` and push one undo entry on `IsItemDeactivatedAfterEdit()`. All 60+ `Draw*Component` functions in EditorLayer converted (~500+ widget calls)
 
+### Post-Process Volumes ✅ COMPLETE
+
+- **PostProcessVolumeComponent** — Box/Sphere spatial volumes with priority-based blending, smoothstep falloff at edges via `blendRadius`, global volumes (apply everywhere), selective override mask (19 bits for all effect groups). `BlendPostProcessSettings()` lerps all ~80 PP fields grouped by override mask. Full inspector UI with shape/extents/blend radius/weight/priority, override group checkboxes, embedded PP settings tree. Purple wireframe visualization for volume bounds. Full serialization (all 3 serialize + 4 deserialize paths). 10 AS bindings + 4 VS nodes. Player wired.
+- **PP Pipeline Optimization** — `HasAnyActiveEffects()` skips entire PP pass when no effects active (no intermediate RT, no barriers, no fullscreen draw). `NeedsDepthBuffer()` skips 2 depth barriers when DoF/TiltShift/CelOutline are all disabled.
+
 ### Pipeline Optimization ✅ COMPLETE
 
 All pipeline optimization items resolved: multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling.

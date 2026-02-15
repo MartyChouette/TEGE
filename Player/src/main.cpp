@@ -73,6 +73,7 @@
 #include "Enjin/Accessibility/FontLibrary.h"
 #include "Enjin/Accessibility/ColorblindPalette.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Editor/AudioEventGraph.h"
 #include "Enjin/Assets/DataAsset.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
@@ -645,11 +646,16 @@ public:
         // Particle emitter simulation
         m_ParticleSystem.Update(deltaTime, m_World.get());
 
-        // Post-processing time update
+        // Post-processing time update + volume evaluation
         if (m_PostProcessing) {
             m_PostProcessing->Update(deltaTime);
             if (m_Camera)
                 m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
+
+            // Evaluate post-process volumes
+            if (m_World && m_Camera) {
+                EvaluatePostProcessVolumes(m_Camera->GetPosition());
+            }
         }
 
         // Accessibility systems
@@ -1549,6 +1555,54 @@ private:
 
         ImGui::PopStyleColor(2);
         ImGui::PopStyleVar(3);
+    }
+
+    void EvaluatePostProcessVolumes(const Enjin::Math::Vector3& cameraPosition) {
+        if (!m_PostProcessing || !m_World) return;
+
+        auto volumeEntities = m_World->GetEntitiesWithComponent<Enjin::ECS::PostProcessVolumeComponent>();
+        if (volumeEntities.empty()) return;
+
+        auto& currentSettings = m_PostProcessing->GetSettings();
+
+        struct VolumeEntry {
+            const Enjin::ECS::PostProcessVolumeComponent* vol;
+            Enjin::f32 blendWeight;
+        };
+        std::vector<VolumeEntry> activeVolumes;
+        activeVolumes.reserve(volumeEntities.size());
+
+        for (auto entity : volumeEntities) {
+            auto* vol = m_World->GetComponent<Enjin::ECS::PostProcessVolumeComponent>(entity);
+            if (!vol || !vol->isActive) continue;
+
+            Enjin::Math::Vector3 center(0, 0, 0);
+            if (!vol->isGlobal) {
+                auto* transform = m_World->GetComponent<Enjin::ECS::TransformComponent>(entity);
+                if (!transform) continue;
+                center = transform->position;
+            }
+
+            Enjin::f32 w = vol->GetBlendWeight(center, cameraPosition);
+            if (w <= 0.001f) continue;
+
+            activeVolumes.push_back({ vol, w });
+        }
+
+        if (activeVolumes.empty()) return;
+
+        std::sort(activeVolumes.begin(), activeVolumes.end(),
+            [](const VolumeEntry& a, const VolumeEntry& b) {
+                return a.vol->priority < b.vol->priority;
+            });
+
+        Enjin::Renderer::PostProcessSettings blended = currentSettings;
+        for (auto& entry : activeVolumes) {
+            Enjin::ECS::BlendPostProcessSettings(blended, blended, entry.vol->settings,
+                entry.blendWeight, entry.vol->overrideMask);
+        }
+
+        currentSettings = blended;
     }
 
     // Gameplay processing methods (ProcessContactDamage, ProcessPickup,

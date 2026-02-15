@@ -265,6 +265,8 @@ private:
     void DrawAssetBrowserPanel();
     void DrawEditorSettingsPanel();
     void DrawPostProcessingPanel();
+    void DrawPostProcessVolumeComponent(ECS::Entity entity);
+    void EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition);
     void DrawRetroEffectsPanel();
     void DrawGameViewPanel();
     void DrawSceneListPanel();

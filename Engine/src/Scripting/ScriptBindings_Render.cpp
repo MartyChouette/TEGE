@@ -1,6 +1,7 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
 #include <angelscript.h>
@@ -14,6 +15,7 @@ using namespace Enjin::Math;
 
 static ECS::RenderSystem* s_BindingsRenderSystem = nullptr;
 static Renderer::PostProcessing* s_BindingsPostProcessing = nullptr;
+extern ECS::World* s_BindingsWorld;
 
 namespace Enjin {
 namespace Scripting {
@@ -410,6 +412,70 @@ static bool PostProcess_IsFXAAEnabled() {
 }
 
 // ============================================================================
+// Post-Process Volume wrappers
+// ============================================================================
+
+static void PPVolume_SetActive(u64 entity, bool active) {
+    if (!s_BindingsWorld) return;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    if (vol) vol->isActive = active;
+}
+
+static bool PPVolume_IsActive(u64 entity) {
+    if (!s_BindingsWorld) return false;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    return vol ? vol->isActive : false;
+}
+
+static void PPVolume_SetWeight(u64 entity, f32 weight) {
+    if (!s_BindingsWorld) return;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    if (vol) vol->weight = std::clamp(weight, 0.0f, 1.0f);
+}
+
+static f32 PPVolume_GetWeight(u64 entity) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    return vol ? vol->weight : 0.0f;
+}
+
+static void PPVolume_SetBlendRadius(u64 entity, f32 radius) {
+    if (!s_BindingsWorld) return;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    if (vol) vol->blendRadius = std::max(radius, 0.0f);
+}
+
+static f32 PPVolume_GetBlendRadius(u64 entity) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    return vol ? vol->blendRadius : 0.0f;
+}
+
+static void PPVolume_SetPriority(u64 entity, i32 priority) {
+    if (!s_BindingsWorld) return;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    if (vol) vol->priority = priority;
+}
+
+static i32 PPVolume_GetPriority(u64 entity) {
+    if (!s_BindingsWorld) return 0;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    return vol ? vol->priority : 0;
+}
+
+static void PPVolume_SetGlobal(u64 entity, bool global) {
+    if (!s_BindingsWorld) return;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    if (vol) vol->isGlobal = global;
+}
+
+static bool PPVolume_IsGlobal(u64 entity) {
+    if (!s_BindingsWorld) return false;
+    auto* vol = s_BindingsWorld->GetComponent<ECS::PostProcessVolumeComponent>(static_cast<ECS::Entity>(entity));
+    return vol ? vol->isGlobal : false;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -630,6 +696,38 @@ void RegisterRenderBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsFXAAEnabled()",
         asFUNCTION(PostProcess_IsFXAAEnabled), asCALL_CDECL));
+
+    // ---- Post-Process Volumes ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PPVolume_SetActive(uint64, bool)",
+        asFUNCTION(PPVolume_SetActive), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PPVolume_IsActive(uint64)",
+        asFUNCTION(PPVolume_IsActive), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PPVolume_SetWeight(uint64, float)",
+        asFUNCTION(PPVolume_SetWeight), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PPVolume_GetWeight(uint64)",
+        asFUNCTION(PPVolume_GetWeight), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PPVolume_SetBlendRadius(uint64, float)",
+        asFUNCTION(PPVolume_SetBlendRadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PPVolume_GetBlendRadius(uint64)",
+        asFUNCTION(PPVolume_GetBlendRadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PPVolume_SetPriority(uint64, int)",
+        asFUNCTION(PPVolume_SetPriority), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int PPVolume_GetPriority(uint64)",
+        asFUNCTION(PPVolume_GetPriority), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PPVolume_SetGlobal(uint64, bool)",
+        asFUNCTION(PPVolume_SetGlobal), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PPVolume_IsGlobal(uint64)",
+        asFUNCTION(PPVolume_IsGlobal), asCALL_CDECL));
 }
 
 } // namespace Scripting

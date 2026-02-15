@@ -33,6 +33,7 @@
 #include "Enjin/Plugin/PluginSystem.h"
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -6486,6 +6487,130 @@ void NodeRegistry::RegisterBuiltinNodes() {
             extern Gameplay::HUDSystem* s_VisualScriptHUD;
             if (s_VisualScriptHUD) return s_VisualScriptHUD->IsEnabled();
             return false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // Post-Process Volume nodes
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PPVolumeSetActive;
+        def.displayName = "Set PP Volume Active";
+        def.description = "Enable or disable a post-process volume on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Active", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"post-process", "volume", "active", "enable", "disable"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            auto entity = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]))
+                ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::Entity(0);
+            bool active = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2]))
+                ? std::get<bool>(inputs[2]) : true;
+            if (ctx.world && entity != 0) {
+                auto* vol = ctx.world->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                if (vol) vol->isActive = active;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PPVolumeSetWeight;
+        def.displayName = "Set PP Volume Weight";
+        def.description = "Set the blend weight of a post-process volume (0-1)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Weight", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"post-process", "volume", "weight", "blend"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            auto entity = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]))
+                ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::Entity(0);
+            f32 weight = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 1.0f;
+            if (ctx.world && entity != 0) {
+                auto* vol = ctx.world->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                if (vol) vol->weight = std::clamp(weight, 0.0f, 1.0f);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PPVolumeSetBlendRadius;
+        def.displayName = "Set PP Volume Blend Radius";
+        def.description = "Set the blend radius for smooth transitions at volume edges";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Radius", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"post-process", "volume", "blend", "radius", "transition"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            auto entity = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]))
+                ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::Entity(0);
+            f32 radius = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 1.0f;
+            if (ctx.world && entity != 0) {
+                auto* vol = ctx.world->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                if (vol) vol->blendRadius = std::max(radius, 0.0f);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PPVolumeSetPriority;
+        def.displayName = "Set PP Volume Priority";
+        def.description = "Set the priority of a post-process volume (higher overrides lower)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Int("Priority", PK::Input, 0)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"post-process", "volume", "priority", "order"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            auto entity = (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]))
+                ? static_cast<ECS::Entity>(std::get<u64>(inputs[1])) : ECS::Entity(0);
+            i32 priority = (inputs.size() > 2 && std::holds_alternative<i32>(inputs[2]))
+                ? std::get<i32>(inputs[2]) : 0;
+            if (ctx.world && entity != 0) {
+                auto* vol = ctx.world->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                if (vol) vol->priority = priority;
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }

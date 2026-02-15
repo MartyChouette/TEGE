@@ -15,6 +15,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
@@ -730,6 +731,218 @@ ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     zone.priority = j["priority"].get<i32>();
     if (j.contains("isActive")) zone.isActive = JB(j["isActive"]);
     return zone;
+}
+
+// Serialize PostProcessSettings (GPU-aligned UBO struct) to JSON
+json SerializePPSettings(const Renderer::PostProcessSettings& s) {
+    json j;
+    j["toneMappingMode"] = s.toneMappingMode;
+    j["exposure"] = RF(s.exposure);
+    j["gamma"] = RF(s.gamma);
+    j["whitePoint"] = RF(s.whitePoint);
+    j["bloomEnabled"] = s.bloomEnabled;
+    j["bloomThreshold"] = RF(s.bloomThreshold);
+    j["bloomIntensity"] = RF(s.bloomIntensity);
+    j["bloomRadius"] = RF(s.bloomRadius);
+    j["vignetteEnabled"] = s.vignetteEnabled;
+    j["vignetteIntensity"] = RF(s.vignetteIntensity);
+    j["vignetteSmoothness"] = RF(s.vignetteSmoothness);
+    j["chromaticAberrationEnabled"] = s.chromaticAberrationEnabled;
+    j["chromaticAberrationIntensity"] = RF(s.chromaticAberrationIntensity);
+    j["colorFilter"] = SerializeVector3(s.colorFilter);
+    j["saturation"] = RF(s.saturation);
+    j["contrast"] = RF(s.contrast);
+    j["brightness"] = RF(s.brightness);
+    j["colorblindMode"] = s.colorblindMode;
+    j["colorblindStrength"] = RF(s.colorblindStrength);
+    j["filmGrainEnabled"] = s.filmGrainEnabled;
+    j["filmGrainIntensity"] = RF(s.filmGrainIntensity);
+    j["fxaaEnabled"] = s.fxaaEnabled;
+    j["fxaaSpanMax"] = RF(s.fxaaSpanMax);
+    j["fxaaReduceMin"] = RF(s.fxaaReduceMin);
+    j["fxaaReduceMul"] = RF(s.fxaaReduceMul);
+    j["ditherEnabled"] = s.ditherEnabled;
+    j["ditherPattern"] = s.ditherPattern;
+    j["ditherStrength"] = RF(s.ditherStrength);
+    j["colorQuantEnabled"] = s.colorQuantEnabled;
+    j["colorBitDepth"] = s.colorBitDepth;
+    j["resDownscaleEnabled"] = s.resDownscaleEnabled;
+    j["internalWidth"] = s.internalWidth;
+    j["internalHeight"] = s.internalHeight;
+    j["usePointFiltering"] = s.usePointFiltering;
+    j["crtEnabled"] = s.crtEnabled;
+    j["scanlineIntensity"] = RF(s.scanlineIntensity);
+    j["scanlineWidth"] = RF(s.scanlineWidth);
+    j["crtCurvature"] = RF(s.crtCurvature);
+    j["lutEnabled"] = s.lutEnabled;
+    j["lutStrength"] = RF(s.lutStrength);
+    j["lutSize"] = s.lutSize;
+    j["crtPhosphorEnabled"] = s.crtPhosphorEnabled;
+    j["crtMaskType"] = s.crtMaskType;
+    j["crtMaskPitch"] = RF(s.crtMaskPitch);
+    j["crtBloomRadius"] = RF(s.crtBloomRadius);
+    j["crtBloomStrength"] = RF(s.crtBloomStrength);
+    j["vhsEnabled"] = s.vhsEnabled;
+    j["vhsTrackingIntensity"] = RF(s.vhsTrackingIntensity);
+    j["vhsTrackingSpeed"] = RF(s.vhsTrackingSpeed);
+    j["vhsWobbleIntensity"] = RF(s.vhsWobbleIntensity);
+    j["vhsWobbleSpeed"] = RF(s.vhsWobbleSpeed);
+    j["vhsColorBleed"] = RF(s.vhsColorBleed);
+    j["vhsNoiseIntensity"] = RF(s.vhsNoiseIntensity);
+    j["vhsBlueShift"] = RF(s.vhsBlueShift);
+    j["vhsScreenTear"] = s.vhsScreenTear;
+    j["vhsInterlacing"] = s.vhsInterlacing;
+    j["paletteEnabled"] = s.paletteEnabled;
+    j["paletteColors"] = s.paletteColors;
+    j["dofEnabled"] = s.dofEnabled;
+    j["dofFocalDistance"] = RF(s.dofFocalDistance);
+    j["dofFocalRange"] = RF(s.dofFocalRange);
+    j["dofNearBlurStrength"] = RF(s.dofNearBlurStrength);
+    j["dofFarBlurStrength"] = RF(s.dofFarBlurStrength);
+    j["dofBokehSize"] = RF(s.dofBokehSize);
+    j["dofApertureShape"] = s.dofApertureShape;
+    j["dofDebugCoC"] = s.dofDebugCoC;
+    j["tiltShiftEnabled"] = s.tiltShiftEnabled;
+    j["tiltShiftFocusY"] = RF(s.tiltShiftFocusY);
+    j["tiltShiftBandWidth"] = RF(s.tiltShiftBandWidth);
+    j["tiltShiftBlurAmount"] = RF(s.tiltShiftBlurAmount);
+    j["celOutlineEnabled"] = s.celOutlineEnabled;
+    j["celOutlineThickness"] = RF(s.celOutlineThickness);
+    j["celOutlineThreshold"] = RF(s.celOutlineThreshold);
+    j["celOutlineColor"] = SerializeVector3(s.celOutlineColor);
+    j["stippleEnabled"] = s.stippleEnabled;
+    j["stipplePatternMask"] = s.stipplePatternMask;
+    j["stippleColorMode"] = s.stippleColorMode;
+    j["stippleScale"] = RF(s.stippleScale);
+    j["stippleDensity"] = RF(s.stippleDensity);
+    j["stippleStrength"] = RF(s.stippleStrength);
+    j["stippleFgColor"] = SerializeVector3(s.stippleFgColor);
+    j["stippleBgColor"] = SerializeVector3(s.stippleBgColor);
+    return j;
+}
+
+Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
+    Renderer::PostProcessSettings s;
+    auto GU = [&](const char* k) -> u32 { return j.contains(k) ? j[k].get<u32>() : 0; };
+    auto GF = [&](const char* k, f32 def) -> f32 { return j.contains(k) ? j[k].get<f32>() : def; };
+
+    s.toneMappingMode = GU("toneMappingMode");
+    s.exposure = GF("exposure", 1.0f);
+    s.gamma = GF("gamma", 1.0f);
+    s.whitePoint = GF("whitePoint", 4.0f);
+    s.bloomEnabled = GU("bloomEnabled");
+    s.bloomThreshold = GF("bloomThreshold", 1.0f);
+    s.bloomIntensity = GF("bloomIntensity", 0.5f);
+    s.bloomRadius = GF("bloomRadius", 0.005f);
+    s.vignetteEnabled = GU("vignetteEnabled");
+    s.vignetteIntensity = GF("vignetteIntensity", 0.3f);
+    s.vignetteSmoothness = GF("vignetteSmoothness", 0.5f);
+    s.chromaticAberrationEnabled = GU("chromaticAberrationEnabled");
+    s.chromaticAberrationIntensity = GF("chromaticAberrationIntensity", 0.005f);
+    if (j.contains("colorFilter")) s.colorFilter = DeserializeVector3(j["colorFilter"]);
+    s.saturation = GF("saturation", 1.0f);
+    s.contrast = GF("contrast", 1.0f);
+    s.brightness = GF("brightness", 0.0f);
+    s.colorblindMode = GU("colorblindMode");
+    s.colorblindStrength = GF("colorblindStrength", 1.0f);
+    s.filmGrainEnabled = GU("filmGrainEnabled");
+    s.filmGrainIntensity = GF("filmGrainIntensity", 0.05f);
+    s.fxaaEnabled = GU("fxaaEnabled");
+    s.fxaaSpanMax = GF("fxaaSpanMax", 8.0f);
+    s.fxaaReduceMin = GF("fxaaReduceMin", 1.0f / 128.0f);
+    s.fxaaReduceMul = GF("fxaaReduceMul", 1.0f / 8.0f);
+    s.ditherEnabled = GU("ditherEnabled");
+    s.ditherPattern = GU("ditherPattern");
+    s.ditherStrength = GF("ditherStrength", 1.0f);
+    s.colorQuantEnabled = GU("colorQuantEnabled");
+    s.colorBitDepth = GU("colorBitDepth");
+    if (s.colorBitDepth == 0) s.colorBitDepth = 8;
+    s.resDownscaleEnabled = GU("resDownscaleEnabled");
+    s.internalWidth = GU("internalWidth");
+    if (s.internalWidth == 0) s.internalWidth = 320;
+    s.internalHeight = GU("internalHeight");
+    if (s.internalHeight == 0) s.internalHeight = 240;
+    s.usePointFiltering = GU("usePointFiltering");
+    s.crtEnabled = GU("crtEnabled");
+    s.scanlineIntensity = GF("scanlineIntensity", 0.3f);
+    s.scanlineWidth = GF("scanlineWidth", 1.0f);
+    s.crtCurvature = GF("crtCurvature", 0.0f);
+    s.lutEnabled = GU("lutEnabled");
+    s.lutStrength = GF("lutStrength", 1.0f);
+    s.lutSize = GU("lutSize");
+    if (s.lutSize == 0) s.lutSize = 32;
+    s.crtPhosphorEnabled = GU("crtPhosphorEnabled");
+    s.crtMaskType = GU("crtMaskType");
+    s.crtMaskPitch = GF("crtMaskPitch", 1.0f);
+    s.crtBloomRadius = GF("crtBloomRadius", 1.5f);
+    s.crtBloomStrength = GF("crtBloomStrength", 0.3f);
+    s.vhsEnabled = GU("vhsEnabled");
+    s.vhsTrackingIntensity = GF("vhsTrackingIntensity", 0.3f);
+    s.vhsTrackingSpeed = GF("vhsTrackingSpeed", 1.0f);
+    s.vhsWobbleIntensity = GF("vhsWobbleIntensity", 0.002f);
+    s.vhsWobbleSpeed = GF("vhsWobbleSpeed", 2.0f);
+    s.vhsColorBleed = GF("vhsColorBleed", 0.003f);
+    s.vhsNoiseIntensity = GF("vhsNoiseIntensity", 0.05f);
+    s.vhsBlueShift = GF("vhsBlueShift", 0.05f);
+    s.vhsScreenTear = GU("vhsScreenTear");
+    s.vhsInterlacing = GU("vhsInterlacing");
+    s.paletteEnabled = GU("paletteEnabled");
+    s.paletteColors = GU("paletteColors");
+    if (s.paletteColors == 0) s.paletteColors = 16;
+    s.dofEnabled = GU("dofEnabled");
+    s.dofFocalDistance = GF("dofFocalDistance", 10.0f);
+    s.dofFocalRange = GF("dofFocalRange", 5.0f);
+    s.dofNearBlurStrength = GF("dofNearBlurStrength", 1.0f);
+    s.dofFarBlurStrength = GF("dofFarBlurStrength", 1.0f);
+    s.dofBokehSize = GF("dofBokehSize", 4.0f);
+    s.dofApertureShape = GU("dofApertureShape");
+    s.dofDebugCoC = GU("dofDebugCoC");
+    s.tiltShiftEnabled = GU("tiltShiftEnabled");
+    s.tiltShiftFocusY = GF("tiltShiftFocusY", 0.5f);
+    s.tiltShiftBandWidth = GF("tiltShiftBandWidth", 0.3f);
+    s.tiltShiftBlurAmount = GF("tiltShiftBlurAmount", 3.0f);
+    s.celOutlineEnabled = GU("celOutlineEnabled");
+    s.celOutlineThickness = GF("celOutlineThickness", 1.0f);
+    s.celOutlineThreshold = GF("celOutlineThreshold", 0.1f);
+    if (j.contains("celOutlineColor")) s.celOutlineColor = DeserializeVector3(j["celOutlineColor"]);
+    s.stippleEnabled = GU("stippleEnabled");
+    s.stipplePatternMask = GU("stipplePatternMask");
+    if (s.stipplePatternMask == 0) s.stipplePatternMask = 1;
+    s.stippleColorMode = GU("stippleColorMode");
+    s.stippleScale = GF("stippleScale", 1.0f);
+    s.stippleDensity = GF("stippleDensity", 0.5f);
+    s.stippleStrength = GF("stippleStrength", 1.0f);
+    if (j.contains("stippleFgColor")) s.stippleFgColor = DeserializeVector3(j["stippleFgColor"]);
+    if (j.contains("stippleBgColor")) s.stippleBgColor = DeserializeVector3(j["stippleBgColor"]);
+    return s;
+}
+
+json SerializePostProcessVolumeComponent(const ECS::PostProcessVolumeComponent& vol) {
+    json j;
+    j["shape"] = static_cast<u32>(vol.shape);
+    j["halfExtents"] = SerializeVector3(vol.halfExtents);
+    j["priority"] = vol.priority;
+    j["isActive"] = vol.isActive;
+    j["isGlobal"] = vol.isGlobal;
+    j["blendRadius"] = RF(vol.blendRadius);
+    j["weight"] = RF(vol.weight);
+    j["overrideMask"] = vol.overrideMask;
+    j["settings"] = SerializePPSettings(vol.settings);
+    return j;
+}
+
+ECS::PostProcessVolumeComponent DeserializePostProcessVolumeComponent(const json& j) {
+    ECS::PostProcessVolumeComponent vol;
+    if (j.contains("shape")) { u32 v = j["shape"].get<u32>(); if (v <= 1) vol.shape = static_cast<ECS::PPVolumeShape>(v); }
+    if (j.contains("halfExtents")) vol.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("priority")) vol.priority = j["priority"].get<i32>();
+    if (j.contains("isActive")) vol.isActive = JB(j["isActive"]);
+    if (j.contains("isGlobal")) vol.isGlobal = JB(j["isGlobal"]);
+    if (j.contains("blendRadius")) vol.blendRadius = j["blendRadius"].get<f32>();
+    if (j.contains("weight")) vol.weight = j["weight"].get<f32>();
+    if (j.contains("overrideMask")) vol.overrideMask = j["overrideMask"].get<u32>();
+    if (j.contains("settings")) vol.settings = DeserializePPSettings(j["settings"]);
+    return vol;
 }
 
 json SerializeFluidVolumeComponent(const ECS::FluidVolumeComponent& vol) {
@@ -4983,6 +5196,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
             }
 
+            if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(entity)) {
+                const auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*vol);
+            }
+
             if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
                 const auto* vol = m_World->GetComponent<ECS::FluidVolumeComponent>(entity);
                 entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*vol);
@@ -5594,6 +5812,11 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("postProcessVolume")) {
+                auto vol = DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]);
+                m_World->AddComponent<ECS::PostProcessVolumeComponent>(entity, vol);
+            }
+
             if (entityJson.contains("fluidVolume")) {
                 auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
                 m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
@@ -6119,6 +6342,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::GravityZoneComponent>(entity)) {
                 const auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(entity);
                 entityJson["gravityZone"] = SerializeGravityZoneComponent(*zone);
+            }
+
+            if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(entity)) {
+                const auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+                entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*vol);
             }
 
             if (m_World->HasComponent<ECS::FluidVolumeComponent>(entity)) {
@@ -6694,6 +6922,11 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::GravityZoneComponent>(entity, zone);
             }
 
+            if (entityJson.contains("postProcessVolume")) {
+                auto vol = DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]);
+                m_World->AddComponent<ECS::PostProcessVolumeComponent>(entity, vol);
+            }
+
             if (entityJson.contains("fluidVolume")) {
                 auto vol = DeserializeFluidVolumeComponent(entityJson["fluidVolume"]);
                 m_World->AddComponent<ECS::FluidVolumeComponent>(entity, vol);
@@ -7148,6 +7381,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["temperatureZone"] = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         if (world->HasComponent<ECS::GravityZoneComponent>(entity))
             entityJson["gravityZone"] = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        if (world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
+            entityJson["postProcessVolume"] = SerializePostProcessVolumeComponent(*world->GetComponent<ECS::PostProcessVolumeComponent>(entity));
         if (world->HasComponent<ECS::FluidVolumeComponent>(entity))
             entityJson["fluidVolume"] = SerializeFluidVolumeComponent(*world->GetComponent<ECS::FluidVolumeComponent>(entity));
         // Controllers
@@ -7451,6 +7686,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         if (entityJson.contains("gravityZone")) {
             world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(entityJson["gravityZone"]));
         }
+        if (entityJson.contains("postProcessVolume")) {
+            world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(entityJson["postProcessVolume"]));
+        }
         if (entityJson.contains("fluidVolume")) {
             world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(entityJson["fluidVolume"]));
         }
@@ -7733,6 +7971,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeTemperatureZoneComponent(*world->GetComponent<ECS::TemperatureZoneComponent>(entity));
         else if (key == "gravityZone" && world->HasComponent<ECS::GravityZoneComponent>(entity))
             j = SerializeGravityZoneComponent(*world->GetComponent<ECS::GravityZoneComponent>(entity));
+        else if (key == "postProcessVolume" && world->HasComponent<ECS::PostProcessVolumeComponent>(entity))
+            j = SerializePostProcessVolumeComponent(*world->GetComponent<ECS::PostProcessVolumeComponent>(entity));
         else if (key == "fluidVolume" && world->HasComponent<ECS::FluidVolumeComponent>(entity))
             j = SerializeFluidVolumeComponent(*world->GetComponent<ECS::FluidVolumeComponent>(entity));
         else if (key == "platformer2D" && world->HasComponent<ECS::Platformer2DController>(entity))
@@ -7943,6 +8183,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "cameraTrigger") { world->AddComponent<ECS::CameraTriggerComponent>(entity, DeserializeCameraTriggerComponent(j)); return true; }
         if (key == "temperatureZone") { world->AddComponent<ECS::TemperatureZoneComponent>(entity, DeserializeTemperatureZoneComponent(j)); return true; }
         if (key == "gravityZone") { world->AddComponent<ECS::GravityZoneComponent>(entity, DeserializeGravityZoneComponent(j)); return true; }
+        if (key == "postProcessVolume") { world->AddComponent<ECS::PostProcessVolumeComponent>(entity, DeserializePostProcessVolumeComponent(j)); return true; }
         if (key == "fluidVolume") { world->AddComponent<ECS::FluidVolumeComponent>(entity, DeserializeFluidVolumeComponent(j)); return true; }
         if (key == "platformer2D") { world->AddComponent<ECS::Platformer2DController>(entity, DeserializePlatformer2D(j)); return true; }
         if (key == "topDown2D") { world->AddComponent<ECS::TopDown2DController>(entity, DeserializeTopDown2D(j)); return true; }

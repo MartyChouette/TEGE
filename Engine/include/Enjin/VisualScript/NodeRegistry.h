@@ -354,6 +354,12 @@ constexpr const char* WaterSetColor          = "Water_SetColor";
 constexpr const char* HUDSetEnabled  = "HUD_SetEnabled";
 constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
 
+// Post-Process Volume
+constexpr const char* PPVolumeSetActive      = "PPVolume_SetActive";
+constexpr const char* PPVolumeSetWeight      = "PPVolume_SetWeight";
+constexpr const char* PPVolumeSetBlendRadius = "PPVolume_SetBlendRadius";
+constexpr const char* PPVolumeSetPriority    = "PPVolume_SetPriority";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

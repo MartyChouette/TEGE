@@ -3036,6 +3036,8 @@ void PostProcessing::Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFrame
     // Update uniform buffer with current settings
     UpdateUniformBuffer();
 
+    bool needsDepth = m_Settings.NeedsDepthBuffer() && m_DepthImage != VK_NULL_HANDLE;
+
     // Transition scene image for shader reading
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -3052,30 +3054,35 @@ void PostProcessing::Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFrame
     barrier.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    // Also transition depth image for shader reading (DoF/Tilt-Shift)
-    VkImageMemoryBarrier depthBarrier{};
-    depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-    depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    depthBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depthBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-    depthBarrier.image = m_DepthImage;
-    depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    depthBarrier.subresourceRange.baseMipLevel = 0;
-    depthBarrier.subresourceRange.levelCount = 1;
-    depthBarrier.subresourceRange.baseArrayLayer = 0;
-    depthBarrier.subresourceRange.layerCount = 1;
-    depthBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-    depthBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    if (needsDepth) {
+        // Transition depth image for shader reading (DoF/Tilt-Shift/CelOutline)
+        VkImageMemoryBarrier depthBarrier{};
+        depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        depthBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthBarrier.image = m_DepthImage;
+        depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depthBarrier.subresourceRange.baseMipLevel = 0;
+        depthBarrier.subresourceRange.levelCount = 1;
+        depthBarrier.subresourceRange.baseArrayLayer = 0;
+        depthBarrier.subresourceRange.layerCount = 1;
+        depthBarrier.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        depthBarrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
 
-    VkImageMemoryBarrier barriers[2] = { barrier, depthBarrier };
-    vkCmdPipelineBarrier(cmd,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        0, 0, nullptr, 0, nullptr, 2, barriers);
-
-    // Begin the final render pass (to swapchain)
-    // Caller should handle render pass begin/end
+        VkImageMemoryBarrier barriers[2] = { barrier, depthBarrier };
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 2, barriers);
+    } else {
+        // Color-only barrier (skip depth transition)
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
 
     // Bind post-process pipeline
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_Pipeline);
@@ -3087,22 +3094,39 @@ void PostProcessing::Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFrame
     // Draw fullscreen triangle
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
-    // Transition scene image and depth back for next frame
+    // Transition scene image back for next frame
     barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
     barrier.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
 
-    depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
-    depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depthBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
-    depthBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    if (needsDepth) {
+        VkImageMemoryBarrier depthBarrier{};
+        depthBarrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        depthBarrier.oldLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+        depthBarrier.newLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+        depthBarrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthBarrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        depthBarrier.image = m_DepthImage;
+        depthBarrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+        depthBarrier.subresourceRange.baseMipLevel = 0;
+        depthBarrier.subresourceRange.levelCount = 1;
+        depthBarrier.subresourceRange.baseArrayLayer = 0;
+        depthBarrier.subresourceRange.layerCount = 1;
+        depthBarrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        depthBarrier.dstAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    VkImageMemoryBarrier restoreBarriers[2] = { barrier, depthBarrier };
-    vkCmdPipelineBarrier(cmd,
-        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
-        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-        0, 0, nullptr, 0, nullptr, 2, restoreBarriers);
+        VkImageMemoryBarrier restoreBarriers[2] = { barrier, depthBarrier };
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+            0, 0, nullptr, 0, nullptr, 2, restoreBarriers);
+    } else {
+        vkCmdPipelineBarrier(cmd,
+            VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+            0, 0, nullptr, 0, nullptr, 1, &barrier);
+    }
 }
 
 void PostProcessing::ApplyToCurrentPass(VkCommandBuffer cmd, u32 width, u32 height) {

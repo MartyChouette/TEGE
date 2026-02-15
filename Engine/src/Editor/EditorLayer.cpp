@@ -33,6 +33,7 @@
 #include "Enjin/ECS/Components/CameraTrigger.h"
 #include "Enjin/ECS/Components/TemperatureZone.h"
 #include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
@@ -594,6 +595,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::FluidVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::FluidVolumeComponent>(e); },
             "fluidVolume"},
+        {"Post-Process Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::PostProcessVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PostProcessVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PostProcessVolumeComponent>(e); },
+            "postProcessVolume"},
 
         // -- 2D Graphics --
         {"Sprite", "2D Graphics", nullptr,
@@ -2146,8 +2152,14 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     u32 rtWidth = m_GameViewRenderTarget->GetWidth();
     u32 rtHeight = m_GameViewRenderTarget->GetHeight();
 
+    // Evaluate post-process volumes: blend active volumes into the current PP settings
+    if (m_PostProcessing && m_World && m_Camera) {
+        EvaluatePostProcessVolumes(m_Camera->GetPosition());
+    }
+
     bool usePostProcessing = m_PostProcessing && m_PostProcessing->IsInitialized() &&
-                             m_SceneRenderTarget && m_SceneRenderTarget->IsValid();
+                             m_SceneRenderTarget && m_SceneRenderTarget->IsValid() &&
+                             m_PostProcessing->GetSettings().HasAnyActiveEffects();
 
     // Choose render target: scene RT when post-processing is active, game view RT otherwise
     Renderer::RenderTarget* sceneTarget = usePostProcessing
@@ -2854,6 +2866,35 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                 for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::SliderJointComponent>()) {
                     auto* j = m_World->GetComponent<ECS::SliderJointComponent>(e);
                     if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 100, 255, 180));
+                }
+
+                // Post-Process Volume wireframes (purple)
+                for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::PostProcessVolumeComponent>()) {
+                    auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(e);
+                    auto* transform = m_World->GetComponent<ECS::TransformComponent>(e);
+                    if (!vol || !vol->isActive || vol->isGlobal || !transform) continue;
+                    bool sel = IsSelected(e);
+                    ImU32 color = sel ? IM_COL32(180, 100, 255, 220) : IM_COL32(180, 100, 255, 80);
+                    f32 thick = sel ? 2.0f : 1.0f;
+                    if (vol->shape == ECS::PPVolumeShape::Box) {
+                        drawWireBox(bgDrawList, transform->position, vol->halfExtents, color, thick);
+                        // Blend radius outer box (dashed feel via thinner line)
+                        if (vol->blendRadius > 0.01f) {
+                            Math::Vector3 outer = vol->halfExtents + Math::Vector3(vol->blendRadius, vol->blendRadius, vol->blendRadius);
+                            drawWireBox(bgDrawList, transform->position, outer,
+                                sel ? IM_COL32(180, 100, 255, 120) : IM_COL32(180, 100, 255, 40), thick * 0.5f);
+                        }
+                    } else {
+                        Math::Vector3 c = transform->position;
+                        f32 r = vol->halfExtents.x;
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,1,0}, color, thick);
+                        drawWireCircle(bgDrawList, c, r, {1,0,0}, {0,0,1}, color, thick);
+                        drawWireCircle(bgDrawList, c, r, {0,1,0}, {0,0,1}, color, thick);
+                        if (vol->blendRadius > 0.01f) {
+                            ImU32 outerColor = sel ? IM_COL32(180, 100, 255, 120) : IM_COL32(180, 100, 255, 40);
+                            drawWireCircle(bgDrawList, c, r + vol->blendRadius, {1,0,0}, {0,1,0}, outerColor, thick * 0.5f);
+                        }
+                    }
                 }
             }
 
@@ -4746,6 +4787,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Gravity Zone component
         if (m_World->HasComponent<ECS::GravityZoneComponent>(m_PrimarySelected)) {
             DrawGravityZoneComponent(m_PrimarySelected);
+        }
+
+        // Post-Process Volume component
+        if (m_World->HasComponent<ECS::PostProcessVolumeComponent>(m_PrimarySelected)) {
+            DrawPostProcessVolumeComponent(m_PrimarySelected);
         }
 
         // Fluid Volume component
@@ -9360,6 +9406,263 @@ void EditorLayer::DrawBuildConfigSection() {
 
         ImGui::Spacing();
         ImGui::TextDisabled("Use File > Build Game to export with these settings.");
+    }
+}
+
+void EditorLayer::EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition) {
+    if (!m_PostProcessing || !m_World) return;
+
+    auto volumeEntities = m_World->GetEntitiesWithComponent<ECS::PostProcessVolumeComponent>();
+    if (volumeEntities.empty()) return;
+
+    // Save the global/panel PP settings as the base layer (restored each frame before blending)
+    // The base settings come from the PostProcessing panel — we capture them once and
+    // restore before blending so volume changes don't permanently modify panel values.
+    auto& currentSettings = m_PostProcessing->GetSettings();
+
+    // Collect active volumes with their blend weights
+    struct VolumeEntry {
+        const ECS::PostProcessVolumeComponent* vol;
+        f32 blendWeight;
+    };
+    std::vector<VolumeEntry> activeVolumes;
+    activeVolumes.reserve(volumeEntities.size());
+
+    for (auto entity : volumeEntities) {
+        auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+        if (!vol || !vol->isActive) continue;
+
+        Math::Vector3 center(0, 0, 0);
+        if (!vol->isGlobal) {
+            auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+            if (!transform) continue;
+            center = transform->position;
+        }
+
+        f32 w = vol->GetBlendWeight(center, cameraPosition);
+        if (w <= 0.001f) continue;
+
+        activeVolumes.push_back({ vol, w });
+    }
+
+    if (activeVolumes.empty()) return;
+
+    // Sort by priority (lowest first — applied first, higher priority overrides)
+    std::sort(activeVolumes.begin(), activeVolumes.end(),
+        [](const VolumeEntry& a, const VolumeEntry& b) {
+            return a.vol->priority < b.vol->priority;
+        });
+
+    // Start from current global settings and blend each volume on top
+    Renderer::PostProcessSettings blended = currentSettings;
+    for (auto& entry : activeVolumes) {
+        ECS::BlendPostProcessSettings(blended, blended, entry.vol->settings,
+            entry.blendWeight, entry.vol->overrideMask);
+    }
+
+    // Apply blended result
+    currentSettings = blended;
+}
+
+void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
+    if (ImGui::CollapsingHeader("[PP] Post-Process Volume", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto* vol = m_World->GetComponent<ECS::PostProcessVolumeComponent>(entity);
+        if (!vol) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Active##PPVol", &vol->isActive);
+        InspectorUndo::Checkbox(m_UndoRedo, "Global##PPVol", &vol->isGlobal);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Global volumes apply everywhere (ignore shape/position).\n"
+                              "Use for scene-wide base settings.");
+        }
+
+        if (!vol->isGlobal) {
+            // Shape
+            const char* shapes[] = { "Box", "Sphere" };
+            int shapeIdx = static_cast<int>(vol->shape);
+            if (InspectorUndo::Combo(m_UndoRedo, "Shape##PPVol", &shapeIdx, shapes, 2)) {
+                vol->shape = static_cast<ECS::PPVolumeShape>(shapeIdx);
+            }
+
+            // Half-extents / Radius
+            if (vol->shape == ECS::PPVolumeShape::Sphere) {
+                f32 radius = vol->halfExtents.x;
+                if (InspectorUndo::DragFloat(m_UndoRedo, "Radius##PPVol", &radius, 0.5f, 0.1f, 500.0f)) {
+                    vol->halfExtents = Math::Vector3(radius, radius, radius);
+                }
+            } else {
+                f32 halfExt[3] = { vol->halfExtents.x, vol->halfExtents.y, vol->halfExtents.z };
+                if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents##PPVol", halfExt,
+                        [vol](f32 x, f32 y, f32 z) { vol->halfExtents = Math::Vector3(x, y, z); },
+                        0.5f, 0.1f, 500.0f)) {
+                    vol->halfExtents = Math::Vector3(halfExt[0], halfExt[1], halfExt[2]);
+                }
+            }
+
+            InspectorUndo::DragFloat(m_UndoRedo, "Blend Radius##PPVol", &vol->blendRadius,
+                0.1f, 0.0f, 50.0f, "%.1f");
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Smooth transition distance at volume edges (world units).\n"
+                                  "0 = hard boundary, larger = softer fade.");
+            }
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Weight##PPVol", &vol->weight,
+            0.01f, 0.0f, 1.0f, "%.2f");
+        ImGui::DragInt("Priority##PPVol", &vol->priority, 1, -100, 100);
+        if (ImGui::IsItemHovered()) {
+            ImGui::SetTooltip("Higher priority volumes blend on top of lower ones.");
+        }
+
+        ImGui::Separator();
+
+        // Override mask checkboxes
+        if (ImGui::TreeNode("Override Groups##PPVol")) {
+            bool allOverride = vol->overrideMask == ECS::PostProcessVolumeComponent::OverrideAll;
+            if (ImGui::Checkbox("Override All", &allOverride)) {
+                vol->overrideMask = allOverride ? ECS::PostProcessVolumeComponent::OverrideAll : 0;
+            }
+            if (!allOverride) {
+                auto checkGroup = [&](const char* label, u32 bit) {
+                    bool on = (vol->overrideMask & bit) != 0;
+                    if (ImGui::Checkbox(label, &on)) {
+                        if (on) vol->overrideMask |= bit;
+                        else vol->overrideMask &= ~bit;
+                    }
+                };
+                checkGroup("Tone Mapping", ECS::PostProcessVolumeComponent::OverrideToneMapping);
+                checkGroup("Bloom", ECS::PostProcessVolumeComponent::OverrideBloom);
+                checkGroup("Vignette", ECS::PostProcessVolumeComponent::OverrideVignette);
+                checkGroup("Chromatic Aberration", ECS::PostProcessVolumeComponent::OverrideChromaticAberr);
+                checkGroup("Color Grading", ECS::PostProcessVolumeComponent::OverrideColorGrading);
+                checkGroup("Film Grain", ECS::PostProcessVolumeComponent::OverrideFilmGrain);
+                checkGroup("FXAA", ECS::PostProcessVolumeComponent::OverrideFXAA);
+                checkGroup("Dithering", ECS::PostProcessVolumeComponent::OverrideDither);
+                checkGroup("Color Quantize", ECS::PostProcessVolumeComponent::OverrideColorQuant);
+                checkGroup("Res Downscale", ECS::PostProcessVolumeComponent::OverrideResDownscale);
+                checkGroup("CRT", ECS::PostProcessVolumeComponent::OverrideCRT);
+                checkGroup("CRT Phosphor", ECS::PostProcessVolumeComponent::OverrideCRTPhosphor);
+                checkGroup("LUT", ECS::PostProcessVolumeComponent::OverrideLUT);
+                checkGroup("VHS", ECS::PostProcessVolumeComponent::OverrideVHS);
+                checkGroup("Palette Lock", ECS::PostProcessVolumeComponent::OverridePalette);
+                checkGroup("Depth of Field", ECS::PostProcessVolumeComponent::OverrideDoF);
+                checkGroup("Tilt-Shift", ECS::PostProcessVolumeComponent::OverrideTiltShift);
+                checkGroup("Cel Outline", ECS::PostProcessVolumeComponent::OverrideCelOutline);
+                checkGroup("Stipple", ECS::PostProcessVolumeComponent::OverrideStipple);
+            }
+            ImGui::TreePop();
+        }
+
+        // Embedded PP settings
+        if (ImGui::TreeNode("Post-Process Settings##PPVol")) {
+            auto& s = vol->settings;
+
+            // Tone mapping
+            if (ImGui::TreeNode("Tone Mapping##PPVolSet")) {
+                const char* modes[] = { "None", "Reinhard", "Reinhard Ext", "ACES", "Uncharted 2", "AgX" };
+                int mode = static_cast<int>(s.toneMappingMode);
+                if (ImGui::Combo("Mode##PPVolTM", &mode, modes, 6)) s.toneMappingMode = static_cast<u32>(mode);
+                ImGui::DragFloat("Exposure##PPVolTM", &s.exposure, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Gamma##PPVolTM", &s.gamma, 0.01f, 0.1f, 5.0f);
+                ImGui::DragFloat("White Point##PPVolTM", &s.whitePoint, 0.1f, 0.1f, 20.0f);
+                ImGui::TreePop();
+            }
+
+            // Bloom
+            if (ImGui::TreeNode("Bloom##PPVolSet")) {
+                bool bloom = s.bloomEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolBloom", &bloom)) s.bloomEnabled = bloom ? 1 : 0;
+                ImGui::DragFloat("Threshold##PPVolBloom", &s.bloomThreshold, 0.01f, 0.0f, 10.0f);
+                ImGui::DragFloat("Intensity##PPVolBloom", &s.bloomIntensity, 0.01f, 0.0f, 5.0f);
+                ImGui::DragFloat("Radius##PPVolBloom", &s.bloomRadius, 0.001f, 0.0f, 0.1f);
+                ImGui::TreePop();
+            }
+
+            // Vignette
+            if (ImGui::TreeNode("Vignette##PPVolSet")) {
+                bool vig = s.vignetteEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolVig", &vig)) s.vignetteEnabled = vig ? 1 : 0;
+                ImGui::DragFloat("Intensity##PPVolVig", &s.vignetteIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Smoothness##PPVolVig", &s.vignetteSmoothness, 0.01f, 0.0f, 1.0f);
+                ImGui::TreePop();
+            }
+
+            // Chromatic Aberration
+            if (ImGui::TreeNode("Chromatic Aberration##PPVolSet")) {
+                bool ca = s.chromaticAberrationEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolCA", &ca)) s.chromaticAberrationEnabled = ca ? 1 : 0;
+                ImGui::DragFloat("Intensity##PPVolCA", &s.chromaticAberrationIntensity, 0.001f, 0.0f, 0.1f);
+                ImGui::TreePop();
+            }
+
+            // Color Grading
+            if (ImGui::TreeNode("Color Grading##PPVolSet")) {
+                f32 col[3] = { s.colorFilter.x, s.colorFilter.y, s.colorFilter.z };
+                if (ImGui::ColorEdit3("Color Filter##PPVolCG", col)) {
+                    s.colorFilter = Math::Vector3(col[0], col[1], col[2]);
+                }
+                ImGui::DragFloat("Saturation##PPVolCG", &s.saturation, 0.01f, 0.0f, 3.0f);
+                ImGui::DragFloat("Contrast##PPVolCG", &s.contrast, 0.01f, 0.0f, 3.0f);
+                ImGui::DragFloat("Brightness##PPVolCG", &s.brightness, 0.01f, -1.0f, 1.0f);
+                ImGui::TreePop();
+            }
+
+            // Film Grain
+            if (ImGui::TreeNode("Film Grain##PPVolSet")) {
+                bool fg = s.filmGrainEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolFG", &fg)) s.filmGrainEnabled = fg ? 1 : 0;
+                ImGui::DragFloat("Intensity##PPVolFG", &s.filmGrainIntensity, 0.001f, 0.0f, 0.5f);
+                ImGui::TreePop();
+            }
+
+            // FXAA
+            if (ImGui::TreeNode("FXAA##PPVolSet")) {
+                bool fxaa = s.fxaaEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolFXAA", &fxaa)) s.fxaaEnabled = fxaa ? 1 : 0;
+                ImGui::TreePop();
+            }
+
+            // Depth of Field
+            if (ImGui::TreeNode("Depth of Field##PPVolSet")) {
+                bool dof = s.dofEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolDoF", &dof)) s.dofEnabled = dof ? 1 : 0;
+                ImGui::DragFloat("Focal Distance##PPVolDoF", &s.dofFocalDistance, 0.1f, 0.1f, 500.0f);
+                ImGui::DragFloat("Focal Range##PPVolDoF", &s.dofFocalRange, 0.1f, 0.1f, 100.0f);
+                ImGui::DragFloat("Near Blur##PPVolDoF", &s.dofNearBlurStrength, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Far Blur##PPVolDoF", &s.dofFarBlurStrength, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Bokeh Size##PPVolDoF", &s.dofBokehSize, 0.1f, 0.0f, 20.0f);
+                ImGui::TreePop();
+            }
+
+            // Tilt-Shift
+            if (ImGui::TreeNode("Tilt-Shift##PPVolSet")) {
+                bool ts = s.tiltShiftEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolTS", &ts)) s.tiltShiftEnabled = ts ? 1 : 0;
+                ImGui::DragFloat("Focus Y##PPVolTS", &s.tiltShiftFocusY, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Band Width##PPVolTS", &s.tiltShiftBandWidth, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Blur Amount##PPVolTS", &s.tiltShiftBlurAmount, 0.1f, 0.0f, 10.0f);
+                ImGui::TreePop();
+            }
+
+            // Cel Outline
+            if (ImGui::TreeNode("Cel Outline##PPVolSet")) {
+                bool cel = s.celOutlineEnabled != 0;
+                if (ImGui::Checkbox("Enabled##PPVolCel", &cel)) s.celOutlineEnabled = cel ? 1 : 0;
+                ImGui::DragFloat("Thickness##PPVolCel", &s.celOutlineThickness, 0.1f, 0.1f, 10.0f);
+                ImGui::DragFloat("Threshold##PPVolCel", &s.celOutlineThreshold, 0.01f, 0.0f, 1.0f);
+                f32 outColor[3] = { s.celOutlineColor.x, s.celOutlineColor.y, s.celOutlineColor.z };
+                if (ImGui::ColorEdit3("Color##PPVolCel", outColor)) {
+                    s.celOutlineColor = Math::Vector3(outColor[0], outColor[1], outColor[2]);
+                }
+                ImGui::TreePop();
+            }
+
+            ImGui::TreePop();
+        }
+
+        if (ImGui::Button("Remove##PostProcessVolume")) {
+            RemoveComponentWithUndo<ECS::PostProcessVolumeComponent>(entity, "postProcessVolume", "Post-Process Volume");
+        }
     }
 }
 

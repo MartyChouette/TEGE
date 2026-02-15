@@ -207,6 +207,41 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 _stipplePad2 = 0.0f;
     alignas(16) Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);  // Background/paper (white)
     alignas(4) f32 _stipplePad3 = 0.0f;
+
+    // Returns true if any post-processing effect is actually enabled or non-identity.
+    // When false, the entire post-processing pass can be skipped (render direct to target).
+    bool HasAnyActiveEffects() const {
+        if (toneMappingMode != 0) return true;
+        if (bloomEnabled) return true;
+        if (vignetteEnabled) return true;
+        if (chromaticAberrationEnabled) return true;
+        if (filmGrainEnabled) return true;
+        if (fxaaEnabled) return true;
+        if (ditherEnabled) return true;
+        if (colorQuantEnabled) return true;
+        if (resDownscaleEnabled) return true;
+        if (crtEnabled) return true;
+        if (lutEnabled) return true;
+        if (crtPhosphorEnabled) return true;
+        if (vhsEnabled) return true;
+        if (paletteEnabled) return true;
+        if (dofEnabled) return true;
+        if (tiltShiftEnabled) return true;
+        if (celOutlineEnabled) return true;
+        if (stippleEnabled) return true;
+        if (colorblindMode != 0) return true;
+        // Non-identity color grading
+        if (brightness != 0.0f || contrast != 1.0f || saturation != 1.0f) return true;
+        if (colorFilter.x != 1.0f || colorFilter.y != 1.0f || colorFilter.z != 1.0f) return true;
+        // Non-identity gamma
+        if (gamma != 1.0f) return true;
+        return false;
+    }
+
+    // Returns true if any effect needs to read the depth buffer (DoF, TiltShift, CelOutline).
+    bool NeedsDepthBuffer() const {
+        return dofEnabled || tiltShiftEnabled || celOutlineEnabled;
+    }
 };
 
 // Post-processing manager
