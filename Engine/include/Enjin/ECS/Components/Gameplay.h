@@ -86,6 +86,10 @@ struct RigidbodyComponent {
     Math::Vector3 velocity = Math::Vector3(0, 0, 0);
     Math::Vector3 angularVelocity = Math::Vector3(0, 0, 0);
 
+    // Stability: max velocity magnitudes (prevents physics explosions)
+    f32 maxVelocity = 100.0f;         // m/s — clamped each frame
+    f32 maxAngularVelocity = 50.0f;   // rad/s — clamped each frame
+
     // Constraints
     bool freezePositionX = false;
     bool freezePositionY = false;

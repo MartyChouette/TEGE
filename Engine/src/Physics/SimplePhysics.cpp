@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include <algorithm>
 #include <climits>
+#include <cmath>
 
 namespace Enjin {
 namespace Physics {
@@ -107,8 +108,32 @@ void SimplePhysics::Update(f32 deltaTime) {
         if (rb->freezePositionY) rb->velocity.y = 0.0f;
         if (rb->freezePositionZ) rb->velocity.z = 0.0f;
 
+        // Stability: NaN/Inf guard on velocity
+        if (std::isnan(rb->velocity.x) || std::isnan(rb->velocity.y) || std::isnan(rb->velocity.z) ||
+            std::isinf(rb->velocity.x) || std::isinf(rb->velocity.y) || std::isinf(rb->velocity.z)) {
+            rb->velocity = Math::Vector3(0, 0, 0);
+            rb->angularVelocity = Math::Vector3(0, 0, 0);
+        }
+
+        // Stability: clamp velocity magnitude
+        f32 speed = rb->velocity.Length();
+        if (speed > rb->maxVelocity) {
+            rb->velocity = rb->velocity * (rb->maxVelocity / speed);
+        }
+        f32 angSpeed = rb->angularVelocity.Length();
+        if (angSpeed > rb->maxAngularVelocity) {
+            rb->angularVelocity = rb->angularVelocity * (rb->maxAngularVelocity / angSpeed);
+        }
+
         // Update position (predicted)
         transform->position = transform->position + rb->velocity * deltaTime;
+
+        // Stability: NaN/Inf guard on position (catch overflow from extreme forces)
+        if (std::isnan(transform->position.x) || std::isnan(transform->position.y) || std::isnan(transform->position.z) ||
+            std::isinf(transform->position.x) || std::isinf(transform->position.y) || std::isinf(transform->position.z)) {
+            transform->position = Math::Vector3(0, 0, 0);
+            rb->velocity = Math::Vector3(0, 0, 0);
+        }
 
         // Ground check using actual colliders via downward raycast
         rb->isGrounded = false;

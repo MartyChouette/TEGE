@@ -151,9 +151,13 @@ void ParticleSystem::UpdateEmitter(ECS::ParticleEmitterComponent& emitter, const
     pool.systemAge += deltaTime;
 
     // --- Spawning ---
-    // Continuous emission via accumulator
+    // Continuous emission via accumulator (capped for stability)
     if (emitter.emissionRate > 0.0f) {
-        pool.spawnAccumulator += emitter.emissionRate * deltaTime;
+        constexpr f32 MAX_EMISSION_RATE = 5000.0f;
+        f32 clampedRate = std::min(emitter.emissionRate, MAX_EMISSION_RATE);
+        pool.spawnAccumulator += clampedRate * deltaTime;
+        // Cap accumulator to prevent massive catch-up spawns after lag spikes
+        pool.spawnAccumulator = std::min(pool.spawnAccumulator, 128.0f);
         while (pool.spawnAccumulator >= 1.0f && pool.activeCount < pool.maxParticles) {
             SpawnParticle(emitter, emitterPos);
             pool.spawnAccumulator -= 1.0f;
@@ -258,16 +262,18 @@ void ParticleSystem::Update(f32 deltaTime, ECS::World* world) {
             }
         }
 
-        // Resize pool if maxParticles changed
+        // Resize pool if maxParticles changed (capped for stability)
+        constexpr u32 MAX_EMITTER_PARTICLES = 16384;
         if (emitter->pool.maxParticles != emitter->maxParticles) {
+            u32 newMax = std::min(emitter->maxParticles, MAX_EMITTER_PARTICLES);
             // Gracefully expire particles beyond new limit before resizing
-            if (emitter->maxParticles < emitter->pool.activeCount) {
-                for (u32 j = emitter->maxParticles; j < emitter->pool.activeCount; ++j) {
+            if (newMax < emitter->pool.activeCount) {
+                for (u32 j = newMax; j < emitter->pool.activeCount; ++j) {
                     emitter->pool.particles[j].lifetime = 0.0f;
                 }
             }
-            emitter->pool.maxParticles = emitter->maxParticles;
-            emitter->pool.particles.resize(emitter->pool.maxParticles);
+            emitter->pool.maxParticles = newMax;
+            emitter->pool.particles.resize(newMax);
             if (emitter->pool.activeCount > emitter->pool.maxParticles) {
                 emitter->pool.activeCount = emitter->pool.maxParticles;
             }
