@@ -35,6 +35,7 @@
 #include "Enjin/Effects/Destructible.h"
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/MIDIInput.h"
 #include <string>
 
 namespace Enjin {
@@ -223,6 +224,9 @@ private:
 
     // Audio event graph runtime
     Editor::AudioEventGraphRuntime m_AudioGraphRuntime;
+
+    // MIDI input
+    InputSystem::MIDIInput m_MIDIInput;
 
     // Level streaming
     Scene::StreamingManager m_StreamingManager;

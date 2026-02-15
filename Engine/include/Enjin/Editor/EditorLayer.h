@@ -558,6 +558,9 @@ private:
     f32 m_FrameTimeMin = 0.0f;
     f32 m_FrameTimeMax = 0.0f;
     f32 m_FrameTimeAvg = 0.0f;
+    f32 m_FrameTimeP50 = 0.0f;
+    f32 m_FrameTimeP95 = 0.0f;
+    f32 m_FrameTimeP99 = 0.0f;
     f32 m_LastDeltaTime = 0.0f;
 
     // Physics debug visualization

@@ -5,6 +5,10 @@
 #include <fstream>
 #include <algorithm>
 
+// stb_image_write is implemented in PixelEditor.cpp — just declare the function
+extern "C" int stbi_write_png(const char* filename, int w, int h, int comp,
+                               const void* data, int stride_in_bytes);
+
 using json = nlohmann::json;
 
 namespace Enjin {
@@ -252,6 +256,49 @@ bool TemplateCreator::DeleteTemplate(const std::string& templatesDir, const std:
         ENJIN_LOG_ERROR(Editor, "TemplateCreator: failed to delete template — %s", e.what());
         return false;
     }
+}
+
+// ---------------------------------------------------------------------------
+// SaveThumbnail
+// ---------------------------------------------------------------------------
+bool TemplateCreator::SaveThumbnail(const std::string& templatesDir, const std::string& templateId,
+                                     const u8* pixels, u32 width, u32 height) {
+    if (!pixels || width == 0 || height == 0 || templateId.empty()) return false;
+
+    std::filesystem::path dir = std::filesystem::path(templatesDir) / templateId;
+    if (!std::filesystem::exists(dir)) return false;
+
+    // Downscale to thumbnail size (280x180) using simple bilinear sampling
+    constexpr u32 THUMB_W = 280;
+    constexpr u32 THUMB_H = 180;
+
+    std::vector<u8> thumb(THUMB_W * THUMB_H * 4);
+    f32 scaleX = static_cast<f32>(width) / THUMB_W;
+    f32 scaleY = static_cast<f32>(height) / THUMB_H;
+
+    for (u32 ty = 0; ty < THUMB_H; ++ty) {
+        for (u32 tx = 0; tx < THUMB_W; ++tx) {
+            u32 sx = static_cast<u32>(tx * scaleX);
+            u32 sy = static_cast<u32>(ty * scaleY);
+            if (sx >= width) sx = width - 1;
+            if (sy >= height) sy = height - 1;
+            u32 srcIdx = (sy * width + sx) * 4;
+            u32 dstIdx = (ty * THUMB_W + tx) * 4;
+            thumb[dstIdx + 0] = pixels[srcIdx + 0];
+            thumb[dstIdx + 1] = pixels[srcIdx + 1];
+            thumb[dstIdx + 2] = pixels[srcIdx + 2];
+            thumb[dstIdx + 3] = pixels[srcIdx + 3];
+        }
+    }
+
+    std::string thumbPath = (dir / "thumbnail.png").string();
+    int result = stbi_write_png(thumbPath.c_str(), THUMB_W, THUMB_H, 4, thumb.data(), THUMB_W * 4);
+    if (result) {
+        ENJIN_LOG_INFO(Editor, "Template thumbnail saved: %s", thumbPath.c_str());
+    } else {
+        ENJIN_LOG_WARN(Editor, "Failed to save template thumbnail: %s", thumbPath.c_str());
+    }
+    return result != 0;
 }
 
 } // namespace Editor

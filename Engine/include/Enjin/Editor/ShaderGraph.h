@@ -50,6 +50,12 @@ enum class ShaderNodeType : u8 {
     FragmentOutput,     // Final color + alpha
     VertexOutput,       // Vertex displacement
 
+    // Screen-space inputs
+    SceneColor, SceneNormal, SceneDepth,
+
+    // Flow control
+    StaticSwitch,
+
     // Utility
     Comment, Reroute
 };

@@ -3,6 +3,7 @@
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
 #include <vulkan/vulkan.h>
+#include <vector>
 
 namespace Enjin {
 namespace Renderer {
@@ -33,12 +34,17 @@ public:
     // End rendering to this target (ends render pass, transitions for sampling)
     void End(VkCommandBuffer cmd);
 
+    // Capture color attachment pixels to CPU memory (RGBA8, blocking)
+    // Returns empty vector on failure. Caller owns the data.
+    std::vector<u8> CaptureToPixels() const;
+
     // Getters
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     VkImageView GetColorImageView() const { return m_ColorImageView; }
     VkSampler GetSampler() const { return m_Sampler; }
     VkDescriptorSet GetImGuiTextureID() const { return m_ImGuiDescriptor; }
+    VkImage GetColorImage() const { return m_ColorImage; }
     u32 GetWidth() const { return m_Width; }
     u32 GetHeight() const { return m_Height; }
     bool IsValid() const { return m_Framebuffer != VK_NULL_HANDLE; }

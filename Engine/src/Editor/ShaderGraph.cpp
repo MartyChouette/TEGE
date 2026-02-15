@@ -110,6 +110,14 @@ ShaderNodeCategory ShaderGraphEditor::GetCategory(ShaderNodeType type) {
         case ShaderNodeType::Reflect:
             return ShaderNodeCategory::Vector;
 
+        case ShaderNodeType::SceneColor:
+        case ShaderNodeType::SceneNormal:
+        case ShaderNodeType::SceneDepth:
+            return ShaderNodeCategory::Input;
+
+        case ShaderNodeType::StaticSwitch:
+            return ShaderNodeCategory::Math;
+
         case ShaderNodeType::FragmentOutput:
         case ShaderNodeType::VertexOutput:
             return ShaderNodeCategory::Output;
@@ -192,6 +200,14 @@ const char* ShaderGraphEditor::GetNodeName(ShaderNodeType type) {
         case ShaderNodeType::DotProduct:   return "Dot Product";
         case ShaderNodeType::CrossProduct: return "Cross Product";
         case ShaderNodeType::Reflect:      return "Reflect";
+
+        // Screen-space
+        case ShaderNodeType::SceneColor:  return "Scene Color";
+        case ShaderNodeType::SceneNormal: return "Scene Normal";
+        case ShaderNodeType::SceneDepth:  return "Scene Depth";
+
+        // Flow
+        case ShaderNodeType::StaticSwitch: return "Static Switch";
 
         // Output
         case ShaderNodeType::FragmentOutput: return "Fragment Output";
@@ -620,6 +636,21 @@ void ShaderGraphEditor::DrawInspector() {
             break;
         }
 
+        case ShaderNodeType::SceneColor:
+            ImGui::TextDisabled("Reads scene color buffer (deferred)");
+            break;
+        case ShaderNodeType::SceneNormal:
+            ImGui::TextDisabled("Reads world-space normals (deferred)");
+            break;
+        case ShaderNodeType::SceneDepth:
+            ImGui::TextDisabled("Reads linearized depth (0=near, 1=far)");
+            break;
+
+        case ShaderNodeType::StaticSwitch:
+            ImGui::TextDisabled("Inputs: Condition, True, False");
+            ImGui::TextDisabled("If Condition > 0.5 => True path");
+            break;
+
         default:
             ImGui::TextDisabled("No editable properties");
             break;
@@ -712,6 +743,10 @@ void ShaderGraphEditor::DrawContextMenu() {
         ImGui::Separator();
         if (ImGui::MenuItem("Texture Parameter")) addNode(ShaderNodeType::TextureParameter);
         if (ImGui::MenuItem("Float Parameter"))   addNode(ShaderNodeType::FloatParameter);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Scene Color"))  addNode(ShaderNodeType::SceneColor);
+        if (ImGui::MenuItem("Scene Normal")) addNode(ShaderNodeType::SceneNormal);
+        if (ImGui::MenuItem("Scene Depth"))  addNode(ShaderNodeType::SceneDepth);
         ImGui::EndMenu();
     }
 
@@ -739,6 +774,8 @@ void ShaderGraphEditor::DrawContextMenu() {
         if (ImGui::MenuItem("Max"))          addNode(ShaderNodeType::Max);
         if (ImGui::MenuItem("Step"))         addNode(ShaderNodeType::Step);
         if (ImGui::MenuItem("Smooth Step"))  addNode(ShaderNodeType::SmoothStep);
+        ImGui::Separator();
+        if (ImGui::MenuItem("Static Switch")) addNode(ShaderNodeType::StaticSwitch);
         ImGui::EndMenu();
     }
 
@@ -825,6 +862,8 @@ static const char* NodeOutType(ShaderNodeType type) {
         case ShaderNodeType::SplitVec2:
         case ShaderNodeType::SplitVec3:
         case ShaderNodeType::SplitVec4:
+        case ShaderNodeType::SceneDepth:
+        case ShaderNodeType::StaticSwitch:
             return "float";
         case ShaderNodeType::Vec2Constant:
         case ShaderNodeType::VertexUV:
@@ -844,6 +883,7 @@ static const char* NodeOutType(ShaderNodeType type) {
         case ShaderNodeType::Reflect:
         case ShaderNodeType::HSVToRGB:
         case ShaderNodeType::RGBToHSV:
+        case ShaderNodeType::SceneNormal:
             return "vec3";
         case ShaderNodeType::Vec4Constant:
         case ShaderNodeType::ColorConstant:
@@ -852,6 +892,7 @@ static const char* NodeOutType(ShaderNodeType type) {
         case ShaderNodeType::SampleTexture2D:
         case ShaderNodeType::SampleCubemap:
         case ShaderNodeType::Blend:
+        case ShaderNodeType::SceneColor:
             return "vec4";
         // Arithmetic nodes: type depends on inputs (default float)
         case ShaderNodeType::Add:
@@ -919,6 +960,51 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
     if (sorted.size() != graph.nodes.size()) {
         result.errors.push_back("Cycle detected in shader graph");
         return result;
+    }
+
+    // --- Type mismatch validation ---
+    // Check known pin type constraints
+    auto pinExpectedType = [](ShaderNodeType type, u32 pin) -> const char* {
+        switch (type) {
+            case ShaderNodeType::SampleTexture2D:
+            case ShaderNodeType::UVTransform:
+            case ShaderNodeType::Flipbook:
+                if (pin == 0) return "vec2"; // UV input
+                break;
+            case ShaderNodeType::DotProduct:
+            case ShaderNodeType::CrossProduct:
+            case ShaderNodeType::Reflect:
+            case ShaderNodeType::Normalize:
+                if (pin < 2) return "vec3";
+                break;
+            case ShaderNodeType::SampleCubemap:
+                if (pin == 0) return "vec3"; // direction
+                break;
+            case ShaderNodeType::StaticSwitch:
+                if (pin == 0) return "float"; // condition
+                break;
+            case ShaderNodeType::FragmentOutput:
+                if (pin == 0) return "vec4"; // color
+                if (pin == 1) return "float"; // alpha
+                break;
+            default: break;
+        }
+        return nullptr; // any type
+    };
+
+    for (const auto& link : graph.links) {
+        auto fromIt = nodeMap.find(link.fromNode);
+        auto toIt = nodeMap.find(link.toNode);
+        if (fromIt == nodeMap.end() || toIt == nodeMap.end()) continue;
+
+        const char* fromType = NodeOutType(fromIt->second->type);
+        const char* expected = pinExpectedType(toIt->second->type, link.toPin);
+        if (expected && strcmp(fromType, expected) != 0) {
+            result.errors.push_back(
+                std::string("Type mismatch: ") + GetNodeName(fromIt->second->type) +
+                " outputs " + fromType + " but " + GetNodeName(toIt->second->type) +
+                " pin " + std::to_string(link.toPin) + " expects " + expected);
+        }
     }
 
     // --- Collect texture samplers ---
@@ -1292,6 +1378,26 @@ ShaderCodeResult ShaderGraphEditor::GenerateGLSL() const {
                 auto incident = GetInputExpr(graph, nid, 0, "vec3(0.0, -1.0, 0.0)");
                 auto normal = GetInputExpr(graph, nid, 1, "vec3(0.0, 1.0, 0.0)");
                 body += "    vec3 " + var + " = reflect(" + incident + ", " + normal + ");\n";
+                break;
+            }
+
+            // --- Screen-space inputs ---
+            case ShaderNodeType::SceneColor:
+                body += "    vec4 " + var + " = fragColor; // Scene color (deferred buffer)\n";
+                break;
+            case ShaderNodeType::SceneNormal:
+                body += "    vec3 " + var + " = fragNormal; // Scene world normal (deferred buffer)\n";
+                break;
+            case ShaderNodeType::SceneDepth:
+                body += "    float " + var + " = gl_FragCoord.z; // Scene depth (linearize with near/far)\n";
+                break;
+
+            // --- Flow control ---
+            case ShaderNodeType::StaticSwitch: {
+                auto cond = GetInputExpr(graph, nid, 0, "0.0");
+                auto onTrue = GetInputExpr(graph, nid, 1, "1.0");
+                auto onFalse = GetInputExpr(graph, nid, 2, "0.0");
+                body += "    float " + var + " = (" + cond + " > 0.5) ? " + onTrue + " : " + onFalse + ";\n";
                 break;
             }
 

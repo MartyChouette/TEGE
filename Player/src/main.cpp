@@ -18,6 +18,7 @@
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Input/InputAction.h"
+#include "Enjin/Input/MIDIInput.h"
 #include "Enjin/GUI/GameMenus.h"
 #include "Enjin/GUI/ImGuiLayer.h"
 #include "Enjin/GUI/UISystem.h"
@@ -467,6 +468,8 @@ public:
         Enjin::Scripting::SetBindingsNetworking(nullptr);
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);
         Enjin::Scripting::SetBindingsAudioGraphRuntime(nullptr);
+        m_MIDIInput.Shutdown();
+        Enjin::Scripting::SetBindingsMIDI(nullptr);
 
         // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
@@ -544,6 +547,7 @@ public:
         m_SimpleAudio.Update(deltaTime);
         m_SimpleAudio.UpdateAudioSources(deltaTime);
         m_AudioGraphRuntime.Update(deltaTime);
+        m_MIDIInput.Update();
 
         // Update input
         m_InputMap.Update(deltaTime);
@@ -905,6 +909,8 @@ private:
         Enjin::Scripting::SetBindingsAccessibilitySettings(&m_AccessibilitySettings);
         Enjin::Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem in player — null-safe
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
+        m_MIDIInput.Initialize();
+        Enjin::Scripting::SetBindingsMIDI(&m_MIDIInput);
 
         // Wire visual script system externs (for VS nodes)
         {
@@ -1373,6 +1379,9 @@ private:
 
     // Audio event graph runtime
     Enjin::Editor::AudioEventGraphRuntime m_AudioGraphRuntime;
+
+    // MIDI input
+    Enjin::InputSystem::MIDIInput m_MIDIInput;
 
     // Accessibility systems
     Enjin::Accessibility::SubtitleSystem m_SubtitleSystem;

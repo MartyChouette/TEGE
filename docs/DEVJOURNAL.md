@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-02-14 (Session 20)
+
+### 4 Features Implemented
+
+**1. Template Thumbnail Auto-Capture**
+When saving a template via TemplateCreator, the game view render target is automatically captured as a 280x180 PNG thumbnail. Implementation: `RenderTarget::CaptureToPixels()` performs Vulkan framebuffer readback using a staging buffer with BGRA-to-RGBA swizzle, `TemplateCreator::SaveThumbnail()` downscales the captured pixels and writes via `stbi_write_png`. Wired through EditorLayer. Files: `RenderTarget.h/cpp`, `TemplateCreator.h/cpp`, `EditorLayer.cpp`.
+
+**2. Performance Profiler UI Expansion**
+P50/P95/P99 frame time percentiles computed and displayed in the stats overlay. Descriptor cache hit/miss tracking added to RenderSystem with hit rate percentage display. CSV export button writes `perf_stats.csv` with all profiler metrics. Files: `PerformanceStats.h`, `RenderSystem.h/cpp`, `EditorLayer.cpp`.
+
+**3. Shader Graph QoL**
+4 new node types added: SceneColor (vec4), SceneNormal (vec3), SceneDepth (float), StaticSwitch (conditional branching). Type mismatch validation in `GenerateGLSL()` reports errors when connected pins have incompatible types (e.g. float connected to vec2 UV input). Total shader graph nodes: 58. Files: `ShaderGraph.h/cpp`.
+
+**4. MIDI Input Support**
+Platform-specific MIDI input system: WinMM backend on Windows with stubs on other platforms. `MIDIInput` class handles device enumeration, open/close, per-frame event polling (double-buffered for thread safety), and persistent CC state. 12 AngelScript bindings: `MIDI_GetDeviceCount`, `MIDI_GetDeviceName`, `MIDI_OpenDevice`, `MIDI_CloseDevice`, `MIDI_IsDeviceOpen`, `MIDI_IsNoteOn`, `MIDI_IsNoteOff`, `MIDI_GetNoteVelocity`, `MIDI_GetCC`, `MIDI_GetCCValue`, `MIDI_GetEventCount`. Wired in PlayMode and Player. Files: `MIDIInput.h/cpp`, `ScriptBindings_MIDI.cpp`, `ScriptBindings.h/cpp`, `PlayMode.h/cpp`, `Player/main.cpp`.
+
+Files changed: ~12 across Engine/src, Engine/include, Player
+
+---
+
 ## 2026-02-14 (Session 19)
 
 ### 6 Features Implemented

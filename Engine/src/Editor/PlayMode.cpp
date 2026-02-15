@@ -168,6 +168,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsAccessibilitySettings(m_AccessibilitySettings);
     Scripting::SetBindingsPluginSystem(nullptr);  // No PluginSystem instance yet — null-safe
     Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
+    m_MIDIInput.Initialize();
+    Scripting::SetBindingsMIDI(&m_MIDIInput);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
     s_VisualScriptHUD = &m_HUDSystem;
@@ -393,6 +395,8 @@ void PlayMode::Stop() {
     Scripting::SetBindingsProcedural(nullptr);
     Scripting::SetBindingsPluginSystem(nullptr);
     Scripting::SetBindingsAudioGraphRuntime(nullptr);
+    m_MIDIInput.Shutdown();
+    Scripting::SetBindingsMIDI(nullptr);
 
     // Clear accessibility wiring
     if (m_UISystem) {
@@ -466,6 +470,7 @@ void PlayMode::Update(f32 deltaTime) {
 
         // Update input action map (polls input state for remappable actions)
         m_InputMap.Update(deltaTime);
+        m_MIDIInput.Update();
 
         // Physics runs first to update rigidbody positions, then controllers overlay input
         auto t0 = std::chrono::high_resolution_clock::now();

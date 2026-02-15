@@ -4372,8 +4372,9 @@ void RenderSystem::UpdateEntityTextureDescriptors(
 
     // Skip vkUpdateDescriptorSets if these textures are already bound
     MaterialComponent::TextureKey currentKey{ texBase, texHeight, texNormal, texMR, texEmissive };
-    if (currentKey == m_LastBound.textureKey) return;
+    if (currentKey == m_LastBound.textureKey) { ++m_DescriptorCacheHits; return; }
     m_LastBound.textureKey = currentKey;
+    ++m_DescriptorCacheWrites;
 
     // Collect image infos (must persist until vkUpdateDescriptorSets returns)
     VkDescriptorImageInfo imageInfos[5];

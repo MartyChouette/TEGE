@@ -16,6 +16,7 @@ namespace Effects { class WeatherSystem; class DestructibleSystem; }
 namespace Procedural { class LevelGenerator; }
 namespace Plugin { class PluginSystem; }
 namespace Editor { class AudioEventGraphRuntime; }
+namespace InputSystem { class MIDIInput; }
 namespace Scripting {
 
 class ScriptEngine;
@@ -102,6 +103,12 @@ void SetBindingsPluginSystem(Plugin::PluginSystem* system);
 
 // Audio event graph runtime setter
 void SetBindingsAudioGraphRuntime(Editor::AudioEventGraphRuntime* runtime);
+
+// Registration for MIDI input bindings (defined in ScriptBindings_MIDI.cpp)
+void RegisterMIDIBindings(asIScriptEngine* engine);
+
+// MIDI input setter
+void SetBindingsMIDI(InputSystem::MIDIInput* midi);
 
 } // namespace Scripting
 } // namespace Enjin

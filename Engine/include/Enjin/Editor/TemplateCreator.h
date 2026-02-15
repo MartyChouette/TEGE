@@ -42,6 +42,11 @@ public:
     // Delete a custom template by removing its directory.
     static bool DeleteTemplate(const std::string& templatesDir, const std::string& templateId);
 
+    // Save a thumbnail PNG to an existing template directory.
+    // pixels is RGBA8 data, width x height. Downscales to 280x180 if larger.
+    static bool SaveThumbnail(const std::string& templatesDir, const std::string& templateId,
+                              const u8* pixels, u32 width, u32 height);
+
 private:
     // Sanitize a string for safe use as a directory name.
     static std::string SanitizeId(const std::string& name);

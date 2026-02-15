@@ -267,7 +267,9 @@ public:
     // Draw call / triangle counters (reset each frame in Update)
     u32 GetDrawCallCount() const { return m_DrawCallCount; }
     u32 GetTriangleCount() const { return m_TriangleCount; }
-    void ResetFrameCounters() { m_DrawCallCount = 0; m_TriangleCount = 0; }
+    u32 GetDescriptorCacheHits() const { return m_DescriptorCacheHits; }
+    u32 GetDescriptorCacheWrites() const { return m_DescriptorCacheWrites; }
+    void ResetFrameCounters() { m_DrawCallCount = 0; m_TriangleCount = 0; m_DescriptorCacheHits = 0; m_DescriptorCacheWrites = 0; }
 
     // Fog and snow parameters (set by editor, uploaded to LightingUBO)
     void SetFogParams(f32 density, f32 start, f32 end, f32 heightFalloff) {
@@ -639,6 +641,8 @@ private:
     // Draw call / triangle counters
     u32 m_DrawCallCount = 0;
     u32 m_TriangleCount = 0;
+    u32 m_DescriptorCacheHits = 0;
+    u32 m_DescriptorCacheWrites = 0;
 
     // Cached player entity (any entity with a CharacterController) for per-frame position lookup.
     // Updated in OnEntityAdded/OnEntityRemoved to avoid linear search each frame.

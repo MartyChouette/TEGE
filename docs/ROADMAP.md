@@ -247,7 +247,7 @@ The existing `NodeGraphEditor` framework is production-ready and currently power
 
 | System | Effort | Use Case | Status |
 |--------|--------|----------|--------|
-| Shader Graph | 6-8 weeks | Visual shader authoring, GLSL generation | ✅ Complete (54 node types, topological sort GLSL codegen, .enjshader save/load, editor wired) |
+| Shader Graph | 6-8 weeks | Visual shader authoring, GLSL generation | ✅ Complete (58 node types incl. SceneColor/SceneNormal/SceneDepth/StaticSwitch, type mismatch validation, topological sort GLSL codegen, .enjshader save/load, editor wired) |
 | Audio Event Graph | 2-3 weeks | Dynamic audio mixing based on game state | ✅ Complete (runtime execution, trigger events, parameter thresholds, delay scheduling, .enjaudiopkg, 4 AS + 3 VS bindings) |
 | Particle System Graph | 2-3 weeks | Sub-emitter chains, complex particle systems | ✅ Complete (compiler to ParticleEmitterComponent, emitter/modifier/control/renderer mapping, .enjparticle, apply-to-entity) |
 | Procedural Generation Graph | 4-6 weeks | Visual WFC/L-system/BSP rule composition | ✅ Complete (node-based pipeline editor with 38 node types, graph execution, preview) |
@@ -599,7 +599,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 
 ### Partially Complete
 
-- ~~**Project Hub & Creation Wizard**~~ ✅ (v1) — All 4 tabs (Recent/New/Open/Demos), 38 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done. **v2 redesign planned** — see "Project Hub Redesign & Template Creator" section: 3-action landing (New/Open/Sandbox), template creator with panel checkboxes and auto-thumbnail capture, project name in separate popup, `TEGE_Projects` default directory, software distribution tiers
+- ~~**Project Hub & Creation Wizard**~~ ✅ (v1) — All 4 tabs (Recent/New/Open/Demos), 38 templates with category filtering and search, git init option, custom templates, folder structure auto-creation, template hover preview all done. ~~Auto-thumbnail capture~~ ✅ done. **v2 redesign planned** — see "Project Hub Redesign & Template Creator" section: 3-action landing (New/Open/Sandbox), template creator with panel checkboxes, project name in separate popup, `TEGE_Projects` default directory, software distribution tiers
 - ~~**Undo/Redo**~~ ✅ — Entity operations, visual script node edits, inspector property edits, tilemap paint (per-stroke with cell deduplication), terrain sculpt (heightmap+splatmap snapshot), UI editor edits (move/resize/nudge/delete) all done
 - ~~**Drag and Drop**~~ ✅ — OS file drop, hierarchy reparenting, asset browser to Game View (model/prefab/image/scene/audio/script dispatch), material inspector texture fields, sprite inspector texture fields all done
 - ~~**Asset Import Pipeline**~~ ✅ — Import settings dialog, .enjinasset metadata, asset browser drag-import, source-app import presets (10 DCC tools), thumbnails (CPU rasterizer with caching), texture compression (BC1/BC3/BC4/BC5/BC7/ASTC with mipmap gen) — fully complete
@@ -801,6 +801,7 @@ Complete flow from art to playable entity:
 - ~~**Component/Plugin DLL Repositories**~~ ✅ RESOLVED — Plugin repository system with catalog browsing, search/filter by category, install/uninstall, version comparison, `repository.json` format, persistent source management. Extended `PluginManifest` with author/category/tags fields. Editor Plugin Browser panel. Enhanced with `PluginContext` (World, RenderSystem, ScriptEngine, SimpleAudio, SceneManager), `PluginSDK.h` single-header with `ENJIN_IMPLEMENT_PLUGIN()` macro, `OnSaveState/OnRestoreState` for hot-reload state preservation, 4 AS bindings (`Plugin_IsLoaded/GetVersion/Load/Unload`), 3 VS nodes, example plugin in `examples/ExamplePlugin/`.
 - ~~**Documentation Generator**~~ ✅ RESOLVED — `DocGenerator` auto-generates markdown from component headers (field parser), AngelScript bindings (via `asIScriptEngine` enumeration), visual script nodes (from `NodeRegistry`), and data asset schemas. Outputs COMPONENTS.md, SCRIPTING_API.md, VISUAL_SCRIPT_NODES.md, DATA_ASSETS.md, INDEX.md to `docs/generated/`. Accessible via Tools menu.
 - ~~**ScriptableObject / DataAsset System**~~ ✅ RESOLVED — `DataAssetRegistry` singleton with schemas (`.enjschema`) and assets (`.enjdata`) JSON I/O. 8 field types (String, Float, Int, Bool, Vector3, Vector4, StringArray, FloatArray). AngelScript bindings (`DataAsset_Load/GetFloat/GetInt/GetBool/GetString/GetVector3`). 3 visual script nodes (`DataAsset_Load`, `DataAsset_GetFloat`, `DataAsset_GetString`). Editor Data Asset panel with schema editor, asset browser, inline field editing.
+- ~~**MIDI Input**~~ ✅ RESOLVED — Platform-specific MIDI input (WinMM on Windows, stubs on other platforms). `MIDIInput` class with device enumeration, open/close, per-frame double-buffered event polling, persistent CC state. 12 AngelScript bindings (`MIDI_GetDeviceCount/GetDeviceName/OpenDevice/CloseDevice/IsDeviceOpen/IsNoteOn/IsNoteOff/GetNoteVelocity/GetCC/GetCCValue/GetEventCount`). Wired in PlayMode and Player. Files: `MIDIInput.h/cpp`, `ScriptBindings_MIDI.cpp`.
 
 ---
 
@@ -1249,15 +1250,9 @@ A dedicated tool (accessible from Sandbox flow + Tools menu) for creating and ed
 - Templates appear in the New Project template browser automatically
 - Export as shareable `.enjintemplate.zip` for community sharing
 
-### Template Thumbnail Capture
+### ~~Template Thumbnail Capture~~ ✅ DONE
 
-Each built-in template should have a representative screenshot. Implementation:
-
-- On `ApplyTemplate()`, after scene setup, capture the Game View render target to a PNG
-- Store as `thumbnail.png` in the template folder
-- For built-in templates, embed thumbnails as compiled-in byte arrays (like ShaderData.h) or generate on first run and cache
-- Template browser cards display the thumbnail image instead of the current accent-bar + text layout
-- Custom templates auto-capture on save
+~~Each built-in template should have a representative screenshot.~~ Implemented: `RenderTarget::CaptureToPixels()` reads Vulkan framebuffer via staging buffer with BGRA-to-RGBA swizzle. `TemplateCreator::SaveThumbnail()` downscales to 280x180 and writes PNG via `stbi_write_png`. Auto-captures game view on template save. Files: `RenderTarget.h/cpp`, `TemplateCreator.h/cpp`.
 
 ### Per-Template Window Layouts
 
@@ -1459,7 +1454,11 @@ These are documented limitations that require larger feature work. Sorted by pri
 | ~~VSync toggle~~ | ~~✅ DONE — Deferred VSync change via `RequestVSyncChange()` applied at EndFrame(). Safe mid-frame toggle, checkbox fully enabled.~~ |
 | ~~Apply to Prefab button~~ | ~~✅ DONE — Uses `PrefabManager::CreateFromEntity()` + `SavePrefab()` to write modified entity back to prefab file.~~ |
 | ~~Shader Graph Parallax/Flipbook nodes~~ | ~~✅ DONE — Parallax: steep POM with occlusion interpolation (64-step bounded loop, height map sampler). Flipbook: frame-based UV offset with row/col/frame inputs. Inspector UI for both.~~ |
+| ~~Shader Graph SceneColor/SceneNormal/SceneDepth/StaticSwitch nodes~~ | ~~✅ DONE — 4 new node types for deferred data access and conditional branching. Type mismatch validation in GenerateGLSL() reports errors for incompatible pin connections.~~ |
 | ~~Particle Graph renderer inspector~~ | ~~✅ DONE — Billboard: texture, mode, sort, blend, size, color. Mesh: path, texture, scale, alignment, color. Trail: width, texture mode, vertex distance, start/end color. 15 new fields, compiler mapping, save/load serialization.~~ |
 | ~~Flash Timeline SWF sprite import~~ | ~~✅ DONE — BuildTimeline() is 267 lines, production-ready. Frame-by-frame property tracks, removal keyframes, color transforms, frame labels.~~ |
+| ~~Template Thumbnail Auto-Capture~~ | ~~✅ DONE — Vulkan framebuffer readback via staging buffer (BGRA→RGBA swizzle), downscale to 280x180, stbi_write_png. Auto-captures game view on template save.~~ |
+| ~~Profiler P50/P95/P99 + CSV Export~~ | ~~✅ DONE — Frame time percentiles computed and displayed in stats overlay. Descriptor cache hit/miss tracking with hit rate percentage. CSV export button (perf_stats.csv).~~ |
+| ~~MIDI Input~~ | ~~✅ DONE — Platform-specific MIDI input (WinMM on Windows, stubs elsewhere). Device enumeration, open/close, double-buffered event polling, persistent CC state. 12 AngelScript bindings. Wired in PlayMode and Player.~~ |
 
-*Last updated: 2026-02-14 — Session 19: 6 features completed. Reduced motion for UI (cursor blink, tooltips, switch access pulse). HTTP Client libcurl on Linux/Mac (cross-platform WinHTTP + libcurl). Flash SharedObject persistence (TieredSaveSystem meta-progression, 5 AS bindings). SH Probe baking UI (per-probe list, viewport wireframes). Generate Forest UI (4 presets in Procedural panel). Gamepad editor navigation (4 radial dials, DPad hierarchy, stick camera). All 6 targets build clean.*
+*Last updated: 2026-02-14 — Session 20: 4 features completed. Template thumbnail auto-capture (Vulkan framebuffer readback, 280x180 PNG). Performance profiler expansion (P50/P95/P99 percentiles, descriptor cache hit/miss, CSV export). Shader Graph QoL (4 new node types: SceneColor/SceneNormal/SceneDepth/StaticSwitch, type mismatch validation). MIDI input support (WinMM, 12 AS bindings, wired in PlayMode + Player). All 6 targets build clean.*

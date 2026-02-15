@@ -1251,6 +1251,19 @@ void EditorLayer::Update(f32 deltaTime) {
     if (validCount == 0) { m_FrameTimeMin = 0.0f; m_FrameTimeMax = 0.0f; }
     m_FrameTimeAvg = validCount > 0 ? sum / static_cast<f32>(validCount) : 0.0f;
 
+    // Compute percentiles (P50, P95, P99) via partial sort
+    if (validCount >= 2) {
+        f32 sorted[FRAME_TIME_HISTORY_SIZE];
+        u32 n = 0;
+        for (usize i = 0; i < FRAME_TIME_HISTORY_SIZE; ++i) {
+            if (m_FrameTimeHistory[i] > 0.0f) sorted[n++] = m_FrameTimeHistory[i];
+        }
+        std::sort(sorted, sorted + n);
+        m_FrameTimeP50 = sorted[n * 50 / 100];
+        m_FrameTimeP95 = sorted[n * 95 / 100];
+        m_FrameTimeP99 = sorted[std::min(n * 99 / 100, n - 1)];
+    }
+
     // Update performance metrics periodically (every 0.5s)
     m_PerfUpdateTimer += deltaTime;
     if (m_PerfUpdateTimer >= 0.5f) {
@@ -1262,6 +1275,8 @@ void EditorLayer::Update(f32 deltaTime) {
         if (m_RenderSystem) {
             m_PerfMetrics.drawCallCount = m_RenderSystem->GetDrawCallCount();
             m_PerfMetrics.triangleCount = m_RenderSystem->GetTriangleCount();
+            m_PerfMetrics.descriptorCacheHits = m_RenderSystem->GetDescriptorCacheHits();
+            m_PerfMetrics.descriptorCacheWrites = m_RenderSystem->GetDescriptorCacheWrites();
         }
     }
 
@@ -11111,6 +11126,13 @@ void EditorLayer::DrawStatsOverlay() {
         ImGui::Text("Max: %.2f ms (%.0f fps)", m_FrameTimeMax, m_FrameTimeMax > 0 ? 1000.0f / m_FrameTimeMax : 0);
         ImGui::Text("Avg: %.2f ms (%.0f fps)", m_FrameTimeAvg, m_FrameTimeAvg > 0 ? 1000.0f / m_FrameTimeAvg : 0);
 
+        // Percentiles
+        ImGui::TextColored(ImVec4(0.7f, 0.9f, 1.0f, 1.0f), "-- Percentiles --");
+        ImGui::Text("P50: %.2f ms (%.0f fps)", m_FrameTimeP50, m_FrameTimeP50 > 0 ? 1000.0f / m_FrameTimeP50 : 0);
+        ImGui::Text("P95: %.2f ms (%.0f fps)", m_FrameTimeP95, m_FrameTimeP95 > 0 ? 1000.0f / m_FrameTimeP95 : 0);
+        ImVec4 p99Color = m_FrameTimeP99 > 16.7f ? ImVec4(1.0f, 0.3f, 0.3f, 1.0f) : ImVec4(0.8f, 0.8f, 0.8f, 1.0f);
+        ImGui::TextColored(p99Color, "P99: %.2f ms (%.0f fps)", m_FrameTimeP99, m_FrameTimeP99 > 0 ? 1000.0f / m_FrameTimeP99 : 0);
+
         // Frame time graph
         ImGui::Separator();
         ImGui::Text("Frame Time History:");
@@ -11179,6 +11201,46 @@ void EditorLayer::DrawStatsOverlay() {
         } else {
             ImGui::Text("Triangles: %u", m_PerfMetrics.triangleCount);
         }
+
+        // Descriptor cache hit rate
+        u32 totalDescOps = m_PerfMetrics.descriptorCacheHits + m_PerfMetrics.descriptorCacheWrites;
+        if (totalDescOps > 0) {
+            f32 hitRate = static_cast<f32>(m_PerfMetrics.descriptorCacheHits) / static_cast<f32>(totalDescOps) * 100.0f;
+            ImVec4 cacheColor = hitRate > 80.0f ? ImVec4(0.2f, 1.0f, 0.2f, 1.0f) :
+                                hitRate > 50.0f ? ImVec4(1.0f, 1.0f, 0.2f, 1.0f) :
+                                                   ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+            ImGui::TextColored(cacheColor, "Desc Cache: %.0f%% (%u/%u)", hitRate,
+                              m_PerfMetrics.descriptorCacheHits, totalDescOps);
+        }
+
+        // CSV export
+        ImGui::Separator();
+        if (ImGui::SmallButton("Export CSV")) {
+            try {
+                std::string csvPath = "perf_stats.csv";
+                std::ofstream ofs(csvPath);
+                if (ofs.is_open()) {
+                    ofs << "Metric,Value\n";
+                    ofs << "FPS," << (m_LastDeltaTime > 0.0f ? 1.0f / m_LastDeltaTime : 0.0f) << "\n";
+                    ofs << "FrameTime_ms," << (m_LastDeltaTime * 1000.0f) << "\n";
+                    ofs << "Min_ms," << m_FrameTimeMin << "\n";
+                    ofs << "Max_ms," << m_FrameTimeMax << "\n";
+                    ofs << "Avg_ms," << m_FrameTimeAvg << "\n";
+                    ofs << "P50_ms," << m_FrameTimeP50 << "\n";
+                    ofs << "P95_ms," << m_FrameTimeP95 << "\n";
+                    ofs << "P99_ms," << m_FrameTimeP99 << "\n";
+                    ofs << "DrawCalls," << m_PerfMetrics.drawCallCount << "\n";
+                    ofs << "Triangles," << m_PerfMetrics.triangleCount << "\n";
+                    ofs << "DescCacheHits," << m_PerfMetrics.descriptorCacheHits << "\n";
+                    ofs << "DescCacheWrites," << m_PerfMetrics.descriptorCacheWrites << "\n";
+                    ofs << "ProcessMemory_MB," << (static_cast<f32>(m_PerfMetrics.processMemoryBytes) / (1024.0f * 1024.0f)) << "\n";
+                    if (m_World) ofs << "Entities," << m_World->GetEntityCount() << "\n";
+                    ENJIN_LOG_INFO(Editor, "Performance stats exported to %s", csvPath.c_str());
+                }
+            } catch (...) {}
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("perf_stats.csv");
     }
     ImGui::End();
 }
@@ -22142,6 +22204,17 @@ void EditorLayer::DrawTemplateCreatorWindow() {
 
             Scene::SceneSerializer serializer(m_World);
             if (Editor::TemplateCreator::SaveTemplate("templates", meta, m_World, serializer)) {
+                // Auto-capture thumbnail from game view render target
+                if (m_GameViewRenderTarget && m_GameViewRenderTarget->IsValid()) {
+                    auto pixels = m_GameViewRenderTarget->CaptureToPixels();
+                    if (!pixels.empty()) {
+                        std::string tmplId = meta.id.empty() ? meta.name : meta.id;
+                        // Sanitize id same way TemplateCreator does
+                        for (auto& c : tmplId) { if (c == ' ') c = '_'; c = static_cast<char>(std::tolower(c)); }
+                        Editor::TemplateCreator::SaveThumbnail("templates", tmplId,
+                            pixels.data(), m_GameViewRenderTarget->GetWidth(), m_GameViewRenderTarget->GetHeight());
+                    }
+                }
                 m_ConsoleLog.push_back("[Template] Saved: " + meta.name);
                 m_TmplNeedsRescan = true;
             } else {

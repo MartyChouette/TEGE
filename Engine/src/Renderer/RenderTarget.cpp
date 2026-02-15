@@ -439,5 +439,124 @@ void RenderTarget::DestroyResources() {
     }
 }
 
+std::vector<u8> RenderTarget::CaptureToPixels() const {
+    if (!m_Context || m_ColorImage == VK_NULL_HANDLE || m_Width == 0 || m_Height == 0)
+        return {};
+
+    VkDevice device = m_Context->GetDevice();
+    VkQueue queue = m_Context->GetGraphicsQueue();
+
+    u32 imageSize = m_Width * m_Height * 4;
+
+    // Create temporary command pool
+    VkCommandPool tempPool = VK_NULL_HANDLE;
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = m_Context->GetGraphicsQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    if (vkCreateCommandPool(device, &poolInfo, nullptr, &tempPool) != VK_SUCCESS)
+        return {};
+
+    // Create staging buffer (host-visible)
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = imageSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    VkBuffer stagingBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory = VK_NULL_HANDLE;
+
+    if (vkCreateBuffer(device, &bufInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, stagingBuffer, &memReqs);
+
+    VkMemoryAllocateInfo allocInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = m_Context->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &stagingMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        vkDestroyCommandPool(device, tempPool, nullptr);
+        return {};
+    }
+    vkBindBufferMemory(device, stagingBuffer, stagingMemory, 0);
+
+    // Allocate one-shot command buffer
+    VkCommandBufferAllocateInfo cmdAllocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    cmdAllocInfo.commandPool = tempPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer cmd;
+    vkAllocateCommandBuffers(device, &cmdAllocInfo, &cmd);
+
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    vkBeginCommandBuffer(cmd, &beginInfo);
+
+    // Transition color image to TRANSFER_SRC
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.image = m_ColorImage;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    // Copy image to buffer
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {m_Width, m_Height, 1};
+    vkCmdCopyImageToBuffer(cmd, m_ColorImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+        stagingBuffer, 1, &region);
+
+    // Transition back to SHADER_READ_ONLY
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    vkEndCommandBuffer(cmd);
+
+    // Submit and wait
+    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(queue);
+    vkFreeCommandBuffers(device, tempPool, 1, &cmd);
+
+    // Map and read pixels
+    void* data = nullptr;
+    vkMapMemory(device, stagingMemory, 0, imageSize, 0, &data);
+
+    std::vector<u8> pixels(imageSize);
+    const u8* src = static_cast<const u8*>(data);
+    // BGRA → RGBA swizzle
+    for (u32 i = 0; i < imageSize; i += 4) {
+        pixels[i + 0] = src[i + 2]; // R ← B
+        pixels[i + 1] = src[i + 1]; // G
+        pixels[i + 2] = src[i + 0]; // B ← R
+        pixels[i + 3] = src[i + 3]; // A
+    }
+
+    vkUnmapMemory(device, stagingMemory);
+
+    // Cleanup staging + temp pool
+    vkDestroyBuffer(device, stagingBuffer, nullptr);
+    vkFreeMemory(device, stagingMemory, nullptr);
+    vkDestroyCommandPool(device, tempPool, nullptr);
+
+    return pixels;
+}
+
 } // namespace Renderer
 } // namespace Enjin

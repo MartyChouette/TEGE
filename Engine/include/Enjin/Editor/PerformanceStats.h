@@ -19,6 +19,8 @@ struct PerformanceMetrics {
     usize gpuAllocatedBytes = 0;
     u32 drawCallCount = 0;
     u32 triangleCount = 0;
+    u32 descriptorCacheHits = 0;
+    u32 descriptorCacheWrites = 0;
 };
 
 class ENJIN_API PerformanceStats {
