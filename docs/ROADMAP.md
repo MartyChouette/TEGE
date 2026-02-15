@@ -1130,7 +1130,7 @@ The following accessibility features exist as infrastructure/settings structs bu
 | ~~**High Contrast UI Theme**~~ | P2 | Low | ~~`HighContrastDark` and `HighContrastLight` presets with WCAG AAA 7:1+ contrast ratios, 3px borders, bright focus indicators~~ ✅ Complete |
 | ~~**Font Scaling for Players**~~ | P2 | Low | ~~`fontScale` field on RuntimeAccessibilitySettings, `SetFontScale()` on UISystem — all 5 text render paths multiply by scale factor. Wired in Player from accessibility settings~~ ✅ Complete |
 | ~~**Dyslexia-Friendly Options**~~ | P3 | Low | ✅ Done — FontLibrary.h with FontFamily enum (Default/Monospace/OpenDyslexic), letter/word/line spacing config |
-| **Reduced Motion for UI** | P2 | Low | Honor RuntimeAccessibilitySettings.reducedMotion in UISystem — skip animations, instant transitions, no scroll inertia |
+| ~~**Reduced Motion for UI**~~ | P2 | Low | ~~✅ Done — UISystem honors `m_ReducedMotion` flag: cursor blink disabled (always visible), instant tooltips, switch access pulse/scan indicator made static. Wired via `PlayMode::GetUISystem()` setter from EditorLayer~~ |
 | ~~**Colorblind-Safe UI Palettes**~~ | P3 | Low | ✅ Done — ColorblindPalette.h with 9 palettes, pattern+icon alongside color (PatternType enum) |
 | ~~**One-Button Mode**~~ | P3 | Medium | ✅ Done — Switch access scanning in UISystem with configurable scan speed, visual highlight pulse |
 
@@ -1162,7 +1162,7 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 ### ~~ActionScript Compatibility Layer~~ ✅ Done
 - ~~**AS2/AS3 → AngelScript transpiler**~~ ✅ — `AS3Transpiler` class: pattern-based line-by-line transpilation with regex, type mapping (Number→float, etc.), class/function/var conversion, Flash API → shim calls, scope tracking
 - ~~**Flash API shim library**~~ ✅ — `FlashAPIShim` namespace: `RegisterFlashBindings()` with DisplayObject (position/scale/rotation/alpha/visible), MovieClip (gotoAndPlay/Stop/Play/Stop), Stage (width/height/fps), Mouse/Keyboard, TextField, Math, Sound (via SimpleAudio), Timer (setTimeout/setInterval)
-- **Newgrounds.io integration** — Medal/scoreboard API bindings via HTTP (future networking layer). `SharedObject` mapped to `SaveSystem` slots
+- ~~**Newgrounds.io integration**~~ ✅ — Medal/scoreboard API bindings via HTTP. `SharedObject` persistence mapped to `TieredSaveSystem` meta-progression (`so_{name}_{key}` namespacing), 5 AngelScript bindings (Flash_SO_Set/Get/Has/Flush/Clear), AS3 transpiler mappings, wired in PlayMode + Player
 
 ### Flash Game Templates
 - ~~**Starter templates**~~ ✅ — Pre-built project templates for common Flash game genres: point-and-click adventure, dress-up game, tower defense, bullet hell, rhythm game, escape room, idle/clicker. All included in the 43 built-in templates and polished with HUD elements, enemies, inventory, and gameplay setups
@@ -1329,7 +1329,7 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 ### Lighting & Global Illumination
 
-- **Spherical Harmonics Lighting** — SH probe baking (L2, 9 coefficients) for diffuse indirect lighting. Probe grid placement tool in editor, per-probe visualization (color spheres), blend weights. Lightweight GI alternative to full ray-traced GI — runs on any GPU. Bake button in Rendering settings
+- ~~**Spherical Harmonics Lighting**~~ ✅ — SH probe baking (L2, 9 coefficients) for diffuse indirect lighting. Probe grid placement tool in editor (per-probe list with bake status colors, individual Bake/Delete buttons, L0 irradiance preview, manual probe placement via DragFloat3 + Add), viewport visualization (green=baked, red=empty spheres, yellow grid bounds AABB), blend weights. Wired to renderer via LightingUBO shProbeIrradiance. Bake button in Rendering settings
 - **Beam Tracing and Cone Tracing** — Voxel cone tracing (VXGI-style) for real-time diffuse/specular GI and soft shadows. Voxelized scene representation (64/128/256 resolution), cone-traced lighting queries. Also: volumetric beam tracing for god rays and light shafts through participating media
 
 ### SDF & Distance Field Rendering
@@ -1352,7 +1352,7 @@ Goal: Make these techniques clear and artistically accessible to creators — no
 
 ### Procedural & Terrain
 
-- ~~**Fractal Terrain and L-System Vegetation**~~ ✅ — Fractal terrain generation (fBm octave stacking, ridged multifractal) with erosion simulation (hydraulic via droplet simulation, thermal via talus angle). 3D L-system with full turtle interpreter (yaw/pitch/roll), stochastic production rules, branch radius decay. Added to `ProceduralAlgorithms.h/cpp`. Remaining: one-click "Generate Forest" with density/species/age controls, seasonal variation, wind animation
+- ~~**Fractal Terrain and L-System Vegetation**~~ ✅ — Fractal terrain generation (fBm octave stacking, ridged multifractal) with erosion simulation (hydraulic via droplet simulation, thermal via talus angle). 3D L-system with full turtle interpreter (yaw/pitch/roll), stochastic production rules, branch radius decay. Added to `ProceduralAlgorithms.h/cpp`. One-click "Generate Forest" UI in Procedural panel: 4 forest types (Mixed/Dense Conifer/Deciduous Park/Sparse Savanna), area radius, tree/shrub/grass density controls, creates Tree+Shrub+Grass volume entities
 
 ### Simulation-Driven Geometry
 
@@ -1434,7 +1434,7 @@ These are documented limitations that require larger feature work. Sorted by pri
 | Feature | Files | Status | Notes |
 |---------|-------|--------|-------|
 | ~~OIT Composite Shader~~ | ~~`OITManager.cpp`~~ | ~~✅ DONE~~ | ~~Fullscreen triangle composite pipeline with embedded SPIR-V (`oit_composite.frag` + `fullscreen.vert`), alpha blending over opaque scene, dynamic viewport/scissor. `CompositePass()` draws fullscreen triangle with accumulation/revealage descriptor set.~~ |
-| HTTP Client (Linux/Mac) | `HTTPClient.cpp` | No-op on non-Windows | Get/Post/PostForm return failure. CMake finds libcurl and defines `ENJIN_HAS_CURL` but it's never used in code. Needs conditional compilation to use libcurl when available. |
+| ~~HTTP Client (Linux/Mac)~~ | ~~`HTTPClient.cpp`~~ | ~~✅ DONE~~ | ~~Full libcurl implementation (`#elif defined(ENJIN_HAS_CURL)`) with Get/Post/PostForm, 16MB response cap, percent encoding. CMake includes macOS in UNIX branch. Cross-platform: WinHTTP on Windows, libcurl on Linux/macOS.~~ |
 | ~~SWF Zlib Decompression~~ | ~~`SWFLoader.cpp`~~ | ~~✅ DONE~~ | ~~Uses stb_image's built-in zlib decompressor (`stbi_zlib_decode_buffer`). CWS files fully supported. 256MB size cap. No external zlib dependency needed.~~ |
 | ~~Network Auth & Replay~~ | ~~`NetworkSystem.cpp`~~ | ~~✅ DONE~~ | ~~Full HMAC-SHA256 (`NetworkSecurity.h`), session key exchange, 64-bit sliding replay window, constant-time verify, per-connection tracking. BCryptGenRandom (Windows) / /dev/urandom (POSIX) for key generation.~~ |
 
@@ -1462,4 +1462,4 @@ These are documented limitations that require larger feature work. Sorted by pri
 | ~~Particle Graph renderer inspector~~ | ~~✅ DONE — Billboard: texture, mode, sort, blend, size, color. Mesh: path, texture, scale, alignment, color. Trail: width, texture mode, vertex distance, start/end color. 15 new fields, compiler mapping, save/load serialization.~~ |
 | ~~Flash Timeline SWF sprite import~~ | ~~✅ DONE — BuildTimeline() is 267 lines, production-ready. Frame-by-frame property tracks, removal keyframes, color transforms, frame labels.~~ |
 
-*Last updated: 2026-02-14 — Session 10: Final 7 roadmap items completed. DoF/Tilt-Shift GPU shader (16-tap Poisson + 25-tap blur, depth barriers, SPIR-V embedded). InteractiveWater wired (PlayMode, Player, inspector, serialization). VSync toggle enabled (deferred swapchain recreation). Apply to Prefab implemented. Shader Graph Parallax POM + Flipbook UV offset. Particle Graph renderer inspector (15 fields). ASTC weighted+dithered quality improvement. All 6 targets build clean.*
+*Last updated: 2026-02-14 — Session 19: 6 features completed. Reduced motion for UI (cursor blink, tooltips, switch access pulse). HTTP Client libcurl on Linux/Mac (cross-platform WinHTTP + libcurl). Flash SharedObject persistence (TieredSaveSystem meta-progression, 5 AS bindings). SH Probe baking UI (per-probe list, viewport wireframes). Generate Forest UI (4 presets in Procedural panel). Gamepad editor navigation (4 radial dials, DPad hierarchy, stick camera). All 6 targets build clean.*

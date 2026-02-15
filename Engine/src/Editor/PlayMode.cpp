@@ -8,6 +8,7 @@
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/FlashAPIShim.h"
 #include "Enjin/Debug/Profiler.h"
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/Accessibility/AlternativeInput.h"
@@ -145,6 +146,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsRenderSystem(m_RenderSystem);
     Scripting::SetBindingsPostProcessing(m_PostProcessing);
     Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
+    Scripting::SetFlashShimSaveSystem(&m_TieredSaveSystem);
     Scripting::SetBindingsQuestSystem(&m_QuestSystem);
     Scripting::SetBindingsCinematicSystem(&m_CinematicSystem);
     Scripting::SetBindingsObjectPool(&m_ObjectPool);
@@ -375,6 +377,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsAnnouncer(nullptr);
     Scripting::SetBindingsAccessibilitySettings(nullptr);
     Scripting::SetBindingsSaveSystem(nullptr);
+    Scripting::SetFlashShimSaveSystem(nullptr);
     Scripting::SetBindingsQuestSystem(nullptr);
     Scripting::SetBindingsCinematicSystem(nullptr);
     Scripting::SetBindingsObjectPool(nullptr);

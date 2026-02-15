@@ -127,6 +127,7 @@ public:
     void SetAudioIndicators(Accessibility::AudioVisualIndicatorSystem* indicators) { m_AudioIndicators = indicators; }
     void SetContentWarnings(Accessibility::ContentWarningSystem* warnings) { m_ContentWarnings = warnings; }
     void SetUISystem(GUI::UISystem* uiSystem) { m_UISystem = uiSystem; }
+    GUI::UISystem* GetUISystem() const { return m_UISystem; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
     void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }

@@ -85,14 +85,18 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
     std::sort(canvases.begin(), canvases.end(),
         [](const CanvasEntry& a, const CanvasEntry& b) { return a.sortOrder < b.sortOrder; });
 
-    // Update cursor blink timer
-    m_CursorBlinkTimer += deltaTime;
-    if (m_CursorBlinkTimer >= 1.0f) m_CursorBlinkTimer -= 1.0f;
-    m_CursorVisible = m_CursorBlinkTimer < 0.5f;
+    // Update cursor blink timer (skip animation when reduced motion is on)
+    if (m_ReducedMotion) {
+        m_CursorVisible = true;  // Always visible — no blinking
+    } else {
+        m_CursorBlinkTimer += deltaTime;
+        if (m_CursorBlinkTimer >= 1.0f) m_CursorBlinkTimer -= 1.0f;
+        m_CursorVisible = m_CursorBlinkTimer < 0.5f;
+    }
 
-    // Update tooltip hover timer
+    // Update tooltip hover timer (instant when reduced motion)
     if (m_TooltipHoverElementId != 0) {
-        m_TooltipHoverTimer += deltaTime;
+        m_TooltipHoverTimer += m_ReducedMotion ? 999.0f : deltaTime;
     }
 
     for (auto& entry : canvases) {
@@ -1942,8 +1946,12 @@ void UISystem::ProcessFocusNavigation(UICanvasComponent& canvas, f32 deltaTime) 
 
     // Switch access auto-scan mode: cycle focus automatically, single input to select
     if (m_SwitchAccessEnabled) {
-        m_SwitchPulsePhase += deltaTime * 4.0f;
-        if (m_SwitchPulsePhase > 6.2832f) m_SwitchPulsePhase -= 6.2832f;
+        if (!m_ReducedMotion) {
+            m_SwitchPulsePhase += deltaTime * 4.0f;
+            if (m_SwitchPulsePhase > 6.2832f) m_SwitchPulsePhase -= 6.2832f;
+        } else {
+            m_SwitchPulsePhase = 0.0f;  // Static appearance
+        }
 
         m_SwitchScanTimer += deltaTime;
         if (m_SwitchScanTimer >= m_SwitchScanSpeed) {
@@ -2170,7 +2178,8 @@ void UISystem::RenderScanIndicator(const UIElement& element, const UITheme& them
     f32 radius = ResolveFloat(element.style.borderRadius, theme.borderRadius) + 3.0f;
 
     // Animated pulse: border thickness oscillates between 2.5 and 4.5
-    f32 pulse = 0.5f + 0.5f * std::sin(m_SwitchPulsePhase);
+    // (static when reduced motion is enabled)
+    f32 pulse = m_ReducedMotion ? 0.5f : (0.5f + 0.5f * std::sin(m_SwitchPulsePhase));
     f32 thickness = 2.5f + pulse * 2.0f;
 
     // Use a bright scanning color (cyan-blue)

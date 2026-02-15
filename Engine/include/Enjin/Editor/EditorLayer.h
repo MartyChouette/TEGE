@@ -563,6 +563,40 @@ private:
     // Physics debug visualization
     bool m_ShowColliderWireframes = false;
 
+    // SH Light Probe visualization
+    bool m_ShowSHProbes = false;
+    bool m_ShowSHGridBounds = false;
+
+    // --- Gamepad Editor Navigation ---
+    struct RadialMenuItem {
+        const char* label;
+        const char* icon; // Short bracket-tag icon
+        i32 actionId;     // Mapped to an action enum
+    };
+    enum class RadialMenuType : u8 { None = 0, Tools, File, Play, Create };
+    enum class GamepadAction : u8 {
+        None = 0,
+        // Tools radial (RB)
+        Translate, Rotate, Scale, ToggleSpace, FocusSelection, ToggleGrid,
+        // File radial (LB)
+        Save, Undo, Redo, Duplicate, Delete, CommandPalette,
+        // Play radial (Start)
+        PlayToggle, Pause, Stop,
+        // Create radial (Y)
+        CreateEmpty, CreateCube, CreateLight, CreateCamera, CreateSprite
+    };
+    bool m_GamepadEditorEnabled = true;
+    RadialMenuType m_RadialMenuActive = RadialMenuType::None;
+    f32 m_RadialMenuAngle = 0.0f;     // Current stick angle
+    i32 m_RadialMenuHovered = -1;     // Hovered sector index
+    f32 m_RadialMenuOpenTime = 0.0f;  // For open animation
+    Math::Vector2 m_RadialMenuCenter; // Screen position
+
+    void UpdateGamepadEditor(f32 deltaTime);
+    void DrawRadialMenu(RadialMenuType type);
+    void ExecuteGamepadAction(GamepadAction action);
+    void HandleGamepadViewportNavigation(f32 deltaTime);
+
     // Grid settings
     bool m_ShowGrid = true;
     f32 m_GridSize = 200.0f;

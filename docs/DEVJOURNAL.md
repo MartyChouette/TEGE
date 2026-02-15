@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-02-14 (Session 19)
+
+### 6 Features Implemented
+
+**1. Reduced Motion for UI**
+UISystem now honors `m_ReducedMotion` flag: cursor blink disabled (always visible), instant tooltips (no fade delay), switch access pulse/scan indicator made static. Wired via `PlayMode::GetUISystem()` setter from EditorLayer.
+
+**2. HTTP Client libcurl on Linux/Mac**
+Full libcurl implementation in HTTPClient.cpp (`#elif defined(ENJIN_HAS_CURL)`) with Get/Post/PostForm, 16MB response cap, percent encoding. CMake changed to include macOS in UNIX branch. Cross-platform HTTP: WinHTTP on Windows, libcurl on Linux/macOS.
+
+**3. Flash SharedObject to TieredSaveSystem**
+SharedObject now persists to meta-progression via TieredSaveSystem using `so_{name}_{key}` namespacing. 5 new AngelScript bindings: `Flash_SO_Set`, `Flash_SO_Get`, `Flash_SO_Has`, `Flash_SO_Flush`, `Flash_SO_Clear`. AS3 transpiler mappings fixed. Wired in PlayMode + Player.
+
+**4. SH Probe Baking UI**
+Full editor tool in Rendering panel: per-probe list with bake status colors ([BAKED] green / [EMPTY] red), individual Bake/Delete buttons, L0 irradiance preview swatch, manual probe placement (DragFloat3 + Add button). Viewport wireframe visualization: green spheres for baked probes, red spheres for empty, yellow grid bounds AABB.
+
+**5. Generate Forest UI**
+One-click forest generation in Procedural panel: 4 forest types (Mixed, Dense Conifer, Deciduous Park, Sparse Savanna), area radius slider, tree/shrub/grass density controls. Creates Tree+Shrub+Grass volume entities with appropriate settings per preset.
+
+**6. Gamepad Editor Navigation**
+Full gamepad support for the editor: 4 radial dial menus (RB = Tools with translate/rotate/scale/local-world, LB = File with new/open/save/save-as, Start = Play with play/pause/stop, Y = Create with entity types), DPad hierarchy navigation (up/down to traverse, right to expand, left to collapse), left stick camera movement, right/left triggers for vertical camera, X = delete, B = deselect. Toggle in View menu.
+
+Files changed: ~12 across Engine/src, Engine/include, docs
+
+---
+
 ## 2026-02-14 (Session 18)
 
 ### 7 Remaining Roadmap Items Completed

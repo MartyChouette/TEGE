@@ -1132,6 +1132,11 @@ void EditorLayer::InitializePlayMode() {
             ctrlSys->SetReducedMotion(m_EditorSettings.reducedMotion);
         }
 
+        // Wire reduced motion to UISystem
+        if (m_PlayMode.GetUISystem()) {
+            m_PlayMode.GetUISystem()->SetReducedMotion(m_EditorSettings.reducedMotion);
+        }
+
         // Apply sprint/crouch toggle modes from settings
         if (m_EditorSettings.sprintMode == 1) {
             m_InputMap.SetActionMode(InputSystem::GameAction::Sprint, InputSystem::ActionMode::Toggle);
@@ -1423,6 +1428,9 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Update alternative input devices
     m_AlternativeInput.Update(deltaTime);
+
+    // Update gamepad editor navigation
+    UpdateGamepadEditor(deltaTime);
 
     // Focus mode toggle (F11) and exit (Escape)
     // F11 toggles between editor view and fullscreen game view while playing
@@ -2806,12 +2814,71 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
                     if (j) drawJointLine(bgDrawList, j->entityA, j->entityB, j->anchorA, j->anchorB, IM_COL32(50, 100, 255, 180));
                 }
             }
+
+            // --- SH Light Probe visualization ---
+            if (m_ShowSHProbes || m_ShowSHGridBounds) {
+                auto* shLighting = m_RenderSystem->GetSHLighting();
+                if (shLighting) {
+                    // Wire circle helper for probe spheres
+                    auto drawProbeCircle = [&](ImDrawList* dl, const Math::Vector3& center, f32 radius,
+                                              const Math::Vector3& axisU, const Math::Vector3& axisV,
+                                              ImU32 color, f32 thickness, i32 segments = 16) {
+                        constexpr f32 PI2 = 6.2831853f;
+                        ImVec2 prev;
+                        bool prevValid = false;
+                        for (i32 i = 0; i <= segments; ++i) {
+                            f32 angle = PI2 * f32(i) / f32(segments);
+                            Math::Vector3 p = center + axisU * (std::cos(angle) * radius) + axisV * (std::sin(angle) * radius);
+                            ImVec2 sp;
+                            bool valid = worldToScreen(p, sp);
+                            if (valid && prevValid) dl->AddLine(prev, sp, color, thickness);
+                            prev = sp;
+                            prevValid = valid;
+                        }
+                    };
+
+                    if (m_ShowSHProbes) {
+                        const f32 probeRadius = 0.3f;
+                        for (const auto& probe : shLighting->GetProbes()) {
+                            // Green if baked, red if empty
+                            ImU32 color = probe.baked ? IM_COL32(50, 220, 50, 180) : IM_COL32(220, 50, 50, 180);
+                            f32 thick = 1.5f;
+                            // Draw 3 orthogonal circles
+                            drawProbeCircle(bgDrawList, probe.position, probeRadius, {1,0,0}, {0,1,0}, color, thick);
+                            drawProbeCircle(bgDrawList, probe.position, probeRadius, {1,0,0}, {0,0,1}, color, thick);
+                            drawProbeCircle(bgDrawList, probe.position, probeRadius, {0,1,0}, {0,0,1}, color, thick);
+
+                            // Draw probe ID label
+                            ImVec2 labelPos;
+                            if (worldToScreen(probe.position + Math::Vector3(0, probeRadius + 0.1f, 0), labelPos)) {
+                                char idBuf[16];
+                                snprintf(idBuf, sizeof(idBuf), "P%u", probe.id);
+                                bgDrawList->AddText(ImVec2(labelPos.x - 8, labelPos.y - 8), color, idBuf);
+                            }
+                        }
+                    }
+
+                    if (m_ShowSHGridBounds) {
+                        const auto& grid = shLighting->GetGrid();
+                        Math::Vector3 center = (grid.boundsMin + grid.boundsMax) * 0.5f;
+                        Math::Vector3 halfExt = (grid.boundsMax - grid.boundsMin) * 0.5f;
+                        if (halfExt.x > 0.001f || halfExt.y > 0.001f || halfExt.z > 0.001f) {
+                            drawWireBox(bgDrawList, center, halfExt, IM_COL32(255, 200, 50, 120), 1.0f);
+                        }
+                    }
+                }
+            }
         }
     }
 
     // Stats overlay
     if (m_ShowStatsOverlay) {
         DrawStatsOverlay();
+    }
+
+    // Gamepad radial menu overlay
+    if (m_RadialMenuActive != RadialMenuType::None) {
+        DrawRadialMenu(m_RadialMenuActive);
     }
 
     // Demo window (for testing)
@@ -3420,6 +3487,8 @@ void EditorLayer::DrawMenuBar() {
             }
             ImGui::Separator();
             ImGui::MenuItem("Show Colliders", nullptr, &m_ShowColliderWireframes);
+            ImGui::MenuItem("Gamepad Editor", nullptr, &m_GamepadEditorEnabled);
+            ImGui::SetItemTooltip("RB=Tools, LB=File, Start=Play, Y=Create (radial menus)");
             ImGui::MenuItem("Stats Overlay", nullptr, &m_ShowStatsOverlay);
             ImGui::MenuItem("ImGui Demo", nullptr, &m_ShowDemoWindow);
             ImGui::Separator();
@@ -10552,8 +10621,16 @@ void EditorLayer::DrawRenderingPanel() {
         if (ImGui::CollapsingHeader("Light Probes")) {
             if (auto* shLighting = m_RenderSystem->GetSHLighting()) {
                 auto& grid = shLighting->GetGrid();
+                u32 probeCount = shLighting->GetProbeCount();
+                u32 bakedCount = 0;
+                for (auto& p : shLighting->GetProbes()) { if (p.baked) ++bakedCount; }
 
-                ImGui::Text("Probes: %u", shLighting->GetProbeCount());
+                ImGui::Text("Probes: %u (%u baked)", probeCount, bakedCount);
+
+                // Visualization toggle
+                ImGui::Checkbox("Show Probes in Viewport##SHViz", &m_ShowSHProbes);
+                ImGui::SameLine();
+                ImGui::Checkbox("Show Grid Bounds##SHGrid", &m_ShowSHGridBounds);
 
                 if (ImGui::TreeNode("Grid Configuration")) {
                     f32 boundsMin[3] = { grid.boundsMin.x, grid.boundsMin.y, grid.boundsMin.z };
@@ -10584,6 +10661,58 @@ void EditorLayer::DrawRenderingPanel() {
                         shLighting->Clear();
                     }
 
+                    ImGui::TreePop();
+                }
+
+                // Per-probe list
+                if (probeCount > 0 && ImGui::TreeNode("Probe List")) {
+                    for (auto& probe : shLighting->GetProbes()) {
+                        ImGui::PushID(static_cast<int>(probe.id));
+                        ImVec4 statusColor = probe.baked
+                            ? ImVec4(0.2f, 0.8f, 0.3f, 1.0f)
+                            : ImVec4(0.8f, 0.3f, 0.2f, 1.0f);
+                        ImGui::TextColored(statusColor, "%s", probe.baked ? "[BAKED]" : "[EMPTY]");
+                        ImGui::SameLine();
+                        ImGui::Text("Probe %u (%.1f, %.1f, %.1f)", probe.id,
+                            probe.position.x, probe.position.y, probe.position.z);
+
+                        // Per-probe bake button
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Bake")) {
+                            shLighting->BakeProbe(probe.id, m_World);
+                        }
+                        ImGui::SameLine();
+                        if (ImGui::SmallButton("Delete")) {
+                            shLighting->RemoveProbe(probe.id);
+                            ImGui::PopID();
+                            break; // Iterator invalidated
+                        }
+
+                        // Show irradiance preview for baked probes
+                        if (probe.baked) {
+                            f32 l0r = probe.coefficientsR[0] * 0.282095f;
+                            f32 l0g = probe.coefficientsG[0] * 0.282095f;
+                            f32 l0b = probe.coefficientsB[0] * 0.282095f;
+                            ImGui::SameLine();
+                            ImGui::ColorButton("##irrad", ImVec4(
+                                std::clamp(l0r, 0.0f, 1.0f),
+                                std::clamp(l0g, 0.0f, 1.0f),
+                                std::clamp(l0b, 0.0f, 1.0f), 1.0f),
+                                ImGuiColorEditFlags_NoTooltip | ImGuiColorEditFlags_NoPicker,
+                                ImVec2(14, 14));
+                        }
+                        ImGui::PopID();
+                    }
+                    ImGui::TreePop();
+                }
+
+                // Manual probe placement
+                if (ImGui::TreeNode("Add Probe")) {
+                    static f32 newProbePos[3] = { 0.0f, 1.0f, 0.0f };
+                    ImGui::DragFloat3("Position##NewProbe", newProbePos, 0.1f);
+                    if (ImGui::Button("Add Probe at Position")) {
+                        shLighting->AddProbe(Math::Vector3(newProbePos[0], newProbePos[1], newProbePos[2]));
+                    }
                     ImGui::TreePop();
                 }
             } else {
@@ -33937,6 +34066,105 @@ void EditorLayer::DrawProceduralGenPanel() {
         }
     }
 
+    // --- One-Click Forest Generation ---
+    ImGui::Separator();
+    if (ImGui::CollapsingHeader("Generate Forest", ImGuiTreeNodeFlags_DefaultOpen)) {
+        static i32 forestType = 0; // 0=Mixed, 1=Dense Conifer, 2=Deciduous, 3=Sparse Savanna
+        static f32 forestAreaHalf = 30.0f;
+        static u32 treeDensity = 120;
+        static u32 shrubDensity = 200;
+        static u32 grassDensity = 8000;
+        static bool includeShrubs = true;
+        static bool includeGrass = true;
+
+        const char* forestTypes[] = { "Mixed Forest", "Dense Conifer", "Deciduous Park", "Sparse Savanna" };
+        ImGui::Combo("Forest Type", &forestType, forestTypes, 4);
+        ImGui::DragFloat("Area Radius", &forestAreaHalf, 1.0f, 5.0f, 200.0f, "%.0f m");
+        ImGui::DragScalar("Tree Density", ImGuiDataType_U32, &treeDensity, 5.0f);
+        ImGui::Checkbox("Include Shrubs", &includeShrubs);
+        if (includeShrubs)
+            ImGui::DragScalar("Shrub Density", ImGuiDataType_U32, &shrubDensity, 10.0f);
+        ImGui::Checkbox("Include Grass", &includeGrass);
+        if (includeGrass)
+            ImGui::DragScalar("Grass Density", ImGuiDataType_U32, &grassDensity, 100.0f);
+
+        if (ImGui::Button("Generate Forest", ImVec2(-1, 32))) {
+            if (m_World) {
+                // Create tree volume entity
+                auto treeEnt = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(treeEnt, ECS::NameComponent{"Forest Trees"});
+                auto& treeTf = m_World->AddComponent<ECS::TransformComponent>(treeEnt);
+                treeTf.position = Math::Vector3(0, 0, 0);
+                auto& tree = m_World->AddComponent<ECS::TreeVolumeComponent>(treeEnt);
+                tree.halfExtents = Math::Vector3(forestAreaHalf, 0, forestAreaHalf);
+                tree.density = treeDensity;
+                switch (forestType) {
+                    case 1: // Dense Conifer
+                        tree.treeType = ECS::TreeType::Evergreen;
+                        tree.trunkHeight = 3.0f;
+                        tree.canopyRadius = 0.8f;
+                        tree.canopyBaseColor = Math::Vector3(0.05f, 0.25f, 0.08f);
+                        tree.canopyTipColor = Math::Vector3(0.08f, 0.35f, 0.1f);
+                        break;
+                    case 2: // Deciduous Park
+                        tree.treeType = ECS::TreeType::Deciduous;
+                        tree.trunkHeight = 2.5f;
+                        tree.canopyRadius = 1.5f;
+                        tree.canopyBaseColor = Math::Vector3(0.15f, 0.45f, 0.1f);
+                        tree.canopyTipColor = Math::Vector3(0.3f, 0.6f, 0.2f);
+                        tree.windSwayStrength = 0.2f;
+                        break;
+                    case 3: // Sparse Savanna
+                        tree.treeType = ECS::TreeType::Deciduous;
+                        tree.trunkHeight = 3.5f;
+                        tree.trunkWidth = 0.2f;
+                        tree.canopyRadius = 2.0f;
+                        tree.canopyOffset = 2.5f;
+                        tree.canopyBaseColor = Math::Vector3(0.25f, 0.4f, 0.1f);
+                        tree.canopyTipColor = Math::Vector3(0.35f, 0.55f, 0.15f);
+                        break;
+                    default: break; // Mixed uses defaults
+                }
+
+                // Shrub volume
+                if (includeShrubs) {
+                    auto shrubEnt = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(shrubEnt, ECS::NameComponent{"Forest Shrubs"});
+                    auto& shrubTf = m_World->AddComponent<ECS::TransformComponent>(shrubEnt);
+                    shrubTf.position = Math::Vector3(0, 0, 0);
+                    auto& shrub = m_World->AddComponent<ECS::ShrubVolumeComponent>(shrubEnt);
+                    shrub.halfExtents = Math::Vector3(forestAreaHalf, 0, forestAreaHalf);
+                    shrub.density = shrubDensity;
+                    if (forestType == 3) { // Savanna: sparse low brush
+                        shrub.shrubHeight = 0.3f;
+                        shrub.baseColor = Math::Vector3(0.3f, 0.4f, 0.15f);
+                        shrub.tipColor = Math::Vector3(0.5f, 0.55f, 0.25f);
+                    }
+                }
+
+                // Grass volume
+                if (includeGrass) {
+                    auto grassEnt = m_World->CreateEntity();
+                    m_World->AddComponent<ECS::NameComponent>(grassEnt, ECS::NameComponent{"Forest Grass"});
+                    auto& grassTf = m_World->AddComponent<ECS::TransformComponent>(grassEnt);
+                    grassTf.position = Math::Vector3(0, 0, 0);
+                    auto& grass = m_World->AddComponent<ECS::GrassVolumeComponent>(grassEnt);
+                    grass.halfExtents = Math::Vector3(forestAreaHalf, 0, forestAreaHalf);
+                    grass.density = grassDensity;
+                    if (forestType == 3) { // Savanna: dry grass
+                        grass.baseColor = Math::Vector3(0.4f, 0.45f, 0.15f);
+                        grass.tipColor = Math::Vector3(0.6f, 0.55f, 0.25f);
+                        grass.bladeHeight = 0.5f;
+                    }
+                }
+
+                ENJIN_LOG_INFO(Editor, "Generated forest: %u trees, %u shrubs, %u grass blades over %.0f m area",
+                    treeDensity, includeShrubs ? shrubDensity : 0, includeGrass ? grassDensity : 0, forestAreaHalf * 2.0f);
+            }
+        }
+        ImGui::SetItemTooltip("Creates Tree + Shrub + Grass volume entities centered at origin");
+    }
+
     // Preview canvas (256x256 max display)
     ImGui::Separator();
     ImGui::Text("Preview:");
@@ -33985,6 +34213,334 @@ void EditorLayer::DrawProceduralGenPanel() {
     }
 
     ImGui::End();
+}
+
+// --- Gamepad Editor Navigation ---
+
+void EditorLayer::UpdateGamepadEditor(f32 deltaTime) {
+    if (!m_GamepadEditorEnabled || !Input::IsGamepadConnected(0)) return;
+
+    // Don't process editor gamepad when game is playing and consuming input
+    if (m_PlayMode.IsPlaying() && !m_PlayMode.IsPaused()) return;
+
+    // Radial menu triggers (hold to open, release to select)
+    // RB = Tools, LB = File, Start = Play, Y = Create
+    auto checkRadialTrigger = [&](GamepadButton btn, RadialMenuType type) {
+        if (Input::IsGamepadButtonPressed(btn, 0)) {
+            m_RadialMenuActive = type;
+            m_RadialMenuOpenTime = 0.0f;
+            m_RadialMenuHovered = -1;
+            auto extent = m_Renderer->GetSwapchainExtent();
+            m_RadialMenuCenter = Math::Vector2(extent.width * 0.5f, extent.height * 0.5f);
+        }
+        if (m_RadialMenuActive == type && Input::IsGamepadButtonReleased(btn, 0)) {
+            if (m_RadialMenuHovered >= 0) {
+                // Execute selected action
+                DrawRadialMenu(type); // Ensure action is resolved
+            }
+            m_RadialMenuActive = RadialMenuType::None;
+        }
+    };
+
+    checkRadialTrigger(GamepadButton::RightBumper, RadialMenuType::Tools);
+    checkRadialTrigger(GamepadButton::LeftBumper, RadialMenuType::File);
+    checkRadialTrigger(GamepadButton::Start, RadialMenuType::Play);
+    checkRadialTrigger(GamepadButton::Y, RadialMenuType::Create);
+
+    if (m_RadialMenuActive != RadialMenuType::None) {
+        m_RadialMenuOpenTime += deltaTime;
+        // Update stick angle for sector selection
+        auto stick = Input::GetGamepadRightStick(0);
+        f32 mag = std::sqrt(stick.x * stick.x + stick.y * stick.y);
+        if (mag > 0.3f) {
+            m_RadialMenuAngle = std::atan2(stick.y, stick.x);
+        } else {
+            m_RadialMenuHovered = -1; // Stick centered = no selection
+        }
+    }
+
+    // Quick actions (no radial menu needed)
+    // A = Select/confirm, B = Cancel/deselect, X = Delete
+    if (m_RadialMenuActive == RadialMenuType::None) {
+        if (Input::IsGamepadButtonPressed(GamepadButton::B, 0)) {
+            if (!m_SelectedEntities.empty()) ClearSelection();
+        }
+        if (Input::IsGamepadButtonPressed(GamepadButton::X, 0)) {
+            ExecuteGamepadAction(GamepadAction::Delete);
+        }
+
+        // DPad: Navigate hierarchy
+        if (Input::IsGamepadButtonPressed(GamepadButton::DPadUp, 0) ||
+            Input::IsGamepadButtonPressed(GamepadButton::DPadDown, 0)) {
+            // Cycle through entities in hierarchy
+            auto entities = m_World ? m_World->GetEntitiesWithComponent<ECS::NameComponent>() : std::vector<ECS::Entity>{};
+            if (!entities.empty()) {
+                i32 currentIdx = -1;
+                for (i32 i = 0; i < static_cast<i32>(entities.size()); ++i) {
+                    if (entities[i] == m_PrimarySelected) { currentIdx = i; break; }
+                }
+                bool down = Input::IsGamepadButtonPressed(GamepadButton::DPadDown, 0);
+                i32 newIdx = currentIdx + (down ? 1 : -1);
+                if (newIdx < 0) newIdx = static_cast<i32>(entities.size()) - 1;
+                if (newIdx >= static_cast<i32>(entities.size())) newIdx = 0;
+                SelectEntity(entities[newIdx]);
+            }
+        }
+
+        // Left stick: Viewport camera navigation
+        HandleGamepadViewportNavigation(deltaTime);
+    }
+}
+
+void EditorLayer::HandleGamepadViewportNavigation(f32 deltaTime) {
+    if (!m_Camera) return;
+
+    auto leftStick = Input::GetGamepadLeftStick(0);
+    f32 lt = Input::GetGamepadLeftTrigger(0);
+    f32 rt = Input::GetGamepadRightTrigger(0);
+
+    // Left stick: Move camera (forward/back + strafe)
+    f32 moveSpeed = 10.0f * deltaTime;
+    if (Input::IsGamepadButtonDown(GamepadButton::LeftStick, 0)) moveSpeed *= 3.0f; // Sprint
+
+    if (std::abs(leftStick.x) > 0.01f || std::abs(leftStick.y) > 0.01f) {
+        auto forward = m_Camera->GetForward();
+        auto right = m_Camera->GetRight();
+        auto movement = right * (leftStick.x * moveSpeed) - forward * (leftStick.y * moveSpeed);
+        m_Camera->SetPosition(m_Camera->GetPosition() + movement);
+    }
+
+    // Triggers: Move up/down
+    f32 vertical = (rt - lt) * moveSpeed;
+    if (std::abs(vertical) > 0.01f) {
+        auto pos = m_Camera->GetPosition();
+        pos.y += vertical;
+        m_Camera->SetPosition(pos);
+    }
+}
+
+void EditorLayer::DrawRadialMenu(RadialMenuType type) {
+    if (type == RadialMenuType::None) return;
+
+    // Define menu items per type
+    struct RadialItem {
+        const char* label;
+        const char* icon;
+        GamepadAction action;
+    };
+
+    std::vector<RadialItem> items;
+    switch (type) {
+        case RadialMenuType::Tools:
+            items = {
+                {"Translate", "[T]", GamepadAction::Translate},
+                {"Rotate", "[R]", GamepadAction::Rotate},
+                {"Scale", "[S]", GamepadAction::Scale},
+                {"Space", "[W/L]", GamepadAction::ToggleSpace},
+                {"Focus", "[F]", GamepadAction::FocusSelection},
+                {"Grid", "[G]", GamepadAction::ToggleGrid}
+            };
+            break;
+        case RadialMenuType::File:
+            items = {
+                {"Save", "[Sv]", GamepadAction::Save},
+                {"Undo", "[Un]", GamepadAction::Undo},
+                {"Redo", "[Re]", GamepadAction::Redo},
+                {"Duplicate", "[Dp]", GamepadAction::Duplicate},
+                {"Delete", "[Del]", GamepadAction::Delete},
+                {"Palette", "[Cmd]", GamepadAction::CommandPalette}
+            };
+            break;
+        case RadialMenuType::Play:
+            items = {
+                {"Play/Stop", "[>]", GamepadAction::PlayToggle},
+                {"Pause", "[||]", GamepadAction::Pause},
+                {"Stop", "[X]", GamepadAction::Stop}
+            };
+            break;
+        case RadialMenuType::Create:
+            items = {
+                {"Empty", "[E]", GamepadAction::CreateEmpty},
+                {"Cube", "[C]", GamepadAction::CreateCube},
+                {"Light", "[L]", GamepadAction::CreateLight},
+                {"Camera", "[Cam]", GamepadAction::CreateCamera},
+                {"Sprite", "[S]", GamepadAction::CreateSprite}
+            };
+            break;
+        default: return;
+    }
+
+    if (items.empty()) return;
+
+    // Draw the radial menu using ImGui overlay
+    ImDrawList* dl = ImGui::GetForegroundDrawList();
+    ImVec2 center(m_RadialMenuCenter.x, m_RadialMenuCenter.y);
+    f32 innerRadius = 50.0f;
+    f32 outerRadius = 140.0f;
+    f32 animScale = std::min(1.0f, m_RadialMenuOpenTime * 5.0f); // Quick pop-in
+    outerRadius *= animScale;
+    innerRadius *= animScale;
+
+    i32 sectorCount = static_cast<i32>(items.size());
+    f32 sectorAngle = 6.2831853f / sectorCount;
+
+    // Background circle
+    dl->AddCircleFilled(center, outerRadius + 4, IM_COL32(0, 0, 0, 160), 48);
+    dl->AddCircle(center, outerRadius + 4, IM_COL32(200, 200, 200, 120), 48, 2.0f);
+    dl->AddCircleFilled(center, innerRadius - 2, IM_COL32(30, 30, 30, 200), 32);
+
+    // Determine hovered sector from stick angle
+    auto stick = Input::GetGamepadRightStick(0);
+    f32 stickMag = std::sqrt(stick.x * stick.x + stick.y * stick.y);
+    m_RadialMenuHovered = -1;
+    if (stickMag > 0.3f) {
+        f32 angle = std::atan2(stick.y, stick.x);
+        if (angle < 0) angle += 6.2831853f;
+        // Offset so first sector is centered at top (sector 0 starts at -PI/2)
+        f32 offsetAngle = angle + 1.5707963f; // +PI/2 to rotate menu so top = first item
+        if (offsetAngle > 6.2831853f) offsetAngle -= 6.2831853f;
+        m_RadialMenuHovered = static_cast<i32>(offsetAngle / sectorAngle) % sectorCount;
+    }
+
+    // Draw sectors
+    for (i32 i = 0; i < sectorCount; ++i) {
+        f32 startAngle = -1.5707963f + i * sectorAngle; // Start from top
+        f32 endAngle = startAngle + sectorAngle;
+        f32 midAngle = startAngle + sectorAngle * 0.5f;
+        bool hovered = (i == m_RadialMenuHovered);
+
+        // Sector fill
+        ImU32 sectorColor = hovered ? IM_COL32(80, 140, 220, 180) : IM_COL32(50, 55, 65, 150);
+        constexpr i32 arcSegs = 16;
+        ImVec2 pts[arcSegs * 2 + 2];
+        for (i32 s = 0; s <= arcSegs; ++s) {
+            f32 a = startAngle + (endAngle - startAngle) * s / arcSegs;
+            pts[s] = ImVec2(center.x + std::cos(a) * innerRadius, center.y + std::sin(a) * innerRadius);
+            pts[arcSegs * 2 + 1 - s] = ImVec2(center.x + std::cos(a) * outerRadius, center.y + std::sin(a) * outerRadius);
+        }
+        dl->AddConvexPolyFilled(pts, arcSegs * 2 + 2, sectorColor);
+
+        // Sector border lines
+        ImVec2 innerPt(center.x + std::cos(startAngle) * innerRadius, center.y + std::sin(startAngle) * innerRadius);
+        ImVec2 outerPt(center.x + std::cos(startAngle) * outerRadius, center.y + std::sin(startAngle) * outerRadius);
+        dl->AddLine(innerPt, outerPt, IM_COL32(100, 100, 100, 120), 1.0f);
+
+        // Label text centered in sector
+        f32 labelDist = (innerRadius + outerRadius) * 0.5f;
+        ImVec2 labelPos(center.x + std::cos(midAngle) * labelDist, center.y + std::sin(midAngle) * labelDist);
+        ImU32 textColor = hovered ? IM_COL32(255, 255, 255, 255) : IM_COL32(200, 200, 200, 220);
+        auto textSize = ImGui::CalcTextSize(items[i].label);
+        dl->AddText(ImVec2(labelPos.x - textSize.x * 0.5f, labelPos.y - textSize.y * 0.5f), textColor, items[i].label);
+    }
+
+    // Center label showing hovered action
+    if (m_RadialMenuHovered >= 0 && m_RadialMenuHovered < sectorCount) {
+        auto textSize = ImGui::CalcTextSize(items[m_RadialMenuHovered].icon);
+        dl->AddText(ImVec2(center.x - textSize.x * 0.5f, center.y - textSize.y * 0.5f),
+                    IM_COL32(255, 255, 255, 255), items[m_RadialMenuHovered].icon);
+    }
+
+    // Execute on release (handled in UpdateGamepadEditor via release detection)
+    // But also execute if A is pressed while menu is open
+    if (Input::IsGamepadButtonPressed(GamepadButton::A, 0) && m_RadialMenuHovered >= 0) {
+        ExecuteGamepadAction(items[m_RadialMenuHovered].action);
+        m_RadialMenuActive = RadialMenuType::None;
+    }
+}
+
+void EditorLayer::ExecuteGamepadAction(GamepadAction action) {
+    switch (action) {
+        // Tools
+        case GamepadAction::Translate:    m_GizmoOperation = GizmoOperation::Translate; break;
+        case GamepadAction::Rotate:       m_GizmoOperation = GizmoOperation::Rotate; break;
+        case GamepadAction::Scale:        m_GizmoOperation = GizmoOperation::Scale; break;
+        case GamepadAction::ToggleSpace:
+            m_GizmoSpace = (m_GizmoSpace == GizmoSpace::World) ? GizmoSpace::Local : GizmoSpace::World;
+            break;
+        case GamepadAction::FocusSelection:
+            if (!m_SelectedEntities.empty()) FocusOnSelection();
+            break;
+        case GamepadAction::ToggleGrid:   m_ShowGrid = !m_ShowGrid; break;
+
+        // File
+        case GamepadAction::Save:
+            if (!m_CurrentScenePath.empty()) SaveScene(m_CurrentScenePath);
+            break;
+        case GamepadAction::Undo:         m_UndoRedo.Undo(); break;
+        case GamepadAction::Redo:         m_UndoRedo.Redo(); break;
+        case GamepadAction::Duplicate:
+            if (!m_SelectedEntities.empty()) DuplicateSelectedEntities();
+            break;
+        case GamepadAction::Delete:
+            if (!m_SelectedEntities.empty()) DeleteSelectedEntities();
+            break;
+        case GamepadAction::CommandPalette:
+            m_CommandPalette.Toggle();
+            break;
+
+        // Play
+        case GamepadAction::PlayToggle:
+            if (m_PlayMode.IsStopped()) m_PlayMode.Play();
+            else m_PendingPlayStop = true;
+            break;
+        case GamepadAction::Pause:
+            if (m_PlayMode.IsPlaying()) m_PlayMode.Pause();
+            else if (m_PlayMode.IsPaused()) m_PlayMode.Resume();
+            break;
+        case GamepadAction::Stop:
+            if (!m_PlayMode.IsStopped()) m_PendingPlayStop = true;
+            break;
+
+        // Create
+        case GamepadAction::CreateEmpty:
+            if (m_World) {
+                auto e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, ECS::NameComponent{"New Entity"});
+                m_World->AddComponent<ECS::TransformComponent>(e);
+                SelectEntity(e);
+            }
+            break;
+        case GamepadAction::CreateCube:
+            if (m_World) {
+                auto e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, ECS::NameComponent{"Cube"});
+                m_World->AddComponent<ECS::TransformComponent>(e);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCube(1.0f));
+                m_World->AddComponent<ECS::MaterialComponent>(e);
+                SelectEntity(e);
+            }
+            break;
+        case GamepadAction::CreateLight:
+            if (m_World) {
+                auto e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, ECS::NameComponent{"Light"});
+                auto& tf = m_World->AddComponent<ECS::TransformComponent>(e);
+                tf.position = Math::Vector3(0, 5, 0);
+                m_World->AddComponent<ECS::LightComponent>(e);
+                SelectEntity(e);
+            }
+            break;
+        case GamepadAction::CreateCamera:
+            if (m_World) {
+                auto e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, ECS::NameComponent{"Camera"});
+                m_World->AddComponent<ECS::TransformComponent>(e);
+                m_World->AddComponent<ECS::CameraComponent>(e);
+                SelectEntity(e);
+            }
+            break;
+        case GamepadAction::CreateSprite:
+            if (m_World) {
+                auto e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, ECS::NameComponent{"Sprite"});
+                m_World->AddComponent<ECS::TransformComponent>(e);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad());
+                m_World->AddComponent<ECS::MaterialComponent>(e);
+                SelectEntity(e);
+            }
+            break;
+        default: break;
+    }
 }
 
 // --- Git Integration ---

@@ -13,6 +13,7 @@ namespace Enjin {
 
 namespace ECS { class World; }
 namespace Audio { class SimpleAudio; }
+namespace Gameplay { class TieredSaveSystem; }
 namespace Scripting {
 
 // ============================================================================
@@ -253,9 +254,10 @@ void Flash_ClearInterval(u32 id);
 // Register all Flash API shim types and functions into AngelScript
 ENJIN_API void RegisterFlashAPIBindings(asIScriptEngine* engine);
 
-// Set the world and audio pointers for the shim to use
+// Set the world, audio, and save system pointers for the shim to use
 void SetFlashShimWorld(ECS::World* world);
 void SetFlashShimAudio(Audio::SimpleAudio* audio);
+void SetFlashShimSaveSystem(Gameplay::TieredSaveSystem* sys);
 
 } // namespace Scripting
 } // namespace Enjin

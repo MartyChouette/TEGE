@@ -38,6 +38,7 @@
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scripting/FlashAPIShim.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Scripting/ScriptEvents.h"
 #include "Enjin/ECS/Systems/DialogueSystem.h"
@@ -444,6 +445,7 @@ public:
         Enjin::Scripting::SetBindingsPhysics(nullptr);
         Enjin::Scripting::SetBindingsDialogueSystem(nullptr);
         Enjin::Scripting::SetBindingsSaveSystem(nullptr);
+        Enjin::Scripting::SetFlashShimSaveSystem(nullptr);
         Enjin::Scripting::SetBindingsCoroutineScheduler(nullptr);
         Enjin::Scripting::SetBindingsEventBus(nullptr);
         Enjin::Scripting::SetBindingsScriptEngine(nullptr);
@@ -870,6 +872,7 @@ private:
         Enjin::Scripting::SetBindingsPhysics(m_Physics.get());
         Enjin::Scripting::SetBindingsDialogueSystem(&m_DialogueSystem);
         Enjin::Scripting::SetBindingsSaveSystem(&m_TieredSaveSystem);
+        Enjin::Scripting::SetFlashShimSaveSystem(&m_TieredSaveSystem);
         Enjin::Scripting::SetBindingsCoroutineScheduler(&m_CoroutineScheduler);
         Enjin::Scripting::SetBindingsEventBus(&m_ScriptEventBus);
         Enjin::Scripting::SetBindingsScriptEngine(&m_ScriptEngine);

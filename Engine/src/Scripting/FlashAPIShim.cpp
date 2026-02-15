@@ -6,6 +6,7 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/Hierarchy.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Animation/Timeline.h"
 #include "Enjin/Math/Quaternion.h"
 #include "Enjin/Platform/Input.h"
@@ -43,10 +44,13 @@ struct TimerEntry {
 };
 static std::unordered_map<u32, TimerEntry> s_Timers;
 
+static Gameplay::TieredSaveSystem* g_FlashSaveSystem = nullptr;
+
 void SetFlashShimWorld(ECS::World* /*world*/) {
     // World pointer is now shared via s_BindingsWorld (set by SetBindingsWorld)
 }
 void SetFlashShimAudio(Audio::SimpleAudio* audio) { g_FlashAudio = audio; }
+void SetFlashShimSaveSystem(Gameplay::TieredSaveSystem* sys) { g_FlashSaveSystem = sys; }
 
 // ============================================================================
 // Stage statics
@@ -237,9 +241,23 @@ void FlashSound::setPan(f32 p) {
 
 static std::unordered_map<std::string, FlashSharedObject> s_SharedObjects;
 
+// SharedObject key prefix for TieredSaveSystem meta-progression storage
+static std::string SOMetaKey(const std::string& soName, const std::string& key) {
+    return "so_" + soName + "_" + key;
+}
+
 void FlashSharedObject::flush() {
-    ENJIN_LOG_INFO(Script, "Flash SharedObject.flush: %s (%zu keys)",
-                   name.c_str(), data.size());
+    // Persist all in-memory data to TieredSaveSystem meta-progression
+    if (g_FlashSaveSystem) {
+        for (auto& [key, value] : data) {
+            g_FlashSaveSystem->SetMetaString(SOMetaKey(name, key), value);
+        }
+        g_FlashSaveSystem->SaveMeta();
+        ENJIN_LOG_INFO(Script, "Flash SharedObject.flush: %s (%zu keys persisted)",
+                       name.c_str(), data.size());
+    } else {
+        ENJIN_LOG_WARN(Script, "Flash SharedObject.flush: no save system (data in-memory only)");
+    }
 }
 
 void FlashSharedObject::clear() {
@@ -248,15 +266,30 @@ void FlashSharedObject::clear() {
 
 void FlashSharedObject::setProperty(const std::string& key, const std::string& value) {
     data[key] = value;
+    // Also write-through to save system if available
+    if (g_FlashSaveSystem) {
+        g_FlashSaveSystem->SetMetaString(SOMetaKey(name, key), value);
+    }
 }
 
 std::string FlashSharedObject::getProperty(const std::string& key) const {
+    // Check in-memory first
     auto it = data.find(key);
-    return (it != data.end()) ? it->second : "";
+    if (it != data.end()) return it->second;
+    // Fall back to persisted meta-progression
+    if (g_FlashSaveSystem) {
+        return g_FlashSaveSystem->GetMetaString(SOMetaKey(name, key), "");
+    }
+    return "";
 }
 
 bool FlashSharedObject::hasProperty(const std::string& key) const {
-    return data.find(key) != data.end();
+    if (data.find(key) != data.end()) return true;
+    // Check persisted storage
+    if (g_FlashSaveSystem) {
+        return !g_FlashSaveSystem->GetMetaString(SOMetaKey(name, key), "").empty();
+    }
+    return false;
 }
 
 FlashSharedObject FlashSharedObject::getLocal(const std::string& name) {
@@ -681,6 +714,36 @@ void Flash_ClearInterval(u32 id) {
 } // namespace FlashAPI
 
 // ============================================================================
+// SharedObject AS binding functions
+// ============================================================================
+
+static void Flash_SO_Set(const std::string& soName, const std::string& key, const std::string& value) {
+    auto& so = s_SharedObjects[soName];
+    so.name = soName;
+    so.setProperty(key, value);
+}
+
+static std::string Flash_SO_Get(const std::string& soName, const std::string& key) {
+    auto so = FlashSharedObject::getLocal(soName);
+    return so.getProperty(key);
+}
+
+static bool Flash_SO_Has(const std::string& soName, const std::string& key) {
+    auto so = FlashSharedObject::getLocal(soName);
+    return so.hasProperty(key);
+}
+
+static void Flash_SO_Flush(const std::string& soName) {
+    auto it = s_SharedObjects.find(soName);
+    if (it != s_SharedObjects.end()) it->second.flush();
+}
+
+static void Flash_SO_Clear(const std::string& soName) {
+    auto it = s_SharedObjects.find(soName);
+    if (it != s_SharedObjects.end()) it->second.clear();
+}
+
+// ============================================================================
 // AngelScript registration
 // ============================================================================
 
@@ -746,6 +809,13 @@ void RegisterFlashAPIBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetTimeout(float)", asFUNCTION(Flash_SetTimeout), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("uint Flash_SetInterval(float)", asFUNCTION(Flash_SetInterval), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flash_ClearInterval(uint)", asFUNCTION(Flash_ClearInterval), asCALL_CDECL));
+
+    // --- SharedObject (persisted via TieredSaveSystem meta-progression) ---
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Set(const string &in, const string &in, const string &in)", asFUNCTION(Flash_SO_Set), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("string Flash_SO_Get(const string &in, const string &in)", asFUNCTION(Flash_SO_Get), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("bool Flash_SO_Has(const string &in, const string &in)", asFUNCTION(Flash_SO_Has), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Flush(const string &in)", asFUNCTION(Flash_SO_Flush), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flash_SO_Clear(const string &in)", asFUNCTION(Flash_SO_Clear), asCALL_CDECL));
 
     // --- Compatibility aliases (match transpiler output function names) ---
     AS_CHECK(engine->RegisterGlobalFunction("float Math_Random()", asFUNCTION(Flash_MathRandom), asCALL_CDECL));

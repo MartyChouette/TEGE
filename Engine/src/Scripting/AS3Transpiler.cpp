@@ -199,11 +199,21 @@ void AS3Transpiler::InitDefaultMappings() {
         "attachSound -> Audio_LoadSound", true, false
     });
 
-    // --- SharedObject ---
+    // --- SharedObject (mapped to Flash_SO_* functions backed by TieredSaveSystem) ---
     m_Mappings.push_back({
-        "SharedObject\\.getLocal\\(\"(\\w+)\"\\)",
-        "Save_GetSlot(\"$1\")",
-        "SharedObject.getLocal -> Save_GetSlot"
+        "(\\w+)\\.data\\.(\\w+)\\s*=\\s*\"([^\"]+)\"",
+        "Flash_SO_Set(\"$1\", \"$2\", \"$3\")",
+        "SharedObject.data.key = value -> Flash_SO_Set"
+    });
+    m_Mappings.push_back({
+        "(\\w+)\\.data\\.(\\w+)",
+        "Flash_SO_Get(\"$1\", \"$2\")",
+        "SharedObject.data.key -> Flash_SO_Get"
+    });
+    m_Mappings.push_back({
+        "(\\w+)\\.flush\\(\\)",
+        "Flash_SO_Flush(\"$1\")",
+        "SharedObject.flush -> Flash_SO_Flush"
     });
 
     // --- Math ---

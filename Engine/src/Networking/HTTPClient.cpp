@@ -235,10 +235,129 @@ HTTPResponse HTTPClient::PostForm(const std::string& url,
     return DoRequest("POST", url, body, h);
 }
 
+#elif defined(ENJIN_HAS_CURL)
+
+// ============================================================================
+// libcurl Implementation (Linux / macOS)
+// ============================================================================
+
+#include <curl/curl.h>
+
+static size_t CurlWriteCallback(char* ptr, size_t size, size_t nmemb, void* userData) {
+    auto* response = static_cast<std::string*>(userData);
+    size_t bytes = size * nmemb;
+    static constexpr size_t MAX_RESPONSE_SIZE = 16 * 1024 * 1024;
+    if (response->size() + bytes > MAX_RESPONSE_SIZE) {
+        ENJIN_LOG_WARN(Network, "HTTP response exceeds 16MB limit, truncating");
+        return 0; // Abort transfer
+    }
+    response->append(ptr, bytes);
+    return bytes;
+}
+
+static HTTPResponse DoRequestCurl(const std::string& method, const std::string& url,
+                                   const std::string& body,
+                                   const std::unordered_map<std::string, std::string>& headers) {
+    HTTPResponse response;
+
+    CURL* curl = curl_easy_init();
+    if (!curl) {
+        response.error = "curl_easy_init failed";
+        return response;
+    }
+
+    std::string responseBody;
+    curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, CurlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &responseBody);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+    curl_easy_setopt(curl, CURLOPT_USERAGENT, "EnjinEngine/1.0");
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+
+    // Set method
+    if (method == "POST") {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
+    }
+
+    // Build header list
+    struct curl_slist* headerList = nullptr;
+    for (auto& [key, value] : headers) {
+        std::string h = key + ": " + value;
+        headerList = curl_slist_append(headerList, h.c_str());
+    }
+    // Default Content-Type for POST
+    if (method == "POST" && !body.empty() &&
+        headers.find("Content-Type") == headers.end()) {
+        headerList = curl_slist_append(headerList, "Content-Type: application/json");
+    }
+    if (headerList) {
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList);
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        response.error = std::string("curl error: ") + curl_easy_strerror(res);
+    } else {
+        long statusCode = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &statusCode);
+        response.statusCode = static_cast<i32>(statusCode);
+        response.body = std::move(responseBody);
+        response.success = (statusCode >= 200 && statusCode < 300);
+    }
+
+    if (headerList) curl_slist_free_all(headerList);
+    curl_easy_cleanup(curl);
+    return response;
+}
+
+// S6: RFC 3986 percent-encoding for form POST key/value pairs
+static std::string PercentEncodeCurl(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (unsigned char c : s) {
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
+            out += static_cast<char>(c);
+        } else {
+            char buf[4];
+            snprintf(buf, sizeof(buf), "%%%02X", c);
+            out += buf;
+        }
+    }
+    return out;
+}
+
+HTTPResponse HTTPClient::Get(const std::string& url,
+                              const std::unordered_map<std::string, std::string>& headers) {
+    return DoRequestCurl("GET", url, "", headers);
+}
+
+HTTPResponse HTTPClient::Post(const std::string& url,
+                               const std::string& body,
+                               const std::unordered_map<std::string, std::string>& headers) {
+    return DoRequestCurl("POST", url, body, headers);
+}
+
+HTTPResponse HTTPClient::PostForm(const std::string& url,
+                                   const std::unordered_map<std::string, std::string>& params,
+                                   const std::unordered_map<std::string, std::string>& headers) {
+    std::string body;
+    for (auto& [key, value] : params) {
+        if (!body.empty()) body += "&";
+        body += PercentEncodeCurl(key) + "=" + PercentEncodeCurl(value);
+    }
+    auto h = headers;
+    h["Content-Type"] = "application/x-www-form-urlencoded";
+    return DoRequestCurl("POST", url, body, h);
+}
+
 #else
 
 // ============================================================================
-// Stub Implementation (Non-Windows)
+// Stub Implementation (No HTTP backend available)
 // ============================================================================
 
 HTTPResponse HTTPClient::Get(const std::string& url,
@@ -261,7 +380,7 @@ HTTPResponse HTTPClient::PostForm(const std::string& url,
     return { false, 0, "", {}, "HTTP not available on this platform" };
 }
 
-#endif // _WIN32
+#endif // _WIN32 / ENJIN_HAS_CURL
 
 } // namespace Networking
 } // namespace Enjin

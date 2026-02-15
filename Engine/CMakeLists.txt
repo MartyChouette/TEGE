@@ -69,8 +69,8 @@ target_compile_features(EnjinEngine PUBLIC cxx_std_20)
 # Platform-specific networking and system libraries
 if(WIN32)
     target_link_libraries(EnjinEngine PUBLIC ws2_32 winhttp)
-elseif(UNIX AND NOT APPLE)
-    # Linux: POSIX sockets are in libc (no extra link needed),
+elseif(UNIX)
+    # Linux/macOS: POSIX sockets are in libc (no extra link needed),
     # but we need libcurl for HTTP client functionality
     find_package(CURL QUIET)
     if(CURL_FOUND)
@@ -78,7 +78,7 @@ elseif(UNIX AND NOT APPLE)
         target_compile_definitions(EnjinEngine PUBLIC ENJIN_HAS_CURL)
         message(STATUS "Found libcurl for HTTP client")
     else()
-        message(STATUS "libcurl not found — HTTP client features disabled on Linux")
+        message(STATUS "libcurl not found — HTTP client features disabled")
     endif()
 endif()
 
