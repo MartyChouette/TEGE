@@ -21,6 +21,9 @@ Added `JB()` helper in SceneRenderSettings.cpp and SceneSerializer.cpp that hand
 **5. Grid Movement Serialization**
 Added `gridOrigin`, `gridMoveStart`, `gridMoveTarget`, `gridMoving` to controller base serialize/deserialize — grid state now persists across save/load.
 
+**7. Audio Mixer Window**
+New editor tool window (View > Tools > Audio Mixer) with DAW-style mixer layout. Top strip shows Master volume slider plus per-channel volume sliders (SFX/Music/UI/Voice) with color-coded labels and mute buttons. Tab bar filters sources by channel type (All/SFX/Music/UI/Voice). Source list shows every entity with AudioSourceComponent: channel badge, entity name, clip filename, volume and pitch sliders (live-adjustable during play mode), loop/3D indicators, and playing state. Click a source to select the entity in the hierarchy. Empty states with guidance when no sources present.
+
 **6. Controller/UI Performance**
 ControllerSystem: early-out on `!isEnabled` before fetching transform (all 7 controller types). UISystem: canvas sort vector promoted to member `m_CachedCanvases` (avoids per-frame allocation). AudioSystem: entity iteration uses `GetEntitiesWithComponent<AudioSourceComponent>()`.
 

@@ -345,6 +345,7 @@ private:
     void DrawTimerComponent(ECS::Entity entity);
     void DrawAudioSourceComponent(ECS::Entity entity);
     void DrawAudioListenerComponent(ECS::Entity entity);
+    void DrawAudioMixer();
 
     // AI components
     void DrawAIControllerComponent(ECS::Entity entity);
@@ -1131,6 +1132,10 @@ private:
     void UIEditorScreenToDesign(f32 screenX, f32 screenY, f32& designX, f32& designY);
     void UIEditorDesignToScreen(f32 designX, f32 designY, f32& screenX, f32& screenY);
     UIEditDragMode UIEditorHitTestHandles(f32 localX, f32 localY, const GUI::UIRect& rect);
+
+    // Audio Mixer tool
+    bool m_ShowAudioMixer = false;
+    i32 m_MixerChannelTab = -1; // -1 = All, 0-3 = SFX/Music/UI/Voice
 
     // Template Creator tool
     bool m_ShowTemplateCreator = false;

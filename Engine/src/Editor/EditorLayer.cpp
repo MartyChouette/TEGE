@@ -2533,6 +2533,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawTemplateMarketplaceWindow();
     }
 
+    // Audio Mixer window
+    if (m_ShowAudioMixer) {
+        DrawAudioMixer();
+    }
+
     // Keyboard Shortcuts Help modal
     if (m_ShowShortcutsHelp) {
         DrawShortcutsHelpModal();
@@ -3499,6 +3504,8 @@ void EditorLayer::DrawMenuBar() {
                         m_ParticleGraphEditor.SetOpen(pgOpen);
                     }
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Audio Mixer", nullptr, &m_ShowAudioMixer)) {}
                 ImGui::Separator();
                 if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
                     if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
@@ -37774,6 +37781,207 @@ void EditorLayer::DrawNewFeedbackForm() {
             ResetFeedbackForm();
         }
     }
+}
+
+// ============================================================================
+// AUDIO MIXER WINDOW
+// ============================================================================
+
+void EditorLayer::DrawAudioMixer() {
+    ImGui::SetNextWindowSize(ImVec2(520, 460), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Audio Mixer", &m_ShowAudioMixer)) {
+        ImGui::End();
+        return;
+    }
+
+    if (!m_World) {
+        DrawEmptyState("\xef\x80\xa8", "No World Loaded", "Load a scene to see audio sources.", nullptr, nullptr);
+        ImGui::End();
+        return;
+    }
+
+    Audio::SimpleAudio* audio = m_PlayMode.IsPlaying() ? m_PlayMode.GetSimpleAudio() : nullptr;
+
+    // --- Master / Channel volume strip at top ---
+    {
+        f32 masterVol = audio ? audio->GetMasterVolume() : 1.0f;
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("Master");
+        ImGui::SameLine(70);
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::SliderFloat("##MasterVol", &masterVol, 0.0f, 1.0f, "%.2f")) {
+            if (audio) audio->SetMasterVolume(masterVol);
+        }
+    }
+
+    ImGui::Separator();
+
+    // Channel volume strips
+    static const char* channelNames[] = {"SFX", "Music", "UI", "Voice"};
+    static const ImVec4 channelColors[] = {
+        {0.3f, 0.7f, 0.4f, 1.0f},  // SFX — green
+        {0.5f, 0.4f, 0.9f, 1.0f},  // Music — purple
+        {0.2f, 0.6f, 0.9f, 1.0f},  // UI — blue
+        {0.9f, 0.6f, 0.2f, 1.0f},  // Voice — orange
+    };
+
+    for (int ch = 0; ch < 4; ch++) {
+        auto channel = static_cast<Audio::AudioChannel>(ch);
+        f32 chVol = audio ? audio->GetChannelVolume(channel) : 1.0f;
+
+        ImGui::PushStyleColor(ImGuiCol_PlotHistogram, channelColors[ch]);
+        ImGui::AlignTextToFramePadding();
+        ImGui::Text("%-6s", channelNames[ch]);
+        ImGui::SameLine(70);
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 50);
+        char sliderId[32];
+        snprintf(sliderId, sizeof(sliderId), "##ChVol%d", ch);
+        if (ImGui::SliderFloat(sliderId, &chVol, 0.0f, 1.0f, "%.2f")) {
+            if (audio) audio->SetChannelVolume(channel, chVol);
+        }
+        ImGui::SameLine();
+        char muteBtnId[32];
+        snprintf(muteBtnId, sizeof(muteBtnId), "M##Mute%d", ch);
+        if (ImGui::SmallButton(muteBtnId)) {
+            if (audio) audio->SetChannelVolume(channel, chVol > 0.0f ? 0.0f : 1.0f);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Mute/unmute %s channel", channelNames[ch]);
+        ImGui::PopStyleColor();
+    }
+
+    ImGui::Separator();
+
+    // --- Channel filter tabs ---
+    if (ImGui::BeginTabBar("MixerTabs")) {
+        struct TabDef { const char* label; i32 filter; };
+        TabDef tabs[] = {{"All", -1}, {"SFX", 0}, {"Music", 1}, {"UI", 2}, {"Voice", 3}};
+
+        for (auto& tab : tabs) {
+            if (ImGui::BeginTabItem(tab.label)) {
+                m_MixerChannelTab = tab.filter;
+                ImGui::EndTabItem();
+            }
+        }
+        ImGui::EndTabBar();
+    }
+
+    // --- Audio source list ---
+    auto entities = m_World->GetEntitiesWithComponent<ECS::AudioSourceComponent>();
+    i32 displayCount = 0;
+
+    if (ImGui::BeginChild("MixerSources", ImVec2(0, 0), ImGuiChildFlags_None)) {
+        for (ECS::Entity entity : entities) {
+            auto* asc = m_World->GetComponent<ECS::AudioSourceComponent>(entity);
+            if (!asc) continue;
+
+            i32 chIdx = static_cast<i32>(asc->channel);
+
+            // Filter by selected tab
+            if (m_MixerChannelTab >= 0 && chIdx != m_MixerChannelTab) continue;
+
+            // Get entity name
+            auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+            const char* entityName = nameComp ? nameComp->name.c_str() : "(unnamed)";
+
+            // Get clip filename
+            std::string clipName;
+            if (!asc->clipPath.empty()) {
+                auto lastSlash = asc->clipPath.find_last_of("/\\");
+                clipName = (lastSlash != std::string::npos)
+                    ? asc->clipPath.substr(lastSlash + 1) : asc->clipPath;
+            } else {
+                clipName = "(no clip)";
+            }
+
+            const char* chName = (chIdx >= 0 && chIdx < 4) ? channelNames[chIdx] : "?";
+            ImVec4 chColor = (chIdx >= 0 && chIdx < 4) ? channelColors[chIdx] : ImVec4(0.5f, 0.5f, 0.5f, 1.0f);
+
+            ImGui::PushID(static_cast<int>(entity));
+
+            // Channel badge + entity name
+            ImGui::TextColored(chColor, "[%s]", chName);
+            ImGui::SameLine();
+            bool isSelected = IsSelected(entity);
+            if (ImGui::Selectable(entityName, isSelected, ImGuiSelectableFlags_None, ImVec2(0, 0))) {
+                ClearSelection();
+                SelectEntity(entity);
+            }
+
+            // Clip name (dimmed)
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120);
+            ImGui::TextDisabled("%s", clipName.c_str());
+
+            // Controls row
+            ImGui::Indent(30);
+
+            // Volume slider
+            ImGui::SetNextItemWidth(150);
+            char volId[32];
+            snprintf(volId, sizeof(volId), "##Vol%llu", (unsigned long long)entity);
+            if (ImGui::SliderFloat(volId, &asc->volume, 0.0f, 1.0f, "Vol %.2f")) {
+                if (audio && asc->soundHandle != 0) {
+                    audio->SetVolume(asc->soundHandle, asc->volume);
+                }
+            }
+
+            ImGui::SameLine();
+
+            // Pitch slider
+            ImGui::SetNextItemWidth(100);
+            char pitchId[32];
+            snprintf(pitchId, sizeof(pitchId), "##Pitch%llu", (unsigned long long)entity);
+            if (ImGui::SliderFloat(pitchId, &asc->pitch, 0.1f, 3.0f, "x%.1f")) {
+                if (audio && asc->soundHandle != 0) {
+                    audio->SetPitch(asc->soundHandle, asc->pitch);
+                }
+            }
+
+            ImGui::SameLine();
+
+            // Loop indicator
+            if (asc->loop) {
+                ImGui::TextDisabled("LOOP");
+                ImGui::SameLine();
+            }
+
+            // 3D indicator
+            bool channelForces2D = asc->channel == ECS::AudioChannel::Music || asc->channel == ECS::AudioChannel::UI;
+            if (asc->is3D && !channelForces2D) {
+                ImGui::TextDisabled("3D");
+                ImGui::SameLine();
+            }
+
+            // Playing indicator
+            bool isPlaying = asc->isPlaying;
+            if (isPlaying && audio && asc->soundHandle != 0) {
+                isPlaying = audio->IsPlaying(asc->soundHandle);
+            }
+            if (isPlaying) {
+                ImGui::TextColored(ImVec4(0.2f, 0.9f, 0.3f, 1.0f), "PLAYING");
+            } else {
+                ImGui::TextDisabled("stopped");
+            }
+
+            ImGui::Unindent(30);
+            ImGui::Separator();
+
+            displayCount++;
+            ImGui::PopID();
+        }
+
+        if (displayCount == 0) {
+            const char* filterName = m_MixerChannelTab >= 0 && m_MixerChannelTab < 4
+                ? channelNames[m_MixerChannelTab] : "any";
+            DrawEmptyState("\xef\x80\xa8", "No Audio Sources",
+                m_MixerChannelTab >= 0
+                    ? (std::string("No ") + filterName + " audio sources in scene.").c_str()
+                    : "Add AudioSourceComponent to entities to see them here.",
+                nullptr, nullptr);
+        }
+    }
+    ImGui::EndChild();
+
+    ImGui::End();
 }
 
 } // namespace Editor
