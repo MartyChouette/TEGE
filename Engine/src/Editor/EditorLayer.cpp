@@ -201,6 +201,7 @@ void EditorLayer::RemoveComponentWithUndo(ECS::Entity entity, const std::string&
         }
     );
     m_UndoRedo.Execute(std::move(cmd));
+    ShowNotification("Removed " + componentName + " (Ctrl+Z to undo)", NotificationType::Info);
 }
 
 // --- Component search bar data ---
@@ -1380,9 +1381,10 @@ void EditorLayer::Update(f32 deltaTime) {
             }
         }
 
-        // Delete selected entities
+        // Delete selected entities — show confirmation dialog
         if (Input::IsKeyPressed(KeyCode::Delete) && !m_SelectedEntities.empty()) {
-            DeleteSelectedEntities();
+            m_PendingDeleteEntities.assign(m_SelectedEntities.begin(), m_SelectedEntities.end());
+            m_ShowDeleteConfirm = true;
         }
 
         // Duplicate selected entities (Ctrl+D)
@@ -2536,6 +2538,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Keyboard Shortcuts Help modal
     if (m_ShowShortcutsHelp) {
         DrawShortcutsHelpModal();
+    }
+
+    // Entity delete confirmation modal
+    if (m_ShowDeleteConfirm) {
+        DrawDeleteConfirmModal();
     }
 
     // Clear the force flag after one frame
@@ -4179,6 +4186,19 @@ void EditorLayer::DrawHierarchyPanel() {
     }
 
     if (m_World) {
+        // Search/filter bar
+        ImGui::SetNextItemWidth(-1);
+        ImGui::InputTextWithHint("##HierarchySearch", "Search entities...", m_HierarchySearchBuf, sizeof(m_HierarchySearchBuf));
+        ImGui::Separator();
+
+        bool hasFilter = m_HierarchySearchBuf[0] != '\0';
+        std::string filterLower;
+        if (hasFilter) {
+            filterLower = m_HierarchySearchBuf;
+            std::transform(filterLower.begin(), filterLower.end(), filterLower.begin(),
+                [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+        }
+
         // Only show root entities (no parent) at top level; children are drawn recursively
         const auto& entities = m_World->GetAllEntities();
 
@@ -4191,6 +4211,18 @@ void EditorLayer::DrawHierarchyPanel() {
                 });
         }
 
+        if (hasFilter) {
+            // Flat filtered list — show all matching entities regardless of hierarchy
+            for (ECS::Entity entity : entities) {
+                auto* nameComp = m_World->GetComponent<ECS::NameComponent>(entity);
+                std::string name = nameComp ? nameComp->name : "Entity " + std::to_string(entity);
+                std::string nameLower = name;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
+                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                if (nameLower.find(filterLower) == std::string::npos) continue;
+                DrawEntityNode(entity, name);
+            }
+        } else {
         for (ECS::Entity entity : entities) {
             // Skip entities that have a parent — they'll be drawn under their parent
             if (ECS::HasParent(m_World, entity)) continue;
@@ -4205,6 +4237,7 @@ void EditorLayer::DrawHierarchyPanel() {
 
             DrawEntityNode(entity, name);
         }
+        } // end else (no filter)
 
         // Drop target for the empty area — unparent entities dropped here
         if (ImGui::BeginDragDropTarget()) {
@@ -5489,6 +5522,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
         if (!transform) return;
 
         InspectorUndo::Checkbox(m_UndoRedo, "Visible", &transform->visible);
+        ImGui::SetItemTooltip("Toggle entity visibility in the scene");
 
         // Position
         f32 pos[3] = { transform->position.x, transform->position.y, transform->position.z };
@@ -5497,6 +5531,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
                 0.1f)) {
             transform->position = Math::Vector3(pos[0], pos[1], pos[2]);
         }
+        ImGui::SetItemTooltip("World position (X, Y, Z)");
 
         // Rotation (euler angles in degrees)
         Math::Vector3 eulerRad = transform->rotation.ToEuler();
@@ -5509,6 +5544,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
             transform->rotation = Math::Quaternion::FromEuler(
                 Math::Vector3(Math::Radians(rot[0]), Math::Radians(rot[1]), Math::Radians(rot[2])));
         }
+        ImGui::SetItemTooltip("Euler rotation in degrees (X, Y, Z)");
 
         // Scale
         f32 scale[3] = { transform->scale.x, transform->scale.y, transform->scale.z };
@@ -5517,6 +5553,7 @@ void EditorLayer::DrawTransformComponent(ECS::Entity entity) {
                 0.1f, 0.001f, 1000.0f)) {
             transform->scale = Math::Vector3(scale[0], scale[1], scale[2]);
         }
+        ImGui::SetItemTooltip("Scale multiplier per axis");
     }
 }
 
@@ -5559,6 +5596,10 @@ void EditorLayer::DrawLODComponent(ECS::Entity entity) {
     if (lodOpen) {
         ECS::LODComponent* lod = m_World->GetComponent<ECS::LODComponent>(entity);
         if (!lod) return;
+
+        if (!m_World->HasComponent<ECS::MeshComponent>(entity)) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "No MeshComponent — LOD requires a mesh to simplify");
+        }
 
         InspectorUndo::Checkbox(m_UndoRedo, "Enabled", &lod->enabled);
         ImGui::Text("Levels: %d | Active: LOD %d", lod->levelCount, lod->activeLOD);
@@ -5626,13 +5667,17 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 [material](f32 r, f32 g, f32 b) { material->baseColor = Math::Vector3(r, g, b); })) {
             material->baseColor = Math::Vector3(baseColor[0], baseColor[1], baseColor[2]);
         }
+        ImGui::SetItemTooltip("Surface color when no texture is applied");
 
         // Opacity
         InspectorUndo::DragFloat(m_UndoRedo, "Opacity", &material->opacity, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("Overall transparency (0 = invisible, 1 = fully opaque)");
 
         // PBR properties
         InspectorUndo::DragFloat(m_UndoRedo, "Metallic", &material->metallic, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("Metallic factor (0 = dielectric/plastic, 1 = metal)");
         InspectorUndo::DragFloat(m_UndoRedo, "Roughness", &material->roughness, 0.01f, 0.0f, 1.0f);
+        ImGui::SetItemTooltip("Surface roughness (0 = mirror smooth, 1 = fully rough)");
 
         // Emission
         f32 emissive[3] = { material->emissiveColor.x, material->emissiveColor.y, material->emissiveColor.z };
@@ -5640,12 +5685,17 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
                 [material](f32 r, f32 g, f32 b) { material->emissiveColor = Math::Vector3(r, g, b); })) {
             material->emissiveColor = Math::Vector3(emissive[0], emissive[1], emissive[2]);
         }
+        ImGui::SetItemTooltip("Self-illumination color (adds glow independent of lighting)");
         InspectorUndo::DragFloat(m_UndoRedo, "Emissive Strength", &material->emissiveStrength, 0.1f, 0.0f, 100.0f);
+        ImGui::SetItemTooltip("Emissive intensity multiplier");
 
         // Rendering options
         InspectorUndo::Checkbox(m_UndoRedo, "Double Sided", &material->doubleSided);
+        ImGui::SetItemTooltip("Render both front and back faces");
         InspectorUndo::Checkbox(m_UndoRedo, "Cast Shadows", &material->castShadows);
+        ImGui::SetItemTooltip("Whether this object casts shadows");
         InspectorUndo::Checkbox(m_UndoRedo, "Receive Shadows", &material->receiveShadows);
+        ImGui::SetItemTooltip("Whether shadows are drawn on this surface");
 
         // Shadow dither mode
         const char* shadowDitherModes[] = { "None", "By Darkness", "By Distance", "By Angle" };
@@ -5688,6 +5738,7 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         }
 
         InspectorUndo::Checkbox(m_UndoRedo, "Exclude From Cel Shading##Mat", &material->excludeFromCelShading);
+        ImGui::SetItemTooltip("Exempt this material from the global cel shading effect");
 
         // Dithered gradient rendering
         InspectorUndo::Checkbox(m_UndoRedo, "Dithered Gradient##Mat", &material->ditherGradient);
@@ -5710,9 +5761,11 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Alpha Mode", &currentMode, alphaModes, 3)) {
             material->alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(currentMode);
         }
+        ImGui::SetItemTooltip("Opaque: solid | Mask: cutout by alpha | Blend: transparent");
 
         if (material->alphaMode == ECS::MaterialComponent::AlphaMode::Mask) {
             InspectorUndo::DragFloat(m_UndoRedo, "Alpha Cutoff", &material->alphaCutoff, 0.01f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Alpha threshold below which pixels are discarded");
         }
 
         // Texture paths
@@ -5900,6 +5953,7 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Type", &currentType, lightTypes, 3)) {
             light->type = static_cast<ECS::LightType>(currentType);
         }
+        ImGui::SetItemTooltip("Directional: sun-like | Point: omnidirectional | Spot: cone-shaped");
 
         // Color
         f32 color[3] = { light->color.x, light->color.y, light->color.z };
@@ -5907,18 +5961,24 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
                 [light](f32 r, f32 g, f32 b) { light->color = Math::Vector3(r, g, b); })) {
             light->color = Math::Vector3(color[0], color[1], color[2]);
         }
+        ImGui::SetItemTooltip("Light color");
 
         // Intensity
         InspectorUndo::DragFloat(m_UndoRedo, "Intensity", &light->intensity, 0.1f, 0.0f, 100.0f);
+        ImGui::SetItemTooltip("Brightness multiplier");
 
         // Point/Spot specific
         if (light->type == ECS::LightType::Point || light->type == ECS::LightType::Spot) {
             InspectorUndo::DragFloat(m_UndoRedo, "Range", &light->range, 0.5f, 0.1f, 1000.0f);
+            ImGui::SetItemTooltip("Maximum distance the light reaches");
 
             if (ImGui::TreeNode("Attenuation")) {
                 InspectorUndo::DragFloat(m_UndoRedo, "Constant", &light->constantAttenuation, 0.01f, 0.0f, 10.0f);
+                ImGui::SetItemTooltip("Base attenuation (distance-independent)");
                 InspectorUndo::DragFloat(m_UndoRedo, "Linear", &light->linearAttenuation, 0.001f, 0.0f, 1.0f);
+                ImGui::SetItemTooltip("Linear falloff factor");
                 InspectorUndo::DragFloat(m_UndoRedo, "Quadratic", &light->quadraticAttenuation, 0.001f, 0.0f, 1.0f);
+                ImGui::SetItemTooltip("Quadratic falloff factor (physically realistic)");
                 ImGui::TreePop();
             }
         }
@@ -5926,11 +5986,14 @@ void EditorLayer::DrawLightComponent(ECS::Entity entity) {
         // Spot specific
         if (light->type == ECS::LightType::Spot) {
             InspectorUndo::DragFloat(m_UndoRedo, "Inner Cone", &light->innerConeAngle, 0.5f, 0.0f, light->outerConeAngle);
+            ImGui::SetItemTooltip("Angle of full-intensity spotlight cone");
             InspectorUndo::DragFloat(m_UndoRedo, "Outer Cone", &light->outerConeAngle, 0.5f, light->innerConeAngle, 90.0f);
+            ImGui::SetItemTooltip("Angle where light fades to zero");
         }
 
         // Shadows
         InspectorUndo::Checkbox(m_UndoRedo, "Cast Shadows", &light->castShadows);
+        ImGui::SetItemTooltip("Enable shadow casting from this light");
     }
 }
 
@@ -5966,6 +6029,7 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
                     }
                 }
             }
+            ImGui::SetItemTooltip("Apply a camera preset configuration");
         }
 
         ImGui::Separator();
@@ -5976,20 +6040,25 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Projection", &currentType, projTypes, 2)) {
             camera->projectionType = static_cast<ECS::ProjectionType>(currentType);
         }
+        ImGui::SetItemTooltip("Perspective: 3D depth | Orthographic: flat/2D");
 
         // Perspective settings
         if (camera->projectionType == ECS::ProjectionType::Perspective) {
             InspectorUndo::DragFloat(m_UndoRedo, "Field of View", &camera->fieldOfView, 0.5f, 1.0f, 179.0f);
+            ImGui::SetItemTooltip("Vertical field of view in degrees");
         }
 
         // Orthographic settings
         if (camera->projectionType == ECS::ProjectionType::Orthographic) {
             InspectorUndo::DragFloat(m_UndoRedo, "Ortho Size", &camera->orthoSize, 0.5f, 0.1f, 100.0f);
+            ImGui::SetItemTooltip("Half-height of the orthographic view volume");
         }
 
         // Common settings
         InspectorUndo::DragFloat(m_UndoRedo, "Near Plane", &camera->nearPlane, 0.01f, 0.001f, camera->farPlane - 0.01f);
+        ImGui::SetItemTooltip("Minimum render distance (objects closer are clipped)");
         InspectorUndo::DragFloat(m_UndoRedo, "Far Plane", &camera->farPlane, 1.0f, camera->nearPlane + 0.01f, 10000.0f);
+        ImGui::SetItemTooltip("Maximum render distance (objects farther are clipped)");
 
         ImGui::Separator();
 
@@ -7104,6 +7173,9 @@ void EditorLayer::DrawConsolePanel() {
 
     // Console output
     ImGui::BeginChild("ConsoleOutput", ImVec2(0, -ImGui::GetFrameHeightWithSpacing()), true);
+    if (m_ConsoleLog.empty()) {
+        DrawEmptyState(">>", "Console Empty", "Messages will appear here");
+    }
     for (const auto& line : m_ConsoleLog) {
         ImGui::TextUnformatted(line.c_str());
     }
@@ -10990,6 +11062,7 @@ void EditorLayer::DrawSceneListPanel() {
             if (ImGui::IsMouseDoubleClicked(0)) {
                 // Double click to load scene
                 m_SceneManager.LoadScene(scene.name);
+                ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
             }
         }
         if (isCurrent) {
@@ -11005,9 +11078,11 @@ void EditorLayer::DrawSceneListPanel() {
         if (ImGui::BeginPopupContextItem("SceneContextMenu")) {
             if (ImGui::MenuItem("Load")) {
                 m_SceneManager.LoadScene(scene.name);
+                ShowNotification("Scene loaded: " + scene.name, NotificationType::Success);
             }
             if (ImGui::MenuItem("Load Additive")) {
                 m_SceneManager.LoadSceneAdditive(scene.name);
+                ShowNotification("Scene loaded (additive): " + scene.name, NotificationType::Success);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Set as Start Scene")) {
@@ -22848,6 +22923,40 @@ void EditorLayer::DrawShortcutsHelpModal() {
     ImGui::End();
 }
 
+void EditorLayer::DrawDeleteConfirmModal() {
+    ImGui::OpenPopup("Delete Entities?");
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    if (ImGui::BeginPopupModal("Delete Entities?", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        usize count = m_PendingDeleteEntities.size();
+        if (count == 1) {
+            auto* nc = m_World ? m_World->GetComponent<ECS::NameComponent>(m_PendingDeleteEntities[0]) : nullptr;
+            std::string name = nc ? nc->name : "Entity " + std::to_string(m_PendingDeleteEntities[0]);
+            ImGui::Text("Delete \"%s\"?", name.c_str());
+        } else {
+            ImGui::Text("Delete %zu entities?", count);
+        }
+        ImGui::TextDisabled("This can be undone with Ctrl+Z.");
+        ImGui::Spacing();
+        if (ImGui::Button("Delete", ImVec2(120, 0))) {
+            DeleteSelectedEntities();
+            m_ShowDeleteConfirm = false;
+            m_PendingDeleteEntities.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+            m_ShowDeleteConfirm = false;
+            m_PendingDeleteEntities.clear();
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    } else {
+        m_ShowDeleteConfirm = false;
+        m_PendingDeleteEntities.clear();
+    }
+}
+
 void EditorLayer::ImportModel(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot import model: no world loaded");
@@ -23226,11 +23335,15 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
 
         // Track for re-import
         m_LastImportedModelPath = path;
+
+        ShowNotification("Imported: " + std::filesystem::path(path).filename().string() +
+            " (" + std::to_string(result.meshCount) + " meshes)", NotificationType::Success);
     } else {
         std::stringstream ss;
         ss << "[Error] Failed to import: " << result.errorMessage;
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_ERROR(Editor, "Failed to import %s: %s", path.c_str(), result.errorMessage.c_str());
+        ShowNotification("Import failed: " + std::filesystem::path(path).filename().string(), NotificationType::Error);
     }
 }
 
@@ -24564,14 +24677,20 @@ void EditorLayer::DrawRigidbodyComponent(ECS::Entity entity) {
         if (InspectorUndo::Combo(m_UndoRedo, "Body Type", &currentType, bodyTypes, 3)) {
             rb->bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(currentType);
         }
+        ImGui::SetItemTooltip("Dynamic: physics-driven | Kinematic: script-driven | Static: immovable");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Mass", &rb->mass, 0.1f, 0.001f, 1000.0f);
+        ImGui::SetItemTooltip("Mass in kg (affects forces and collisions)");
         InspectorUndo::DragFloat(m_UndoRedo, "Drag", &rb->drag, 0.01f, 0.0f, 10.0f);
+        ImGui::SetItemTooltip("Linear damping (air resistance)");
         InspectorUndo::DragFloat(m_UndoRedo, "Angular Drag", &rb->angularDrag, 0.01f, 0.0f, 10.0f);
+        ImGui::SetItemTooltip("Rotational damping (spin resistance)");
 
         InspectorUndo::Checkbox(m_UndoRedo, "Use Gravity", &rb->useGravity);
+        ImGui::SetItemTooltip("Apply gravitational force to this body");
         if (rb->useGravity) {
             InspectorUndo::DragFloat(m_UndoRedo, "Gravity Scale", &rb->gravityScale, 0.1f, -10.0f, 10.0f);
+            ImGui::SetItemTooltip("Gravity multiplier (negative = anti-gravity)");
         }
 
         if (ImGui::TreeNode("Constraints")) {
@@ -24615,6 +24734,7 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
                 0.1f)) {
             col->center = Math::Vector3(center[0], center[1], center[2]);
         }
+        ImGui::SetItemTooltip("Local offset from entity origin");
 
         f32 size[3] = { col->size.x, col->size.y, col->size.z };
         if (InspectorUndo::DragFloat3(m_UndoRedo, "Size", size,
@@ -24622,12 +24742,16 @@ void EditorLayer::DrawBoxColliderComponent(ECS::Entity entity) {
                 0.1f, 0.001f, 1000.0f)) {
             col->size = Math::Vector3(size[0], size[1], size[2]);
         }
+        ImGui::SetItemTooltip("Collider dimensions (width, height, depth)");
 
         InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger", &col->isTrigger);
+        ImGui::SetItemTooltip("Trigger colliders detect overlap but don't block movement");
 
         if (ImGui::TreeNode("Physics Material")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Surface friction (0 = ice, 1 = rubber)");
             InspectorUndo::DragFloat(m_UndoRedo, "Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Restitution (0 = no bounce, 1 = full bounce)");
             ImGui::TreePop();
         }
 
@@ -25898,13 +26022,18 @@ void EditorLayer::DrawSphereColliderComponent(ECS::Entity entity) {
                 0.1f)) {
             col->center = Math::Vector3(center[0], center[1], center[2]);
         }
+        ImGui::SetItemTooltip("Local offset from entity origin");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Radius", &col->radius, 0.05f, 0.001f, 1000.0f);
+        ImGui::SetItemTooltip("Sphere radius in world units");
         InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger", &col->isTrigger);
+        ImGui::SetItemTooltip("Trigger colliders detect overlap but don't block movement");
 
         if (ImGui::TreeNode("Physics Material")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Surface friction (0 = ice, 1 = rubber)");
             InspectorUndo::DragFloat(m_UndoRedo, "Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Restitution (0 = no bounce, 1 = full bounce)");
             ImGui::TreePop();
         }
 
@@ -25930,21 +26059,28 @@ void EditorLayer::DrawCapsuleColliderComponent(ECS::Entity entity) {
                 0.1f)) {
             col->center = Math::Vector3(center[0], center[1], center[2]);
         }
+        ImGui::SetItemTooltip("Local offset from entity origin");
 
         InspectorUndo::DragFloat(m_UndoRedo, "Radius", &col->radius, 0.05f, 0.001f, 100.0f);
+        ImGui::SetItemTooltip("Capsule hemisphere radius");
         InspectorUndo::DragFloat(m_UndoRedo, "Height", &col->height, 0.1f, 0.001f, 100.0f);
+        ImGui::SetItemTooltip("Total capsule height including hemispheres");
 
         const char* directions[] = { "X", "Y", "Z" };
         int dir = static_cast<int>(col->direction);
         if (InspectorUndo::Combo(m_UndoRedo, "Direction", &dir, directions, 3)) {
             col->direction = static_cast<ECS::CapsuleColliderComponent::Direction>(dir);
         }
+        ImGui::SetItemTooltip("Primary axis of the capsule");
 
         InspectorUndo::Checkbox(m_UndoRedo, "Is Trigger", &col->isTrigger);
+        ImGui::SetItemTooltip("Trigger colliders detect overlap but don't block movement");
 
         if (ImGui::TreeNode("Physics Material##Capsule")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Friction", &col->friction, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Surface friction (0 = ice, 1 = rubber)");
             InspectorUndo::DragFloat(m_UndoRedo, "Bounciness", &col->bounciness, 0.05f, 0.0f, 1.0f);
+            ImGui::SetItemTooltip("Restitution (0 = no bounce, 1 = full bounce)");
             ImGui::TreePop();
         }
 
@@ -35660,6 +35796,7 @@ void EditorLayer::DrawNetworkPanel() {
 
     auto* netSystem = m_PlayMode.GetNetworkSystem();
     if (!netSystem) {
+        DrawEmptyState("NET", "No Network", "Enter play mode to access networking");
         ImGui::End();
         return;
     }

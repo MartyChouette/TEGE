@@ -1178,6 +1178,14 @@ private:
     bool m_ShowShortcutsHelp = false;
     char m_ShortcutSearchBuf[64] = "";
     void DrawShortcutsHelpModal();
+
+    // Hierarchy search/filter
+    char m_HierarchySearchBuf[128] = "";
+
+    // Entity delete confirmation
+    bool m_ShowDeleteConfirm = false;
+    std::vector<ECS::Entity> m_PendingDeleteEntities;
+    void DrawDeleteConfirmModal();
 };
 
 } // namespace Editor

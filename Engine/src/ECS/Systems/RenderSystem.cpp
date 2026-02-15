@@ -1854,7 +1854,8 @@ void RenderSystem::ClassifySceneComposition() {
             ? totalMesh - m_SceneComposition.spriteCount - m_SceneComposition.tilemapCount : 0;
     }
 
-    // Check for shadow-casting directional lights
+    // Check for shadow-casting directional lights and any lights at all
+    bool hasAnyLights = !m_CachedLightEntities.empty();
     for (Entity entity : m_CachedLightEntities) {
         auto* light = m_World->GetComponent<LightComponent>(entity);
         if (light && light->type == LightType::Directional && light->castShadows) {
@@ -1864,9 +1865,12 @@ void RenderSystem::ClassifySceneComposition() {
     }
 
     // Classify scene mode
+    // Scene3D: 3D meshes present — full pipeline (shadows, lighting, normal maps)
+    // Scene2_5D: sprites only but lights exist — skip shadows, populate full lighting UBO
+    // Scene2D: sprites only, no lights — minimal UBO (ambient/fog only)
     if (m_SceneComposition.mesh3DCount > 0) {
         m_SceneComposition.mode = SceneRenderMode::Scene3D;
-    } else if (m_SceneComposition.hasShadowCastingLights) {
+    } else if (hasAnyLights) {
         m_SceneComposition.mode = SceneRenderMode::Scene2_5D;
     } else {
         m_SceneComposition.mode = SceneRenderMode::Scene2D;

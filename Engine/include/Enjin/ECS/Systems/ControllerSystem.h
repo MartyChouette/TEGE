@@ -69,8 +69,9 @@ private:
                      f32 capsuleRadius = 0.3f, f32 capsuleHalfHeight = 0.5f);
 
     // Grid movement: returns true if grid movement handled the position update (caller should skip free movement)
+    // useXYPlane: when true, moves on XY plane (2D); when false, moves on XZ plane (3D)
     bool UpdateGridMovement(CharacterControllerBase& controller, TransformComponent& transform,
-                           const Math::Vector2& input, f32 dt);
+                           const Math::Vector2& input, f32 dt, bool useXYPlane = false);
 
     // Helper: update game camera entity transform to match position/lookAt
     void UpdateGameCameraTransform(const Math::Vector3& position, const Math::Vector3& target, const Math::Vector3& up);

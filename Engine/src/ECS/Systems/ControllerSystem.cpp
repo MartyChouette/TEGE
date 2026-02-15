@@ -596,10 +596,16 @@ bool ControllerSystem::CheckWall2D(const Math::Vector3& position, f32 moveDirX, 
 }
 
 bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, TransformComponent& transform,
-                                          const Math::Vector2& input, f32 dt) {
+                                          const Math::Vector2& input, f32 dt, bool useXYPlane) {
     if (!ctrl.gridMovement) return false;
 
     f32 cellSize = ctrl.gridCellSize;
+
+    // Secondary axis: Y for 2D (XY plane), Z for 3D (XZ plane)
+    auto& secAxis = useXYPlane ? transform.position.y : transform.position.z;
+    auto secStart = useXYPlane ? ctrl.gridMoveStart.y : ctrl.gridMoveStart.z;
+    auto secTarget = useXYPlane ? ctrl.gridMoveTarget.y : ctrl.gridMoveTarget.z;
+    auto secOrigin = useXYPlane ? ctrl.gridOrigin.y : ctrl.gridOrigin.z;
 
     if (ctrl.gridMoving) {
         // Currently moving between cells - advance the interpolation
@@ -615,7 +621,7 @@ bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, Transfo
             // Smooth step for nicer feel
             t = t * t * (3.0f - 2.0f * t);
             transform.position.x = ctrl.gridMoveStart.x + (ctrl.gridMoveTarget.x - ctrl.gridMoveStart.x) * t;
-            transform.position.z = ctrl.gridMoveStart.z + (ctrl.gridMoveTarget.z - ctrl.gridMoveStart.z) * t;
+            secAxis = secStart + (secTarget - secStart) * t;
         }
         return true;
     }
@@ -626,26 +632,26 @@ bool ControllerSystem::UpdateGridMovement(CharacterControllerBase& ctrl, Transfo
     }
 
     // Determine dominant direction (4-directional)
-    f32 dx = 0.0f, dz = 0.0f;
+    f32 dx = 0.0f, dSec = 0.0f;
     if (Math::Abs(input.x) > Math::Abs(input.y)) {
         dx = input.x > 0.0f ? cellSize : -cellSize;
     } else {
-        dz = input.y > 0.0f ? cellSize : -cellSize;
+        dSec = input.y > 0.0f ? cellSize : -cellSize;
     }
 
     // Snap current position to nearest grid cell first
     f32 ox = ctrl.gridOrigin.x;
-    f32 oz = ctrl.gridOrigin.z;
     f32 snappedX = Math::Round((transform.position.x - ox) / cellSize) * cellSize + ox;
-    f32 snappedZ = Math::Round((transform.position.z - oz) / cellSize) * cellSize + oz;
+    f32 snappedSec = Math::Round((secAxis - secOrigin) / cellSize) * cellSize + secOrigin;
     transform.position.x = snappedX;
-    transform.position.z = snappedZ;
+    secAxis = snappedSec;
 
     // Set up move to next cell
     ctrl.gridMoveStart = transform.position;
     ctrl.gridMoveTarget = transform.position;
     ctrl.gridMoveTarget.x += dx;
-    ctrl.gridMoveTarget.z += dz;
+    if (useXYPlane) ctrl.gridMoveTarget.y += dSec;
+    else            ctrl.gridMoveTarget.z += dSec;
     ctrl.gridMoveProgress = 0.0f;
     ctrl.gridMoving = true;
 
@@ -825,17 +831,17 @@ void ControllerSystem::UpdatePlatformer2D(Entity entity, Platformer2DController&
 void ControllerSystem::UpdateTopDown2D(Entity entity, TopDown2DController& ctrl, TransformComponent& transform, f32 dt) {
     (void)entity;
 
-    // Grid movement takes full control of position (XZ plane)
+    // Grid movement takes full control of position (XY plane for 2D)
     if (ctrl.gridMovement) {
         Math::Vector2 input = GetMovementInput(ctrl);
-        if (UpdateGridMovement(ctrl, transform, input, dt)) {
+        if (UpdateGridMovement(ctrl, transform, input, dt, true)) {
             // Update facing even in grid mode
             if (ctrl.rotateToFaceMovement && ctrl.gridMoving) {
                 Math::Vector3 dir = ctrl.gridMoveTarget - ctrl.gridMoveStart;
-                if (dir.x != 0.0f || dir.z != 0.0f) {
-                    f32 targetAngle = Math::Degrees(Math::Atan2(dir.x, dir.z));
+                if (dir.x != 0.0f || dir.y != 0.0f) {
+                    f32 targetAngle = Math::Degrees(Math::Atan2(dir.x, dir.y));
                     ctrl.facingAngle = targetAngle;
-                    transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.facingAngle));
+                    transform.rotation = Math::Quaternion::FromEuler(Math::Vector3(0, 0, Math::Radians(-ctrl.facingAngle)));
                 }
             }
             return;
@@ -881,21 +887,21 @@ void ControllerSystem::UpdateTopDown2D(Entity entity, TopDown2DController& ctrl,
 
     if (input.Length() > 0.01f) {
         ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, targetVelocity.x, accel * dt);
-        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, targetVelocity.y, accel * dt);
+        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, targetVelocity.y, accel * dt);
     } else if (!ctrl.isDashing) {
         ctrl.velocity.x = Math::MoveTowards(ctrl.velocity.x, 0.0f, decel * dt);
-        ctrl.velocity.z = Math::MoveTowards(ctrl.velocity.z, 0.0f, decel * dt);
+        ctrl.velocity.y = Math::MoveTowards(ctrl.velocity.y, 0.0f, decel * dt);
     }
 
-    // Apply velocity to position (XZ plane for top-down)
+    // Apply velocity to position (XY plane for 2D top-down)
     transform.position.x += ctrl.velocity.x * dt;
-    transform.position.z += ctrl.velocity.z * dt;
+    transform.position.y += ctrl.velocity.y * dt;
 
-    // Rotate to face movement direction
+    // Rotate to face movement direction (Z axis for 2D)
     if (ctrl.rotateToFaceMovement && input.Length() > 0.1f) {
         f32 targetAngle = Math::Degrees(Math::Atan2(input.x, input.y));
         ctrl.facingAngle = Math::MoveTowardsAngle(ctrl.facingAngle, targetAngle, ctrl.rotationSpeed * dt);
-        transform.rotation = Math::Quaternion(Math::Vector3(0, 1, 0), Math::Radians(ctrl.facingAngle));
+        transform.rotation = Math::Quaternion::FromEuler(Math::Vector3(0, 0, Math::Radians(-ctrl.facingAngle)));
     }
 }
 
