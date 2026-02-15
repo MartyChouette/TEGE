@@ -320,7 +320,7 @@ Design pattern for panels with no content:
 1. **Foundation (1-2 weeks):** ✅ Color tokens, font hierarchy, spacing constants
 2. **Core Panels (2-3 weeks):** ✅ Hierarchy, Inspector, Viewport styling
 3. **Micro-interactions (2 weeks):** ✅ Spring easing, hover effects, color transitions
-4. **Polish (1-2 weeks):** ~~Empty states~~ ✅ (DrawEmptyState helper with centered icon, heading, body, CTA button; applied to Hierarchy, Inspector, Asset Browser, Scene List, Dialogue, Plugin Browser, and all "No world loaded" panels), ~~notification toasts~~ ✅ (4 types: Info/Success/Warning/Error, slide-in animation, fade-out on expiry, wired to save/build/template events), ~~accent color presets~~ ✅ (6 harmony presets, auto-derive 11 colors), ~~theme preview~~ ✅ (250x160 live preview pane), ~~keyboard shortcuts help~~ ✅ (Ctrl+Shift+/, searchable modal, 5 categories), loading indicators, tooltips
+4. **Polish (1-2 weeks):** ~~Empty states~~ ✅ (DrawEmptyState helper with centered icon, heading, body, CTA button; applied to Hierarchy, Inspector, Asset Browser, Scene List, Dialogue, Plugin Browser, Console, Network, and all "No world loaded" panels), ~~notification toasts~~ ✅ (4 types: Info/Success/Warning/Error, slide-in animation, fade-out on expiry, wired to save/build/template/scene-load/model-import/component-remove events), ~~accent color presets~~ ✅ (6 harmony presets, auto-derive 11 colors), ~~theme preview~~ ✅ (250x160 live preview pane), ~~keyboard shortcuts help~~ ✅ (Ctrl+Shift+/, searchable modal, 5 categories), loading indicators, ~~tooltips~~ ✅ (50+ inspector tooltips across Transform/Material/Light/Camera/Rigidbody/Collider), ~~hierarchy search~~ ✅ (case-insensitive text filter), ~~delete confirmation~~ ✅ (modal dialog for entity deletion), ~~LOD warning~~ ✅ (disabled state warning when LOD system inactive)
 
 ---
 
@@ -548,10 +548,13 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | ✅ Complete (TemplateCreator.h/cpp, save/load/scan/delete, View > Tools > Template Creator, templates/ directory) |
 | Template marketplace | Medium | Medium | P3 | ✅ Complete (TemplateMarketplace.h/cpp, 15 curated templates, search/filter/sort, install/uninstall, View > Tools) |
-| Notification toast system | Medium | Low | P3 | ✅ Complete (4 types, slide-in/fade-out, wired to save/build/template events) |
+| Notification toast system | Medium | Low | P3 | ✅ Complete (4 types, slide-in/fade-out, wired to save/build/template/scene-load/model-import/component-remove events) |
 | Accent color harmony presets | Medium | Low | P3 | ✅ Complete (6 presets, auto-derive 11 accent colors, fine-tune in sub-tree) |
 | Theme preview pane | Low | Low | P3 | ✅ Complete (250x160 live preview in Editor Settings) |
 | Keyboard shortcuts help | Medium | Low | P3 | ✅ Complete (Ctrl+Shift+/, searchable modal, 5 categories) |
+| Hierarchy search bar | Medium | Low | P3 | ✅ Complete (case-insensitive text filter, hides non-matching entities) |
+| Entity delete confirmation | Low | Low | P3 | ✅ Complete (modal dialog with Cancel/Delete) |
+| Inspector tooltips | Medium | Low | P3 | ✅ Complete (50+ tooltips across Transform/Material/Light/Camera/Rigidbody/Collider) |
 | Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
 | Installer distribution | Medium | High | P3 | Planned |

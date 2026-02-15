@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-02-15 (Session 23)
+
+### Lighting Pipeline Fix, Editor UX Audit, TopDown2D Controller
+
+**1. Lighting Fix — ShaderData.h Full Recompile**
+Recompiled all 22 GLSL shaders to SPIR-V and re-embedded in `ShaderData.h`. The stale SPIR-V had a 16-byte UBO offset mismatch introduced when `shProbeIrradiance` was added to LightingUBO — the GLSL was updated but the embedded bytecode was not recompiled. Also widened the `Scene2_5D` classification gate in RenderSystem so it triggers on any light entities, not just shadow-casting directional lights. This ensures lit sprites get the full LightingUBO in scenes with point/spot lights only.
+
+**2. Editor UX Audit (8 Fixes)**
+- Hierarchy search bar: case-insensitive text filter, entities not matching are hidden
+- Entity delete confirmation modal: "Delete N entities?" with Cancel/Delete buttons
+- Console and Network panels: empty state placeholders (DrawEmptyState pattern)
+- 50+ inspector tooltips across Transform, Material, Light, Camera, Rigidbody, and Collider components
+- Scene load and model import toast notifications via ShowNotification()
+- Component remove feedback toasts with undo hint ("Removed X. Press Ctrl+Z to undo")
+- LOD disabled state warning when LODComponent is present but LOD system is not active
+
+**3. TopDown2D Controller Fix**
+Changed TopDown2D controller from XZ plane movement (3D convention) to XY plane movement (2D convention). Rotation now uses Z-axis instead of Y-axis. `UpdateGridMovement()` now accepts a `useXYPlane` parameter so both 2D (XY) and 3D (XZ) top-down controllers share the same code path.
+
+Files changed: ~10 across Engine/src/Editor, Engine/src/ECS/Systems, Engine/src/Renderer, Engine/include
+
+---
+
 ## 2026-02-14 (Session 22)
 
 ### 5 Editor UX Features Implemented
