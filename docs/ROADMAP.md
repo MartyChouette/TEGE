@@ -254,7 +254,7 @@ The existing `NodeGraphEditor` framework is production-ready and currently power
 
 ---
 
-## GUI Modernization Plan
+## GUI Modernization Plan ✅ COMPLETE
 
 ### Brand Color Palette
 
@@ -320,7 +320,7 @@ Design pattern for panels with no content:
 1. **Foundation (1-2 weeks):** ✅ Color tokens, font hierarchy, spacing constants
 2. **Core Panels (2-3 weeks):** ✅ Hierarchy, Inspector, Viewport styling
 3. **Micro-interactions (2 weeks):** ✅ Spring easing, hover effects, color transitions
-4. **Polish (1-2 weeks):** ~~Empty states~~ ✅ (DrawEmptyState helper with centered icon, heading, body, CTA button; applied to Hierarchy, Inspector, Asset Browser, Scene List, Dialogue, Plugin Browser, and all "No world loaded" panels), loading indicators, tooltips
+4. **Polish (1-2 weeks):** ~~Empty states~~ ✅ (DrawEmptyState helper with centered icon, heading, body, CTA button; applied to Hierarchy, Inspector, Asset Browser, Scene List, Dialogue, Plugin Browser, and all "No world loaded" panels), ~~notification toasts~~ ✅ (4 types: Info/Success/Warning/Error, slide-in animation, fade-out on expiry, wired to save/build/template events), ~~accent color presets~~ ✅ (6 harmony presets, auto-derive 11 colors), ~~theme preview~~ ✅ (250x160 live preview pane), ~~keyboard shortcuts help~~ ✅ (Ctrl+Shift+/, searchable modal, 5 categories), loading indicators, tooltips
 
 ---
 
@@ -346,11 +346,9 @@ Ideas for "simple creation of complex games":
 - Behavior tree states can trigger animation graph states
 - Quest completion can trigger cinematic camera sequences
 
-### Template Marketplace (Future)
+### Template Marketplace ✅ COMPLETE
 
-- Pre-wired behavior trees, dialogue trees, quest flows
-- Downloadable game mechanics (inventory system, shop system)
-- Community-shared visual scripts
+`TemplateMarketplace` class (`TemplateMarketplace.h/cpp`) with bundled catalog of 15 curated templates across 5 categories (Starter, Genre, Systems, Retro, Advanced). `MarketplaceEntry` struct with id, name, description, category, author, version, license, projectMode, tags, accentColor, downloadCount, rating, ratingCount, fileSizeBytes, quality. Features: multi-field fuzzy search, category filter chips, sort by name/rating/downloads, install/uninstall to `templates/` directory. Full marketplace UI panel with accent-colored cards and metadata display. Uses `IsOpen()/SetOpen()` pattern. Menu: View > Tools > Template Marketplace.
 
 ---
 
@@ -549,6 +547,11 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Template rebuild & demo scenes | Medium | Medium | P2 | ✅ Complete (38→22→44 templates, all polished +50%) |
 | Project Hub redesign (landing + wizard) | Medium | High | P2 | ✅ Complete |
 | Template creator tool | Medium | Medium | P3 | ✅ Complete (TemplateCreator.h/cpp, save/load/scan/delete, View > Tools > Template Creator, templates/ directory) |
+| Template marketplace | Medium | Medium | P3 | ✅ Complete (TemplateMarketplace.h/cpp, 15 curated templates, search/filter/sort, install/uninstall, View > Tools) |
+| Notification toast system | Medium | Low | P3 | ✅ Complete (4 types, slide-in/fade-out, wired to save/build/template events) |
+| Accent color harmony presets | Medium | Low | P3 | ✅ Complete (6 presets, auto-derive 11 accent colors, fine-tune in sub-tree) |
+| Theme preview pane | Low | Low | P3 | ✅ Complete (250x160 live preview in Editor Settings) |
+| Keyboard shortcuts help | Medium | Low | P3 | ✅ Complete (Ctrl+Shift+/, searchable modal, 5 categories) |
 | Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
 | Installer distribution | Medium | High | P3 | Planned |
@@ -592,7 +595,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 - ~~**Extended Model Format Support**~~ ✅ — PLY (ASCII/binary point cloud/mesh) and VOX (MagicaVoxel voxel with greedy face merging) import via custom loaders, routed through SceneImporter
 - ~~**Template Rebuild & Demo Scenes**~~ ✅ — Redesigned from 38 to 22 focused templates, then restored 20 removed templates for 44 total across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test), each showcasing real engine features. All 44 templates polished with ~50% more content: additional entities, components, atmosphere, HUD elements, and gameplay setups
 - **Planet Gravity Template** — Super Mario Galaxy-style spherical gravity third-person platformer (PlanetGravityZone, SurfaceAlignedController, orbit camera)
-- **Editor Accent Color & Theming** — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), rounded corners, softer panel borders, distinct visual identity
+- ~~**Editor Accent Color & Theming**~~ ✅ — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), ~~accent color harmony presets~~ (done — 6 presets: Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal, auto-derive 11 colors), ~~theme preview pane~~ (done — 250x160 live preview), ~~notification toasts~~ (done — 4 types, slide-in/fade-out), ~~keyboard shortcuts help~~ (done — Ctrl+Shift+/, searchable, categorized), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added
 - ~~**Improved Icon/Window Inspector**~~ ✅ — Entity icons in hierarchy (bracket-tagged by primary component type), component icons on inspector headers, window icon picker in Project Settings with browse/apply/persist
 - ~~**Asset Browser Panel**~~ ✅ — Grid/list view toggle with cached directory listing, image thumbnails via texture cache, search/filter bar, hover tooltip with 256px preview, drag source for future drag-to-viewport, type-colored labels (3D/SCN/SHD/IMG/AS/SFX/PFB), adjustable thumbnail size

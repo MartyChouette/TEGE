@@ -46,6 +46,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
 - **Startup Templates** - 44 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
 - **Template Creator** - Save current scene as reusable template with metadata (View > Tools > Template Creator), custom templates stored in templates/ directory
+- **Template Marketplace** - Bundled catalog of 15 curated templates across 5 categories with search, filter by category, sort by name/rating/downloads, install/uninstall (View > Tools > Template Marketplace)
 - **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
 - **Stats Overlay** - FPS, frame time, draw calls, triangle count
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
@@ -72,6 +73,10 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Empty State Patterns** - Helpful empty-state messages with call-to-action buttons in all panels
 - **Collaborative Editing** - Real-time multi-user scene editing with OT protocol, peer cursors, conflict resolution, lock enforcement
 - **Symbol Library** - Reusable graphic symbols as prefabs with nested editing, category browser, update propagation, Flash timeline sync
+- **Notification Toasts** - Stacked bottom-right toast notifications (Info/Success/Warning/Error) with slide-in animation and fade-out, wired to save/build/template events
+- **Accent Color Presets** - 6 harmony presets (Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal) with auto-derived accent colors and fine-tune controls
+- **Theme Preview** - 250x160 live preview pane in Editor Settings showing current theme appearance in real-time
+- **Keyboard Shortcuts Help** - Ctrl+Shift+/ searchable modal listing all editor shortcuts grouped by category (General, Viewport, Selection, Play Mode, Editor)
 
 ### Entity-Component System
 - **70+ Component Types** - Full inspector UI for all components

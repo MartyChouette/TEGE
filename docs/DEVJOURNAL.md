@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-02-14 (Session 22)
+
+### 5 Editor UX Features Implemented
+
+**1. Template Marketplace**
+New `TemplateMarketplace` class (`TemplateMarketplace.h/cpp`) with a bundled catalog of 15 curated templates across 5 categories (Starter, Genre, Systems, Retro, Advanced). `MarketplaceEntry` struct with id, name, description, category, author, version, license, projectMode, tags, accentColor, downloadCount, rating, ratingCount, fileSizeBytes, quality. Multi-field fuzzy search, category filter chips, sort by name/rating/downloads. Install/uninstall to `templates/` directory. Full marketplace UI panel: search bar, category filter chips, sort dropdown, grid layout with accent-colored cards, install/remove buttons, metadata display. Uses `IsOpen()/SetOpen()` pattern (no EditorPanel bits). Menu: View > Tools > Template Marketplace.
+
+**2. Accent Color Picker Enhancement**
+Enhanced accent color section in Editor Settings with 6 harmony presets (Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal). Click a preset to auto-derive all 11 accent colors from a single primary color. Fine-tune individual colors in a collapsible sub-tree. Reset to Theme Defaults button for quick restoration.
+
+**3. Theme Preview Pane**
+Miniature 250x160 live preview pane in Editor Settings showing current theme's window background, title bar, header, buttons, slider, checkbox, and status bar. Updates in real-time when theme or accent colors change.
+
+**4. Notification Toast System**
+Stacked toast notifications in the bottom-right corner of the editor. 4 types: Info (blue), Success (green), Warning (yellow), Error (red). Slide-in animation from right, fade-out on expiry (3s default, 5s for errors). `ShowNotification(message, type)` callable from EditorLayer. Wired into: scene save, build complete/fail, template save/install/remove.
+
+**5. Keyboard Shortcuts Help Modal**
+Ctrl+Shift+/ opens a searchable modal listing all editor shortcuts grouped by 5 categories: General, Viewport, Selection, Play Mode, Editor. Fuzzy search across shortcut keys, descriptions, and categories.
+
+Files changed: ~6 across Engine/src/Editor, Engine/include/Enjin/Editor, docs
+
+---
+
 ## 2026-02-14 (Session 21)
 
 ### 2 Stability Fixes

@@ -1433,6 +1433,13 @@ void EditorLayer::Update(f32 deltaTime) {
         if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyPressed(KeyCode::P)) {
             m_CommandPalette.Toggle();
         }
+
+        // Keyboard shortcuts help (Ctrl+Shift+/)
+        if (Input::IsKeyDown(KeyCode::LeftControl) && Input::IsKeyDown(KeyCode::LeftShift) &&
+            Input::IsKeyPressed(KeyCode::Slash)) {
+            m_ShowShortcutsHelp = !m_ShowShortcutsHelp;
+            m_ShortcutSearchBuf[0] = '\0';
+        }
     }
 
     // Register palette commands on first use
@@ -2521,6 +2528,16 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         DrawTemplateCreatorWindow();
     }
 
+    // Template Marketplace window
+    if (m_TemplateMarketplace.IsOpen()) {
+        DrawTemplateMarketplaceWindow();
+    }
+
+    // Keyboard Shortcuts Help modal
+    if (m_ShowShortcutsHelp) {
+        DrawShortcutsHelpModal();
+    }
+
     // Clear the force flag after one frame
     if (m_ForceLayout) m_ForceLayout = false;
 
@@ -3001,6 +3018,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         m_GameMenu.Render(io.DisplaySize.x, io.DisplaySize.y);
     }
 
+    // Draw notification toasts (always on top)
+    DrawNotifications(m_LastDeltaTime);
+
     // End profiler frame measurement
     Debug::Profiler::Instance().EndFrame();
 
@@ -3477,6 +3497,15 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Template Creator", nullptr, &m_ShowTemplateCreator)) {
                     if (m_ShowTemplateCreator) m_TmplNeedsRescan = true;
+                }
+                {
+                    bool mpOpen = m_TemplateMarketplace.IsOpen();
+                    if (ImGui::MenuItem("Template Marketplace", nullptr, &mpOpen)) {
+                        if (mpOpen && m_TemplateMarketplace.GetCatalog().empty()) {
+                            m_TemplateMarketplace.Initialize("templates");
+                        }
+                        m_TemplateMarketplace.SetOpen(mpOpen);
+                    }
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Generate Documentation...")) {
@@ -8279,39 +8308,13 @@ void EditorLayer::DrawEditorSettingsPanel() {
 
         // -- Accent Colors --
         if (ImGui::TreeNode("Accent Colors")) {
-            bool accentChanged = false;
-            auto& ac = m_EditorSettings.accentColors;
+            DrawAccentColorPicker();
+            ImGui::TreePop();
+        }
 
-            if (ImGui::Checkbox("Use Custom Accent Colors", &ac.useCustom)) {
-                accentChanged = true;
-            }
-
-            if (ac.useCustom) {
-                if (ImGui::ColorEdit4("Button##accent", &ac.button.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Button Hover##accent", &ac.buttonHover.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Button Active##accent", &ac.buttonActive.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Check Mark##accent", &ac.checkMark.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Slider Grab##accent", &ac.sliderGrab.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Slider Grab Active##accent", &ac.sliderGrabActive.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Resize Grip##accent", &ac.resizeGrip.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Text Selected##accent", &ac.textSelected.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Drag & Drop Target##accent", &ac.dragDropTarget.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Tab Active##accent", &ac.tabActive.r)) accentChanged = true;
-                if (ImGui::ColorEdit4("Tab Hovered##accent", &ac.tabHovered.r)) accentChanged = true;
-
-                ImGui::Spacing();
-                if (ImGui::Button("Reset to Defaults")) {
-                    ac = AccentColorConfig::DefaultForTheme(m_EditorSettings.theme);
-                    ac.useCustom = true;
-                    accentChanged = true;
-                }
-            }
-
-            if (accentChanged) {
-                m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
-                settingsChanged = true;
-            }
-
+        // -- Theme Preview --
+        if (ImGui::TreeNode("Theme Preview")) {
+            DrawThemePreview();
             ImGui::TreePop();
         }
 
@@ -22216,6 +22219,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
                     }
                 }
                 m_ConsoleLog.push_back("[Template] Saved: " + meta.name);
+                ShowNotification("Template saved: " + std::string(m_TmplName), NotificationType::Success);
                 m_TmplNeedsRescan = true;
             } else {
                 m_ConsoleLog.push_back("[Template] ERROR: Failed to save template");
@@ -22338,6 +22342,507 @@ void EditorLayer::DrawTemplateCreatorWindow() {
 
     if (ImGui::Button("Refresh", ImVec2(-1, 0))) {
         m_TmplNeedsRescan = true;
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// Template Marketplace Window
+// ============================================================================
+void EditorLayer::DrawTemplateMarketplaceWindow() {
+    ImGui::SetNextWindowSize(ImVec2(680, 550), ImGuiCond_FirstUseEver);
+    bool open = m_TemplateMarketplace.IsOpen();
+    if (!ImGui::Begin("Template Marketplace", &open)) {
+        ImGui::End();
+        m_TemplateMarketplace.SetOpen(open);
+        return;
+    }
+    m_TemplateMarketplace.SetOpen(open);
+
+    // Search bar
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::InputTextWithHint("##mktsearch", "Search templates...", m_MarketSearchBuf, sizeof(m_MarketSearchBuf));
+    ImGui::SameLine();
+
+    // Category filter
+    const char* categories[] = { "All", "Starter", "Genre", "Systems", "Retro", "Advanced" };
+    ImGui::SetNextItemWidth(100.0f);
+    ImGui::Combo("##mktcat", &m_MarketCategoryFilter, categories, 6);
+    ImGui::SameLine();
+
+    // Sort
+    const char* sortOpts[] = { "Name", "Rating", "Downloads" };
+    ImGui::SetNextItemWidth(90.0f);
+    ImGui::Combo("##mktsort", &m_MarketSortBy, sortOpts, 3);
+
+    ImGui::Separator();
+
+    // Get filtered results
+    std::string catFilter = m_MarketCategoryFilter > 0 ? categories[m_MarketCategoryFilter] : "";
+    auto results = m_TemplateMarketplace.FilterAndSearch(m_MarketSearchBuf, catFilter);
+
+    // Sort results
+    if (m_MarketSortBy == 1) { // Rating
+        std::sort(results.begin(), results.end(),
+            [](const Editor::MarketplaceEntry* a, const Editor::MarketplaceEntry* b) {
+                return a->rating > b->rating;
+            });
+    } else if (m_MarketSortBy == 2) { // Downloads
+        std::sort(results.begin(), results.end(),
+            [](const Editor::MarketplaceEntry* a, const Editor::MarketplaceEntry* b) {
+                return a->downloadCount > b->downloadCount;
+            });
+    }
+
+    if (results.empty()) {
+        DrawEmptyState("{ }", "No Templates Found", "Try a different search or category filter");
+    } else {
+        // Results count
+        ImGui::TextDisabled("%zu template%s", results.size(), results.size() == 1 ? "" : "s");
+        ImGui::Spacing();
+
+        // Grid/list of templates
+        for (auto* entry : results) {
+            ImGui::PushID(entry->id.c_str());
+
+            // Accent color bar
+            ImVec4 accent(entry->accentColor[0], entry->accentColor[1],
+                          entry->accentColor[2], entry->accentColor[3]);
+            ImGui::PushStyleColor(ImGuiCol_Header, accent);
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                ImVec4(accent.x * 1.2f, accent.y * 1.2f, accent.z * 1.2f, accent.w));
+
+            bool nodeOpen = ImGui::TreeNode("##mktentry", "%s", entry->name.c_str());
+            ImGui::PopStyleColor(2);
+
+            // Badges on same line
+            ImGui::SameLine();
+            ImGui::TextDisabled("[%s]", entry->category.c_str());
+            ImGui::SameLine();
+            ImGui::TextDisabled("[%s]", entry->projectMode.c_str());
+
+            // Rating stars + download count
+            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f + ImGui::GetCursorPosX());
+            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%.1f", entry->rating);
+            ImGui::SameLine();
+            ImGui::TextDisabled("(%u)", entry->downloadCount);
+
+            // Install status indicator
+            bool installed = m_TemplateMarketplace.IsInstalled(entry->id);
+            if (installed) {
+                ImGui::SameLine();
+                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "[OK]");
+            }
+
+            if (nodeOpen) {
+                // Description
+                ImGui::TextWrapped("%s", entry->description.c_str());
+                ImGui::Spacing();
+
+                // Metadata
+                ImGui::TextDisabled("Author: %s  |  Version: %s  |  License: %s",
+                    entry->author.c_str(), entry->version.c_str(), entry->license.c_str());
+                ImGui::TextDisabled("Quality: %s  |  Size: %s",
+                    Editor::TemplateMarketplace::GetQualityName(entry->quality),
+                    entry->fileSizeBytes < 1024 ? (std::to_string(entry->fileSizeBytes) + " B").c_str() :
+                    (std::to_string(entry->fileSizeBytes / 1024) + " KB").c_str());
+
+                // Tags
+                if (!entry->tags.empty()) {
+                    ImGui::TextDisabled("Tags:");
+                    ImGui::SameLine();
+                    for (usize t = 0; t < entry->tags.size(); ++t) {
+                        if (t > 0) ImGui::SameLine();
+                        ImGui::SmallButton(entry->tags[t].c_str());
+                    }
+                }
+
+                ImGui::Spacing();
+
+                // Install / Uninstall buttons
+                if (installed) {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                    ImGui::Button("Installed", ImVec2(90, 0));
+                    ImGui::PopStyleColor();
+                    ImGui::SameLine();
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
+                    if (ImGui::Button("Remove", ImVec2(70, 0))) {
+                        m_TemplateMarketplace.Uninstall(entry->id);
+                        ShowNotification("Removed: " + entry->name, NotificationType::Info);
+                        m_TmplNeedsRescan = true;
+                    }
+                    ImGui::PopStyleColor();
+                } else {
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.8f, 1.0f));
+                    if (ImGui::Button("Install", ImVec2(90, 0))) {
+                        if (m_TemplateMarketplace.Install(entry->id)) {
+                            ShowNotification("Installed: " + entry->name, NotificationType::Success);
+                            m_TmplNeedsRescan = true;
+                        } else {
+                            ShowNotification("Failed to install: " + entry->name, NotificationType::Error);
+                        }
+                    }
+                    ImGui::PopStyleColor();
+                }
+
+                ImGui::TreePop();
+            }
+
+            ImGui::PopID();
+        }
+    }
+
+    ImGui::End();
+}
+
+// ============================================================================
+// Notification Toast System
+// ============================================================================
+void EditorLayer::ShowNotification(const std::string& message, NotificationType type) {
+    EditorNotification notif;
+    notif.message = message;
+    notif.type = type;
+    notif.lifetime = (type == NotificationType::Error) ? 5.0f : 3.0f;
+    notif.elapsed = 0.0f;
+    notif.slideIn = 0.0f;
+    m_Notifications.push_back(std::move(notif));
+}
+
+void EditorLayer::DrawNotifications(f32 deltaTime) {
+    if (m_Notifications.empty()) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 padding = 16.0f;
+    f32 toastW = 300.0f;
+    f32 toastH = 40.0f;
+    f32 spacing = 6.0f;
+    f32 startX = io.DisplaySize.x - toastW - padding;
+    f32 startY = io.DisplaySize.y - padding;
+
+    ImDrawList* fg = ImGui::GetForegroundDrawList();
+
+    // Update and draw toasts from bottom up
+    i32 visibleIdx = 0;
+    for (i32 i = static_cast<i32>(m_Notifications.size()) - 1; i >= 0; --i) {
+        auto& notif = m_Notifications[i];
+        notif.elapsed += deltaTime;
+
+        // Slide-in animation (0 to 1 over 200ms)
+        if (notif.slideIn < 1.0f) {
+            notif.slideIn += deltaTime * 5.0f;
+            if (notif.slideIn > 1.0f) notif.slideIn = 1.0f;
+        }
+
+        // Fade out in last 0.5s
+        f32 fadeAlpha = 1.0f;
+        f32 remaining = notif.lifetime - notif.elapsed;
+        if (remaining < 0.5f) {
+            fadeAlpha = remaining / 0.5f;
+            if (fadeAlpha < 0.0f) fadeAlpha = 0.0f;
+        }
+
+        // Slide from right
+        f32 slideOffset = (1.0f - notif.slideIn) * (toastW + padding);
+        f32 yPos = startY - (toastH + spacing) * (visibleIdx + 1);
+        f32 xPos = startX + slideOffset;
+
+        // Background color based on type
+        ImU32 bgColor;
+        switch (notif.type) {
+            case NotificationType::Success: bgColor = IM_COL32(30, 110, 50, static_cast<u8>(220 * fadeAlpha)); break;
+            case NotificationType::Warning: bgColor = IM_COL32(140, 110, 20, static_cast<u8>(220 * fadeAlpha)); break;
+            case NotificationType::Error:   bgColor = IM_COL32(150, 30, 30, static_cast<u8>(220 * fadeAlpha)); break;
+            default:                        bgColor = IM_COL32(40, 60, 90, static_cast<u8>(220 * fadeAlpha)); break;
+        }
+
+        ImVec2 p0(xPos, yPos);
+        ImVec2 p1(xPos + toastW, yPos + toastH);
+        fg->AddRectFilled(p0, p1, bgColor, 6.0f);
+
+        // Type icon
+        const char* icon;
+        switch (notif.type) {
+            case NotificationType::Success: icon = "[OK]"; break;
+            case NotificationType::Warning: icon = "[!]"; break;
+            case NotificationType::Error:   icon = "[X]"; break;
+            default:                        icon = "[i]"; break;
+        }
+
+        ImU32 textColor = IM_COL32(255, 255, 255, static_cast<u8>(240 * fadeAlpha));
+        fg->AddText(ImVec2(xPos + 10, yPos + 11), textColor, icon);
+        fg->AddText(ImVec2(xPos + 40, yPos + 11), textColor, notif.message.c_str());
+
+        visibleIdx++;
+    }
+
+    // Remove expired notifications
+    m_Notifications.erase(
+        std::remove_if(m_Notifications.begin(), m_Notifications.end(),
+            [](const EditorNotification& n) { return n.elapsed >= n.lifetime; }),
+        m_Notifications.end());
+}
+
+// ============================================================================
+// Accent Color Picker (with harmony presets)
+// ============================================================================
+void EditorLayer::DrawAccentColorPicker() {
+    bool accentChanged = false;
+    auto& ac = m_EditorSettings.accentColors;
+    bool settingsChanged = false;
+
+    if (ImGui::Checkbox("Use Custom Accent Colors", &ac.useCustom)) {
+        accentChanged = true;
+    }
+
+    if (ac.useCustom) {
+        // Harmony presets — derive all accent colors from a single primary color
+        ImGui::TextDisabled("Quick Presets:");
+        struct AccentPreset {
+            const char* name;
+            f32 r, g, b;
+        };
+        static const AccentPreset presets[] = {
+            {"Default Blue",   0.22f, 0.45f, 0.78f},
+            {"Warm Orange",    0.80f, 0.45f, 0.15f},
+            {"Forest Green",   0.22f, 0.60f, 0.30f},
+            {"Royal Purple",   0.50f, 0.25f, 0.70f},
+            {"Crimson Red",    0.75f, 0.18f, 0.22f},
+            {"Teal",           0.15f, 0.55f, 0.60f},
+        };
+
+        for (i32 i = 0; i < 6; ++i) {
+            if (i > 0) ImGui::SameLine();
+            auto& p = presets[i];
+
+            // Draw small color swatch button
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(p.r, p.g, p.b, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(p.r * 1.2f, p.g * 1.2f, p.b * 1.2f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(p.r * 0.8f, p.g * 0.8f, p.b * 0.8f, 1.0f));
+            if (ImGui::Button(p.name, ImVec2(0, 24))) {
+                // Auto-derive all accent colors from primary
+                ac.button       = {p.r * 0.7f, p.g * 0.7f, p.b * 0.7f, 1.0f};
+                ac.buttonHover  = {p.r, p.g, p.b, 1.0f};
+                ac.buttonActive = {p.r * 1.15f, p.g * 1.15f, p.b * 1.15f, 1.0f};
+                ac.checkMark    = {p.r * 1.1f, p.g * 1.1f, p.b * 1.1f, 1.0f};
+                ac.sliderGrab   = {p.r * 0.9f, p.g * 0.9f, p.b * 0.9f, 1.0f};
+                ac.sliderGrabActive = {p.r * 1.2f, p.g * 1.2f, p.b * 1.2f, 1.0f};
+                ac.resizeGrip   = {p.r * 0.6f, p.g * 0.6f, p.b * 0.6f, 0.5f};
+                ac.textSelected = {p.r * 0.7f, p.g * 0.7f, p.b * 0.7f, 0.5f};
+                ac.dragDropTarget = {p.r, p.g, p.b, 0.9f};
+                ac.tabActive    = {p.r * 0.65f, p.g * 0.65f, p.b * 0.65f, 1.0f};
+                ac.tabHovered   = {p.r * 0.85f, p.g * 0.85f, p.b * 0.85f, 1.0f};
+                accentChanged = true;
+            }
+            ImGui::PopStyleColor(3);
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Individual color editors (advanced)
+        if (ImGui::TreeNode("Fine-Tune Colors")) {
+            if (ImGui::ColorEdit4("Button##accent", &ac.button.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Button Hover##accent", &ac.buttonHover.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Button Active##accent", &ac.buttonActive.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Check Mark##accent", &ac.checkMark.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Slider Grab##accent", &ac.sliderGrab.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Slider Grab Active##accent", &ac.sliderGrabActive.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Resize Grip##accent", &ac.resizeGrip.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Text Selected##accent", &ac.textSelected.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Drag & Drop Target##accent", &ac.dragDropTarget.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Tab Active##accent", &ac.tabActive.r)) accentChanged = true;
+            if (ImGui::ColorEdit4("Tab Hovered##accent", &ac.tabHovered.r)) accentChanged = true;
+            ImGui::TreePop();
+        }
+
+        ImGui::Spacing();
+        if (ImGui::Button("Reset to Theme Defaults")) {
+            ac = AccentColorConfig::DefaultForTheme(m_EditorSettings.theme);
+            ac.useCustom = true;
+            accentChanged = true;
+        }
+    }
+
+    if (accentChanged) {
+        m_ImGuiLayer->ApplyTheme(m_EditorSettings.theme, &m_EditorSettings.accentColors);
+        settingsChanged = true;
+    }
+
+    if (settingsChanged) {
+        m_EditorSettings.Save();
+    }
+}
+
+// ============================================================================
+// Theme Preview
+// ============================================================================
+void EditorLayer::DrawThemePreview() {
+    ImVec2 previewSize(250.0f, 160.0f);
+    ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+
+    // Get current ImGui style for preview
+    ImGuiStyle& style = ImGui::GetStyle();
+
+    // Background
+    ImU32 windowBg = ImGui::GetColorU32(ImGuiCol_WindowBg);
+    ImU32 childBg = ImGui::GetColorU32(ImGuiCol_ChildBg);
+    ImU32 border = ImGui::GetColorU32(ImGuiCol_Border);
+    ImU32 titleBg = ImGui::GetColorU32(ImGuiCol_TitleBgActive);
+    ImU32 headerBg = ImGui::GetColorU32(ImGuiCol_Header);
+    ImU32 button = ImGui::GetColorU32(ImGuiCol_Button);
+    ImU32 buttonHov = ImGui::GetColorU32(ImGuiCol_ButtonHovered);
+    ImU32 text = ImGui::GetColorU32(ImGuiCol_Text);
+    ImU32 textDis = ImGui::GetColorU32(ImGuiCol_TextDisabled);
+    ImU32 sliderGrab = ImGui::GetColorU32(ImGuiCol_SliderGrab);
+    ImU32 frameBg = ImGui::GetColorU32(ImGuiCol_FrameBg);
+    ImU32 checkMark = ImGui::GetColorU32(ImGuiCol_CheckMark);
+
+    // Main background
+    dl->AddRectFilled(pos, ImVec2(pos.x + previewSize.x, pos.y + previewSize.y), windowBg, 4.0f);
+    dl->AddRect(pos, ImVec2(pos.x + previewSize.x, pos.y + previewSize.y), border, 4.0f);
+
+    // Title bar
+    dl->AddRectFilled(ImVec2(pos.x + 1, pos.y + 1),
+                      ImVec2(pos.x + previewSize.x - 1, pos.y + 22), titleBg, 4.0f, ImDrawFlags_RoundCornersTop);
+    dl->AddText(ImVec2(pos.x + 8, pos.y + 4), text, "Preview Panel");
+
+    // Simulated hierarchy tree
+    f32 y = pos.y + 28;
+    dl->AddRectFilled(ImVec2(pos.x + 6, y), ImVec2(pos.x + previewSize.x * 0.45f, y + 16), headerBg, 2.0f);
+    dl->AddText(ImVec2(pos.x + 10, y + 1), text, "Scene Root");
+    y += 18;
+    dl->AddText(ImVec2(pos.x + 22, y + 1), textDis, "Entity 1");
+    y += 16;
+    dl->AddText(ImVec2(pos.x + 22, y + 1), textDis, "Entity 2");
+
+    // Simulated inspector section (right half)
+    f32 rightX = pos.x + previewSize.x * 0.48f;
+    y = pos.y + 28;
+    dl->AddRectFilled(ImVec2(rightX, y), ImVec2(pos.x + previewSize.x - 6, y + 16), headerBg, 2.0f);
+    dl->AddText(ImVec2(rightX + 4, y + 1), text, "Inspector");
+    y += 20;
+
+    // Slider mockup
+    dl->AddRectFilled(ImVec2(rightX + 4, y + 2), ImVec2(pos.x + previewSize.x - 10, y + 14), frameBg, 2.0f);
+    f32 sliderEnd = rightX + 4 + (pos.x + previewSize.x - 10 - rightX - 4) * 0.6f;
+    dl->AddRectFilled(ImVec2(rightX + 4, y + 2), ImVec2(sliderEnd, y + 14), sliderGrab, 2.0f);
+    y += 20;
+
+    // Button mockups
+    dl->AddRectFilled(ImVec2(rightX + 4, y), ImVec2(rightX + 60, y + 18), button, 3.0f);
+    dl->AddText(ImVec2(rightX + 12, y + 2), text, "Apply");
+    dl->AddRectFilled(ImVec2(rightX + 64, y), ImVec2(rightX + 124, y + 18), buttonHov, 3.0f);
+    dl->AddText(ImVec2(rightX + 72, y + 2), text, "Cancel");
+    y += 24;
+
+    // Checkbox mockup
+    dl->AddRectFilled(ImVec2(rightX + 4, y), ImVec2(rightX + 16, y + 12), frameBg, 2.0f);
+    dl->AddText(ImVec2(rightX + 7, y - 1), checkMark, "x");
+    dl->AddText(ImVec2(rightX + 20, y), textDis, "Enabled");
+
+    // Bottom status bar
+    f32 barY = pos.y + previewSize.y - 18;
+    dl->AddRectFilled(ImVec2(pos.x + 1, barY),
+                      ImVec2(pos.x + previewSize.x - 1, pos.y + previewSize.y - 1), childBg, 4.0f, ImDrawFlags_RoundCornersBottom);
+    dl->AddText(ImVec2(pos.x + 8, barY + 2), textDis, "Ready");
+
+    // Reserve space
+    ImGui::Dummy(previewSize);
+}
+
+// ============================================================================
+// Keyboard Shortcuts Help Modal
+// ============================================================================
+void EditorLayer::DrawShortcutsHelpModal() {
+    ImGui::SetNextWindowSize(ImVec2(520, 480), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Keyboard Shortcuts", &m_ShowShortcutsHelp)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::InputTextWithHint("##shortcutsearch", "Search shortcuts...",
+                             m_ShortcutSearchBuf, sizeof(m_ShortcutSearchBuf));
+    ImGui::Separator();
+
+    struct ShortcutEntry {
+        const char* category;
+        const char* shortcut;
+        const char* description;
+    };
+
+    static const ShortcutEntry shortcuts[] = {
+        // General
+        {"General", "Ctrl+S", "Save scene"},
+        {"General", "Ctrl+Z", "Undo"},
+        {"General", "Ctrl+Y", "Redo"},
+        {"General", "Ctrl+D", "Duplicate selected"},
+        {"General", "Delete", "Delete selected entity"},
+        {"General", "F", "Focus on selected entity"},
+        {"General", "Ctrl+P", "Command Palette"},
+        {"General", "Ctrl+Shift+/", "Show this help"},
+        // Viewport
+        {"Viewport", "1", "Translate gizmo"},
+        {"Viewport", "2", "Rotate gizmo"},
+        {"Viewport", "3", "Scale gizmo"},
+        {"Viewport", "4", "Toggle local/world space"},
+        {"Viewport", "W/A/S/D", "Camera movement (hold RMB)"},
+        {"Viewport", "Space / E", "Move camera up"},
+        {"Viewport", "Q / Ctrl", "Move camera down"},
+        {"Viewport", "Shift", "Sprint (faster camera)"},
+        {"Viewport", "RMB + Mouse", "Look around"},
+        {"Viewport", "MMB", "Orbit (Orbit mode)"},
+        // Selection
+        {"Selection", "Ctrl+Click", "Toggle entity selection"},
+        {"Selection", "Shift+Click", "Range select"},
+        {"Selection", "Drag", "Marquee selection"},
+        {"Selection", "Escape", "Clear selection"},
+        // Play Mode
+        {"Play Mode", "Ctrl+P", "Play / Stop"},
+        {"Play Mode", "Ctrl+Shift+P", "Pause / Resume"},
+        // Editor
+        {"Editor", "F1", "Toggle game menu"},
+        {"Editor", "F10", "Toggle input action map"},
+        {"Editor", "Ctrl+Shift+/", "Keyboard shortcuts help"},
+    };
+
+    std::string filter;
+    if (m_ShortcutSearchBuf[0] != '\0') {
+        filter = m_ShortcutSearchBuf;
+        for (auto& c : filter) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+
+    const char* lastCategory = nullptr;
+    for (auto& sc : shortcuts) {
+        // Filter
+        if (!filter.empty()) {
+            std::string shortcutLower = sc.shortcut;
+            std::string descLower = sc.description;
+            std::string catLower = sc.category;
+            for (auto& c : shortcutLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (auto& c : descLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (auto& c : catLower) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            if (shortcutLower.find(filter) == std::string::npos &&
+                descLower.find(filter) == std::string::npos &&
+                catLower.find(filter) == std::string::npos) {
+                continue;
+            }
+        }
+
+        // Category header
+        if (!lastCategory || std::strcmp(lastCategory, sc.category) != 0) {
+            if (lastCategory) ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 1.0f, 1.0f), "%s", sc.category);
+            ImGui::Separator();
+            lastCategory = sc.category;
+        }
+
+        // Shortcut entry
+        ImGui::Text("  %-20s", sc.shortcut);
+        ImGui::SameLine(200.0f);
+        ImGui::TextDisabled("%s", sc.description);
     }
 
     ImGui::End();
@@ -23490,6 +23995,7 @@ void EditorLayer::SaveScene(const std::string& path) {
         ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_INFO(Editor, "Saved scene to %s (%zu entities)", path.c_str(), entityCount);
+        ShowNotification("Scene saved: " + std::filesystem::path(path).filename().string(), NotificationType::Success);
 
         // Track in recent projects
         m_EditorSettings.AddRecentProject(path);
@@ -29863,6 +30369,11 @@ void EditorLayer::DrawBuildDialog() {
         m_BuildResult = pipeline.Execute(m_BuildConfig);
         m_BuildInProgress = false;
         m_BuildFinished = true;
+        if (m_BuildResult.success) {
+            ShowNotification("Build complete!", NotificationType::Success);
+        } else {
+            ShowNotification("Build failed", NotificationType::Error);
+        }
     }
     if (!canBuild) ImGui::EndDisabled();
 

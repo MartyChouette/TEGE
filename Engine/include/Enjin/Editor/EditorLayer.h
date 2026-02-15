@@ -63,6 +63,7 @@
 #include "Enjin/Editor/VectorDrawingEditor.h"
 #include "Enjin/Editor/FeedbackSystem.h"
 #include "Enjin/Editor/TemplateCreator.h"
+#include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
 #include "Enjin/Build/HTML5Exporter.h"
@@ -1144,6 +1145,39 @@ private:
     i32 m_TmplDeleteConfirm = -1; // index of template pending delete confirmation
 
     void DrawTemplateCreatorWindow();
+
+    // Template Marketplace
+    Editor::TemplateMarketplace m_TemplateMarketplace;
+    char m_MarketSearchBuf[128] = "";
+    i32 m_MarketCategoryFilter = 0;   // 0=All, 1=Starter, 2=Genre, 3=Systems, 4=Retro, 5=Advanced
+    i32 m_MarketSortBy = 0;           // 0=Name, 1=Rating, 2=Downloads
+    std::string m_MarketDetailId;     // ID of entry with detail popup open
+
+    void DrawTemplateMarketplaceWindow();
+
+    // Notification Toast System
+    enum class NotificationType : u8 { Info = 0, Success, Warning, Error };
+    struct EditorNotification {
+        std::string message;
+        NotificationType type = NotificationType::Info;
+        f32 lifetime = 3.0f;
+        f32 elapsed = 0.0f;
+        f32 slideIn = 0.0f;  // 0=offscreen, 1=fully visible (animated)
+    };
+    std::vector<EditorNotification> m_Notifications;
+    void ShowNotification(const std::string& message, NotificationType type = NotificationType::Info);
+    void DrawNotifications(f32 deltaTime);
+
+    // Accent Color Picker
+    void DrawAccentColorPicker();
+
+    // Theme Preview
+    void DrawThemePreview();
+
+    // Keyboard Shortcuts Help Modal
+    bool m_ShowShortcutsHelp = false;
+    char m_ShortcutSearchBuf[64] = "";
+    void DrawShortcutsHelpModal();
 };
 
 } // namespace Editor
