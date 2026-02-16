@@ -9,6 +9,7 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
+#include <algorithm>
 
 namespace Enjin {
 namespace Networking {
@@ -137,6 +138,43 @@ static constexpr u32 PACKET_HEADER_SIZE = 12;
 // CONNECTION INFO
 // ============================================================================
 
+struct RateLimiter {
+    f32 tokens = 0.0f;
+    f32 maxTokens = 0.0f;
+    f32 refillRate = 0.0f;
+    f32 lastTime = 0.0f;
+    void Configure(f32 maxTokensIn, f32 refillRateIn, f32 now, f32 initialTokens) {
+        maxTokens = maxTokensIn;
+        refillRate = refillRateIn;
+        lastTime = now;
+        tokens = initialTokens;
+    }
+    void Refill(f32 now) {
+        f32 dt = now - lastTime;
+        if (dt <= 0.0f) return;
+        tokens = std::min(maxTokens, tokens + dt * refillRate);
+        lastTime = now;
+    }
+    bool Consume(f32 amount, f32 now) {
+        Refill(now);
+        if (tokens < amount) return false;
+        tokens -= amount;
+        return true;
+    }
+};
+struct RateLimitState {
+    RateLimiter packets;
+    RateLimiter bytes;
+    f32 lastSeen = 0.0f;
+};
+
+struct ViolationState {
+    u32 count = 0;
+    f32 windowStart = 0.0f;
+    f32 lastSeen = 0.0f;
+    f32 bannedUntil = 0.0f;
+};
+
 struct ConnectionInfo {
     NetworkAddress address;
     ConnectionState state = ConnectionState::Disconnected;
@@ -160,6 +198,16 @@ struct ConnectionInfo {
     u32 packetsLost = 0;
     f32 packetLossRate = 0.0f;
 
+    // Per-packet send timestamps for accurate RTT measurement (H1 fix)
+    static constexpr u32 kSendTimestampSize = 128;
+    f32 sendTimestamps[kSendTimestampSize] = {};
+    void RecordSendTime(u16 seq, f32 time) { sendTimestamps[seq % kSendTimestampSize] = time; }
+    f32 GetSendTime(u16 seq) const { return sendTimestamps[seq % kSendTimestampSize]; }
+
+    // Rate limiting
+    RateLimiter packetLimiter;
+    RateLimiter byteLimiter;
+
     // Replay protection (per-connection sliding window)
     ReplayWindow replayWindow;
 
@@ -177,6 +225,23 @@ struct NetworkConfig {
     u32 maxPlayers = MAX_PLAYERS;
     std::string serverIP = "127.0.0.1";
     f32 syncRate = DEFAULT_SYNC_RATE;
+
+    // Rate limiting (per-sender)
+    f32 maxPacketsPerSecond = 200.0f;
+    f32 maxBytesPerSecond = 128.0f * 1024.0f;   // 128 KB/s
+    f32 burstPackets = 50.0f;
+    f32 burstBytes = 64.0f * 1024.0f;          // 64 KB burst
+
+    // Abuse protection
+    u32 maxViolations = 10;
+    f32 violationWindowSeconds = 10.0f;
+    f32 banSeconds = 30.0f;
+    bool kickOnViolation = true;
+
+    // Config I/O
+    bool LoadFromFile(const std::string& path = GetDefaultPath());
+    bool SaveToFile(const std::string& path = GetDefaultPath()) const;
+    static std::string GetDefaultPath();
 
     // Interpolation
     f32 interpDelay = 0.1f;           // 100ms interpolation buffer delay
@@ -309,3 +374,9 @@ inline u32 FNV1aHash(const std::string& str) {
 
 } // namespace Networking
 } // namespace Enjin
+
+
+
+
+
+

@@ -24,6 +24,11 @@
 namespace Enjin {
 namespace Networking {
 
+#ifdef _WIN32
+// M4 fix: WSA reference counting so multiple transports don't break Winsock
+static int s_WsaRefCount = 0;
+#endif
+
 // ============================================================================
 // NetworkAddress helpers
 // ============================================================================
@@ -40,13 +45,10 @@ u32 NetworkAddress::ParseIP(const std::string& ipStr) {
 std::string NetworkAddress::IPToString(u32 ip) {
     struct in_addr addr;
     addr.s_addr = ip;
-#ifdef _WIN32
-    return std::string(inet_ntoa(addr));
-#else
+    // H4 fix: inet_ntop is thread-safe on all platforms (replaces deprecated inet_ntoa)
     char buf[INET_ADDRSTRLEN];
     inet_ntop(AF_INET, &addr, buf, sizeof(buf));
     return std::string(buf);
-#endif
 }
 
 // ============================================================================
@@ -62,11 +64,14 @@ bool NetworkTransport::Bind(u16 port) {
 
 #ifdef _WIN32
     if (!m_WsaInitialized) {
-        WSADATA wsaData;
-        if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-            ENJIN_LOG_ERROR(Network, "NetworkTransport: WSAStartup failed");
-            return false;
+        if (s_WsaRefCount == 0) {
+            WSADATA wsaData;
+            if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+                ENJIN_LOG_ERROR(Network, "NetworkTransport: WSAStartup failed");
+                return false;
+            }
         }
+        s_WsaRefCount++;
         m_WsaInitialized = true;
     }
 #endif
@@ -188,7 +193,11 @@ void NetworkTransport::Close() {
 
 #ifdef _WIN32
     if (m_WsaInitialized) {
-        WSACleanup();
+        s_WsaRefCount--;
+        if (s_WsaRefCount <= 0) {
+            WSACleanup();
+            s_WsaRefCount = 0;
+        }
         m_WsaInitialized = false;
     }
 #endif

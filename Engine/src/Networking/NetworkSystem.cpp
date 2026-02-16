@@ -21,6 +21,8 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
         return false;
     }
 
+    LoadConfig();
+
     if (!m_Transport.Bind(port)) {
         ENJIN_LOG_ERROR(Network, "NetworkSystem: Failed to bind as host on port %u", port);
         return false;
@@ -29,7 +31,6 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     m_Role = NetworkRole::Host;
     m_LocalPlayerId = 0;
     m_LocalPlayerName = playerName;
-    m_NextPlayerId = 1;
     m_Time = 0.0f;
     m_Tick = 0;
 
@@ -60,6 +61,8 @@ bool NetworkSystem::JoinGame(const std::string& ip, u16 port, const std::string&
         ENJIN_LOG_WARN(Network, "NetworkSystem: Already connected, disconnect first");
         return false;
     }
+
+    LoadConfig();
 
     // Bind to any available port
     if (!m_Transport.Bind(0)) {
@@ -116,6 +119,8 @@ void NetworkSystem::Disconnect() {
     m_EntityToNetwork.clear();
     m_InterpBuffers.clear();
     m_ReliableOutbox.clear();
+    m_UnknownRateLimiters.clear();
+    m_ViolationStates.clear();
     m_SyncTimer = 0.0f;
     m_HeartbeatTimer = 0.0f;
     m_BytesSentThisSecond = 0;
@@ -384,9 +389,188 @@ u32 NetworkSystem::GetConnectedPlayerCount() const {
     return count;
 }
 
+bool NetworkSystem::LoadConfig(const std::string& path) {
+    return m_Config.LoadFromFile(path);
+}
+
+bool NetworkSystem::SaveConfig(const std::string& path) const {
+    return m_Config.SaveToFile(path);
+}
+
 // ============================================================================
 // PACKET PROCESSING
 // ============================================================================
+
+namespace {
+static constexpr f32 kRateLimitUnknownTtl = 10.0f;
+static constexpr size_t kRateLimitUnknownCap = 256;
+static constexpr f32 kViolationCleanupTtl = 60.0f;
+
+static u32 GetMinPayloadSize(MessageType type) {
+    switch (type) {
+        case MessageType::ConnectionRequest: return 1;
+        case MessageType::ConnectionAccept: return 1;
+        case MessageType::ConnectionReject: return 1;
+        case MessageType::Heartbeat: return 0;
+        case MessageType::HeartbeatAck: return 0;
+        case MessageType::PlayerReady: return 1;
+        case MessageType::LobbyState: return 1;
+        case MessageType::EntitySnapshot: return 2;
+        case MessageType::EntitySpawn: return 45;
+        case MessageType::EntityDestroy: return 4;
+        case MessageType::OwnershipRequest: return 4;
+        case MessageType::OwnershipGrant: return 5;
+        case MessageType::RPCCall: return 7;
+        case MessageType::SessionKeyExchange: return SESSION_KEY_SIZE;
+        default: return 0;
+    }
+}
+}
+
+bool NetworkSystem::IsBanned(const NetworkAddress& sender) {
+    auto it = m_ViolationStates.find(sender);
+    if (it == m_ViolationStates.end()) return false;
+    return it->second.bannedUntil > m_Time;
+}
+
+void NetworkSystem::RegisterViolation(const NetworkAddress& sender, const char* reason) {
+    if (m_Config.maxViolations == 0 || m_Config.violationWindowSeconds <= 0.0f) return;
+
+    ViolationState& state = m_ViolationStates[sender];
+    if (state.windowStart <= 0.0f || (m_Time - state.windowStart) > m_Config.violationWindowSeconds) {
+        state.windowStart = m_Time;
+        state.count = 0;
+    }
+
+    state.count++;
+    state.lastSeen = m_Time;
+
+    if (state.count >= m_Config.maxViolations) {
+        BanSender(sender, reason);
+    }
+}
+
+void NetworkSystem::BanSender(const NetworkAddress& sender, const char* reason) {
+    ViolationState& state = m_ViolationStates[sender];
+    state.bannedUntil = m_Time + std::max(0.0f, m_Config.banSeconds);
+    state.lastSeen = m_Time;
+    state.count = 0;
+
+    ENJIN_LOG_WARN(Network, "NetworkSystem: Banning sender (reason: %s)", reason ? reason : "unknown");
+    if (m_Config.kickOnViolation) {
+        DisconnectSender(sender, reason);
+    }
+}
+
+void NetworkSystem::DisconnectSender(const NetworkAddress& sender, const char* reason) {
+    if (m_Role == NetworkRole::Host) {
+        ConnectionInfo* conn = FindConnectionByAddress(sender);
+        if (conn) {
+            const std::vector<u8> empty;
+            SendPacket(sender, MessageType::Disconnect, empty);
+            HandleDisconnect(sender, conn->playerId);
+        }
+    } else if (m_Role == NetworkRole::Client) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Disconnecting due to protocol violation (%s)", reason ? reason : "unknown");
+        Disconnect();
+    }
+}
+
+bool NetworkSystem::RateLimitPacket(const NetworkAddress& sender, u32 size) {
+    if (IsBanned(sender)) return false;
+    if (m_Config.maxPacketsPerSecond <= 0.0f && m_Config.maxBytesPerSecond <= 0.0f) {
+        return true;
+    }
+
+    const f32 now = m_Time;
+
+    auto configure = [now](RateLimiter& limiter, f32 maxPerSecond, f32 burst) {
+        if (maxPerSecond <= 0.0f) return;
+        const f32 maxTokens = std::max(1.0f, burst);
+        const f32 refillRate = std::max(0.0f, maxPerSecond);
+        if (limiter.maxTokens != maxTokens || limiter.refillRate != refillRate) {
+            limiter.Configure(maxTokens, refillRate, now, maxTokens);
+        }
+    };
+
+    ConnectionInfo* conn = FindConnectionByAddress(sender);
+    if (conn) {
+        configure(conn->packetLimiter, m_Config.maxPacketsPerSecond, m_Config.burstPackets);
+        configure(conn->byteLimiter, m_Config.maxBytesPerSecond, m_Config.burstBytes);
+
+        bool ok = true;
+        if (m_Config.maxPacketsPerSecond > 0.0f) {
+            ok = conn->packetLimiter.Consume(1.0f, now) && ok;
+        }
+        if (m_Config.maxBytesPerSecond > 0.0f) {
+            ok = conn->byteLimiter.Consume(static_cast<f32>(size), now) && ok;
+        }
+        if (!ok) {
+            RegisterViolation(sender, "rate limit exceeded");
+        }
+        return ok;
+    }
+
+    RateLimitState& state = m_UnknownRateLimiters[sender];
+    state.lastSeen = now;
+    configure(state.packets, m_Config.maxPacketsPerSecond, m_Config.burstPackets);
+    configure(state.bytes, m_Config.maxBytesPerSecond, m_Config.burstBytes);
+
+    bool ok = true;
+    if (m_Config.maxPacketsPerSecond > 0.0f) {
+        ok = state.packets.Consume(1.0f, now) && ok;
+    }
+    if (m_Config.maxBytesPerSecond > 0.0f) {
+        ok = state.bytes.Consume(static_cast<f32>(size), now) && ok;
+    }
+
+    if (!ok) {
+        RegisterViolation(sender, "rate limit exceeded");
+    }
+
+    return ok;
+}
+
+void NetworkSystem::CleanupRateLimiters() {
+    if (!m_UnknownRateLimiters.empty()) {
+        const f32 now = m_Time;
+        for (auto it = m_UnknownRateLimiters.begin(); it != m_UnknownRateLimiters.end(); ) {
+            if (now - it->second.lastSeen > kRateLimitUnknownTtl) {
+                it = m_UnknownRateLimiters.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        if (m_UnknownRateLimiters.size() > kRateLimitUnknownCap) {
+            std::vector<std::pair<NetworkAddress, f32>> ordered;
+            ordered.reserve(m_UnknownRateLimiters.size());
+            for (const auto& entry : m_UnknownRateLimiters) {
+                ordered.push_back({entry.first, entry.second.lastSeen});
+            }
+
+            std::sort(ordered.begin(), ordered.end(),
+                [](const auto& a, const auto& b) { return a.second < b.second; });
+
+            const size_t toRemove = ordered.size() - kRateLimitUnknownCap;
+            for (size_t i = 0; i < toRemove; ++i) {
+                m_UnknownRateLimiters.erase(ordered[i].first);
+            }
+        }
+    }
+
+    if (m_ViolationStates.empty()) return;
+    const f32 now = m_Time;
+    for (auto it = m_ViolationStates.begin(); it != m_ViolationStates.end(); ) {
+        const bool expiredBan = it->second.bannedUntil > 0.0f && now > it->second.bannedUntil;
+        const bool stale = (now - it->second.lastSeen) > kViolationCleanupTtl;
+        if (expiredBan && stale) {
+            it = m_ViolationStates.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
 
 void NetworkSystem::ProcessIncomingPackets() {
     u8 buffer[MAX_PACKET_SIZE];
@@ -405,6 +589,10 @@ void NetworkSystem::ProcessIncomingPackets() {
 }
 
 void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u32 size) {
+    if (!RateLimitPacket(sender, size)) {
+        return;
+    }
+
     // ========================================================================
     // HMAC VERIFICATION — verify packet integrity before any processing
     // ========================================================================
@@ -424,6 +612,7 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
                 u32 authOverhead = 4 + HMAC_TAG_SIZE;  // auth sequence (4) + HMAC tag (32)
                 if (size < PACKET_HEADER_SIZE + authOverhead) {
                     ENJIN_LOG_WARN(Network, "NetworkSystem: Packet too small for auth tag, dropping");
+                    RegisterViolation(sender, "auth tag too small");
                     return;
                 }
 
@@ -438,6 +627,7 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
                 if (!HMACSHA256::Verify(m_SessionKey.data(), SESSION_KEY_SIZE,
                                         data, signedLen, hmacTag)) {
                     ENJIN_LOG_WARN(Network, "NetworkSystem: HMAC verification failed, dropping packet");
+                    RegisterViolation(sender, "HMAC failed");
                     return;
                 }
 
@@ -469,6 +659,7 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     if (header.payloadSize != actualPayload) {
         ENJIN_LOG_WARN(Network, "NetworkSystem: Payload size mismatch (header=%u, actual=%u), dropping packet",
                        header.payloadSize, actualPayload);
+        RegisterViolation(sender, "payload size mismatch");
         return;
     }
 
@@ -506,10 +697,19 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
     // S10: Validate message type is within valid range before processing
     if (header.type == 0 || header.type > static_cast<u8>(MessageType::SessionKeyExchange)) {
         ENJIN_LOG_WARN(Network, "NetworkSystem: Invalid message type %u, dropping packet", header.type);
+        RegisterViolation(sender, "invalid message type");
         return;
     }
 
     MessageType type = static_cast<MessageType>(header.type);
+
+    const u32 minPayload = GetMinPayloadSize(type);
+    if (payloadSize < minPayload) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Payload too small for message %u (min=%u, got=%u), dropping",
+                       header.type, minPayload, payloadSize);
+        RegisterViolation(sender, "payload too small");
+        return;
+    }
 
     switch (type) {
         case MessageType::ConnectionRequest:
@@ -526,6 +726,9 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
             break;
         case MessageType::Heartbeat:
             HandleHeartbeat(sender, header.senderId);
+            break;
+        case MessageType::HeartbeatAck:
+            HandleHeartbeatAck(sender, header.senderId);
             break;
         case MessageType::PlayerReady:
             HandlePlayerReady(header.senderId, payload, payloadSize);
@@ -565,6 +768,7 @@ void NetworkSystem::HandlePacket(const NetworkAddress& sender, const u8* data, u
 
 void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Host) return;
+    if (size < 1) return;
 
     u32 offset = 0;
     std::string playerName = ReadString(payload, offset, size);
@@ -581,16 +785,22 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
         return;
     }
 
-    // N6: Reject if PlayerId space exhausted (u8 wraps at 255 → 0 = host ID)
-    if (m_NextPlayerId >= 254) {
+    // M2 fix: Recycle player IDs instead of monotonic increment
+    // Scan for the lowest unused ID (1-253, 0=host, 255=INVALID_PLAYER)
+    PlayerId newId = INVALID_PLAYER;
+    for (PlayerId candidate = 1; candidate < 254; candidate++) {
+        bool inUse = false;
+        for (const auto& c : m_Connections) {
+            if (c.playerId == candidate) { inUse = true; break; }
+        }
+        if (!inUse) { newId = candidate; break; }
+    }
+    if (newId == INVALID_PLAYER) {
         std::vector<u8> rejectPayload;
         WriteString(rejectPayload, "Player ID space exhausted");
         SendPacket(sender, MessageType::ConnectionReject, rejectPayload);
         return;
     }
-
-    // Accept connection
-    PlayerId newId = m_NextPlayerId++;
     ConnectionInfo conn;
     conn.address = sender;
     conn.state = ConnectionState::Connected;
@@ -651,6 +861,10 @@ void NetworkSystem::HandleConnectionRequest(const NetworkAddress& sender, const 
 
 void NetworkSystem::HandleConnectionAccept(const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Client) return;
+    if (size < 1) return;
+    // C2 fix: only accept from host we connected to (already validated by connection lookup)
+    // If we're already connected, ignore duplicate accepts
+    if (!m_Connections.empty() && m_Connections[0].state == ConnectionState::Connected) return;
 
     u32 offset = 0;
     PlayerId assignedId = ReadU8(payload, offset, size);
@@ -666,6 +880,7 @@ void NetworkSystem::HandleConnectionAccept(const u8* payload, u32 size) {
 
 void NetworkSystem::HandleConnectionReject(const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Client) return;
+    if (size < 1) return;
 
     u32 offset = 0;
     std::string reason = ReadString(payload, offset, size);
@@ -710,8 +925,15 @@ void NetworkSystem::HandleHeartbeat(const NetworkAddress& sender, PlayerId sende
     SendPacket(sender, MessageType::HeartbeatAck, empty);
 }
 
+void NetworkSystem::HandleHeartbeatAck(const NetworkAddress& sender, PlayerId senderId) {
+    // M1 fix: RTT is computed in ProcessAck via per-packet send timestamps (H1 fix).
+    // HeartbeatAck is now handled explicitly instead of falling through to default.
+    // Connection tracking (lastRecvTime, sequence) is already updated in HandlePacket.
+}
+
 void NetworkSystem::HandlePlayerReady(PlayerId senderId, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Host) return;
+    if (size < 1) return;
 
     u32 offset = 0;
     bool ready = ReadU8(payload, offset, size) != 0;
@@ -727,6 +949,7 @@ void NetworkSystem::HandlePlayerReady(PlayerId senderId, const u8* payload, u32 
 
 void NetworkSystem::HandleLobbyState(const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Client) return;
+    if (size < 1) return;
 
     u32 offset = 0;
     u8 playerCount = ReadU8(payload, offset, size);
@@ -744,6 +967,7 @@ void NetworkSystem::HandleLobbyState(const u8* payload, u32 size) {
 
 void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
     if (!m_World) return;
+    if (size < 2) return;
 
     u32 offset = 0;
     u16 count = ReadU16(payload, offset, size);
@@ -755,10 +979,19 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
     }
 
     for (u16 i = 0; i < count && offset < size; i++) {
+        if (size - offset < 9) return;
+
         EntitySnapshot snap;
         snap.networkId = ReadU32(payload, offset, size);
         snap.fieldMask = ReadU8(payload, offset, size);
         snap.tick = ReadU32(payload, offset, size);
+
+        u32 required = 0;
+        if (snap.fieldMask & SnapPosition) required += 12;
+        if (snap.fieldMask & SnapRotation) required += 16;
+        if (snap.fieldMask & SnapScale) required += 12;
+        if (snap.fieldMask & SnapVelocity) required += 12;
+        if (size - offset < required) return;
 
         if (snap.fieldMask & SnapPosition) snap.position = ReadVector3(payload, offset, size);
         if (snap.fieldMask & SnapRotation) snap.rotation = ReadQuaternion(payload, offset, size);
@@ -803,6 +1036,7 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
 
 void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
     if (!m_World || m_Role != NetworkRole::Client) return;
+    if (size < 45) return;
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -846,6 +1080,7 @@ void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
 
 void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
     if (!m_World) return;
+    if (size < 4) return;
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -864,6 +1099,7 @@ void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
 
 void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Host) return;
+    if (size < 4) return;
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -900,6 +1136,7 @@ void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload,
 
 void NetworkSystem::HandleOwnershipGrant(const u8* payload, u32 size) {
     if (!m_World) return;
+    if (size < 5) return;
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);
@@ -916,6 +1153,7 @@ void NetworkSystem::HandleOwnershipGrant(const u8* payload, u32 size) {
 }
 
 void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size) {
+    if (size < 7) return;
     u32 offset = 0;
     u32 nameHash = ReadU32(payload, offset, size);
     PlayerId targetId = ReadU8(payload, offset, size);
@@ -925,6 +1163,11 @@ void NetworkSystem::HandleRPCCall(PlayerId senderId, const u8* payload, u32 size
     if (targetId != INVALID_PLAYER && targetId != m_LocalPlayerId) {
         // Forward (host only)
         if (m_Role == NetworkRole::Host) {
+            // M6 fix: validate dataSize consistency before forwarding to other clients
+            if (dataSize > size - offset) {
+                ENJIN_LOG_WARN(Network, "RPC forward rejected: data size mismatch (declared %u, remaining %u)", dataSize, size - offset);
+                return;
+            }
             ConnectionInfo* conn = FindConnectionByPlayerId(targetId);
             if (conn) {
                 std::vector<u8> fwdPayload(payload, payload + size);
@@ -977,6 +1220,8 @@ void NetworkSystem::SendPacket(const NetworkAddress& addr, MessageType type, con
         header.ackBitfield = conn->remoteAckBitfield;
         conn->packetsSent++;
         conn->lastSendTime = m_Time;
+        // H1 fix: record per-packet send timestamp for accurate RTT measurement
+        conn->RecordSendTime(header.sequence, m_Time);
     }
 
     m_SendBuffer.clear();
@@ -1110,6 +1355,11 @@ void NetworkSystem::UpdateReliableMessages(f32 dt) {
             }
 
             // Retransmit
+            // H2 fix: capture the new outer sequence so ProcessAck can match acks
+            ConnectionInfo* retryConn = FindConnectionByAddress(it->target);
+            if (retryConn) {
+                it->sequence = retryConn->localSequence; // will be used by SendPacket
+            }
             std::vector<u8> wrappedPayload;
             WriteU16(wrappedPayload, it->sequence);
             wrappedPayload.insert(wrappedPayload.end(), it->data.begin(), it->data.end());
@@ -1148,14 +1398,25 @@ void NetworkSystem::SendEntitySnapshots() {
 
         auto* netTrans = m_World->GetComponent<ECS::NetworkTransformComponent>(entity);
 
-        // Determine which fields changed
+        // Determine which fields changed (M3 fix: delta compress rotation/scale too)
         u8 fieldMask = 0;
         if (!netTrans ||
             (transform->position - netTrans->lastSyncedPosition).Length() > 0.001f) {
             fieldMask |= SnapPosition;
         }
-        // Always send rotation and scale for simplicity
-        fieldMask |= SnapRotation | SnapScale;
+        if (!netTrans ||
+            std::abs(transform->rotation.x - netTrans->lastSyncedRotation.x) > 0.0001f ||
+            std::abs(transform->rotation.y - netTrans->lastSyncedRotation.y) > 0.0001f ||
+            std::abs(transform->rotation.z - netTrans->lastSyncedRotation.z) > 0.0001f ||
+            std::abs(transform->rotation.w - netTrans->lastSyncedRotation.w) > 0.0001f) {
+            fieldMask |= SnapRotation;
+        }
+        if (!netTrans ||
+            std::abs(transform->scale.x - netTrans->lastSyncedScale.x) > 0.001f ||
+            std::abs(transform->scale.y - netTrans->lastSyncedScale.y) > 0.001f ||
+            std::abs(transform->scale.z - netTrans->lastSyncedScale.z) > 0.001f) {
+            fieldMask |= SnapScale;
+        }
 
         if (fieldMask == 0) continue;
 
@@ -1195,6 +1456,21 @@ void NetworkSystem::InterpolateRemoteEntities(f32 dt) {
 
     f32 renderTime = m_Time - m_Config.interpDelay;
 
+    // L5 fix: periodically clean up stale network entity references (every ~5 seconds)
+    static u32 cleanupCounter = 0;
+    if (++cleanupCounter >= 100) {  // ~5s at 20Hz sync rate
+        cleanupCounter = 0;
+        for (auto it = m_NetworkToEntity.begin(); it != m_NetworkToEntity.end(); ) {
+            if (m_World->GetComponent<ECS::TransformComponent>(it->second) == nullptr) {
+                m_EntityToNetwork.erase(it->second);
+                m_InterpBuffers.erase(it->first);
+                it = m_NetworkToEntity.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+
     auto entities = m_World->GetEntitiesWithComponent<ECS::NetworkIdentityComponent>();
     for (auto entity : entities) {
         auto* netId = m_World->GetComponent<ECS::NetworkIdentityComponent>(entity);
@@ -1232,6 +1508,7 @@ void NetworkSystem::InterpolateRemoteEntities(f32 dt) {
 void NetworkSystem::UpdateBandwidthCounters(f32 dt) {
     m_BandwidthTimer += dt;
     if (m_BandwidthTimer >= 1.0f) {
+        CleanupRateLimiters();
         m_UploadKBps = static_cast<f32>(m_BytesSentThisSecond) / 1024.0f;
         m_DownloadKBps = static_cast<f32>(m_BytesReceivedThisSecond) / 1024.0f;
         m_BytesSentThisSecond = 0;
@@ -1257,11 +1534,25 @@ void NetworkSystem::ProcessAck(ConnectionInfo& conn, u16 ackSeq, u32 ackBits) {
             }),
         m_ReliableOutbox.end());
 
-    // Estimate RTT from ack timing
-    // Simple: if ack is for a recent sequence, use send/recv delta
-    f32 estimatedRtt = m_Time - conn.lastSendTime;
-    if (estimatedRtt > 0.0f && estimatedRtt < 2.0f) {
-        conn.rtt = conn.rtt * 0.9f + estimatedRtt * 0.1f;  // Exponential smoothing
+    // H1 fix: accurate RTT from per-packet send timestamps
+    f32 sendTime = conn.GetSendTime(ackSeq);
+    if (sendTime > 0.0f) {
+        f32 estimatedRtt = m_Time - sendTime;
+        if (estimatedRtt > 0.0f && estimatedRtt < 2.0f) {
+            conn.rtt = conn.rtt * 0.9f + estimatedRtt * 0.1f;  // Exponential smoothing
+        }
+    }
+
+    // H3 fix: compute packet loss from ack bitfield (32-packet sliding window)
+    if (conn.packetsSent > 1) {
+        u32 windowSize = std::min(conn.packetsSent, 32u);
+        u32 ackedInWindow = 0;
+        for (u32 i = 1; i <= windowSize; i++) {
+            if (ackBits & (1u << i)) ackedInWindow++;
+        }
+        f32 windowLoss = 1.0f - static_cast<f32>(ackedInWindow) / static_cast<f32>(windowSize);
+        conn.packetLossRate = conn.packetLossRate * 0.95f + windowLoss * 0.05f;
+        conn.packetsLost = static_cast<u32>(conn.packetLossRate * conn.packetsSent);
     }
 }
 
@@ -1332,7 +1623,23 @@ void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const
         return;
     }
 
+    // C2 fix: reject session key from any address other than the host we connected to.
+    // This prevents LAN-level MITM from injecting a fake session key before the real one.
+    if (!m_Connections.empty() && sender != m_Connections[0].address) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: SessionKeyExchange from unexpected sender, dropping");
+        return;
+    }
+
+    // C2 fix: reject if we already have a session key (prevent key replacement attacks)
+    if (m_SessionKeyGenerated) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: SessionKeyExchange received but key already set, ignoring");
+        return;
+    }
+
     // Read the session key
+    // NOTE (C1): Session key is transmitted in plaintext over UDP. For production use,
+    // implement Diffie-Hellman or ECDH key exchange so the shared secret is never on the wire.
+    // Current mitigation: sender IP validation above reduces attack surface to same-IP spoofing.
     u32 offset = 0;
     for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
         m_SessionKey[i] = ReadU8(payload, offset, size);
@@ -1374,30 +1681,7 @@ bool NetworkSystem::AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo
     return true;
 }
 
-bool NetworkSystem::VerifyIncoming(const u8* data, u32 size, ConnectionInfo* conn, u32& authSequence) {
-    // Minimum size: some header + 4 (auth seq) + 32 (HMAC)
-    u32 authOverhead = 4 + HMAC_TAG_SIZE;
-    if (size < authOverhead) return false;
-
-    u32 hmacOffset = size - HMAC_TAG_SIZE;
-    u32 seqOffset = hmacOffset - 4;
-    const u8* hmacTag = data + hmacOffset;
-
-    // Verify HMAC over everything except the HMAC tag itself
-    u32 signedLen = seqOffset + 4;
-    if (!HMACSHA256::Verify(m_SessionKey.data(), SESSION_KEY_SIZE,
-                            data, signedLen, hmacTag)) {
-        return false;
-    }
-
-    // Extract auth sequence
-    authSequence = (static_cast<u32>(data[seqOffset]) << 24) |
-                   (static_cast<u32>(data[seqOffset + 1]) << 16) |
-                   (static_cast<u32>(data[seqOffset + 2]) << 8) |
-                   (static_cast<u32>(data[seqOffset + 3]));
-
-    return true;
-}
+// H5 fix: VerifyIncoming removed — was dead code. HMAC verification is inline in HandlePacket().
 
 } // namespace Networking
 } // namespace Enjin

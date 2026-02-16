@@ -39,13 +39,13 @@ void WriteF32(std::vector<u8>& buf, f32 val) {
 }
 
 void WriteString(std::vector<u8>& buf, const std::string& str) {
-    u16 len = static_cast<u16>(str.size());
-    if (len > 255) {
+    // L3 fix: consistent u8 type (wire format is length-prefixed u8)
+    u8 len = static_cast<u8>(std::min<size_t>(str.size(), 255));
+    if (str.size() > 255) {
         ENJIN_LOG_WARN(Network, "WriteString truncating string from %u to 255 bytes", static_cast<u32>(str.size()));
-        len = 255;
     }
-    WriteU8(buf, static_cast<u8>(len));
-    for (u16 i = 0; i < len; i++) {
+    WriteU8(buf, len);
+    for (u8 i = 0; i < len; i++) {
         buf.push_back(static_cast<u8>(str[i]));
     }
 }

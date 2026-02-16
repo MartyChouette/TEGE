@@ -85,6 +85,8 @@ public:
 
     const NetworkConfig& GetConfig() const { return m_Config; }
     NetworkConfig& GetConfig() { return m_Config; }
+    bool LoadConfig(const std::string& path = NetworkConfig::GetDefaultPath());
+    bool SaveConfig(const std::string& path = NetworkConfig::GetDefaultPath()) const;
 
     // Stats
     f32 GetPing() const;
@@ -105,6 +107,12 @@ private:
     // Packet processing
     void ProcessIncomingPackets();
     void HandlePacket(const NetworkAddress& sender, const u8* data, u32 size);
+    bool RateLimitPacket(const NetworkAddress& sender, u32 size);
+    void CleanupRateLimiters();
+    bool IsBanned(const NetworkAddress& sender);
+    void RegisterViolation(const NetworkAddress& sender, const char* reason);
+    void BanSender(const NetworkAddress& sender, const char* reason);
+    void DisconnectSender(const NetworkAddress& sender, const char* reason);
 
     // Message handlers
     void HandleConnectionRequest(const NetworkAddress& sender, const u8* payload, u32 size);
@@ -112,6 +120,7 @@ private:
     void HandleConnectionReject(const u8* payload, u32 size);
     void HandleDisconnect(const NetworkAddress& sender, PlayerId senderId);
     void HandleHeartbeat(const NetworkAddress& sender, PlayerId senderId);
+    void HandleHeartbeatAck(const NetworkAddress& sender, PlayerId senderId);
     void HandlePlayerReady(PlayerId senderId, const u8* payload, u32 size);
     void HandleLobbyState(const u8* payload, u32 size);
     void HandleEntitySnapshot(const u8* payload, u32 size);
@@ -131,7 +140,6 @@ private:
     void SendSessionKey(const NetworkAddress& addr);
     void HandleSessionKeyExchange(const NetworkAddress& sender, const u8* payload, u32 size);
     bool AuthenticateOutgoing(std::vector<u8>& packet, ConnectionInfo* conn);
-    bool VerifyIncoming(const u8* data, u32 size, ConnectionInfo* conn, u32& authSequence);
 
     // Update ticks
     void UpdateHeartbeats(f32 dt);
@@ -168,7 +176,6 @@ private:
 
     // Connections (host: one per client, client: one for host)
     std::vector<ConnectionInfo> m_Connections;
-    PlayerId m_NextPlayerId = 1;  // Host starts assigning from 1
 
     // Lobby
     std::vector<LobbyPlayer> m_LobbyPlayers;
@@ -180,6 +187,12 @@ private:
 
     // Interpolation buffers for remote entities
     std::unordered_map<NetworkId, InterpolationBuffer> m_InterpBuffers;
+
+    // Rate limiting for unknown senders
+    std::unordered_map<NetworkAddress, RateLimitState, NetworkAddressHash> m_UnknownRateLimiters;
+
+    // Violation tracking / bans
+    std::unordered_map<NetworkAddress, ViolationState, NetworkAddressHash> m_ViolationStates;
 
     // RPC registry
     std::unordered_map<u32, RPCRegistration> m_RPCRegistry;
