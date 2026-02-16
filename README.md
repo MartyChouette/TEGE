@@ -195,7 +195,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~480 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, input actions, screen-space effects), hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~686 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, Flash API shim), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
@@ -215,7 +215,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **126+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, procedural generation, debug
+- **138+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through
@@ -361,7 +361,7 @@ enjin/
 - [x] Destructible Environments
 - [x] 2D Physics System
 - [x] Localization System
-- [ ] Networking (client-server, peer-to-peer)
+- [x] LAN Multiplayer (host-authoritative UDP, HMAC-SHA256 auth, 20Hz entity sync, RPC, lobby, reliable delivery)
 
 ### Phase 12: Advanced Gameplay
 - [x] Save/Load System (10-slot persistence)

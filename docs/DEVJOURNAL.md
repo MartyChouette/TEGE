@@ -2,6 +2,40 @@
 
 ---
 
+## 2026-02-16 (Session 30)
+
+### Networking Code Audit — 18 Findings, 16 Fixed
+
+Full security/stability/correctness audit of the networking subsystem (~2,960 lines across 9 files). All code was written by other AI assistants and reviewed for vulnerabilities, bugs, and quality issues.
+
+**CRITICAL (2):**
+- C1: Session key transmitted in plaintext over UDP — documented, requires DH/ECDH for full fix
+- C2: Client accepted unauthenticated session key from any sender — added sender IP validation + duplicate key rejection
+
+**HIGH (5 fixes):**
+- H1: RTT estimation used `lastSendTime` instead of per-packet timestamps — added 128-entry send timestamp ring buffer on ConnectionInfo
+- H2: Reliable message retransmits never got acked (sequence mismatch) — update `rm.sequence` to new outer sequence on retransmit
+- H3: `packetLossRate`/`packetsLost` never computed (always 0.0f) — 32-packet sliding window from ack bitfield with EMA smoothing
+- H4: `inet_ntoa` not thread-safe on Windows — replaced with `inet_ntop` on both platforms
+- H5: `VerifyIncoming()` was dead code diverging from real HMAC path — removed (inline HandlePacket is actual path)
+
+**MEDIUM (6 fixes):**
+- M1: `HeartbeatAck` had no handler (fell through to `default: break`) — added handler + switch case + GetMinPayloadSize
+- M2: Player IDs never recycled (monotonic increment, 254 lifetime cap) — scan for lowest unused ID
+- M3: Rotation/scale always sent defeating delta compression (~28 bytes/entity wasted) — threshold-based delta checks
+- M4: `WSACleanup()` called per transport Close() (breaks multi-instance) — static reference counting
+- M5: Entity spawn creates bare entities (protocol limitation) — documented
+- M6: RPC forwarding without re-validating `dataSize` — validate before relay
+
+**LOW (3 fixes):**
+- L1: Repeated empty vector creation — intentional per S-M11 (no fix needed)
+- L3: WriteString u16/u8 type mismatch — consistent u8 from the start
+- L5: Stale entity map references — periodic cleanup in InterpolateRemoteEntities
+
+Files changed: `NetworkTypes.h`, `NetworkSystem.h`, `NetworkSystem.cpp`, `NetworkTransport.cpp`, `NetworkSerializer.cpp`
+
+---
+
 ## 2026-02-15 (Session 29)
 
 ### InputAction AS Bindings, NSIS Installer, Audit Round 5

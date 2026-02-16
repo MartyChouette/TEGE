@@ -4,6 +4,26 @@ This document captures detailed technical plans, performance findings, and strat
 
 ---
 
+
+## Networking Config & Settings UX (2026-02-16)
+
+**Change Summary**
+- Added external JSON config for networking and security defaults: `config/network_settings.json`.
+- Added load/save helpers on `NetworkConfig` and `NetworkSystem` so defaults can be overridden without recompiling.
+- Added rate-limit + abuse protection knobs (burst limits, violation window, ban/kick behavior).
+
+**User Editability**
+- User-editable: Yes.
+- How: Edit `config/network_settings.json` (loaded at host/join). No editor UI yet.
+- Safe defaults ship in repo; values are runtime-tunable for different games/traffic profiles.
+
+**Needs Restructure (Settings UX)**
+- Consolidate settings into three tiers with clear ownership:
+  - System Settings (editor/app-level, machine or installation scope)
+  - Project Settings (game-specific, shared in repo)
+  - Scene Settings (per-scene overrides, local to scene file)
+- Networking config should live under Project Settings with optional Scene overrides.
+
 ## Performance Optimization Findings
 
 ### Critical Rendering Pipeline Issues
@@ -1456,6 +1476,7 @@ These are documented limitations that require larger feature work. Sorted by pri
 | ~~HTTP Client (Linux/Mac)~~ | ~~`HTTPClient.cpp`~~ | ~~✅ DONE~~ | ~~Full libcurl implementation (`#elif defined(ENJIN_HAS_CURL)`) with Get/Post/PostForm, 16MB response cap, percent encoding. CMake includes macOS in UNIX branch. Cross-platform: WinHTTP on Windows, libcurl on Linux/macOS.~~ |
 | ~~SWF Zlib Decompression~~ | ~~`SWFLoader.cpp`~~ | ~~✅ DONE~~ | ~~Uses stb_image's built-in zlib decompressor (`stbi_zlib_decode_buffer`). CWS files fully supported. 256MB size cap. No external zlib dependency needed.~~ |
 | ~~Network Auth & Replay~~ | ~~`NetworkSystem.cpp`~~ | ~~✅ DONE~~ | ~~Full HMAC-SHA256 (`NetworkSecurity.h`), session key exchange, 64-bit sliding replay window, constant-time verify, per-connection tracking. BCryptGenRandom (Windows) / /dev/urandom (POSIX) for key generation.~~ |
+| ~~Network Audit Fixes~~ | ~~`NetworkSystem.cpp` + 4 files~~ | ~~✅ DONE~~ | ~~16 fixes from comprehensive audit: per-packet RTT timestamps (128-entry ring buffer), reliable ack sequence fix on retransmit, packet loss computation (32-packet sliding window), `inet_ntop` thread safety, session key sender validation + duplicate rejection, HeartbeatAck handler, player ID recycling, rotation/scale delta compression, WSA refcount, RPC forward validation, stale entity cleanup, dead code removal.~~ |
 
 ### MEDIUM (infrastructure gaps)
 
@@ -1485,4 +1506,4 @@ These are documented limitations that require larger feature work. Sorted by pri
 | ~~Profiler P50/P95/P99 + CSV Export~~ | ~~✅ DONE — Frame time percentiles computed and displayed in stats overlay. Descriptor cache hit/miss tracking with hit rate percentage. CSV export button (perf_stats.csv).~~ |
 | ~~MIDI Input~~ | ~~✅ DONE — Platform-specific MIDI input (WinMM on Windows, stubs elsewhere). Device enumeration, open/close, double-buffered event polling, persistent CC state. 12 AngelScript bindings. Wired in PlayMode and Player.~~ |
 
-*Last updated: 2026-02-14 — Session 20: 4 features completed. Template thumbnail auto-capture (Vulkan framebuffer readback, 280x180 PNG). Performance profiler expansion (P50/P95/P99 percentiles, descriptor cache hit/miss, CSV export). Shader Graph QoL (4 new node types: SceneColor/SceneNormal/SceneDepth/StaticSwitch, type mismatch validation). MIDI input support (WinMM, 12 AS bindings, wired in PlayMode + Player). All 6 targets build clean.*
+*Last updated: 2026-02-16 — Session 30: Networking audit (16 fixes): per-packet RTT, reliable ack fix, packet loss tracking, inet_ntop, session key validation, HeartbeatAck handler, player ID recycling, delta compression, WSA refcount, RPC forward validation. All 10 targets build clean.*
