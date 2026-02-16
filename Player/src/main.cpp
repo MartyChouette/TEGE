@@ -392,6 +392,14 @@ public:
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
 
+        // Clear 2D physics collision callbacks before destroying systems they reference
+        if (m_Physics2D) {
+            m_Physics2D->SetOnCollisionEnter(nullptr);
+            m_Physics2D->SetOnCollisionExit(nullptr);
+            m_Physics2D->SetOnSensorEnter(nullptr);
+            m_Physics2D->SetOnSensorExit(nullptr);
+        }
+
         // Destroy pooled objects before shutting down scripts
         m_ObjectPool.DestroyAll(m_World.get());
 
@@ -480,6 +488,7 @@ public:
         Enjin::Scripting::SetBindingsAudioGraphRuntime(nullptr);
         m_MIDIInput.Shutdown();
         Enjin::Scripting::SetBindingsMIDI(nullptr);
+        Enjin::Scripting::SetBindingsInputActionMap(nullptr);
 
         // Shutdown scripts
         m_ScriptSystem.ShutdownAllScripts();
@@ -968,6 +977,7 @@ private:
         Enjin::Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
         m_MIDIInput.Initialize();
         Enjin::Scripting::SetBindingsMIDI(&m_MIDIInput);
+        Enjin::Scripting::SetBindingsInputActionMap(&m_InputMap);
 
         // Wire visual script system externs (for VS nodes)
         {

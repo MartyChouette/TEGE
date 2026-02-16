@@ -95,6 +95,7 @@ void World::FlushPendingDestructions() {
 }
 
 bool World::IsValid(Entity entity) const {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     if (!m_EntityManager.IsValid(entity)) return false;
     // Entities queued for deferred destruction are not considered valid
     if (m_PendingDestructionSet.count(entity)) return false;
@@ -102,6 +103,7 @@ bool World::IsValid(Entity entity) const {
 }
 
 bool World::IsPendingDestruction(Entity entity) const {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     return m_PendingDestructionSet.count(entity) > 0;
 }
 
@@ -114,6 +116,7 @@ void World::Update(f32 deltaTime) {
 void World::Clear() {
     std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     m_PendingDestructions.clear();
+    m_PendingDestructionSet.clear();
     m_ComponentStorages.clear();
     m_EntityManager.Reset();
     m_NameCache.clear();

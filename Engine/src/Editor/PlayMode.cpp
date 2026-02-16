@@ -176,6 +176,7 @@ void PlayMode::Play() {
     Scripting::SetBindingsAudioGraphRuntime(&m_AudioGraphRuntime);
     m_MIDIInput.Initialize();
     Scripting::SetBindingsMIDI(&m_MIDIInput);
+    Scripting::SetBindingsInputActionMap(&m_InputMap);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
     s_VisualScriptHUD = &m_HUDSystem;
@@ -412,6 +413,7 @@ void PlayMode::Stop() {
     Scripting::SetBindingsAudioGraphRuntime(nullptr);
     m_MIDIInput.Shutdown();
     Scripting::SetBindingsMIDI(nullptr);
+    Scripting::SetBindingsInputActionMap(nullptr);
 
     // Clear accessibility wiring
     if (m_UISystem) {

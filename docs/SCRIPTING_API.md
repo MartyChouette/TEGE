@@ -287,60 +287,89 @@ Raster-tier screen-space effects running in the post-process fragment shader. Al
 
 ### God Rays
 
-- `SS_SetGodRaysEnabled(bool)` — Enable/disable screen-space god rays.
-- `SS_IsGodRaysEnabled()` — Check if god rays are enabled. Returns `bool`.
-- `SS_SetGodRaysDensity(float)` — Set radial blur density (default ~1.0).
-- `SS_GetGodRaysDensity()` — Get current god rays density.
-- `SS_SetGodRaysWeight(float)` — Set per-sample weight.
-- `SS_GetGodRaysWeight(float)` — Get current per-sample weight.
-- `SS_SetGodRaysDecay(float)` — Set radial decay factor (how quickly rays fade along their length).
-- `SS_GetGodRaysDecay()` — Get current decay factor.
-- `SS_SetGodRaysExposure(float)` — Set final exposure multiplier for god rays.
-- `SS_GetGodRaysExposure()` — Get current exposure multiplier.
+- `PostProcess_SetGodRaysEnabled(bool)` — Enable/disable screen-space god rays.
+- `PostProcess_IsGodRaysEnabled()` — Check if god rays are enabled. Returns `bool`.
+- `PostProcess_SetGodRaysIntensity(float)` — Set god rays brightness multiplier.
+- `PostProcess_GetGodRaysIntensity()` — Get current god rays intensity.
+- `PostProcess_SetGodRaysSamples(int)` — Set number of radial blur samples (default 64).
+- `PostProcess_GetGodRaysSamples()` — Get current sample count.
 
 ### SSAO (Screen-Space Ambient Occlusion)
 
-- `SS_SetSSAOEnabled(bool)` — Enable/disable screen-space ambient occlusion.
-- `SS_IsSSAOEnabled()` — Check if SSAO is enabled. Returns `bool`.
-- `SS_SetSSAORadius(float)` — Set hemisphere sampling radius (world units).
-- `SS_GetSSAORadius()` — Get current SSAO radius.
-- `SS_SetSSAOBias(float)` — Set depth bias to prevent self-occlusion.
-- `SS_GetSSAOBias()` — Get current SSAO bias.
-- `SS_SetSSAOIntensity(float)` — Set occlusion intensity multiplier.
-- `SS_GetSSAOIntensity()` — Get current SSAO intensity.
+- `PostProcess_SetSSAOEnabled(bool)` — Enable/disable screen-space ambient occlusion.
+- `PostProcess_IsSSAOEnabled()` — Check if SSAO is enabled. Returns `bool`.
+- `PostProcess_SetSSAORadius(float)` — Set hemisphere sampling radius (world units).
+- `PostProcess_GetSSAORadius()` — Get current SSAO radius.
+- `PostProcess_SetSSAOIntensity(float)` — Set occlusion intensity multiplier.
+- `PostProcess_GetSSAOIntensity()` — Get current SSAO intensity.
 
 ### Contact Shadows
 
-- `SS_SetContactShadowsEnabled(bool)` — Enable/disable contact shadows.
-- `SS_IsContactShadowsEnabled()` — Check if contact shadows are enabled. Returns `bool`.
-- `SS_SetContactShadowLength(float)` — Set ray march length in screen space.
-- `SS_GetContactShadowLength()` — Get current contact shadow ray length.
-- `SS_SetContactShadowFade(float)` — Set distance-based fade factor.
-- `SS_GetContactShadowFade()` — Get current fade factor.
+- `PostProcess_SetContactShadowsEnabled(bool)` — Enable/disable contact shadows.
+- `PostProcess_IsContactShadowsEnabled()` — Check if contact shadows are enabled. Returns `bool`.
+- `PostProcess_SetContactShadowsIntensity(float)` — Set contact shadow darkness.
+- `PostProcess_GetContactShadowsIntensity()` — Get current contact shadow intensity.
 
 ### Fake Caustics
 
-- `SS_SetCausticsEnabled(bool)` — Enable/disable fake caustics.
-- `SS_IsCausticsEnabled()` — Check if caustics are enabled. Returns `bool`.
-- `SS_SetCausticsScale(float)` — Set Voronoi pattern scale.
-- `SS_GetCausticsScale()` — Get current caustics scale.
-- `SS_SetCausticsSpeed(float)` — Set animation speed.
-- `SS_GetCausticsSpeed()` — Get current animation speed.
-- `SS_SetCausticsIntensity(float)` — Set caustics brightness.
-- `SS_GetCausticsIntensity()` — Get current caustics intensity.
-- `SS_SetCausticsWaterHeight(float)` — Set water surface Y position (caustics render below this).
-- `SS_GetCausticsWaterHeight()` — Get current water height threshold.
+- `PostProcess_SetCausticsEnabled(bool)` — Enable/disable fake caustics.
+- `PostProcess_IsCausticsEnabled()` — Check if caustics are enabled. Returns `bool`.
+- `PostProcess_SetCausticsIntensity(float)` — Set caustics brightness.
+- `PostProcess_GetCausticsIntensity()` — Get current caustics intensity.
+- `PostProcess_SetCausticsWaterY(float)` — Set water surface Y position (caustics render below this).
+- `PostProcess_GetCausticsWaterY()` — Get current water height threshold.
 
 ### Fog Shafts
 
-- `SS_SetFogShaftsEnabled(bool)` — Enable/disable volumetric fog shafts.
-- `SS_IsFogShaftsEnabled()` — Check if fog shafts are enabled. Returns `bool`.
-- `SS_SetFogShaftsDensity(float)` — Set fog shaft density.
-- `SS_GetFogShaftsDensity()` — Get current fog shaft density.
-- `SS_SetFogShaftsIntensity(float)` — Set fog shaft brightness.
-- `SS_GetFogShaftsIntensity()` — Get current fog shaft intensity.
-- `SS_SetFogShaftsDecay(float)` — Set radial decay for fog shaft sampling.
-- `SS_GetFogShaftsDecay()` — Get current fog shaft decay.
+- `PostProcess_SetFogShaftsEnabled(bool)` — Enable/disable volumetric fog shafts.
+- `PostProcess_IsFogShaftsEnabled()` — Check if fog shafts are enabled. Returns `bool`.
+- `PostProcess_SetFogShaftsIntensity(float)` — Set fog shaft brightness.
+- `PostProcess_GetFogShaftsIntensity()` — Get current fog shaft intensity.
+- `PostProcess_SetFogShaftsMaxDistance(float)` — Set max ray march distance (world units).
+- `PostProcess_GetFogShaftsMaxDistance()` — Get current max distance.
+
+## Input Actions
+
+**Enum `GameAction`:** `MoveForward = 0`, `MoveBack = 1`, `MoveLeft = 2`, `MoveRight = 3`, `Jump = 4`, `Sprint = 5`, `Crouch = 6`, `Dash = 7`, `Interact = 8`, `Attack = 9`, `Block = 10`, `Pause = 11`, `LookUp = 12`, `LookDown = 13`, `LookLeft = 14`, `LookRight = 15`, `CameraZoomIn = 16`, `CameraZoomOut = 17`
+
+### Query
+
+- `InputAction_IsDown(int action)` — Check if action is held down. Returns `bool`.
+- `InputAction_IsPressed(int action)` — Check if action was just pressed this frame. Returns `bool`.
+- `InputAction_IsReleased(int action)` — Check if action was just released this frame. Returns `bool`.
+- `InputAction_GetValue(int action)` — Get analog value for action (0.0-1.0). Returns `float`.
+- `InputAction_GetMovement()` — Get combined WASD/stick movement vector. Returns `Vec2`.
+
+### Sensitivity
+
+- `InputAction_SetSensitivity(int action, float sensitivity)` — Set sensitivity multiplier for an action.
+- `InputAction_GetMouseSensitivity()` — Get global mouse sensitivity. Returns `float`.
+- `InputAction_SetMouseSensitivity(float sens)` — Set global mouse sensitivity.
+
+### Toggle Settings
+
+- `InputAction_IsSprintToggle()` — Check if sprint uses toggle mode. Returns `bool`.
+- `InputAction_SetSprintToggle(bool toggle)` — Set sprint to toggle or hold mode.
+- `InputAction_IsCrouchToggle()` — Check if crouch uses toggle mode. Returns `bool`.
+- `InputAction_SetCrouchToggle(bool toggle)` — Set crouch to toggle or hold mode.
+
+### Rebinding
+
+- `InputAction_Rebind(int actionIndex, int keyCode)` — Rebind an action to a new key.
+- `InputAction_PollNextKey()` — Poll for the next key press (for rebind UI). Returns `int` (-1 if none).
+
+### Display Helpers
+
+- `InputAction_GetCount()` — Get total number of actions. Returns `int`.
+- `InputAction_GetName(int index)` — Get display name of an action. Returns `string`.
+- `InputAction_GetBindingName(int index)` — Get display name of current key binding. Returns `string`.
+
+### Presets
+
+- `InputAction_ApplyLeftHandOnly()` — Apply left-hand-only key layout.
+- `InputAction_ApplyRightHandOnly()` — Apply right-hand-only key layout.
+- `InputAction_ApplyGamepadOnly()` — Apply gamepad-only layout.
+- `InputAction_ResetDefaults()` — Reset all bindings to defaults.
 
 ## Networking
 

@@ -109,8 +109,60 @@ set(CPACK_PACKAGE_INSTALL_DIRECTORY "Enjin")
 
 # Platform-specific generators
 if(WIN32)
-    set(CPACK_GENERATOR "ZIP")
+    set(CPACK_GENERATOR "ZIP;NSIS")
     set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-win64")
+
+    # --- NSIS Installer Configuration ---
+    set(CPACK_NSIS_DISPLAY_NAME "Enjin Engine ${PROJECT_VERSION}")
+    set(CPACK_NSIS_PACKAGE_NAME "Enjin Engine")
+    set(CPACK_NSIS_URL_INFO_ABOUT "https://enjin.dev")
+    set(CPACK_NSIS_HELP_LINK "https://enjin.dev/docs")
+    set(CPACK_NSIS_CONTACT "support@enjin.dev")
+    set(CPACK_NSIS_MODIFY_PATH OFF)
+    set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+
+    # Install to Program Files/Enjin by default
+    set(CPACK_NSIS_INSTALL_ROOT "$PROGRAMFILES64")
+
+    # Start Menu shortcuts
+    set(CPACK_NSIS_CREATE_ICONS_EXTRA
+        "CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Enjin Editor.lnk' '$INSTDIR\\\\bin\\\\EnjinEditor.exe'
+         CreateShortCut '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Enjin Player.lnk' '$INSTDIR\\\\bin\\\\EnjinPlayer.exe'
+         CreateShortCut '$DESKTOP\\\\Enjin Editor.lnk' '$INSTDIR\\\\bin\\\\EnjinEditor.exe'")
+    set(CPACK_NSIS_DELETE_ICONS_EXTRA
+        "Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Enjin Editor.lnk'
+         Delete '$SMPROGRAMS\\\\$STARTMENU_FOLDER\\\\Enjin Player.lnk'
+         Delete '$DESKTOP\\\\Enjin Editor.lnk'")
+
+    # File associations (.enjin project files, .enjpak asset packs)
+    set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+        WriteRegStr HKCR '.enjin' '' 'EnjinScene'
+        WriteRegStr HKCR 'EnjinScene' '' 'Enjin Scene File'
+        WriteRegStr HKCR 'EnjinScene\\\\shell\\\\open\\\\command' '' '$INSTDIR\\\\bin\\\\EnjinEditor.exe \\\"%1\\\"'
+        WriteRegStr HKCR '.enjpak' '' 'EnjinAssetPack'
+        WriteRegStr HKCR 'EnjinAssetPack' '' 'Enjin Asset Pack'
+        WriteRegStr HKCR 'EnjinAssetPack\\\\shell\\\\open\\\\command' '' '$INSTDIR\\\\bin\\\\EnjinPlayer.exe \\\"%1\\\"'
+        System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, p 0, p 0)'
+    ")
+    set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+        DeleteRegKey HKCR '.enjin'
+        DeleteRegKey HKCR 'EnjinScene'
+        DeleteRegKey HKCR '.enjpak'
+        DeleteRegKey HKCR 'EnjinAssetPack'
+        System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, p 0, p 0)'
+    ")
+
+    # Use icon if available
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/enjin.ico")
+        set(CPACK_NSIS_MUI_ICON "${CMAKE_SOURCE_DIR}/resources/enjin.ico")
+        set(CPACK_NSIS_MUI_UNIICON "${CMAKE_SOURCE_DIR}/resources/enjin.ico")
+    endif()
+
+    # Installer branding
+    if(EXISTS "${CMAKE_SOURCE_DIR}/resources/installer_banner.bmp")
+        set(CPACK_NSIS_MUI_WELCOMEFINISHPAGE_BITMAP "${CMAKE_SOURCE_DIR}/resources/installer_banner.bmp")
+    endif()
+
 elseif(APPLE)
     set(CPACK_GENERATOR "TGZ")
     set(CPACK_PACKAGE_FILE_NAME "enjin-${PROJECT_VERSION}-macos")
@@ -123,6 +175,11 @@ else()
     set(CPACK_DEBIAN_PACKAGE_SECTION "games")
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "libvulkan1, libglfw3 (>= 3.3)")
     set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://enjin.dev")
+endif()
+
+# Resource directory for distribution assets (icons, banners)
+if(EXISTS "${CMAKE_SOURCE_DIR}/LICENSE")
+    set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
 endif()
 
 include(CPack)

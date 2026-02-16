@@ -561,7 +561,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Inspector tooltips | Medium | Low | P3 | ✅ Complete (50+ tooltips across Transform/Material/Light/Camera/Rigidbody/Collider) |
 | Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
-| Installer distribution | Medium | High | P3 | Planned |
+| Installer distribution | Medium | High | P3 | ✅ Complete (NSIS installer with Start Menu/Desktop shortcuts, .enjin/.enjpak file associations, uninstaller) |
 | Hub application (launcher) | Medium | Very High | P4 | ✅ Done |
 | **— Flash Game Revival —** | | | | |
 | SWF import & conversion | Medium | Very High | P4 | ✅ Done |
@@ -1319,12 +1319,12 @@ The engine is currently source-built (clone + cmake + build). Future distributio
 - Includes `EnjinEditor.exe`, `EnjinPlayer.exe`, `glslangValidator`, sample templates
 - Target audience: game developers who don't need to modify the engine
 
-**Tier 3: Installer Distribution (Future)**
-- Windows: MSIX or Inno Setup installer with Start Menu shortcut, file type associations (`.enjin`, `.enjinproject`), PATH entry for CLI tools
-- Linux: AppImage or Flatpak (self-contained, no system dependencies)
-- macOS: `.dmg` with drag-to-Applications
-- Installer registers `TEGE_Projects` default directory, optionally installs Vulkan runtime
-- Auto-updater (check GitHub releases API on startup, download + replace binaries)
+**Tier 3: Installer Distribution ✅ COMPLETE**
+- Windows: NSIS installer via CPack (`cpack -G NSIS`) with Start Menu + Desktop shortcuts, `.enjin`/`.enjpak` file associations, standard uninstaller
+- Generates both ZIP and NSIS from a single `cpack` invocation
+- Linux: AppImage or Flatpak (self-contained, no system dependencies) — future
+- macOS: `.dmg` with drag-to-Applications — future
+- Auto-updater (check GitHub releases API on startup, download + replace binaries) — future
 - Target audience: end users, non-technical game developers
 
 **Tier 4: Hub Application (Future)**

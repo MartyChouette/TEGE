@@ -1126,6 +1126,9 @@ void EditorLayer::InitializePlayMode() {
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
         m_PlayMode.SetAnnouncer(&m_Announcer);
+        m_PlayMode.SetUISystem(&m_UISystem);
+        m_PlayMode.SetAlternativeInput(&m_AlternativeInput);
+        m_PlayMode.SetAudioIndicators(&m_AudioIndicators);
 
         // Configure subtitle system from editor settings
         Accessibility::SubtitleConfig subConfig;

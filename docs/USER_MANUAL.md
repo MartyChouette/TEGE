@@ -1693,6 +1693,24 @@ Available from the **Post Processing** panel:
 | **FXAA** | Anti-aliasing toggle. |
 | **Film Grain** | Grain intensity. |
 
+#### Screen-Space Effects
+
+Five raster-tier screen-space effects run in the post-process shader using only the scene color and depth buffer. They provide ambient occlusion, contact shadows, volumetric light, caustics, and fog without requiring ray tracing hardware. All are configurable from the Post Processing panel and persist per-scene.
+
+| Effect | Description | Key Parameters |
+|--------|-------------|---------------|
+| **God Rays** | Screen-space radial blur from the projected sun position (GPU Gems 3 style). | Intensity, decay, density, samples (default 64), weight. |
+| **SSAO** | Depth-only hemisphere-sampled ambient occlusion with reconstructed normals. | Radius, intensity, bias, samples (default 16). |
+| **Contact Shadows** | Screen-space ray march toward the light source in the depth buffer for fine shadow detail. | Ray length, march steps (default 16), intensity. |
+| **Fake Caustics** | Procedural animated Voronoi pattern projected below a configurable water plane Y height. | Intensity, scale, speed, water Y. |
+| **Fog Shafts** | Noisy volumetric-look fog via ray marching through the depth buffer. | Intensity, density, decay, samples (default 16), max distance. |
+
+**Effect chain order** (all run in HDR before tone mapping): SSAO (multiply) -> Contact Shadows (multiply) -> Caustics (additive) -> God Rays (additive) -> Fog Shafts (blend) -> DoF -> Tilt-Shift -> Tone Mapping.
+
+**Performance:** All sample counts are tunable. Estimated total cost is ~3 ms at 1080p on a GTX 1060-class GPU with default settings. Effects can be enabled/disabled individually.
+
+**PostProcessVolume blending:** All 5 effects support spatial blending via `PostProcessVolumeComponent` override bits (19-23).
+
 ### Retro Effects
 
 #### Per-Material
@@ -1784,6 +1802,10 @@ The `InputActionMap` system provides semantic game actions that can be rebound:
 - **Hold/Toggle modes** for sprint and crouch.
 - **One-handed presets**: left-hand only, right-hand only, or gamepad only.
 - Input mappings are saved as JSON and persist between sessions.
+
+**18 Game Actions:** MoveForward, MoveBack, MoveLeft, MoveRight, Jump, Sprint, Crouch, Dash, Interact, Attack, Block, Pause, LookUp, LookDown, LookLeft, LookRight, CameraZoomIn, CameraZoomOut.
+
+**AngelScript API:** 22 bindings are available for scripting input actions at runtime -- see the Scripting API reference for the full `InputAction_*` function list (query, sensitivity, toggle, rebinding, display, presets).
 
 ### Reduced Motion
 
@@ -1903,6 +1925,26 @@ The player executable:
 4. No editor UI is loaded -- only game systems run.
 
 To distribute: ship both files together. The player expects `game.enjpak` in the same directory.
+
+### Distribution
+
+Enjin supports multiple distribution formats via CMake/CPack:
+
+| Format | Platform | Command |
+|--------|----------|---------|
+| **ZIP** | Windows | `cd build && cpack -G ZIP` |
+| **NSIS Installer** | Windows | `cd build && cpack -G NSIS` |
+| **TGZ** | macOS/Linux | `cd build && cpack -G TGZ` |
+| **DEB** | Linux | `cd build && cpack -G DEB` |
+
+The **NSIS installer** provides:
+- Start Menu shortcuts for Enjin Editor and Enjin Player.
+- Desktop shortcut for the Editor.
+- File associations (`.enjin` opens in Editor, `.enjpak` opens in Player).
+- Standard Windows uninstaller via Add/Remove Programs.
+- Default install to `Program Files/Enjin`.
+
+To create both a ZIP and installer in one step: `cd build && cpack` (uses all configured generators).
 
 ---
 

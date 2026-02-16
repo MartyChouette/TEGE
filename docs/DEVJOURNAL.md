@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-02-15 (Session 29)
+
+### InputAction AS Bindings, NSIS Installer, Audit Round 5
+
+**InputAction AngelScript Bindings (22 bindings):**
+- `ScriptBindings_InputAction.cpp` created with full `GameAction` enum (18 values), 5 query, 3 sensitivity, 4 toggle, 2 rebinding, 3 display helper, and 4 preset functions
+- Declarations added to `ScriptBindings.h`, registered in `RegisterAllBindings()`
+- Wired `SetBindingsInputActionMap` in PlayMode.cpp (Play/Stop) and Player/main.cpp (init/shutdown)
+
+**Windows NSIS Installer:**
+- CPack NSIS generator added alongside existing ZIP
+- Start Menu + Desktop shortcuts for Editor and Player
+- File associations: `.enjin` (Scene File → Editor), `.enjpak` (Asset Pack → Player)
+- Standard Windows uninstaller, install to Program Files/Enjin
+
+**Documentation Polish:**
+- USER_MANUAL: 5 screen-space effects documented with parameters, chain order, performance budget, PostProcessVolume bits
+- USER_MANUAL: Distribution section with CPack/NSIS/ZIP/TGZ/DEB commands
+- USER_MANUAL: InputActionMap section expanded with 18 actions + 22 binding reference
+- SCRIPTING_API: SS effect function names corrected from `SS_*` to `PostProcess_*` (matching actual registered names)
+- SCRIPTING_API: Full InputAction section added (query, sensitivity, toggle, rebinding, display, presets)
+
+**Audit Round 5 — 24 findings, 9 fixed:**
+- CRITICAL: `World::Clear()` missing `m_PendingDestructionSet.clear()` — stale IDs corrupt IsValid() after entity reuse
+- HIGH: GPU hang via unbounded god rays/contact shadows loops — capped at 256/64 in shader, `std::clamp` in C++ setter
+- MEDIUM: `World::IsValid()`/`IsPendingDestruction()` missing mutex lock — data race on unordered_set
+- MEDIUM: InputAction `RebindAction`/`GetActionName`/`GetBindingDisplayName` missing range validation
+- MEDIUM: Player shutdown missing 2D physics callback cleanup — dangling pointers on Box2D destroy
+- MEDIUM: 5 PlayMode accessibility setters never called from EditorLayer (UISystem, AlternativeInput, AudioIndicators) — now wired
+- LOW: NSIS `.enjin` mislabeled as "Project File" → corrected to "Scene File"
+- Shader SPIR-V re-embedded after god rays/contact shadows loop cap changes
+
+**Remaining unfixed audit items (deferred):**
+- Plugin VS nodes dead (no PluginSystem instance at runtime)
+- Procedural bindings null (no LevelGenerator at runtime)
+- NSIS file associations: both main() functions ignore argv (command-line open)
+- Various shader division-by-zero with degenerate UBO data (near=0, gamma=0, whitePoint=0)
+
+Files changed: 14 files across Engine, Player, docs, CMakeLists.txt
+
+---
+
 ## 2026-02-15 (Session 28)
 
 ### Comprehensive Audit #4 — 81 Findings, 30+ Fixes

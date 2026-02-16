@@ -190,12 +190,12 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Import Presets** - Source-app import presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp) with auto-detection and per-axis flip toggles
 - **Texture Compression** - CPU-side BCn/ASTC compression (BC1/BC3/BC4/BC5/BC7, ASTC 4x4/6x6/8x8) with mipmap generation and quality presets
 - **Asset Thumbnails** - Auto-generated preview thumbnails for images, 3D models (software rasterizer), and scenes with caching
-- **Binary Distribution** - CMake install rules + CPack config for Windows ZIP packaging, one-command build scripts (package.bat/package.sh)
+- **Binary Distribution** - CMake install rules + CPack config for Windows ZIP + NSIS installer (Start Menu shortcuts, file associations, uninstaller), one-command build scripts (package.bat/package.sh)
 - **Linux AppImage** - AppImageBuilder for Linux packaging with .desktop file generation
 - **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~390 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins), hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~480 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, input actions, screen-space effects), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel

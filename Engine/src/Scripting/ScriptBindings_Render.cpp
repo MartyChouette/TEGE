@@ -433,7 +433,7 @@ static f32 PostProcess_GetGodRaysIntensity() {
 }
 static void PostProcess_SetGodRaysSamples(i32 v) {
     if (!s_BindingsPostProcessing) return;
-    s_BindingsPostProcessing->GetSettings().godRaysSamples = static_cast<u32>(std::max(v, 1));
+    s_BindingsPostProcessing->GetSettings().godRaysSamples = static_cast<u32>(std::clamp(v, 1, 256));
 }
 static i32 PostProcess_GetGodRaysSamples() {
     if (!s_BindingsPostProcessing) return 64;

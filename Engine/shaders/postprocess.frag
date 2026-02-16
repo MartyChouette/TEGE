@@ -931,13 +931,14 @@ vec3 applyGodRays(vec3 color, vec2 uv) {
     if (settings.lightScreenPos.w < 0.5) return color; // Light not on screen
 
     vec2 lightPos = settings.lightScreenPos.xy;
-    vec2 deltaUV = (uv - lightPos) * settings.godRaysDensity / float(settings.godRaysSamples);
+    uint godRaySamples = min(settings.godRaysSamples, 256u);
+    vec2 deltaUV = (uv - lightPos) * settings.godRaysDensity / float(godRaySamples);
 
     vec2 sampleUV = uv;
     float illumination = 0.0;
     float decay = 1.0;
 
-    for (uint i = 0u; i < settings.godRaysSamples; i++) {
+    for (uint i = 0u; i < godRaySamples; i++) {
         sampleUV -= deltaUV;
         vec2 clampedUV = clamp(sampleUV, 0.001, 0.999);
         float sampleLuma = dot(texture(sceneTexture, clampedUV).rgb, vec3(0.2126, 0.7152, 0.0722));
@@ -1022,13 +1023,14 @@ vec3 applyContactShadows(vec3 color, vec2 uv) {
     // March from fragment toward light in screen space
     // Project light direction to screen-space step
     vec2 lightDir2D = normalize(settings.lightScreenPos.xy - uv);
-    vec2 stepUV = lightDir2D * settings.contactShadowsLength / float(settings.contactShadowsSteps);
+    uint csSteps = min(settings.contactShadowsSteps, 64u);
+    vec2 stepUV = lightDir2D * settings.contactShadowsLength / float(csSteps);
 
     float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
     vec2 sampleUV = uv;
     float shadow = 0.0;
 
-    for (uint i = 1u; i <= settings.contactShadowsSteps; i++) {
+    for (uint i = 1u; i <= csSteps; i++) {
         sampleUV += stepUV;
         if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) break;
 
@@ -1036,7 +1038,7 @@ vec3 applyContactShadows(vec3 color, vec2 uv) {
         float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
 
         // Interpolated expected depth along ray (linear interpolation in view space)
-        float t = float(i) / float(settings.contactShadowsSteps);
+        float t = float(i) / float(csSteps);
         float expectedDepth = fragLinear - t * settings.contactShadowsLength * fragLinear;
 
         // Hit test: sample is closer than expected (occluder found)
