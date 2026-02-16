@@ -360,6 +360,13 @@ constexpr const char* PPVolumeSetWeight      = "PPVolume_SetWeight";
 constexpr const char* PPVolumeSetBlendRadius = "PPVolume_SetBlendRadius";
 constexpr const char* PPVolumeSetPriority    = "PPVolume_SetPriority";
 
+// Screen-Space Effects
+constexpr const char* SSEffectSetSSAO             = "SSEffect_SetSSAO";
+constexpr const char* SSEffectSetContactShadows   = "SSEffect_SetContactShadows";
+constexpr const char* SSEffectSetGodRays          = "SSEffect_SetGodRays";
+constexpr const char* SSEffectSetCaustics         = "SSEffect_SetCaustics";
+constexpr const char* SSEffectSetFogShafts        = "SSEffect_SetFogShafts";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

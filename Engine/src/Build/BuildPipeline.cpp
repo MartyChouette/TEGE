@@ -217,12 +217,9 @@ bool BuildPipeline::ValidateAssets() {
                 }
 
                 for (const auto& entity : entities) {
-                    if (!entity.contains("components")) continue;
-                    const auto& comps = entity["components"];
-
                     // Material texture paths
-                    if (comps.contains("material")) {
-                        const auto& mat = comps["material"];
+                    if (entity.contains("material")) {
+                        const auto& mat = entity["material"];
 
                         auto checkTexture = [&](const std::string& key) {
                             if (mat.contains(key)) {
@@ -265,8 +262,8 @@ bool BuildPipeline::ValidateAssets() {
                     }
 
                     // Sprite2D texture path
-                    if (comps.contains("sprite2d")) {
-                        const auto& sprite = comps["sprite2d"];
+                    if (entity.contains("sprite2D")) {
+                        const auto& sprite = entity["sprite2D"];
                         if (sprite.contains("texturePath")) {
                             std::string texPath = sprite["texturePath"].get<std::string>();
                             if (!texPath.empty()) {
@@ -279,8 +276,8 @@ bool BuildPipeline::ValidateAssets() {
                     }
 
                     // Audio source file paths
-                    if (comps.contains("audioSource")) {
-                        const auto& audio = comps["audioSource"];
+                    if (entity.contains("audioSource")) {
+                        const auto& audio = entity["audioSource"];
                         if (audio.contains("filePath")) {
                             std::string audioPath = audio["filePath"].get<std::string>();
                             if (!audioPath.empty()) {
@@ -293,14 +290,62 @@ bool BuildPipeline::ValidateAssets() {
                     }
 
                     // Script component paths
-                    if (comps.contains("script")) {
-                        const auto& script = comps["script"];
-                        if (script.contains("scriptPath")) {
-                            std::string scriptPath = script["scriptPath"].get<std::string>();
-                            if (!scriptPath.empty()) {
-                                std::string absPath = (fs::path(m_ProjectDir) / scriptPath).string();
+                    if (entity.contains("scriptComponent")) {
+                        const auto& sc = entity["scriptComponent"];
+                        if (sc.contains("scripts") && sc["scripts"].is_array()) {
+                            for (const auto& script : sc["scripts"]) {
+                                if (script.contains("path")) {
+                                    std::string scriptPath = script["path"].get<std::string>();
+                                    if (!scriptPath.empty()) {
+                                        std::string absPath = (fs::path(m_ProjectDir) / scriptPath).string();
+                                        if (fs::exists(absPath)) {
+                                            m_ScriptPaths.insert(absPath);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Tilemap tileset texture
+                    if (entity.contains("tilemap")) {
+                        const auto& tm = entity["tilemap"];
+                        if (tm.contains("tilesetPath")) {
+                            std::string texPath = tm["tilesetPath"].get<std::string>();
+                            if (!texPath.empty()) {
+                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
                                 if (fs::exists(absPath)) {
-                                    m_ScriptPaths.insert(absPath);
+                                    m_TexturePaths.insert(absPath);
+                                }
+                            }
+                        }
+                    }
+
+                    // Tree volume textures
+                    if (entity.contains("treeVolume")) {
+                        const auto& tree = entity["treeVolume"];
+                        for (const char* key : {"barkTexturePath", "canopyTexturePath"}) {
+                            if (tree.contains(key)) {
+                                std::string texPath = tree[key].get<std::string>();
+                                if (!texPath.empty()) {
+                                    std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
+                                    if (fs::exists(absPath)) {
+                                        m_TexturePaths.insert(absPath);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Shrub volume custom asset
+                    if (entity.contains("shrubVolume")) {
+                        const auto& shrub = entity["shrubVolume"];
+                        if (shrub.contains("customAssetPath")) {
+                            std::string texPath = shrub["customAssetPath"].get<std::string>();
+                            if (!texPath.empty()) {
+                                std::string absPath = (fs::path(m_ProjectDir) / texPath).string();
+                                if (fs::exists(absPath)) {
+                                    m_TexturePaths.insert(absPath);
                                 }
                             }
                         }
@@ -609,6 +654,12 @@ void BuildPipeline::ScanProjectDirectory() {
         { ".ply",        &m_ModelPaths },
         { ".vox",        &m_ModelPaths },
         { ".svg",        &m_TexturePaths },        // F23: SVG files
+        { ".png",        &m_TexturePaths },        // Image textures
+        { ".jpg",        &m_TexturePaths },
+        { ".jpeg",       &m_TexturePaths },
+        { ".bmp",        &m_TexturePaths },
+        { ".tga",        &m_TexturePaths },
+        { ".hdr",        &m_TexturePaths },
         { ".enjshader",  &m_DataAssetPaths },     // Graph system assets
         { ".enjaudiopkg", &m_DataAssetPaths },
         { ".enjparticle", &m_DataAssetPaths },

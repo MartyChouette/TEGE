@@ -20,6 +20,9 @@
 #include "Enjin/GUI/UISystem.h"
 #include "Enjin/Gameplay/GameplayLoop.h"
 #include "Enjin/Effects/Weather.h"
+#include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidTerrainCoupling.h"
+#include "Enjin/Effects/CurlNoiseSystem.h"
 
 // Extern for visual script node access to systems
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
@@ -29,6 +32,8 @@ extern Enjin::Gameplay::HUDSystem* s_VisualScriptHUD;
 extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
 extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
 extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
+extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
 
 namespace Enjin {
 namespace Editor {
@@ -177,6 +182,9 @@ void PlayMode::Play() {
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
     s_VisualScriptAudio = &m_SimpleAudio;
+    s_VisualScriptPostProcessing = m_PostProcessing;
+    s_VisualScriptWater = m_Water3D;
+    s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
@@ -184,6 +192,7 @@ void PlayMode::Play() {
     m_SimpleAudio.SetWorld(m_World);
     m_DestructibleSystem.Initialize(m_World);
     m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
+    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Initialize(m_World);
 
     // Wire 2D physics collision callbacks to visual script system and gameplay processing
     Gameplay::GameplayLoop::Wire2DCollisionCallbacks(
@@ -353,6 +362,7 @@ void PlayMode::Stop() {
     // Shutdown owned runtime systems
     m_AudioGraphRuntime.Shutdown();
     m_SimpleAudio.Shutdown();
+    if (m_CurlNoiseSystem) m_CurlNoiseSystem->Shutdown();
     m_DestructibleSystem.Shutdown();
 
     // Clear 2D physics callbacks
@@ -371,6 +381,8 @@ void PlayMode::Stop() {
     s_VisualScriptSubtitleSystem = nullptr;
     s_VisualScriptAnnouncer = nullptr;
     s_VisualScriptAudio = nullptr;
+    s_VisualScriptPostProcessing = nullptr;
+    s_VisualScriptAudioGraphRuntime = nullptr;
     Scripting::SetBindingsWorld(nullptr);
     Scripting::SetBindingsRenderSystem(nullptr);
     Scripting::SetBindingsDialogueSystem(nullptr);
@@ -537,6 +549,11 @@ void PlayMode::Update(f32 deltaTime) {
                 m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
         }
         m_EntityEventBus.ProcessDeferred();
+
+        // Fluid simulation + terrain coupling + curl noise
+        if (m_FluidSimulation) m_FluidSimulation->Update(deltaTime, m_World);
+        if (m_FluidTerrainCoupling && m_FluidSimulation) m_FluidTerrainCoupling->Update(deltaTime, m_World, *m_FluidSimulation);
+        if (m_CurlNoiseSystem) m_CurlNoiseSystem->Update(deltaTime);
 
         // Weather (needs camera position for particle spawning around player)
         if (m_WeatherSystem && m_Camera) {

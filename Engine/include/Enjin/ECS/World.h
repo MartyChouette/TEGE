@@ -5,6 +5,7 @@
 #include "Enjin/ECS/Component.h"
 #include "Enjin/ECS/System.h"
 #include <unordered_map>
+#include <unordered_set>
 #include <memory>
 #include <string>
 #include <mutex>
@@ -286,6 +287,7 @@ private:
 
     // Deferred entity destruction queue (flushed at start of Update)
     std::vector<Entity> m_PendingDestructions;
+    std::unordered_set<Entity> m_PendingDestructionSet;  // O(1) lookup companion
 };
 
 } // namespace ECS

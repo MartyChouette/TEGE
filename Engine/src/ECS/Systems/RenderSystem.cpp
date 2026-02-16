@@ -5559,7 +5559,10 @@ void RenderSystem::CreateRTDummyResources() {
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
         vkAllocateMemory(device, &allocInfo, nullptr, &m_RTLightUBOMemory[i]);
         vkBindBufferMemory(device, m_RTLightUBO[i], m_RTLightUBOMemory[i], 0);
-        vkMapMemory(device, m_RTLightUBOMemory[i], 0, 256, 0, &m_RTLightUBOMapped[i]);
+        if (vkMapMemory(device, m_RTLightUBOMemory[i], 0, 256, 0, &m_RTLightUBOMapped[i]) != VK_SUCCESS) {
+            m_RTLightUBOMapped[i] = nullptr;
+            continue;
+        }
         std::memset(m_RTLightUBOMapped[i], 0, 256);
     }
 

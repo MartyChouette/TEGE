@@ -208,6 +208,69 @@ struct alignas(16) PostProcessSettings {
     alignas(16) Math::Vector3 stippleBgColor = Math::Vector3(1.0f, 1.0f, 1.0f);  // Background/paper (white)
     alignas(4) f32 _stipplePad3 = 0.0f;
 
+    // =========================================================================
+    // Screen-Space Effects ("Classic Hi-Def Tricks")
+    // =========================================================================
+
+    // Inverse view-projection matrix for world-space reconstruction from depth
+    alignas(16) Math::Vector4 invViewProj0 = Math::Vector4(1, 0, 0, 0);  // column 0
+    alignas(16) Math::Vector4 invViewProj1 = Math::Vector4(0, 1, 0, 0);  // column 1
+    alignas(16) Math::Vector4 invViewProj2 = Math::Vector4(0, 0, 1, 0);  // column 2
+    alignas(16) Math::Vector4 invViewProj3 = Math::Vector4(0, 0, 0, 1);  // column 3
+
+    // Light direction (world space, normalized, toward light)
+    alignas(16) Math::Vector3 lightDirWorld = Math::Vector3(0.0f, -1.0f, 0.0f);
+    alignas(4) f32 _ssPad0 = 0.0f;
+
+    // Light screen-space position (xy = NDC 0..1, z = depth, w = 1 if on-screen)
+    alignas(16) Math::Vector4 lightScreenPos = Math::Vector4(0.5f, 0.5f, 0.0f, 0.0f);
+
+    // God Rays (screen-space radial blur)
+    alignas(4) u32 godRaysEnabled = 0;
+    alignas(4) f32 godRaysIntensity = 0.5f;
+    alignas(4) f32 godRaysDecay = 0.97f;       // Per-sample falloff
+    alignas(4) f32 godRaysDensity = 1.0f;       // Sample spacing multiplier
+    alignas(4) u32 godRaysSamples = 64;          // Number of radial blur samples
+    alignas(4) f32 godRaysWeight = 0.01f;        // Per-sample weight
+    alignas(4) f32 _godRaysPad0 = 0.0f;
+    alignas(4) f32 _godRaysPad1 = 0.0f;
+
+    // SSAO (Screen-Space Ambient Occlusion)
+    alignas(4) u32 ssaoEnabled = 0;
+    alignas(4) f32 ssaoRadius = 0.5f;            // World-space sample radius
+    alignas(4) f32 ssaoIntensity = 1.5f;         // Darkening strength
+    alignas(4) f32 ssaoBias = 0.025f;             // Depth bias to reduce self-occlusion
+    alignas(4) u32 ssaoSamples = 16;              // Hemisphere samples per pixel
+    alignas(4) f32 _ssaoPad0 = 0.0f;
+    alignas(4) f32 _ssaoPad1 = 0.0f;
+    alignas(4) f32 _ssaoPad2 = 0.0f;
+
+    // Contact Shadows (screen-space ray march toward light)
+    alignas(4) u32 contactShadowsEnabled = 0;
+    alignas(4) f32 contactShadowsLength = 0.1f;  // Ray length in UV space
+    alignas(4) u32 contactShadowsSteps = 16;     // March steps
+    alignas(4) f32 contactShadowsIntensity = 1.0f;
+
+    // Fake Caustics (procedural animated pattern below water)
+    alignas(4) u32 causticsEnabled = 0;
+    alignas(4) f32 causticsIntensity = 0.3f;
+    alignas(4) f32 causticsScale = 1.0f;          // Pattern scale
+    alignas(4) f32 causticsSpeed = 1.0f;           // Animation speed
+    alignas(4) f32 causticsWaterY = 0.0f;          // Water plane Y height (world)
+    alignas(4) f32 _causticsPad0 = 0.0f;
+    alignas(4) f32 _causticsPad1 = 0.0f;
+    alignas(4) f32 _causticsPad2 = 0.0f;
+
+    // Fog Shafts (volumetric-look fog ray march)
+    alignas(4) u32 fogShaftsEnabled = 0;
+    alignas(4) f32 fogShaftsIntensity = 0.3f;
+    alignas(4) f32 fogShaftsDensity = 0.05f;      // Fog density along ray
+    alignas(4) f32 fogShaftsDecay = 0.95f;
+    alignas(4) u32 fogShaftsSamples = 16;          // March samples
+    alignas(4) f32 fogShaftsMaxDistance = 50.0f;   // World-space max march distance
+    alignas(4) f32 _fogShaftsPad0 = 0.0f;
+    alignas(4) f32 _fogShaftsPad1 = 0.0f;
+
     // Returns true if any post-processing effect is actually enabled or non-identity.
     // When false, the entire post-processing pass can be skipped (render direct to target).
     bool HasAnyActiveEffects() const {
@@ -229,6 +292,11 @@ struct alignas(16) PostProcessSettings {
         if (tiltShiftEnabled) return true;
         if (celOutlineEnabled) return true;
         if (stippleEnabled) return true;
+        if (godRaysEnabled) return true;
+        if (ssaoEnabled) return true;
+        if (contactShadowsEnabled) return true;
+        if (causticsEnabled) return true;
+        if (fogShaftsEnabled) return true;
         if (colorblindMode != 0) return true;
         // Non-identity color grading
         if (brightness != 0.0f || contrast != 1.0f || saturation != 1.0f) return true;
@@ -238,9 +306,11 @@ struct alignas(16) PostProcessSettings {
         return false;
     }
 
-    // Returns true if any effect needs to read the depth buffer (DoF, TiltShift, CelOutline).
+    // Returns true if any effect needs to read the depth buffer.
     bool NeedsDepthBuffer() const {
-        return dofEnabled || tiltShiftEnabled || celOutlineEnabled;
+        return dofEnabled || tiltShiftEnabled || celOutlineEnabled ||
+               ssaoEnabled || contactShadowsEnabled || causticsEnabled ||
+               fogShaftsEnabled || godRaysEnabled;
     }
 };
 
@@ -290,6 +360,25 @@ public:
     void SetCameraPlanes(f32 nearPlane, f32 farPlane) {
         m_Settings.cameraNearPlane = nearPlane;
         m_Settings.cameraFarPlane = farPlane;
+    }
+
+    // Set inverse view-projection matrix (for screen-space world reconstruction)
+    void SetInverseViewProjection(const Math::Vector4& col0, const Math::Vector4& col1,
+                                   const Math::Vector4& col2, const Math::Vector4& col3) {
+        m_Settings.invViewProj0 = col0;
+        m_Settings.invViewProj1 = col1;
+        m_Settings.invViewProj2 = col2;
+        m_Settings.invViewProj3 = col3;
+    }
+
+    // Set directional light direction (world space, normalized, toward light)
+    void SetLightDirection(const Math::Vector3& dir) {
+        m_Settings.lightDirWorld = dir;
+    }
+
+    // Set light screen-space position (xy=NDC 0..1, z=depth, w=1 if on-screen)
+    void SetLightScreenPos(const Math::Vector4& pos) {
+        m_Settings.lightScreenPos = pos;
     }
 
     // Get scene render target (render to this instead of swapchain)

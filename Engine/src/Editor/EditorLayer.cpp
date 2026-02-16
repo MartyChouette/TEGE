@@ -1118,6 +1118,10 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetWeatherSystem(&m_WeatherSystem);
         m_PlayMode.SetParticleSystem(&m_ParticleSystem);
         m_PlayMode.SetSceneManager(&m_SceneManager);
+        m_PlayMode.SetWater3D(&m_Water3D);
+        m_PlayMode.SetFluidSimulation(&m_FluidSimulation);
+        m_PlayMode.SetFluidTerrainCoupling(&m_FluidTerrainCoupling);
+        m_PlayMode.SetCurlNoiseSystem(m_CurlNoiseSystem.get());
 
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
@@ -2223,6 +2227,54 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (m_Camera) {
             m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
         }
+
+        // Pass inverse view-projection + light data for screen-space effects
+        {
+            Math::Matrix4 viewMat = gameCamera.GetViewMatrix();
+            Math::Matrix4 projMat = gameCamera.GetProjectionMatrix();
+            Math::Matrix4 vp = projMat * viewMat;
+            Math::Matrix4 invVP = vp.Inverse();
+            // Extract columns (column-major: m[0..3]=col0, m[4..7]=col1, etc.)
+            m_PostProcessing->SetInverseViewProjection(
+                Math::Vector4(invVP.m[0], invVP.m[1], invVP.m[2], invVP.m[3]),
+                Math::Vector4(invVP.m[4], invVP.m[5], invVP.m[6], invVP.m[7]),
+                Math::Vector4(invVP.m[8], invVP.m[9], invVP.m[10], invVP.m[11]),
+                Math::Vector4(invVP.m[12], invVP.m[13], invVP.m[14], invVP.m[15]));
+
+            // Find first directional light for god rays / contact shadows / fog shafts
+            Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
+            for (ECS::Entity e : m_World->GetEntitiesWithComponent<ECS::LightComponent>()) {
+                auto* light = m_World->GetComponent<ECS::LightComponent>(e);
+                auto* lt = m_World->GetComponent<ECS::TransformComponent>(e);
+                if (light && lt && light->type == ECS::LightType::Directional) {
+                    lightDir = lt->rotation.Rotate(Math::Vector3(0.0f, 0.0f, -1.0f));
+                    break;
+                }
+            }
+            m_PostProcessing->SetLightDirection(Math::Vector3(-lightDir.x, -lightDir.y, -lightDir.z));
+
+            // Project light position to screen space for god rays
+            // Use a far-away point in light direction as the "sun" position
+            Math::Vector3 camPos = gameCamera.GetPosition();
+            Math::Vector3 sunWorldPos = camPos - lightDir * 1000.0f;
+            Math::Vector4 sunClip;
+            {
+                Math::Vector4 wp(sunWorldPos, 1.0f);
+                // vp * wp (column-major multiply)
+                sunClip.x = vp.m[0]*wp.x + vp.m[4]*wp.y + vp.m[8]*wp.z + vp.m[12]*wp.w;
+                sunClip.y = vp.m[1]*wp.x + vp.m[5]*wp.y + vp.m[9]*wp.z + vp.m[13]*wp.w;
+                sunClip.z = vp.m[2]*wp.x + vp.m[6]*wp.y + vp.m[10]*wp.z + vp.m[14]*wp.w;
+                sunClip.w = vp.m[3]*wp.x + vp.m[7]*wp.y + vp.m[11]*wp.z + vp.m[15]*wp.w;
+            }
+            if (sunClip.w > 0.001f) {
+                Math::Vector3 ndc(sunClip.x / sunClip.w, sunClip.y / sunClip.w, sunClip.z / sunClip.w);
+                Math::Vector2 screenUV(ndc.x * 0.5f + 0.5f, ndc.y * 0.5f + 0.5f);
+                m_PostProcessing->SetLightScreenPos(Math::Vector4(screenUV.x, screenUV.y, ndc.z, 1.0f));
+            } else {
+                m_PostProcessing->SetLightScreenPos(Math::Vector4(0.5f, 0.5f, 0.0f, 0.0f));
+            }
+        }
+
         m_GameViewRenderTarget->Begin(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
         m_GameViewRenderTarget->End(commandBuffer);
@@ -9549,6 +9601,11 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
                 checkGroup("Tilt-Shift", ECS::PostProcessVolumeComponent::OverrideTiltShift);
                 checkGroup("Cel Outline", ECS::PostProcessVolumeComponent::OverrideCelOutline);
                 checkGroup("Stipple", ECS::PostProcessVolumeComponent::OverrideStipple);
+                checkGroup("God Rays", ECS::PostProcessVolumeComponent::OverrideGodRays);
+                checkGroup("SSAO", ECS::PostProcessVolumeComponent::OverrideSSAO);
+                checkGroup("Contact Shadows", ECS::PostProcessVolumeComponent::OverrideContactShadows);
+                checkGroup("Caustics", ECS::PostProcessVolumeComponent::OverrideCaustics);
+                checkGroup("Fog Shafts", ECS::PostProcessVolumeComponent::OverrideFogShafts);
             }
             ImGui::TreePop();
         }
@@ -9928,6 +9985,102 @@ void EditorLayer::DrawPostProcessingPanel() {
             ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
             ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
             ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
+        }
+    }
+
+    // ================================================================
+    // Screen-Space Effects
+    // ================================================================
+
+    // SSAO
+    if (ImGui::CollapsingHeader("SSAO (Ambient Occlusion)")) {
+        bool ssaoOn = settings.ssaoEnabled != 0;
+        if (ImGui::Checkbox("Enabled##SSAO", &ssaoOn)) {
+            settings.ssaoEnabled = ssaoOn ? 1 : 0;
+        }
+        if (settings.ssaoEnabled) {
+            ImGui::DragFloat("Radius##SSAO", &settings.ssaoRadius, 0.01f, 0.01f, 5.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space sample radius");
+            ImGui::DragFloat("Intensity##SSAO", &settings.ssaoIntensity, 0.01f, 0.0f, 5.0f);
+            ImGui::DragFloat("Bias##SSAO", &settings.ssaoBias, 0.001f, 0.0f, 0.1f, "%.4f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth bias to reduce self-occlusion");
+            int samples = static_cast<int>(settings.ssaoSamples);
+            if (ImGui::SliderInt("Samples##SSAO", &samples, 4, 32)) {
+                settings.ssaoSamples = static_cast<u32>(samples);
+            }
+        }
+    }
+
+    // Contact Shadows
+    if (ImGui::CollapsingHeader("Contact Shadows")) {
+        bool csOn = settings.contactShadowsEnabled != 0;
+        if (ImGui::Checkbox("Enabled##ContactShadows", &csOn)) {
+            settings.contactShadowsEnabled = csOn ? 1 : 0;
+        }
+        if (settings.contactShadowsEnabled) {
+            ImGui::DragFloat("Ray Length##CS", &settings.contactShadowsLength, 0.001f, 0.001f, 0.5f, "%.4f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-space ray march length (UV space)");
+            int steps = static_cast<int>(settings.contactShadowsSteps);
+            if (ImGui::SliderInt("Steps##CS", &steps, 4, 32)) {
+                settings.contactShadowsSteps = static_cast<u32>(steps);
+            }
+            ImGui::DragFloat("Intensity##CS", &settings.contactShadowsIntensity, 0.01f, 0.0f, 2.0f);
+        }
+    }
+
+    // God Rays
+    if (ImGui::CollapsingHeader("God Rays")) {
+        bool grOn = settings.godRaysEnabled != 0;
+        if (ImGui::Checkbox("Enabled##GodRays", &grOn)) {
+            settings.godRaysEnabled = grOn ? 1 : 0;
+        }
+        if (settings.godRaysEnabled) {
+            ImGui::DragFloat("Intensity##GR", &settings.godRaysIntensity, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Decay##GR", &settings.godRaysDecay, 0.001f, 0.9f, 1.0f, "%.4f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample falloff (closer to 1 = longer rays)");
+            ImGui::DragFloat("Density##GR", &settings.godRaysDensity, 0.01f, 0.1f, 3.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample spacing multiplier");
+            int samples = static_cast<int>(settings.godRaysSamples);
+            if (ImGui::SliderInt("Samples##GR", &samples, 16, 128)) {
+                settings.godRaysSamples = static_cast<u32>(samples);
+            }
+            ImGui::DragFloat("Weight##GR", &settings.godRaysWeight, 0.001f, 0.001f, 0.1f, "%.4f");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample contribution weight");
+        }
+    }
+
+    // Fake Caustics
+    if (ImGui::CollapsingHeader("Fake Caustics")) {
+        bool fcOn = settings.causticsEnabled != 0;
+        if (ImGui::Checkbox("Enabled##Caustics", &fcOn)) {
+            settings.causticsEnabled = fcOn ? 1 : 0;
+        }
+        if (settings.causticsEnabled) {
+            ImGui::DragFloat("Intensity##Caustics", &settings.causticsIntensity, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Scale##Caustics", &settings.causticsScale, 0.01f, 0.1f, 10.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Voronoi pattern scale");
+            ImGui::DragFloat("Speed##Caustics", &settings.causticsSpeed, 0.01f, 0.0f, 5.0f);
+            ImGui::DragFloat("Water Y##Caustics", &settings.causticsWaterY, 0.1f, -100.0f, 100.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space Y height of the water surface");
+        }
+    }
+
+    // Fog Shafts
+    if (ImGui::CollapsingHeader("Fog Shafts")) {
+        bool fsOn = settings.fogShaftsEnabled != 0;
+        if (ImGui::Checkbox("Enabled##FogShafts", &fsOn)) {
+            settings.fogShaftsEnabled = fsOn ? 1 : 0;
+        }
+        if (settings.fogShaftsEnabled) {
+            ImGui::DragFloat("Intensity##FS", &settings.fogShaftsIntensity, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Fog Density##FS", &settings.fogShaftsDensity, 0.001f, 0.001f, 0.5f, "%.4f");
+            ImGui::DragFloat("Decay##FS", &settings.fogShaftsDecay, 0.001f, 0.8f, 1.0f, "%.4f");
+            int samples = static_cast<int>(settings.fogShaftsSamples);
+            if (ImGui::SliderInt("Samples##FS", &samples, 4, 32)) {
+                settings.fogShaftsSamples = static_cast<u32>(samples);
+            }
+            ImGui::DragFloat("Max Distance##FS", &settings.fogShaftsMaxDistance, 1.0f, 5.0f, 500.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space max march distance");
         }
     }
 

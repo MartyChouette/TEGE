@@ -42,7 +42,7 @@ namespace Enjin {
 namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
-namespace Effects { class WeatherSystem; class ParticleSystem; }
+namespace Effects { class WeatherSystem; class ParticleSystem; class Water3D; class FluidSimulation; class FluidTerrainCoupling; class CurlNoiseSystem; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; class AlternativeInputManager; class AudioVisualIndicatorSystem; class ContentWarningSystem; }
 namespace GUI { class UISystem; }
 namespace Editor {
@@ -132,6 +132,10 @@ public:
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
     void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
+    void SetWater3D(Effects::Water3D* w) { m_Water3D = w; }
+    void SetFluidSimulation(Effects::FluidSimulation* fs) { m_FluidSimulation = fs; }
+    void SetFluidTerrainCoupling(Effects::FluidTerrainCoupling* ftc) { m_FluidTerrainCoupling = ftc; }
+    void SetCurlNoiseSystem(Effects::CurlNoiseSystem* cn) { m_CurlNoiseSystem = cn; }
 
     // Play mode diff dialog
     bool HasPendingDiff() const { return m_ShowDiffDialog; }
@@ -209,6 +213,10 @@ private:
     Effects::WeatherSystem* m_WeatherSystem = nullptr;
     Effects::ParticleSystem* m_ParticleSystem = nullptr;
     Scene::SceneManager* m_SceneManager = nullptr;
+    Effects::Water3D* m_Water3D = nullptr;
+    Effects::FluidSimulation* m_FluidSimulation = nullptr;
+    Effects::FluidTerrainCoupling* m_FluidTerrainCoupling = nullptr;
+    Effects::CurlNoiseSystem* m_CurlNoiseSystem = nullptr;
 
     // Audio system (owned by PlayMode for script bindings)
     Audio::SimpleAudio m_SimpleAudio;

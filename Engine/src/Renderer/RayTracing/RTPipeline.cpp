@@ -200,7 +200,9 @@ bool RTPipeline::BuildSBT(const std::vector<ShaderGroup>& groups) {
 
     // Write handles into SBT buffer
     void* mapped = nullptr;
-    vkMapMemory(m_Context->GetDevice(), m_SBTMemory, 0, totalSize, 0, &mapped);
+    if (vkMapMemory(m_Context->GetDevice(), m_SBTMemory, 0, totalSize, 0, &mapped) != VK_SUCCESS || !mapped) {
+        return false;
+    }
     std::memset(mapped, 0, totalSize);
 
     u8* sbtData = static_cast<u8*>(mapped);

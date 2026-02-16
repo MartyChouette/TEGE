@@ -172,6 +172,43 @@ struct SceneRenderSettings {
     f32 celOutlineThreshold = 0.1f;
     Math::Vector3 celOutlineColor = Math::Vector3(0.0f, 0.0f, 0.0f);
 
+    // --- Screen-Space Effects ---
+    // God Rays
+    bool godRaysEnabled = false;
+    f32 godRaysIntensity = 0.5f;
+    f32 godRaysDecay = 0.97f;
+    f32 godRaysDensity = 1.0f;
+    u32 godRaysSamples = 64;
+    f32 godRaysWeight = 0.01f;
+
+    // SSAO
+    bool ssaoEnabled = false;
+    f32 ssaoRadius = 0.5f;
+    f32 ssaoIntensity = 1.5f;
+    f32 ssaoBias = 0.025f;
+    u32 ssaoSamples = 16;
+
+    // Contact Shadows
+    bool contactShadowsEnabled = false;
+    f32 contactShadowsLength = 0.1f;
+    u32 contactShadowsSteps = 16;
+    f32 contactShadowsIntensity = 1.0f;
+
+    // Fake Caustics
+    bool causticsEnabled = false;
+    f32 causticsIntensity = 0.3f;
+    f32 causticsScale = 1.0f;
+    f32 causticsSpeed = 1.0f;
+    f32 causticsWaterY = 0.0f;
+
+    // Fog Shafts
+    bool fogShaftsEnabled = false;
+    f32 fogShaftsIntensity = 0.3f;
+    f32 fogShaftsDensity = 0.05f;
+    f32 fogShaftsDecay = 0.95f;
+    u32 fogShaftsSamples = 16;
+    f32 fogShaftsMaxDistance = 50.0f;
+
     // --- Ray Tracing ---
     bool rtEnabled = false;
     u32 rtMode = 0;                    // 0=Hybrid, 1=PathTrace

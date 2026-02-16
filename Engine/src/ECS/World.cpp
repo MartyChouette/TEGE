@@ -33,10 +33,9 @@ void World::DestroyEntity(Entity entity) {
         return;
     }
     // Avoid duplicate queue entries
-    for (Entity e : m_PendingDestructions) {
-        if (e == entity) return;
-    }
+    if (m_PendingDestructionSet.count(entity)) return;
     m_PendingDestructions.push_back(entity);
+    m_PendingDestructionSet.insert(entity);
 }
 
 void World::DestroyEntityImmediate(Entity entity) {
@@ -88,6 +87,7 @@ void World::FlushPendingDestructions() {
     // Move to local to allow new destructions during flush
     std::vector<Entity> pending = std::move(m_PendingDestructions);
     m_PendingDestructions.clear();
+    m_PendingDestructionSet.clear();
 
     for (Entity entity : pending) {
         DestroyEntityInternal(entity);
@@ -97,17 +97,12 @@ void World::FlushPendingDestructions() {
 bool World::IsValid(Entity entity) const {
     if (!m_EntityManager.IsValid(entity)) return false;
     // Entities queued for deferred destruction are not considered valid
-    for (Entity e : m_PendingDestructions) {
-        if (e == entity) return false;
-    }
+    if (m_PendingDestructionSet.count(entity)) return false;
     return true;
 }
 
 bool World::IsPendingDestruction(Entity entity) const {
-    for (Entity e : m_PendingDestructions) {
-        if (e == entity) return true;
-    }
-    return false;
+    return m_PendingDestructionSet.count(entity) > 0;
 }
 
 void World::Update(f32 deltaTime) {

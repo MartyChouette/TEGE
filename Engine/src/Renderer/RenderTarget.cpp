@@ -536,7 +536,11 @@ std::vector<u8> RenderTarget::CaptureToPixels() const {
 
     // Map and read pixels
     void* data = nullptr;
-    vkMapMemory(device, stagingMemory, 0, imageSize, 0, &data);
+    if (vkMapMemory(device, stagingMemory, 0, imageSize, 0, &data) != VK_SUCCESS || !data) {
+        vkFreeMemory(device, stagingMemory, nullptr);
+        vkDestroyBuffer(device, stagingBuffer, nullptr);
+        return {};
+    }
 
     std::vector<u8> pixels(imageSize);
     const u8* src = static_cast<const u8*>(data);

@@ -70,6 +70,10 @@ Cached `m_CachedPlayerEntity` for CharacterController zone detection. Full entit
 
 Replaced linear scan in load/unload queues with `unordered_set` for O(1) duplicate detection. Pre-built `unordered_map` priority lookup before sorting (sort comparator O(1) instead of O(M) per comparison).
 
+#### 14. ~~World::IsValid() O(N) Pending Destruction Scan~~ ✅ RESOLVED
+
+`IsValid()` and `IsPendingDestruction()` scanned the `m_PendingDestructions` vector linearly for every call. Added companion `m_PendingDestructionSet` (unordered_set) for O(1) lookup. `DestroyEntity()` duplicate check also upgraded from O(N) to O(1).
+
 ### Data Structure Improvements
 
 | Current | Recommended | Location | Status |
@@ -365,7 +369,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 3 | ~~**Player App — Particles**~~ | ~~ParticleSystem not created in Player~~ ✅ Fixed | Player now creates and updates ParticleSystem |
 | 4 | ~~**Player App — Post-Processing**~~ | ~~No bloom/vignette/FXAA/film grain/color grading/retro effects~~ ✅ Wired | PostProcessing initialized from swapchain, wired to script bindings |
 | 5 | ~~**Player App — Save System**~~ | ~~TieredSaveSystem not initialized in Player~~ ✅ Fixed | Default LocalSaveBackend, LoadMeta/SaveMeta, Update, script bindings, VS extern all wired |
-| 6 | ~~**Build Pipeline — Asset Packing**~~ | ~~BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files~~ ✅ Fixed | All asset types packed (.as, .wav/mp3/ogg/flac, .enjdlg, .enjprefab, .enjdata/.enjschema, .csv, .gltf/.glb/.fbx/.obj, .svg) |
+| 6 | ~~**Build Pipeline — Asset Packing**~~ | ~~BuildPipeline does NOT pack .as scripts, .enjdlg dialogue, .enjprefab, DataAssets, or audio files~~ ✅ Fixed | All asset types packed (.as, .wav/mp3/ogg/flac, .enjdlg, .enjprefab, .enjdata/.enjschema, .csv, .gltf/.glb/.fbx/.obj, .svg, .png/.jpg/.jpeg/.bmp/.tga/.hdr). Scene scanning fixed: removed broken "components" wrapper check, fixed sprite2D/scriptComponent key names, added tilemap/tree/shrub texture scanning |
 | 7 | ~~**Script Engine in Player**~~ | ~~ScriptEngine subsystem pointers (physics, audio, scene manager, etc.) never wired in Player~~ ✅ Fixed | All SetXxx() calls wired after system creation |
 | 8 | ~~**UI System — No Script Bindings**~~ | ~~UICanvas/UISystem have zero AngelScript or Visual Script bindings~~ ✅ Fixed | UI canvas bindings + focus management + VS nodes added |
 | 9 | ~~**Level Streaming**~~ | ~~Fully implemented but no trigger volumes, no editor UI, no script bindings~~ ✅ Fixed | StreamingVolume/Portal serialization, inspector UI, 6 AS + 6 VS bindings |
@@ -669,6 +673,15 @@ Import dialog enhancements:
 
 - **PostProcessVolumeComponent** — Box/Sphere spatial volumes with priority-based blending, smoothstep falloff at edges via `blendRadius`, global volumes (apply everywhere), selective override mask (19 bits for all effect groups). `BlendPostProcessSettings()` lerps all ~80 PP fields grouped by override mask. Full inspector UI with shape/extents/blend radius/weight/priority, override group checkboxes, embedded PP settings tree. Purple wireframe visualization for volume bounds. Full serialization (all 3 serialize + 4 deserialize paths). 10 AS bindings + 4 VS nodes. Player wired.
 - **PP Pipeline Optimization** — `HasAnyActiveEffects()` skips entire PP pass when no effects active (no intermediate RT, no barriers, no fullscreen draw). `NeedsDepthBuffer()` skips 2 depth barriers when DoF/TiltShift/CelOutline are all disabled.
+
+### Screen-Space Effects ✅ COMPLETE
+
+- **God Rays** ✅ — Radial blur from screen-space light position. Configurable density, weight, decay, exposure, samples. Runs in postprocess.frag using depth + invViewProj + light direction
+- **SSAO** ✅ — Hemisphere sampling with depth-reconstructed view-space positions. Configurable radius, bias, intensity, sample count
+- **Contact Shadows** ✅ — Screen-space ray march toward light for sub-cascade shadowing. Configurable ray length, step count, thickness, fade distance
+- **Fake Caustics** ✅ — Animated Voronoi pattern projected below configurable water height. Configurable scale, speed, intensity, depth-aware fade
+- **Fog Shafts** ✅ — Volumetric-style light shafts through fog via depth-aware radial sampling. Configurable density, intensity, decay, samples
+- All 5 effects: ~256 bytes added to PostProcessSettings UBO, editor UI with 5 collapsing headers, 30 AS bindings + 5 VS nodes, full SceneRenderSettings serialization, Player wiring (invViewProj + light direction/screen-pos), PostProcessVolume override bits 19-23
 
 ### Pipeline Optimization ✅ COMPLETE
 

@@ -412,6 +412,143 @@ static bool PostProcess_IsFXAAEnabled() {
 }
 
 // ============================================================================
+// Screen-Space Effects wrappers — God Rays
+// ============================================================================
+
+static void PostProcess_SetGodRaysEnabled(bool enabled) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().godRaysEnabled = enabled ? 1u : 0u;
+}
+static bool PostProcess_IsGodRaysEnabled() {
+    if (!s_BindingsPostProcessing) return false;
+    return s_BindingsPostProcessing->GetSettings().godRaysEnabled != 0;
+}
+static void PostProcess_SetGodRaysIntensity(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().godRaysIntensity = v;
+}
+static f32 PostProcess_GetGodRaysIntensity() {
+    if (!s_BindingsPostProcessing) return 0.5f;
+    return s_BindingsPostProcessing->GetSettings().godRaysIntensity;
+}
+static void PostProcess_SetGodRaysSamples(i32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().godRaysSamples = static_cast<u32>(std::max(v, 1));
+}
+static i32 PostProcess_GetGodRaysSamples() {
+    if (!s_BindingsPostProcessing) return 64;
+    return static_cast<i32>(s_BindingsPostProcessing->GetSettings().godRaysSamples);
+}
+
+// ============================================================================
+// Screen-Space Effects wrappers — SSAO
+// ============================================================================
+
+static void PostProcess_SetSSAOEnabled(bool enabled) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().ssaoEnabled = enabled ? 1u : 0u;
+}
+static bool PostProcess_IsSSAOEnabled() {
+    if (!s_BindingsPostProcessing) return false;
+    return s_BindingsPostProcessing->GetSettings().ssaoEnabled != 0;
+}
+static void PostProcess_SetSSAORadius(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().ssaoRadius = v;
+}
+static f32 PostProcess_GetSSAORadius() {
+    if (!s_BindingsPostProcessing) return 0.5f;
+    return s_BindingsPostProcessing->GetSettings().ssaoRadius;
+}
+static void PostProcess_SetSSAOIntensity(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().ssaoIntensity = v;
+}
+static f32 PostProcess_GetSSAOIntensity() {
+    if (!s_BindingsPostProcessing) return 1.5f;
+    return s_BindingsPostProcessing->GetSettings().ssaoIntensity;
+}
+
+// ============================================================================
+// Screen-Space Effects wrappers — Contact Shadows
+// ============================================================================
+
+static void PostProcess_SetContactShadowsEnabled(bool enabled) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().contactShadowsEnabled = enabled ? 1u : 0u;
+}
+static bool PostProcess_IsContactShadowsEnabled() {
+    if (!s_BindingsPostProcessing) return false;
+    return s_BindingsPostProcessing->GetSettings().contactShadowsEnabled != 0;
+}
+static void PostProcess_SetContactShadowsIntensity(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().contactShadowsIntensity = v;
+}
+static f32 PostProcess_GetContactShadowsIntensity() {
+    if (!s_BindingsPostProcessing) return 1.0f;
+    return s_BindingsPostProcessing->GetSettings().contactShadowsIntensity;
+}
+
+// ============================================================================
+// Screen-Space Effects wrappers — Fake Caustics
+// ============================================================================
+
+static void PostProcess_SetCausticsEnabled(bool enabled) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().causticsEnabled = enabled ? 1u : 0u;
+}
+static bool PostProcess_IsCausticsEnabled() {
+    if (!s_BindingsPostProcessing) return false;
+    return s_BindingsPostProcessing->GetSettings().causticsEnabled != 0;
+}
+static void PostProcess_SetCausticsIntensity(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().causticsIntensity = v;
+}
+static f32 PostProcess_GetCausticsIntensity() {
+    if (!s_BindingsPostProcessing) return 0.3f;
+    return s_BindingsPostProcessing->GetSettings().causticsIntensity;
+}
+static void PostProcess_SetCausticsWaterY(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().causticsWaterY = v;
+}
+static f32 PostProcess_GetCausticsWaterY() {
+    if (!s_BindingsPostProcessing) return 0.0f;
+    return s_BindingsPostProcessing->GetSettings().causticsWaterY;
+}
+
+// ============================================================================
+// Screen-Space Effects wrappers — Fog Shafts
+// ============================================================================
+
+static void PostProcess_SetFogShaftsEnabled(bool enabled) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().fogShaftsEnabled = enabled ? 1u : 0u;
+}
+static bool PostProcess_IsFogShaftsEnabled() {
+    if (!s_BindingsPostProcessing) return false;
+    return s_BindingsPostProcessing->GetSettings().fogShaftsEnabled != 0;
+}
+static void PostProcess_SetFogShaftsIntensity(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().fogShaftsIntensity = v;
+}
+static f32 PostProcess_GetFogShaftsIntensity() {
+    if (!s_BindingsPostProcessing) return 0.3f;
+    return s_BindingsPostProcessing->GetSettings().fogShaftsIntensity;
+}
+static void PostProcess_SetFogShaftsMaxDistance(f32 v) {
+    if (!s_BindingsPostProcessing) return;
+    s_BindingsPostProcessing->GetSettings().fogShaftsMaxDistance = v;
+}
+static f32 PostProcess_GetFogShaftsMaxDistance() {
+    if (!s_BindingsPostProcessing) return 50.0f;
+    return s_BindingsPostProcessing->GetSettings().fogShaftsMaxDistance;
+}
+
+// ============================================================================
 // Post-Process Volume wrappers
 // ============================================================================
 
@@ -696,6 +833,100 @@ void RegisterRenderBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction(
         "bool PostProcess_IsFXAAEnabled()",
         asFUNCTION(PostProcess_IsFXAAEnabled), asCALL_CDECL));
+
+    // ---- Screen-Space Effects: God Rays ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetGodRaysEnabled(bool)",
+        asFUNCTION(PostProcess_SetGodRaysEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PostProcess_IsGodRaysEnabled()",
+        asFUNCTION(PostProcess_IsGodRaysEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetGodRaysIntensity(float)",
+        asFUNCTION(PostProcess_SetGodRaysIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetGodRaysIntensity()",
+        asFUNCTION(PostProcess_GetGodRaysIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetGodRaysSamples(int)",
+        asFUNCTION(PostProcess_SetGodRaysSamples), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "int PostProcess_GetGodRaysSamples()",
+        asFUNCTION(PostProcess_GetGodRaysSamples), asCALL_CDECL));
+
+    // ---- Screen-Space Effects: SSAO ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetSSAOEnabled(bool)",
+        asFUNCTION(PostProcess_SetSSAOEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PostProcess_IsSSAOEnabled()",
+        asFUNCTION(PostProcess_IsSSAOEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetSSAORadius(float)",
+        asFUNCTION(PostProcess_SetSSAORadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetSSAORadius()",
+        asFUNCTION(PostProcess_GetSSAORadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetSSAOIntensity(float)",
+        asFUNCTION(PostProcess_SetSSAOIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetSSAOIntensity()",
+        asFUNCTION(PostProcess_GetSSAOIntensity), asCALL_CDECL));
+
+    // ---- Screen-Space Effects: Contact Shadows ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetContactShadowsEnabled(bool)",
+        asFUNCTION(PostProcess_SetContactShadowsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PostProcess_IsContactShadowsEnabled()",
+        asFUNCTION(PostProcess_IsContactShadowsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetContactShadowsIntensity(float)",
+        asFUNCTION(PostProcess_SetContactShadowsIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetContactShadowsIntensity()",
+        asFUNCTION(PostProcess_GetContactShadowsIntensity), asCALL_CDECL));
+
+    // ---- Screen-Space Effects: Caustics ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetCausticsEnabled(bool)",
+        asFUNCTION(PostProcess_SetCausticsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PostProcess_IsCausticsEnabled()",
+        asFUNCTION(PostProcess_IsCausticsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetCausticsIntensity(float)",
+        asFUNCTION(PostProcess_SetCausticsIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetCausticsIntensity()",
+        asFUNCTION(PostProcess_GetCausticsIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetCausticsWaterY(float)",
+        asFUNCTION(PostProcess_SetCausticsWaterY), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetCausticsWaterY()",
+        asFUNCTION(PostProcess_GetCausticsWaterY), asCALL_CDECL));
+
+    // ---- Screen-Space Effects: Fog Shafts ----
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetFogShaftsEnabled(bool)",
+        asFUNCTION(PostProcess_SetFogShaftsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "bool PostProcess_IsFogShaftsEnabled()",
+        asFUNCTION(PostProcess_IsFogShaftsEnabled), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetFogShaftsIntensity(float)",
+        asFUNCTION(PostProcess_SetFogShaftsIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetFogShaftsIntensity()",
+        asFUNCTION(PostProcess_GetFogShaftsIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "void PostProcess_SetFogShaftsMaxDistance(float)",
+        asFUNCTION(PostProcess_SetFogShaftsMaxDistance), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction(
+        "float PostProcess_GetFogShaftsMaxDistance()",
+        asFUNCTION(PostProcess_GetFogShaftsMaxDistance), asCALL_CDECL));
 
     // ---- Post-Process Volumes ----
     AS_CHECK(engine->RegisterGlobalFunction(

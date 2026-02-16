@@ -51,7 +51,12 @@ void WeatherSystem::Update(f32 deltaTime, const Math::Vector3& cameraPos) {
 
     // Update weather transition
     if (m_TransitionProgress < 1.0f) {
-        m_TransitionProgress += deltaTime / m_TransitionDuration;
+        if (m_TransitionDuration <= 0.0f) {
+            m_TransitionProgress = 1.0f;
+            m_CurrentWeather = m_TargetWeather;
+        } else {
+            m_TransitionProgress += deltaTime / m_TransitionDuration;
+        }
         if (m_TransitionProgress >= 1.0f) {
             m_TransitionProgress = 1.0f;
             m_CurrentWeather = m_TargetWeather;

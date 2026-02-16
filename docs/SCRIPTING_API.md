@@ -1,6 +1,6 @@
 # AngelScript API Reference
 
-Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~250 functions across all categories.
+Complete reference for all functions callable from AngelScript via `TegeBehavior` scripts. ~280 functions across all categories.
 
 ---
 
@@ -280,6 +280,67 @@ Permanent key-value storage that survives across runs and save slot deletion.
 - `Physics2D_SetGravity(float gx, gy)` — Set global 2D gravity.
 - `Physics2D_GetGravity()` — Get current 2D gravity as Vector2.
 - `Physics2D_SetGravityScale(uint64, float scale)` — Per-body gravity multiplier.
+
+## Screen-Space Effects
+
+Raster-tier screen-space effects running in the post-process fragment shader. All use existing depth buffer + inverse view-projection matrix. No additional render passes required.
+
+### God Rays
+
+- `SS_SetGodRaysEnabled(bool)` — Enable/disable screen-space god rays.
+- `SS_IsGodRaysEnabled()` — Check if god rays are enabled. Returns `bool`.
+- `SS_SetGodRaysDensity(float)` — Set radial blur density (default ~1.0).
+- `SS_GetGodRaysDensity()` — Get current god rays density.
+- `SS_SetGodRaysWeight(float)` — Set per-sample weight.
+- `SS_GetGodRaysWeight(float)` — Get current per-sample weight.
+- `SS_SetGodRaysDecay(float)` — Set radial decay factor (how quickly rays fade along their length).
+- `SS_GetGodRaysDecay()` — Get current decay factor.
+- `SS_SetGodRaysExposure(float)` — Set final exposure multiplier for god rays.
+- `SS_GetGodRaysExposure()` — Get current exposure multiplier.
+
+### SSAO (Screen-Space Ambient Occlusion)
+
+- `SS_SetSSAOEnabled(bool)` — Enable/disable screen-space ambient occlusion.
+- `SS_IsSSAOEnabled()` — Check if SSAO is enabled. Returns `bool`.
+- `SS_SetSSAORadius(float)` — Set hemisphere sampling radius (world units).
+- `SS_GetSSAORadius()` — Get current SSAO radius.
+- `SS_SetSSAOBias(float)` — Set depth bias to prevent self-occlusion.
+- `SS_GetSSAOBias()` — Get current SSAO bias.
+- `SS_SetSSAOIntensity(float)` — Set occlusion intensity multiplier.
+- `SS_GetSSAOIntensity()` — Get current SSAO intensity.
+
+### Contact Shadows
+
+- `SS_SetContactShadowsEnabled(bool)` — Enable/disable contact shadows.
+- `SS_IsContactShadowsEnabled()` — Check if contact shadows are enabled. Returns `bool`.
+- `SS_SetContactShadowLength(float)` — Set ray march length in screen space.
+- `SS_GetContactShadowLength()` — Get current contact shadow ray length.
+- `SS_SetContactShadowFade(float)` — Set distance-based fade factor.
+- `SS_GetContactShadowFade()` — Get current fade factor.
+
+### Fake Caustics
+
+- `SS_SetCausticsEnabled(bool)` — Enable/disable fake caustics.
+- `SS_IsCausticsEnabled()` — Check if caustics are enabled. Returns `bool`.
+- `SS_SetCausticsScale(float)` — Set Voronoi pattern scale.
+- `SS_GetCausticsScale()` — Get current caustics scale.
+- `SS_SetCausticsSpeed(float)` — Set animation speed.
+- `SS_GetCausticsSpeed()` — Get current animation speed.
+- `SS_SetCausticsIntensity(float)` — Set caustics brightness.
+- `SS_GetCausticsIntensity()` — Get current caustics intensity.
+- `SS_SetCausticsWaterHeight(float)` — Set water surface Y position (caustics render below this).
+- `SS_GetCausticsWaterHeight()` — Get current water height threshold.
+
+### Fog Shafts
+
+- `SS_SetFogShaftsEnabled(bool)` — Enable/disable volumetric fog shafts.
+- `SS_IsFogShaftsEnabled()` — Check if fog shafts are enabled. Returns `bool`.
+- `SS_SetFogShaftsDensity(float)` — Set fog shaft density.
+- `SS_GetFogShaftsDensity()` — Get current fog shaft density.
+- `SS_SetFogShaftsIntensity(float)` — Set fog shaft brightness.
+- `SS_GetFogShaftsIntensity()` — Get current fog shaft intensity.
+- `SS_SetFogShaftsDecay(float)` — Set radial decay for fog shaft sampling.
+- `SS_GetFogShaftsDecay()` — Get current fog shaft decay.
 
 ## Networking
 

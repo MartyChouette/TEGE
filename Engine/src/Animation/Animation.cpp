@@ -79,6 +79,7 @@ void SpriteAnimator::Update(f32 deltaTime) {
 
     // Check for frame advance
     while (m_FrameTimer >= currentFrame.duration) {
+        if (currentFrame.duration <= 0.0f) { m_FrameTimer = 0.0f; break; }
         m_FrameTimer -= currentFrame.duration;
 
         // Trigger event
@@ -333,6 +334,7 @@ void SkeletalAnimator::Update(f32 deltaTime) {
             }
             break;
         case PlayMode::Loop:
+            if (duration <= 0.0f) { m_CurrentTime = 0.0f; break; }
             while (m_CurrentTime >= duration) {
                 m_CurrentTime -= duration;
             }

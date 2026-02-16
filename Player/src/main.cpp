@@ -30,6 +30,8 @@
 #include "Enjin/Effects/InteractiveWater.h"
 #include "Enjin/Effects/Wind.h"
 #include "Enjin/Effects/FluidSimulation.h"
+#include "Enjin/Effects/FluidTerrainCoupling.h"
+#include "Enjin/Effects/CurlNoiseSystem.h"
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
@@ -402,6 +404,8 @@ public:
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             s_VisualScriptSaveSystem = nullptr;
             s_VisualScriptWeather = nullptr;
             s_VisualScriptWater = nullptr;
@@ -409,6 +413,8 @@ public:
             s_VisualScriptSubtitleSystem = nullptr;
             s_VisualScriptAnnouncer = nullptr;
             s_VisualScriptAudio = nullptr;
+            s_VisualScriptPostProcessing = nullptr;
+            s_VisualScriptAudioGraphRuntime = nullptr;
         }
 
         // Shutdown gameplay systems before world is destroyed
@@ -424,6 +430,7 @@ public:
 
         // Shutdown script-bound systems
         m_AudioGraphRuntime.Shutdown();
+        m_CurlNoiseSystem.Shutdown();
         m_DestructibleSystem.Shutdown();
         m_WeatherSystem.Shutdown();
         m_SimpleAudio.Shutdown();
@@ -642,6 +649,8 @@ public:
                 m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
         }
         m_FluidSimulation.Update(deltaTime, m_World.get());
+        m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
+        m_CurlNoiseSystem.Update(deltaTime);
 
         // Particle emitter simulation
         m_ParticleSystem.Update(deltaTime, m_World.get());
@@ -651,6 +660,46 @@ public:
             m_PostProcessing->Update(deltaTime);
             if (m_Camera)
                 m_PostProcessing->SetCameraPlanes(m_Camera->GetNearPlane(), m_Camera->GetFarPlane());
+
+            // Screen-space effects: compute invViewProj + light direction + light screen pos
+            if (m_Camera && m_World) {
+                Enjin::Math::Matrix4 viewMat = m_Camera->GetViewMatrix();
+                Enjin::Math::Matrix4 projMat = m_Camera->GetProjectionMatrix();
+                Enjin::Math::Matrix4 vp = projMat * viewMat;
+                Enjin::Math::Matrix4 invVP = vp.Inverse();
+                m_PostProcessing->SetInverseViewProjection(
+                    Enjin::Math::Vector4(invVP.m[0], invVP.m[1], invVP.m[2], invVP.m[3]),
+                    Enjin::Math::Vector4(invVP.m[4], invVP.m[5], invVP.m[6], invVP.m[7]),
+                    Enjin::Math::Vector4(invVP.m[8], invVP.m[9], invVP.m[10], invVP.m[11]),
+                    Enjin::Math::Vector4(invVP.m[12], invVP.m[13], invVP.m[14], invVP.m[15]));
+
+                // Find first directional light for god rays / contact shadows
+                Enjin::Math::Vector3 lightDir(0.0f, -1.0f, 0.0f);
+                for (auto e : m_World->GetEntitiesWithComponent<Enjin::ECS::LightComponent>()) {
+                    auto* lc = m_World->GetComponent<Enjin::ECS::LightComponent>(e);
+                    if (lc && lc->type == Enjin::ECS::LightType::Directional) {
+                        auto* tc = m_World->GetComponent<Enjin::ECS::TransformComponent>(e);
+                        if (tc) lightDir = tc->rotation.GetForward();
+                        break;
+                    }
+                }
+                m_PostProcessing->SetLightDirection(lightDir);
+
+                // Project sun position to screen space for god rays
+                Enjin::Math::Vector3 sunFar = m_Camera->GetPosition() - lightDir * 500.0f;
+                Enjin::f32 clipX = vp.m[0]*sunFar.x + vp.m[4]*sunFar.y + vp.m[8]*sunFar.z + vp.m[12];
+                Enjin::f32 clipY = vp.m[1]*sunFar.x + vp.m[5]*sunFar.y + vp.m[9]*sunFar.z + vp.m[13];
+                Enjin::f32 clipW = vp.m[3]*sunFar.x + vp.m[7]*sunFar.y + vp.m[11]*sunFar.z + vp.m[15];
+                Enjin::f32 sunOnScreen = (clipW > 0.001f) ? 1.0f : 0.0f;
+                if (clipW > 0.001f) {
+                    Enjin::f32 ndcX = clipX / clipW;
+                    Enjin::f32 ndcY = clipY / clipW;
+                    m_PostProcessing->SetLightScreenPos(Enjin::Math::Vector4(
+                        ndcX * 0.5f + 0.5f, ndcY * 0.5f + 0.5f, 0.0f, sunOnScreen));
+                } else {
+                    m_PostProcessing->SetLightScreenPos(Enjin::Math::Vector4(0.5f, 0.5f, 0.0f, 0.0f));
+                }
+            }
 
             // Evaluate post-process volumes
             if (m_World && m_Camera) {
@@ -929,6 +978,8 @@ private:
             extern Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem;
             extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
             extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
+            extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
             s_VisualScriptSaveSystem = &m_TieredSaveSystem;
             s_VisualScriptWeather = &m_WeatherSystem;
             s_VisualScriptWater = &m_Water3D;
@@ -936,6 +987,8 @@ private:
             s_VisualScriptSubtitleSystem = &m_SubtitleSystem;
             s_VisualScriptAnnouncer = &m_Announcer;
             s_VisualScriptAudio = &m_SimpleAudio;
+            s_VisualScriptPostProcessing = m_PostProcessing.get();
+            s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
         }
 
         // Wire dialogue system event bus and subtitle system
@@ -1018,6 +1071,9 @@ private:
         // Wire fluid simulation and wind system to renderer
         m_RenderSystem->SetFluidSimulation(&m_FluidSimulation);
         m_RenderSystem->SetWindSystem(&m_WindSystem);
+
+        // Initialize curl noise system
+        m_CurlNoiseSystem.Initialize(m_World.get());
 
         // Initialize audio event graph runtime
         m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
@@ -1372,8 +1428,10 @@ private:
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Enjin::Effects::ParticleSystem m_ParticleSystem;
 
-    // Fluid simulation, wind, world time, seasonal weather
+    // Fluid simulation, terrain coupling, curl noise, wind, world time, seasonal weather
     Enjin::Effects::FluidSimulation m_FluidSimulation;
+    Enjin::Effects::FluidTerrainCoupling m_FluidTerrainCoupling;
+    Enjin::Effects::CurlNoiseSystem m_CurlNoiseSystem;
     Enjin::Effects::WindSystem m_WindSystem;
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;

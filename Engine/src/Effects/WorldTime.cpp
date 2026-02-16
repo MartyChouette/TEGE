@@ -10,6 +10,7 @@ static constexpr f32 TWO_PI = 6.28318530717958647692f;
 
 void WorldTimeSystem::Update(f32 deltaTime) {
     if (m_CalendarConfig.paused) return;
+    if (m_CalendarConfig.secondsPerGameHour <= 0.0f) return;
 
     // Accumulate real time -> game hours
     f32 gameHoursElapsed = deltaTime / m_CalendarConfig.secondsPerGameHour;

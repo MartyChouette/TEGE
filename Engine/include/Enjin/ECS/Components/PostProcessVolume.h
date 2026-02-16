@@ -66,6 +66,11 @@ struct ENJIN_API PostProcessVolumeComponent {
     static constexpr u32 OverrideCelOutline        = 1 << 16;
     static constexpr u32 OverrideStipple           = 1 << 17;
     static constexpr u32 OverrideCRTPhosphor       = 1 << 18;
+    static constexpr u32 OverrideGodRays           = 1 << 19;
+    static constexpr u32 OverrideSSAO              = 1 << 20;
+    static constexpr u32 OverrideContactShadows    = 1 << 21;
+    static constexpr u32 OverrideCaustics          = 1 << 22;
+    static constexpr u32 OverrideFogShafts         = 1 << 23;
     static constexpr u32 OverrideAll               = 0xFFFFFFFF;
 
     // The post-process settings this volume wants to apply.
@@ -250,6 +255,42 @@ inline void BlendPostProcessSettings(
         out.stippleStrength = lerpF(a.stippleStrength, b.stippleStrength, t);
         out.stippleFgColor = lerpV(a.stippleFgColor, b.stippleFgColor, t);
         out.stippleBgColor = lerpV(a.stippleBgColor, b.stippleBgColor, t);
+    }
+    if (overrideMask & PostProcessVolumeComponent::OverrideGodRays) {
+        out.godRaysEnabled = lerpU(a.godRaysEnabled, b.godRaysEnabled, t);
+        out.godRaysIntensity = lerpF(a.godRaysIntensity, b.godRaysIntensity, t);
+        out.godRaysDecay = lerpF(a.godRaysDecay, b.godRaysDecay, t);
+        out.godRaysDensity = lerpF(a.godRaysDensity, b.godRaysDensity, t);
+        out.godRaysSamples = lerpU(a.godRaysSamples, b.godRaysSamples, t);
+        out.godRaysWeight = lerpF(a.godRaysWeight, b.godRaysWeight, t);
+    }
+    if (overrideMask & PostProcessVolumeComponent::OverrideSSAO) {
+        out.ssaoEnabled = lerpU(a.ssaoEnabled, b.ssaoEnabled, t);
+        out.ssaoRadius = lerpF(a.ssaoRadius, b.ssaoRadius, t);
+        out.ssaoIntensity = lerpF(a.ssaoIntensity, b.ssaoIntensity, t);
+        out.ssaoBias = lerpF(a.ssaoBias, b.ssaoBias, t);
+        out.ssaoSamples = lerpU(a.ssaoSamples, b.ssaoSamples, t);
+    }
+    if (overrideMask & PostProcessVolumeComponent::OverrideContactShadows) {
+        out.contactShadowsEnabled = lerpU(a.contactShadowsEnabled, b.contactShadowsEnabled, t);
+        out.contactShadowsLength = lerpF(a.contactShadowsLength, b.contactShadowsLength, t);
+        out.contactShadowsSteps = lerpU(a.contactShadowsSteps, b.contactShadowsSteps, t);
+        out.contactShadowsIntensity = lerpF(a.contactShadowsIntensity, b.contactShadowsIntensity, t);
+    }
+    if (overrideMask & PostProcessVolumeComponent::OverrideCaustics) {
+        out.causticsEnabled = lerpU(a.causticsEnabled, b.causticsEnabled, t);
+        out.causticsIntensity = lerpF(a.causticsIntensity, b.causticsIntensity, t);
+        out.causticsScale = lerpF(a.causticsScale, b.causticsScale, t);
+        out.causticsSpeed = lerpF(a.causticsSpeed, b.causticsSpeed, t);
+        out.causticsWaterY = lerpF(a.causticsWaterY, b.causticsWaterY, t);
+    }
+    if (overrideMask & PostProcessVolumeComponent::OverrideFogShafts) {
+        out.fogShaftsEnabled = lerpU(a.fogShaftsEnabled, b.fogShaftsEnabled, t);
+        out.fogShaftsIntensity = lerpF(a.fogShaftsIntensity, b.fogShaftsIntensity, t);
+        out.fogShaftsDensity = lerpF(a.fogShaftsDensity, b.fogShaftsDensity, t);
+        out.fogShaftsDecay = lerpF(a.fogShaftsDecay, b.fogShaftsDecay, t);
+        out.fogShaftsSamples = lerpU(a.fogShaftsSamples, b.fogShaftsSamples, t);
+        out.fogShaftsMaxDistance = lerpF(a.fogShaftsMaxDistance, b.fogShaftsMaxDistance, t);
     }
 }
 

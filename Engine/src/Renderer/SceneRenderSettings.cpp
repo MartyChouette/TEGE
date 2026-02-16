@@ -228,6 +228,38 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.stippleStrength              = pp->stippleStrength;
         s.stippleFgColor               = pp->stippleFgColor;
         s.stippleBgColor               = pp->stippleBgColor;
+
+        // Screen-Space Effects
+        s.godRaysEnabled               = pp->godRaysEnabled != 0;
+        s.godRaysIntensity             = pp->godRaysIntensity;
+        s.godRaysDecay                 = pp->godRaysDecay;
+        s.godRaysDensity               = pp->godRaysDensity;
+        s.godRaysSamples               = pp->godRaysSamples;
+        s.godRaysWeight                = pp->godRaysWeight;
+
+        s.ssaoEnabled                  = pp->ssaoEnabled != 0;
+        s.ssaoRadius                   = pp->ssaoRadius;
+        s.ssaoIntensity                = pp->ssaoIntensity;
+        s.ssaoBias                     = pp->ssaoBias;
+        s.ssaoSamples                  = pp->ssaoSamples;
+
+        s.contactShadowsEnabled        = pp->contactShadowsEnabled != 0;
+        s.contactShadowsLength         = pp->contactShadowsLength;
+        s.contactShadowsSteps          = pp->contactShadowsSteps;
+        s.contactShadowsIntensity      = pp->contactShadowsIntensity;
+
+        s.causticsEnabled              = pp->causticsEnabled != 0;
+        s.causticsIntensity            = pp->causticsIntensity;
+        s.causticsScale                = pp->causticsScale;
+        s.causticsSpeed                = pp->causticsSpeed;
+        s.causticsWaterY               = pp->causticsWaterY;
+
+        s.fogShaftsEnabled             = pp->fogShaftsEnabled != 0;
+        s.fogShaftsIntensity           = pp->fogShaftsIntensity;
+        s.fogShaftsDensity             = pp->fogShaftsDensity;
+        s.fogShaftsDecay               = pp->fogShaftsDecay;
+        s.fogShaftsSamples             = pp->fogShaftsSamples;
+        s.fogShaftsMaxDistance          = pp->fogShaftsMaxDistance;
     }
 
     return s;
@@ -438,6 +470,38 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->stippleFgColor               = stippleFgColor;
         pp->stippleBgColor               = stippleBgColor;
 
+        // Screen-Space Effects
+        pp->godRaysEnabled               = godRaysEnabled ? 1 : 0;
+        pp->godRaysIntensity             = godRaysIntensity;
+        pp->godRaysDecay                 = godRaysDecay;
+        pp->godRaysDensity               = godRaysDensity;
+        pp->godRaysSamples               = godRaysSamples;
+        pp->godRaysWeight                = godRaysWeight;
+
+        pp->ssaoEnabled                  = ssaoEnabled ? 1 : 0;
+        pp->ssaoRadius                   = ssaoRadius;
+        pp->ssaoIntensity                = ssaoIntensity;
+        pp->ssaoBias                     = ssaoBias;
+        pp->ssaoSamples                  = ssaoSamples;
+
+        pp->contactShadowsEnabled        = contactShadowsEnabled ? 1 : 0;
+        pp->contactShadowsLength         = contactShadowsLength;
+        pp->contactShadowsSteps          = contactShadowsSteps;
+        pp->contactShadowsIntensity      = contactShadowsIntensity;
+
+        pp->causticsEnabled              = causticsEnabled ? 1 : 0;
+        pp->causticsIntensity            = causticsIntensity;
+        pp->causticsScale                = causticsScale;
+        pp->causticsSpeed                = causticsSpeed;
+        pp->causticsWaterY               = causticsWaterY;
+
+        pp->fogShaftsEnabled             = fogShaftsEnabled ? 1 : 0;
+        pp->fogShaftsIntensity           = fogShaftsIntensity;
+        pp->fogShaftsDensity             = fogShaftsDensity;
+        pp->fogShaftsDecay               = fogShaftsDecay;
+        pp->fogShaftsSamples             = fogShaftsSamples;
+        pp->fogShaftsMaxDistance          = fogShaftsMaxDistance;
+
         // Restore runtime-only fields
         pp->time = savedTime;
         pp->screenWidth = savedScreenW;
@@ -622,6 +686,34 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["celOutlineThickness"]   = RF(s.celOutlineThickness);
     j["celOutlineThreshold"]   = RF(s.celOutlineThreshold);
     j["celOutlineColor"]       = SerializeVec3(s.celOutlineColor);
+
+    // Screen-Space Effects
+    j["godRaysEnabled"]          = s.godRaysEnabled;
+    j["godRaysIntensity"]        = RF(s.godRaysIntensity);
+    j["godRaysDecay"]            = RF(s.godRaysDecay);
+    j["godRaysDensity"]          = RF(s.godRaysDensity);
+    j["godRaysSamples"]          = s.godRaysSamples;
+    j["godRaysWeight"]           = RF(s.godRaysWeight);
+    j["ssaoEnabled"]             = s.ssaoEnabled;
+    j["ssaoRadius"]              = RF(s.ssaoRadius);
+    j["ssaoIntensity"]           = RF(s.ssaoIntensity);
+    j["ssaoBias"]                = RF(s.ssaoBias);
+    j["ssaoSamples"]             = s.ssaoSamples;
+    j["contactShadowsEnabled"]   = s.contactShadowsEnabled;
+    j["contactShadowsLength"]    = RF(s.contactShadowsLength);
+    j["contactShadowsSteps"]     = s.contactShadowsSteps;
+    j["contactShadowsIntensity"] = RF(s.contactShadowsIntensity);
+    j["causticsEnabled"]         = s.causticsEnabled;
+    j["causticsIntensity"]       = RF(s.causticsIntensity);
+    j["causticsScale"]           = RF(s.causticsScale);
+    j["causticsSpeed"]           = RF(s.causticsSpeed);
+    j["causticsWaterY"]          = RF(s.causticsWaterY);
+    j["fogShaftsEnabled"]        = s.fogShaftsEnabled;
+    j["fogShaftsIntensity"]      = RF(s.fogShaftsIntensity);
+    j["fogShaftsDensity"]        = RF(s.fogShaftsDensity);
+    j["fogShaftsDecay"]          = RF(s.fogShaftsDecay);
+    j["fogShaftsSamples"]        = s.fogShaftsSamples;
+    j["fogShaftsMaxDistance"]     = RF(s.fogShaftsMaxDistance);
 
     // Ray Tracing
     j["rtEnabled"]                    = s.rtEnabled;
@@ -809,6 +901,34 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("celOutlineThickness"))   s.celOutlineThickness   = j["celOutlineThickness"].get<f32>();
     if (j.contains("celOutlineThreshold"))   s.celOutlineThreshold   = j["celOutlineThreshold"].get<f32>();
     if (j.contains("celOutlineColor"))       s.celOutlineColor       = DeserializeVec3(j["celOutlineColor"], s.celOutlineColor);
+
+    // Screen-Space Effects
+    if (j.contains("godRaysEnabled"))          s.godRaysEnabled          = JB(j["godRaysEnabled"]);
+    if (j.contains("godRaysIntensity"))        s.godRaysIntensity        = j["godRaysIntensity"].get<f32>();
+    if (j.contains("godRaysDecay"))            s.godRaysDecay            = j["godRaysDecay"].get<f32>();
+    if (j.contains("godRaysDensity"))          s.godRaysDensity          = j["godRaysDensity"].get<f32>();
+    if (j.contains("godRaysSamples"))          s.godRaysSamples          = j["godRaysSamples"].get<u32>();
+    if (j.contains("godRaysWeight"))           s.godRaysWeight           = j["godRaysWeight"].get<f32>();
+    if (j.contains("ssaoEnabled"))             s.ssaoEnabled             = JB(j["ssaoEnabled"]);
+    if (j.contains("ssaoRadius"))              s.ssaoRadius              = j["ssaoRadius"].get<f32>();
+    if (j.contains("ssaoIntensity"))           s.ssaoIntensity           = j["ssaoIntensity"].get<f32>();
+    if (j.contains("ssaoBias"))                s.ssaoBias                = j["ssaoBias"].get<f32>();
+    if (j.contains("ssaoSamples"))             s.ssaoSamples             = j["ssaoSamples"].get<u32>();
+    if (j.contains("contactShadowsEnabled"))   s.contactShadowsEnabled   = JB(j["contactShadowsEnabled"]);
+    if (j.contains("contactShadowsLength"))    s.contactShadowsLength    = j["contactShadowsLength"].get<f32>();
+    if (j.contains("contactShadowsSteps"))     s.contactShadowsSteps     = j["contactShadowsSteps"].get<u32>();
+    if (j.contains("contactShadowsIntensity")) s.contactShadowsIntensity = j["contactShadowsIntensity"].get<f32>();
+    if (j.contains("causticsEnabled"))         s.causticsEnabled         = JB(j["causticsEnabled"]);
+    if (j.contains("causticsIntensity"))       s.causticsIntensity       = j["causticsIntensity"].get<f32>();
+    if (j.contains("causticsScale"))           s.causticsScale           = j["causticsScale"].get<f32>();
+    if (j.contains("causticsSpeed"))           s.causticsSpeed           = j["causticsSpeed"].get<f32>();
+    if (j.contains("causticsWaterY"))          s.causticsWaterY          = j["causticsWaterY"].get<f32>();
+    if (j.contains("fogShaftsEnabled"))        s.fogShaftsEnabled        = JB(j["fogShaftsEnabled"]);
+    if (j.contains("fogShaftsIntensity"))      s.fogShaftsIntensity      = j["fogShaftsIntensity"].get<f32>();
+    if (j.contains("fogShaftsDensity"))        s.fogShaftsDensity        = j["fogShaftsDensity"].get<f32>();
+    if (j.contains("fogShaftsDecay"))          s.fogShaftsDecay          = j["fogShaftsDecay"].get<f32>();
+    if (j.contains("fogShaftsSamples"))        s.fogShaftsSamples        = j["fogShaftsSamples"].get<u32>();
+    if (j.contains("fogShaftsMaxDistance"))     s.fogShaftsMaxDistance     = j["fogShaftsMaxDistance"].get<f32>();
 
     // Ray Tracing
     if (j.contains("rtEnabled"))                      s.rtEnabled                      = JB(j["rtEnabled"]);

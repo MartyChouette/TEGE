@@ -165,6 +165,61 @@ layout(binding = 1) uniform PostProcessSettings {
     float _stipplePad2;
     vec3 stippleBgColor;
     float _stipplePad3;
+
+    // Screen-Space Effects infrastructure
+    vec4 invViewProj0;    // Inverse view-projection matrix columns
+    vec4 invViewProj1;
+    vec4 invViewProj2;
+    vec4 invViewProj3;
+    vec3 lightDirWorld;   // Directional light direction (toward light)
+    float _ssPad0;
+    vec4 lightScreenPos;  // xy=NDC 0..1, z=depth, w=1 if on-screen
+
+    // God Rays
+    uint godRaysEnabled;
+    float godRaysIntensity;
+    float godRaysDecay;
+    float godRaysDensity;
+    uint godRaysSamples;
+    float godRaysWeight;
+    float _godRaysPad0;
+    float _godRaysPad1;
+
+    // SSAO
+    uint ssaoEnabled;
+    float ssaoRadius;
+    float ssaoIntensity;
+    float ssaoBias;
+    uint ssaoSamples;
+    float _ssaoPad0;
+    float _ssaoPad1;
+    float _ssaoPad2;
+
+    // Contact Shadows
+    uint contactShadowsEnabled;
+    float contactShadowsLength;
+    uint contactShadowsSteps;
+    float contactShadowsIntensity;
+
+    // Fake Caustics
+    uint causticsEnabled;
+    float causticsIntensity;
+    float causticsScale;
+    float causticsSpeed;
+    float causticsWaterY;
+    float _causticsPad0;
+    float _causticsPad1;
+    float _causticsPad2;
+
+    // Fog Shafts
+    uint fogShaftsEnabled;
+    float fogShaftsIntensity;
+    float fogShaftsDensity;
+    float fogShaftsDecay;
+    uint fogShaftsSamples;
+    float fogShaftsMaxDistance;
+    float _fogShaftsPad0;
+    float _fogShaftsPad1;
 } settings;
 
 // LUT texture (binding 2)
@@ -826,6 +881,273 @@ vec3 applyStipple(vec3 color, vec2 screenPos) {
     return mix(color, stippled, settings.stippleStrength);
 }
 
+// Linearize Vulkan [0,1] reverse-Z depth to view-space distance
+float linearizeDepth(float d, float near, float far) {
+    return near * far / (far - d * (far - near));
+}
+
+// ============================================================
+// Screen-Space Effects — Shared Utilities
+// ============================================================
+
+// Interleaved gradient noise (Jimenez 2014) — low-discrepancy, no texture needed
+float interleavedGradientNoise(vec2 screenPos) {
+    return fract(52.9829189 * fract(0.06711056 * screenPos.x + 0.00583715 * screenPos.y));
+}
+
+// Reconstruct world-space position from UV + depth using inverse view-projection matrix
+vec3 reconstructWorldPos(vec2 uv, float depth) {
+    // NDC: x,y in [-1,1], z = depth (Vulkan 0..1 reversed Z)
+    vec4 clip = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    // Manually multiply by inverse view-projection matrix (stored as 4 column vectors)
+    vec4 world;
+    world.x = dot(clip, vec4(settings.invViewProj0.x, settings.invViewProj1.x, settings.invViewProj2.x, settings.invViewProj3.x));
+    world.y = dot(clip, vec4(settings.invViewProj0.y, settings.invViewProj1.y, settings.invViewProj2.y, settings.invViewProj3.y));
+    world.z = dot(clip, vec4(settings.invViewProj0.z, settings.invViewProj1.z, settings.invViewProj2.z, settings.invViewProj3.z));
+    world.w = dot(clip, vec4(settings.invViewProj0.w, settings.invViewProj1.w, settings.invViewProj2.w, settings.invViewProj3.w));
+    return world.xyz / world.w;
+}
+
+// Reconstruct normal from depth buffer using cross product of partial derivatives
+vec3 reconstructNormal(vec2 uv) {
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    float dC = texture(depthTexture, uv).r;
+    float dR = texture(depthTexture, uv + vec2(texelSize.x, 0.0)).r;
+    float dU = texture(depthTexture, uv + vec2(0.0, texelSize.y)).r;
+
+    vec3 posC = reconstructWorldPos(uv, dC);
+    vec3 posR = reconstructWorldPos(uv + vec2(texelSize.x, 0.0), dR);
+    vec3 posU = reconstructWorldPos(uv + vec2(0.0, texelSize.y), dU);
+
+    return normalize(cross(posR - posC, posU - posC));
+}
+
+// ============================================================
+// God Rays — Screen-space radial blur from projected sun position
+// (GPU Gems 3, Crysis 2007)
+// ============================================================
+vec3 applyGodRays(vec3 color, vec2 uv) {
+    if (settings.godRaysEnabled == 0) return color;
+    if (settings.lightScreenPos.w < 0.5) return color; // Light not on screen
+
+    vec2 lightPos = settings.lightScreenPos.xy;
+    vec2 deltaUV = (uv - lightPos) * settings.godRaysDensity / float(settings.godRaysSamples);
+
+    vec2 sampleUV = uv;
+    float illumination = 0.0;
+    float decay = 1.0;
+
+    for (uint i = 0u; i < settings.godRaysSamples; i++) {
+        sampleUV -= deltaUV;
+        vec2 clampedUV = clamp(sampleUV, 0.001, 0.999);
+        float sampleLuma = dot(texture(sceneTexture, clampedUV).rgb, vec3(0.2126, 0.7152, 0.0722));
+        // Only accumulate bright areas (sky/emissive) — threshold at 0.5
+        sampleLuma = max(sampleLuma - 0.5, 0.0);
+        illumination += sampleLuma * decay * settings.godRaysWeight;
+        decay *= settings.godRaysDecay;
+    }
+
+    return color + vec3(illumination * settings.godRaysIntensity);
+}
+
+// ============================================================
+// SSAO — Screen-Space Ambient Occlusion
+// Hemisphere sampling with reconstructed normals (Crysis 2007)
+// ============================================================
+vec3 applySSAO(vec3 color, vec2 uv) {
+    if (settings.ssaoEnabled == 0) return color;
+
+    float depth = texture(depthTexture, uv).r;
+    if (depth < 0.0001) return color; // Sky
+
+    vec3 fragPos = reconstructWorldPos(uv, depth);
+    vec3 normal = reconstructNormal(uv);
+
+    vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
+    vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
+
+    float occlusion = 0.0;
+    uint sampleCount = min(settings.ssaoSamples, 32u);
+
+    for (uint i = 0u; i < sampleCount; i++) {
+        // Generate pseudo-random sample direction using IGN + golden angle spiral
+        float fi = float(i);
+        float noise = interleavedGradientNoise(screenPos + vec2(fi * 7.0, fi * 13.0));
+        float angle = fi * 2.399963 + noise * 6.2831853; // Golden angle spiral + noise
+        float radius = (fi + noise) / float(sampleCount);
+        radius = mix(0.1, 1.0, radius * radius); // Quadratic distribution
+
+        // Create sample offset in tangent space
+        vec3 sampleDir = vec3(cos(angle) * radius, sin(angle) * radius, sqrt(max(1.0 - radius * radius, 0.0)));
+
+        // Orient to hemisphere around normal using Gram-Schmidt
+        vec3 tangent = normalize(cross(abs(normal.y) < 0.999 ? vec3(0, 1, 0) : vec3(1, 0, 0), normal));
+        vec3 bitangent = cross(normal, tangent);
+        vec3 sampleOffset = tangent * sampleDir.x + bitangent * sampleDir.y + normal * sampleDir.z;
+
+        vec3 samplePos = fragPos + sampleOffset * settings.ssaoRadius;
+
+        // Project sample back to screen
+        vec4 projSample;
+        projSample.x = dot(vec4(samplePos, 1.0), vec4(settings.invViewProj0.x, settings.invViewProj0.y, settings.invViewProj0.z, settings.invViewProj0.w));
+        // We need VIEW-PROJ, not INV-VIEW-PROJ to project. Use depth comparison instead:
+        // Approximate: offset UV by projected radius and compare depths
+        vec2 offsetUV = uv + sampleOffset.xy * settings.ssaoRadius * texelSize * 100.0;
+        offsetUV = clamp(offsetUV, 0.001, 0.999);
+        float sampleDepth = texture(depthTexture, offsetUV).r;
+        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+        float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
+
+        // Range check + depth comparison
+        float rangeCheck = smoothstep(0.0, 1.0, settings.ssaoRadius / max(abs(fragLinear - sampleLinear), 0.001));
+        occlusion += (sampleLinear <= fragLinear - settings.ssaoBias ? 1.0 : 0.0) * rangeCheck;
+    }
+
+    occlusion = 1.0 - (occlusion / float(sampleCount)) * settings.ssaoIntensity;
+    occlusion = clamp(occlusion, 0.0, 1.0);
+
+    return color * occlusion;
+}
+
+// ============================================================
+// Contact Shadows — Screen-space ray march toward light in depth buffer
+// (Uncharted 4, DOOM 2016)
+// ============================================================
+vec3 applyContactShadows(vec3 color, vec2 uv) {
+    if (settings.contactShadowsEnabled == 0) return color;
+
+    float depth = texture(depthTexture, uv).r;
+    if (depth < 0.0001) return color; // Sky
+
+    // March from fragment toward light in screen space
+    // Project light direction to screen-space step
+    vec2 lightDir2D = normalize(settings.lightScreenPos.xy - uv);
+    vec2 stepUV = lightDir2D * settings.contactShadowsLength / float(settings.contactShadowsSteps);
+
+    float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
+    vec2 sampleUV = uv;
+    float shadow = 0.0;
+
+    for (uint i = 1u; i <= settings.contactShadowsSteps; i++) {
+        sampleUV += stepUV;
+        if (sampleUV.x < 0.0 || sampleUV.x > 1.0 || sampleUV.y < 0.0 || sampleUV.y > 1.0) break;
+
+        float sampleDepth = texture(depthTexture, sampleUV).r;
+        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+
+        // Interpolated expected depth along ray (linear interpolation in view space)
+        float t = float(i) / float(settings.contactShadowsSteps);
+        float expectedDepth = fragLinear - t * settings.contactShadowsLength * fragLinear;
+
+        // Hit test: sample is closer than expected (occluder found)
+        float thickness = abs(sampleLinear - expectedDepth);
+        if (sampleLinear < expectedDepth && thickness < settings.contactShadowsLength * fragLinear * 0.5) {
+            shadow = 1.0 - t; // Fade with distance
+            break;
+        }
+    }
+
+    shadow *= settings.contactShadowsIntensity;
+    return color * (1.0 - shadow);
+}
+
+// ============================================================
+// Fake Caustics — Procedural animated Voronoi pattern below water plane
+// (Tomb Raider 2013 style)
+// ============================================================
+vec3 applyCaustics(vec3 color, vec2 uv) {
+    if (settings.causticsEnabled == 0) return color;
+
+    float depth = texture(depthTexture, uv).r;
+    if (depth < 0.0001) return color; // Sky
+
+    vec3 worldPos = reconstructWorldPos(uv, depth);
+
+    // Only apply below water plane
+    if (worldPos.y > settings.causticsWaterY) return color;
+
+    // Animated Voronoi pattern on XZ plane
+    float t = settings.time * settings.causticsSpeed;
+    vec2 p = worldPos.xz * settings.causticsScale;
+
+    // Two-layer Voronoi for more organic look
+    float minDist1 = 1.0;
+    float minDist2 = 1.0;
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec2 cell = vec2(float(x), float(y));
+            vec2 cellID = floor(p) + cell;
+            // Pseudo-random cell center
+            vec2 cellCenter = cellID + vec2(
+                fract(sin(dot(cellID, vec2(127.1, 311.7))) * 43758.5453),
+                fract(sin(dot(cellID, vec2(269.5, 183.3))) * 43758.5453)
+            );
+            // Animate cell centers
+            cellCenter += 0.3 * vec2(sin(t + cellCenter.x * 6.28), cos(t + cellCenter.y * 6.28));
+            float d = length(fract(p) - cell - fract(cellCenter));
+            if (d < minDist1) {
+                minDist2 = minDist1;
+                minDist1 = d;
+            } else if (d < minDist2) {
+                minDist2 = d;
+            }
+        }
+    }
+
+    // Caustic brightness from cell edge proximity
+    float caustic = smoothstep(0.0, 0.3, minDist2 - minDist1);
+    caustic *= caustic; // Sharpen
+
+    // Fade with depth below water
+    float waterDepthFade = clamp((settings.causticsWaterY - worldPos.y) * 0.1, 0.0, 1.0);
+
+    return color + vec3(caustic * settings.causticsIntensity * waterDepthFade);
+}
+
+// ============================================================
+// Fog Shafts — Noisy volumetric-look fog ray march
+// (The Last of Us, Skyrim style)
+// ============================================================
+vec3 applyFogShafts(vec3 color, vec2 uv) {
+    if (settings.fogShaftsEnabled == 0) return color;
+
+    float depth = texture(depthTexture, uv).r;
+    float fragLinear = linearizeDepth(depth, settings.cameraNearPlane, settings.cameraFarPlane);
+    float maxDist = min(fragLinear, settings.fogShaftsMaxDistance);
+
+    vec2 screenPos = uv * vec2(settings.screenWidth, settings.screenHeight);
+    float noise0 = interleavedGradientNoise(screenPos);
+
+    vec2 lightDir2D = normalize(settings.lightScreenPos.xy - uv);
+    float fog = 0.0;
+    float decay = 1.0;
+
+    uint sampleCount = min(settings.fogShaftsSamples, 32u);
+
+    for (uint i = 0u; i < sampleCount; i++) {
+        float t = (float(i) + noise0) / float(sampleCount);
+        vec2 sampleUV = uv - lightDir2D * t * 0.2; // March toward light
+        sampleUV = clamp(sampleUV, 0.001, 0.999);
+
+        float sampleDepth = texture(depthTexture, sampleUV).r;
+        float sampleLinear = linearizeDepth(sampleDepth, settings.cameraNearPlane, settings.cameraFarPlane);
+
+        // Accumulate fog if sample is behind geometry (in open space)
+        float sampleDist = t * maxDist;
+        if (sampleLinear > sampleDist) {
+            fog += settings.fogShaftsDensity * decay;
+        }
+        decay *= settings.fogShaftsDecay;
+    }
+
+    // Modulate by light direction alignment (stronger when looking toward light)
+    float lightAlignment = max(dot(normalize(settings.lightScreenPos.xy - vec2(0.5)), uv - vec2(0.5)), 0.0);
+    lightAlignment = pow(lightAlignment + 0.3, 2.0); // Bias to prevent total darkness
+
+    fog *= settings.fogShaftsIntensity * lightAlignment;
+    return color + vec3(clamp(fog, 0.0, 1.0));
+}
+
 // Cel shading outline: Sobel edge detection on depth buffer
 vec3 applyCelOutline(vec3 color, vec2 uv) {
     if (settings.celOutlineEnabled == 0) return color;
@@ -853,11 +1175,6 @@ vec3 applyCelOutline(vec3 color, vec2 uv) {
 
     float edge = smoothstep(settings.celOutlineThreshold * 0.5, settings.celOutlineThreshold, edgeMagnitude);
     return mix(color, settings.celOutlineColor, edge);
-}
-
-// Linearize Vulkan [0,1] reverse-Z depth to view-space distance
-float linearizeDepth(float d, float near, float far) {
-    return near * far / (far - d * (far - near));
 }
 
 // Depth of Field — 16-tap Poisson disc blur weighted by Circle of Confusion
@@ -964,6 +1281,13 @@ void main() {
     } else {
         color = applyChromaticAberration(uv);
     }
+
+    // Screen-space effects (HDR, before DoF/tone mapping)
+    color = applySSAO(color, uv);
+    color = applyContactShadows(color, uv);
+    color = applyCaustics(color, uv);
+    color = applyGodRays(color, uv);
+    color = applyFogShafts(color, uv);
 
     // Apply Depth of Field (before tone mapping for HDR-correct blur)
     if (settings.dofEnabled != 0u) {

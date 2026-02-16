@@ -2,6 +2,96 @@
 
 ---
 
+## 2026-02-15 (Session 28)
+
+### Comprehensive Audit #4 — 81 Findings, 30+ Fixes
+
+**Stability Fixes (4):**
+- Weather transition div-by-zero when `m_TransitionDuration <= 0` — instant-completes transition
+- WorldTime div-by-zero when `secondsPerGameHour <= 0` — early return guard
+- Sprite animation infinite loop when frame `duration <= 0` — break + reset timer
+- Skeletal animator Loop mode infinite loop when `duration <= 0` — clamp + break
+
+**Security Fixes (4):**
+- `vkMapMemory` return value checked in 4 sites: RenderSystem RT light UBO, AccelerationStructure TLAS build, RTPipeline SBT build, RenderTarget pixel readback — all gracefully fail on error
+
+**Feature Gap Fixes (8):**
+- `s_VisualScriptWater` now wired in PlayMode::Play() (was only cleared in Stop())
+- `s_VisualScriptAudioGraphRuntime` wired in both PlayMode and Player (was never set)
+- `PlayMode::SetWater3D()` added + called from EditorLayer
+- FluidSimulation, FluidTerrainCoupling, CurlNoiseSystem wired in PlayMode via setters from EditorLayer
+- CurlNoiseSystem + FluidTerrainCoupling added to Player with init/update/shutdown
+
+**Performance Fix (1):**
+- `World::IsValid()` and `IsPendingDestruction()` upgraded from O(N) linear scan to O(1) hash set lookup via companion `m_PendingDestructionSet` — also optimizes `DestroyEntity()` duplicate check
+
+**VS Node Registrations (3):**
+- `TweenFloat` — generic float interpolation on TweenComponent
+- `OnCollision` — per-frame collision event (complements Enter/Exit one-shots)
+- `CustomEvent` — named event dispatch node
+
+Files changed: `Weather.cpp`, `WorldTime.cpp`, `Animation.cpp`, `RenderSystem.cpp`, `AccelerationStructure.cpp`, `RTPipeline.cpp`, `RenderTarget.cpp`, `PlayMode.h/cpp`, `EditorLayer.cpp`, `Player/main.cpp`, `World.h/cpp`, `NodeRegistry.cpp`, `SceneSerializer.cpp`
+
+---
+
+## 2026-02-15 (Session 27)
+
+### Critical Build Pipeline Fix + Market Analysis
+
+**1. Build Pipeline Scene Scanning — Fixed**
+The build pipeline's `ValidateAssets()` was completely non-functional: it checked for `entity["components"]` wrapper that doesn't exist (SceneSerializer stores components directly on the entity object). Every entity was skipped during scene scanning, meaning no textures, audio, or scripts were ever discovered from scene files.
+
+Fixes applied to `BuildPipeline.cpp`:
+- Removed `"components"` wrapper check — access component keys directly on entity object
+- Fixed `"sprite2d"` → `"sprite2D"` (case mismatch with SceneSerializer)
+- Fixed `"script"` → `"scriptComponent"` key name + inner structure (`scripts[]` array with `"path"`, not flat `"scriptPath"`)
+- Added scanning for tilemap `tilesetPath`, tree `barkTexturePath`/`canopyTexturePath`, shrub `customAssetPath`
+- Added 6 missing image extensions to `ScanProjectDirectory()`: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tga`, `.hdr`
+
+**2. Market & Business Analysis**
+Created comprehensive market positioning document (`docs/MARKET_ANALYSIS.md`) covering competitive landscape (Unity/Unreal/Godot/GameMaker), Enjin's unique differentiators, 4 target markets (Flash revival, accessibility-first, batteries-included indie, education), 5 paths to profitability, competitive moats, risk assessment, and strategic recommendations.
+
+Files changed: `Engine/src/Build/BuildPipeline.cpp`, `docs/MARKET_ANALYSIS.md`
+
+---
+
+## 2026-02-15 (Session 26)
+
+### Raster-Tier Screen-Space Effects
+
+**1. Five Screen-Space Effects in postprocess.frag**
+Implemented 5 new screen-space effects that run entirely in the post-process fragment shader using only existing scene color, depth buffer, and UBO parameters — no additional render passes or geometry needed:
+- **God Rays** — Radial blur from a screen-space light position toward the viewer. Configurable density, weight, decay, exposure, and number of samples. Light screen position derived from directional light direction + inverse view-projection in the UBO.
+- **SSAO (Screen-Space Ambient Occlusion)** — Hemisphere sampling around each fragment using reconstructed view-space position from depth. Configurable radius, bias, intensity, and sample count. Multiplied into the ambient term.
+- **Contact Shadows** — Screen-space ray march from each fragment toward the light to detect small-scale shadowing that CSM cascades miss. Configurable ray length, step count, thickness, and fade distance.
+- **Fake Caustics** — Animated Voronoi-based caustic pattern projected onto surfaces below a configurable water height. Configurable scale, speed, intensity, and water surface Y. Depth-aware fade prevents application on distant geometry.
+- **Fog Shafts** — Volumetric-style light shafts through fog, using depth-aware radial sampling similar to god rays but modulated by fog density. Configurable density, intensity, decay, and number of samples.
+
+**2. PostProcessSettings UBO Expansion**
+Added ~256 bytes to the PostProcessSettings UBO for the 5 new effects (~50 bytes each: enable flag, 4-6 parameter floats). `invViewProj` matrix and light direction/screen-position vectors added for depth reconstruction and light-relative sampling.
+
+**3. Editor UI**
+5 new collapsing headers in the Post Processing panel, one per effect. Each header contains an enable checkbox and parameter sliders with tooltips. Consistent layout with existing PP effect sections.
+
+**4. Scripting Integration**
+30 new AngelScript bindings (6 per effect: enable/disable + get/set for each parameter). 5 new Visual Script toggle nodes (`SS_EnableGodRays`, `SS_EnableSSAO`, `SS_EnableContactShadows`, `SS_EnableCaustics`, `SS_EnableFogShafts`).
+
+**5. Serialization & Scene Render Settings**
+All 5 effects fully serialized in `SceneRenderSettings` (JSON round-trip) and `SceneSerializer` (per-scene persistence). `CaptureFromRuntime()` and `ApplyToRuntime()` handle all new fields.
+
+**6. Player Wiring**
+Player app uploads `invViewProj`, light direction, and light screen position to the PostProcessSettings UBO each frame so all 5 effects function correctly at runtime.
+
+**7. PostProcessVolume Override Bits**
+Override mask bits 19-23 allocated for the 5 new effects (God Rays=19, SSAO=20, Contact Shadows=21, Caustics=22, Fog Shafts=23), enabling per-volume spatial blending of screen-space effect parameters.
+
+**8. Shader Size**
+postprocess.frag SPIR-V grew from 16,871 to 23,269 u32 words (~38% increase). All 10 build targets compile clean.
+
+Files changed: ~15 across Engine/include/Enjin/Renderer, Engine/include/Enjin/Editor, Engine/src/Renderer, Engine/src/Editor, Engine/src/Scene, Engine/src/Scripting, Engine/src/VisualScript, Player/src
+
+---
+
 ## 2026-02-15 (Session 25)
 
 ### Post-Process Volumes with Spatial Blending, PP Pipeline Optimization

@@ -290,7 +290,9 @@ bool TLAS::Build(VkCommandBuffer cmd,
     // Copy instance data
     if (instanceCount > 0) {
         void* mapped = nullptr;
-        vkMapMemory(m_Context->GetDevice(), m_InstanceMemory, 0, instanceDataSize, 0, &mapped);
+        if (vkMapMemory(m_Context->GetDevice(), m_InstanceMemory, 0, instanceDataSize, 0, &mapped) != VK_SUCCESS || !mapped) {
+            return false;
+        }
         std::memcpy(mapped, instances, static_cast<size_t>(instanceDataSize));
         vkUnmapMemory(m_Context->GetDevice(), m_InstanceMemory);
     }

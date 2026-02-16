@@ -402,7 +402,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
 
 ECS::NotesComponent DeserializeNotesComponent(const json& j) {
     ECS::NotesComponent notes;
-    notes.notes = j["notes"].get<std::string>();
+    if (j.contains("notes")) notes.notes = j["notes"].get<std::string>();
     return notes;
 }
 
@@ -467,20 +467,20 @@ json SerializeWeatherZoneComponent(const ECS::WeatherZoneComponent& zone) {
 
 ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
     ECS::WeatherZoneComponent zone;
-    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
-    zone.weatherType = j["weatherType"].get<u32>();
-    zone.rainIntensity = j["rainIntensity"].get<f32>();
-    zone.snowIntensity = j["snowIntensity"].get<f32>();
-    zone.fogDensity = j["fogDensity"].get<f32>();
-    zone.fogColor = DeserializeVector3(j["fogColor"]);
-    zone.fogStart = j["fogStart"].get<f32>();
-    zone.fogEnd = j["fogEnd"].get<f32>();
-    zone.lightningEnabled = JB(j["lightningEnabled"]);
+    if (j.contains("halfExtents")) zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("weatherType")) zone.weatherType = j["weatherType"].get<u32>();
+    if (j.contains("rainIntensity")) zone.rainIntensity = j["rainIntensity"].get<f32>();
+    if (j.contains("snowIntensity")) zone.snowIntensity = j["snowIntensity"].get<f32>();
+    if (j.contains("fogDensity")) zone.fogDensity = j["fogDensity"].get<f32>();
+    if (j.contains("fogColor")) zone.fogColor = DeserializeVector3(j["fogColor"]);
+    if (j.contains("fogStart")) zone.fogStart = j["fogStart"].get<f32>();
+    if (j.contains("fogEnd")) zone.fogEnd = j["fogEnd"].get<f32>();
+    if (j.contains("lightningEnabled")) zone.lightningEnabled = JB(j["lightningEnabled"]);
     if (j.contains("lightningMinInterval")) zone.lightningMinInterval = j["lightningMinInterval"].get<f32>();
     if (j.contains("lightningMaxInterval")) zone.lightningMaxInterval = j["lightningMaxInterval"].get<f32>();
     if (j.contains("windDirection")) zone.windDirection = DeserializeVector3(j["windDirection"]);
     if (j.contains("windStrength")) zone.windStrength = j["windStrength"].get<f32>();
-    zone.priority = j["priority"].get<i32>();
+    if (j.contains("priority")) zone.priority = j["priority"].get<i32>();
     return zone;
 }
 
@@ -818,6 +818,33 @@ json SerializePPSettings(const Renderer::PostProcessSettings& s) {
     j["stippleStrength"] = RF(s.stippleStrength);
     j["stippleFgColor"] = SerializeVector3(s.stippleFgColor);
     j["stippleBgColor"] = SerializeVector3(s.stippleBgColor);
+    // Screen-Space Effects
+    j["godRaysEnabled"] = s.godRaysEnabled;
+    j["godRaysIntensity"] = RF(s.godRaysIntensity);
+    j["godRaysDecay"] = RF(s.godRaysDecay);
+    j["godRaysDensity"] = RF(s.godRaysDensity);
+    j["godRaysSamples"] = s.godRaysSamples;
+    j["godRaysWeight"] = RF(s.godRaysWeight);
+    j["ssaoEnabled"] = s.ssaoEnabled;
+    j["ssaoRadius"] = RF(s.ssaoRadius);
+    j["ssaoIntensity"] = RF(s.ssaoIntensity);
+    j["ssaoBias"] = RF(s.ssaoBias);
+    j["ssaoSamples"] = s.ssaoSamples;
+    j["contactShadowsEnabled"] = s.contactShadowsEnabled;
+    j["contactShadowsLength"] = RF(s.contactShadowsLength);
+    j["contactShadowsSteps"] = s.contactShadowsSteps;
+    j["contactShadowsIntensity"] = RF(s.contactShadowsIntensity);
+    j["causticsEnabled"] = s.causticsEnabled;
+    j["causticsIntensity"] = RF(s.causticsIntensity);
+    j["causticsScale"] = RF(s.causticsScale);
+    j["causticsSpeed"] = RF(s.causticsSpeed);
+    j["causticsWaterY"] = RF(s.causticsWaterY);
+    j["fogShaftsEnabled"] = s.fogShaftsEnabled;
+    j["fogShaftsIntensity"] = RF(s.fogShaftsIntensity);
+    j["fogShaftsDensity"] = RF(s.fogShaftsDensity);
+    j["fogShaftsDecay"] = RF(s.fogShaftsDecay);
+    j["fogShaftsSamples"] = s.fogShaftsSamples;
+    j["fogShaftsMaxDistance"] = RF(s.fogShaftsMaxDistance);
     return j;
 }
 
@@ -914,6 +941,37 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.stippleStrength = GF("stippleStrength", 1.0f);
     if (j.contains("stippleFgColor")) s.stippleFgColor = DeserializeVector3(j["stippleFgColor"]);
     if (j.contains("stippleBgColor")) s.stippleBgColor = DeserializeVector3(j["stippleBgColor"]);
+    // Screen-Space Effects
+    s.godRaysEnabled = GU("godRaysEnabled");
+    s.godRaysIntensity = GF("godRaysIntensity", 0.5f);
+    s.godRaysDecay = GF("godRaysDecay", 0.97f);
+    s.godRaysDensity = GF("godRaysDensity", 1.0f);
+    s.godRaysSamples = GU("godRaysSamples");
+    if (s.godRaysSamples == 0) s.godRaysSamples = 64;
+    s.godRaysWeight = GF("godRaysWeight", 0.01f);
+    s.ssaoEnabled = GU("ssaoEnabled");
+    s.ssaoRadius = GF("ssaoRadius", 0.5f);
+    s.ssaoIntensity = GF("ssaoIntensity", 1.5f);
+    s.ssaoBias = GF("ssaoBias", 0.025f);
+    s.ssaoSamples = GU("ssaoSamples");
+    if (s.ssaoSamples == 0) s.ssaoSamples = 16;
+    s.contactShadowsEnabled = GU("contactShadowsEnabled");
+    s.contactShadowsLength = GF("contactShadowsLength", 0.1f);
+    s.contactShadowsSteps = GU("contactShadowsSteps");
+    if (s.contactShadowsSteps == 0) s.contactShadowsSteps = 16;
+    s.contactShadowsIntensity = GF("contactShadowsIntensity", 1.0f);
+    s.causticsEnabled = GU("causticsEnabled");
+    s.causticsIntensity = GF("causticsIntensity", 0.3f);
+    s.causticsScale = GF("causticsScale", 1.0f);
+    s.causticsSpeed = GF("causticsSpeed", 1.0f);
+    s.causticsWaterY = GF("causticsWaterY", 0.0f);
+    s.fogShaftsEnabled = GU("fogShaftsEnabled");
+    s.fogShaftsIntensity = GF("fogShaftsIntensity", 0.3f);
+    s.fogShaftsDensity = GF("fogShaftsDensity", 0.05f);
+    s.fogShaftsDecay = GF("fogShaftsDecay", 0.95f);
+    s.fogShaftsSamples = GU("fogShaftsSamples");
+    if (s.fogShaftsSamples == 0) s.fogShaftsSamples = 16;
+    s.fogShaftsMaxDistance = GF("fogShaftsMaxDistance", 50.0f);
     return s;
 }
 
@@ -1585,7 +1643,7 @@ json SerializeBody2DComponent(const Physics::Body2DComponent& body) {
 
 Physics::Body2DComponent DeserializeBody2DComponent(const json& j) {
     Physics::Body2DComponent body;
-    if (j.contains("shapeType")) body.shapeType = static_cast<Physics::Shape2DType>(j["shapeType"].get<int>());
+    if (j.contains("shapeType")) { int v = j["shapeType"].get<int>(); if (v >= 0 && v <= 2) body.shapeType = static_cast<Physics::Shape2DType>(v); }
     if (j.contains("circleRadius")) body.circle.radius = j["circleRadius"].get<f32>();
     if (j.contains("circleOffset") && j["circleOffset"].is_array() && j["circleOffset"].size() >= 2) {
         body.circle.offset = Math::Vector2(j["circleOffset"][0].get<f32>(), j["circleOffset"][1].get<f32>());
@@ -3129,7 +3187,7 @@ Effects::InteractiveWaterComponent DeserializeInteractiveWaterComponent(const js
     if (j.contains("enableBuoyancy")) iw.enableBuoyancy = JB(j["enableBuoyancy"]);
     if (j.contains("buoyancyForce")) iw.buoyancyForce = j["buoyancyForce"].get<f32>();
     if (j.contains("waterDrag")) iw.waterDrag = j["waterDrag"].get<f32>();
-    if (j.contains("boundaryMode")) iw.boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(j["boundaryMode"].get<int>());
+    if (j.contains("boundaryMode")) { int v = j["boundaryMode"].get<int>(); if (v >= 0 && v <= 2) iw.boundaryMode = static_cast<Effects::InteractiveWaterComponent::BoundaryMode>(v); }
     return iw;
 }
 
@@ -5777,6 +5835,13 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
             }
 
+            if (entityJson.contains("interactiveWater")) {
+                m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
+            }
+            if (entityJson.contains("waterInteractor")) {
+                m_World->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
+            }
+
             if (entityJson.contains("shrubVolume")) {
                 auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
                 m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
@@ -6887,6 +6952,13 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
             }
 
+            if (entityJson.contains("interactiveWater")) {
+                m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
+            }
+            if (entityJson.contains("waterInteractor")) {
+                m_World->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
+            }
+
             if (entityJson.contains("shrubVolume")) {
                 auto shrub = DeserializeShrubVolumeComponent(entityJson["shrubVolume"]);
                 m_World->AddComponent<ECS::ShrubVolumeComponent>(entity, shrub);
@@ -7664,6 +7736,12 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("waterVolume")) {
             world->AddComponent<ECS::WaterVolumeComponent>(entity, DeserializeWaterVolumeComponent(entityJson["waterVolume"]));
+        }
+        if (entityJson.contains("interactiveWater")) {
+            world->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
+        }
+        if (entityJson.contains("waterInteractor")) {
+            world->AddComponent<Effects::WaterInteractorComponent>(entity, DeserializeWaterInteractorComponent(entityJson["waterInteractor"]));
         }
         if (entityJson.contains("shrubVolume")) {
             world->AddComponent<ECS::ShrubVolumeComponent>(entity, DeserializeShrubVolumeComponent(entityJson["shrubVolume"]));

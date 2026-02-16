@@ -34,6 +34,7 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
+#include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -67,6 +68,9 @@ Enjin::Accessibility::SubtitleSystem* s_VisualScriptSubtitleSystem = nullptr;
 
 // Global pointer for visual script announcer access (set by PlayMode)
 Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
+
+// Global pointer for visual script post-processing access (set by PlayMode)
+Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -4784,6 +4788,106 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
+    // Tween Float
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TweenFloat;
+        def.displayName = "Tween Float";
+        def.description = "Start a generic float tween on an entity's TweenComponent (value in currentValue.x)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Start", PK::Input),
+            Float("End", PK::Input),
+            Float("Duration", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"tween", "float", "interpolate", "lerp", "animate"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
+                target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
+            auto* tc = ctx.world->GetComponent<ECS::TweenComponent>(target);
+            if (tc && !tc->tweens.empty()) {
+                auto& entry = tc->tweens[0];
+                entry.property = ECS::TweenProperty::Float;
+                f32 startVal = 0.0f, endVal = 1.0f;
+                if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                    startVal = std::get<f32>(inputs[2]);
+                if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                    endVal = std::get<f32>(inputs[3]);
+                entry.startValue = Math::Vector3(startVal, 0, 0);
+                entry.endValue = Math::Vector3(endVal, 0, 0);
+                entry.useCurrentAsStart = false;
+                if (inputs.size() > 4 && std::holds_alternative<f32>(inputs[4]))
+                    entry.duration = std::get<f32>(inputs[4]);
+                entry.elapsed = 0.0f;
+                entry.isPlaying = true;
+                entry.isComplete = false;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // On Collision (generic — fires each frame while colliding)
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::OnCollision;
+        def.displayName = "On Collision";
+        def.description = "Fires each frame while entity is colliding with another (use Enter/Exit for one-shot)";
+        def.category = NodeCategory::Events;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.3f);
+        def.flags = NodeDefFlags::Event;
+        def.outputs = {
+            FlowOut(),
+            EntityPin("Other Entity", PK::Output)
+        };
+        def.keywords = {"collision", "overlap", "touching", "contact"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            outputs[0] = ctx.otherEntity;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Custom Event
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::CustomEvent;
+        def.displayName = "Custom Event";
+        def.description = "Fires when a named custom event is dispatched via script or visual script";
+        def.category = NodeCategory::Events;
+        def.headerColor = Math::Vector3(0.2f, 0.6f, 0.3f);
+        def.flags = NodeDefFlags::Event;
+        def.inputs = {
+            String("Event Name", PK::Input)
+        };
+        def.outputs = {
+            FlowOut(),
+            String("Event Name", PK::Output)
+        };
+        def.keywords = {"custom", "event", "dispatch", "signal", "trigger"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            outputs.resize(1);
+            std::string eventName;
+            if (!inputs.empty() && std::holds_alternative<std::string>(inputs[0]))
+                eventName = std::get<std::string>(inputs[0]);
+            outputs[0] = eventName;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
     // ========================================================================
     // DIALOGUE NODES
     // ========================================================================
@@ -6494,6 +6598,115 @@ void NodeRegistry::RegisterBuiltinNodes() {
     // ========================================================================
     // Post-Process Volume nodes
     // ========================================================================
+
+    // ========================================================================
+    // Screen-Space Effects
+    // ========================================================================
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SSEffectSetSSAO;
+        def.displayName = "Set SSAO Enabled";
+        def.description = "Enable or disable screen-space ambient occlusion";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"ssao", "ambient", "occlusion", "screen-space"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().ssaoEnabled = enabled ? 1u : 0u;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SSEffectSetContactShadows;
+        def.displayName = "Set Contact Shadows Enabled";
+        def.description = "Enable or disable screen-space contact shadows";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"contact", "shadows", "screen-space"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().contactShadowsEnabled = enabled ? 1u : 0u;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SSEffectSetGodRays;
+        def.displayName = "Set God Rays Enabled";
+        def.description = "Enable or disable screen-space god rays (light shafts from the sun)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"god", "rays", "light", "shafts", "sun"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().godRaysEnabled = enabled ? 1u : 0u;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SSEffectSetCaustics;
+        def.displayName = "Set Caustics Enabled";
+        def.description = "Enable or disable fake underwater caustics pattern";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"caustics", "water", "underwater"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().causticsEnabled = enabled ? 1u : 0u;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SSEffectSetFogShafts;
+        def.displayName = "Set Fog Shafts Enabled";
+        def.description = "Enable or disable volumetric-look fog shaft ray march";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.4f, 0.5f, 0.7f);
+        def.inputs = { FlowIn(), Bool("Enabled", PK::Input, true) };
+        def.outputs = { FlowOut() };
+        def.keywords = {"fog", "shafts", "volumetric", "atmosphere"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Renderer::PostProcessing* s_VisualScriptPostProcessing;
+            bool enabled = (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) ? std::get<bool>(inputs[1]) : true;
+            if (s_VisualScriptPostProcessing) s_VisualScriptPostProcessing->GetSettings().fogShaftsEnabled = enabled ? 1u : 0u;
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
 
     {
         NodeDefinition def;
