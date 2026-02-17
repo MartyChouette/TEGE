@@ -661,7 +661,7 @@ graph TB
 <!-- ==================== SECTION 3 ==================== -->
 <h2 id="timeline">3. Engine Evolution Timeline</h2>
 
-<p>Development phases reconstructed from completed feature set and roadmap documentation. Scroll horizontally to explore the full timeline.</p>
+<p>Actual development history from git commit dates. The entire engine was built in approximately 8 weeks, starting December 23, 2025. There is a ~4-week gap between the initial foundation (Dec 23-25) and the resumption of active development (Jan 22). The bulk of the engine (150+ features) was built in the subsequent 4 weeks.</p>
 
 <div class="h-timeline">
     <div class="h-timeline-inner">
@@ -669,157 +669,100 @@ graph TB
 
         <div class="h-timeline-phase" style="--phase-color: #3fb950">
             <h4>Foundation</h4>
-            <div class="date">Q1 2024</div>
+            <div class="date">Dec 23 &ndash; 25, 2025</div>
             <ul>
-                <li>Core Layer (Types, Math, Logging)</li>
-                <li>Window &amp; Input (GLFW)</li>
-                <li>Memory Allocators</li>
-                <li>Platform Abstraction</li>
+                <li>Project Init &amp; Core Layer</li>
+                <li>Vulkan Swapchain &amp; Windowing</li>
+                <li>3D Rendering Pipeline</li>
+                <li>GPU Culling &amp; Render Graph</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #58a6ff">
-            <h4>Vulkan Renderer</h4>
-            <div class="date">Q1 &ndash; Q3 2024</div>
+            <h4>Renderer &amp; Editor</h4>
+            <div class="date">Jan 22 &ndash; 28, 2026</div>
             <ul>
-                <li>VulkanContext &amp; Swapchain</li>
-                <li>Graphics Pipeline &amp; Buffers</li>
-                <li>Blinn-Phong Lighting</li>
-                <li>PBR Materials &amp; Normals</li>
-                <li>4-Cascade CSM Shadows</li>
-                <li>Skeletal Animation (GPU)</li>
+                <li>Shader Compilation &amp; Triangle Fix</li>
+                <li>Engine Infra (Input, glTF, ImGui)</li>
+                <li>Blinn-Phong &amp; PBR Materials</li>
+                <li>CSM Shadows &amp; Post-Processing</li>
+                <li>Scene Serialization &amp; FBX Import</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #d2a8ff">
-            <h4>ECS &amp; Editor</h4>
-            <div class="date">Q2 &ndash; Q4 2024</div>
+            <h4>Core Systems</h4>
+            <div class="date">Jan 29 &ndash; 31, 2026</div>
             <ul>
-                <li>ECS World (Thread-Safe)</li>
-                <li>70+ Component Types</li>
-                <li>ImGui Editor (32 Panels)</li>
-                <li>Transform Gizmos</li>
-                <li>Scene Serialization (JSON)</li>
-                <li>Multi-Select &amp; Undo/Redo</li>
-                <li>PlayMode (Play/Pause/Stop)</li>
+                <li>Weather, Water, Wind &amp; Vegetation</li>
+                <li>Skeletal Animation (GPU Skinning)</li>
+                <li>Physics &amp; Collision Detection</li>
+                <li>21 Templates &amp; Scene Management</li>
+                <li>Accessibility &amp; Input Remapping</li>
+                <li>Audio (miniaudio Backend)</li>
+                <li>Skybox, Undo/Redo, IK, Prefabs</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #f0883e">
-            <h4>2D Pipeline</h4>
-            <div class="date">Q3 2024 &ndash; Q1 2025</div>
+            <h4>2D &amp; Build</h4>
+            <div class="date">Feb 1 &ndash; 5, 2026</div>
             <ul>
-                <li>Sprite Rendering &amp; Atlas</li>
-                <li>Tilemap Rendering/Editing</li>
-                <li>Sprite Animation System</li>
-                <li>2D Camera (Follow, Shake)</li>
-                <li>Pixel Editor (8 Tools)</li>
-                <li>Sprite Sheet Importer</li>
+                <li>Build Pipeline &amp; Splitscreen</li>
+                <li>Terrain, 2D Tools, UI System</li>
+                <li>2.5D Lit Sprites &amp; Batch Renderer</li>
+                <li>Dialogue Trees &amp; State Machines</li>
+                <li>Tweening, Noise, Shader Hot-Reload</li>
+                <li>29 Enhanced Templates &amp; 2D Mode</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #39d353">
-            <h4>Physics</h4>
-            <div class="date">Q3 2024 &ndash; Q1 2026</div>
+            <h4>Visual Scripting &amp; Perf</h4>
+            <div class="date">Feb 6 &ndash; 8, 2026</div>
             <ul>
-                <li>SimplePhysics &amp; Solver</li>
-                <li>Physics2D (Shapes, Joints)</li>
-                <li>IPhysicsBackend Abstraction</li>
-                <li>Jolt v5.2.0 Backend</li>
-                <li>Box2D v3.0.0 Backend</li>
-                <li>Compile Guard (Simple)</li>
+                <li>Visual Scripting (Phases 1-4)</li>
+                <li>Fence-Based GPU Sync (18 Systems)</li>
+                <li>Descriptor Caching &amp; Material Sort</li>
+                <li>Soft Shadows, Point/Spot Shadows</li>
+                <li>Sprite Atlas (4096&times;4096)</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #d29922">
-            <h4>Scripting</h4>
-            <div class="date">Q4 2024 &ndash; Q1 2026</div>
+            <h4>Massive Expansion</h4>
+            <div class="date">Feb 9 &ndash; 10, 2026</div>
             <ul>
-                <li>AngelScript (~844 Bindings)</li>
-                <li>Visual Scripting (222+ Nodes)</li>
-                <li>VS Debugger &amp; Profiler</li>
-                <li>Flash API Shim (~40 Bindings)</li>
-                <li>AS2/AS3 Transpiler</li>
-                <li>DataAsset System</li>
+                <li>AI/BT, 2D Physics, Proc Gen</li>
+                <li>Destructibles, Localization, Fluid Sim</li>
+                <li>RT Pipeline &amp; Collaborative Editing</li>
+                <li>Newgrounds API &amp; HTML5 Export</li>
+                <li>Vector Editor, Cel Shading, Save System</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #f85149">
-            <h4>Advanced Rendering</h4>
-            <div class="date">Q1 &ndash; Q4 2025</div>
+            <h4>Physics &amp; Advanced</h4>
+            <div class="date">Feb 11 &ndash; 14, 2026</div>
             <ul>
-                <li>Post-Processing (12+ Effects)</li>
-                <li>Screen-Space Effects (5)</li>
-                <li>Point/Spot Shadows</li>
-                <li>Ray Tracing (19 Shaders)</li>
-                <li>SVGF + OIDN Denoisers</li>
-                <li>SH Light Probes (L2)</li>
-                <li>OIT, DoF, Tilt-Shift</li>
-            </ul>
-        </div>
-
-        <div class="h-timeline-phase" style="--phase-color: #db61a2">
-            <h4>Gameplay &amp; AI</h4>
-            <div class="date">Q1 2025 &ndash; Q1 2026</div>
-            <ul>
-                <li>Dialogue Trees (7 Nodes)</li>
-                <li>AI System (5 Behaviors)</li>
-                <li>Behavior Tree Editor (20 Nodes)</li>
-                <li>Quest System</li>
-                <li>Tiered Save (20 Slots, 3 Tiers)</li>
-                <li>Destructible Environments</li>
-            </ul>
-        </div>
-
-        <div class="h-timeline-phase" style="--phase-color: #2ea043">
-            <h4>Effects &amp; Procedural</h4>
-            <div class="date">Q1 &ndash; Q4 2025</div>
-            <ul>
-                <li>Weather (Rain/Snow/Fog/Storm)</li>
-                <li>Particles (12 Presets, GPU)</li>
-                <li>Water3D (Gerstner Waves)</li>
-                <li>Fluid Simulation</li>
-                <li>9+ Proc Gen Algorithms</li>
-                <li>Non-Euclidean Geometry</li>
-                <li>Reaction-Diffusion, Physarum</li>
-            </ul>
-        </div>
-
-        <div class="h-timeline-phase" style="--phase-color: #79c0ff">
-            <h4>Networking &amp; Build</h4>
-            <div class="date">Q2 &ndash; Q4 2025</div>
-            <ul>
-                <li>LAN Multiplayer (UDP)</li>
-                <li>HMAC-SHA256 Packet Auth</li>
-                <li>Build Pipeline (.enjpak)</li>
-                <li>HTML5 Export</li>
-                <li>Newgrounds.io API</li>
-                <li>NSIS Installer / CPack</li>
-            </ul>
-        </div>
-
-        <div class="h-timeline-phase" style="--phase-color: #bc8cff">
-            <h4>Graph Systems</h4>
-            <div class="date">Q3 &ndash; Q4 2025</div>
-            <ul>
-                <li>Shader Graph (62 Nodes)</li>
-                <li>Audio Event Graph</li>
-                <li>Particle Graph</li>
-                <li>Flash-Style Timeline</li>
-                <li>Vector Drawing Editor</li>
+                <li>Jolt v5.2.0 &amp; Box2D v3.0.0 Backends</li>
+                <li>OIT, SH Probes, SDF, DoF, POM</li>
+                <li>9 Exotic Rendering Systems</li>
+                <li>Shader/Audio/Particle Graphs</li>
+                <li>Linux/Steam Deck, Switch Stub</li>
+                <li>Template Marketplace, MIDI Input</li>
             </ul>
         </div>
 
         <div class="h-timeline-phase" style="--phase-color: #e3b341">
-            <h4>Performance &amp; Polish</h4>
-            <div class="date">Q4 2025 &ndash; Q1 2026</div>
+            <h4>Polish &amp; Audits</h4>
+            <div class="date">Feb 15 &ndash; 17, 2026</div>
             <ul>
-                <li>P0-P6 Perf Optimization</li>
-                <li>5 Audit Rounds (350+ Findings)</li>
-                <li>44 Templates + Marketplace</li>
-                <li>Accessibility Systems</li>
-                <li>UX Polish (Toasts, Themes)</li>
-                <li>Security Hardening</li>
+                <li>Audio Rewrite &amp; Audio Mixer</li>
+                <li>Post-Process Volumes &amp; SS Effects</li>
+                <li>InputAction, NSIS Installer</li>
+                <li>Networking Security (HMAC-SHA256)</li>
+                <li>5+ Security/Stability Audit Rounds</li>
             </ul>
         </div>
 
@@ -1138,7 +1081,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
         <tr><td>Thread Safety</td><td><span class="badge badge-full">Good</span></td><td>Recursive mutex, deferred destruction, atomic refcounts</td></tr>
         <tr><td>Error Handling</td><td><span class="badge badge-full">Good</span></td><td>Vulkan checks, JSON validation, bounds checking</td></tr>
         <tr><td>Memory Management</td><td><span class="badge badge-full">Good</span></td><td>Custom allocators, reserve(), no known leaks</td></tr>
-        <tr><td>Test Coverage</td><td><span class="badge badge-basic">Low</span></td><td>StressTest exists but no unit test framework</td></tr>
+        <tr><td>Test Coverage</td><td><span class="badge badge-basic">Basic</span></td><td>Custom CTest framework: 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests</td></tr>
         <tr><td>Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~450 lines), 8+ doc files, API docs</td></tr>
     </tbody>
 </table>

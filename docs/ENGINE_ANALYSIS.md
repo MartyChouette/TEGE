@@ -415,113 +415,98 @@ Enjin achieves surprisingly broad feature coverage for a single-developer engine
 
 ## 3. Engine Evolution Timeline
 
-This timeline reconstructs the development phases based on the completed feature set and roadmap documentation.
+This timeline shows the actual development history reconstructed from git commit dates. The entire engine was built in approximately 8 weeks, starting December 23, 2025.
 
 ```mermaid
 gantt
-    title Enjin Engine Development Phases
-    dateFormat YYYY-MM
-    axisFormat %Y-%m
+    title Enjin Engine Development Phases (Actual Git History)
+    dateFormat YYYY-MM-DD
+    axisFormat %m/%d
 
-    section Foundation
-    Core Layer (Types, Math, Logging)           :done, f1, 2024-01, 2024-03
-    Window & Input (GLFW)                       :done, f2, 2024-02, 2024-03
-    Memory Allocators (Stack, Pool, Linear)      :done, f3, 2024-02, 2024-04
-    Platform Abstraction                        :done, f4, 2024-03, 2024-04
+    section Foundation (Week 1)
+    Project Init & Vulkan Swapchain             :done, f1, 2025-12-23, 2025-12-24
+    3D Rendering Pipeline & GPU Culling         :done, f2, 2025-12-24, 2025-12-25
+    Core Layer (Types, Math, Platform)          :done, f3, 2025-12-23, 2025-12-25
 
-    section Vulkan Renderer
-    VulkanContext & Swapchain                   :done, r1, 2024-03, 2024-05
-    Graphics Pipeline & Buffers                 :done, r2, 2024-04, 2024-06
-    Blinn-Phong Lighting                        :done, r3, 2024-05, 2024-07
-    PBR Materials & Normal Mapping              :done, r4, 2024-06, 2024-08
-    Shadow Mapping (CSM)                        :done, r5, 2024-07, 2024-09
-    Skeletal Animation (GPU Skinning)           :done, r6, 2024-08, 2024-10
+    section Renderer & Editor (Week 2)
+    Shader Compilation & Triangle Fix           :done, r1, 2026-01-22, 2026-01-27
+    Engine Infrastructure (Input, glTF, ImGui)  :done, r2, 2026-01-27, 2026-01-28
+    Blinn-Phong Lighting & PBR Materials        :done, r3, 2026-01-27, 2026-01-28
+    Shadow Mapping (CSM)                        :done, r4, 2026-01-28, 2026-01-28
 
-    section ECS & Editor
-    ECS World (Entities, Components)            :done, e1, 2024-05, 2024-07
-    70+ Component Types                         :done, e2, 2024-06, 2025-02
-    ImGui Editor (Hierarchy, Inspector)         :done, e3, 2024-07, 2024-10
-    Transform Gizmos (ImGuizmo)                 :done, e4, 2024-08, 2024-09
-    Scene Serialization (JSON)                  :done, e5, 2024-08, 2024-10
-    Multi-Select & Undo/Redo                    :done, e6, 2024-09, 2024-11
-    PlayMode (Play/Pause/Stop)                  :done, e7, 2024-10, 2024-12
+    section Core Systems (Week 3)
+    Post-Processing & Retro Effects             :done, s1, 2026-01-28, 2026-01-30
+    Weather, Water, Wind & Vegetation           :done, s2, 2026-01-29, 2026-01-30
+    Skeletal Animation (GPU Skinning)           :done, s3, 2026-01-30, 2026-01-30
+    Physics & Collision Detection               :done, s4, 2026-01-30, 2026-01-30
+    Parallax & Normal Mapping                   :done, s5, 2026-01-30, 2026-01-30
 
-    section 2D Pipeline
-    Sprite Rendering & Atlas                    :done, s1, 2024-10, 2024-12
-    Tilemap Rendering & Editing                 :done, s2, 2024-11, 2025-01
-    Sprite Animation System                     :done, s3, 2024-11, 2025-01
-    2D Camera (Follow, Shake, Bounds)           :done, s4, 2024-12, 2025-01
-    Pixel Editor (8 Tools)                      :done, s5, 2025-01, 2025-03
-    Sprite Sheet Importer                       :done, s6, 2025-01, 2025-02
+    section Editor & Audio (Week 4)
+    Scene Management & 21 Templates             :done, e1, 2026-01-31, 2026-01-31
+    Accessibility, Input Remapping, UI System   :done, e2, 2026-01-31, 2026-01-31
+    Skybox, Undo/Redo, IK Solvers, Prefabs     :done, e3, 2026-01-31, 2026-01-31
+    Audio (miniaudio Backend)                   :done, e4, 2026-01-31, 2026-01-31
+    Build Pipeline & Splitscreen                :done, e5, 2026-02-01, 2026-02-01
 
-    section Physics
-    SimplePhysics (Collision, Solver)           :done, p1, 2024-09, 2024-12
-    Physics2D (Shapes, Joints, CCD)             :done, p2, 2025-01, 2025-03
-    IPhysicsBackend Abstraction                 :done, p3, 2025-12, 2026-01
-    Jolt v5.2.0 Backend                         :done, p4, 2026-01, 2026-02
-    Box2D v3.0.0 Backend                        :done, p5, 2026-02, 2026-02
-    SimplePhysics Compile Guard                 :done, p6, 2026-02, 2026-02
+    section 2D Pipeline (Week 5)
+    Terrain Sculpting                           :done, d1, 2026-02-02, 2026-02-02
+    2D Editor Tools (Sprite, Tilemap)           :done, d2, 2026-02-02, 2026-02-02
+    Runtime UI System & 2.5D Lit Sprites        :done, d3, 2026-02-02, 2026-02-02
+    Particle & Sprite Batch Renderers           :done, d4, 2026-02-02, 2026-02-03
+    Collision Filtering (32-group Bitmask)      :done, d5, 2026-02-03, 2026-02-03
 
-    section Scripting
-    AngelScript Integration                     :done, sc1, 2024-10, 2025-01
-    ~844 Script Bindings                        :done, sc2, 2025-01, 2026-02
-    Visual Scripting (222+ Nodes)               :done, sc3, 2025-03, 2025-08
-    VS Debugger & Profiler                      :done, sc4, 2025-06, 2025-08
-    Flash API Shim & AS2/AS3 Transpiler         :done, sc5, 2025-09, 2025-12
+    section Scripting & Tools (Week 6)
+    Dialogue Trees & State Machines             :done, t1, 2026-02-04, 2026-02-04
+    AngelScript Bindings & Shader Hot-Reload    :done, t2, 2026-02-04, 2026-02-04
+    Noise Library & Tweening (25 Easings)       :done, t3, 2026-02-04, 2026-02-04
+    29 Enhanced Templates & 2D/3D Mode          :done, t4, 2026-02-04, 2026-02-05
+    9-Slice, Asset Metadata, 2D Camera          :done, t5, 2026-02-05, 2026-02-05
 
-    section Advanced Rendering
-    Post-Processing Pipeline                    :done, ar1, 2025-01, 2025-04
-    Retro Effects (CRT, Dither)                 :done, ar2, 2025-02, 2025-04
-    Point/Spot Light Shadows                    :done, ar3, 2025-04, 2025-06
-    Cel Shading & Outlines                      :done, ar4, 2025-05, 2025-06
-    Ray Tracing Pipeline (19 Shaders)           :done, ar5, 2025-06, 2025-10
-    SVGF & OIDN Denoisers                       :done, ar6, 2025-08, 2025-11
-    SH Light Probes                             :done, ar7, 2025-10, 2025-12
-    OIT (Weighted Blended)                      :done, ar8, 2025-11, 2025-12
-    Depth of Field & Tilt-Shift                 :done, ar9, 2025-10, 2025-11
+    section Visual Scripting & Perf (Week 7)
+    Visual Scripting (Phases 1-4)               :done, v1, 2026-02-06, 2026-02-06
+    Shadow Optimization & Descriptor Caching    :done, v2, 2026-02-06, 2026-02-08
+    Soft Shadows, Point/Spot Shadow Maps        :done, v3, 2026-02-07, 2026-02-08
+    Sprite Texture Atlas (4096x4096)            :done, v4, 2026-02-08, 2026-02-08
+    Fence-Based GPU Sync (18 Subsystems)        :done, v5, 2026-02-07, 2026-02-07
 
-    section Gameplay & AI
-    Dialogue Trees (7 Node Types)               :done, g1, 2025-03, 2025-05
-    AI System (Patrol/Chase/Flee)                :done, g2, 2025-04, 2025-07
-    Behavior Tree Editor (20 Nodes)             :done, g3, 2025-05, 2025-07
-    Quest System                                :done, g4, 2025-06, 2025-08
-    Tiered Save System (20 Slots)               :done, g5, 2025-12, 2026-02
-    Destructible Environments                   :done, g6, 2025-09, 2025-11
+    section Massive Expansion (Week 8)
+    AI/BT, 2D Physics, Proc Gen, Destructibles :done, m1, 2026-02-09, 2026-02-09
+    Localization, Fluid Sim, Pixel Editor       :done, m2, 2026-02-09, 2026-02-09
+    SVG, Empty States, Dialogue Box, Icons      :done, m3, 2026-02-09, 2026-02-09
+    RT Pipeline, Collaborative Editing          :done, m4, 2026-02-10, 2026-02-10
+    Newgrounds API, HTML5 Export, Vector Editor  :done, m5, 2026-02-10, 2026-02-10
+    Cel Shading, Save System, PlayMode Diff     :done, m6, 2026-02-10, 2026-02-10
 
-    section Effects & Procedural
-    Weather System (Rain/Snow/Fog)              :done, ef1, 2025-02, 2025-04
-    Particle System (GPU Instanced)             :done, ef2, 2025-03, 2025-05
-    Water3D (Gerstner Waves)                    :done, ef3, 2025-04, 2025-06
-    Fluid Simulation (Stable Fluids)            :done, ef4, 2025-06, 2025-08
-    9+ Procedural Gen Algorithms                :done, ef5, 2025-07, 2025-10
-    Reaction-Diffusion, Physarum, CA            :done, ef6, 2025-08, 2025-11
-    Non-Euclidean Geometry                      :done, ef7, 2025-10, 2025-12
+    section Physics & Platform (Week 9)
+    IPhysicsBackend + Jolt v5.2.0 Backend       :done, p1, 2026-02-11, 2026-02-11
+    Box2D v3.0.0 Backend                        :done, p2, 2026-02-11, 2026-02-11
+    Template Redesign (38 → 22 → 43)            :done, p3, 2026-02-12, 2026-02-13
+    Stipple/Dither, Camera Presets, DoF         :done, p4, 2026-02-12, 2026-02-12
+    OIT, SH Probes, SDF Scene, POM Modes        :done, p5, 2026-02-13, 2026-02-13
+    Physics Phase 4-5 (Jolt/Box2D Default)      :done, p6, 2026-02-13, 2026-02-13
 
-    section Networking & Build
-    LAN Multiplayer (UDP)                       :done, n1, 2025-06, 2025-09
-    HMAC-SHA256 Packet Auth                     :done, n2, 2025-08, 2025-09
-    Build Pipeline (.enjpak)                    :done, n3, 2025-04, 2025-07
-    HTML5 Export                                :done, n4, 2025-07, 2025-09
-    Newgrounds.io API                           :done, n5, 2025-08, 2025-10
+    section Advanced & Exotic (Week 10)
+    Linux/Steam Deck, Switch Stub, Hub App      :done, a1, 2026-02-14, 2026-02-14
+    9 Exotic Rendering Systems                  :done, a2, 2026-02-14, 2026-02-14
+    Shader/Audio/Particle Graphs, MIDI Input    :done, a3, 2026-02-14, 2026-02-14
+    Symbol Library, Newgrounds Game Page         :done, a4, 2026-02-14, 2026-02-14
+    Template Marketplace, Gamepad Editor         :done, a5, 2026-02-14, 2026-02-14
 
-    section Graph Systems
-    Shader Graph (62 Nodes, GLSL Codegen)       :done, gs1, 2025-09, 2025-12
-    Audio Event Graph                           :done, gs2, 2025-10, 2025-11
-    Particle Graph                              :done, gs3, 2025-10, 2025-12
-
-    section Performance & Polish
-    P0-P5 Performance Optimization              :done, pp1, 2025-11, 2026-02
-    Security Audits (5 Rounds)                  :done, pp2, 2026-02, 2026-02
-    Feature Accessibility Wiring                :done, pp3, 2026-02, 2026-02
-    44 Templates + Marketplace                  :done, pp4, 2025-12, 2026-02
-    Accessibility Systems                       :done, pp5, 2025-09, 2026-02
+    section Polish & Audits (Week 11)
+    Audio Rewrite (miniaudio), Audio Mixer      :done, q1, 2026-02-15, 2026-02-15
+    Post-Process Volumes, Screen-Space Effects  :done, q2, 2026-02-15, 2026-02-15
+    InputAction System, NSIS Installer          :done, q3, 2026-02-16, 2026-02-16
+    Networking Security (HMAC-SHA256)           :done, q4, 2026-02-16, 2026-02-17
+    5+ Security/Stability Audit Rounds          :done, q5, 2026-02-11, 2026-02-17
 
     section Planned
-    macOS (MoltenVK)                            :active, pl1, 2026-03, 2026-06
-    Console Platforms                           :active, pl2, 2026-06, 2027-06
-    Mobile (Android/iOS)                        :active, pl3, 2026-09, 2027-03
-    VR/XR (OpenXR)                              :active, pl4, 2027-01, 2027-06
+    macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
+    Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
+    Mobile (Android/iOS)                        :active, pl3, 2026-09-01, 2027-03-01
+    VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
 ```
+
+**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026).
 
 ---
 
@@ -973,7 +958,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | **Error Handling** | Good | Vulkan error checks at 9+ sites, JSON `.contains()` validation, bounds checking, GPU loop caps (god rays 256, contact shadows 64) |
 | **Memory Management** | Good | Custom allocators (Stack/Pool/Linear), `reserve()` on hot-path vectors, no known leaks |
 | **API Consistency** | Good | Consistent naming conventions (Get/Set/Is), ENJIN_API export macro |
-| **Test Coverage** | Low | StressTest executable exists but no unit test framework visible |
+| **Test Coverage** | Basic | Custom CTest framework with 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests (Serializer, DungeonCrawler, SMT, StressTest). No third-party test framework (Catch2/GTest) |
 | **Documentation** | Strong | CLAUDE.md (~450 lines), 8+ doc files, generated API docs, inline tooltips |
 
 ### Areas Needing Refactoring
@@ -1018,7 +1003,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 
 ### Recommended Priority Actions
 
-1. **Add unit testing framework** (Catch2 or GoogleTest) -- currently the biggest gap
+1. **Expand unit test coverage** -- custom CTest framework exists with 4 unit + 4 integration tests, but coverage is minimal relative to codebase size. Consider adding Catch2 or GoogleTest for richer assertions
 2. **Extract EditorLayer panels** into individual classes to reduce file size and improve maintainability
 3. **Replace XOR obfuscation** with authenticated encryption for commercial releases
 4. **Restrict script #include paths** to project directory to prevent path traversal
