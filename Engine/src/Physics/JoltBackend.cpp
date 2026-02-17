@@ -225,14 +225,13 @@ void JoltBackend::ShutdownJolt() {
     // Remove all bodies
     if (m_PhysicsSystem) {
         auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
-        for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
-            JPH::BodyID bodyID(bodyIndex);
+        for (auto& [entity, bodyID] : m_EntityToBody) {
             bodyInterface.RemoveBody(bodyID);
             bodyInterface.DestroyBody(bodyID);
         }
     }
 
-    m_EntityToBodyIndex.clear();
+    m_EntityToBody.clear();
     m_BodyIndexToEntity.clear();
     m_BodyFilterData.clear();
     m_EntityToConstraint.clear();
@@ -313,14 +312,14 @@ void JoltBackend::SyncECSToJolt() {
 
     // Create bodies for new entities
     for (ECS::Entity entity : m_CurrentEntitiesCache) {
-        if (m_EntityToBodyIndex.find(entity) == m_EntityToBodyIndex.end()) {
+        if (m_EntityToBody.find(entity) == m_EntityToBody.end()) {
             CreateBodyForEntity(entity);
         }
     }
 
     // Destroy bodies for removed entities (reuse member to avoid per-frame alloc)
     m_ToRemoveCache.clear();
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         if (m_CurrentEntitiesCache.find(entity) == m_CurrentEntitiesCache.end()) {
             m_ToRemoveCache.push_back(entity);
         }
@@ -330,12 +329,10 @@ void JoltBackend::SyncECSToJolt() {
     }
 
     // Update kinematic bodies and property changes
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!transform) continue;
-
-        JPH::BodyID bodyID(bodyIndex);
 
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic) {
             // Kinematic bodies: drive position from ECS
@@ -348,7 +345,7 @@ void JoltBackend::SyncECSToJolt() {
 
         // Update collision filter data
         ColliderInfo info = GetColliderInfo(entity);
-        m_BodyFilterData[bodyIndex] = {info.categoryBits, info.collisionMask};
+        m_BodyFilterData[bodyID.GetIndex()] = {info.categoryBits, info.collisionMask};
     }
 
     m_CurrentEntitiesCache.clear();  // Release references after use
@@ -502,17 +499,17 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     // Actually, Jolt's ObjectLayer is set at creation time and we use it for broad phase only.
     // The fine-grained filter uses BodyID index to look up our filter data map.
 
-    m_EntityToBodyIndex[entity] = bodyIndex;
+    m_EntityToBody[entity] = bodyID;
     m_BodyIndexToEntity[bodyIndex] = entity;
     m_BodyFilterData[bodyIndex] = {colliderInfo.categoryBits, colliderInfo.collisionMask};
 }
 
 void JoltBackend::DestroyBodyForEntity(ECS::Entity entity) {
-    auto it = m_EntityToBodyIndex.find(entity);
-    if (it == m_EntityToBodyIndex.end()) return;
+    auto it = m_EntityToBody.find(entity);
+    if (it == m_EntityToBody.end()) return;
 
-    uint32_t bodyIndex = it->second;
-    JPH::BodyID bodyID(bodyIndex);
+    JPH::BodyID bodyID = it->second;
+    uint32_t bodyIndex = bodyID.GetIndex();
 
     // Remove any joint constraints first
     DestroyJointForEntity(entity);
@@ -523,7 +520,7 @@ void JoltBackend::DestroyBodyForEntity(ECS::Entity entity) {
 
     m_BodyIndexToEntity.erase(bodyIndex);
     m_BodyFilterData.erase(bodyIndex);
-    m_EntityToBodyIndex.erase(it);
+    m_EntityToBody.erase(it);
 }
 
 ColliderInfo JoltBackend::GetColliderInfo(ECS::Entity entity) {
@@ -554,12 +551,10 @@ ColliderInfo JoltBackend::GetColliderInfo(ECS::Entity entity) {
 void JoltBackend::SyncJoltToECS() {
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!transform) continue;
-
-        JPH::BodyID bodyID(bodyIndex);
 
         // Only sync dynamic bodies back to ECS
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
@@ -607,7 +602,7 @@ void JoltBackend::SyncJoltToECS() {
             if (m_PhysicsSystem->GetNarrowPhaseQuery().CastRay(shortRay, groundResult, groundBPFilter, groundObjFilter, bodyFilter)) {
                 // Make sure we didn't hit ourselves
                 JPH::BodyID hitBody = groundResult.mBodyID;
-                if (hitBody.GetIndex() != bodyIndex) {
+                if (hitBody != bodyID) {
                     rb->isGrounded = true;
                 }
             }
@@ -625,15 +620,13 @@ void JoltBackend::ApplyGravityZones() {
 
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
         if (!rb || rb->bodyType != ECS::RigidbodyComponent::BodyType::Dynamic) continue;
         if (!rb->useGravity) continue;
 
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
-
-        JPH::BodyID bodyID(bodyIndex);
 
         // Find highest-priority gravity zone containing this entity
         i32 bestPriority = INT_MIN;
@@ -656,9 +649,11 @@ void JoltBackend::ApplyGravityZones() {
         if (inZone) {
             // Disable Jolt's built-in gravity for this body
             bodyInterface.SetGravityFactor(bodyID, 0.0f);
-            // Apply custom gravity as a force
-            Math::Vector3 force = customGravity * rb->gravityScale * rb->mass;
-            bodyInterface.AddForce(bodyID, ToJolt(force));
+            // Apply custom gravity as a force (guard against zero/negative mass)
+            if (rb->mass > 0.0001f) {
+                Math::Vector3 force = customGravity * rb->gravityScale * rb->mass;
+                bodyInterface.AddForce(bodyID, ToJolt(force));
+            }
         } else {
             // Restore normal gravity factor
             bodyInterface.SetGravityFactor(bodyID, rb->gravityScale);
@@ -735,8 +730,8 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
     auto& bodyInterface = m_PhysicsSystem->GetBodyInterface();
 
     auto getBodyID = [&](ECS::Entity e) -> JPH::BodyID {
-        auto it = m_EntityToBodyIndex.find(e);
-        if (it != m_EntityToBodyIndex.end()) return JPH::BodyID(it->second);
+        auto it = m_EntityToBody.find(e);
+        if (it != m_EntityToBody.end()) return it->second;
         return JPH::BodyID();
     };
 
@@ -1098,9 +1093,9 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
         AABB movedCollider = AABB::FromCenterSize(newPos, halfExtents * 2.0f);
         bool resolved = true;
 
-        for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+        for (auto& [entity, bodyID] : m_EntityToBody) {
             // Skip entities not matching layer mask
-            auto filterIt = m_BodyFilterData.find(bodyIndex);
+            auto filterIt = m_BodyFilterData.find(bodyID.GetIndex());
             if (filterIt != m_BodyFilterData.end()) {
                 if (!(filterIt->second.categoryBits & layerMask)) continue;
             }
@@ -1159,12 +1154,12 @@ std::vector<ECS::Entity> JoltBackend::GetCollidersInRadius(const Math::Vector3& 
 
     f32 radiusSq = radius * radius;
 
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
 
         // Layer mask filter
-        auto filterIt = m_BodyFilterData.find(bodyIndex);
+        auto filterIt = m_BodyFilterData.find(bodyID.GetIndex());
         if (filterIt != m_BodyFilterData.end()) {
             if (!(filterIt->second.categoryBits & layerMask)) continue;
         }
@@ -1185,11 +1180,11 @@ std::vector<ECS::Entity> JoltBackend::OverlapBox(const Math::Vector3& center, co
 
     AABB queryBox(center - halfExtents, center + halfExtents);
 
-    for (auto& [entity, bodyIndex] : m_EntityToBodyIndex) {
+    for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         if (!transform) continue;
 
-        auto filterIt = m_BodyFilterData.find(bodyIndex);
+        auto filterIt = m_BodyFilterData.find(bodyID.GetIndex());
         if (filterIt != m_BodyFilterData.end()) {
             if (!(filterIt->second.categoryBits & layerMask)) continue;
         }

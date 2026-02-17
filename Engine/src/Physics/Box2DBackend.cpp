@@ -406,8 +406,6 @@ void Box2DBackend::ProcessEvents() {
 
             if (m_OnCollisionExit) m_OnCollisionExit(contact);
         }
-
-        newContacts.erase(pairKey);
     }
 
     m_ActiveContacts = std::move(newContacts);

@@ -125,11 +125,13 @@ int main() {
 
         auto& h = srcWorld.AddComponent<ECS::HealthComponent>(e);
         h.maxHealth = 200.0f;
+        h.currentHealth = 150.0f;  // Partially damaged
         h.regenRate = 5.0f;
         h.regenDelay = 2.0f;
         h.isInvulnerable = true;
         h.invulnerabilityTime = 1.5f;
         h.maxShield = 50.0f;
+        h.currentShield = 30.0f;  // Partially depleted
         h.shieldRegenRate = 3.0f;
         h.shieldRegenDelay = 4.0f;
 
@@ -562,12 +564,12 @@ int main() {
         auto* h = dstWorld.GetComponent<ECS::HealthComponent>(e);
         if (h) {
             CHECK_FLOAT(h->maxHealth, 200.0f, "h.maxHealth");
-            CHECK_FLOAT(h->currentHealth, 200.0f, "h.currentHealth (reset to max)");
+            CHECK_FLOAT(h->currentHealth, 150.0f, "h.currentHealth (round-trip)");
             CHECK_FLOAT(h->regenRate, 5.0f, "h.regenRate");
             CHECK_BOOL(h->isInvulnerable, true, "h.isInvulnerable");
             CHECK_FLOAT(h->maxShield, 50.0f, "h.maxShield");
-            CHECK_FLOAT(h->currentShield, 50.0f, "h.currentShield (reset to max)");
-            CHECK_BOOL(h->isDead, false, "h.isDead (runtime reset)");
+            CHECK_FLOAT(h->currentShield, 30.0f, "h.currentShield (round-trip)");
+            CHECK_BOOL(h->isDead, false, "h.isDead");
         }
         HAS_COMPONENT(dstWorld, e, ECS::DamageComponent, "DamageComponent");
         auto* d = dstWorld.GetComponent<ECS::DamageComponent>(e);

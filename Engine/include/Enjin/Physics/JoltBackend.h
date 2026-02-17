@@ -103,9 +103,9 @@ private:
     std::unique_ptr<JPH::JobSystemThreadPool> m_JobSystem;
     std::unique_ptr<JoltContactListener> m_ContactListener;
 
-    // Entity↔Body mappings
-    std::unordered_map<ECS::Entity, uint32_t> m_EntityToBodyIndex;  // Entity → BodyID index
-    std::unordered_map<uint32_t, ECS::Entity> m_BodyIndexToEntity;  // BodyID index → Entity
+    // Entity↔Body mappings (store full BodyID to preserve generation counter — P1/P2 fix)
+    std::unordered_map<ECS::Entity, JPH::BodyID> m_EntityToBody;      // Entity → BodyID
+    std::unordered_map<uint32_t, ECS::Entity> m_BodyIndexToEntity;    // BodyID index → Entity
 
     // Per-body collision filter data (keyed by BodyID index)
     std::unordered_map<uint32_t, CollisionFilterData> m_BodyFilterData;

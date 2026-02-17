@@ -507,18 +507,18 @@ json SerializeWaterVolumeComponent(const ECS::WaterVolumeComponent& volume) {
 
 ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     ECS::WaterVolumeComponent volume;
-    volume.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("halfExtents")) volume.halfExtents = DeserializeVector3(j["halfExtents"]);
     if (j.contains("waterType")) { u32 v = j["waterType"].get<u32>(); if (v <= 3) volume.waterType = static_cast<ECS::WaterType>(v); }
-    volume.waterColor = DeserializeVector3(j["waterColor"]);
-    volume.opacity = j["opacity"].get<f32>();
-    volume.waveSpeed = j["waveSpeed"].get<f32>();
-    volume.waveHeight = j["waveHeight"].get<f32>();
+    if (j.contains("waterColor")) volume.waterColor = DeserializeVector3(j["waterColor"]);
+    if (j.contains("opacity")) volume.opacity = j["opacity"].get<f32>();
+    if (j.contains("waveSpeed")) volume.waveSpeed = j["waveSpeed"].get<f32>();
+    if (j.contains("waveHeight")) volume.waveHeight = j["waveHeight"].get<f32>();
     if (j.contains("enableShore")) volume.enableShore = JB(j["enableShore"]);
     if (j.contains("shoreWidth")) volume.shoreWidth = j["shoreWidth"].get<f32>();
     if (j.contains("foamIntensity")) volume.foamIntensity = j["foamIntensity"].get<f32>();
     if (j.contains("foamScale")) volume.foamScale = j["foamScale"].get<f32>();
     if (j.contains("shoreColor")) volume.shoreColor = DeserializeVector3(j["shoreColor"]);
-    volume.priority = j["priority"].get<i32>();
+    if (j.contains("priority")) volume.priority = j["priority"].get<i32>();
     if (j.contains("iceColor")) volume.iceColor = DeserializeVector3(j["iceColor"]);
     if (j.contains("iceOpacity")) volume.iceOpacity = j["iceOpacity"].get<f32>();
     if (j.contains("freezeRate")) volume.freezeRate = j["freezeRate"].get<f32>();
@@ -1484,6 +1484,13 @@ json SerializeRigidbodyComponent(const ECS::RigidbodyComponent& rb) {
     j["freezeRotationZ"] = RF(rb.freezeRotationZ);
     j["bodyType"] = static_cast<u8>(rb.bodyType);
     j["collisionMode"] = static_cast<u8>(rb.collisionMode);
+    // R3 fix: serialize runtime state for mid-play save/load
+    j["velocity"] = SerializeVector3(rb.velocity);
+    j["angularVelocity"] = SerializeVector3(rb.angularVelocity);
+    j["maxVelocity"] = RF(rb.maxVelocity);
+    j["maxAngularVelocity"] = RF(rb.maxAngularVelocity);
+    j["isGrounded"] = rb.isGrounded;
+    j["isSleeping"] = rb.isSleeping;
     return j;
 }
 
@@ -1502,6 +1509,13 @@ ECS::RigidbodyComponent DeserializeRigidbodyComponent(const json& j) {
     if (j.contains("freezeRotationZ")) rb.freezeRotationZ = JB(j["freezeRotationZ"]);
     if (j.contains("bodyType")) { u8 v = j["bodyType"].get<u8>(); if (v <= 2) rb.bodyType = static_cast<ECS::RigidbodyComponent::BodyType>(v); }
     if (j.contains("collisionMode")) { u8 v = j["collisionMode"].get<u8>(); if (v <= 2) rb.collisionMode = static_cast<ECS::RigidbodyComponent::CollisionMode>(v); }
+    // R3 fix: deserialize runtime state for mid-play save/load
+    if (j.contains("velocity")) rb.velocity = DeserializeVector3(j["velocity"]);
+    if (j.contains("angularVelocity")) rb.angularVelocity = DeserializeVector3(j["angularVelocity"]);
+    if (j.contains("maxVelocity")) rb.maxVelocity = j["maxVelocity"].get<f32>();
+    if (j.contains("maxAngularVelocity")) rb.maxAngularVelocity = j["maxAngularVelocity"].get<f32>();
+    if (j.contains("isGrounded")) rb.isGrounded = JB(j["isGrounded"]);
+    if (j.contains("isSleeping")) rb.isSleeping = JB(j["isSleeping"]);
     return rb;
 }
 
@@ -1787,21 +1801,33 @@ json SerializeHealthComponent(const ECS::HealthComponent& h) {
     j["maxShield"] = RF(h.maxShield);
     j["shieldRegenRate"] = RF(h.shieldRegenRate);
     j["shieldRegenDelay"] = RF(h.shieldRegenDelay);
+    // R2 fix: serialize runtime state for mid-play save/load
+    j["currentHealth"] = RF(h.currentHealth);
+    j["currentShield"] = RF(h.currentShield);
+    j["isDead"] = h.isDead;
+    j["invulnerabilityTimer"] = RF(h.invulnerabilityTimer);
+    j["timeSinceLastDamage"] = RF(h.timeSinceLastDamage);
     return j;
 }
 
 ECS::HealthComponent DeserializeHealthComponent(const json& j) {
     ECS::HealthComponent h;
     if (j.contains("maxHealth")) h.maxHealth = j["maxHealth"].get<f32>();
-    h.currentHealth = h.maxHealth;
+    h.currentHealth = h.maxHealth;  // Default: full health
     if (j.contains("regenRate")) h.regenRate = j["regenRate"].get<f32>();
     if (j.contains("regenDelay")) h.regenDelay = j["regenDelay"].get<f32>();
     if (j.contains("isInvulnerable")) h.isInvulnerable = JB(j["isInvulnerable"]);
     if (j.contains("invulnerabilityTime")) h.invulnerabilityTime = j["invulnerabilityTime"].get<f32>();
     if (j.contains("maxShield")) h.maxShield = j["maxShield"].get<f32>();
-    h.currentShield = h.maxShield;
+    h.currentShield = h.maxShield;  // Default: full shield
     if (j.contains("shieldRegenRate")) h.shieldRegenRate = j["shieldRegenRate"].get<f32>();
     if (j.contains("shieldRegenDelay")) h.shieldRegenDelay = j["shieldRegenDelay"].get<f32>();
+    // R2 fix: restore runtime state if present (mid-play save/load)
+    if (j.contains("currentHealth")) h.currentHealth = j["currentHealth"].get<f32>();
+    if (j.contains("currentShield")) h.currentShield = j["currentShield"].get<f32>();
+    if (j.contains("isDead")) h.isDead = JB(j["isDead"]);
+    if (j.contains("invulnerabilityTimer")) h.invulnerabilityTimer = j["invulnerabilityTimer"].get<f32>();
+    if (j.contains("timeSinceLastDamage")) h.timeSinceLastDamage = j["timeSinceLastDamage"].get<f32>();
     return h;
 }
 

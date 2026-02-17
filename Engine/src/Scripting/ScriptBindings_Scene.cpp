@@ -42,6 +42,8 @@ void FlushDeferredEntityDestroys() {
         }
     }
     s_DeferredDestroys.clear();
+    // Reset per-frame entity creation cap for next frame (S3/S4 fix)
+    ResetFrameEntityCreationCount();
 }
 } // namespace Scripting
 } // namespace Enjin
@@ -155,11 +157,29 @@ static void Scene_DestroyEntity(u64 id) {
     s_DeferredDestroys.push_back(entity);
 }
 
+// S3/S4 fix: Per-frame entity creation cap to prevent script DoS
+static constexpr u32 kMaxEntityCreationsPerFrame = 256;
+static u32 s_FrameEntityCreationCount = 0;
+
+namespace Enjin { namespace Scripting {
+void ResetFrameEntityCreationCount() { s_FrameEntityCreationCount = 0; }
+} }
+
+bool CheckEntityCreationCap(const char* funcName) {
+    if (s_FrameEntityCreationCount >= kMaxEntityCreationsPerFrame) {
+        ENJIN_LOG_WARN(Script, "%s: per-frame entity creation cap (%u) reached", funcName, kMaxEntityCreationsPerFrame);
+        return false;
+    }
+    s_FrameEntityCreationCount++;
+    return true;
+}
+
 static u64 Scene_Instantiate() {
     if (!s_BindingsWorld) {
         ENJIN_LOG_WARN(Script, "Scene_Instantiate: no active world");
         return INVALID_ENTITY;
     }
+    if (!CheckEntityCreationCap("Scene_Instantiate")) return INVALID_ENTITY;
 
     Entity entity = s_BindingsWorld->CreateEntity();
     // New entities get a TransformComponent by default so scripts can
@@ -173,6 +193,7 @@ static u64 Scene_InstantiateNamed(const std::string& name) {
         ENJIN_LOG_WARN(Script, "Scene_InstantiateNamed: no active world");
         return INVALID_ENTITY;
     }
+    if (!CheckEntityCreationCap("Scene_InstantiateNamed")) return INVALID_ENTITY;
 
     Entity entity = s_BindingsWorld->CreateEntity();
     s_BindingsWorld->AddComponent<TransformComponent>(entity);
@@ -185,6 +206,7 @@ static u64 Scene_InstantiateAt(const Vector3& position) {
         ENJIN_LOG_WARN(Script, "Scene_InstantiateAt: no active world");
         return INVALID_ENTITY;
     }
+    if (!CheckEntityCreationCap("Scene_InstantiateAt")) return INVALID_ENTITY;
 
     Entity entity = s_BindingsWorld->CreateEntity();
     TransformComponent tc;

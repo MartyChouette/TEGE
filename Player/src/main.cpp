@@ -613,6 +613,7 @@ public:
         // --- AngelScript ---
         m_ScriptSystem.Update(deltaTime);
         m_CoroutineScheduler.EndOfFrame();
+        Enjin::Scripting::FlushDeferredEntityDestroys();
 
         // --- Gameplay systems ---
         m_TweenSystem.Update(m_World.get(), deltaTime);

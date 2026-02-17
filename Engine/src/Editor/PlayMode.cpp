@@ -515,6 +515,7 @@ void PlayMode::Update(f32 deltaTime) {
             ENJIN_PROFILE_SCOPE("Scripting");
             m_ScriptSystem.Update(deltaTime);
             m_CoroutineScheduler.EndOfFrame();
+            Scripting::FlushDeferredEntityDestroys();
         }
         auto t3 = std::chrono::high_resolution_clock::now();
 

@@ -1088,14 +1088,23 @@ int ScriptEngine::IncludeCallback(const char* include,
     }
 
     // Helper lambda: verify that a resolved path stays within the script directory
+    // S1 fix: Use canonical() to resolve symlinks, preventing symlink traversal attacks
     auto isPathSafe = [&](const std::filesystem::path& resolved) -> bool {
         if (self->m_ScriptDirectory.empty()) return true; // No restriction if no directory set
         std::error_code ec2;
-        auto baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2);
-        if (ec2) return false;
-        auto resolvedAbs = std::filesystem::absolute(resolved, ec2);
-        if (ec2) return false;
-        auto relPath = resolvedAbs.lexically_relative(baseDir);
+        auto baseDir = std::filesystem::canonical(self->m_ScriptDirectory, ec2);
+        if (ec2) {
+            // Fall back to absolute() if canonical fails (e.g. directory doesn't exist yet)
+            baseDir = std::filesystem::absolute(self->m_ScriptDirectory, ec2);
+            if (ec2) return false;
+        }
+        auto resolvedCanonical = std::filesystem::canonical(resolved, ec2);
+        if (ec2) {
+            // File might not exist yet — fall back to absolute of the normalized path
+            resolvedCanonical = std::filesystem::absolute(resolved.lexically_normal(), ec2);
+            if (ec2) return false;
+        }
+        auto relPath = resolvedCanonical.lexically_relative(baseDir);
         if (relPath.empty() || relPath.string().find("..") == 0) {
             ENJIN_LOG_ERROR(Script, "Script #include path escapes script directory: %s", include);
             return false;

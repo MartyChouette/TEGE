@@ -12,8 +12,18 @@ ScriptEventBus::~ScriptEventBus() {
     Clear();
 }
 
+static constexpr u32 kMaxListenersPerEvent = 1024;
+
 u32 ScriptEventBus::Listen(const std::string& eventName, asIScriptObject* obj,
                            asIScriptFunction* callback, u64 entityId) {
+    // S2 fix: Cap listener count per event to prevent unbounded memory growth
+    auto& list = m_Listeners[eventName];
+    if (list.size() >= kMaxListenersPerEvent) {
+        ENJIN_LOG_WARN(Script, "ScriptEventBus: listener cap (%u) reached for event '%s'",
+                       kMaxListenersPerEvent, eventName.c_str());
+        return 0;
+    }
+
     EventListener listener;
     listener.object = obj;
     listener.callback = callback;
@@ -24,7 +34,7 @@ u32 ScriptEventBus::Listen(const std::string& eventName, asIScriptObject* obj,
     if (obj) obj->AddRef();
     if (callback) callback->AddRef();
 
-    m_Listeners[eventName].push_back(listener);
+    list.push_back(listener);
     return listener.id;
 }
 

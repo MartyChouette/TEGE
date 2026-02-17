@@ -13,12 +13,16 @@ using namespace Enjin;
 
 extern ECS::World* s_BindingsWorld;
 
+// S4 fix: shares per-frame entity creation cap with Scene bindings
+extern bool CheckEntityCreationCap(const char* funcName);
+
 // ============================================================================
 // Prefab instantiation
 // ============================================================================
 
 static u64 Prefab_Instantiate(const std::string& path, float px, float py, float pz) {
     if (!s_BindingsWorld) return 0;
+    if (!CheckEntityCreationCap("Prefab_Instantiate")) return 0;
     auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
     if (!prefab) return 0;
     return Assets::PrefabManager::Get().Instantiate(
@@ -31,6 +35,7 @@ static u64 Prefab_InstantiateEx(const std::string& path,
                                  float rx, float ry, float rz,
                                  float sx, float sy, float sz) {
     if (!s_BindingsWorld) return 0;
+    if (!CheckEntityCreationCap("Prefab_InstantiateEx")) return 0;
     auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
     if (!prefab) return 0;
     return Assets::PrefabManager::Get().Instantiate(

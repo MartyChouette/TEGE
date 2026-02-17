@@ -116,5 +116,9 @@ void RegisterInputActionBindings(asIScriptEngine* engine);
 // Input action map setter
 void SetBindingsInputActionMap(InputSystem::InputActionMap* map);
 
+// Per-frame script binding housekeeping
+void FlushDeferredEntityDestroys();
+void ResetFrameEntityCreationCount();
+
 } // namespace Scripting
 } // namespace Enjin
