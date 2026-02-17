@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-02-17 (Session 31)
+
+### Physics / Scripting / Serialization Audit — 26 Findings Fixed
+
+Ran targeted audits across physics backends (Jolt + Box2D), scripting subsystem (AngelScript engine, events, coroutines, bindings), and scene serialization. Fixed all critical, high, and medium findings across three commits.
+
+**Critical Fixes (11):**
+- P1/P2: Jolt `m_EntityToBodyIndex` stored only body index — reconstructing `JPH::BodyID(index)` loses generation counter, causing stale body references after destroy/recreate. Changed to store full `JPH::BodyID` across 15+ call sites.
+- P3: Box2D END touch events erroneously erased from newContacts map (contacts appeared to never end)
+- P4: Jolt gravity force applied without mass guard — division by near-zero mass caused physics explosions
+- R1: WaterVolumeComponent deserialization used bare `j["key"]` without `.contains()` checks (crash on missing keys)
+- R2: HealthComponent didn't serialize runtime state (currentHealth, currentShield, isDead, timers)
+- R3: RigidbodyComponent didn't serialize runtime state (velocity, angularVelocity, isGrounded, isSleeping)
+- S1: Script `#include` path validation used `lexically_relative()` — doesn't resolve symlinks, allowing escape
+- S2: No cap on event listeners per event — unbounded memory growth from malicious scripts
+- S3/S4: No per-frame entity creation cap — scripts could spawn unlimited entities via Scene_Instantiate/Prefab_Instantiate
+- Pre-existing bug: `FlushDeferredEntityDestroys()` was defined but never called from PlayMode or Player
+
+**High/Medium/Low Fixes (15):**
+- S5: Event recursion depth guard (max 8)
+- S8: Listener ID wrap-around skips ID 0
+- S9: Active coroutine cap at 4096
+- S13: Script include depth limit at 16 with RAII guard
+- P5/P6: Clamp friction/restitution to [0,1] in Jolt and Box2D
+- P8: Box2D `b2Body_IsValid()` check in SyncBox2DToECS
+- P9: Clamp gravityScale to [-10,10]
+- P7: Documented JoltContactListener thread safety rationale
+- R4: PostProcessSettings enum bounds checking (toneMappingMode max 5, colorblindMode max 7)
+- R5: Serialize DamageComponent.damagedEntities vector
+
+All 8 test executables pass (484+ checks, 0 failures). Clean build across all targets.
+
+### Engine Analysis Documentation
+Generated comprehensive ENGINE_ANALYSIS.md with Mermaid architecture diagrams, feature completeness matrix, market positioning, revenue models, performance diagnostics, and technical debt assessment.
+
+---
+
 ## 2026-02-16 (Session 30)
 
 ### Networking Code Audit — 18 Findings, 16 Fixed

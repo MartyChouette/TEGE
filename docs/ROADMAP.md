@@ -1530,4 +1530,4 @@ These are documented limitations that require larger feature work. Sorted by pri
 | ~~Profiler P50/P95/P99 + CSV Export~~ | ~~✅ DONE — Frame time percentiles computed and displayed in stats overlay. Descriptor cache hit/miss tracking with hit rate percentage. CSV export button (perf_stats.csv).~~ |
 | ~~MIDI Input~~ | ~~✅ DONE — Platform-specific MIDI input (WinMM on Windows, stubs elsewhere). Device enumeration, open/close, double-buffered event polling, persistent CC state. 12 AngelScript bindings. Wired in PlayMode and Player.~~ |
 
-*Last updated: 2026-02-16 — Session 30: Networking audit (16 fixes): per-packet RTT, reliable ack fix, packet loss tracking, inet_ntop, session key validation, HeartbeatAck handler, player ID recycling, delta compression, WSA refcount, RPC forward validation. All 10 targets build clean.*
+*Last updated: 2026-02-17 — Session 31: Physics/scripting/serialization audit (26 fixes): Jolt BodyID generation counter, Box2D body validity, event/coroutine/entity caps, serialization completeness (Health/Rigidbody/Damage runtime state), enum bounds, include depth limit. All 8 test executables pass.*
