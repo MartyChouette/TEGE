@@ -511,6 +511,14 @@ bool NetworkSystem::RateLimitPacket(const NetworkAddress& sender, u32 size) {
         return ok;
     }
 
+    // H4 fix: reject unknown senders when map is already at capacity to prevent
+    // memory growth between cleanup ticks (e.g., IP spoofing flood)
+    if (m_UnknownRateLimiters.find(sender) == m_UnknownRateLimiters.end() &&
+        m_UnknownRateLimiters.size() >= kRateLimitUnknownCap) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Unknown sender rate limiter map at capacity (%zu), dropping packet", kRateLimitUnknownCap);
+        return false;
+    }
+
     RateLimitState& state = m_UnknownRateLimiters[sender];
     state.lastSeen = now;
     configure(state.packets, m_Config.maxPacketsPerSecond, m_Config.burstPackets);
@@ -1599,15 +1607,41 @@ ConnectionInfo* NetworkSystem::FindConnectionByPlayerId(PlayerId id) {
 
 void NetworkSystem::GenerateSessionKey() {
     m_SessionKey = Networking::GenerateSessionKey();
+
+    // C2 fix: verify key is not all zeros (indicates CSPRNG failure)
+    bool allZero = true;
+    for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
+        if (m_SessionKey[i] != 0) { allZero = false; break; }
+    }
+    if (allZero) {
+        ENJIN_LOG_ERROR(Network, "NetworkSystem: CSPRNG produced zero key — authentication disabled");
+        m_AuthEnabled = false;
+        return;
+    }
+
     m_SessionKeyGenerated = true;
     ENJIN_LOG_INFO(Network, "NetworkSystem: Session key generated for HMAC authentication");
 }
 
 void NetworkSystem::SendSessionKey(const NetworkAddress& addr) {
-    // Send the 32-byte session key to the client.
-    // This packet itself is NOT authenticated (chicken-and-egg), but it is sent
-    // immediately after ConnectionAccept so the window for interception is small.
-    // For production, consider using Diffie-Hellman key exchange instead.
+    // C1 mitigation: The session key is sent to the client over UDP.
+    // This is NOT encrypted (proper fix requires ECDH/X25519 key exchange).
+    // Current mitigations:
+    //   - Sender IP validation in HandleSessionKeyExchange (prevents LAN MITM injection)
+    //   - One-shot acceptance (prevents key replacement attacks)
+    //   - LAN-only scope (session key only used for HMAC packet authentication)
+    // TODO: Implement X25519 Diffie-Hellman key exchange when a crypto library is added.
+
+    // C2 companion: refuse to send a zero/weak key
+    bool allZero = true;
+    for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
+        if (m_SessionKey[i] != 0) { allZero = false; break; }
+    }
+    if (allZero) {
+        ENJIN_LOG_ERROR(Network, "NetworkSystem: Refusing to send zero session key (CSPRNG failure)");
+        return;
+    }
+
     std::vector<u8> payload;
     payload.reserve(SESSION_KEY_SIZE);
     for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
@@ -1637,13 +1671,25 @@ void NetworkSystem::HandleSessionKeyExchange(const NetworkAddress& sender, const
     }
 
     // Read the session key
-    // NOTE (C1): Session key is transmitted in plaintext over UDP. For production use,
-    // implement Diffie-Hellman or ECDH key exchange so the shared secret is never on the wire.
-    // Current mitigation: sender IP validation above reduces attack surface to same-IP spoofing.
+    // C1 NOTE: Session key is transmitted in plaintext over UDP. Proper fix requires
+    // ECDH/X25519 key exchange so the shared secret never crosses the wire.
+    // Current mitigations: sender IP validation + one-shot acceptance + LAN-only scope.
     u32 offset = 0;
     for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
         m_SessionKey[i] = ReadU8(payload, offset, size);
     }
+
+    // C2 companion: reject a zero session key (indicates CSPRNG failure on host)
+    bool allZero = true;
+    for (u32 i = 0; i < SESSION_KEY_SIZE; i++) {
+        if (m_SessionKey[i] != 0) { allZero = false; break; }
+    }
+    if (allZero) {
+        ENJIN_LOG_ERROR(Network, "NetworkSystem: Received zero session key (host CSPRNG failure?), rejecting");
+        std::memset(m_SessionKey.data(), 0, SESSION_KEY_SIZE);
+        return;
+    }
+
     m_SessionKeyGenerated = true;
 
     // Mark connection as authenticated

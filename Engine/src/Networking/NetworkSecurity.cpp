@@ -24,18 +24,10 @@ SessionKey GenerateSessionKey() {
         nullptr, key.data(), SESSION_KEY_SIZE,
         BCRYPT_USE_SYSTEM_PREFERRED_RNG);
     if (status != 0) {
-        ENJIN_LOG_ERROR(Network, "BCryptGenRandom failed (status=0x%08lX), using fallback", status);
-        // Fallback: use QueryPerformanceCounter + GetTickCount as entropy sources
-        LARGE_INTEGER pc;
-        QueryPerformanceCounter(&pc);
-        u64 tick = GetTickCount64();
-        u8 entropy[16];
-        std::memcpy(entropy, &pc.QuadPart, 8);
-        std::memcpy(entropy + 8, &tick, 8);
-        // Hash the entropy to produce a key (not ideal but better than zeros)
-        SHA256 hasher;
-        hasher.Update(entropy, sizeof(entropy));
-        hasher.Final(key.data());
+        // C2 fix: fail hard instead of using weak predictable fallback.
+        // A weak session key compromises all HMAC authentication.
+        ENJIN_LOG_FATAL(Network, "BCryptGenRandom failed (status=0x%08lX) — cannot generate secure session key", status);
+        return key; // Returns zero key; caller must check and refuse to authenticate
     }
 #else
     // POSIX: read from /dev/urandom
@@ -43,16 +35,9 @@ SessionKey GenerateSessionKey() {
     if (urandom.good()) {
         urandom.read(reinterpret_cast<char*>(key.data()), SESSION_KEY_SIZE);
     } else {
-        ENJIN_LOG_ERROR(Network, "Failed to open /dev/urandom, using fallback");
-        // Fallback: hash current time and address space layout
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC, &ts);
-        u8 entropy[16];
-        std::memcpy(entropy, &ts.tv_sec, 8);
-        std::memcpy(entropy + 8, &ts.tv_nsec, 8);
-        SHA256 hasher;
-        hasher.Update(entropy, sizeof(entropy));
-        hasher.Final(key.data());
+        // C2 fix: fail hard instead of using weak predictable fallback.
+        ENJIN_LOG_FATAL(Network, "Failed to open /dev/urandom — cannot generate secure session key");
+        return key; // Returns zero key; caller must check and refuse to authenticate
     }
 #endif
 

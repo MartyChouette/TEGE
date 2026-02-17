@@ -1,5 +1,6 @@
 #include "Enjin/Networking/NetworkTransport.h"
 #include "Enjin/Logging/Log.h"
+#include <atomic>
 
 #ifdef _WIN32
     #ifndef WIN32_LEAN_AND_MEAN
@@ -26,7 +27,8 @@ namespace Networking {
 
 #ifdef _WIN32
 // M4 fix: WSA reference counting so multiple transports don't break Winsock
-static int s_WsaRefCount = 0;
+// H3 fix: atomic for thread safety when multiple transports bind/close concurrently
+static std::atomic<int> s_WsaRefCount{0};
 #endif
 
 // ============================================================================
