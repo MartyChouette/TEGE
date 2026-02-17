@@ -116,7 +116,7 @@ enjin/
 - `VulkanPipeline` - Graphics pipeline with descriptor sets
 - `VulkanBuffer` - GPU buffers (vertex, index, uniform, storage)
 - `RenderSystem` - ECS system that renders entities with Mesh+Transform
-- `PostProcessing` - Bloom, vignette, color grading, FXAA, film grain
+- `PostProcessing` - Bloom, vignette, color grading, FXAA, film grain, DoF, tilt-shift, stipple/dither, SSAO, god rays, contact shadows, caustics, fog shafts
 - `RenderTarget` - Offscreen rendering for Game View
 
 **Features**:
@@ -130,6 +130,12 @@ enjin/
 - Text-to-texture rasterization (stb_truetype)
 - Ray tracing pipeline (hybrid raster+RT, path tracing mode)
 - SVGF compute denoiser (temporal, variance, a-trous wavelet)
+- OIDN denoiser (Intel neural denoise, optional)
+- SH light probes (L2, grid baking, wired to LightingUBO)
+- OIT (weighted blended, fullscreen composite)
+- Screen-space effects (SSAO, god rays, contact shadows, caustics, fog shafts)
+- Dithered gradient rendering (per-material, 2-8 bands, 6 patterns)
+- Camera presets (9 built-in)
 
 ### Ray Tracing System
 
@@ -195,7 +201,7 @@ enjin/
 - Entity selection via ray casting (click-to-select)
 - Entity clipboard (Cut/Copy/Paste via JSON serialization)
 - Scene management with project manifests and scene transitions
-- Startup template selector with 38 built-in templates + custom templates
+- Startup template selector with 44 built-in templates + custom templates + template marketplace
 - Terrain sculpting brushes (raise, lower, flatten, smooth, paint) with viewport ray-heightmap intersection
 - 2D terrain control point drag-to-edit in viewport
 - Bug reporting and feedback system with auto-captured diagnostics
@@ -233,7 +239,7 @@ enjin/
 - `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapters wrapping existing engines behind the interfaces
 - `JoltBackend` — Jolt Physics v5.2.0 backend (see below)
 - `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
-- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both OFF by default
+- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both ON by default
 - PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`; all consumers accept `IPhysicsBackend*`
 
 **JoltBackend** (production-grade 3D physics via Jolt v5.2.0):
@@ -354,11 +360,15 @@ enjin/
 - `LookAtTargetComponent` - Entity rotation toward target with angle limits
 - `WaypointComponent` - Linked waypoint chains for patrol routes
 
-### Assets System
+### Assets & Build System
 
 - `GLTFLoader` - Loads .gltf/.glb files (meshes, materials, skins, animations)
-- `SceneImporter` - Converts loaded models to ECS entities
+- `AssimpLoader` - Loads FBX/OBJ/DAE/PLY/VOX via Assimp v5.4.3
+- `SceneImporter` - Converts loaded models to ECS entities (auto-detect format)
 - `MeshFactory` - Primitive mesh generation (cube, sphere, plane, cylinder, cone, quad)
+- `BuildPipeline` - Full game export: scan, validate, pack `.enjpak`, copy player, manifest
+- `HTML5Exporter` - Canvas export, preloader, responsive scaling, Newgrounds embed template
+- Distribution: CMake CPack with NSIS installer (Start Menu/Desktop shortcuts, file associations), ZIP, TGZ, DEB
 
 ### Scripting System (AngelScript)
 
@@ -369,12 +379,20 @@ enjin/
 - `CoroutineScheduler` - Manages script coroutines (yield seconds, frames, end-of-frame)
 - `ScriptEventBus` - Script-to-script event dispatch system
 
-**Script Bindings** (5 categories):
+**Script Bindings** (~686 bindings across 15+ categories):
 - **Scene**: Entity transform access (Get/Set Position/Rotation/Scale/Name), scene loading
 - **Physics**: Raycast, sphere/box overlap, force/impulse/velocity, gravity scale
-- **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume
+- **Audio**: Play/stop/volume/pitch per entity, positional audio, master volume, channel mixing
 - **Components**: Health, Material, Light, Camera, AudioSource, Animator, Controller (40+ functions)
 - **Core**: Coroutines (StartCoroutine, Yield*), Events (Listen, Send, Broadcast), logging, input, time
+- **Gameplay**: Save/load, quests, cinematics, destructibles, object pooling, weather, particles, prefabs
+- **UI**: Canvas element manipulation, focus management, localization
+- **AI**: Controller, behavior tree blackboard, navmesh pathfinding (34 bindings)
+- **Accessibility**: Subtitles, announcer, colorblind filter, font scaling (20 bindings)
+- **Input**: InputActionMap remapping, sensitivity, presets (22 bindings)
+- **Rendering**: Post-processing, screen-space effects, post-process volumes
+- **Networking**: LAN multiplayer, Newgrounds API
+- **Flash**: ~40 bindings emulating Flash APIs (AS2/AS3 transpiler support)
 
 **Script Lifecycle**: `OnCreate()` → `OnUpdate(deltaTime)` per frame → `OnDestroy()`
 

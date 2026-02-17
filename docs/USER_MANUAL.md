@@ -41,6 +41,7 @@ This manual covers everything you need to get started and build games with Enjin
 29. [Vector Drawing Editor](#29-vector-drawing-editor)
 30. [HTML5 Export](#30-html5-export)
 31. [Newgrounds.io Integration](#31-negroundsio-integration)
+32. [Networking & Security Settings](#32-networking--security-settings)
 
 ---
 
@@ -3128,3 +3129,42 @@ Built-in support for the Newgrounds.io API for publishing Flash-style web games.
 | `NG_LoadSlot(slotId)` | Load from cloud slot |
 
 Configuration is done via the Newgrounds tab in the Flash Timeline panel.
+
+
+---
+
+## 32. Networking & Security Settings
+
+Enjin loads its runtime networking configuration from a JSON file so multiplayer tuning does not require a rebuild.
+
+**Config file path**
+
+`config/network_settings.json` (relative to the working directory of the editor or game).
+
+**Default config**
+
+```json
+{
+  "port": 7777,
+  "maxPlayers": 16,
+  "serverIP": "127.0.0.1",
+  "syncRate": 0.05,
+  "rateLimit": {
+    "maxPacketsPerSecond": 200.0,
+    "maxBytesPerSecond": 131072.0,
+    "burstPackets": 50.0,
+    "burstBytes": 65536.0
+  },
+  "security": {
+    "maxViolations": 10,
+    "violationWindowSeconds": 10.0,
+    "banSeconds": 30.0,
+    "kickOnViolation": true
+  }
+}
+```
+
+**Notes**
+
+The `rateLimit` block controls per-sender packet and bandwidth throttling with a token-bucket burst allowance. The `security` block determines how many violations within a rolling window will trigger a temporary ban and optional kick. For competitive or high-traffic games, raise `maxBytesPerSecond`, `burstBytes`, and/or `maxPacketsPerSecond` to match your netcode needs.
+

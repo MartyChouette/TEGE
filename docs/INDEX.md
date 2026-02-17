@@ -14,11 +14,12 @@
 - **[ROADMAP.md](ROADMAP.md)** - Technical roadmap, performance findings, node graph expansion, GUI modernization plans
 - **[DEVJOURNAL.md](DEVJOURNAL.md)** - Development journal with daily progress, decisions, and implementation notes
 - **[SECURITY_AUDIT.md](SECURITY_AUDIT.md)** - Security & robustness audit report (35 findings across serialization, networking, renderer, future-proofing)
+- **[ENGINE_ANALYSIS.md](ENGINE_ANALYSIS.md)** - Comprehensive technical analysis with Mermaid architecture diagrams, feature completeness matrix, market positioning, revenue models, performance diagnostics, and technical debt assessment
 
 ## API Reference
 
 - **[API_REFERENCE.md](API_REFERENCE.md)** - C++ API documentation
-- **[SCRIPTING_API.md](SCRIPTING_API.md)** - AngelScript scripting API reference (~170 functions)
+- **[SCRIPTING_API.md](SCRIPTING_API.md)** - AngelScript scripting API reference (~480 functions)
 
 ## Key Systems
 
@@ -80,6 +81,8 @@
 | Collaborative Editing UI | `Enjin/Editor/CollaborativeEditingUI.h` | OT protocol UI, peer cursors, conflict resolution, session management |
 | Symbol Library | `Enjin/Editor/SymbolLibrary.h` | Reusable graphic symbols as prefabs, nested editing, category browser, update propagation |
 | Newgrounds Game Page | `Enjin/Build/NewgroundsGamePage.h` | Themed HTML5 export template with medal sidebar, scoreboard, embed codes |
+| Input Action Map | `Enjin/Input/InputAction.h` | Remappable input bindings, sensitivity, deadzone, presets, 18 game actions |
+| Screen-Space Effects | `Enjin/Renderer/PostProcessing.h` | SSAO, god rays, contact shadows, caustics, fog shafts (all in postprocess.frag) |
 
 ---
 
