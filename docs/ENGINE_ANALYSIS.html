@@ -462,7 +462,7 @@ graph TB
         Gizmos["ImGuizmo&lt;br/&gt;(Transform Gizmos)"]
         TemplateSystem["Template System&lt;br/&gt;(44 Templates + Creator&lt;br/&gt;+ Marketplace)"]
         InspectorUndo["Inspector Undo/Redo&lt;br/&gt;(PropertyEditCommand)"]
-        Panels["20+ Editor Panels&lt;br/&gt;(Hierarchy, Inspector,&lt;br/&gt;Console, Asset Browser...)"]
+        Panels["32 Editor Panels&lt;br/&gt;(Hierarchy, Inspector,&lt;br/&gt;Console, Asset Browser...)"]
         Notifications["Toast Notifications&lt;br/&gt;(4 Types, Slide-in)"]
         CommandPalette["Command Palette&lt;br/&gt;(Ctrl+P, Fuzzy Search)"]
     end
@@ -526,8 +526,8 @@ graph TB
     end
 
     subgraph ScriptingLayer["Scripting"]
-        AngelScript["AngelScript (~686 Bindings)"]
-        VisualScript["Visual Scripting (143+ Nodes)"]
+        AngelScript["AngelScript (~844 Bindings)"]
+        VisualScript["Visual Scripting (222+ Nodes)"]
         FlashShim["Flash API Shim (~40 Bindings)"]
     end
 
@@ -577,8 +577,8 @@ graph TB
 <div class="stat-row">
     <div class="stat-card"><div class="value">49</div><div class="label">Full Features</div></div>
     <div class="stat-card"><div class="value">70+</div><div class="label">Component Types</div></div>
-    <div class="stat-card"><div class="value">~686</div><div class="label">Script Bindings</div></div>
-    <div class="stat-card"><div class="value">143+</div><div class="label">VS Nodes</div></div>
+    <div class="stat-card"><div class="value">~844</div><div class="label">Script Bindings</div></div>
+    <div class="stat-card"><div class="value">222+</div><div class="label">VS Nodes</div></div>
     <div class="stat-card"><div class="value">19</div><div class="label">RT Shaders</div></div>
 </div>
 
@@ -697,7 +697,7 @@ graph TB
             <ul>
                 <li>ECS World (Thread-Safe)</li>
                 <li>70+ Component Types</li>
-                <li>ImGui Editor (20+ Panels)</li>
+                <li>ImGui Editor (32 Panels)</li>
                 <li>Transform Gizmos</li>
                 <li>Scene Serialization (JSON)</li>
                 <li>Multi-Select &amp; Undo/Redo</li>
@@ -735,8 +735,8 @@ graph TB
             <h4>Scripting</h4>
             <div class="date">Q4 2024 &ndash; Q1 2026</div>
             <ul>
-                <li>AngelScript (~686 Bindings)</li>
-                <li>Visual Scripting (143+ Nodes)</li>
+                <li>AngelScript (~844 Bindings)</li>
+                <li>Visual Scripting (222+ Nodes)</li>
                 <li>VS Debugger &amp; Profiler</li>
                 <li>Flash API Shim (~40 Bindings)</li>
                 <li>AS2/AS3 Transpiler</li>
@@ -802,7 +802,7 @@ graph TB
             <h4>Graph Systems</h4>
             <div class="date">Q3 &ndash; Q4 2025</div>
             <ul>
-                <li>Shader Graph (58 Nodes)</li>
+                <li>Shader Graph (62 Nodes)</li>
                 <li>Audio Event Graph</li>
                 <li>Particle Graph</li>
                 <li>Flash-Style Timeline</li>
@@ -1148,7 +1148,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 <table>
     <thead><tr><th>Area</th><th>Issue</th><th>Severity</th><th>Effort</th></tr></thead>
     <tbody>
-        <tr><td>EditorLayer size</td><td>Single file handles all 20+ panels (10,000+ lines)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
+        <tr><td>EditorLayer size</td><td>Single file handles all 32 panels (10,000+ lines)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
         <tr><td>RenderSystem scope</td><td>Sprites, particles, vegetation, water, debug &mdash; too many responsibilities</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
         <tr><td>XOR obfuscation</td><td>Asset pack uses trivially breakable XOR</td><td><span class="badge badge-stub">Medium</span></td><td>Medium</td></tr>
         <tr><td>Push constant flags</td><td>32-bit flag field fully allocated</td><td><span class="badge badge-none">Low</span></td><td>Low</td></tr>
@@ -1238,7 +1238,7 @@ graph TB
 
     subgraph ScriptFeatures["Scripting Features"]
         ASEngine["AngelScript Engine"]
-        Bindings["Script Bindings (~686)"]
+        Bindings["Script Bindings (~844)"]
         VisScript["Visual Scripting"]
         FlashShim["Flash API Shim"]
         Transpiler["AS2/AS3 Transpiler"]

@@ -40,7 +40,7 @@ graph TB
         Gizmos["ImGuizmo<br/>(Transform Gizmos)"]
         TemplateSystem["Template System<br/>(44 Templates + Creator<br/>+ Marketplace)"]
         InspectorUndo["Inspector Undo/Redo<br/>(PropertyEditCommand)"]
-        Panels["20+ Editor Panels<br/>(Hierarchy, Inspector,<br/>Console, Asset Browser...)"]
+        Panels["32 Editor Panels<br/>(Hierarchy, Inspector,<br/>Console, Asset Browser...)"]
         Notifications["Toast Notifications<br/>(4 Types, Slide-in)"]
         CommandPalette["Command Palette<br/>(Ctrl+P, Fuzzy Search)"]
     end
@@ -124,9 +124,9 @@ graph TB
     end
 
     subgraph ScriptingLayer["Scripting"]
-        AngelScript["AngelScript Engine<br/>(~686 Bindings,<br/>Hot-Reload)"]
+        AngelScript["AngelScript Engine<br/>(~844 Bindings,<br/>Hot-Reload)"]
         TegeBehavior["TegeBehavior<br/>(Base Script Class)"]
-        VisualScript["Visual Scripting<br/>(143+ Nodes, Debugger,<br/>Profiler)"]
+        VisualScript["Visual Scripting<br/>(222+ Nodes, Debugger,<br/>Profiler)"]
         StateMachine["State Machines<br/>(Script Callbacks)"]
         Coroutines["Coroutines<br/>(Yield/Resume)"]
         EventBus["EventBus<br/>(Pub/Sub Events)"]
@@ -206,7 +206,7 @@ graph TB
     end
 
     subgraph ToolsLayer["Graph Editors & Tools"]
-        ShaderGraph["Shader Graph<br/>(58 Nodes, GLSL Codegen,<br/>.enjshader)"]
+        ShaderGraph["Shader Graph<br/>(62 Nodes, GLSL Codegen,<br/>.enjshader)"]
         ParticleGraph["Particle Graph<br/>(Compiler to Emitter,<br/>.enjparticle)"]
         DialogueEditor["Dialogue Editor<br/>(7 Node Types, .enjdlg)"]
         BehaviorTreeEditor["Behavior Tree Editor<br/>(20 Node Types)"]
@@ -464,8 +464,8 @@ gantt
 
     section Scripting
     AngelScript Integration                     :done, sc1, 2024-10, 2025-01
-    ~686 Script Bindings                        :done, sc2, 2025-01, 2026-02
-    Visual Scripting (143+ Nodes)               :done, sc3, 2025-03, 2025-08
+    ~844 Script Bindings                        :done, sc2, 2025-01, 2026-02
+    Visual Scripting (222+ Nodes)               :done, sc3, 2025-03, 2025-08
     VS Debugger & Profiler                      :done, sc4, 2025-06, 2025-08
     Flash API Shim & AS2/AS3 Transpiler         :done, sc5, 2025-09, 2025-12
 
@@ -505,7 +505,7 @@ gantt
     Newgrounds.io API                           :done, n5, 2025-08, 2025-10
 
     section Graph Systems
-    Shader Graph (58 Nodes, GLSL Codegen)       :done, gs1, 2025-09, 2025-12
+    Shader Graph (62 Nodes, GLSL Codegen)       :done, gs1, 2025-09, 2025-12
     Audio Event Graph                           :done, gs2, 2025-10, 2025-11
     Particle Graph                              :done, gs3, 2025-10, 2025-12
 
@@ -564,7 +564,7 @@ flowchart TB
             DirShadow --> C3["Cascade 3<br/>(Far)"]
         end
 
-        ShadowCasterCache --> PointShadow["Point Light Shadows<br/>(Up to 4 Cubemaps,<br/>1024^2 per face)"]
+        ShadowCasterCache --> PointShadow["Point Light Shadows<br/>(Up to 4 Cubemaps,<br/>512^2 per face)"]
         ShadowCasterCache --> SpotShadow["Spot Light Shadows<br/>(Up to 4, 2D Array,<br/>1024^2)"]
 
         C3 --> FullUBO3D["Upload Full LightingUBO<br/>(Multi-Light Arrays,<br/>Shadow Data, SH Probes)"]
@@ -980,9 +980,9 @@ pie title Frame Budget Breakdown (3D, 60fps)
 
 | Area | Issue | Severity | Effort |
 |---|---|---|---|
-| **EditorLayer size** | Single file handles all 20+ panels, likely 10,000+ lines | Medium | High -- extract panel classes |
+| **EditorLayer size** | Single file handles all 32 panels, likely 10,000+ lines | Medium | High -- extract panel classes |
 | **RenderSystem scope** | Handles sprites, particles, vegetation, water, debug viz -- too many responsibilities | Medium | High -- extract sub-renderers |
-| **Script binding files** | 15+ separate ScriptBindings_*.cpp files with similar patterns | Low | Medium -- code generation |
+| **Script binding files** | 30+ separate ScriptBindings_*.cpp files with similar patterns | Low | Medium -- code generation |
 | **Push constant flags** | 32-bit flag field with bits 0-31 allocated, approaching limit | Low | Low -- expand to 64-bit or use UBO |
 | **XOR obfuscation** | Asset pack uses trivially breakable XOR (not cryptographically secure) | Medium | Medium -- replace with AES-GCM |
 | **Script #include paths** | Resolved via `lexically_normal()` but not restricted to script directory | Medium | Low -- add path validation |
@@ -995,7 +995,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 |---|---|---|
 | **Entity count** | Warning at 10,000+ | Archetype ECS migration for cache-friendly iteration |
 | **Draw calls** | Dependent on material variety | Indirect rendering already implemented |
-| **Shadow map resolution** | 1024^2 per face/cascade | Configurable, could add virtual shadow maps |
+| **Shadow map resolution** | 2048^2 per CSM cascade, 1024^2 per spot, 512^2 per point face | Configurable, could add virtual shadow maps |
 | **Particle count** | 16,384 per emitter | GPU compute simulation would lift this |
 | **Visual script nodes** | Warning at 500+ | Subgraph/function nodes already mitigate this |
 | **Network players** | LAN scale (4-16 typical) | Dedicated server architecture for larger scale |
@@ -1099,7 +1099,7 @@ graph TB
 
     subgraph ScriptFeatures["Scripting Features"]
         ASEngine["AngelScript Engine"]
-        Bindings["Script Bindings (~686)"]
+        Bindings["Script Bindings (~844)"]
         VisScript["Visual Scripting"]
         VSDebugger["VS Debugger"]
         VSProfiler["VS Profiler"]
