@@ -1,6 +1,6 @@
 # Enjin Engine -- Comprehensive Technical Analysis
 
-*Analysis Date: 2026-02-15*
+*Analysis Date: 2026-02-17*
 *Engine Version: Pre-release (Active Development)*
 *Language: C++20 | Graphics API: Vulkan | Build System: CMake*
 
@@ -100,7 +100,7 @@ graph TB
         end
 
         subgraph Systems["ECS Systems"]
-            ControllerSystem["ControllerSystem<br/>(5 Controller Types)"]
+            ControllerSystem["ControllerSystem<br/>(6 Controller Types)"]
             AISystem["AISystem<br/>(Patrol/Chase/Flee/<br/>Wander/Navmesh)"]
         end
     end
@@ -126,7 +126,7 @@ graph TB
     subgraph ScriptingLayer["Scripting"]
         AngelScript["AngelScript Engine<br/>(~686 Bindings,<br/>Hot-Reload)"]
         TegeBehavior["TegeBehavior<br/>(Base Script Class)"]
-        VisualScript["Visual Scripting<br/>(138+ Nodes, Debugger,<br/>Profiler)"]
+        VisualScript["Visual Scripting<br/>(143+ Nodes, Debugger,<br/>Profiler)"]
         StateMachine["State Machines<br/>(Script Callbacks)"]
         Coroutines["Coroutines<br/>(Yield/Resume)"]
         EventBus["EventBus<br/>(Pub/Sub Events)"]
@@ -402,12 +402,12 @@ This matrix compares Enjin's current feature set against five established game e
 
 | Engine | Full | Partial | Basic | Stub | None |
 |--------|------|---------|-------|------|------|
-| **Enjin** | 41 | 2 | 2 | 1 | 2 |
-| **Unity** | 38 | 6 | 3 | 0 | 1 |
-| **Godot** | 27 | 10 | 2 | 0 | 9 |
-| **Unreal** | 34 | 5 | 0 | 0 | 9 |
-| **GameMaker** | 10 | 3 | 9 | 0 | 26 |
-| **Construct** | 7 | 7 | 7 | 0 | 27 |
+| **Enjin** | 49 | 1 | 1 | 1 | 1 |
+| **Unity** | 37 | 7 | 2 | 0 | 7 |
+| **Godot** | 31 | 10 | 1 | 0 | 11 |
+| **Unreal** | 38 | 6 | 0 | 0 | 9 |
+| **GameMaker** | 14 | 5 | 9 | 0 | 24 |
+| **Construct** | 13 | 9 | 5 | 0 | 25 |
 
 Enjin achieves surprisingly broad feature coverage for a single-developer engine. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
 
@@ -465,7 +465,7 @@ gantt
     section Scripting
     AngelScript Integration                     :done, sc1, 2024-10, 2025-01
     ~686 Script Bindings                        :done, sc2, 2025-01, 2026-02
-    Visual Scripting (138+ Nodes)               :done, sc3, 2025-03, 2025-08
+    Visual Scripting (143+ Nodes)               :done, sc3, 2025-03, 2025-08
     VS Debugger & Profiler                      :done, sc4, 2025-06, 2025-08
     Flash API Shim & AS2/AS3 Transpiler         :done, sc5, 2025-09, 2025-12
 
@@ -900,7 +900,7 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 
 ### Optimization Status
 
-All performance issues from P0 through P5 have been resolved. The engine has undergone 8+ rounds of auditing (performance + security + stability + feature wiring) with 250+ findings addressed across 5 formal audit reports.
+All performance issues from P0 through P5 have been resolved. The engine has undergone 8+ rounds of auditing (performance + security + stability + feature wiring) with 350+ findings addressed across 5 formal audit reports.
 
 #### Resolved Optimizations (Good Patterns)
 
@@ -1379,11 +1379,11 @@ All data in this document is derived from:
 - `docs/AUDIT_2026_02_11.md` -- Comprehensive audit (98 findings)
 - `docs/AUDIT_2026_02_12.md` -- Follow-up audit (96 findings)
 - `docs/AUDIT_2026_02_12_R2.md` -- Third audit round (83 findings)
-- `docs/AUDIT_2026_02_16.md` -- Fifth audit round (24 findings, 9 fixed)
+- `docs/AUDIT_2026_02_13.md` -- Fourth audit round
 - `docs/SECURITY_AUDIT.md` -- Security audit (35 findings)
 
 Feature counts, component counts, binding counts, node counts, and all technical specifications reference verified codebase data as documented in these files. Market analysis figures are estimates based on publicly available industry data and reasonable projections for a new entrant.
 
 ---
 
-*Document updated 2026-02-16. Enjin Engine is proprietary software.*
+*Document updated 2026-02-17. Enjin Engine is proprietary software.*

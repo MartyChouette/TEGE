@@ -66,22 +66,10 @@
             color: var(--accent);
         }
 
-        .toc ol {
-            padding-left: 20px;
-        }
-
-        .toc li {
-            margin: 6px 0;
-        }
-
-        .toc a {
-            color: var(--link);
-            text-decoration: none;
-        }
-
-        .toc a:hover {
-            text-decoration: underline;
-        }
+        .toc ol { padding-left: 20px; }
+        .toc li { margin: 6px 0; }
+        .toc a { color: var(--link); text-decoration: none; }
+        .toc a:hover { text-decoration: underline; }
 
         h2 {
             font-size: 1.8em;
@@ -103,25 +91,188 @@
             color: var(--accent3);
         }
 
-        p {
-            margin: 12px 0;
-            color: var(--text);
-        }
+        p { margin: 12px 0; color: var(--text); }
 
-        .mermaid-wrapper {
+        /* =========== Zoomable Diagram Container =========== */
+        .diagram-container {
             background: var(--surface);
             border: 1px solid var(--border);
             border-radius: 8px;
-            padding: 24px;
             margin: 24px 0;
-            overflow-x: auto;
+            position: relative;
+            overflow: hidden;
         }
 
-        .mermaid-wrapper .mermaid {
+        .zoom-controls {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            z-index: 10;
+            background: rgba(13, 17, 23, 0.85);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 6px;
+            backdrop-filter: blur(8px);
+        }
+
+        .zoom-btn {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            transition: background 0.15s;
+        }
+
+        .zoom-btn:hover { background: var(--accent); color: #fff; }
+        .zoom-btn.zoom-reset { width: auto; padding: 0 8px; font-size: 11px; font-weight: 500; }
+
+        .zoom-level {
+            color: var(--text-muted);
+            font-size: 11px;
+            min-width: 36px;
+            text-align: center;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .diagram-viewport {
+            overflow: hidden;
+            cursor: grab;
+            padding: 24px;
+            min-height: 200px;
+        }
+
+        .diagram-viewport:active { cursor: grabbing; }
+
+        .diagram-viewport .mermaid {
             display: flex;
             justify-content: center;
+            transform-origin: 0 0;
+            transition: none;
         }
 
+        .zoom-hint {
+            position: absolute;
+            bottom: 8px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: var(--text-muted);
+            font-size: 11px;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        /* =========== Horizontal Timeline =========== */
+        .h-timeline {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            margin: 24px 0;
+            overflow-x: auto;
+            overflow-y: hidden;
+            position: relative;
+        }
+
+        .h-timeline::-webkit-scrollbar { height: 8px; }
+        .h-timeline::-webkit-scrollbar-track { background: var(--surface); border-radius: 0 0 8px 8px; }
+        .h-timeline::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+        .h-timeline::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+        .h-timeline-inner {
+            display: flex;
+            gap: 3px;
+            padding: 20px 24px;
+            min-width: max-content;
+            position: relative;
+        }
+
+        .h-timeline-connector {
+            position: absolute;
+            top: 50%;
+            left: 24px;
+            right: 24px;
+            height: 2px;
+            background: var(--border);
+            z-index: 0;
+        }
+
+        .h-timeline-phase {
+            position: relative;
+            z-index: 1;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+            min-width: 190px;
+            max-width: 220px;
+            border-top: 3px solid var(--phase-color, var(--accent));
+            transition: transform 0.15s, box-shadow 0.15s;
+        }
+
+        .h-timeline-phase:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+
+        .h-timeline-phase.planned {
+            border-style: dashed;
+            opacity: 0.7;
+        }
+
+        .h-timeline-phase h4 {
+            margin: 0 0 2px;
+            color: var(--phase-color, var(--accent));
+            font-size: 0.9em;
+        }
+
+        .h-timeline-phase .date {
+            font-size: 0.75em;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .h-timeline-phase ul {
+            font-size: 0.8em;
+            padding-left: 14px;
+            margin: 0;
+            color: var(--text);
+        }
+
+        .h-timeline-phase li { margin: 2px 0; }
+
+        .h-timeline-phase .badge-done {
+            display: inline-block;
+            background: #1a3a1a;
+            color: #3fb950;
+            font-size: 0.65em;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
+        .h-timeline-phase .badge-planned {
+            display: inline-block;
+            background: #1a1a2a;
+            color: #8b949e;
+            font-size: 0.65em;
+            padding: 1px 6px;
+            border-radius: 8px;
+            margin-left: 4px;
+            vertical-align: middle;
+        }
+
+        /* =========== Tables =========== */
         table {
             width: 100%;
             border-collapse: collapse;
@@ -144,9 +295,7 @@
             background: var(--surface);
         }
 
-        tr:hover td {
-            background: var(--surface2);
-        }
+        tr:hover td { background: var(--surface2); }
 
         .badge {
             display: inline-block;
@@ -162,18 +311,9 @@
         .badge-stub { background: #1a1a2a; color: #8b949e; }
         .badge-none { background: #1c1c1c; color: #484f58; }
 
-        ul {
-            padding-left: 24px;
-            margin: 8px 0;
-        }
-
-        li {
-            margin: 4px 0;
-        }
-
-        strong {
-            color: var(--text);
-        }
+        ul { padding-left: 24px; margin: 8px 0; }
+        li { margin: 4px 0; }
+        strong { color: var(--text); }
 
         .highlight-box {
             background: var(--surface);
@@ -208,14 +348,10 @@
             padding: 16px;
         }
 
-        .comparison-card h4 {
-            margin-top: 0;
-        }
+        .comparison-card h4 { margin-top: 0; }
 
         @media (max-width: 768px) {
-            .comparison-grid {
-                grid-template-columns: 1fr;
-            }
+            .comparison-grid { grid-template-columns: 1fr; }
             h1 { font-size: 1.8em; }
             h2 { font-size: 1.4em; }
         }
@@ -233,7 +369,7 @@
             border-radius: 8px;
             padding: 16px 20px;
             flex: 1;
-            min-width: 180px;
+            min-width: 150px;
             text-align: center;
         }
 
@@ -280,7 +416,7 @@
 <div class="container">
 
 <h1>Enjin Engine</h1>
-<p class="subtitle">Comprehensive Technical Analysis &mdash; 2026-02-15 &mdash; C++20 | Vulkan | CMake</p>
+<p class="subtitle">Comprehensive Technical Analysis &mdash; 2026-02-17 &mdash; C++20 | Vulkan | CMake</p>
 
 <div class="toc">
     <h2>Table of Contents</h2>
@@ -303,7 +439,14 @@
 
 <p>The Enjin engine is organized in a strict layered architecture. The <strong>Core</strong> layer has zero engine dependencies, the <strong>Engine</strong> layer builds on Core, and the <strong>Application</strong> layer (Editor, Player) consumes Engine.</p>
 
-<div class="mermaid-wrapper">
+<div class="diagram-container">
+    <div class="zoom-controls">
+        <button class="zoom-btn zoom-in" title="Zoom In">+</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn zoom-out" title="Zoom Out">&minus;</button>
+        <button class="zoom-btn zoom-reset" title="Reset View">Reset</button>
+    </div>
+    <div class="diagram-viewport">
 <pre class="mermaid">
 graph TB
     subgraph ApplicationLayer["Application Layer"]
@@ -330,7 +473,7 @@ graph TB
         VulkanPipeline["VulkanPipeline&lt;br/&gt;(Graphics Pipeline,&lt;br/&gt;Descriptor Sets)"]
         VulkanBuffer["VulkanBuffer&lt;br/&gt;(Vertex, Index, Uniform,&lt;br/&gt;Storage Buffers)"]
         RenderSystem["RenderSystem&lt;br/&gt;(Entity Rendering,&lt;br/&gt;Material Sort, Caching)"]
-        PostProcessing["PostProcessing&lt;br/&gt;(Bloom, Vignette, FXAA,&lt;br/&gt;DoF, Tilt-Shift)"]
+        PostProcessing["PostProcessing&lt;br/&gt;(Bloom, Vignette, FXAA,&lt;br/&gt;DoF, Tilt-Shift, SSAO,&lt;br/&gt;God Rays, Caustics)"]
         ShadowSystem["Shadow System&lt;br/&gt;(4-Cascade CSM, Point&lt;br/&gt;Cubemap, Spot 2D Array)"]
         SpriteBatch["SpriteBatchRenderer&lt;br/&gt;(GPU Instanced)"]
         SpriteAtlas["SpriteTextureAtlas&lt;br/&gt;(4096x4096 Shelf-Pack)"]
@@ -368,7 +511,7 @@ graph TB
         Components["70+ Component Types"]
 
         subgraph Systems["ECS Systems"]
-            ControllerSystem["ControllerSystem (5 Types)"]
+            ControllerSystem["ControllerSystem (6 Types)"]
             AISystem["AISystem (Patrol/Chase/Flee)"]
         end
     end
@@ -383,9 +526,9 @@ graph TB
     end
 
     subgraph ScriptingLayer["Scripting"]
-        AngelScript["AngelScript (~627 Bindings)"]
-        VisualScript["Visual Scripting (134+ Nodes)"]
-        FlashShim["Flash API Shim"]
+        AngelScript["AngelScript (~686 Bindings)"]
+        VisualScript["Visual Scripting (143+ Nodes)"]
+        FlashShim["Flash API Shim (~40 Bindings)"]
     end
 
     subgraph CoreLayer["Core Layer"]
@@ -416,6 +559,8 @@ graph TB
     VulkanRenderer --> VulkanContext
     Application --> Window
 </pre>
+    </div>
+    <div class="zoom-hint">Scroll to zoom &middot; Drag to pan</div>
 </div>
 
 <div class="highlight-box">
@@ -427,13 +572,13 @@ graph TB
 <!-- ==================== SECTION 2 ==================== -->
 <h2 id="matrix">2. Feature Completeness Matrix</h2>
 
-<p>Comparison of Enjin's current feature set against five established game engines.</p>
+<p>Comparison of Enjin's current feature set against five established game engines across 53 feature categories.</p>
 
 <div class="stat-row">
-    <div class="stat-card"><div class="value">41</div><div class="label">Full Features</div></div>
+    <div class="stat-card"><div class="value">49</div><div class="label">Full Features</div></div>
     <div class="stat-card"><div class="value">70+</div><div class="label">Component Types</div></div>
-    <div class="stat-card"><div class="value">627</div><div class="label">Script Bindings</div></div>
-    <div class="stat-card"><div class="value">134+</div><div class="label">VS Nodes</div></div>
+    <div class="stat-card"><div class="value">~686</div><div class="label">Script Bindings</div></div>
+    <div class="stat-card"><div class="value">143+</div><div class="label">VS Nodes</div></div>
     <div class="stat-card"><div class="value">19</div><div class="label">RT Shaders</div></div>
 </div>
 
@@ -450,21 +595,48 @@ graph TB
         <tr><td><strong>Shadows (CSM/Point/Spot)</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Sprite Batching/Atlas</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
         <tr><td><strong>Skeletal Animation</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Sprite Animation</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
         <tr><td><strong>3D Physics (Production)</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>2D Physics (Production)</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-basic">Basic</span></td></tr>
+        <tr><td><strong>Physics Joints</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Audio Engine</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>3D Spatial Audio</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>MIDI Input</strong></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Text Scripting</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Visual Scripting</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Hot-Reload</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">N/A</span></td><td><span class="badge badge-none">N/A</span></td></tr>
+        <tr><td><strong>State Machines</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Editor (GUI)</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Scene Hierarchy</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-basic">Basic</span></td></tr>
+        <tr><td><strong>Inspector/Properties</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Undo/Redo</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Multi-Select</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Transform Gizmos</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Asset Browser</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Tilemap Editing</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Terrain Sculpting</strong></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Prefab System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Build/Export Pipeline</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>HTML5 Export</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Console Support</strong></td><td><span class="badge badge-stub">Stub</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Mobile Support</strong></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>LAN Multiplayer</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>HTTP/REST Client</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
         <tr><td><strong>Save System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-basic">Basic</span></td></tr>
         <tr><td><strong>Quest System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Dialogue Trees</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>AI / Behavior Trees</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Navmesh / Pathfinding</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>UI System (Runtime)</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-full">Full</span></td></tr>
         <tr><td><strong>Accessibility</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-basic">Basic</span></td></tr>
         <tr><td><strong>Procedural Generation</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Weather System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Particle System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
         <tr><td><strong>Shader Graph</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
-        <tr><td><strong>HTML5 Export</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
-        <tr><td><strong>Console Support</strong></td><td><span class="badge badge-stub">Stub</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
-        <tr><td><strong>Mobile Support</strong></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td></tr>
+        <tr><td><strong>Plugin/Extension System</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Profiler</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-none">None</span></td></tr>
+        <tr><td><strong>Localization</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-partial">Partial</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-partial">Partial</span></td></tr>
+        <tr><td><strong>Level Streaming</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Retro/CRT Effects</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-basic">Basic</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Flash/SWF Import</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
         <tr><td><strong>Newgrounds Integration</strong></td><td><span class="badge badge-full">Full</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td><td><span class="badge badge-none">None</span></td></tr>
@@ -475,12 +647,12 @@ graph TB
 <table>
     <thead><tr><th>Engine</th><th>Full</th><th>Partial</th><th>Basic</th><th>Stub</th><th>None</th></tr></thead>
     <tbody>
-        <tr><td><strong>Enjin</strong></td><td>41</td><td>2</td><td>2</td><td>1</td><td>2</td></tr>
-        <tr><td><strong>Unity</strong></td><td>38</td><td>6</td><td>3</td><td>0</td><td>1</td></tr>
-        <tr><td><strong>Godot</strong></td><td>27</td><td>10</td><td>2</td><td>0</td><td>9</td></tr>
-        <tr><td><strong>Unreal</strong></td><td>34</td><td>5</td><td>0</td><td>0</td><td>9</td></tr>
-        <tr><td><strong>GameMaker</strong></td><td>10</td><td>3</td><td>9</td><td>0</td><td>26</td></tr>
-        <tr><td><strong>Construct</strong></td><td>7</td><td>7</td><td>7</td><td>0</td><td>27</td></tr>
+        <tr><td><strong>Enjin</strong></td><td>49</td><td>1</td><td>1</td><td>1</td><td>1</td></tr>
+        <tr><td><strong>Unity</strong></td><td>37</td><td>7</td><td>2</td><td>0</td><td>7</td></tr>
+        <tr><td><strong>Godot</strong></td><td>27</td><td>10</td><td>2</td><td>0</td><td>14</td></tr>
+        <tr><td><strong>Unreal</strong></td><td>34</td><td>5</td><td>0</td><td>0</td><td>14</td></tr>
+        <tr><td><strong>GameMaker</strong></td><td>10</td><td>4</td><td>7</td><td>0</td><td>32</td></tr>
+        <tr><td><strong>Construct</strong></td><td>10</td><td>8</td><td>5</td><td>0</td><td>30</td></tr>
     </tbody>
 </table>
 
@@ -489,85 +661,180 @@ graph TB
 <!-- ==================== SECTION 3 ==================== -->
 <h2 id="timeline">3. Engine Evolution Timeline</h2>
 
-<p>Development phases reconstructed from completed feature set and roadmap documentation.</p>
+<p>Development phases reconstructed from completed feature set and roadmap documentation. Scroll horizontally to explore the full timeline.</p>
 
-<div class="mermaid-wrapper">
-<pre class="mermaid">
-gantt
-    title Enjin Engine Development Phases
-    dateFormat YYYY-MM
-    axisFormat %Y-%m
+<div class="h-timeline">
+    <div class="h-timeline-inner">
+        <div class="h-timeline-connector"></div>
 
-    section Foundation
-    Core Layer (Types, Math, Logging)           :done, f1, 2024-01, 2024-03
-    Window and Input (GLFW)                     :done, f2, 2024-02, 2024-03
-    Memory Allocators (Stack, Pool, Linear)      :done, f3, 2024-02, 2024-04
+        <div class="h-timeline-phase" style="--phase-color: #3fb950">
+            <h4>Foundation</h4>
+            <div class="date">Q1 2024</div>
+            <ul>
+                <li>Core Layer (Types, Math, Logging)</li>
+                <li>Window &amp; Input (GLFW)</li>
+                <li>Memory Allocators</li>
+                <li>Platform Abstraction</li>
+            </ul>
+        </div>
 
-    section Vulkan Renderer
-    VulkanContext and Swapchain                 :done, r1, 2024-03, 2024-05
-    Graphics Pipeline and Buffers              :done, r2, 2024-04, 2024-06
-    PBR Materials and Normal Mapping           :done, r4, 2024-06, 2024-08
-    Shadow Mapping (CSM)                       :done, r5, 2024-07, 2024-09
-    Skeletal Animation (GPU Skinning)          :done, r6, 2024-08, 2024-10
+        <div class="h-timeline-phase" style="--phase-color: #58a6ff">
+            <h4>Vulkan Renderer</h4>
+            <div class="date">Q1 &ndash; Q3 2024</div>
+            <ul>
+                <li>VulkanContext &amp; Swapchain</li>
+                <li>Graphics Pipeline &amp; Buffers</li>
+                <li>Blinn-Phong Lighting</li>
+                <li>PBR Materials &amp; Normals</li>
+                <li>4-Cascade CSM Shadows</li>
+                <li>Skeletal Animation (GPU)</li>
+            </ul>
+        </div>
 
-    section ECS and Editor
-    ECS World (Entities, Components)           :done, e1, 2024-05, 2024-07
-    70+ Component Types                        :done, e2, 2024-06, 2025-02
-    ImGui Editor (Hierarchy, Inspector)        :done, e3, 2024-07, 2024-10
-    Multi-Select and Undo/Redo                 :done, e6, 2024-09, 2024-11
-    PlayMode (Play/Pause/Stop)                 :done, e7, 2024-10, 2024-12
+        <div class="h-timeline-phase" style="--phase-color: #d2a8ff">
+            <h4>ECS &amp; Editor</h4>
+            <div class="date">Q2 &ndash; Q4 2024</div>
+            <ul>
+                <li>ECS World (Thread-Safe)</li>
+                <li>70+ Component Types</li>
+                <li>ImGui Editor (20+ Panels)</li>
+                <li>Transform Gizmos</li>
+                <li>Scene Serialization (JSON)</li>
+                <li>Multi-Select &amp; Undo/Redo</li>
+                <li>PlayMode (Play/Pause/Stop)</li>
+            </ul>
+        </div>
 
-    section 2D Pipeline
-    Sprite Rendering and Atlas                 :done, s1, 2024-10, 2024-12
-    Tilemap Rendering and Editing              :done, s2, 2024-11, 2025-01
-    2D Camera (Follow, Shake, Bounds)          :done, s4, 2024-12, 2025-01
+        <div class="h-timeline-phase" style="--phase-color: #f0883e">
+            <h4>2D Pipeline</h4>
+            <div class="date">Q3 2024 &ndash; Q1 2025</div>
+            <ul>
+                <li>Sprite Rendering &amp; Atlas</li>
+                <li>Tilemap Rendering/Editing</li>
+                <li>Sprite Animation System</li>
+                <li>2D Camera (Follow, Shake)</li>
+                <li>Pixel Editor (8 Tools)</li>
+                <li>Sprite Sheet Importer</li>
+            </ul>
+        </div>
 
-    section Physics
-    SimplePhysics (Collision, Solver)          :done, p1, 2024-09, 2024-12
-    Physics2D (Shapes, Joints, CCD)            :done, p2, 2025-01, 2025-03
-    IPhysicsBackend Abstraction                :done, p3, 2025-12, 2026-01
-    Jolt v5.2.0 Backend                        :done, p4, 2026-01, 2026-02
-    Box2D v3.0.0 Backend                       :done, p5, 2026-02, 2026-02
+        <div class="h-timeline-phase" style="--phase-color: #39d353">
+            <h4>Physics</h4>
+            <div class="date">Q3 2024 &ndash; Q1 2026</div>
+            <ul>
+                <li>SimplePhysics &amp; Solver</li>
+                <li>Physics2D (Shapes, Joints)</li>
+                <li>IPhysicsBackend Abstraction</li>
+                <li>Jolt v5.2.0 Backend</li>
+                <li>Box2D v3.0.0 Backend</li>
+                <li>Compile Guard (Simple)</li>
+            </ul>
+        </div>
 
-    section Scripting
-    AngelScript Integration                    :done, sc1, 2024-10, 2025-01
-    627 Script Bindings                        :done, sc2, 2025-01, 2026-02
-    Visual Scripting (134+ Nodes)              :done, sc3, 2025-03, 2025-08
-    Flash API Shim and Transpiler              :done, sc5, 2025-09, 2025-12
+        <div class="h-timeline-phase" style="--phase-color: #d29922">
+            <h4>Scripting</h4>
+            <div class="date">Q4 2024 &ndash; Q1 2026</div>
+            <ul>
+                <li>AngelScript (~686 Bindings)</li>
+                <li>Visual Scripting (143+ Nodes)</li>
+                <li>VS Debugger &amp; Profiler</li>
+                <li>Flash API Shim (~40 Bindings)</li>
+                <li>AS2/AS3 Transpiler</li>
+                <li>DataAsset System</li>
+            </ul>
+        </div>
 
-    section Advanced Rendering
-    Post-Processing Pipeline                   :done, ar1, 2025-01, 2025-04
-    Ray Tracing Pipeline (19 Shaders)          :done, ar5, 2025-06, 2025-10
-    SVGF and OIDN Denoisers                    :done, ar6, 2025-08, 2025-11
-    SH Light Probes                            :done, ar7, 2025-10, 2025-12
-    Depth of Field and Tilt-Shift              :done, ar9, 2025-10, 2025-11
+        <div class="h-timeline-phase" style="--phase-color: #f85149">
+            <h4>Advanced Rendering</h4>
+            <div class="date">Q1 &ndash; Q4 2025</div>
+            <ul>
+                <li>Post-Processing (12+ Effects)</li>
+                <li>Screen-Space Effects (5)</li>
+                <li>Point/Spot Shadows</li>
+                <li>Ray Tracing (19 Shaders)</li>
+                <li>SVGF + OIDN Denoisers</li>
+                <li>SH Light Probes (L2)</li>
+                <li>OIT, DoF, Tilt-Shift</li>
+            </ul>
+        </div>
 
-    section Gameplay and AI
-    Dialogue Trees (7 Node Types)              :done, g1, 2025-03, 2025-05
-    AI System (Patrol/Chase/Flee)              :done, g2, 2025-04, 2025-07
-    Quest System                               :done, g4, 2025-06, 2025-08
-    Tiered Save System (20 Slots)              :done, g5, 2025-12, 2026-02
+        <div class="h-timeline-phase" style="--phase-color: #db61a2">
+            <h4>Gameplay &amp; AI</h4>
+            <div class="date">Q1 2025 &ndash; Q1 2026</div>
+            <ul>
+                <li>Dialogue Trees (7 Nodes)</li>
+                <li>AI System (5 Behaviors)</li>
+                <li>Behavior Tree Editor (20 Nodes)</li>
+                <li>Quest System</li>
+                <li>Tiered Save (20 Slots, 3 Tiers)</li>
+                <li>Destructible Environments</li>
+            </ul>
+        </div>
 
-    section Networking and Build
-    LAN Multiplayer (UDP)                      :done, n1, 2025-06, 2025-09
-    Build Pipeline (.enjpak)                   :done, n3, 2025-04, 2025-07
-    HTML5 Export                               :done, n4, 2025-07, 2025-09
+        <div class="h-timeline-phase" style="--phase-color: #2ea043">
+            <h4>Effects &amp; Procedural</h4>
+            <div class="date">Q1 &ndash; Q4 2025</div>
+            <ul>
+                <li>Weather (Rain/Snow/Fog/Storm)</li>
+                <li>Particles (12 Presets, GPU)</li>
+                <li>Water3D (Gerstner Waves)</li>
+                <li>Fluid Simulation</li>
+                <li>9+ Proc Gen Algorithms</li>
+                <li>Non-Euclidean Geometry</li>
+                <li>Reaction-Diffusion, Physarum</li>
+            </ul>
+        </div>
 
-    section Graph Systems
-    Shader Graph (58 Nodes, GLSL Codegen)      :done, gs1, 2025-09, 2025-12
-    Audio Event Graph                          :done, gs2, 2025-10, 2025-11
-    Particle Graph                             :done, gs3, 2025-10, 2025-12
+        <div class="h-timeline-phase" style="--phase-color: #79c0ff">
+            <h4>Networking &amp; Build</h4>
+            <div class="date">Q2 &ndash; Q4 2025</div>
+            <ul>
+                <li>LAN Multiplayer (UDP)</li>
+                <li>HMAC-SHA256 Packet Auth</li>
+                <li>Build Pipeline (.enjpak)</li>
+                <li>HTML5 Export</li>
+                <li>Newgrounds.io API</li>
+                <li>NSIS Installer / CPack</li>
+            </ul>
+        </div>
 
-    section Performance and Polish
-    P0-P5 Performance Optimization             :done, pp1, 2025-11, 2026-02
-    Security Audits (3 Rounds)                 :done, pp2, 2026-02, 2026-02
-    44 Templates + Marketplace                 :done, pp4, 2025-12, 2026-02
+        <div class="h-timeline-phase" style="--phase-color: #bc8cff">
+            <h4>Graph Systems</h4>
+            <div class="date">Q3 &ndash; Q4 2025</div>
+            <ul>
+                <li>Shader Graph (58 Nodes)</li>
+                <li>Audio Event Graph</li>
+                <li>Particle Graph</li>
+                <li>Flash-Style Timeline</li>
+                <li>Vector Drawing Editor</li>
+            </ul>
+        </div>
 
-    section Planned
-    macOS (MoltenVK)                           :active, pl1, 2026-03, 2026-06
-    Console Platforms                          :active, pl2, 2026-06, 2027-06
-    Mobile (Android/iOS)                       :active, pl3, 2026-09, 2027-03
-</pre>
+        <div class="h-timeline-phase" style="--phase-color: #e3b341">
+            <h4>Performance &amp; Polish</h4>
+            <div class="date">Q4 2025 &ndash; Q1 2026</div>
+            <ul>
+                <li>P0-P6 Perf Optimization</li>
+                <li>5 Audit Rounds (350+ Findings)</li>
+                <li>44 Templates + Marketplace</li>
+                <li>Accessibility Systems</li>
+                <li>UX Polish (Toasts, Themes)</li>
+                <li>Security Hardening</li>
+            </ul>
+        </div>
+
+        <div class="h-timeline-phase planned" style="--phase-color: #8b949e">
+            <h4>Planned</h4>
+            <div class="date">Q2 2026+</div>
+            <ul>
+                <li>macOS (MoltenVK)</li>
+                <li>WebAssembly / WebGPU</li>
+                <li>Console Platforms</li>
+                <li>Mobile (Android/iOS)</li>
+                <li>VR/XR (OpenXR)</li>
+            </ul>
+        </div>
+    </div>
 </div>
 
 <hr class="section-divider">
@@ -577,7 +844,14 @@ gantt
 
 <p>Complete rendering pipeline for a single frame, including the 2D/2.5D/3D branching logic.</p>
 
-<div class="mermaid-wrapper">
+<div class="diagram-container">
+    <div class="zoom-controls">
+        <button class="zoom-btn zoom-in" title="Zoom In">+</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn zoom-out" title="Zoom Out">&minus;</button>
+        <button class="zoom-btn zoom-reset" title="Reset View">Reset</button>
+    </div>
+    <div class="diagram-viewport">
 <pre class="mermaid">
 flowchart TB
     FrameStart["Frame Start"] --> FlushDestroy["Flush Deferred Entity Destruction"]
@@ -655,6 +929,8 @@ flowchart TB
     style Path3DBlock fill:#3a1a1a,stroke:#aa4a4a
     style PostProcessBlock fill:#1a2a3a,stroke:#4a7aaa
 </pre>
+    </div>
+    <div class="zoom-hint">Scroll to zoom &middot; Drag to pan</div>
 </div>
 
 <div class="highlight-box green">
@@ -791,11 +1067,18 @@ flowchart TB
 <!-- ==================== SECTION 8 ==================== -->
 <h2 id="perf">8. Performance Diagnostics Summary</h2>
 
-<p>All performance issues from P0 through P5 have been resolved. The engine has undergone 6 rounds of performance auditing with 98+ findings addressed.</p>
+<p>All performance issues from P0 through P6 have been resolved. The engine has undergone 5 audit rounds with 350+ findings addressed.</p>
 
 <h3>Frame Budget Breakdown (3D, 60fps)</h3>
 
-<div class="mermaid-wrapper">
+<div class="diagram-container">
+    <div class="zoom-controls">
+        <button class="zoom-btn zoom-in" title="Zoom In">+</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn zoom-out" title="Zoom Out">&minus;</button>
+        <button class="zoom-btn zoom-reset" title="Reset View">Reset</button>
+    </div>
+    <div class="diagram-viewport">
 <pre class="mermaid">
 pie title Frame Budget Breakdown (3D, 60fps)
     "Shadow Passes (CSM + Point + Spot)" : 3.0
@@ -808,6 +1091,8 @@ pie title Frame Budget Breakdown (3D, 60fps)
     "ImGui / Editor Overlay" : 1.0
     "Remaining Headroom" : 0.17
 </pre>
+    </div>
+    <div class="zoom-hint">Scroll to zoom &middot; Drag to pan</div>
 </div>
 
 <h3>Current Performance Profile</h3>
@@ -854,7 +1139,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
         <tr><td>Error Handling</td><td><span class="badge badge-full">Good</span></td><td>Vulkan checks, JSON validation, bounds checking</td></tr>
         <tr><td>Memory Management</td><td><span class="badge badge-full">Good</span></td><td>Custom allocators, reserve(), no known leaks</td></tr>
         <tr><td>Test Coverage</td><td><span class="badge badge-basic">Low</span></td><td>StressTest exists but no unit test framework</td></tr>
-        <tr><td>Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~440 lines), 6 doc files, API docs</td></tr>
+        <tr><td>Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~450 lines), 8+ doc files, API docs</td></tr>
     </tbody>
 </table>
 
@@ -886,7 +1171,14 @@ pie title Frame Budget Breakdown (3D, 60fps)
 
 <p>Major feature dependencies illustrating the engine's internal coupling.</p>
 
-<div class="mermaid-wrapper">
+<div class="diagram-container">
+    <div class="zoom-controls">
+        <button class="zoom-btn zoom-in" title="Zoom In">+</button>
+        <span class="zoom-level">100%</span>
+        <button class="zoom-btn zoom-out" title="Zoom Out">&minus;</button>
+        <button class="zoom-btn zoom-reset" title="Reset View">Reset</button>
+    </div>
+    <div class="diagram-viewport">
 <pre class="mermaid">
 graph TB
     subgraph CoreDeps["Core Dependencies"]
@@ -946,7 +1238,7 @@ graph TB
 
     subgraph ScriptFeatures["Scripting Features"]
         ASEngine["AngelScript Engine"]
-        Bindings["Script Bindings (627)"]
+        Bindings["Script Bindings (~686)"]
         VisScript["Visual Scripting"]
         FlashShim["Flash API Shim"]
         Transpiler["AS2/AS3 Transpiler"]
@@ -1041,6 +1333,8 @@ graph TB
     style ScriptFeatures fill:#2a2a1a,stroke:#8a8a4a
     style GameplayFeatures fill:#2a1a2a,stroke:#8a4a8a
 </pre>
+    </div>
+    <div class="zoom-hint">Scroll to zoom &middot; Drag to pan</div>
 </div>
 
 <h3>Key Dependency Observations</h3>
@@ -1057,7 +1351,7 @@ graph TB
 </div>
 
 <footer>
-    <p>Enjin Engine &mdash; Comprehensive Technical Analysis &mdash; Generated 2026-02-15</p>
+    <p>Enjin Engine &mdash; Comprehensive Technical Analysis &mdash; Updated 2026-02-17</p>
     <p>C++20 | Vulkan | CMake &mdash; Proprietary Software</p>
 </footer>
 
@@ -1080,21 +1374,146 @@ graph TB
             htmlLabels: true,
             curve: 'basis',
             padding: 15,
-            useMaxWidth: true
-        },
-        gantt: {
-            useMaxWidth: true,
-            barHeight: 20,
-            barGap: 4,
-            topPadding: 30,
-            leftPadding: 75,
-            fontSize: 12
+            useMaxWidth: false
         },
         pie: {
-            useMaxWidth: true,
+            useMaxWidth: false,
             textPosition: 0.75
         }
     });
+
+    // ==================== Zoom & Pan for Diagrams ====================
+    document.addEventListener('DOMContentLoaded', () => {
+        // Wait for mermaid to render
+        setTimeout(() => {
+            document.querySelectorAll('.diagram-container').forEach(initZoomPan);
+        }, 1500);
+    });
+
+    function initZoomPan(container) {
+        const viewport = container.querySelector('.diagram-viewport');
+        const mermaidEl = viewport.querySelector('.mermaid');
+        const zoomLevelEl = container.querySelector('.zoom-level');
+        const zoomInBtn = container.querySelector('.zoom-in');
+        const zoomOutBtn = container.querySelector('.zoom-out');
+        const zoomResetBtn = container.querySelector('.zoom-reset');
+
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isPanning = false;
+        let startX = 0;
+        let startY = 0;
+        let lastPanX = 0;
+        let lastPanY = 0;
+
+        function updateTransform() {
+            const svg = mermaidEl.querySelector('svg');
+            if (svg) {
+                svg.style.transformOrigin = '0 0';
+                svg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            }
+            if (zoomLevelEl) {
+                zoomLevelEl.textContent = Math.round(scale * 100) + '%';
+            }
+        }
+
+        function clampScale(s) {
+            return Math.min(Math.max(0.2, s), 4);
+        }
+
+        // Mouse wheel zoom
+        viewport.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const rect = viewport.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+
+            const oldScale = scale;
+            const delta = e.deltaY > 0 ? 0.9 : 1.1;
+            scale = clampScale(scale * delta);
+
+            // Zoom towards mouse position
+            const ratio = scale / oldScale;
+            panX = mouseX - ratio * (mouseX - panX);
+            panY = mouseY - ratio * (mouseY - panY);
+
+            updateTransform();
+        }, { passive: false });
+
+        // Pan - mousedown
+        viewport.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            isPanning = true;
+            startX = e.clientX;
+            startY = e.clientY;
+            lastPanX = panX;
+            lastPanY = panY;
+            viewport.style.cursor = 'grabbing';
+        });
+
+        // Pan - mousemove
+        window.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            panX = lastPanX + (e.clientX - startX);
+            panY = lastPanY + (e.clientY - startY);
+            updateTransform();
+        });
+
+        // Pan - mouseup
+        window.addEventListener('mouseup', () => {
+            if (isPanning) {
+                isPanning = false;
+                viewport.style.cursor = 'grab';
+            }
+        });
+
+        // Double-click to reset
+        viewport.addEventListener('dblclick', () => {
+            scale = 1;
+            panX = 0;
+            panY = 0;
+            updateTransform();
+        });
+
+        // Button controls
+        if (zoomInBtn) {
+            zoomInBtn.addEventListener('click', () => {
+                const rect = viewport.getBoundingClientRect();
+                const cx = rect.width / 2;
+                const cy = rect.height / 2;
+                const oldScale = scale;
+                scale = clampScale(scale * 1.25);
+                const ratio = scale / oldScale;
+                panX = cx - ratio * (cx - panX);
+                panY = cy - ratio * (cy - panY);
+                updateTransform();
+            });
+        }
+
+        if (zoomOutBtn) {
+            zoomOutBtn.addEventListener('click', () => {
+                const rect = viewport.getBoundingClientRect();
+                const cx = rect.width / 2;
+                const cy = rect.height / 2;
+                const oldScale = scale;
+                scale = clampScale(scale / 1.25);
+                const ratio = scale / oldScale;
+                panX = cx - ratio * (cx - panX);
+                panY = cy - ratio * (cy - panY);
+                updateTransform();
+            });
+        }
+
+        if (zoomResetBtn) {
+            zoomResetBtn.addEventListener('click', () => {
+                scale = 1;
+                panX = 0;
+                panY = 0;
+                updateTransform();
+            });
+        }
+    }
 </script>
 
 </body>
