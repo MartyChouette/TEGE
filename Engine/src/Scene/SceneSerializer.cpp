@@ -853,7 +853,8 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     auto GU = [&](const char* k) -> u32 { return j.contains(k) ? j[k].get<u32>() : 0; };
     auto GF = [&](const char* k, f32 def) -> f32 { return j.contains(k) ? j[k].get<f32>() : def; };
 
-    s.toneMappingMode = GU("toneMappingMode");
+    // R4 fix: Clamp enum fields to valid ranges
+    s.toneMappingMode = std::min(GU("toneMappingMode"), 5u); // 0-5 (None..AgX)
     s.exposure = GF("exposure", 1.0f);
     s.gamma = GF("gamma", 1.0f);
     s.whitePoint = GF("whitePoint", 4.0f);
@@ -870,7 +871,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.saturation = GF("saturation", 1.0f);
     s.contrast = GF("contrast", 1.0f);
     s.brightness = GF("brightness", 0.0f);
-    s.colorblindMode = GU("colorblindMode");
+    s.colorblindMode = std::min(GU("colorblindMode"), 7u); // 0-7 (off..achromatopsia)
     s.colorblindStrength = GF("colorblindStrength", 1.0f);
     s.filmGrainEnabled = GU("filmGrainEnabled");
     s.filmGrainIntensity = GF("filmGrainIntensity", 0.05f);
@@ -1839,6 +1840,12 @@ json SerializeDamageComponent(const ECS::DamageComponent& d) {
     j["damageOnce"] = RF(d.damageOnce);
     j["damageInterval"] = RF(d.damageInterval);
     j["type"] = static_cast<u8>(d.type);
+    // R5 fix: serialize runtime tracking for mid-play save/load
+    if (!d.damagedEntities.empty()) {
+        json arr = json::array();
+        for (auto e : d.damagedEntities) arr.push_back(static_cast<u64>(e));
+        j["damagedEntities"] = arr;
+    }
     return j;
 }
 
@@ -1850,6 +1857,12 @@ ECS::DamageComponent DeserializeDamageComponent(const json& j) {
     if (j.contains("damageOnce")) d.damageOnce = JB(j["damageOnce"]);
     if (j.contains("damageInterval")) d.damageInterval = j["damageInterval"].get<f32>();
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v <= 5) d.type = static_cast<ECS::DamageComponent::DamageType>(v); }
+    // R5 fix: deserialize runtime tracking for mid-play save/load
+    if (j.contains("damagedEntities") && j["damagedEntities"].is_array()) {
+        for (auto& e : j["damagedEntities"]) {
+            d.damagedEntities.push_back(static_cast<ECS::Entity>(e.get<u64>()));
+        }
+    }
     return d;
 }
 

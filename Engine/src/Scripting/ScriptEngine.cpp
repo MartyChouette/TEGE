@@ -1112,6 +1112,16 @@ int ScriptEngine::IncludeCallback(const char* include,
         return true;
     };
 
+    // S13 fix: Track include depth to prevent stack overflow from recursive includes
+    static thread_local u32 s_IncludeDepth = 0;
+    static constexpr u32 kMaxIncludeDepth = 16;
+    if (s_IncludeDepth >= kMaxIncludeDepth) {
+        ENJIN_LOG_ERROR(Script, "Script #include depth limit (%u) exceeded — possible circular includes", kMaxIncludeDepth);
+        return -1;
+    }
+    s_IncludeDepth++;
+    struct DepthGuard { ~DepthGuard() { s_IncludeDepth--; } } depthGuard;
+
     // Strategy 1: resolve relative to the file doing the including
     if (from && from[0] != '\0') {
         std::filesystem::path fromPath(from);

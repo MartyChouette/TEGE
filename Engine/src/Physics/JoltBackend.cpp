@@ -445,15 +445,18 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     JPH::BodyCreationSettings bodySettings(shape, ToJoltR(transform->position),
         ToJolt(transform->rotation), motionType, objectLayer);
 
-    bodySettings.mFriction = friction;
-    bodySettings.mRestitution = bounciness;
+    // P5 fix: Clamp material properties to valid ranges
+    bodySettings.mFriction = std::clamp(friction, 0.0f, 1.0f);
+    bodySettings.mRestitution = std::clamp(bounciness, 0.0f, 1.0f);
     bodySettings.mIsSensor = colliderInfo.isTrigger;
     bodySettings.mUserData = static_cast<uint64_t>(entity);
 
     if (rb) {
         bodySettings.mLinearDamping = rb->drag;
         bodySettings.mAngularDamping = rb->angularDrag;
-        bodySettings.mGravityFactor = rb->useGravity ? rb->gravityScale : 0.0f;
+        // P9 fix: Clamp gravity scale to prevent physics instability
+        f32 clampedGravityScale = std::clamp(rb->gravityScale, -10.0f, 10.0f);
+        bodySettings.mGravityFactor = rb->useGravity ? clampedGravityScale : 0.0f;
 
         // Mass override
         if (rb->mass > 0.0f && motionType == JPH::EMotionType::Dynamic) {
@@ -655,8 +658,8 @@ void JoltBackend::ApplyGravityZones() {
                 bodyInterface.AddForce(bodyID, ToJolt(force));
             }
         } else {
-            // Restore normal gravity factor
-            bodyInterface.SetGravityFactor(bodyID, rb->gravityScale);
+            // Restore normal gravity factor (P9 fix: clamp)
+            bodyInterface.SetGravityFactor(bodyID, std::clamp(rb->gravityScale, -10.0f, 10.0f));
         }
     }
 }

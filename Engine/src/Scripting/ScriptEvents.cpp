@@ -28,6 +28,8 @@ u32 ScriptEventBus::Listen(const std::string& eventName, asIScriptObject* obj,
     listener.object = obj;
     listener.callback = callback;
     listener.entityId = entityId;
+    // S8 fix: skip ID 0 on wrap-around (0 is used as error return)
+    if (m_NextId == 0) m_NextId = 1;
     listener.id = m_NextId++;
 
     // AddRef to prevent the object and function from being garbage collected
@@ -65,24 +67,44 @@ void ScriptEventBus::RemoveAllForEntity(u64 entityId) {
     }
 }
 
+// S5 fix: Guard against infinite event recursion (e.g. event A fires event B fires event A)
+static constexpr u32 kMaxEventRecursionDepth = 8;
+static u32 s_EventDispatchDepth = 0;
+
 void ScriptEventBus::Send(const std::string& eventName, const EventData& data) {
+    if (s_EventDispatchDepth >= kMaxEventRecursionDepth) {
+        ENJIN_LOG_WARN(Script, "ScriptEventBus: recursion depth limit (%u) reached for event '%s'",
+                       kMaxEventRecursionDepth, eventName.c_str());
+        return;
+    }
+
     auto it = m_Listeners.find(eventName);
     if (it == m_Listeners.end()) return;
 
     // Iterate a copy in case listeners modify the list during dispatch
     auto listenersCopy = it->second;
+    s_EventDispatchDepth++;
     for (auto& listener : listenersCopy) {
         DispatchToListener(listener, eventName, data);
     }
+    s_EventDispatchDepth--;
 }
 
 void ScriptEventBus::Broadcast(const EventData& data) {
+    if (s_EventDispatchDepth >= kMaxEventRecursionDepth) {
+        ENJIN_LOG_WARN(Script, "ScriptEventBus: recursion depth limit (%u) reached during broadcast",
+                       kMaxEventRecursionDepth);
+        return;
+    }
+
+    s_EventDispatchDepth++;
     for (auto& [name, listeners] : m_Listeners) {
         auto listenersCopy = listeners;
         for (auto& listener : listenersCopy) {
             DispatchToListener(listener, name, data);
         }
     }
+    s_EventDispatchDepth--;
 }
 
 void ScriptEventBus::DispatchToListener(EventListener& listener, const std::string& eventName,

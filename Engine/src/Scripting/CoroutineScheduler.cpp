@@ -16,8 +16,22 @@ CoroutineScheduler::~CoroutineScheduler() {
     Clear();
 }
 
+// S9 fix: Cap active coroutine count to prevent memory exhaustion
+static constexpr u32 kMaxActiveCoroutines = 4096;
+
 u32 CoroutineScheduler::StartCoroutine(asIScriptContext* ctx, u64 entityId) {
     if (!ctx) return 0;
+
+    if (m_Coroutines.size() >= kMaxActiveCoroutines) {
+        ENJIN_LOG_WARN(Script, "CoroutineScheduler: coroutine cap (%u) reached, rejecting new coroutine",
+                       kMaxActiveCoroutines);
+        ctx->Abort();
+        ctx->Release();
+        return 0;
+    }
+
+    // S8 fix: skip ID 0 on wrap-around (0 is used as error return)
+    if (m_NextId == 0) m_NextId = 1;
 
     Coroutine co;
     co.context = ctx;

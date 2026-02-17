@@ -33,7 +33,10 @@ struct JoltContactEvent {
 // per-body categoryBits/collisionMask from the backend's filter data map.
 class JoltContactListener : public JPH::ContactListener {
 public:
-    // Set by JoltBackend to enable bilateral collision filtering
+    // Set by JoltBackend to enable bilateral collision filtering.
+    // P7 note: Thread safety is guaranteed by Jolt's execution model — this map is only
+    // read during PhysicsSystem::Update() while the main thread is blocked participating
+    // in the physics step, so no concurrent writes to filterData can occur.
     const std::unordered_map<uint32_t, CollisionFilterData>* filterData = nullptr;
 
     // Called from Jolt worker threads — reject contacts that don't pass bilateral filter

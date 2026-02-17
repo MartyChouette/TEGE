@@ -221,9 +221,10 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
 
     // Shape definition
     b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.density = body2d->material.density;
-    shapeDef.friction = body2d->material.friction;
-    shapeDef.restitution = body2d->material.restitution;
+    // P6 fix: Clamp material properties to valid ranges
+    shapeDef.density = std::max(body2d->material.density, 0.0f);
+    shapeDef.friction = std::clamp(body2d->material.friction, 0.0f, 1.0f);
+    shapeDef.restitution = std::clamp(body2d->material.restitution, 0.0f, 1.0f);
     shapeDef.isSensor = body2d->isSensor;
     shapeDef.enableSensorEvents = body2d->isSensor;
     shapeDef.enableContactEvents = !body2d->isSensor;
@@ -306,6 +307,9 @@ void Box2DBackend::DestroyBodyForEntity(ECS::Entity entity) {
 
 void Box2DBackend::SyncBox2DToECS() {
     for (auto& [entity, bodyId] : m_EntityToBody) {
+        // P8 fix: Verify body is still valid before accessing properties
+        if (!b2Body_IsValid(bodyId)) continue;
+
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
