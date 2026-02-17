@@ -38,6 +38,9 @@
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
+#ifndef _WIN32
+#include <unistd.h>
+#endif
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/ECS/Components/Tween.h"
@@ -34174,16 +34177,24 @@ void EditorLayer::DrawUserManualPanel() {
         std::string outputPath = "UserManual.html";
         ExportManualAsHTML(outputPath);
         m_ConsoleLog.push_back("[Manual] Exported to " + outputPath);
-        // Open in default browser
+        // Open in default browser without invoking a shell
         std::string absPath = std::filesystem::absolute(outputPath).string();
 #ifdef _WIN32
-        std::string cmd = "start \"\" \"" + absPath + "\"";
-#elif defined(__APPLE__)
-        std::string cmd = "open \"" + absPath + "\"";
+        ShellExecuteA(nullptr, "open", absPath.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 #else
-        std::string cmd = "xdg-open \"" + absPath + "\"";
+        auto spawnOpen = [](const char* opener, const std::string& path) {
+            pid_t pid = fork();
+            if (pid == 0) {
+                execlp(opener, opener, path.c_str(), (char*)nullptr);
+                _exit(1);
+            }
+        };
+#ifdef __APPLE__
+        spawnOpen("open", absPath);
+#else
+        spawnOpen("xdg-open", absPath);
 #endif
-        system(cmd.c_str());
+#endif
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Export the user manual as an HTML file.\nOpen in a browser and use Print > Save as PDF.");

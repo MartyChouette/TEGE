@@ -1,0 +1,18 @@
+{
+  "port": 7777,
+  "maxPlayers": 16,
+  "serverIP": "127.0.0.1",
+  "syncRate": 0.05,
+  "rateLimit": {
+    "maxPacketsPerSecond": 200.0,
+    "maxBytesPerSecond": 131072.0,
+    "burstPackets": 50.0,
+    "burstBytes": 65536.0
+  },
+  "security": {
+    "maxViolations": 10,
+    "violationWindowSeconds": 10.0,
+    "banSeconds": 30.0,
+    "kickOnViolation": true
+  }
+}
