@@ -1082,7 +1082,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
         <tr><td>Error Handling</td><td><span class="badge badge-full">Good</span></td><td>Vulkan checks, JSON validation, bounds checking</td></tr>
         <tr><td>Memory Management</td><td><span class="badge badge-full">Good</span></td><td>Custom allocators, reserve(), no known leaks</td></tr>
         <tr><td>Test Coverage</td><td><span class="badge badge-basic">Basic</span></td><td>Custom CTest framework: 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests</td></tr>
-        <tr><td>Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~450 lines), 8+ doc files, API docs</td></tr>
+        <tr><td>Documentation</td><td><span class="badge badge-full">Strong</span></td><td>CLAUDE.md (~450 lines), 17+ doc files, API docs</td></tr>
     </tbody>
 </table>
 
@@ -1091,7 +1091,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 <table>
     <thead><tr><th>Area</th><th>Issue</th><th>Severity</th><th>Effort</th></tr></thead>
     <tbody>
-        <tr><td>EditorLayer size</td><td>Single file handles all 32 panels (10,000+ lines)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
+        <tr><td>EditorLayer size</td><td>Single file handles all 32 panels (~38,000 lines)</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
         <tr><td>RenderSystem scope</td><td>Sprites, particles, vegetation, water, debug &mdash; too many responsibilities</td><td><span class="badge badge-stub">Medium</span></td><td>High</td></tr>
         <tr><td>XOR obfuscation</td><td>Asset pack uses trivially breakable XOR</td><td><span class="badge badge-stub">Medium</span></td><td>Medium</td></tr>
         <tr><td>Push constant flags</td><td>32-bit flag field fully allocated</td><td><span class="badge badge-none">Low</span></td><td>Low</td></tr>
@@ -1100,7 +1100,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 
 <h3>Recommended Priority Actions</h3>
 <ol>
-    <li>Add unit testing framework (Catch2 or GoogleTest)</li>
+    <li>Expand unit test coverage &mdash; custom CTest framework exists (4 unit + 4 integration tests); consider adding Catch2 or GoogleTest for richer assertions</li>
     <li>Extract EditorLayer panels into individual classes</li>
     <li>Replace XOR obfuscation with authenticated encryption</li>
     <li>Restrict script #include paths to project directory</li>

@@ -959,13 +959,13 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | **Memory Management** | Good | Custom allocators (Stack/Pool/Linear), `reserve()` on hot-path vectors, no known leaks |
 | **API Consistency** | Good | Consistent naming conventions (Get/Set/Is), ENJIN_API export macro |
 | **Test Coverage** | Basic | Custom CTest framework with 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests (Serializer, DungeonCrawler, SMT, StressTest). No third-party test framework (Catch2/GTest) |
-| **Documentation** | Strong | CLAUDE.md (~450 lines), 8+ doc files, generated API docs, inline tooltips |
+| **Documentation** | Strong | CLAUDE.md (~450 lines), 17+ doc files, generated API docs, inline tooltips |
 
 ### Areas Needing Refactoring
 
 | Area | Issue | Severity | Effort |
 |---|---|---|---|
-| **EditorLayer size** | Single file handles all 32 panels, likely 10,000+ lines | Medium | High -- extract panel classes |
+| **EditorLayer size** | Single file handles all 32 panels, ~38,000 lines | Medium | High -- extract panel classes |
 | **RenderSystem scope** | Handles sprites, particles, vegetation, water, debug viz -- too many responsibilities | Medium | High -- extract sub-renderers |
 | **Script binding files** | 30+ separate ScriptBindings_*.cpp files with similar patterns | Low | Medium -- code generation |
 | **Push constant flags** | 32-bit flag field with bits 0-31 allocated, approaching limit | Low | Low -- expand to 64-bit or use UBO |
@@ -988,18 +988,21 @@ pie title Frame Budget Breakdown (3D, 60fps)
 
 ### Maintenance Burden Estimate
 
-| Component | Files (est.) | Maintenance Level | Notes |
+| Component | Files (actual) | Maintenance Level | Notes |
 |---|---|---|---|
-| Core Layer | ~20 | Low | Stable foundation, rarely changes |
-| Vulkan Renderer | ~30 | Medium | API-dependent, driver compatibility |
-| ECS & Components | ~80+ | Medium | Component count grows with features |
-| Editor | ~40 | High | UI code has high churn, user-facing |
-| Physics (3 backends) | ~20 | Low | Backends are stable, interfaces fixed |
-| Scripting | ~25 | Medium | Bindings grow with each feature |
-| Effects & Procedural | ~40 | Low | Self-contained, rarely touched |
-| Build & Assets | ~15 | Low | Stable pipeline |
-| Platform Stubs | ~10 | Low | Stubs until devkit access |
-| **Total** | **~280+** | **Medium overall** | Modular architecture helps |
+| Core Layer | ~24 | Low | Stable foundation, rarely changes |
+| Vulkan Renderer + RT | ~124 | High | Largest subsystem -- Vulkan, shadows, RT, post-process |
+| ECS & Components | ~62 | Medium | Component count grows with features |
+| Editor | ~67 | High | UI code has high churn, user-facing |
+| Scripting & Visual Script | ~51 | Medium | Bindings grow with each feature |
+| Effects & Procedural | ~68 | Low | Self-contained, rarely touched after creation |
+| Build & Assets | ~43 | Low | Stable pipeline, import/export |
+| GUI & Localization | ~31 | Medium | UI canvas, dialogue, menus, localization |
+| Physics (3 backends) | ~24 | Low | Backends are stable, interfaces fixed |
+| Gameplay & Networking | ~40 | Medium | Save system, quests, LAN multiplayer |
+| Accessibility & Audio | ~23 | Low | Content warnings, miniaudio backend |
+| Other (AI, Animation, Scene, Plugin, Input, Debug) | ~57 | Low | Many small self-contained modules |
+| **Total** | **~614** | **Medium overall** | Modular architecture helps |
 
 ### Recommended Priority Actions
 
