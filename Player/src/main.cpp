@@ -426,6 +426,7 @@ public:
         }
 
         // Shutdown gameplay systems before world is destroyed
+        m_DialogueSystem.Clear();
         m_VisualScriptSystem.Shutdown();
         m_BehaviorTreeSystem.Shutdown();
         m_AISystem.SetEnabled(false);
@@ -604,7 +605,8 @@ public:
         m_FlowerSystem.Update(deltaTime);
 
         // --- Camera (after controllers, which may drive it) ---
-        if (m_CameraController) {
+        // Only update free-fly camera when no game controller is driving it
+        if (m_CameraController && m_CameraController->IsEnabled()) {
             m_CameraController->Update(deltaTime);
         }
 
@@ -752,11 +754,26 @@ public:
             return;
         }
 
-        // Update camera aspect ratio
+        // Update camera aspect ratio — read FOV/near/far from the active game
+        // CameraComponent so the built game matches the editor Game View.
         auto extent = m_Renderer->GetSwapchainExtent();
         if (extent.width > 0 && extent.height > 0 && m_Camera) {
             Enjin::f32 aspect = static_cast<Enjin::f32>(extent.width) / static_cast<Enjin::f32>(extent.height);
-            m_Camera->SetPerspective(45.0f, aspect, 0.1f, 1000.0f);
+            Enjin::f32 fov = 45.0f;
+            Enjin::f32 nearP = 0.1f;
+            Enjin::f32 farP = 1000.0f;
+            if (m_World) {
+                auto activeCam = Enjin::ECS::CameraManager::GetActiveCamera(m_World.get());
+                if (activeCam != Enjin::ECS::INVALID_ENTITY) {
+                    auto* cc = m_World->GetComponent<Enjin::ECS::CameraComponent>(activeCam);
+                    if (cc) {
+                        fov = cc->fieldOfView;
+                        nearP = cc->nearPlane;
+                        farP = cc->farPlane;
+                    }
+                }
+            }
+            m_Camera->SetPerspective(fov, aspect, nearP, farP);
         }
 
         // Detect splitscreen: multiple active cameras with non-default viewports
@@ -1112,6 +1129,21 @@ private:
             if (!cameras.empty()) {
                 m_ControllerSystem.SetGameCameraEntity(cameras[0]);
                 m_FlowerSystem.SetGameCameraEntity(cameras[0]);
+            }
+
+            // Disable the free-fly CameraController when the scene has character
+            // controllers that drive the camera — matches PlayMode behavior.
+            bool hasGameController =
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::FirstPersonController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::ThirdPersonController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::Platformer2DController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::TopDown2DController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::TopDown3DController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::VehicleController>().empty() ||
+                !m_World->GetEntitiesWithComponent<Enjin::ECS::SurfaceAlignedController>().empty();
+            if (hasGameController && m_CameraController) {
+                m_CameraController->SetEnabled(false);
+                ENJIN_LOG_INFO(Player, "Game controller found — free-fly camera disabled");
             }
         }
 
