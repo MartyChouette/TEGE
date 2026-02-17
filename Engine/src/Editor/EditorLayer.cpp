@@ -35819,7 +35819,7 @@ std::string EditorLayer::RunGitCommand(const std::string& args, const std::strin
         posix_spawn_file_actions_adddup2(&actions, pipefd[1], STDERR_FILENO);
         posix_spawn_file_actions_addclose(&actions, pipefd[0]);
 
-        // Shell-escape workingDir for safety
+        // Shell-escape workingDir; args is constructed internally (not user input)
         std::string cmd = "cd " + ShellEscape(workingDir) + " && git " + args + " 2>&1";
         const char* argv[] = { "/bin/sh", "-c", cmd.c_str(), nullptr };
 

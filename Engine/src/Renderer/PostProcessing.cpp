@@ -4394,7 +4394,14 @@ bool PostProcessing::CreateSceneRenderTarget(u32 width, u32 height) {
     vkGetImageMemoryRequirements(device, m_DepthImage, &memReqs);
 
     allocInfo.allocationSize = memReqs.size;
-    allocInfo.memoryTypeIndex = memTypeIndex;
+    // Re-query memory type for depth format (may differ from color image)
+    for (u32 i = 0; i < memProps.memoryTypeCount; i++) {
+        if ((memReqs.memoryTypeBits & (1 << i)) &&
+            (memProps.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
+            allocInfo.memoryTypeIndex = i;
+            break;
+        }
+    }
 
     if (vkAllocateMemory(device, &allocInfo, nullptr, &m_DepthImageMemory) != VK_SUCCESS) {
         ENJIN_LOG_ERROR(Renderer, "Failed to allocate depth image memory");
@@ -4923,8 +4930,8 @@ bool PostProcessing::LoadLUT(const std::string& filepath) {
     }
     vkBindImageMemory(device, m_LUTImage, m_LUTImageMemory, 0);
 
-    // Upload via staging buffer
-    VkDeviceSize imageSize = width * height * 4;
+    // Upload via staging buffer — cast to VkDeviceSize before multiply to prevent int overflow
+    VkDeviceSize imageSize = static_cast<VkDeviceSize>(width) * height * 4;
     VulkanBuffer stagingBuffer(m_Context);
     stagingBuffer.Create(imageSize, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, true);
     stagingBuffer.UploadData(pixels, imageSize);

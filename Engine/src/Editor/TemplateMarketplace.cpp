@@ -1,7 +1,9 @@
 #include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Logging/Log.h"
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 #include <cctype>
 
 namespace Enjin {
@@ -242,34 +244,30 @@ bool TemplateMarketplace::Install(const std::string& templateId) {
         std::filesystem::path dir = std::filesystem::path(m_TemplatesDir) / templateId;
         std::filesystem::create_directories(dir);
 
-        // Write meta.json
-        std::string metaJson = "{\n";
-        metaJson += "  \"id\": \"" + entry->id + "\",\n";
-        metaJson += "  \"name\": \"" + entry->name + "\",\n";
-        metaJson += "  \"description\": \"" + entry->description + "\",\n";
-        metaJson += "  \"category\": \"" + entry->category + "\",\n";
-        metaJson += "  \"author\": \"" + entry->author + "\",\n";
-        metaJson += "  \"accentColor\": [" +
-            std::to_string(entry->accentColor[0]) + ", " +
-            std::to_string(entry->accentColor[1]) + ", " +
-            std::to_string(entry->accentColor[2]) + ", " +
-            std::to_string(entry->accentColor[3]) + "]\n";
-        metaJson += "}\n";
+        // Write meta.json using nlohmann::json to avoid injection via unescaped strings
+        nlohmann::json metaJ;
+        metaJ["id"] = entry->id;
+        metaJ["name"] = entry->name;
+        metaJ["description"] = entry->description;
+        metaJ["category"] = entry->category;
+        metaJ["author"] = entry->author;
+        metaJ["accentColor"] = { entry->accentColor[0], entry->accentColor[1],
+                                  entry->accentColor[2], entry->accentColor[3] };
 
         std::string metaPath = (dir / "meta.json").string();
-        FILE* f = fopen(metaPath.c_str(), "w");
-        if (f) {
-            fwrite(metaJson.data(), 1, metaJson.size(), f);
-            fclose(f);
+        std::ofstream metaOfs(metaPath);
+        if (metaOfs.is_open()) {
+            metaOfs << metaJ.dump(2);
+            metaOfs.close();
         }
 
         // Write minimal scene.enjin
         std::string sceneJson = "{ \"entities\": [] }\n";
         std::string scenePath = (dir / "scene.enjin").string();
-        f = fopen(scenePath.c_str(), "w");
-        if (f) {
-            fwrite(sceneJson.data(), 1, sceneJson.size(), f);
-            fclose(f);
+        std::ofstream sceneOfs(scenePath);
+        if (sceneOfs.is_open()) {
+            sceneOfs << sceneJson;
+            sceneOfs.close();
         }
 
         m_InstalledIds.insert(templateId);
@@ -287,6 +285,13 @@ bool TemplateMarketplace::Uninstall(const std::string& templateId) {
 
     try {
         std::filesystem::path dir = std::filesystem::path(m_TemplatesDir) / templateId;
+        // Validate path stays within templates directory (prevent traversal via templateId)
+        auto canonical = std::filesystem::weakly_canonical(dir);
+        auto baseCanonical = std::filesystem::weakly_canonical(std::filesystem::path(m_TemplatesDir));
+        if (canonical.string().find(baseCanonical.string()) != 0) {
+            ENJIN_LOG_ERROR(Editor, "Marketplace: uninstall path traversal rejected: %s", templateId.c_str());
+            return false;
+        }
         if (std::filesystem::exists(dir)) {
             std::filesystem::remove_all(dir);
         }

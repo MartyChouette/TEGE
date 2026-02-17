@@ -103,12 +103,19 @@ bool VulkanImage::Create(
     m_MipLevels = 1;
     
     CreateImage(width, height, format, tiling, usage, m_MipLevels);
-    
+    if (m_Image == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create image");
+        return false;
+    }
+
     if (!AllocateMemory(properties)) {
         return false;
     }
-    
-    vkBindImageMemory(m_Context->GetDevice(), m_Image, m_Memory, 0);
+
+    if (vkBindImageMemory(m_Context->GetDevice(), m_Image, m_Memory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind image memory");
+        return false;
+    }
     
     if (!CreateImageView()) {
         return false;
@@ -190,15 +197,26 @@ bool VulkanImage::CreateFromData(
         VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT,
         m_MipLevels
     );
-    
+    if (m_Image == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create image from data");
+        vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        return false;
+    }
+
     if (!AllocateMemory(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
         vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
         vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
         return false;
     }
     
-    vkBindImageMemory(m_Context->GetDevice(), m_Image, m_Memory, 0);
-    
+    if (vkBindImageMemory(m_Context->GetDevice(), m_Image, m_Memory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind image memory");
+        vkFreeMemory(m_Context->GetDevice(), stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_Context->GetDevice(), stagingBuffer, nullptr);
+        return false;
+    }
+
     // Transition and copy (would need command buffer - simplified for now)
     // For now, just create the image view
     if (!CreateImageView()) {

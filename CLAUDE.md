@@ -396,6 +396,22 @@ if (result.success) {
 - Sanitize file paths — prevent `..` traversal.
 - Cap allocation sizes from untrusted input.
 
+## Trust Zone Map
+
+The codebase is divided into trust zones documented in `.enjin-boundaries.json`. AI models navigating the codebase should use these zones to gauge risk and enforce appropriate validation. Summary:
+
+| Zone | Risk | What lives here | Key rule |
+|------|------|----------------|----------|
+| **security-critical** | HIGH | Networking, script engine, asset packer/reader, scene serializer, plugin loader, template I/O | Every parameter from outside the engine must be validated. Changes require security review. |
+| **trust-boundary** | HIGH | ScriptBindings\_\*, SceneSerializer, AssetReader, NetworkSerializer, EditorSettings, VisualScriptExecutor | Where untrusted data crosses into trusted state. Validation MUST happen here. |
+| **user-api** | MEDIUM | ECS component headers, ScriptBindings (686+ functions), VS NodeRegistry, InputAction | The scripting contract. Additions safe, removals/renames break user scripts. All script parameters are untrusted. |
+| **editor-internal** | LOW-MED | EditorLayer, all \*Editor panels, CommandPalette, PlayMode, tools | Developer-facing UI. Still processes file paths and JSON — validate those. |
+| **renderer-internals** | LOW | Vulkan/\*, RayTracing/\*, PostProcessing, shadow maps, shaders, GPU culling | No direct user input. Risk is GPU resource leaks and driver crashes. Always check VkResult. |
+| **gameplay-runtime** | LOW-MED | Physics, audio, AI, save/load, dialogue, weather, particles, destructibles | Data from ECS components — moderate trust. Cap iterations, guard divide-by-zero, limit recursion. |
+| **foundation** | LOW | Core math, memory allocators, logging, platform abstraction | Shared by everything. Widest blast radius. No untrusted input arrives directly. |
+
+When modifying files, check which zone they belong to and follow the zone's rules from `.enjin-boundaries.json`.
+
 ## Current Feature Status
 
 The engine has 150+ completed features across these categories. See `docs/USER_MANUAL.md` for component details.

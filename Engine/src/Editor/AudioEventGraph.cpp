@@ -799,6 +799,13 @@ void AudioEventGraphRuntime::Update(f32 deltaTime) {
 void AudioEventGraphRuntime::ExecuteFromNode(u32 nodeId) {
     if (!m_Graph || !m_Audio) return;
 
+    // Guard against infinite recursion on cyclic graphs
+    static constexpr u32 kMaxExecutionDepth = 16;
+    static thread_local u32 s_ExecutionDepth = 0;
+    if (s_ExecutionDepth >= kMaxExecutionDepth) return;
+    s_ExecutionDepth++;
+    struct DepthGuard { ~DepthGuard() { s_ExecutionDepth--; } } depthGuard;
+
     // Walk forward from trigger node through connected nodes
     std::vector<u32> connected = GetConnectedNodes(nodeId);
     for (u32 connId : connected) {

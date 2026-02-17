@@ -57,6 +57,7 @@ struct DestructionEvent {
     Math::Vector3 impactDirection;
     f32 impactForce;
     f32 chainDamage = 1.0f;
+    u32 chainDepth = 0;  // Track chain propagation depth to prevent infinite loops
 };
 
 // Manages destructible entity fracturing and debris

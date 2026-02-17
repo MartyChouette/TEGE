@@ -237,6 +237,15 @@ bool TemplateCreator::DeleteTemplate(const std::string& templatesDir, const std:
     if (templateId.empty()) return false;
 
     std::filesystem::path dir = std::filesystem::path(templatesDir) / templateId;
+
+    // Validate path stays within templates directory (prevent traversal via templateId)
+    auto canonical = std::filesystem::weakly_canonical(dir);
+    auto baseCanonical = std::filesystem::weakly_canonical(std::filesystem::path(templatesDir));
+    if (canonical.string().find(baseCanonical.string()) != 0) {
+        ENJIN_LOG_ERROR(Editor, "TemplateCreator: path traversal rejected — %s", templateId.c_str());
+        return false;
+    }
+
     if (!std::filesystem::exists(dir) || !std::filesystem::is_directory(dir)) {
         ENJIN_LOG_WARN(Editor, "TemplateCreator: template directory not found — %s", dir.string().c_str());
         return false;

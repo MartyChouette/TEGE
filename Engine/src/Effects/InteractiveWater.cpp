@@ -28,6 +28,7 @@ void InteractiveWaterSystem::Initialize(InteractiveWaterComponent& water) {
 // ============================================================================
 
 f32 InteractiveWaterSystem::GetCellSize(const InteractiveWaterComponent& water) const {
+    if (water.gridResolution <= 1) return water.gridSize;
     return water.gridSize / static_cast<f32>(water.gridResolution - 1);
 }
 

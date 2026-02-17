@@ -198,8 +198,10 @@ void DestructibleSystem::ProcessDestructionQueue() {
                     break;
             }
 
-            // Add all fragments to active debris
+            // Add all fragments to active debris (capped to prevent unbounded growth)
+            static constexpr usize kMaxActiveDebris = 4096;
             for (auto& frag : fragments) {
+                if (m_ActiveDebris.size() >= kMaxActiveDebris) break;
                 m_ActiveDebris.push_back(std::move(frag));
             }
         }
@@ -594,9 +596,13 @@ void DestructibleSystem::UpdateDebris(f32 deltaTime) {
 void DestructibleSystem::CheckChainDestruction(const DestructionEvent& event) {
     if (!m_World) return;
 
+    // Limit chain propagation depth to prevent infinite cascades
+    static constexpr u32 kMaxChainDepth = 8;
+    if (event.chainDepth >= kMaxChainDepth) return;
+
     FractureConfig config = GetFractureConfig(event.entity);
     f32 radiusSq = config.chainRadius * config.chainRadius;
-    f32 chainDamage = event.chainDamage * config.chainDamageFalloff;
+    f32 chainDamage = event.chainDamage * std::clamp(config.chainDamageFalloff, 0.0f, 0.99f);
 
     // Don't propagate if damage is negligible
     if (chainDamage < 0.01f) return;
@@ -633,6 +639,7 @@ void DestructibleSystem::CheckChainDestruction(const DestructionEvent& event) {
 
             chainEvent.impactForce = config.explosionForce * chainDamage;
             chainEvent.chainDamage = chainDamage;
+            chainEvent.chainDepth = event.chainDepth + 1;
 
             // Apply chain damage to health
             if (!otherDc->destroyOnHit) {

@@ -1,0 +1,184 @@
+{
+  "$schema": "Enjin Engine trust/security zone map for AI-assisted development",
+  "$purpose": "Machine-readable boundary annotations so AI models can gauge risk, enforce validation, and avoid accidental security regressions when navigating the codebase.",
+
+  "zones": {
+    "security-critical": {
+      "description": "Handles untrusted input, network data, user-supplied file paths, script execution, or DLL loading. Every parameter must be validated. Changes here require security review.",
+      "paths": [
+        "Engine/*/Enjin/Build/AssetPacker.*",
+        "Engine/*/Enjin/Build/AssetReader.*",
+        "Engine/*/Enjin/Build/BuildPipeline.*",
+        "Engine/*/Enjin/Build/HTML5Exporter.*",
+        "Engine/*/Enjin/Scene/SceneSerializer.*",
+        "Engine/*/Enjin/Assets/SceneImporter.*",
+        "Engine/*/Enjin/Assets/AssetMetadata.*",
+        "Engine/*/Enjin/Networking/*",
+        "Engine/*/Enjin/Scripting/ScriptEngine.*",
+        "Engine/*/Enjin/Scripting/ScriptBindings.*",
+        "Engine/src/Scripting/ScriptBindings_*",
+        "Engine/*/Enjin/VisualScript/VisualScriptExecutor.*",
+        "Engine/*/Enjin/Plugin/PluginSystem.*",
+        "Engine/*/Enjin/Plugin/HotReload.*",
+        "Engine/*/Enjin/Editor/EditorSettings.*",
+        "Engine/*/Enjin/Editor/TemplateCreator.*",
+        "Engine/*/Enjin/Editor/TemplateMarketplace.*",
+        "Engine/*/Enjin/GUI/DialogueAsset.*"
+      ]
+    },
+
+    "trust-boundary": {
+      "description": "Transition points where untrusted data crosses into trusted engine state. Input validation, bounds checking, and sanitization MUST happen here. If adding a new boundary, follow the validation patterns in existing ones.",
+      "paths": [
+        "Engine/src/Scripting/ScriptBindings_*",
+        "Engine/src/Scene/SceneSerializer.cpp",
+        "Engine/src/Build/AssetReader.cpp",
+        "Engine/src/Assets/SceneImporter.cpp",
+        "Engine/src/Networking/NetworkSerializer.cpp",
+        "Engine/src/Networking/NetworkSecurity.cpp",
+        "Engine/src/Editor/EditorSettings.cpp",
+        "Engine/src/VisualScript/VisualScriptExecutor.cpp",
+        "Engine/src/Plugin/PluginSystem.cpp"
+      ],
+      "rules": [
+        "Validate all integer ranges before casting enums",
+        "Bounds-check array indices and allocation sizes from deserialized data",
+        "Sanitize file paths — reject or neutralize '..' traversal",
+        "Cap recursion/iteration depth to prevent stack overflow or DoS",
+        "Check stream/file I/O return values (tellg, tellp, read, write)"
+      ]
+    },
+
+    "user-api": {
+      "description": "Public API surface exposed to game developers via AngelScript bindings and Visual Script nodes. Changes here affect the scripting contract — additions are safe, removals/renames break user scripts.",
+      "paths": [
+        "Engine/include/Enjin/ECS/Components/*",
+        "Engine/include/Enjin/Input/InputAction.*",
+        "Engine/src/Scripting/ScriptBindings_*",
+        "Engine/include/Enjin/VisualScript/NodeDefinition.*",
+        "Engine/include/Enjin/VisualScript/NodeRegistry.*",
+        "Engine/include/Enjin/Scripting/TegeBehavior.*"
+      ],
+      "rules": [
+        "New bindings: add freely; removals/renames break existing game scripts",
+        "All parameters from scripts are untrusted — validate at the binding layer",
+        "Document new bindings in docs/SCRIPTING_API.md"
+      ]
+    },
+
+    "editor-internal": {
+      "description": "Editor UI code (ImGui panels, tools, dialogs). Only the engine developer interacts with this — not exposed to game scripts or end-user players. Lower risk than security-critical, but still processes file paths and JSON configs.",
+      "paths": [
+        "Engine/*/Enjin/Editor/EditorLayer.*",
+        "Engine/*/Enjin/Editor/ScenePicker.*",
+        "Engine/*/Enjin/Editor/SceneLock.*",
+        "Engine/*/Enjin/Editor/TerrainBrush.*",
+        "Engine/*/Enjin/Editor/VectorDrawingEditor.*",
+        "Engine/*/Enjin/Editor/PixelEditor.*",
+        "Engine/*/Enjin/Editor/AnimationEditor.*",
+        "Engine/*/Enjin/Editor/BehaviorTreeEditor.*",
+        "Engine/*/Enjin/Editor/DialogueEditor.*",
+        "Engine/*/Enjin/Editor/VisualScriptEditor.*",
+        "Engine/*/Enjin/Editor/ParticleEditor.*",
+        "Engine/*/Enjin/Editor/ShaderGraphEditor.*",
+        "Engine/*/Enjin/Editor/AudioEventGraphEditor.*",
+        "Engine/*/Enjin/Editor/ProceduralGraphEditor.*",
+        "Engine/*/Enjin/Editor/TimelineEditor.*",
+        "Engine/*/Enjin/Editor/CommandPalette.*",
+        "Engine/*/Enjin/Editor/FeedbackSystem.*",
+        "Engine/*/Enjin/Editor/NodeGraph.*",
+        "Engine/*/Enjin/Editor/PlayMode.*",
+        "Engine/*/Enjin/Editor/PlayModeDiff.*",
+        "Editor/src/main.cpp"
+      ]
+    },
+
+    "renderer-internals": {
+      "description": "Low-level Vulkan/GPU code. No direct user input reaches here — data arrives pre-validated from ECS components. Risk is GPU resource leaks, driver crashes from malformed Vulkan calls, or memory corruption from bad buffer math.",
+      "paths": [
+        "Engine/*/Enjin/Renderer/Vulkan/*",
+        "Engine/*/Enjin/Renderer/RayTracing/*",
+        "Engine/*/Enjin/Renderer/RenderSystem.*",
+        "Engine/*/Enjin/Renderer/PostProcessing.*",
+        "Engine/*/Enjin/Renderer/ShadowMap.*",
+        "Engine/*/Enjin/Renderer/PointLightShadowMap.*",
+        "Engine/*/Enjin/Renderer/SpotLightShadowMap.*",
+        "Engine/*/Enjin/Renderer/OITManager.*",
+        "Engine/*/Enjin/Renderer/GPUDriven/*",
+        "Engine/*/Enjin/Effects/SpriteTextureAtlas.*",
+        "Engine/*/Enjin/Effects/SpriteBatchRenderer.*",
+        "Engine/*/Enjin/Effects/ParticleRenderer.*",
+        "Engine/*/Enjin/Effects/GrassRenderer.*",
+        "Engine/shaders/*"
+      ],
+      "rules": [
+        "Always check VkResult return values",
+        "Cast to VkDeviceSize before multiplying dimensions for buffer sizes",
+        "Verify memory type index compatibility for each image/buffer format",
+        "Reset descriptor cache state at render pass boundaries"
+      ]
+    },
+
+    "gameplay-runtime": {
+      "description": "Runtime gameplay systems (physics, audio, AI, save/load, dialogue, quests). Data comes from ECS components set up by the editor or scripts. Moderate trust — values should be in reasonable ranges but aren't adversarial.",
+      "paths": [
+        "Engine/*/Enjin/Physics/*",
+        "Engine/*/Enjin/Audio/*",
+        "Engine/*/Enjin/AI/*",
+        "Engine/*/Enjin/Gameplay/*",
+        "Engine/*/Enjin/GUI/UISystem.*",
+        "Engine/*/Enjin/GUI/DialogueTree.*",
+        "Engine/*/Enjin/GUI/Localization.*",
+        "Engine/*/Enjin/Effects/Weather.*",
+        "Engine/*/Enjin/Effects/Destructible.*",
+        "Engine/*/Enjin/Effects/InteractiveWater.*",
+        "Engine/*/Enjin/Effects/Particle*",
+        "Engine/*/Enjin/Procedural/*",
+        "Engine/*/Enjin/ECS/Systems/*"
+      ],
+      "rules": [
+        "Cap iteration counts and allocation sizes (e.g., max debris, max particles)",
+        "Guard against divide-by-zero in resolution/grid calculations",
+        "Limit recursion depth for chain reactions and graph execution"
+      ]
+    },
+
+    "foundation": {
+      "description": "Core math, memory, logging, platform abstraction. Shared by everything. Changes here have the widest blast radius. No untrusted input arrives directly.",
+      "paths": [
+        "Core/*/Enjin/Core/*",
+        "Core/*/Enjin/Math/*",
+        "Core/*/Enjin/Memory/*",
+        "Core/*/Enjin/Logging/*",
+        "Core/*/Enjin/Platform/*"
+      ]
+    }
+  },
+
+  "validation-checklist": {
+    "deserialization": [
+      "Check .contains() before accessing JSON keys",
+      "Validate enum integer values against valid ranges before casting",
+      "Clamp numeric values to reasonable min/max",
+      "Cap array/vector sizes from untrusted sources",
+      "Return safe defaults for malformed data"
+    ],
+    "file-paths": [
+      "Use std::filesystem::weakly_canonical() to resolve path before comparison",
+      "Verify resolved path starts with expected base directory",
+      "Reject paths containing '..' after normalization",
+      "Sanitize user-provided filenames (strip shell metacharacters)"
+    ],
+    "vulkan-resources": [
+      "Check VkResult after every vkCreate*/vkAllocate*/vkBind* call",
+      "Re-query memory type index per format (don't reuse across different formats)",
+      "Use VkDeviceSize for all size arithmetic to prevent u32 overflow",
+      "Clean up partially-created resources on failure (don't leak VkImage/VkDeviceMemory)"
+    ],
+    "recursion-and-loops": [
+      "Add depth counter to all recursive graph/tree traversals",
+      "Cap maximum iteration count for unbounded loops over untrusted data",
+      "Use thread_local depth guards for re-entrant execution paths"
+    ]
+  }
+}

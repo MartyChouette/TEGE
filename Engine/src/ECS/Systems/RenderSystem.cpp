@@ -3555,7 +3555,8 @@ void RenderSystem::RenderEntity(Entity entity) {
         if (material->uvQuantize) pushConstants.flags |= (1 << 12);
         if (material->gouraudOnly) pushConstants.flags |= (1 << 13);
         pushConstants.flags |= (static_cast<i32>(material->shadowDitherMode & 0x3) << 14);
-        pushConstants.flags |= (static_cast<i32>(material->vertexSnapResolution) << 24);
+        pushConstants.flags |= (static_cast<i32>((material->vertexSnapResolution / 8) & 0x1F) << 24);
+        pushConstants.flags |= (static_cast<i32>(material->shadowDitherPattern & 0x7) << 29);
         pushConstants.parallaxScale = material->parallaxScale;
         // Artistic surface params (reused push constant slots)
         pushConstants.surfaceParam1 = material->reflectivity;
@@ -5490,7 +5491,10 @@ void RenderSystem::CreateRTDummyResources() {
         imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-        vkCreateImage(device, &imgInfo, nullptr, &m_RTDummyImage);
+        if (vkCreateImage(device, &imgInfo, nullptr, &m_RTDummyImage) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create RT dummy image");
+            return;
+        }
 
         VkMemoryRequirements memReqs;
         vkGetImageMemoryRequirements(device, m_RTDummyImage, &memReqs);
@@ -5498,8 +5502,14 @@ void RenderSystem::CreateRTDummyResources() {
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memReqs.size;
         allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyImageMemory);
-        vkBindImageMemory(device, m_RTDummyImage, m_RTDummyImageMemory, 0);
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyImageMemory) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT dummy image memory");
+            return;
+        }
+        if (vkBindImageMemory(device, m_RTDummyImage, m_RTDummyImageMemory, 0) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to bind RT dummy image memory");
+            return;
+        }
 
         VkImageViewCreateInfo viewInfo{};
         viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -5507,7 +5517,10 @@ void RenderSystem::CreateRTDummyResources() {
         viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
         viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
         viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-        vkCreateImageView(device, &viewInfo, nullptr, &m_RTDummyImageView);
+        if (vkCreateImageView(device, &viewInfo, nullptr, &m_RTDummyImageView) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create RT dummy image view");
+            return;
+        }
     }
 
     // Create sampler for combined image sampler bindings
@@ -5519,7 +5532,10 @@ void RenderSystem::CreateRTDummyResources() {
         samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        vkCreateSampler(device, &samplerInfo, nullptr, &m_RTDummySampler);
+        if (vkCreateSampler(device, &samplerInfo, nullptr, &m_RTDummySampler) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create RT dummy sampler");
+            return;
+        }
     }
 
     // Create dummy buffer for storage buffer bindings (256 bytes)
@@ -5529,7 +5545,10 @@ void RenderSystem::CreateRTDummyResources() {
         bufInfo.size = 256;
         bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
         bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTDummyBuffer);
+        if (vkCreateBuffer(device, &bufInfo, nullptr, &m_RTDummyBuffer) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to create RT dummy buffer");
+            return;
+        }
 
         VkMemoryRequirements memReqs;
         vkGetBufferMemoryRequirements(device, m_RTDummyBuffer, &memReqs);
@@ -5537,8 +5556,14 @@ void RenderSystem::CreateRTDummyResources() {
         allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocInfo.allocationSize = memReqs.size;
         allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyBufferMemory);
-        vkBindBufferMemory(device, m_RTDummyBuffer, m_RTDummyBufferMemory, 0);
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &m_RTDummyBufferMemory) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT dummy buffer memory");
+            return;
+        }
+        if (vkBindBufferMemory(device, m_RTDummyBuffer, m_RTDummyBufferMemory, 0) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "Failed to bind RT dummy buffer memory");
+            return;
+        }
     }
 
     // Create RT light UBOs (per frame in flight, host visible + coherent, persistently mapped)

@@ -73,6 +73,10 @@ bool AssetPacker::AddFile(const std::string& virtualPath, const std::string& dis
     }
 
     auto fileSize = input.tellg();
+    if (fileSize < 0) {
+        ENJIN_LOG_ERROR(Build, "Cannot determine file size: %s", diskPath.c_str());
+        return false;
+    }
     input.seekg(0, std::ios::beg);
 
     std::vector<u8> fileData(static_cast<usize>(fileSize));
@@ -97,7 +101,12 @@ bool AssetPacker::AddData(const std::string& virtualPath, const void* data, usiz
     // Record entry
     PakIndexEntry entry;
     entry.virtualPath = virtualPath;
-    entry.dataOffset = static_cast<u64>(m_File.tellp());
+    auto pos = m_File.tellp();
+    if (pos < 0) {
+        ENJIN_LOG_ERROR(Build, "Cannot determine write position for: %s", virtualPath.c_str());
+        return false;
+    }
+    entry.dataOffset = static_cast<u64>(pos);
     entry.compressedSize = packed.size();
     entry.originalSize = size;
     entry.crc32 = crc;

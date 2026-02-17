@@ -437,8 +437,11 @@ bool EditorSettings::Load(const std::string& path) {
         file >> j;
         file.close();
 
-        if (j.contains("theme")) theme = static_cast<EditorTheme>(j["theme"].get<u32>());
-        if (j.contains("uiScale")) uiScale = j["uiScale"].get<f32>();
+        if (j.contains("theme")) {
+            u32 themeVal = j["theme"].get<u32>();
+            if (themeVal <= 10) theme = static_cast<EditorTheme>(themeVal);
+        }
+        if (j.contains("uiScale")) uiScale = std::clamp(j["uiScale"].get<f32>(), 0.5f, 3.0f);
 
         // Accent colors
         if (j.contains("accentColors") && j["accentColors"].is_object()) {
