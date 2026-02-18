@@ -986,7 +986,10 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         if (action == "resume") {
             m_GameMenu.HideAll();
             m_PlayMode.Resume();
-            if (m_FocusMode) Input::SetMouseCaptured(true);
+            if (m_FocusMode || SceneHasMouseLookController()) {
+                m_GameViewMouseCaptured = !m_FocusMode;
+                Input::SetMouseCaptured(true);
+            }
         } else if (action == "options") {
             m_GameMenu.ShowScreen(GUI::MenuScreen::Options);
         } else if (action == "how_to_play") {
@@ -1488,24 +1491,24 @@ void EditorLayer::Update(f32 deltaTime) {
         }
     }
     if (Input::IsKeyPressed(KeyCode::Escape)) {
-        if (m_GameViewMouseCaptured || (m_FocusMode && Input::IsMouseCaptured())) {
-            // First ESC: release mouse capture so cursor is visible for menu
-            m_GameViewMouseCaptured = false;
-            Input::SetMouseCaptured(false);
-        } else if (m_GameMenu.IsMenuOpen()) {
-            // Menu is open: close it and resume the game
+        if (m_GameMenu.IsMenuOpen()) {
+            // Menu open: close it, resume, recapture if needed
             m_GameMenu.HideAll();
             m_PlayMode.Resume();
-            if (m_FocusMode) Input::SetMouseCaptured(true);
+            if (m_FocusMode || SceneHasMouseLookController()) {
+                m_GameViewMouseCaptured = !m_FocusMode;
+                Input::SetMouseCaptured(true);
+            }
         } else if (m_PlayMode.IsPlaying()) {
-            // Playing (focus or editor): open pause menu and pause game
+            // Playing: single-press pause — release mouse + open menu
+            m_GameViewMouseCaptured = false;
+            Input::SetMouseCaptured(false);
             m_GameMenu.ShowScreen(GUI::MenuScreen::PauseMenu);
             m_PlayMode.Pause();
-            if (m_FocusMode) Input::SetMouseCaptured(false);
-        } else if (m_PlayMode.IsPaused() && !m_GameMenu.IsMenuOpen()) {
-            // Paused without menu (fallback): stop play mode
+        } else if (m_PlayMode.IsPaused()) {
+            // Paused without menu: stop play mode
             m_PlayMode.Stop();
-            ClearSelection(); // Entities have new IDs after scene restore
+            ClearSelection();
             m_PrePlayRenderSettings.ApplyToRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
         }
@@ -4167,9 +4170,6 @@ void EditorLayer::DrawMenuBar() {
                 StartPlayMode();
                 if (m_EditorSettings.autoFocusMode) {
                     m_FocusMode = true;
-                    Input::SetMouseCaptured(true);
-                } else if (m_EditorSettings.lockCursorOnPlay) {
-                    m_GameViewMouseCaptured = true;
                     Input::SetMouseCaptured(true);
                 }
             }
@@ -8714,12 +8714,7 @@ void EditorLayer::DrawEditorSettingsPanel() {
                 ImGui::SetTooltip("Automatically enter fullscreen focus mode when pressing Play");
             }
 
-            if (ImGui::Checkbox("Lock Cursor on Play", &m_EditorSettings.lockCursorOnPlay)) {
-                settingsChanged = true;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Capture and hide the mouse cursor when entering play mode");
-            }
+
 
             ImGui::TreePop();
         }
@@ -10384,9 +10379,6 @@ void EditorLayer::DrawGameViewPanel() {
             if (m_EditorSettings.autoFocusMode) {
                 m_FocusMode = true;
                 Input::SetMouseCaptured(true);
-            } else if (m_EditorSettings.lockCursorOnPlay) {
-                m_GameViewMouseCaptured = true;
-                Input::SetMouseCaptured(true);
             }
         }
     }
@@ -10644,7 +10636,7 @@ void EditorLayer::DrawGameViewPanel() {
             // Interaction hint during play mode (centered near bottom of preview)
             if (isPlaying && SceneHasMouseLookController()) {
                 const char* hintText = m_GameViewMouseCaptured
-                    ? "Press ESC to release cursor"
+                    ? "Press ESC to pause"
                     : "Click to capture mouse";
                 ImVec2 hintSize = ImGui::CalcTextSize(hintText);
                 ImVec2 hintPos((p0.x + p1.x - hintSize.x) * 0.5f, p1.y - 40);

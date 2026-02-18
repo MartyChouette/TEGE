@@ -106,7 +106,6 @@ struct EditorSettings {
 
     // Play Mode
     bool autoFocusMode = false;  // Auto-enter focus mode when pressing Play
-    bool lockCursorOnPlay = true; // Lock/capture cursor when entering play mode
 
     // Performance / Frame Rate
     FrameRateLimit editorFrameRateLimit = FrameRateLimit::FPS60;

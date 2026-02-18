@@ -338,7 +338,6 @@ bool EditorSettings::Save(const std::string& path) const {
 
         // Play Mode
         j["autoFocusMode"] = autoFocusMode;
-        j["lockCursorOnPlay"] = lockCursorOnPlay;
 
         // Performance / Frame Rate
         j["editorFrameRateLimit"] = static_cast<u32>(editorFrameRateLimit);
@@ -481,7 +480,6 @@ bool EditorSettings::Load(const std::string& path) {
 
         // Play Mode
         if (j.contains("autoFocusMode")) autoFocusMode = j["autoFocusMode"].get<bool>();
-        if (j.contains("lockCursorOnPlay")) lockCursorOnPlay = j["lockCursorOnPlay"].get<bool>();
 
         // Performance / Frame Rate
         if (j.contains("editorFrameRateLimit")) {
