@@ -145,6 +145,16 @@ bool ScriptEngine::CompileScript(const std::string& path)
         return false;
     }
 
+    // Validate file path: reject directory traversal and verify it's a .as file
+    {
+        auto normalized = std::filesystem::path(path).lexically_normal().string();
+        if (normalized.find("..") != std::string::npos) {
+            m_LastError = "Script path contains directory traversal";
+            ENJIN_LOG_ERROR(Script, "%s: %s", m_LastError.c_str(), path.c_str());
+            return false;
+        }
+    }
+
     // Derive the module name from the filename (strip directory and extension)
     std::filesystem::path fsPath(path);
     std::string moduleName = fsPath.stem().string();
@@ -212,6 +222,23 @@ bool ScriptEngine::CompileScriptFromMemory(const std::string& moduleName,
 {
     if (!m_Engine) {
         m_LastError = "ScriptEngine not initialized";
+        ENJIN_LOG_ERROR(Script, "%s", m_LastError.c_str());
+        return false;
+    }
+
+    // Reject excessively large in-memory scripts (16 MB limit)
+    static constexpr usize MAX_SOURCE_SIZE = 16 * 1024 * 1024;
+    if (source.size() > MAX_SOURCE_SIZE) {
+        m_LastError = "Script source exceeds maximum size limit";
+        ENJIN_LOG_ERROR(Script, "%s (%u bytes, max %u)",
+                        m_LastError.c_str(), static_cast<u32>(source.size()),
+                        static_cast<u32>(MAX_SOURCE_SIZE));
+        return false;
+    }
+
+    // Reject empty or excessively long module names
+    if (moduleName.empty() || moduleName.size() > 256) {
+        m_LastError = "Invalid module name (empty or too long)";
         ENJIN_LOG_ERROR(Script, "%s", m_LastError.c_str());
         return false;
     }
@@ -1047,7 +1074,8 @@ void ScriptEngine::MessageCallback(const asSMessageInfo* msg, void* param)
     } else {
         oss << "<unknown>";
     }
-    oss << " (" << msg->row << ", " << msg->col << "): " << msg->message;
+    oss << " (" << msg->row << ", " << msg->col << "): "
+        << (msg->message ? msg->message : "<no message>");
 
     std::string formatted = oss.str();
 

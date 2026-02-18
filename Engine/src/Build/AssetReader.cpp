@@ -125,6 +125,12 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
         if (!readVal(&entry.originalSize, sizeof(entry.originalSize))) break;
         if (!readVal(&entry.crc32, sizeof(entry.crc32))) break;
 
+        // Validate that entry data region fits within the file
+        if (entry.offset > fileSize || entry.compressedSize > fileSize - entry.offset) {
+            ENJIN_LOG_WARN(Build, "Entry '%s' data region exceeds file bounds, skipping", vpath.c_str());
+            continue;
+        }
+
         m_Index[vpath] = entry;
     }
 
@@ -170,6 +176,18 @@ std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
     std::ifstream file(m_PakPath, std::ios::binary);
     if (!file.is_open()) {
         ENJIN_LOG_ERROR(Build, "Cannot reopen pack file: %s", m_PakPath.c_str());
+        return {};
+    }
+
+    // Verify offset + size won't exceed file bounds
+    file.seekg(0, std::ios::end);
+    u64 fileSz = static_cast<u64>(file.tellg());
+    if (entry.offset > fileSz || entry.compressedSize > fileSz - entry.offset) {
+        ENJIN_LOG_ERROR(Build, "Entry '%s' data region [%llu + %llu] exceeds file size %llu",
+                        virtualPath.c_str(),
+                        static_cast<unsigned long long>(entry.offset),
+                        static_cast<unsigned long long>(entry.compressedSize),
+                        static_cast<unsigned long long>(fileSz));
         return {};
     }
 

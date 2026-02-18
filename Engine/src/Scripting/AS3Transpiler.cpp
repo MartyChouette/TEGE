@@ -394,11 +394,17 @@ std::string AS3Transpiler::StripComments(const std::string& source,
         }
         else if (i + 1 < source.size() && source[i] == '/' && source[i + 1] == '*') {
             std::string comment;
+            comment.reserve(256);
             while (i + 1 < source.size() && !(source[i] == '*' && source[i + 1] == '/')) {
                 if (source[i] == '\n') { line++; result += '\n'; }
                 comment += source[i++];
             }
-            if (i + 1 < source.size()) { comment += "*/"; i += 2; }
+            if (i + 1 < source.size()) {
+                comment += "*/"; i += 2;
+            } else {
+                // Unterminated block comment -- consume remaining character
+                if (i < source.size()) { comment += source[i++]; }
+            }
             comments.push_back({line, comment});
         }
         else {
@@ -710,6 +716,15 @@ TranspileResult AS3Transpiler::Transpile(const std::string& asSource,
         return result;
     }
 
+    // Reject excessively large source input to prevent pathological regex performance
+    static constexpr usize MAX_TRANSPILE_SOURCE_SIZE = 4 * 1024 * 1024; // 4 MB
+    if (asSource.size() > MAX_TRANSPILE_SOURCE_SIZE) {
+        result.errorMessage = "Source code exceeds maximum transpiler input size (4 MB)";
+        ENJIN_LOG_ERROR(Script, "%s (%u bytes)", result.errorMessage.c_str(),
+                        static_cast<u32>(asSource.size()));
+        return result;
+    }
+
     ASVersion version = config.sourceVersion;
     if (version == ASVersion::Auto) version = DetectVersion(asSource);
 
@@ -764,12 +779,34 @@ TranspileResult AS3Transpiler::Transpile(const std::string& asSource,
 
 TranspileResult AS3Transpiler::TranspileFile(const std::string& inputPath,
                                               const TranspilerConfig& config) {
+    // Validate file path: reject directory traversal
+    {
+        auto normalized = std::filesystem::path(inputPath).lexically_normal().string();
+        if (normalized.find("..") != std::string::npos) {
+            TranspileResult result;
+            result.errorMessage = "File path contains directory traversal";
+            return result;
+        }
+    }
+
     std::ifstream file(inputPath);
     if (!file.is_open()) {
         TranspileResult result;
         result.errorMessage = "Cannot open file: " + inputPath;
         return result;
     }
+
+    // Check file size before reading to prevent OOM on huge files
+    file.seekg(0, std::ios::end);
+    auto fileSize = file.tellg();
+    file.seekg(0, std::ios::beg);
+    static constexpr std::streamoff MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
+    if (fileSize < 0 || fileSize > MAX_FILE_SIZE) {
+        TranspileResult result;
+        result.errorMessage = "File too large for transpiler (max 4 MB)";
+        return result;
+    }
+
     std::ostringstream ss;
     ss << file.rdbuf();
     return Transpile(ss.str(), config);
@@ -777,6 +814,15 @@ TranspileResult AS3Transpiler::TranspileFile(const std::string& inputPath,
 
 bool AS3Transpiler::TranspileToFile(const std::string& inputPath, const std::string& outputPath,
                                      const TranspilerConfig& config) {
+    // Validate output path: reject directory traversal
+    {
+        auto normalized = std::filesystem::path(outputPath).lexically_normal().string();
+        if (normalized.find("..") != std::string::npos) {
+            ENJIN_LOG_ERROR(Script, "TranspileToFile: output path contains directory traversal");
+            return false;
+        }
+    }
+
     auto result = TranspileFile(inputPath, config);
     if (!result.success) return false;
     std::ofstream out(outputPath);

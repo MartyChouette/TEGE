@@ -439,9 +439,10 @@ BSPGenerator::Result BSPGenerator::Generate(const Params& params) {
 DiamondSquare::Result DiamondSquare::Generate(const Params& params) {
     Result result;
 
-    // Validate size is 2^n + 1
+    // Validate size is 2^n + 1, cap to prevent excessive allocation
     u32 size = params.size;
     if (size < 3) size = 3;
+    if (size > 4097) size = 4097; // max 4096+1 = 2^12+1
 
     // Round up to nearest 2^n + 1
     u32 power = 1;
@@ -897,9 +898,13 @@ VoronoiGenerator::Result VoronoiGenerator::Generate(const Params& params) {
 
     LCGRandom rng(params.seed);
 
+    // Cap seed count to prevent excessive allocation
+    u32 numSeeds = params.numSeeds;
+    if (numSeeds > 10000) numSeeds = 10000;
+
     // Place random seed points
-    result.seedPoints.reserve(params.numSeeds);
-    for (u32 i = 0; i < params.numSeeds; ++i) {
+    result.seedPoints.reserve(numSeeds);
+    for (u32 i = 0; i < numSeeds; ++i) {
         f32 sx = rng.Float() * static_cast<f32>(params.width);
         f32 sy = rng.Float() * static_cast<f32>(params.height);
         result.seedPoints.push_back(Math::Vector2(sx, sy));
@@ -916,7 +921,7 @@ VoronoiGenerator::Result VoronoiGenerator::Generate(const Params& params) {
             f32 bestDist = Math::FLOAT_MAX;
             u32 bestSeed = 0;
 
-            for (u32 s = 0; s < params.numSeeds; ++s) {
+            for (u32 s = 0; s < numSeeds; ++s) {
                 f32 dx = px - result.seedPoints[s].x;
                 f32 dy = py - result.seedPoints[s].y;
 

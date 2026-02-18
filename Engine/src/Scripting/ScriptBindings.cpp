@@ -386,7 +386,7 @@ struct TransformProxy {
     }
 
     void SetRotation(const Vector3& eulerDeg) {
-        if (!s_BindingsWorld) return;
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return;
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (t) {
             t->rotation = Quaternion::FromEuler(
@@ -395,33 +395,33 @@ struct TransformProxy {
     }
 
     Vector3 GetScale() const {
-        if (!s_BindingsWorld) return Vector3(1.0f);
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3(1.0f);
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         return t ? t->scale : Vector3(1.0f);
     }
 
     void SetScale(const Vector3& s) {
-        if (!s_BindingsWorld) return;
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return;
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (t) t->scale = s;
     }
 
     Vector3 GetForward() const {
-        if (!s_BindingsWorld) return Vector3(0, 0, -1);
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3(0, 0, -1);
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (!t) return Vector3(0, 0, -1);
         return t->rotation.Rotate(Vector3(0, 0, -1));
     }
 
     Vector3 GetRight() const {
-        if (!s_BindingsWorld) return Vector3(1, 0, 0);
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3(1, 0, 0);
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (!t) return Vector3(1, 0, 0);
         return t->rotation.Rotate(Vector3(1, 0, 0));
     }
 
     Vector3 GetUp() const {
-        if (!s_BindingsWorld) return Vector3(0, 1, 0);
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3(0, 1, 0);
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (!t) return Vector3(0, 1, 0);
         return t->rotation.Rotate(Vector3(0, 1, 0));
@@ -457,15 +457,30 @@ static u32 Time_GetFrameCount()     { return s_FrameCount; }
 // DEBUG FUNCTIONS
 // ============================================================================
 
+// Cap script log messages to prevent excessively long strings from consuming memory
+static constexpr usize MAX_SCRIPT_LOG_LENGTH = 4096;
+
 static void Debug_Log(const std::string& msg) {
+    if (msg.size() > MAX_SCRIPT_LOG_LENGTH) {
+        ENJIN_LOG_INFO(Script, "%s", msg.substr(0, MAX_SCRIPT_LOG_LENGTH).c_str());
+        return;
+    }
     ENJIN_LOG_INFO(Script, "%s", msg.c_str());
 }
 
 static void Debug_LogWarning(const std::string& msg) {
+    if (msg.size() > MAX_SCRIPT_LOG_LENGTH) {
+        ENJIN_LOG_WARN(Script, "%s", msg.substr(0, MAX_SCRIPT_LOG_LENGTH).c_str());
+        return;
+    }
     ENJIN_LOG_WARN(Script, "%s", msg.c_str());
 }
 
 static void Debug_LogError(const std::string& msg) {
+    if (msg.size() > MAX_SCRIPT_LOG_LENGTH) {
+        ENJIN_LOG_ERROR(Script, "%s", msg.substr(0, MAX_SCRIPT_LOG_LENGTH).c_str());
+        return;
+    }
     ENJIN_LOG_ERROR(Script, "%s", msg.c_str());
 }
 
@@ -589,27 +604,35 @@ static ScriptEventData* EventData_Factory() {
 }
 
 static void EventData_SetFloat(ScriptEventData* self, const std::string& key, f32 val) {
+    if (!self) return;
     self->data.SetFloat(key, val);
 }
 static f32 EventData_GetFloat(ScriptEventData* self, const std::string& key) {
+    if (!self) return 0.0f;
     return self->data.GetFloat(key);
 }
 static void EventData_SetInt(ScriptEventData* self, const std::string& key, i32 val) {
+    if (!self) return;
     self->data.SetInt(key, val);
 }
 static i32 EventData_GetInt(ScriptEventData* self, const std::string& key) {
+    if (!self) return 0;
     return self->data.GetInt(key);
 }
 static void EventData_SetString(ScriptEventData* self, const std::string& key, const std::string& val) {
+    if (!self) return;
     self->data.SetString(key, val);
 }
 static std::string EventData_GetString(ScriptEventData* self, const std::string& key) {
+    if (!self) return "";
     return self->data.GetString(key);
 }
 static void EventData_SetEntity(ScriptEventData* self, const std::string& key, u64 val) {
+    if (!self) return;
     self->data.SetEntity(key, val);
 }
 static u64 EventData_GetEntity(ScriptEventData* self, const std::string& key) {
+    if (!self) return 0;
     return self->data.GetEntity(key);
 }
 
@@ -980,7 +1003,7 @@ void RegisterEventBindings(asIScriptEngine* engine) {
 // ---------------------------------------------------------------------------
 
 static void VisualScript_SendEvent(u64 entity, const std::string& eventName) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<ECS::Entity>(entity))) return;
     auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
     if (!script) return;
 
@@ -993,7 +1016,7 @@ static void VisualScript_SendEvent(u64 entity, const std::string& eventName) {
 }
 
 static void VisualScript_SetVariable(u64 entity, const std::string& varName, float value) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<ECS::Entity>(entity))) return;
     auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
     if (!script) return;
 
@@ -1007,7 +1030,7 @@ static void VisualScript_SetVariable(u64 entity, const std::string& varName, flo
 }
 
 static float VisualScript_GetVariable(u64 entity, const std::string& varName) {
-    if (!s_BindingsWorld) return 0.0f;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<ECS::Entity>(entity))) return 0.0f;
     auto* script = s_BindingsWorld->GetComponent<ECS::VisualScriptComponent>(static_cast<ECS::Entity>(entity));
     if (!script) return 0.0f;
 

@@ -46,6 +46,7 @@ void VisualScriptExecutor::ExecuteFromNode(ECS::World* world, ECS::Entity entity
 
     auto startTime = std::chrono::high_resolution_clock::now();
     m_LastStats = {};
+    m_FunctionCallDepth = 0; // Reset call depth at top-level entry
 
     // Clear per-frame pure node cache
     script->ClearRuntimeCache();
@@ -697,6 +698,7 @@ std::vector<ECS::VariableValue> VisualScriptExecutor::GatherInputValues(const Ex
                                                                           const Editor::GraphNode* node,
                                                                           const NodeDefinition* def) {
     std::vector<ECS::VariableValue> inputs;
+    if (!node || !script) return inputs;
     inputs.reserve(8); // Most nodes have fewer than 8 data inputs
 
     for (const auto& pin : node->inputs) {

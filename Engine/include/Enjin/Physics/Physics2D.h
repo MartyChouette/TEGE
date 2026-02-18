@@ -40,8 +40,8 @@ public:
     Math::Vector2 GetGravity() const { return m_Gravity; }
 
     // Iteration settings
-    void SetVelocityIterations(u32 iterations) { m_VelocityIterations = iterations; }
-    void SetPositionIterations(u32 iterations) { m_PositionIterations = iterations; }
+    void SetVelocityIterations(u32 iterations) { m_VelocityIterations = (iterations > 0 && iterations <= 128) ? iterations : 8; }
+    void SetPositionIterations(u32 iterations) { m_PositionIterations = (iterations > 0 && iterations <= 128) ? iterations : 3; }
 
     // Queries
     bool Raycast(const Math::Vector2& origin, const Math::Vector2& direction,

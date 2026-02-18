@@ -254,6 +254,7 @@ namespace Enjin::GUI {
     }
 
     void DialoguePlayer::SetVariable(const std::string& name, const std::string& value) {
+        if (name.empty()) return;
         m_Variables[name] = value;
     }
 
@@ -301,7 +302,11 @@ namespace Enjin::GUI {
             }
 
             case DialogueNodeType::SetVariable: {
-                m_Variables[node->variableName] = node->variableValue;
+                if (!node->variableName.empty()) {
+                    m_Variables[node->variableName] = node->variableValue;
+                } else {
+                    ENJIN_LOG_WARN(Script, "DialoguePlayer: SetVariable node %u has empty variable name, skipping", node->id);
+                }
                 m_CurrentNodeId = node->nextNodeId;
                 ProcessNode(depth + 1);
                 break;
@@ -331,6 +336,7 @@ namespace Enjin::GUI {
     }
 
     bool DialoguePlayer::EvaluateCondition(const DialogueCondition& cond) const {
+        if (cond.variable.empty()) return false;
         std::string varValue = GetVariable(cond.variable);
 
         switch (cond.op) {

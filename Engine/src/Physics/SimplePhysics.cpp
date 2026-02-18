@@ -117,11 +117,11 @@ void SimplePhysics::Update(f32 deltaTime) {
 
         // Stability: clamp velocity magnitude
         f32 speed = rb->velocity.Length();
-        if (speed > rb->maxVelocity) {
+        if (speed > rb->maxVelocity && speed > Math::EPSILON) {
             rb->velocity = rb->velocity * (rb->maxVelocity / speed);
         }
         f32 angSpeed = rb->angularVelocity.Length();
-        if (angSpeed > rb->maxAngularVelocity) {
+        if (angSpeed > rb->maxAngularVelocity && angSpeed > Math::EPSILON) {
             rb->angularVelocity = rb->angularVelocity * (rb->maxAngularVelocity / angSpeed);
         }
 

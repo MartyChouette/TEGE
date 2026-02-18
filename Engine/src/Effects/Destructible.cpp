@@ -234,7 +234,8 @@ void DestructibleSystem::GenerateVoronoiFragments(const DestructionEvent& event,
     }
 
     // Generate N random seed points within entity bounds, create a fragment for each
-    for (u32 i = 0; i < config.fragmentCount; ++i) {
+    u32 fragmentCount = std::clamp(config.fragmentCount, 1u, 256u);
+    for (u32 i = 0; i < fragmentCount; ++i) {
         DebrisFragment frag;
 
         // Random seed point within the entity AABB
@@ -311,7 +312,8 @@ void DestructibleSystem::GenerateGridFragments(const DestructionEvent& event,
     }
 
     // Determine grid dimensions: cube root of fragmentCount for NxNxN
-    u32 gridN = std::max(1u, static_cast<u32>(std::cbrt(static_cast<f32>(config.fragmentCount))));
+    u32 clampedCount = std::clamp(config.fragmentCount, 1u, 256u);
+    u32 gridN = std::max(1u, static_cast<u32>(std::cbrt(static_cast<f32>(clampedCount))));
     f32 cellX = entityScale.x / static_cast<f32>(gridN);
     f32 cellY = entityScale.y / static_cast<f32>(gridN);
     f32 cellZ = entityScale.z / static_cast<f32>(gridN);
@@ -387,7 +389,7 @@ void DestructibleSystem::GenerateRadialFragments(const DestructionEvent& event,
     }
 
     f32 maxExtent = std::max({entityScale.x, entityScale.y, entityScale.z}) * 0.5f;
-    u32 count = std::max(3u, config.fragmentCount);
+    u32 count = std::clamp(config.fragmentCount, 3u, 256u);
     f32 angleStep = 6.283185f / static_cast<f32>(count); // 2*PI / count
     constexpr f32 PI = 3.14159265f;
 
@@ -481,7 +483,8 @@ void DestructibleSystem::GenerateShatterFragments(const DestructionEvent& event,
     }
 
     // Glass-like shatter: random triangular fragments from impact point
-    for (u32 i = 0; i < config.fragmentCount; ++i) {
+    u32 fragmentCount = std::clamp(config.fragmentCount, 1u, 256u);
+    for (u32 i = 0; i < fragmentCount; ++i) {
         DebrisFragment frag;
 
         // Random triangle near impact point

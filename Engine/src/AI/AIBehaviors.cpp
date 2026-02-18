@@ -76,6 +76,10 @@ void PatrolBehavior::Enter(AIAgent* agent) {
     m_WaitTimer = 0.0f;
 
     if (m_Mode == PatrolMode::Waypoints && !m_Waypoints.empty()) {
+        // Clamp waypoint index to valid range
+        if (m_CurrentWaypoint >= m_Waypoints.size()) {
+            m_CurrentWaypoint = 0;
+        }
         // Use navmesh pathfinding if available, otherwise direct movement
         if (agent->HasNavmesh()) {
             agent->MoveToNav(m_Waypoints[m_CurrentWaypoint]);
@@ -586,7 +590,7 @@ bool AIAgent::CanSeeTarget() const {
     Math::Vector3 toTarget = m_Target.position - m_Position;
     f32 distance = toTarget.Length();
 
-    // Close range - peripheral vision
+    // Close range - peripheral vision (also handles distance == 0)
     if (distance <= m_Perception.peripheralRange) {
         return true;
     }
@@ -596,8 +600,9 @@ bool AIAgent::CanSeeTarget() const {
         return false;
     }
 
-    // Check angle
-    Math::Vector3 toTargetNorm = toTarget.Normalized();
+    // Check angle (distance is guaranteed > peripheralRange here, but guard against zero)
+    if (distance < 1e-6f) return true;
+    Math::Vector3 toTargetNorm = toTarget * (1.0f / distance);
     f32 dot = m_Forward.Dot(toTargetNorm);
     f32 angle = Math::Degrees(Math::Acos(Math::Clamp(dot, -1.0f, 1.0f)));
 

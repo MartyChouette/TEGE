@@ -195,7 +195,9 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
             UIElement* dragElement = canvas.GetElement(m_StickyDragElementId);
             if (dragElement && dragElement->type == UIWidgetType::Slider) {
                 dragElement->interaction.active = true;
-                f32 relX = (mouseX - dragElement->computedRect.x) / dragElement->computedRect.w;
+                f32 relX = (dragElement->computedRect.w > 0.0f)
+                ? (mouseX - dragElement->computedRect.x) / dragElement->computedRect.w
+                : 0.0f;
                 relX = std::max(0.0f, std::min(1.0f, relX));
                 f32 newValue = dragElement->data.sliderMin + relX * (dragElement->data.sliderMax - dragElement->data.sliderMin);
                 if (newValue != dragElement->data.sliderValue) {
@@ -273,7 +275,9 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
                 m_StickyDragElementId = element.id;
             }
 
-            f32 relX = (mouseX - element.computedRect.x) / element.computedRect.w;
+            f32 relX = (element.computedRect.w > 0.0f)
+                ? (mouseX - element.computedRect.x) / element.computedRect.w
+                : 0.0f;
             relX = std::max(0.0f, std::min(1.0f, relX));
             f32 newValue = element.data.sliderMin + relX * (element.data.sliderMax - element.data.sliderMin);
             if (newValue != element.data.sliderValue) {
@@ -312,6 +316,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
         // RadioGroup click — select option based on Y position
         if (element.type == UIWidgetType::RadioGroup && mouseClicked && !element.data.options.empty()) {
             f32 itemH = element.computedRect.h / static_cast<f32>(element.data.options.size());
+            if (itemH <= 0.0f) itemH = 1.0f;
             i32 clickedIdx = static_cast<i32>((mouseY - element.computedRect.y) / itemH);
             clickedIdx = std::max(0, std::min(clickedIdx, static_cast<i32>(element.data.options.size()) - 1));
             if (clickedIdx != element.data.selectedOption) {
@@ -330,6 +335,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
         // ListView click — select item based on Y position among children
         if (element.type == UIWidgetType::ListView && mouseClicked && !element.childIds.empty()) {
             f32 fontSize = ResolveFloat(element.style.fontSize, canvas.theme.fontSizeBody) * m_FontScale;
+            if (fontSize < 1.0f) fontSize = 1.0f;
             f32 itemH = fontSize + 8.0f;
             f32 scrollOff = element.data.scrollOffset;
             i32 clickedIdx = static_cast<i32>((mouseY - element.computedRect.y + scrollOff) / itemH);
@@ -351,6 +357,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
             f32 tabBarH = 30.0f;
             if (mouseY < element.computedRect.y + tabBarH) {
                 f32 tabW = element.computedRect.w / static_cast<f32>(element.childIds.size());
+                if (tabW <= 0.0f) tabW = 1.0f;
                 i32 clickedTab = static_cast<i32>((mouseX - element.computedRect.x) / tabW);
                 clickedTab = std::max(0, std::min(clickedTab, static_cast<i32>(element.childIds.size()) - 1));
                 if (clickedTab != element.data.activeTabIndex) {
@@ -380,6 +387,7 @@ void UISystem::ProcessInput(UICanvasComponent& canvas, f32 /*vpW*/, f32 /*vpH*/)
             if (!element.data.dropdownOpen) break;
 
             f32 fontSize = ResolveFloat(element.style.fontSize, canvas.theme.fontSizeBody) * m_FontScale;
+            if (fontSize < 1.0f) fontSize = 1.0f;
             f32 itemH = fontSize + 8.0f;
             f32 listH = itemH * static_cast<f32>(element.data.options.size());
             f32 maxListH = itemH * 8.0f;
@@ -702,6 +710,7 @@ void UISystem::RenderCanvas(const UICanvasComponent& canvas) {
             const UITheme& theme = canvas.theme;
             f32 radius = ResolveFloat(dropdown->style.borderRadius, theme.borderRadius);
             f32 fontSize = ResolveFloat(dropdown->style.fontSize, theme.fontSizeBody) * m_FontScale;
+            if (fontSize < 1.0f) fontSize = 1.0f;
             f32 itemH = fontSize + 8.0f;
             f32 listH = itemH * static_cast<f32>(dropdown->data.options.size());
             f32 maxListH = itemH * 8.0f;
@@ -803,7 +812,7 @@ void UISystem::RenderElement(const UIElement& element, const UITheme& theme, u32
 
     // Dwell-click progress ring
     if (m_DwellClickEnabled && element.id == m_DwellHoverElementId && m_DwellHoverTimer > 0.0f) {
-        f32 progress = m_DwellHoverTimer / m_DwellClickTime;
+        f32 progress = (m_DwellClickTime > 0.0f) ? m_DwellHoverTimer / m_DwellClickTime : 1.0f;
         RenderDwellProgress(element, progress);
     }
 }
@@ -1267,6 +1276,7 @@ void UISystem::RenderRadioGroup(const UIElement& element, const UITheme& theme, 
     if (element.data.options.empty()) return;
 
     f32 itemH = element.computedRect.h / static_cast<f32>(element.data.options.size());
+    if (itemH <= 0.0f) return; // Zero-height element, nothing to render
     f32 radioRadius = std::min(itemH * 0.3f, 8.0f);
 
     ImVec4 textColor = ResolveColor(element.style.textColor, theme.textPrimary, 1.0f);
@@ -1478,7 +1488,8 @@ void UISystem::RenderTabGroup(const UIElement& element, const UITheme& theme,
 
     f32 tabBarH = 30.0f;
     i32 numTabs = static_cast<i32>(element.childIds.size());
-    f32 tabW = element.computedRect.w / static_cast<f32>(numTabs);
+    f32 tabW = (numTabs > 0) ? element.computedRect.w / static_cast<f32>(numTabs) : element.computedRect.w;
+    if (tabW <= 0.0f) tabW = 1.0f;
 
     // Tab bar background
     UIRect tabBarRect;

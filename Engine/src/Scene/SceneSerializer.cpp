@@ -336,16 +336,16 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("stippleTransparency")) material.stippleTransparency = JB(j["stippleTransparency"]);
     if (j.contains("uvQuantize")) material.uvQuantize = JB(j["uvQuantize"]);
     if (j.contains("gouraudOnly")) material.gouraudOnly = JB(j["gouraudOnly"]);
-    if (j.contains("vertexSnapResolution")) material.vertexSnapResolution = j["vertexSnapResolution"].get<u8>();
-    if (j.contains("shadowDitherMode")) material.shadowDitherMode = j["shadowDitherMode"].get<u8>();
-    if (j.contains("shadowDitherPattern")) material.shadowDitherPattern = j["shadowDitherPattern"].get<u8>();
+    if (j.contains("vertexSnapResolution")) { u8 v = j["vertexSnapResolution"].get<u8>(); if (v <= 31) material.vertexSnapResolution = v; }
+    if (j.contains("shadowDitherMode")) { u8 v = j["shadowDitherMode"].get<u8>(); if (v <= 3) material.shadowDitherMode = v; }
+    if (j.contains("shadowDitherPattern")) { u8 v = j["shadowDitherPattern"].get<u8>(); if (v <= 7) material.shadowDitherPattern = v; }
     if (j.contains("reflectivity")) material.reflectivity = j["reflectivity"].get<f32>();
     if (j.contains("fresnelPower")) material.fresnelPower = j["fresnelPower"].get<f32>();
     if (j.contains("rimLightStrength")) material.rimLightStrength = j["rimLightStrength"].get<f32>();
     if (j.contains("excludeFromCelShading")) material.excludeFromCelShading = JB(j["excludeFromCelShading"]);
     if (j.contains("ditherGradient")) material.ditherGradient = JB(j["ditherGradient"]);
-    if (j.contains("ditherGradientBands")) material.ditherGradientBands = j["ditherGradientBands"].get<u8>();
-    if (j.contains("ditherGradientPattern")) material.ditherGradientPattern = j["ditherGradientPattern"].get<u8>();
+    if (j.contains("ditherGradientBands")) { u8 v = j["ditherGradientBands"].get<u8>(); if (v >= 2 && v <= 8) material.ditherGradientBands = v; }
+    if (j.contains("ditherGradientPattern")) { u8 v = j["ditherGradientPattern"].get<u8>(); if (v <= 5) material.ditherGradientPattern = v; }
     return material;
 }
 
@@ -474,7 +474,7 @@ json SerializeWeatherZoneComponent(const ECS::WeatherZoneComponent& zone) {
 ECS::WeatherZoneComponent DeserializeWeatherZoneComponent(const json& j) {
     ECS::WeatherZoneComponent zone;
     if (j.contains("halfExtents")) zone.halfExtents = DeserializeVector3(j["halfExtents"]);
-    if (j.contains("weatherType")) zone.weatherType = j["weatherType"].get<u32>();
+    if (j.contains("weatherType")) { u32 v = j["weatherType"].get<u32>(); if (v <= 3) zone.weatherType = v; }
     if (j.contains("rainIntensity")) zone.rainIntensity = j["rainIntensity"].get<f32>();
     if (j.contains("snowIntensity")) zone.snowIntensity = j["snowIntensity"].get<f32>();
     if (j.contains("fogDensity")) zone.fogDensity = j["fogDensity"].get<f32>();
@@ -1047,7 +1047,7 @@ ECS::FluidVolumeComponent DeserializeFluidVolumeComponent(const json& j) {
     if (j.contains("halfExtents")) vol.halfExtents = DeserializeVector3(j["halfExtents"]);
     if (j.contains("fluidType")) { u32 v = j["fluidType"].get<u32>(); if (v <= 4) vol.fluidType = static_cast<ECS::FluidType>(v); }
     if (j.contains("dimension")) { u32 v = j["dimension"].get<u32>(); if (v <= 1) vol.dimension = static_cast<ECS::FluidDimension>(v); }
-    if (j.contains("gridSize")) vol.gridSize = j["gridSize"].get<u32>();
+    if (j.contains("gridSize")) { u32 v = j["gridSize"].get<u32>(); vol.gridSize = std::min(v, 512u); }
     if (j.contains("viscosity")) vol.viscosity = j["viscosity"].get<f32>();
     if (j.contains("diffusion")) vol.diffusion = j["diffusion"].get<f32>();
     if (j.contains("dissipation")) vol.dissipation = j["dissipation"].get<f32>();

@@ -89,6 +89,20 @@ bool AssetPacker::AddFile(const std::string& virtualPath, const std::string& dis
 bool AssetPacker::AddData(const std::string& virtualPath, const void* data, usize size) {
     if (!m_Active) return false;
 
+    // Reject excessively large individual files (max 1 GB)
+    static constexpr usize MAX_SINGLE_FILE = 1024ull * 1024ull * 1024ull;
+    if (size > MAX_SINGLE_FILE) {
+        ENJIN_LOG_ERROR(Build, "File too large to pack (%zu bytes): %s", size, virtualPath.c_str());
+        return false;
+    }
+
+    // Cap total file count to prevent unbounded index growth
+    static constexpr usize MAX_ENTRIES = 100000;
+    if (m_Entries.size() >= MAX_ENTRIES) {
+        ENJIN_LOG_ERROR(Build, "Max file count (%zu) reached, cannot add: %s", MAX_ENTRIES, virtualPath.c_str());
+        return false;
+    }
+
     // CRC32 of original data
     u32 crc = ComputeCRC32(data, size);
 
@@ -125,7 +139,12 @@ bool AssetPacker::AddData(const std::string& virtualPath, const void* data, usiz
 bool AssetPacker::Finalize() {
     if (!m_Active) return false;
 
-    u64 indexOffset = static_cast<u64>(m_File.tellp());
+    auto pos = m_File.tellp();
+    if (pos < 0) {
+        ENJIN_LOG_ERROR(Build, "Cannot determine file position for index write");
+        return false;
+    }
+    u64 indexOffset = static_cast<u64>(pos);
 
     // Build index as a byte buffer, then obfuscate
     std::vector<u8> indexBuf;
@@ -161,6 +180,12 @@ bool AssetPacker::Finalize() {
                  static_cast<std::streamsize>(indexBuf.size()));
 
     // Footer: index size (u32), index CRC32 (u32)
+    if (indexBuf.size() > UINT32_MAX) {
+        ENJIN_LOG_ERROR(Build, "Index buffer too large (%zu bytes) for u32 size field", indexBuf.size());
+        m_File.close();
+        m_Active = false;
+        return false;
+    }
     u32 indexSize = static_cast<u32>(indexBuf.size());
     m_File.write(reinterpret_cast<const char*>(&indexSize), sizeof(indexSize));
     m_File.write(reinterpret_cast<const char*>(&indexCRC), sizeof(indexCRC));

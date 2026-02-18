@@ -10,6 +10,9 @@
 namespace Enjin {
 namespace Physics {
 
+// Maximum polygon vertex count — matches PolygonShape2D comment "max 8 vertices"
+static constexpr usize kMaxPolygonVertices = 64;
+
 // ============================================================================
 // Helper utilities
 // ============================================================================
@@ -129,10 +132,11 @@ static AABB2D ComputeAABB(const Math::Vector2& worldPos, f32 worldAngle,
                 break;
             }
 
+            usize vertCount = std::min(body.polygon.vertices.size(), kMaxPolygonVertices);
             Math::Vector2 first = center + RotateVec(body.polygon.vertices[0], worldAngle);
             aabb.min = first;
             aabb.max = first;
-            for (usize i = 1; i < body.polygon.vertices.size(); ++i) {
+            for (usize i = 1; i < vertCount; ++i) {
                 Math::Vector2 v = center + RotateVec(body.polygon.vertices[i], worldAngle);
                 aabb.min.x = Math::Min(aabb.min.x, v.x);
                 aabb.min.y = Math::Min(aabb.min.y, v.y);
@@ -208,7 +212,8 @@ void PhysicsWorld2D::Initialize(ECS::World* world) {
             case Shape2DType::Polygon: {
                 // Approximate: compute area and inertia from polygon vertices
                 const auto& verts = body->polygon.vertices;
-                if (verts.size() < 3) {
+                usize vertCount = std::min(verts.size(), kMaxPolygonVertices);
+                if (vertCount < 3) {
                     body->mass = density;
                     body->inverseMass = 1.0f / body->mass;
                     body->inertia = 1.0f;
@@ -218,8 +223,8 @@ void PhysicsWorld2D::Initialize(ECS::World* world) {
 
                 f32 area = 0.0f;
                 f32 I = 0.0f;
-                for (usize i = 0; i < verts.size(); ++i) {
-                    usize j = (i + 1) % verts.size();
+                for (usize i = 0; i < vertCount; ++i) {
+                    usize j = (i + 1) % vertCount;
                     f32 cross = Cross2D(verts[i], verts[j]);
                     area += cross;
                     I += cross * (verts[i].Dot(verts[i]) + verts[i].Dot(verts[j]) + verts[j].Dot(verts[j]));
@@ -783,7 +788,8 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
     Math::Vector2 polyCenter = posB + RotateVec(poly.offset, polyAngle);
 
     const auto& verts = poly.vertices;
-    if (verts.size() < 3) return false;
+    usize vertCount = std::min(verts.size(), kMaxPolygonVertices);
+    if (vertCount < 3) return false;
 
     // Transform circle center into polygon local space
     Math::Vector2 localCircle = InvRotateVec(circleCenter - polyCenter, polyAngle);
@@ -792,11 +798,14 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
     f32 maxSep = std::numeric_limits<f32>::lowest();
     usize closestEdge = 0;
 
-    for (usize i = 0; i < verts.size(); ++i) {
-        usize j = (i + 1) % verts.size();
+    for (usize i = 0; i < vertCount; ++i) {
+        usize j = (i + 1) % vertCount;
         Math::Vector2 edge = verts[j] - verts[i];
         // Edge normal (outward, for CCW winding)
-        Math::Vector2 normal = Math::Vector2(edge.y, -edge.x).Normalized();
+        Math::Vector2 rawNormal = Math::Vector2(edge.y, -edge.x);
+        f32 rawNormalLen = rawNormal.Length();
+        if (rawNormalLen < Math::EPSILON) continue; // Degenerate edge (coincident vertices)
+        Math::Vector2 normal = rawNormal * (1.0f / rawNormalLen);
 
         f32 separation = normal.Dot(localCircle - verts[i]);
         if (separation > maxSep) {
@@ -810,7 +819,7 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
 
     // Determine which feature is closest: vertex or edge
     usize i = closestEdge;
-    usize j = (i + 1) % verts.size();
+    usize j = (i + 1) % vertCount;
     Math::Vector2 edgeVec = verts[j] - verts[i];
     f32 edgeLen = edgeVec.Length();
     if (edgeLen < Math::EPSILON) return false;
@@ -821,6 +830,9 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
     Math::Vector2 closestPoint;
     Math::Vector2 localNormal;
 
+    // Pre-compute edge perpendicular normal (safe — edgeLen already checked > EPSILON above)
+    Math::Vector2 edgePerpNormal = Math::Vector2(edgeVec.y, -edgeVec.x) * (1.0f / edgeLen);
+
     if (t <= 0.0f) {
         // Closest to vertex i
         closestPoint = verts[i];
@@ -828,7 +840,7 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
         f32 dist = diff.Length();
         if (dist > circle.radius) return false;
         if (dist < Math::EPSILON) {
-            localNormal = Math::Vector2(edgeVec.y, -edgeVec.x).Normalized();
+            localNormal = edgePerpNormal;
         } else {
             localNormal = diff * (1.0f / dist);
         }
@@ -840,7 +852,7 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
         f32 dist = diff.Length();
         if (dist > circle.radius) return false;
         if (dist < Math::EPSILON) {
-            localNormal = Math::Vector2(edgeVec.y, -edgeVec.x).Normalized();
+            localNormal = edgePerpNormal;
         } else {
             localNormal = diff * (1.0f / dist);
         }
@@ -848,7 +860,7 @@ bool PhysicsWorld2D::TestCirclePolygon(const Math::Vector2& posA, const CircleSh
     } else {
         // Closest to edge face
         closestPoint = verts[i] + edgeDir * t;
-        localNormal = Math::Vector2(edgeVec.y, -edgeVec.x).Normalized();
+        localNormal = edgePerpNormal;
         f32 dist = (localCircle - closestPoint).Dot(localNormal);
         if (dist > circle.radius) return false;
         manifold.penetration = circle.radius - dist;
@@ -1109,8 +1121,9 @@ void PhysicsWorld2D::SolveJoints(f32 dt) {
                     Math::Vector2 velA = bodyA->velocity;
                     Math::Vector2 velB = bodyB ? bodyB->velocity : Math::Vector2();
                     f32 relVel = (velB - velA).Dot(dir);
-                    if (relVel > 0.0f) {
-                        Math::Vector2 velCorrection = dir * (relVel / (invMassA + invMassB));
+                    f32 ropeInvMassSum = invMassA + invMassB;
+                    if (relVel > 0.0f && ropeInvMassSum > Math::EPSILON) {
+                        Math::Vector2 velCorrection = dir * (relVel / ropeInvMassSum);
                         bodyA->velocity += velCorrection * invMassA;
                         if (bodyB) bodyB->velocity -= velCorrection * invMassB;
                     }
@@ -1148,7 +1161,10 @@ void PhysicsWorld2D::SolveJoints(f32 dt) {
 
             case Joint2DType::Prismatic: {
                 // Constrain movement to the joint axis
-                Math::Vector2 worldAxis = RotateVec(joint->axis, angleA).Normalized();
+                Math::Vector2 rotatedAxis = RotateVec(joint->axis, angleA);
+                f32 rotatedAxisLen = rotatedAxis.Length();
+                if (rotatedAxisLen < Math::EPSILON) break; // Degenerate axis
+                Math::Vector2 worldAxis = rotatedAxis * (1.0f / rotatedAxisLen);
                 Math::Vector2 perp = Math::Vector2(-worldAxis.y, worldAxis.x);
 
                 Math::Vector2 diff = worldAnchorB - worldAnchorA;
@@ -1251,7 +1267,8 @@ void PhysicsWorld2D::PerformCCD(f32 dt) {
 
         // Cast a ray along the velocity direction to find the earliest contact
         Math::Vector2 origin = GetPosition2D(*transform);
-        Math::Vector2 dir = body->velocity.Normalized();
+        // speed is already verified > ccdThreshold above, safe to divide
+        Math::Vector2 dir = body->velocity * (1.0f / speed);
         RayHit2D hit;
 
         if (Raycast(origin, dir, distThisFrame, hit, body->collisionMask)) {
@@ -1278,7 +1295,9 @@ bool PhysicsWorld2D::Raycast(const Math::Vector2& origin, const Math::Vector2& d
                               f32 maxDistance, RayHit2D& outHit, u32 layerMask) const {
     if (!m_World) return false;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < Math::EPSILON) return false;
+    Math::Vector2 dir = direction * (1.0f / dirLen);
     f32 closestDist = maxDistance;
     bool found = false;
 
@@ -1313,7 +1332,9 @@ bool PhysicsWorld2D::Raycast(const Math::Vector2& origin, const Math::Vector2& d
                         outHit.entity = entity;
                         outHit.distance = t;
                         outHit.point = origin + dir * t;
-                        outHit.normal = (outHit.point - center).Normalized();
+                        Math::Vector2 hitDiff = outHit.point - center;
+                        f32 hitDiffLen = hitDiff.Length();
+                        outHit.normal = (hitDiffLen > Math::EPSILON) ? hitDiff * (1.0f / hitDiffLen) : Math::Vector2(0.0f, 1.0f);
                         found = true;
                     }
                 }
@@ -1423,10 +1444,11 @@ bool PhysicsWorld2D::Raycast(const Math::Vector2& origin, const Math::Vector2& d
                 // Ray vs polygon: test each edge
                 Math::Vector2 polyCenter = pos + RotateVec(body->polygon.offset, angle);
                 const auto& verts = body->polygon.vertices;
-                if (verts.size() < 3) break;
+                usize vertCount = std::min(verts.size(), kMaxPolygonVertices);
+                if (vertCount < 3) break;
 
-                for (usize i = 0; i < verts.size(); ++i) {
-                    usize j = (i + 1) % verts.size();
+                for (usize i = 0; i < vertCount; ++i) {
+                    usize j = (i + 1) % vertCount;
                     Math::Vector2 v0 = polyCenter + RotateVec(verts[i], angle);
                     Math::Vector2 v1 = polyCenter + RotateVec(verts[j], angle);
 
@@ -1445,7 +1467,9 @@ bool PhysicsWorld2D::Raycast(const Math::Vector2& origin, const Math::Vector2& d
                         outHit.distance = t;
                         outHit.point = origin + dir * t;
                         // Normal perpendicular to edge, pointing outward
-                        Math::Vector2 edgeNorm = Math::Vector2(edge.y, -edge.x).Normalized();
+                        Math::Vector2 rawEdgeNorm = Math::Vector2(edge.y, -edge.x);
+                        f32 rawEdgeNormLen = rawEdgeNorm.Length();
+                        Math::Vector2 edgeNorm = (rawEdgeNormLen > Math::EPSILON) ? rawEdgeNorm * (1.0f / rawEdgeNormLen) : Math::Vector2(0.0f, 1.0f);
                         if (edgeNorm.Dot(dir) > 0.0f) edgeNorm = -edgeNorm;
                         outHit.normal = edgeNorm;
                         found = true;
@@ -1464,7 +1488,9 @@ std::vector<RayHit2D> PhysicsWorld2D::RaycastAll(const Math::Vector2& origin, co
     std::vector<RayHit2D> hits;
     if (!m_World) return hits;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < Math::EPSILON) return hits;
+    Math::Vector2 dir = direction * (1.0f / dirLen);
 
     for (ECS::Entity entity : m_World->GetEntitiesWithComponent<Body2DComponent>()) {
         auto* body = m_World->GetComponent<Body2DComponent>(entity);
@@ -1497,7 +1523,9 @@ std::vector<RayHit2D> PhysicsWorld2D::RaycastAll(const Math::Vector2& origin, co
                         hit.entity = entity;
                         hit.distance = t;
                         hit.point = origin + dir * t;
-                        hit.normal = (hit.point - center).Normalized();
+                        Math::Vector2 hitDiff = hit.point - center;
+                        f32 hitDiffLen = hitDiff.Length();
+                        hit.normal = (hitDiffLen > Math::EPSILON) ? hitDiff * (1.0f / hitDiffLen) : Math::Vector2(0.0f, 1.0f);
                         hits.push_back(hit);
                     }
                 }

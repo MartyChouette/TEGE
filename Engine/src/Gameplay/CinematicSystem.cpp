@@ -31,6 +31,7 @@ void CinematicSystem::Update(ECS::World* world, Renderer::Camera* gameCamera, f3
         if (!cine || !cine->isPlaying || cine->waypoints.size() < 2) continue;
 
         i32 numSegments = static_cast<i32>(cine->waypoints.size()) - 1;
+        if (cine->currentSegment < 0) cine->currentSegment = 0;
         if (cine->currentSegment >= numSegments) {
             // Sequence complete
             if (cine->loop) {

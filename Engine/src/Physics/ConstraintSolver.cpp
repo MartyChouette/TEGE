@@ -429,7 +429,9 @@ void ConstraintSolver::SolveHingeJoint(ECS::Entity jointEntity, f32 deltaTime) {
     }
 
     // --- Angular constraint: remove velocity components not along the hinge axis ---
-    Math::Vector3 axis = joint->axis.Normalized();
+    f32 axisLen = joint->axis.Length();
+    if (axisLen < Math::EPSILON) return; // Degenerate hinge axis
+    Math::Vector3 axis = joint->axis * (1.0f / axisLen);
 
     // Relative angular velocity (approximate via linear velocity difference)
     Math::Vector3 angVelA = rbA ? rbA->angularVelocity : Math::Vector3(0, 0, 0);
@@ -459,29 +461,39 @@ void ConstraintSolver::SolveHingeJoint(ECS::Entity jointEntity, f32 deltaTime) {
             // Build a reference frame: use world up or forward to get a reference direction
             Math::Vector3 ref(0, 1, 0);
             if (Math::Abs(axis.Dot(ref)) > 0.9f) ref = Math::Vector3(1, 0, 0);
-            Math::Vector3 refDir = (ref - axis * ref.Dot(axis)).Normalized();
-            Math::Vector3 perpDir = axis.Cross(refDir).Normalized();
+            Math::Vector3 rawRefDir = ref - axis * ref.Dot(axis);
+            f32 rawRefDirLen = rawRefDir.Length();
+            Math::Vector3 rawPerpDir;
+            f32 rawPerpDirLen = 0.0f;
+            if (rawRefDirLen > Math::EPSILON) {
+                Math::Vector3 refDir = rawRefDir * (1.0f / rawRefDirLen);
+                rawPerpDir = axis.Cross(refDir);
+                rawPerpDirLen = rawPerpDir.Length();
+                if (rawPerpDirLen > Math::EPSILON) {
+                    Math::Vector3 perpDir = rawPerpDir * (1.0f / rawPerpDirLen);
 
-            f32 angle = Math::Degrees(Math::Atan2(projected.Dot(perpDir), projected.Dot(refDir)));
-            joint->currentAngle = angle;
+                    f32 angle = Math::Degrees(Math::Atan2(projected.Dot(perpDir), projected.Dot(refDir)));
+                    joint->currentAngle = angle;
 
-            // Clamp to limits
-            if (angle < joint->lowerLimit) {
-                f32 violation = joint->lowerLimit - angle;
-                f32 correctionTorque = Math::Radians(violation) / deltaTime;
-                Math::Vector3 torqueImpulse = axis * correctionTorque * 0.5f;
-                if (rbA && rbA->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
-                    rbA->angularVelocity = rbA->angularVelocity - torqueImpulse * invMassA;
-                if (rbB && rbB->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
-                    rbB->angularVelocity = rbB->angularVelocity + torqueImpulse * invMassB;
-            } else if (angle > joint->upperLimit) {
-                f32 violation = angle - joint->upperLimit;
-                f32 correctionTorque = Math::Radians(violation) / deltaTime;
-                Math::Vector3 torqueImpulse = axis * correctionTorque * 0.5f;
-                if (rbA && rbA->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
-                    rbA->angularVelocity = rbA->angularVelocity + torqueImpulse * invMassA;
-                if (rbB && rbB->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
-                    rbB->angularVelocity = rbB->angularVelocity - torqueImpulse * invMassB;
+                    // Clamp to limits
+                    if (angle < joint->lowerLimit) {
+                        f32 violation = joint->lowerLimit - angle;
+                        f32 correctionTorque = Math::Radians(violation) / deltaTime;
+                        Math::Vector3 torqueImpulse = axis * correctionTorque * 0.5f;
+                        if (rbA && rbA->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                            rbA->angularVelocity = rbA->angularVelocity - torqueImpulse * invMassA;
+                        if (rbB && rbB->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                            rbB->angularVelocity = rbB->angularVelocity + torqueImpulse * invMassB;
+                    } else if (angle > joint->upperLimit) {
+                        f32 violation = angle - joint->upperLimit;
+                        f32 correctionTorque = Math::Radians(violation) / deltaTime;
+                        Math::Vector3 torqueImpulse = axis * correctionTorque * 0.5f;
+                        if (rbA && rbA->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                            rbA->angularVelocity = rbA->angularVelocity + torqueImpulse * invMassA;
+                        if (rbB && rbB->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                            rbB->angularVelocity = rbB->angularVelocity - torqueImpulse * invMassB;
+                    }
+                }
             }
         }
     }
@@ -778,8 +790,9 @@ void ConstraintSolver::SolveSliderJoint(ECS::Entity jointEntity, f32 deltaTime) 
     f32 invMassSum = invMassA + invMassB;
     if (invMassSum <= 0.0f) return;
 
-    Math::Vector3 slideAxis = joint->slideAxis.Normalized();
-    if (slideAxis.LengthSquared() < Math::EPSILON) return;
+    f32 slideAxisLen = joint->slideAxis.Length();
+    if (slideAxisLen < Math::EPSILON) return; // Degenerate slide axis
+    Math::Vector3 slideAxis = joint->slideAxis * (1.0f / slideAxisLen);
 
     // World-space anchors
     Math::Vector3 worldAnchorA = tA->position + joint->anchorA;

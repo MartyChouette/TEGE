@@ -26,6 +26,9 @@ struct SpatialHashGrid {
     void Clear() { cells.clear(); oversizedEntities.clear(); }
 
     void Insert(ECS::Entity e, const AABB& bounds) {
+        // Guard against zero or negative cell size
+        if (cellSize <= 0.0001f) cellSize = 4.0f;
+
         i32 minX = static_cast<i32>(std::floor(bounds.min.x / cellSize));
         i32 minY = static_cast<i32>(std::floor(bounds.min.y / cellSize));
         i32 minZ = static_cast<i32>(std::floor(bounds.min.z / cellSize));

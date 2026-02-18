@@ -359,7 +359,8 @@ void TieredSaveSystem::ConfigureAutoSave(const AutoSaveConfig& config) {
 }
 
 u32 TieredSaveSystem::GetNextAutoSaveSlot() {
-    u32 slot = AUTO_SAVE_SLOT_START + (m_AutoSaveRotation % m_AutoSaveConfig.autoSaveSlotCount);
+    u32 slotCount = (m_AutoSaveConfig.autoSaveSlotCount > 0) ? m_AutoSaveConfig.autoSaveSlotCount : 1;
+    u32 slot = AUTO_SAVE_SLOT_START + (m_AutoSaveRotation % slotCount);
     m_AutoSaveRotation++;
     return slot;
 }

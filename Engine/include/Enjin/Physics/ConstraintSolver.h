@@ -31,7 +31,7 @@ public:
     void SetWorld(ECS::World* world) { m_World = world; }
 
     // Configuration
-    void SetIterationCount(u32 iterations) { m_Iterations = iterations; }
+    void SetIterationCount(u32 iterations) { m_Iterations = (iterations > 0 && iterations <= 128) ? iterations : 8; }
     u32 GetIterationCount() const { return m_Iterations; }
     void SetBaumgarteScale(f32 scale) { m_BaumgarteScale = scale; }
 

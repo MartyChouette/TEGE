@@ -19,6 +19,13 @@ StreamingManager::~StreamingManager()
 
 void StreamingManager::AddChunk(const StreamingChunk& chunk)
 {
+    // Cap total registered chunks to prevent unbounded growth
+    static constexpr usize kMaxChunks = 4096;
+    if (m_Chunks.size() >= kMaxChunks) {
+        ENJIN_LOG_WARN(Game, "Max chunk count (%zu) reached, cannot add '%s'", kMaxChunks, chunk.chunkId.c_str());
+        return;
+    }
+
     // Check for duplicate chunk IDs
     for (const auto& existing : m_Chunks) {
         if (existing.chunkId == chunk.chunkId) {
@@ -79,7 +86,7 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
         switch (chunk.state) {
             case ChunkState::Unloaded:
                 // Queue for loading if within load distance (O(1) duplicate check)
-                if (distance <= chunk.loadDistance) {
+                if (distance <= chunk.loadDistance && m_LoadQueue.size() < 256) {
                     if (m_LoadQueueSet.insert(chunk.chunkId).second) {
                         m_LoadQueue.push_back(chunk.chunkId);
                         ENJIN_LOG_INFO(Game, "Queuing chunk '%s' for load (distance: %.1f)",
@@ -90,7 +97,7 @@ void StreamingManager::Update(const Math::Vector3& cameraPosition, f32 deltaTime
 
             case ChunkState::Loaded:
                 // Queue for unloading if beyond unload distance (O(1) duplicate check)
-                if (distance > chunk.unloadDistance) {
+                if (distance > chunk.unloadDistance && m_UnloadQueue.size() < 256) {
                     if (m_UnloadQueueSet.insert(chunk.chunkId).second) {
                         m_UnloadQueue.push_back(chunk.chunkId);
                         ENJIN_LOG_INFO(Game, "Queuing chunk '%s' for unload (distance: %.1f)",
@@ -175,8 +182,13 @@ void StreamingManager::ProcessUnloadQueue()
 
 void StreamingManager::LoadChunkAsync(StreamingChunk& chunk)
 {
+    // Atomically claim a load slot to prevent races
+    u32 prev = m_ActiveLoads.fetch_add(1);
+    if (prev >= m_MaxConcurrentLoads) {
+        m_ActiveLoads.fetch_sub(1);
+        return; // Slot was taken between check and claim
+    }
     chunk.state = ChunkState::Loading;
-    m_ActiveLoads.fetch_add(1);
 
     ENJIN_LOG_INFO(Game, "Loading chunk '%s' from '%s'", chunk.chunkId.c_str(), chunk.scenePath.c_str());
 

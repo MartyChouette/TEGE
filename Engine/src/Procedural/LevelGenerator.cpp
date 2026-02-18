@@ -90,13 +90,13 @@ bool LevelGenerator::LoadPrefabsFromFile(const std::string& filepath) {
             prefab.name = prefabJson.value("name", prefab.id);
             prefab.category = prefabJson.value("category", "default");
 
-            if (prefabJson.contains("size") && prefabJson["size"].is_array()) {
+            if (prefabJson.contains("size") && prefabJson["size"].is_array() && prefabJson["size"].size() >= 3) {
                 prefab.size = Math::Vector3(
                     prefabJson["size"][0].get<f32>(),
                     prefabJson["size"][1].get<f32>(),
                     prefabJson["size"][2].get<f32>());
             }
-            if (prefabJson.contains("origin") && prefabJson["origin"].is_array()) {
+            if (prefabJson.contains("origin") && prefabJson["origin"].is_array() && prefabJson["origin"].size() >= 3) {
                 prefab.origin = Math::Vector3(
                     prefabJson["origin"][0].get<f32>(),
                     prefabJson["origin"][1].get<f32>(),
@@ -125,13 +125,13 @@ bool LevelGenerator::LoadPrefabsFromFile(const std::string& filepath) {
                     conn.id = connJson.value("id", "");
                     conn.type = connJson.value("type", "default");
                     conn.required = connJson.value("required", false);
-                    if (connJson.contains("position") && connJson["position"].is_array()) {
+                    if (connJson.contains("position") && connJson["position"].is_array() && connJson["position"].size() >= 3) {
                         conn.localPosition = Math::Vector3(
                             connJson["position"][0].get<f32>(),
                             connJson["position"][1].get<f32>(),
                             connJson["position"][2].get<f32>());
                     }
-                    if (connJson.contains("size") && connJson["size"].is_array()) {
+                    if (connJson.contains("size") && connJson["size"].is_array() && connJson["size"].size() >= 2) {
                         conn.size = Math::Vector2(
                             connJson["size"][0].get<f32>(),
                             connJson["size"][1].get<f32>());
@@ -744,7 +744,17 @@ void LevelGenerator::InstantiateInWorld(ECS::World* world) {
         transform.scale = Math::Vector3(1, 1, 1);
 
         // Load scene or mesh from prefab paths
-        if (!room.prefab->scenePath.empty()) {
+        // Validate paths to prevent directory traversal
+        auto validatePath = [](const std::string& path) -> bool {
+            if (path.empty()) return true;
+            auto norm = std::filesystem::path(path).lexically_normal().string();
+            if (norm.find("..") != std::string::npos) return false;
+            if (path.size() >= 2 && path[1] == ':') return false;
+            if (path[0] == '/' || path[0] == '\\') return false;
+            return true;
+        };
+
+        if (!room.prefab->scenePath.empty() && validatePath(room.prefab->scenePath)) {
             // Load scene file additively (keeps existing entities)
             Scene::SceneSerializer serializer(world);
             auto sceneResult = serializer.LoadAdditive(room.prefab->scenePath);
@@ -756,7 +766,7 @@ void LevelGenerator::InstantiateInWorld(ECS::World* world) {
                     room.prefab->scenePath.c_str(), room.prefab->name.c_str(),
                     sceneResult.error.c_str());
             }
-        } else if (!room.prefab->meshPath.empty()) {
+        } else if (!room.prefab->meshPath.empty() && validatePath(room.prefab->meshPath)) {
             // Import 3D model using auto-detection
             Assets::ImportOptions importOpts;
             importOpts.scale = 1.0f;
@@ -906,6 +916,10 @@ bool LevelGenerator2D::Generate(const LevelGen2DSettings& settings) {
     // Generate combined tilemap
     u32 totalWidth = static_cast<u32>(Math::Ceil(maxX));
     u32 totalHeight = static_cast<u32>(Math::Ceil(maxY));
+
+    // Cap combined tilemap dimensions to prevent excessive allocation
+    if (totalWidth > 4096) totalWidth = 4096;
+    if (totalHeight > 4096) totalHeight = 4096;
 
     m_GeneratedLevel.tiles.resize(totalHeight);
     for (auto& row : m_GeneratedLevel.tiles) {
@@ -1190,6 +1204,11 @@ Room2D CreateRoom2D(const std::string& id, u32 width, u32 height,
                      bool leftDoor, bool rightDoor, bool topDoor, bool bottomDoor) {
     Room2D room;
     room.id = id;
+    // Clamp dimensions to sane bounds
+    if (width < 3) width = 3;
+    if (height < 3) height = 3;
+    if (width > 1024) width = 1024;
+    if (height > 1024) height = 1024;
     room.size = Math::Vector2(static_cast<f32>(width), static_cast<f32>(height));
     room.category = "room";
 
