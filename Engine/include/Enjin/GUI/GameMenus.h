@@ -80,6 +80,7 @@ private:
     MenuCallback m_Callback;
     std::string m_GameTitle = "My Game";
     i32 m_RebindingAction = -1;
+    MenuScreen m_ReturnScreen = MenuScreen::PauseMenu;
 
     void RenderMainMenu(f32 w, f32 h);
     void RenderPauseMenu(f32 w, f32 h);

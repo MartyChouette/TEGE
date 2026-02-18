@@ -210,6 +210,25 @@ public:
         m_GameMenu.SetInputMap(&m_InputMap);
         m_GameMenu.SetGameTitle(m_WindowTitle.empty() ? "Game" : m_WindowTitle);
 
+        // Wire menu button callbacks for title screen and pause menu
+        m_GameMenu.SetCallback([this](const std::string& action) {
+            if (action == "new_game" || action == "continue") {
+                m_GameMenu.HideAll();
+                m_GameStarted = true;
+            } else if (action == "resume") {
+                m_GameMenu.HideAll();
+            } else if (action == "options") {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::Options);
+            } else if (action == "how_to_play") {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::HowToPlay);
+            } else if (action == "quit_to_menu") {
+                m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+                m_GameStarted = false;
+            } else if (action == "quit") {
+                if (GetWindow()) GetWindow()->Close();
+            }
+        });
+
         // Initialize audio system
         Enjin::Audio::AudioManager::Get().Initialize();
 
@@ -572,17 +591,30 @@ public:
         // Update input
         m_InputMap.Update(deltaTime);
 
-        // ESC to toggle pause menu
+        // ESC: state-aware menu navigation
         if (Enjin::Input::IsKeyPressed(Enjin::KeyCode::Escape)) {
-            if (m_GameMenu.IsMenuOpen()) {
+            auto screen = m_GameMenu.GetCurrentScreen();
+            if (screen == Enjin::GUI::MenuScreen::MainMenu) {
+                // On title screen — ESC does nothing
+            } else if (screen == Enjin::GUI::MenuScreen::Options ||
+                       screen == Enjin::GUI::MenuScreen::HowToPlay) {
+                // In sub-menu — go back to parent menu
+                if (m_GameStarted) {
+                    m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
+                } else {
+                    m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+                }
+            } else if (m_GameMenu.IsMenuOpen()) {
+                // Pause menu — resume gameplay
                 m_GameMenu.HideAll();
             } else {
+                // In gameplay — pause
                 m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::PauseMenu);
             }
         }
 
-        // Skip gameplay updates when paused or content warning is shown (Task #39)
-        if (m_GameMenu.IsMenuOpen()) return;
+        // Skip gameplay updates when paused, on title screen, or content warning is shown
+        if (m_GameMenu.IsMenuOpen() || !m_GameStarted) return;
         if (m_ContentWarnings.IsVisible()) return;
 
         // --- Physics (must run first) ---
@@ -1170,6 +1202,9 @@ private:
             m_ScriptSystem.InitializeAllScripts();
         }
 
+        // Show title screen — gameplay starts when player clicks New Game / Continue
+        m_GameMenu.ShowScreen(Enjin::GUI::MenuScreen::MainMenu);
+
         ENJIN_LOG_INFO(Player, "Splash screen ended, game loaded");
     }
 
@@ -1384,6 +1419,7 @@ private:
     static constexpr const char* PACK_KEY = "enjin_default_pack_key_2025";
 
     bool m_Initialized = false;
+    bool m_GameStarted = false;
     std::vector<Enjin::ECS::Entity> m_DeferredDestroys;
 
     // Splash screen

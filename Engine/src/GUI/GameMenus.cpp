@@ -26,6 +26,12 @@ AudioSettings& GameMenuSystem::GetAudioSettings() {
 }
 
 void GameMenuSystem::ShowScreen(MenuScreen screen) {
+    // Track where Options/HowToPlay should return to
+    if (screen == MenuScreen::Options || screen == MenuScreen::HowToPlay) {
+        if (m_CurrentScreen == MenuScreen::MainMenu || m_CurrentScreen == MenuScreen::PauseMenu) {
+            m_ReturnScreen = m_CurrentScreen;
+        }
+    }
     m_CurrentScreen = screen;
     m_RebindingAction = -1;
 }
@@ -202,7 +208,7 @@ void GameMenuSystem::RenderOptions(f32 w, f32 h) {
 
     ImGui::Dummy(ImVec2(0, 10));
     if (ImGui::Button("Back", ImVec2(100, 32))) {
-        ShowScreen(MenuScreen::PauseMenu);
+        ShowScreen(m_ReturnScreen);
     }
 
     ImGui::End();
@@ -563,7 +569,7 @@ void GameMenuSystem::RenderHowToPlay(f32 w, f32 h) {
 
     ImGui::Dummy(ImVec2(0, 4));
     if (ImGui::Button("Back", ImVec2(100, 32))) {
-        ShowScreen(MenuScreen::MainMenu);
+        ShowScreen(m_ReturnScreen);
     }
 
     ImGui::End();
