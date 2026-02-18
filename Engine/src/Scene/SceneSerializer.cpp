@@ -2118,6 +2118,12 @@ json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
     j["flipX"] = s.flipX;
     j["flipY"] = s.flipY;
     j["visible"] = RF(s.visible);
+    if (s.dropShadow) {
+        j["dropShadow"] = true;
+        j["shadowOffset"] = SerializeVector2(s.shadowOffset);
+        j["shadowColor"] = { RF(s.shadowColor.x), RF(s.shadowColor.y), RF(s.shadowColor.z), RF(s.shadowColor.w) };
+        j["shadowScale"] = RF(s.shadowScale);
+    }
     return j;
 }
 
@@ -2138,6 +2144,13 @@ ECS::Sprite2DComponent DeserializeSprite2DComponent(const json& j) {
     if (j.contains("flipX")) s.flipX = JB(j["flipX"]);
     if (j.contains("flipY")) s.flipY = JB(j["flipY"]);
     if (j.contains("visible")) s.visible = JB(j["visible"]);
+    if (j.contains("dropShadow")) s.dropShadow = JB(j["dropShadow"]);
+    if (j.contains("shadowOffset")) s.shadowOffset = DeserializeVector2(j["shadowOffset"]);
+    if (j.contains("shadowColor") && j["shadowColor"].is_array() && j["shadowColor"].size() >= 4) {
+        s.shadowColor = Math::Vector4(j["shadowColor"][0].get<f32>(), j["shadowColor"][1].get<f32>(),
+                                      j["shadowColor"][2].get<f32>(), j["shadowColor"][3].get<f32>());
+    }
+    if (j.contains("shadowScale")) s.shadowScale = j["shadowScale"].get<f32>();
     return s;
 }
 

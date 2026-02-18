@@ -662,6 +662,12 @@ struct Sprite2DComponent {
 
     // Texture pixel dimensions (set by RenderSystem on texture load for UV normalization)
     f32 texPixelWidth = 0, texPixelHeight = 0;
+
+    // Drop shadow (fake depth grounding)
+    bool dropShadow = false;
+    Math::Vector2 shadowOffset = Math::Vector2(3.0f, -3.0f);  // pixels offset
+    Math::Vector4 shadowColor = Math::Vector4(0.0f, 0.0f, 0.0f, 0.4f);  // RGBA
+    f32 shadowScale = 1.0f;  // 1.0 = same size as sprite
 };
 
 // Animated sprite component (sprite sheet animation)

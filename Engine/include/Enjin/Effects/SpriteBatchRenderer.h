@@ -64,14 +64,15 @@ public:
     // Gather all visible Sprite2DComponent entities, sort by texture and layer,
     // batch by texture, and render with instanced draw calls.
     // textureBindCallback: called by the renderer to bind the correct texture
-    //   descriptor before each texture-grouped batch.
+    //   descriptor before each texture-grouped batch. Receives base texture path
+    //   and normal map path (empty = no normal map, use default white).
     // viewportWidth/Height: 0 = use swapchain extent, >0 = override (for render targets)
     // litMode: when true, uses the lit pipeline with LightingUBO for 2.5D sprite lighting
     void Render(VkCommandBuffer commandBuffer,
                 const std::vector<VkDescriptorSet>& descriptorSets,
                 u32 currentFrame,
                 ECS::World* world,
-                const std::function<void(const std::string& texturePath)>& textureBindCallback,
+                const std::function<void(const std::string& texturePath, const std::string& normalMapPath)>& textureBindCallback,
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0,
                 bool litMode = false);

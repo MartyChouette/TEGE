@@ -323,7 +323,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
                                   const std::vector<VkDescriptorSet>& descriptorSets,
                                   u32 currentFrame,
                                   ECS::World* world,
-                                  const std::function<void(const std::string& texturePath)>& textureBindCallback,
+                                  const std::function<void(const std::string& texturePath, const std::string& normalMapPath)>& textureBindCallback,
                                   u32 viewportWidth,
                                   u32 viewportHeight,
                                   bool litMode) {
@@ -371,7 +371,7 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     if (sortedSprites.empty()) return;
 
     // Sort by sorting layer (ascending), then order in layer (ascending)
-    // Tertiary sort groups atlased sprites together (empty key sorts first)
+    // Tertiary sort groups by effective texture + normal map to maximize batching
     std::sort(sortedSprites.begin(), sortedSprites.end(),
         [](const SpriteEntry& a, const SpriteEntry& b) {
             if (a.sortingLayer != b.sortingLayer)
@@ -381,8 +381,14 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             // Tertiary sort by effective texture key to maximize batching within same layer
             // Atlased sprites use precomputed flag so they group together
             if (a.isAtlased != b.isAtlased) return a.isAtlased;  // Atlased first
-            if (a.isAtlased) return false;  // Both atlased — equal
-            return a.sprite->texturePath < b.sprite->texturePath;
+            if (a.isAtlased) {
+                // Both atlased — sub-sort by normal map to batch same normal maps together
+                return a.sprite->normalMapPath < b.sprite->normalMapPath;
+            }
+            if (a.sprite->texturePath != b.sprite->texturePath)
+                return a.sprite->texturePath < b.sprite->texturePath;
+            // Same base texture — sub-sort by normal map
+            return a.sprite->normalMapPath < b.sprite->normalMapPath;
         });
 
     // Resolve viewport extent
@@ -395,13 +401,176 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     }
     if (extent.width == 0 || extent.height == 0) return;
 
-    // Build instance data and batch by texture path
+    // Build instance data and batch by texture path + normal map path
     m_InstanceDataCache.clear();
     m_InstanceDataCache.reserve(sortedSprites.size());
     std::string currentTexture;
+    std::string currentNormalMap;
     u32 batchStart = 0;
 
-    // Bind pipeline, descriptor set, viewport, scissor, push constants, and buffers ONCE
+    // --- Drop shadow pre-pass ---
+    // Render shadow copies first (behind all sprites) using the unlit pipeline
+    {
+        std::vector<SpriteInstanceData> shadowInstances;
+        for (const auto& entry : sortedSprites) {
+            const auto* sprite = entry.sprite;
+            if (!sprite->dropShadow) continue;
+            const auto* transform = world->GetComponent<ECS::TransformComponent>(entry.entity);
+            if (!transform) continue;
+
+            SpriteInstanceData inst{};
+
+            auto* parentComp = world->GetComponent<ECS::ParentComponent>(entry.entity);
+            if (parentComp && parentComp->parent != ECS::INVALID_ENTITY) {
+                Math::Matrix4 worldMat = ECS::ComputeWorldMatrix(world, entry.entity);
+                inst.position = Math::Vector3(worldMat.m[12] + sprite->shadowOffset.x,
+                                              worldMat.m[13] + sprite->shadowOffset.y,
+                                              worldMat.m[14] - 0.001f);  // Slightly behind
+                inst.rotation = std::atan2(worldMat.m[1], worldMat.m[0]);
+                f32 scaleX = std::sqrt(worldMat.m[0] * worldMat.m[0] + worldMat.m[1] * worldMat.m[1]);
+                f32 scaleY = std::sqrt(worldMat.m[4] * worldMat.m[4] + worldMat.m[5] * worldMat.m[5]);
+                inst.sizeX = sprite->size.x * scaleX * sprite->shadowScale;
+                inst.sizeY = sprite->size.y * scaleY * sprite->shadowScale;
+            } else {
+                inst.position = Math::Vector3(transform->position.x + sprite->shadowOffset.x,
+                                              transform->position.y + sprite->shadowOffset.y,
+                                              transform->position.z - 0.001f);
+                inst.sizeX = sprite->size.x * sprite->shadowScale;
+                inst.sizeY = sprite->size.y * sprite->shadowScale;
+                inst.rotation = transform->rotation.GetRotationZ();
+            }
+
+            // Use same UVs as the sprite (shadow has same silhouette)
+            if (sprite->srcWidth > 0 && sprite->srcHeight > 0 &&
+                sprite->texPixelWidth > 0 && sprite->texPixelHeight > 0) {
+                inst.uvLeft   = sprite->srcX / sprite->texPixelWidth;
+                inst.uvTop    = sprite->srcY / sprite->texPixelHeight;
+                inst.uvRight  = (sprite->srcX + sprite->srcWidth) / sprite->texPixelWidth;
+                inst.uvBottom = (sprite->srcY + sprite->srcHeight) / sprite->texPixelHeight;
+            } else {
+                inst.uvLeft = 0.0f; inst.uvTop = 0.0f;
+                inst.uvRight = 1.0f; inst.uvBottom = 1.0f;
+            }
+
+            // Remap UVs into atlas region if atlased
+            const AtlasRegion* atlasRegion = entry.cachedAtlasRegion;
+            if (atlasRegion) {
+                f32 rw = atlasRegion->uvRight - atlasRegion->uvLeft;
+                f32 rh = atlasRegion->uvBottom - atlasRegion->uvTop;
+                inst.uvLeft   = atlasRegion->uvLeft + inst.uvLeft * rw;
+                inst.uvTop    = atlasRegion->uvTop  + inst.uvTop  * rh;
+                inst.uvRight  = atlasRegion->uvLeft + inst.uvRight * rw;
+                inst.uvBottom = atlasRegion->uvTop  + inst.uvBottom * rh;
+            }
+
+            // Shadow tint: use shadowColor RGB and alpha
+            inst.tintR = sprite->shadowColor.x;
+            inst.tintG = sprite->shadowColor.y;
+            inst.tintB = sprite->shadowColor.z;
+            inst.tintA = sprite->shadowColor.w;
+
+            inst.flipFlags = (sprite->flipX ? 1u : 0u) | (sprite->flipY ? 2u : 0u);
+
+            shadowInstances.push_back(inst);
+        }
+
+        if (!shadowInstances.empty()) {
+            // Use unlit pipeline for shadows (no lighting on shadow quads)
+            m_Pipeline->Bind(commandBuffer);
+            vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                m_Pipeline->GetLayout(), 0, 1, &descriptorSets[currentFrame], 0, nullptr);
+
+            VkViewport viewport{};
+            viewport.x = 0.0f; viewport.y = 0.0f;
+            viewport.width = static_cast<f32>(extent.width);
+            viewport.height = static_cast<f32>(extent.height);
+            viewport.minDepth = 0.0f; viewport.maxDepth = 1.0f;
+            vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+            VkRect2D scissor{}; scissor.offset = {0, 0}; scissor.extent = extent;
+            vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
+
+            Renderer::PushConstants shadowPc{};
+            shadowPc.model = Math::Matrix4::Identity();
+            shadowPc.baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            shadowPc.opacity = 1.0f;
+            shadowPc.flags = 0;
+            vkCmdPushConstants(commandBuffer, m_Pipeline->GetLayout(),
+                VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(shadowPc), &shadowPc);
+
+            VkBuffer shadowVertBufs[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+            VkDeviceSize shadowOffsets[] = { 0, 0 };
+            vkCmdBindVertexBuffers(commandBuffer, 0, 2, shadowVertBufs, shadowOffsets);
+            vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+            // Render all shadows in a single batch (they all use the same base texture as their sprite)
+            // For simplicity, batch all shadow instances together per base texture group
+            // Sort by base texture for batching
+            u32 shadowBatchStart = 0;
+            std::string shadowCurrentTex;
+
+            // Group shadows by their sprite's effective texture
+            // Re-sort shadow instances alongside their texture keys
+            struct ShadowBatchEntry {
+                std::string textureKey;
+                u32 instanceIdx;
+            };
+            std::vector<ShadowBatchEntry> shadowBatchEntries;
+            shadowBatchEntries.reserve(shadowInstances.size());
+            u32 shadowIdx = 0;
+            for (const auto& entry : sortedSprites) {
+                if (!entry.sprite->dropShadow) continue;
+                auto* transform = world->GetComponent<ECS::TransformComponent>(entry.entity);
+                if (!transform) continue;
+                static const std::string kAtlasSentinel("__atlas__");
+                const std::string& effectiveKey = entry.cachedAtlasRegion ? kAtlasSentinel : entry.sprite->texturePath;
+                shadowBatchEntries.push_back({ effectiveKey, shadowIdx });
+                shadowIdx++;
+            }
+
+            // Sort by texture key
+            std::sort(shadowBatchEntries.begin(), shadowBatchEntries.end(),
+                [](const ShadowBatchEntry& a, const ShadowBatchEntry& b) {
+                    return a.textureKey < b.textureKey;
+                });
+
+            // Reorder shadow instances to match sorted order
+            std::vector<SpriteInstanceData> sortedShadowInst(shadowInstances.size());
+            for (u32 i = 0; i < shadowBatchEntries.size(); ++i) {
+                sortedShadowInst[i] = shadowInstances[shadowBatchEntries[i].instanceIdx];
+            }
+
+            // Flush shadow batches
+            for (u32 i = 0; i < sortedShadowInst.size(); ++i) {
+                const std::string& texKey = shadowBatchEntries[i].textureKey;
+                if (texKey != shadowCurrentTex && i > shadowBatchStart) {
+                    u32 count = i - shadowBatchStart;
+                    m_InstanceBuffer->UploadData(sortedShadowInst.data() + shadowBatchStart, count * sizeof(SpriteInstanceData));
+                    if (textureBindCallback) textureBindCallback(shadowCurrentTex, "");
+                    VkBuffer rebindBufs[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+                    VkDeviceSize rebindOff[] = { 0, 0 };
+                    vkCmdBindVertexBuffers(commandBuffer, 0, 2, rebindBufs, rebindOff);
+                    vkCmdDrawIndexed(commandBuffer, 6, count, 0, 0, 0);
+                    shadowBatchStart = i;
+                }
+                if (shadowCurrentTex.empty() || texKey != shadowCurrentTex) {
+                    shadowCurrentTex = texKey;
+                }
+            }
+            // Flush last shadow batch
+            if (sortedShadowInst.size() > shadowBatchStart) {
+                u32 count = static_cast<u32>(sortedShadowInst.size()) - shadowBatchStart;
+                m_InstanceBuffer->UploadData(sortedShadowInst.data() + shadowBatchStart, count * sizeof(SpriteInstanceData));
+                if (textureBindCallback) textureBindCallback(shadowCurrentTex, "");
+                VkBuffer rebindBufs[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
+                VkDeviceSize rebindOff[] = { 0, 0 };
+                vkCmdBindVertexBuffers(commandBuffer, 0, 2, rebindBufs, rebindOff);
+                vkCmdDrawIndexed(commandBuffer, 6, count, 0, 0, 0);
+            }
+        }
+    }
+
+    // --- Main sprite pass ---
+    // Bind active pipeline (lit or unlit) for normal sprite rendering
     activePipeline->Bind(commandBuffer);
 
     vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -427,13 +596,14 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
     pc.metallic = 0.0f;
     pc.opacity = 1.0f;
     pc.flags = 0;
-    vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
-        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
 
     VkBuffer vertexBuffers[] = { m_QuadVertexBuffer->GetBuffer(), m_InstanceBuffer->GetBuffer() };
     VkDeviceSize offsets[] = { 0, 0 };
     vkCmdBindVertexBuffers(commandBuffer, 0, 2, vertexBuffers, offsets);
     vkCmdBindIndexBuffer(commandBuffer, m_QuadIndexBuffer->GetBuffer(), 0, VK_INDEX_TYPE_UINT32);
+
+    // Normal map flag (bit 17, same as triangle.frag/sprite_lit.frag FLAG_HAS_NORMAL_TEX)
+    static constexpr i32 FLAG_HAS_NORMAL_TEX = (1 << 17);
 
     // Lambda to flush the current batch as an instanced draw call
     auto flushBatch = [&](u32 batchEnd) {
@@ -445,9 +615,14 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
             m_InstanceDataCache.data() + batchStart,
             count * sizeof(SpriteInstanceData));
 
-        // Bind the texture for this batch (only per-batch state that changes)
+        // Update push constants with normal map flag for this batch
+        pc.flags = currentNormalMap.empty() ? 0 : FLAG_HAS_NORMAL_TEX;
+        vkCmdPushConstants(commandBuffer, activePipeline->GetLayout(),
+            VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(pc), &pc);
+
+        // Bind the texture + normal map for this batch
         if (textureBindCallback) {
-            textureBindCallback(currentTexture);
+            textureBindCallback(currentTexture, currentNormalMap);
         }
 
         // Re-bind instance buffer after upload (data may have been re-uploaded)
@@ -472,13 +647,14 @@ void SpriteBatchRenderer::Render(VkCommandBuffer commandBuffer,
         static const std::string kAtlasSentinel("__atlas__");
         const std::string& effectiveKey = atlasRegion ? kAtlasSentinel : sprite->texturePath;
 
-        // Flush when effective texture changes (but not on the first sprite)
-        if (effectiveKey != currentTexture && m_InstanceDataCache.size() > batchStart) {
+        // Flush when effective texture OR normal map changes (but not on the first sprite)
+        bool textureChanged = (effectiveKey != currentTexture);
+        bool normalMapChanged = (sprite->normalMapPath != currentNormalMap);
+        if ((textureChanged || normalMapChanged) && m_InstanceDataCache.size() > batchStart) {
             flushBatch(static_cast<u32>(m_InstanceDataCache.size()));
-            currentTexture = effectiveKey;
-        } else if (currentTexture.empty()) {
-            currentTexture = effectiveKey;
         }
+        currentTexture = effectiveKey;
+        currentNormalMap = sprite->normalMapPath;
 
         // Build instance data from sprite + world transform (includes parent chain)
         SpriteInstanceData inst{};

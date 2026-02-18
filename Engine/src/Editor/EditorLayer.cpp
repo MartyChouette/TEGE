@@ -25641,6 +25641,28 @@ void EditorLayer::DrawSprite2DComponent(ECS::Entity entity) {
             }
         }
 
+        // Drop Shadow settings
+        ImGui::Separator();
+        ImGui::Text("Drop Shadow:");
+        InspectorUndo::Checkbox(m_UndoRedo, "Enable Shadow", &sprite->dropShadow);
+        if (sprite->dropShadow) {
+            f32 offset[2] = { sprite->shadowOffset.x, sprite->shadowOffset.y };
+            if (ImGui::DragFloat2("Shadow Offset", offset, 0.1f, -50.0f, 50.0f)) {
+                sprite->shadowOffset = Math::Vector2(offset[0], offset[1]);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Offset in world units (X, Y) from sprite position");
+            }
+            f32 col[4] = { sprite->shadowColor.x, sprite->shadowColor.y, sprite->shadowColor.z, sprite->shadowColor.w };
+            if (ImGui::ColorEdit4("Shadow Color", col, ImGuiColorEditFlags_AlphaBar)) {
+                sprite->shadowColor = Math::Vector4(col[0], col[1], col[2], col[3]);
+            }
+            InspectorUndo::DragFloat(m_UndoRedo, "Shadow Scale", &sprite->shadowScale, 0.01f, 0.1f, 3.0f);
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Scale of the shadow relative to sprite (1.0 = same size)");
+            }
+        }
+
         // Generate Normal Map from height/grayscale texture
         if (!sprite->texturePath.empty()) {
             ImGui::Separator();

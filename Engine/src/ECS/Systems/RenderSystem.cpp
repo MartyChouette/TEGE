@@ -3819,7 +3819,7 @@ void RenderSystem::RenderSprites() {
         // Determine lit mode: Scene2D = unlit, Scene2_5D/Scene3D = lit (sprites respond to lights)
         bool litMode = (m_SceneComposition.mode != SceneRenderMode::Scene2D);
 
-        auto textureBindCallback = [this, litMode](const std::string& texturePath) {
+        auto textureBindCallback = [this, litMode](const std::string& texturePath, const std::string& normalMapPath) {
             // Handle atlas sentinel — bind the packed atlas texture
             if (texturePath == "__atlas__" && m_SpriteAtlas && m_SpriteAtlas->IsValid()) {
                 UpdateTextureDescriptor(m_SpriteAtlas->GetAtlasTexture());
@@ -3829,9 +3829,18 @@ void RenderSystem::RenderSprites() {
                     UpdateTextureDescriptor(tex.get());
                 }
             }
-            // Bind default normal map only for lit sprites (binding 6 unused by unlit shader)
-            if (litMode && m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
-                UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+            // Bind normal map for lit sprites (binding 6)
+            if (litMode) {
+                if (!normalMapPath.empty()) {
+                    auto normalTex = GetOrLoadTexture(normalMapPath);
+                    if (normalTex && normalTex->IsValid()) {
+                        UpdateNormalMapDescriptor(normalTex.get());
+                    } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                        UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+                    }
+                } else if (m_DefaultWhiteTexture && m_DefaultWhiteTexture->IsValid()) {
+                    UpdateNormalMapDescriptor(m_DefaultWhiteTexture.get());
+                }
             }
         };
 
