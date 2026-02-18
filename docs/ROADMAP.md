@@ -419,6 +419,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | 9 | ~~**Level Streaming**~~ | ~~Fully implemented but no trigger volumes, no editor UI, no script bindings~~ ✅ Fixed | StreamingVolume/Portal serialization, inspector UI, 6 AS + 6 VS bindings |
 | 10 | ~~**Localization System**~~ | ~~LocalizationManager complete but no editor panel, no runtime script bindings~~ ✅ Fixed | 5 AS bindings + 1 VS node added |
 | 11 | ~~**Newgrounds Bindings**~~ | ~~RegisterNewgroundsBindings() fully written but never called~~ ✅ Fixed | Called in RegisterAllBindings() |
+| 12 | ~~**Player App — Game Menus**~~ | ~~GameMenuSystem rendered MainMenu/PauseMenu but no callback wired — all buttons dead, no title screen shown~~ ✅ Fixed | Callback wired (New Game/Continue/Resume/Options/How to Play/Quit to Menu/Quit), MainMenu shown after splash, ESC state-aware, Options/HowToPlay Back returns to correct parent screen |
 
 ### HIGH — Systems Partially Walled Off (No Script Bindings)
 
@@ -547,6 +548,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Cloud Save Backends (NG/Steam) | Medium | Medium | P2 | ✅ Complete |
 | Save System Script Bindings (AS + VS) | Medium | Medium | P2 | ✅ Complete |
 | Wire AISystem into PlayMode and Player | Critical | Low | P0 | ✅ Complete (patrol/chase/flee/wander/navmesh — was 615+ lines dead code) |
+| Player App: Automatic title screen & pause menu | High | Low | P1 | ✅ Complete (MainMenu after splash, callback wiring, state-aware ESC, Options/HowToPlay return-screen tracking) |
 | Add AS bindings for 22 gameplay component types | High | High | P1 | ✅ Complete (~180 new bindings, total ~570) |
 | Wire plugin/audio graph/input action bindings in PlayMode | Medium | Low | P1 | ✅ Complete |
 | Pack graph assets in BuildPipeline | Medium | Low | P2 | ✅ Complete (.enjshader/.enjaudiopkg/.enjparticle) |
@@ -706,6 +708,7 @@ Import dialog enhancements:
 
 ### Recently Completed (cont.)
 
+- **Player Title Screen & Pause Menu** — `GameMenuSystem` buttons now fully functional in game builds. Splash screen transitions to MainMenu (New Game / Continue / Options / How to Play / Quit). New Game starts gameplay, ESC opens PauseMenu with Resume / Options / How to Play / Quit to Menu. Options and HowToPlay Back buttons track which parent screen (MainMenu or PauseMenu) they came from via `m_ReturnScreen`. Gameplay updates gated on `m_GameStarted` flag. Files: `GameMenus.h/cpp`, `Player/src/main.cpp`
 - **Sprite Texture Atlas** — Runtime shelf-packing of sprite textures (<=512px) into a single 4096x4096 GPU texture. Sprites sharing the atlas batch into one instanced draw call via `"__atlas__"` sentinel key. Per-instance UVs linearly remapped into atlas regions. Lazy rebuild on new textures, invalidation on texture hot-reload. Oversized/failed textures excluded and fall back to individual draw calls
 - **Soft Shadows (Poisson Disk PCF)** — 16-sample Poisson disk PCF with configurable shadow softness radius. Applied to directional (CSM), point, and spot light shadows
 - **Point/Spot Light Shadow Maps** — Cubemap array depth maps for up to 4 point lights (1024² per face, 6 faces each), 2D array depth maps for up to 4 spot lights (1024²). Shadow data SSBO (binding 12), new descriptor bindings 10-12. Shadow-casting light selection by intensity/distance² scoring. Soft shadows via 3D tangent-frame Poisson disk for point lights, standard 2D Poisson for spot lights
