@@ -1347,11 +1347,14 @@ void EditorLayer::Update(f32 deltaTime) {
         m_RenderSystem->SetWindSystem(&m_WindSystem);
     }
 
-    // Camera controller handles its own input - disable during play mode, text input, or gizmo use
+    // Camera controller handles its own input - disable during text input or gizmo use.
+    // During play mode, require RMB held so WASD doesn't conflict with game controllers.
     if (m_CameraController) {
         bool usingGizmo = ImGuizmo::IsUsing();
         bool inPlayMode = !m_PlayMode.IsStopped();
-        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && !inPlayMode);
+        bool canUseCamera = !inPlayMode ||
+            (Input::IsMouseButtonDown(MouseButton::Right) && !m_GameViewMouseCaptured);
+        m_CameraController->SetEnabled(!WantsKeyboardInput() && !usingGizmo && canUseCamera);
 
         // Set orbit target to selected entity position for MMB orbit
         if (m_PrimarySelected != ECS::INVALID_ENTITY && m_World && m_World->IsValid(m_PrimarySelected)) {
@@ -1367,12 +1370,11 @@ void EditorLayer::Update(f32 deltaTime) {
 
     // Gizmo mode shortcuts (1=translate, 2=rotate, 3=scale, 4=toggle space)
     // Using number keys to avoid conflict with WASD camera movement
-    // Skip during play mode so keys go to game controllers
     // Use WantTextInput (not WantCaptureKeyboard) so shortcuts work when panels
     // have focus but no text field is being edited. WantCaptureKeyboard is true whenever
     // any ImGui window is focused, which blocks Delete/Ctrl+D/gizmo keys after clicking
     // in the hierarchy or any other panel.
-    if (!ImGui::GetIO().WantTextInput && m_PlayMode.IsStopped()) {
+    if (!ImGui::GetIO().WantTextInput) {
         if (Input::IsKeyPressed(KeyCode::Num1)) {
             m_GizmoOperation = GizmoOperation::Translate;
         }
@@ -1545,10 +1547,9 @@ void EditorLayer::Update(f32 deltaTime) {
         m_UIEditMode = false;
     }
 
-    // Handle viewport picking (left-click to select, but not when using gizmo)
-    // Only allow picking in editor mode, not play mode
+    // Handle viewport picking (left-click to select entities in editor viewport)
     // Skip viewport picking while terrain/tilemap/UI edit mode is active to prevent entity deselection
-    if (!ImGuizmo::IsOver() && m_PlayMode.IsStopped() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode) {
+    if (!ImGuizmo::IsOver() && !m_TerrainEditMode && !m_TilemapEditMode && !m_UIEditMode) {
         HandleViewportPicking();
     }
 

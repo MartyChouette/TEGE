@@ -275,10 +275,11 @@ void PlayMode::Play() {
     // This lets the user keep a visible cursor in the editor while play mode runs.
 
     // Skip main-pass shadow rendering during play mode — the game view already
-    // runs its own shadow pass via RenderShadowPassForCamera()
+    // runs its own shadow pass via RenderShadowPassForCamera(), and the editor
+    // viewport reuses those shadow maps. Main pass geometry still renders so the
+    // user can fly the editor camera and inspect the scene at runtime.
     if (m_RenderSystem) {
         m_RenderSystem->SetSkipMainPassShadows(true);
-        m_RenderSystem->SetSkipMainPassRendering(true);
     }
 
     m_State = PlayState::Playing;
@@ -471,7 +472,6 @@ void PlayMode::Stop() {
     // Re-enable main-pass shadow rendering for editor mode
     if (m_RenderSystem) {
         m_RenderSystem->SetSkipMainPassShadows(false);
-        m_RenderSystem->SetSkipMainPassRendering(false);
     }
 
     m_State = PlayState::Stopped;
