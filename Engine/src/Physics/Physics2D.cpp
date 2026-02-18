@@ -14,6 +14,9 @@ namespace Physics {
 // Helper utilities
 // ============================================================================
 
+// WARNING: Truncates entity IDs to 32 bits. Assumes entity IDs fit in u32.
+// If entity IDs exceed 2^32, this will produce collisions. Changing the key
+// type requires broader refactoring of all collision pair tracking.
 static u64 MakePairKey(ECS::Entity a, ECS::Entity b) {
     u64 lo = static_cast<u64>(std::min(a, b));
     u64 hi = static_cast<u64>(std::max(a, b));
@@ -104,6 +107,20 @@ static AABB2D ComputeAABB(const Math::Vector2& worldPos, f32 worldAngle,
             }
             break;
         }
+        case Shape2DType::Capsule: {
+            // PH-C3: Capsule AABB — bounding box of two semicircle endpoints
+            Math::Vector2 center = worldPos + RotateVec(body.capsule.offset, worldAngle);
+            f32 r = body.capsule.radius;
+            f32 halfH = body.capsule.height * 0.5f;
+            Math::Vector2 axis = RotateVec(Math::Vector2(0.0f, halfH), worldAngle);
+            Math::Vector2 p1 = center + axis;
+            Math::Vector2 p2 = center - axis;
+            aabb.min.x = Math::Min(p1.x, p2.x) - r;
+            aabb.min.y = Math::Min(p1.y, p2.y) - r;
+            aabb.max.x = Math::Max(p1.x, p2.x) + r;
+            aabb.max.y = Math::Max(p1.y, p2.y) + r;
+            break;
+        }
         case Shape2DType::Polygon: {
             Math::Vector2 center = worldPos + RotateVec(body.polygon.offset, worldAngle);
             if (body.polygon.vertices.empty()) {
@@ -122,6 +139,12 @@ static AABB2D ComputeAABB(const Math::Vector2& worldPos, f32 worldAngle,
                 aabb.max.x = Math::Max(aabb.max.x, v.x);
                 aabb.max.y = Math::Max(aabb.max.y, v.y);
             }
+            break;
+        }
+        default: {
+            // Unknown shape — return zero-size AABB at position
+            aabb.min = worldPos;
+            aabb.max = worldPos;
             break;
         }
     }
@@ -405,8 +428,7 @@ void PhysicsWorld2D::BroadPhase(std::vector<std::pair<ECS::Entity, ECS::Entity>>
         Body2DComponent* body;
     };
 
-    static std::vector<EntityAABB> entries;
-    entries.clear();
+    std::vector<EntityAABB> entries;
     entries.reserve(entities.size());
 
     for (ECS::Entity e : entities) {
@@ -508,6 +530,50 @@ void PhysicsWorld2D::NarrowPhase(const std::vector<std::pair<ECS::Entity, ECS::E
             }
         }
         // Polygon-Box and Polygon-Polygon omitted for now (use AABB approximation)
+
+        // Capsule narrow phase: approximate capsule as a box with halfExtents = {radius, height/2}
+        // for any pair involving a Capsule shape. This is a conservative approximation;
+        // a dedicated capsule-vs-X test would give tighter results.
+        else if (sA == Shape2DType::Capsule || sB == Shape2DType::Capsule) {
+            BoxShape2D boxA, boxB;
+            f32 effectAngleA = angleA;
+            f32 effectAngleB = angleB;
+            bool canTest = true;
+
+            if (sA == Shape2DType::Capsule) {
+                boxA.offset = bodyA->capsule.offset;
+                boxA.halfExtents = Math::Vector2(bodyA->capsule.radius, bodyA->capsule.height * 0.5f);
+                boxA.rotation = 0.0f;
+            } else if (sA == Shape2DType::Box) {
+                boxA = bodyA->box;
+            } else if (sA == Shape2DType::Circle) {
+                boxA.offset = bodyA->circle.offset;
+                boxA.halfExtents = Math::Vector2(bodyA->circle.radius, bodyA->circle.radius);
+                boxA.rotation = 0.0f;
+            } else {
+                canTest = false;  // Polygon vs Capsule not yet supported
+            }
+
+            if (canTest) {
+                if (sB == Shape2DType::Capsule) {
+                    boxB.offset = bodyB->capsule.offset;
+                    boxB.halfExtents = Math::Vector2(bodyB->capsule.radius, bodyB->capsule.height * 0.5f);
+                    boxB.rotation = 0.0f;
+                } else if (sB == Shape2DType::Box) {
+                    boxB = bodyB->box;
+                } else if (sB == Shape2DType::Circle) {
+                    boxB.offset = bodyB->circle.offset;
+                    boxB.halfExtents = Math::Vector2(bodyB->circle.radius, bodyB->circle.radius);
+                    boxB.rotation = 0.0f;
+                } else {
+                    canTest = false;
+                }
+            }
+
+            if (canTest) {
+                hit = TestBoxBox(posA, boxA, effectAngleA, posB, boxB, effectAngleB, manifold);
+            }
+        }
 
         if (hit) {
             manifolds.push_back(manifold);
@@ -1169,6 +1235,9 @@ void PhysicsWorld2D::PerformCCD(f32 dt) {
                 shapeRadius = Math::Sqrt(body->box.halfExtents.x * body->box.halfExtents.x +
                                           body->box.halfExtents.y * body->box.halfExtents.y);
                 break;
+            case Shape2DType::Capsule:
+                shapeRadius = Math::Max(body->capsule.radius, body->capsule.height * 0.5f);
+                break;
             case Shape2DType::Polygon:
                 for (const auto& v : body->polygon.vertices) {
                     f32 len = v.Length();
@@ -1300,6 +1369,56 @@ bool PhysicsWorld2D::Raycast(const Math::Vector2& origin, const Math::Vector2& d
                 }
                 break;
             }
+            case Shape2DType::Capsule: {
+                // Approximate capsule as a box for ray testing
+                // Box halfExtents = {radius, height/2}
+                Math::Vector2 center = pos + RotateVec(body->capsule.offset, angle);
+                Math::Vector2 he(body->capsule.radius, body->capsule.height * 0.5f);
+
+                // Transform ray into capsule-local space (capsule has no extra rotation)
+                Math::Vector2 localOrigin = InvRotateVec(origin - center, angle);
+                Math::Vector2 localDir = InvRotateVec(dir, angle);
+
+                // Ray-AABB slab test in local space
+                f32 tmin = 0.0f;
+                f32 tmax = closestDist;
+                Math::Vector2 hitNormalLocal;
+
+                for (i32 axis = 0; axis < 2; ++axis) {
+                    f32 orig = (axis == 0) ? localOrigin.x : localOrigin.y;
+                    f32 d = (axis == 0) ? localDir.x : localDir.y;
+                    f32 bmin = (axis == 0) ? -he.x : -he.y;
+                    f32 bmax = (axis == 0) ? he.x : he.y;
+
+                    if (Math::Abs(d) < 0.0001f) {
+                        if (orig < bmin || orig > bmax) { tmin = closestDist + 1.0f; break; }
+                    } else {
+                        f32 t1 = (bmin - orig) / d;
+                        f32 t2 = (bmax - orig) / d;
+
+                        Math::Vector2 n1, n2;
+                        if (axis == 0) { n1 = Math::Vector2(-1, 0); n2 = Math::Vector2(1, 0); }
+                        else { n1 = Math::Vector2(0, -1); n2 = Math::Vector2(0, 1); }
+
+                        if (t1 > t2) { std::swap(t1, t2); std::swap(n1, n2); }
+
+                        if (t1 > tmin) { tmin = t1; hitNormalLocal = n1; }
+                        tmax = Math::Min(tmax, t2);
+
+                        if (tmin > tmax) break;
+                    }
+                }
+
+                if (tmin <= tmax && tmin < closestDist && tmin >= 0.0f) {
+                    closestDist = tmin;
+                    outHit.entity = entity;
+                    outHit.distance = tmin;
+                    outHit.point = origin + dir * tmin;
+                    outHit.normal = RotateVec(hitNormalLocal, angle);
+                    found = true;
+                }
+                break;
+            }
             case Shape2DType::Polygon: {
                 // Ray vs polygon: test each edge
                 Math::Vector2 polyCenter = pos + RotateVec(body->polygon.offset, angle);
@@ -1422,6 +1541,46 @@ std::vector<RayHit2D> PhysicsWorld2D::RaycastAll(const Math::Vector2& origin, co
                 }
                 break;
             }
+            case Shape2DType::Capsule: {
+                // Approximate capsule as a box for ray testing
+                f32 bodyAngle = GetRotationZ(*transform);
+                Math::Vector2 center = pos + RotateVec(body->capsule.offset, bodyAngle);
+                Math::Vector2 he(body->capsule.radius, body->capsule.height * 0.5f);
+
+                Math::Vector2 localOrigin = InvRotateVec(origin - center, bodyAngle);
+                Math::Vector2 localDir = InvRotateVec(dir, bodyAngle);
+
+                f32 tmin = 0.0f;
+                f32 tmax = maxDistance;
+
+                for (i32 axis = 0; axis < 2; ++axis) {
+                    f32 orig = (axis == 0) ? localOrigin.x : localOrigin.y;
+                    f32 d = (axis == 0) ? localDir.x : localDir.y;
+                    f32 bmin = (axis == 0) ? -he.x : -he.y;
+                    f32 bmax = (axis == 0) ? he.x : he.y;
+
+                    if (Math::Abs(d) < 0.0001f) {
+                        if (orig < bmin || orig > bmax) { tmin = maxDistance + 1.0f; break; }
+                    } else {
+                        f32 t1 = (bmin - orig) / d;
+                        f32 t2 = (bmax - orig) / d;
+                        if (t1 > t2) std::swap(t1, t2);
+                        tmin = Math::Max(tmin, t1);
+                        tmax = Math::Min(tmax, t2);
+                        if (tmin > tmax) break;
+                    }
+                }
+
+                if (tmin <= tmax && tmin >= 0.0f) {
+                    RayHit2D hit;
+                    hit.entity = entity;
+                    hit.distance = tmin;
+                    hit.point = origin + dir * tmin;
+                    hit.normal = Math::Vector2(0, 1); // Simplified
+                    hits.push_back(hit);
+                }
+                break;
+            }
             default: break;
         }
     }
@@ -1479,6 +1638,16 @@ bool PhysicsWorld2D::OverlapCircle(const Math::Vector2& center, f32 radius,
                 closest.y = Math::Clamp(localCenter.y, -body->box.halfExtents.y, body->box.halfExtents.y);
 
                 if ((localCenter - closest).LengthSquared() <= radiusSq) {
+                    outEntities.push_back(entity);
+                }
+                break;
+            }
+            case Shape2DType::Capsule: {
+                // Approximate capsule overlap as circle-circle with effective radius
+                Math::Vector2 capsuleCenter = pos + RotateVec(body->capsule.offset, angle);
+                f32 effectiveRadius = body->capsule.radius + body->capsule.height * 0.5f;
+                f32 totalRadius = radius + effectiveRadius;
+                if ((capsuleCenter - center).LengthSquared() <= totalRadius * totalRadius) {
                     outEntities.push_back(entity);
                 }
                 break;

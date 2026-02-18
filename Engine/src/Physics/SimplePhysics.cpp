@@ -98,9 +98,9 @@ void SimplePhysics::Update(f32 deltaTime) {
             rb->velocity = rb->velocity + effectiveGravity * rb->gravityScale * deltaTime;
         }
 
-        // Apply drag
+        // Apply drag (clamp multiplier to prevent velocity reversal at high drag*dt)
         if (rb->drag > 0.0f) {
-            rb->velocity = rb->velocity * (1.0f - rb->drag * deltaTime);
+            rb->velocity = rb->velocity * Math::Max(0.0f, 1.0f - rb->drag * deltaTime);
         }
 
         // Apply velocity constraints

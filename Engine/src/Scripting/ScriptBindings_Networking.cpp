@@ -5,6 +5,7 @@
 #include <angelscript.h>
 #include <cassert>
 #include <string>
+#include <unordered_set>
 
 using namespace Enjin;
 
@@ -30,11 +31,13 @@ void SetBindingsNetworking(Networking::NetworkSystem* net) {
 
 static bool Net_HostGame(int port, const std::string& playerName) {
     if (!s_BindingsNetworking) return false;
+    if (port < 1 || port > 65535) return false; // SC-H1: validate port range
     return s_BindingsNetworking->HostGame(static_cast<u16>(port), playerName);
 }
 
 static bool Net_JoinGame(const std::string& ip, int port, const std::string& playerName) {
     if (!s_BindingsNetworking) return false;
+    if (port < 1 || port > 65535 || ip.empty()) return false; // SC-H1: validate port + IP
     return s_BindingsNetworking->JoinGame(ip, static_cast<u16>(port), playerName);
 }
 
@@ -129,20 +132,29 @@ static void Net_RequestOwnership(int networkId) {
 // RPC
 // ============================================================================
 
+static constexpr usize kMaxRPCDataSize = 65536; // SC-H2: 64KB cap
+
 static void Net_CallRPC(const std::string& name, int targetPlayerId, const std::string& data) {
     if (!s_BindingsNetworking) return;
+    if (data.size() > kMaxRPCDataSize) return; // SC-H2: reject oversized payloads
     s_BindingsNetworking->CallRPC(name, static_cast<Networking::PlayerId>(targetPlayerId),
         reinterpret_cast<const u8*>(data.data()), static_cast<u32>(data.size()));
 }
 
 static void Net_CallRPCAll(const std::string& name, const std::string& data) {
     if (!s_BindingsNetworking) return;
+    if (data.size() > kMaxRPCDataSize) return; // SC-H2
     s_BindingsNetworking->CallRPCAll(name,
         reinterpret_cast<const u8*>(data.data()), static_cast<u32>(data.size()));
 }
 
+static std::unordered_set<std::string> s_RegisteredRPCHandlers; // SC-H3: track registrations
+
 static void Net_RegisterRPCHandler(const std::string& name) {
     if (!s_BindingsNetworking) return;
+    if (s_RegisteredRPCHandlers.count(name)) return; // SC-H3: reject duplicates
+    if (s_RegisteredRPCHandlers.size() >= 64) return; // SC-H3: cap total registrations
+    s_RegisteredRPCHandlers.insert(name);
     // Register a handler that fires a script event "__rpc_<name>"
     std::string eventName = "__rpc_" + name;
     s_BindingsNetworking->RegisterRPC(name, [eventName](Networking::PlayerId sender, const u8* data, u32 size) {

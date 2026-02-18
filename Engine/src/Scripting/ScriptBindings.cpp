@@ -21,6 +21,7 @@
 #include <cstdlib>
 #include <ctime>
 #include <cmath>
+#include <filesystem>
 #include <string>
 #include <cassert>
 
@@ -33,6 +34,30 @@ using namespace Enjin::ECS;
 // Shared across ScriptBindings translation units via extern linkage.
 // ---------------------------------------------------------------------------
 ECS::World* s_BindingsWorld = nullptr;
+
+// ---------------------------------------------------------------------------
+// SC-C2/C3: Centralized asset path validator for script bindings.
+// Rejects absolute paths and directory traversal. Returns true if safe.
+// ---------------------------------------------------------------------------
+bool ValidateScriptAssetPath(const std::string& path, const char* funcName) {
+    if (path.empty()) return false;
+    // Reject absolute paths
+    if (path.size() >= 2 && path[1] == ':') { // Windows drive letter
+        ENJIN_LOG_WARN(Script, "%s: absolute path rejected", funcName);
+        return false;
+    }
+    if (path[0] == '/' || path[0] == '\\') {
+        ENJIN_LOG_WARN(Script, "%s: absolute path rejected", funcName);
+        return false;
+    }
+    // Reject directory traversal
+    auto normalized = std::filesystem::path(path).lexically_normal().string();
+    if (normalized.find("..") != std::string::npos) {
+        ENJIN_LOG_WARN(Script, "%s: path traversal rejected", funcName);
+        return false;
+    }
+    return true;
+}
 
 static Scripting::CoroutineScheduler* s_BindingsCoroutineScheduler = nullptr;
 
@@ -339,20 +364,21 @@ struct TransformProxy {
     TransformProxy() : entity(INVALID_ENTITY) {}
     TransformProxy(Entity e) : entity(e) {}
 
+    // SC-H6: Validate entity before component access to prevent stale data
     Vector3 GetPosition() const {
-        if (!s_BindingsWorld) return Vector3();
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3();
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         return t ? t->position : Vector3();
     }
 
     void SetPosition(const Vector3& pos) {
-        if (!s_BindingsWorld) return;
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return;
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (t) t->position = pos;
     }
 
     Vector3 GetRotation() const {
-        if (!s_BindingsWorld) return Vector3();
+        if (!s_BindingsWorld || !s_BindingsWorld->IsValid(entity)) return Vector3();
         auto* t = s_BindingsWorld->GetComponent<TransformComponent>(entity);
         if (!t) return Vector3();
         Vector3 euler = t->rotation.ToEuler();

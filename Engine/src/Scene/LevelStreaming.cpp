@@ -195,11 +195,24 @@ void StreamingManager::IntegrateLoadedChunk(StreamingChunk& chunk)
         return;
     }
 
-    // N16: Validate path to prevent directory traversal
+    // N16: Validate path to prevent directory traversal and absolute paths
     if (!chunk.scenePath.empty()) {
         auto normalPath = std::filesystem::path(chunk.scenePath).lexically_normal().string();
         if (normalPath.find("..") != std::string::npos) {
             ENJIN_LOG_ERROR(Game, "Path traversal in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
+            chunk.state = ChunkState::Unloaded;
+            m_ActiveLoads.fetch_sub(1);
+            return;
+        }
+        // Reject absolute paths
+        if (chunk.scenePath.size() >= 2 && chunk.scenePath[1] == ':') {
+            ENJIN_LOG_ERROR(Game, "Absolute path rejected in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
+            chunk.state = ChunkState::Unloaded;
+            m_ActiveLoads.fetch_sub(1);
+            return;
+        }
+        if (chunk.scenePath[0] == '/' || chunk.scenePath[0] == '\\') {
+            ENJIN_LOG_ERROR(Game, "Absolute path rejected in chunk '%s': %s", chunk.chunkId.c_str(), chunk.scenePath.c_str());
             chunk.state = ChunkState::Unloaded;
             m_ActiveLoads.fetch_sub(1);
             return;

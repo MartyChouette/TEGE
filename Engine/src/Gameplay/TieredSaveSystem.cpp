@@ -70,7 +70,8 @@ void TieredSaveSystem::CollectEntitiesByTier(ECS::World* world, ECS::Persistence
         // Serialize this entity using the SceneSerializer per-entity method
         std::string entityJson = Scene::SceneSerializer::SerializeEntityToString(world, entity);
         if (!entityJson.empty()) {
-            entitiesArr.push_back(json::parse(entityJson, nullptr, false));
+            auto parsed = json::parse(entityJson, nullptr, false);
+            if (!parsed.is_discarded()) entitiesArr.push_back(std::move(parsed)); // GP-H1
         }
     }
     outJson = entitiesArr.dump();
@@ -107,7 +108,8 @@ std::string TieredSaveSystem::BuildSaveJson(u32 slot, ECS::World* world,
     {
         std::string runData;
         CollectEntitiesByTier(world, ECS::PersistenceTier::RunState, runData);
-        saveJson["runState"]["entities"] = json::parse(runData, nullptr, false);
+        auto parsed = json::parse(runData, nullptr, false);
+        saveJson["runState"]["entities"] = parsed.is_discarded() ? json::array() : std::move(parsed); // GP-H2
     }
 
     // Cache current scene's SceneState before saving
@@ -117,7 +119,8 @@ std::string TieredSaveSystem::BuildSaveJson(u32 slot, ECS::World* world,
     {
         json sceneStates = json::object();
         for (const auto& [scene, data] : m_SceneStateCache) {
-            sceneStates[scene]["entities"] = json::parse(data, nullptr, false);
+            auto parsed = json::parse(data, nullptr, false);
+            sceneStates[scene]["entities"] = parsed.is_discarded() ? json::array() : std::move(parsed); // GP-H3
         }
         saveJson["sceneStates"] = sceneStates;
     }

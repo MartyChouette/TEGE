@@ -352,7 +352,13 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
 ECS::MeshComponent DeserializeMeshComponent(const json& j) {
     ECS::MeshComponent mesh;
 
+    static constexpr usize kMaxVertices = 10'000'000; // SN-H1: OOM cap
     if (j.contains("vertices") && j["vertices"].is_array()) {
+        if (j["vertices"].size() > kMaxVertices) {
+            ENJIN_LOG_WARN(Asset, "Mesh vertex count %zu exceeds cap", j["vertices"].size());
+            return mesh;
+        }
+        mesh.vertices.reserve(j["vertices"].size());
         for (const auto& v : j["vertices"]) {
             ECS::MeshComponent::Vertex vertex;
             if (v.contains("position")) vertex.position = DeserializeVector3(v["position"]);
@@ -626,12 +632,20 @@ json SerializeTerrainComponent(const ECS::TerrainComponent& terrain) {
 
 ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
     ECS::TerrainComponent terrain;
-    if (j.contains("gridWidth")) terrain.gridWidth = j["gridWidth"].get<u32>();
-    if (j.contains("gridHeight")) terrain.gridHeight = j["gridHeight"].get<u32>();
+    if (j.contains("gridWidth")) terrain.gridWidth = std::min(j["gridWidth"].get<u32>(), 4096u); // SN-H2: cap
+    if (j.contains("gridHeight")) terrain.gridHeight = std::min(j["gridHeight"].get<u32>(), 4096u);
     if (j.contains("cellSize")) terrain.cellSize = j["cellSize"].get<f32>();
     if (j.contains("maxHeight")) terrain.maxHeight = j["maxHeight"].get<f32>();
-    if (j.contains("heightmap")) terrain.heightmap = j["heightmap"].get<std::vector<f32>>();
-    if (j.contains("splatmap")) terrain.splatmap = j["splatmap"].get<std::vector<f32>>();
+    if (j.contains("heightmap")) {
+        auto hm = j["heightmap"].get<std::vector<f32>>();
+        usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight;
+        if (hm.size() <= expected) terrain.heightmap = std::move(hm); // SN-H2: validate size
+    }
+    if (j.contains("splatmap")) {
+        auto sm = j["splatmap"].get<std::vector<f32>>();
+        usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight * 4;
+        if (sm.size() <= expected) terrain.splatmap = std::move(sm);
+    }
     if (j.contains("layers")) {
         const auto& layersArr = j["layers"];
         for (int i = 0; i < 4 && i < static_cast<int>(layersArr.size()); ++i) {
@@ -686,10 +700,10 @@ json SerializeCameraTriggerComponent(const ECS::CameraTriggerComponent& trigger)
 
 ECS::CameraTriggerComponent DeserializeCameraTriggerComponent(const json& j) {
     ECS::CameraTriggerComponent trigger;
-    trigger.halfExtents = DeserializeVector3(j["halfExtents"]);
-    trigger.targetCamera = j["targetCamera"].get<u64>();
-    trigger.priority = j["priority"].get<i32>();
-    trigger.blendTime = j["blendTime"].get<f32>();
+    if (j.contains("halfExtents")) trigger.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("targetCamera")) trigger.targetCamera = j["targetCamera"].get<u64>();
+    if (j.contains("priority")) trigger.priority = j["priority"].get<i32>();
+    if (j.contains("blendTime")) trigger.blendTime = j["blendTime"].get<f32>();
     return trigger;
 }
 
@@ -703,9 +717,9 @@ json SerializeTemperatureZoneComponent(const ECS::TemperatureZoneComponent& zone
 
 ECS::TemperatureZoneComponent DeserializeTemperatureZoneComponent(const json& j) {
     ECS::TemperatureZoneComponent zone;
-    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
-    zone.temperature = j["temperature"].get<f32>();
-    zone.priority = j["priority"].get<i32>();
+    if (j.contains("halfExtents")) zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("temperature")) zone.temperature = j["temperature"].get<f32>();
+    if (j.contains("priority")) zone.priority = j["priority"].get<i32>();
     return zone;
 }
 
@@ -725,10 +739,10 @@ ECS::GravityZoneComponent DeserializeGravityZoneComponent(const json& j) {
     ECS::GravityZoneComponent zone;
     if (j.contains("shape")) { u32 v = j["shape"].get<u32>(); if (v <= 1) zone.shape = static_cast<ECS::GravityZoneShape>(v); }
     if (j.contains("mode")) { u32 v = j["mode"].get<u32>(); if (v <= 1) zone.mode = static_cast<ECS::GravityZoneMode>(v); }
-    zone.halfExtents = DeserializeVector3(j["halfExtents"]);
-    zone.gravityDirection = DeserializeVector3(j["gravityDirection"]);
-    zone.gravityStrength = j["gravityStrength"].get<f32>();
-    zone.priority = j["priority"].get<i32>();
+    if (j.contains("halfExtents")) zone.halfExtents = DeserializeVector3(j["halfExtents"]);
+    if (j.contains("gravityDirection")) zone.gravityDirection = DeserializeVector3(j["gravityDirection"]);
+    if (j.contains("gravityStrength")) zone.gravityStrength = j["gravityStrength"].get<f32>();
+    if (j.contains("priority")) zone.priority = j["priority"].get<i32>();
     if (j.contains("isActive")) zone.isActive = JB(j["isActive"]);
     return zone;
 }
@@ -2181,9 +2195,13 @@ json SerializeTilemapComponent(const ECS::TilemapComponent& tm) {
 
 ECS::TilemapComponent DeserializeTilemapComponent(const json& j) {
     ECS::TilemapComponent tm;
-    if (j.contains("tiles")) tm.tiles = j["tiles"].get<std::vector<i32>>();
-    if (j.contains("width")) tm.width = j["width"].get<u32>();
-    if (j.contains("height")) tm.height = j["height"].get<u32>();
+    if (j.contains("width")) tm.width = std::min(j["width"].get<u32>(), 4096u); // SN-H3: cap
+    if (j.contains("height")) tm.height = std::min(j["height"].get<u32>(), 4096u);
+    if (j.contains("tiles")) {
+        auto tiles = j["tiles"].get<std::vector<i32>>();
+        usize maxTiles = static_cast<usize>(tm.width) * tm.height;
+        if (tiles.size() <= maxTiles) tm.tiles = std::move(tiles); // SN-H3: validate
+    }
     if (j.contains("tilesetPath")) tm.tilesetPath = j["tilesetPath"].get<std::string>();
     if (j.contains("tileWidth")) tm.tileWidth = j["tileWidth"].get<f32>();
     if (j.contains("tileHeight")) tm.tileHeight = j["tileHeight"].get<f32>();
@@ -2434,7 +2452,7 @@ json SerializeDialogueComponent(const ECS::DialogueComponent& d) {
     }
     j["choices"] = choicesArr;
     if (!d.dialogueTree.nodes.empty()) {
-        j["dialogueTree"] = RF(d.dialogueTree.ToJson());
+        j["dialogueTree"] = d.dialogueTree.ToJson();
     }
     if (!d.variables.empty()) {
         json vars = json::object();
@@ -5732,6 +5750,16 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
 
     DeserializationResult result;
     result.filepath = filepath;
+
+    // SN-C4: Reject directory traversal in additive load paths
+    {
+        auto normalized = std::filesystem::path(filepath).lexically_normal().string();
+        if (normalized.find("..") != std::string::npos) {
+            result.error = "Path traversal rejected: " + filepath;
+            ENJIN_LOG_ERROR(Asset, "LoadAdditive: %s", result.error.c_str());
+            return result;
+        }
+    }
 
     try {
         std::ifstream file(filepath);

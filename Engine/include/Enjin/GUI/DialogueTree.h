@@ -107,7 +107,7 @@ namespace Enjin::GUI {
         EventCallback m_EventCallback;
 
         void ProcessNode(u32 depth = 0);
-        bool EvaluateCondition(const DialogueCondition& cond);
+        bool EvaluateCondition(const DialogueCondition& cond) const;
     };
 
     class ENJIN_API DialogueTreeEditor {

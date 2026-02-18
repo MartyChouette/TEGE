@@ -246,7 +246,7 @@ namespace Enjin::GUI {
 
         std::vector<DialogueChoice> available;
         for (const auto& choice : current->choices) {
-            if (!choice.hasCondition || const_cast<DialoguePlayer*>(this)->EvaluateCondition(choice.showCondition)) {
+            if (!choice.hasCondition || EvaluateCondition(choice.showCondition)) {
                 available.push_back(choice);
             }
         }
@@ -330,7 +330,7 @@ namespace Enjin::GUI {
         }
     }
 
-    bool DialoguePlayer::EvaluateCondition(const DialogueCondition& cond) {
+    bool DialoguePlayer::EvaluateCondition(const DialogueCondition& cond) const {
         std::string varValue = GetVariable(cond.variable);
 
         switch (cond.op) {

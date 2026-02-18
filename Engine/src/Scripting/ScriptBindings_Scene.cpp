@@ -52,20 +52,21 @@ void FlushDeferredEntityDestroys() {
 // Entity transform/name functions (called by TegeBehavior.as)
 // ============================================================================
 
+// SC-H5: Validate entity before component access to prevent stale/recycled data
 static Vector3 Entity_GetPosition(u64 id) {
-    if (!s_BindingsWorld) return Vector3();
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3();
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     return t ? t->position : Vector3();
 }
 
 static void Entity_SetPosition(u64 id, const Vector3& pos) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (t) t->position = pos;
 }
 
 static Vector3 Entity_GetRotation(u64 id) {
-    if (!s_BindingsWorld) return Vector3();
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3();
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (!t) return Vector3();
     Vector3 euler = t->rotation.ToEuler();
@@ -73,7 +74,7 @@ static Vector3 Entity_GetRotation(u64 id) {
 }
 
 static void Entity_SetRotation(u64 id, const Vector3& eulerDeg) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (t) {
         t->rotation = Quaternion::FromEuler(
@@ -82,31 +83,31 @@ static void Entity_SetRotation(u64 id, const Vector3& eulerDeg) {
 }
 
 static Vector3 Entity_GetScale(u64 id) {
-    if (!s_BindingsWorld) return Vector3(1.0f);
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return Vector3(1.0f);
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     return t ? t->scale : Vector3(1.0f);
 }
 
 static void Entity_SetScale(u64 id, const Vector3& s) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (t) t->scale = s;
 }
 
 static std::string Entity_GetName(u64 id) {
-    if (!s_BindingsWorld) return "";
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return "";
     auto* n = s_BindingsWorld->GetComponent<NameComponent>(static_cast<Entity>(id));
     return n ? n->name : "";
 }
 
 static bool Entity_IsVisible(u64 id) {
-    if (!s_BindingsWorld) return true;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return true;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     return t ? t->visible : true;
 }
 
 static void Entity_SetVisible(u64 id, bool visible) {
-    if (!s_BindingsWorld) return;
+    if (!s_BindingsWorld || !s_BindingsWorld->IsValid(static_cast<Entity>(id))) return;
     auto* t = s_BindingsWorld->GetComponent<TransformComponent>(static_cast<Entity>(id));
     if (t) t->visible = visible;
 }
@@ -151,6 +152,9 @@ static void Scene_DestroyEntity(u64 id) {
         ENJIN_LOG_WARN(Script, "Scene_DestroyEntity: entity %llu is not valid", id);
         return;
     }
+
+    // SC-H4: Cap deferred destroy queue to prevent script DoS
+    if (s_DeferredDestroys.size() >= 1024) return;
 
     // Defer destruction until after script iteration completes to avoid
     // invalidating iterators and component pointers mid-frame.

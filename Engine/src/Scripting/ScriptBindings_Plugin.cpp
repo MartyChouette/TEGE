@@ -1,5 +1,6 @@
 #include "Enjin/Scripting/ScriptBindings.h"
 #include "Enjin/Plugin/PluginSystem.h"
+#include "Enjin/Logging/Log.h"
 #include <angelscript.h>
 
 namespace Enjin {
@@ -24,13 +25,16 @@ static std::string AS_Plugin_GetVersion(const std::string& name) {
     return "";
 }
 
-static bool AS_Plugin_Load(const std::string& name) {
-    if (s_PluginSystem) return s_PluginSystem->LoadPlugin(name);
+// SC-C1: Plugin_Load/Unload removed from script bindings — loading native code
+// from untrusted scripts is a complete sandbox escape. These remain available
+// only to C++ editor code via PluginSystem directly.
+static bool AS_Plugin_Load(const std::string&) {
+    ENJIN_LOG_WARN(Script, "Plugin_Load is disabled from scripts (security)");
     return false;
 }
 
-static void AS_Plugin_Unload(const std::string& name) {
-    if (s_PluginSystem) s_PluginSystem->UnloadPlugin(name);
+static void AS_Plugin_Unload(const std::string&) {
+    ENJIN_LOG_WARN(Script, "Plugin_Unload is disabled from scripts (security)");
 }
 
 void RegisterPluginBindings(asIScriptEngine* engine) {

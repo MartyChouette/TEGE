@@ -381,6 +381,7 @@ void SceneManager::UpdateTransition(f32 deltaTime) {
 
     m_TransitionTimer += deltaTime;
     f32 halfDuration = m_TransitionDuration * 0.5f;
+    if (halfDuration <= 0.0f) halfDuration = 0.001f;
 
     switch (m_TransitionState) {
         case TransitionState::FadingOut:
@@ -421,7 +422,16 @@ std::string SceneManager::ResolvePath(const std::string& relativePath) const {
         return relativePath;
     }
     std::filesystem::path full = std::filesystem::path(m_ProjectRoot) / relativePath;
-    return full.string();
+    // SN-C5: Validate resolved path stays within project root
+    auto resolved = full.lexically_normal();
+    auto root = std::filesystem::path(m_ProjectRoot).lexically_normal();
+    auto resolvedStr = resolved.string();
+    auto rootStr = root.string();
+    if (resolvedStr.find(rootStr) != 0) {
+        ENJIN_LOG_ERROR(Asset, "ResolvePath: path traversal rejected: %s", relativePath.c_str());
+        return "";
+    }
+    return resolvedStr;
 }
 
 } // namespace Scene

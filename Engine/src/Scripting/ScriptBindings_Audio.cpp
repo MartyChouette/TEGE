@@ -18,6 +18,7 @@ using namespace Enjin::ECS;
     do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
 
 extern ECS::World* s_BindingsWorld;
+extern bool ValidateScriptAssetPath(const std::string& path, const char* funcName);
 
 static Audio::SimpleAudio* s_BindingsAudio = nullptr;
 
@@ -69,6 +70,7 @@ static void Audio_Play(u64 entityId) {
 
 static void Audio_PlayAtPosition(const std::string& path, const Vector3& pos) {
     if (!s_BindingsAudio) return;
+    if (!ValidateScriptAssetPath(path, "Audio_PlayAtPosition")) return;
 
     Audio::AudioClipHandle clip = s_BindingsAudio->LoadClip(path);
     if (clip == Audio::INVALID_AUDIO_CLIP) return;

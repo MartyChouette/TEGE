@@ -110,6 +110,7 @@ void UISystem::Update(ECS::World* world, f32 vpW, f32 vpH, f32 deltaTime) {
 // ============================================================================
 
 void UISystem::ComputeLayout(UICanvasComponent& canvas, f32 vpW, f32 vpH) {
+    if (canvas.designWidth <= 0.0f || canvas.designHeight <= 0.0f) return; // UI-H1: prevent div-by-zero
     f32 scaleX = vpW / canvas.designWidth;
     f32 scaleY = vpH / canvas.designHeight;
     f32 scaleFactor = (canvas.scaleMode == UIScaleMode::ConstantPixelSize)

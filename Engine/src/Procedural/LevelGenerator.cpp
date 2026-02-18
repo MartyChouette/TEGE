@@ -78,6 +78,12 @@ bool LevelGenerator::LoadPrefabsFromFile(const std::string& filepath) {
             return false;
         }
 
+        static constexpr usize kMaxPrefabs = 1024;
+        if (root["prefabs"].size() > kMaxPrefabs) {
+            ENJIN_LOG_ERROR(Procedural, "Prefabs file exceeds max count (%zu > %zu): %s",
+                root["prefabs"].size(), kMaxPrefabs, filepath.c_str());
+            return false;
+        }
         for (const auto& prefabJson : root["prefabs"]) {
             RoomPrefab prefab;
             prefab.id = prefabJson.value("id", "");
@@ -272,7 +278,9 @@ f32 LevelGenerator::RandomFloat() const {
 
 u32 LevelGenerator::RandomUint(u32 max) const {
     if (max == 0) return 0;
-    return static_cast<u32>(RandomFloat() * max);
+    u32 result = static_cast<u32>(RandomFloat() * max);
+    if (result >= max) result = max - 1;
+    return result;
 }
 
 bool LevelGenerator::RandomChance(f32 probability) const {
@@ -303,7 +311,7 @@ bool LevelGenerator::Generate(const LevelGenSettings& settings) {
 
     // Main generation loop
     u32 attempts = 0;
-    const u32 maxAttempts = settings.maxRooms * 100;
+    const u32 maxAttempts = (settings.maxRooms <= 10000) ? settings.maxRooms * 100 : 1000000;
 
     while (m_PlacedRooms.size() < settings.targetRooms && attempts < maxAttempts) {
         attempts++;

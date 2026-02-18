@@ -54,8 +54,9 @@ static void Quest_Start(const std::string& questId) {
 }
 
 static void Quest_CompleteObjective(const std::string& questId, int objectiveIndex) {
-    if (s_BindingsQuest && s_BindingsWorld)
-        s_BindingsQuest->CompleteObjective(s_BindingsWorld, questId, objectiveIndex);
+    if (!s_BindingsQuest || !s_BindingsWorld) return;
+    if (objectiveIndex < 0) return; // SC-H8: reject negative indices
+    s_BindingsQuest->CompleteObjective(s_BindingsWorld, questId, objectiveIndex);
 }
 
 static void Quest_Fail(const std::string& questId) {

@@ -31,19 +31,21 @@ void SetBindingsSaveSystem(Gameplay::TieredSaveSystem* sys) {
 // Save/Load slot operations
 // ============================================================================
 
+static constexpr int kMaxSaveSlots = 20; // SC-H7: upper bound
+
 static bool SaveGame_ToSlot(int slot) {
-    if (!s_BindingsSaveSystem || !s_BindingsWorld || slot < 0) return false;
+    if (!s_BindingsSaveSystem || !s_BindingsWorld || slot < 0 || slot >= kMaxSaveSlots) return false;
     return s_BindingsSaveSystem->SaveToSlot(static_cast<u32>(slot), s_BindingsWorld,
                                             s_BindingsSaveSystem->GetCurrentScene());
 }
 
 static bool SaveGame_FromSlot(int slot) {
-    if (!s_BindingsSaveSystem || !s_BindingsWorld || slot < 0) return false;
+    if (!s_BindingsSaveSystem || !s_BindingsWorld || slot < 0 || slot >= kMaxSaveSlots) return false;
     return s_BindingsSaveSystem->LoadFromSlot(static_cast<u32>(slot), s_BindingsWorld);
 }
 
 static bool SaveGame_DeleteSlot(int slot) {
-    if (!s_BindingsSaveSystem || slot < 0) return false;
+    if (!s_BindingsSaveSystem || slot < 0 || slot >= kMaxSaveSlots) return false;
     return s_BindingsSaveSystem->DeleteSlot(static_cast<u32>(slot));
 }
 

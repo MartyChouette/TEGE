@@ -88,6 +88,9 @@ private:
     void DestroyJointForEntity(ECS::Entity entity);
 
     // Collision pair key (same encoding as SimplePhysics)
+    // WARNING: Truncates entity IDs to 32 bits. Assumes entity IDs fit in u32.
+    // If entity IDs exceed 2^32, this will produce collisions. Changing the key
+    // type requires broader refactoring of all collision pair tracking.
     static u64 MakeCollisionPairKey(ECS::Entity a, ECS::Entity b) {
         return (static_cast<u64>(std::min(a, b)) << 32) | static_cast<u64>(std::max(a, b));
     }
@@ -96,6 +99,7 @@ private:
     ECS::World* m_World = nullptr;
     bool m_Initialized = false;
     Math::Vector3 m_Gravity = Math::Vector3(0.0f, -9.81f, 0.0f);
+    f32 m_LastDeltaTime = 1.0f / 60.0f;  // PH-H9: cached deltaTime for MoveKinematic
 
     // Jolt systems (opaque pointers, defined in .cpp)
     std::unique_ptr<JPH::PhysicsSystem> m_PhysicsSystem;
@@ -112,6 +116,9 @@ private:
 
     // Joint tracking (entity owning the joint component → Jolt constraint pointer)
     std::unordered_map<ECS::Entity, JPH::Constraint*> m_EntityToConstraint;
+
+    // Secondary cone constraints created alongside ball-socket joints (PH-H8 fix)
+    std::unordered_map<ECS::Entity, JPH::Constraint*> m_EntityToConeConstraint;
 
     // Collision event tracking
     std::unordered_set<u64> m_PreviousCollisionPairs;

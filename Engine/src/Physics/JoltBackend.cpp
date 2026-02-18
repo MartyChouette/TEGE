@@ -192,7 +192,9 @@ void JoltBackend::InitializeJolt() {
     m_TempAllocator = std::make_unique<JPH::TempAllocatorImpl>(16 * 1024 * 1024);
 
     // Thread pool: use hardware threads minus 1 (min 1)
-    unsigned int numThreads = std::max(1u, std::thread::hardware_concurrency() - 1);
+    // PH-C1: hardware_concurrency() can return 0; guard against unsigned wraparound
+    unsigned int hwThreads = std::thread::hardware_concurrency();
+    unsigned int numThreads = (hwThreads > 1) ? hwThreads - 1 : 1;
     m_JobSystem = std::make_unique<JPH::JobSystemThreadPool>(
         JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, static_cast<int>(numThreads));
 
@@ -235,6 +237,7 @@ void JoltBackend::ShutdownJolt() {
     m_BodyIndexToEntity.clear();
     m_BodyFilterData.clear();
     m_EntityToConstraint.clear();
+    m_EntityToConeConstraint.clear();
 
     m_ContactListener.reset();
     m_PhysicsSystem.reset();
@@ -270,6 +273,9 @@ Math::Vector3 JoltBackend::GetGravity() const {
 
 void JoltBackend::Update(f32 deltaTime) {
     if (!m_World || !m_Initialized || deltaTime <= 0.0f) return;
+
+    // PH-H9 fix: cache deltaTime for MoveKinematic calls in SyncECSToJolt
+    m_LastDeltaTime = deltaTime;
 
     // 1. Sync ECS state to Jolt bodies
     SyncECSToJolt();
@@ -336,7 +342,7 @@ void JoltBackend::SyncECSToJolt() {
 
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic) {
             // Kinematic bodies: drive position from ECS
-            bodyInterface.MoveKinematic(bodyID, ToJoltR(transform->position), ToJolt(transform->rotation), 1.0f / 60.0f);
+            bodyInterface.MoveKinematic(bodyID, ToJoltR(transform->position), ToJolt(transform->rotation), m_LastDeltaTime);
         } else if (!rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) {
             // Static bodies: just set position if it changed
             bodyInterface.SetPosition(bodyID, ToJoltR(transform->position), JPH::EActivation::DontActivate);
@@ -824,13 +830,16 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
         bool useCone = joint->useConeLimit;
         f32 coneAngle = joint->coneAngleLimit;
+        ECS::Entity jointEntity = entity;
         constraint = createConstraint(bodyA, bodyB, settings,
-            [this, useCone, coneAngle, bodyA, bodyB](JPH::Constraint*, auto& bA, auto& bB) {
+            [this, useCone, coneAngle, jointEntity](JPH::Constraint*, auto& bA, auto& bB) {
                 if (useCone) {
                     JPH::ConeConstraintSettings coneSettings;
                     coneSettings.mHalfConeAngle = coneAngle * (3.14159265358979323846f / 180.0f);
                     auto* cc = coneSettings.Create(bA, bB);
                     m_PhysicsSystem->AddConstraint(cc);
+                    // PH-H8 fix: store cone constraint for cleanup in DestroyJointForEntity
+                    m_EntityToConeConstraint[jointEntity] = cc;
                 }
             });
         break;
@@ -908,6 +917,13 @@ void JoltBackend::DestroyJointForEntity(ECS::Entity entity) {
 
     m_PhysicsSystem->RemoveConstraint(it->second);
     m_EntityToConstraint.erase(it);
+
+    // PH-H8 fix: also remove any secondary cone constraint for ball-socket joints
+    auto coneIt = m_EntityToConeConstraint.find(entity);
+    if (coneIt != m_EntityToConeConstraint.end()) {
+        m_PhysicsSystem->RemoveConstraint(coneIt->second);
+        m_EntityToConeConstraint.erase(coneIt);
+    }
 }
 
 // ============================================================================

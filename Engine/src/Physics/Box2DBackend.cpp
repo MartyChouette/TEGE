@@ -391,7 +391,13 @@ void Box2DBackend::ProcessEvents() {
         }
     }
 
-    // End touch events
+    // Merge: carry forward all previous active contacts that haven't ended this frame.
+    // This prevents losing contacts that are still active but didn't fire a new beginEvent.
+    for (u64 prevKey : m_ActiveContacts) {
+        newContacts.insert(prevKey);
+    }
+
+    // End touch events — remove ended contacts and fire callbacks
     for (int i = 0; i < contacts.endCount; ++i) {
         const b2ContactEndTouchEvent& evt = contacts.endEvents[i];
         // Shapes may have been destroyed, check validity
@@ -403,7 +409,9 @@ void Box2DBackend::ProcessEvents() {
 
         u64 pairKey = MakeCollisionPairKey(entityA, entityB);
 
-        if (m_ActiveContacts.find(pairKey) != m_ActiveContacts.end()) {
+        if (newContacts.find(pairKey) != newContacts.end()) {
+            newContacts.erase(pairKey);
+
             Contact2D contact;
             contact.entityA = entityA;
             contact.entityB = entityB;

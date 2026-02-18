@@ -69,6 +69,9 @@ private:
     void DestroyJointForEntity(ECS::Entity entity);
 
     // Collision pair key encoding
+    // WARNING: Truncates entity IDs to 32 bits. Assumes entity IDs fit in u32.
+    // If entity IDs exceed 2^32, this will produce collisions. Changing the key
+    // type requires broader refactoring of all collision pair tracking.
     static u64 MakeCollisionPairKey(ECS::Entity a, ECS::Entity b) {
         return (static_cast<u64>(std::min(a, b)) << 32) | static_cast<u64>(std::max(a, b));
     }

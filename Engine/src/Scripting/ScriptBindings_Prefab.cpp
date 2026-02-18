@@ -12,6 +12,7 @@ using namespace Enjin;
     do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
 
 extern ECS::World* s_BindingsWorld;
+extern bool ValidateScriptAssetPath(const std::string& path, const char* funcName);
 
 // S4 fix: shares per-frame entity creation cap with Scene bindings
 extern bool CheckEntityCreationCap(const char* funcName);
@@ -22,6 +23,7 @@ extern bool CheckEntityCreationCap(const char* funcName);
 
 static u64 Prefab_Instantiate(const std::string& path, float px, float py, float pz) {
     if (!s_BindingsWorld) return 0;
+    if (!ValidateScriptAssetPath(path, "Prefab_Instantiate")) return 0;
     if (!CheckEntityCreationCap("Prefab_Instantiate")) return 0;
     auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
     if (!prefab) return 0;
@@ -35,6 +37,7 @@ static u64 Prefab_InstantiateEx(const std::string& path,
                                  float rx, float ry, float rz,
                                  float sx, float sy, float sz) {
     if (!s_BindingsWorld) return 0;
+    if (!ValidateScriptAssetPath(path, "Prefab_InstantiateEx")) return 0;
     if (!CheckEntityCreationCap("Prefab_InstantiateEx")) return 0;
     auto prefab = Assets::PrefabManager::Get().LoadPrefab(path);
     if (!prefab) return 0;

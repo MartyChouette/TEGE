@@ -550,10 +550,11 @@ LSystemGenerator::Result LSystemGenerator::Generate(const Params& params) {
     }
 
     // String rewriting: apply rules for given iterations
+    static constexpr usize kMaxLSystemStringLength = 4 * 1024 * 1024; // 4MB cap
     std::string current = params.axiom;
     for (u32 iter = 0; iter < params.iterations; ++iter) {
         std::string next;
-        next.reserve(current.size() * 2);
+        next.reserve(std::min(current.size() * 2, kMaxLSystemStringLength));
 
         for (char c : current) {
             auto it = params.rules.find(c);
@@ -562,8 +563,10 @@ LSystemGenerator::Result LSystemGenerator::Generate(const Params& params) {
             } else {
                 next += c;
             }
+            if (next.size() > kMaxLSystemStringLength) break;
         }
         current = std::move(next);
+        if (current.size() > kMaxLSystemStringLength) break;
     }
 
     // Turtle graphics interpretation
@@ -666,6 +669,9 @@ WaveFunctionCollapse::Result WaveFunctionCollapse::Generate(const Params& params
     LCGRandom rng(params.seed);
 
     u32 numTiles = static_cast<u32>(params.tiles.size());
+    if (params.width > 1024 || params.height > 1024) {
+        return result; // Cap grid dimensions to prevent massive allocation
+    }
     u32 totalCells = params.width * params.height;
 
     // Each cell has a set of possible tile IDs.
@@ -801,8 +807,9 @@ WaveFunctionCollapse::Result WaveFunctionCollapse::Generate(const Params& params
 
         if (failed || bestIdx == UINT32_MAX) break;
 
-        // Save state for backtracking
-        if (backtracksUsed < params.maxBacktracks) {
+        // Save state for backtracking (cap stack to prevent unbounded memory growth)
+        static constexpr u32 kMaxBacktrackStackSize = 256;
+        if (backtracksUsed < params.maxBacktracks && backtrackStack.size() < kMaxBacktrackStackSize) {
             Snapshot snap;
             snap.cells = cells;
             snap.collapsedCell = bestIdx;
@@ -1671,10 +1678,11 @@ LSystem3D::Result LSystem3D::Generate(const Params& params) {
     LCGRandom rng(params.seed);
 
     // ---- String rewriting phase ----
+    static constexpr usize kMaxLSystemStringLength3D = 4 * 1024 * 1024; // 4MB cap
     std::string current = params.axiom;
     for (u32 iter = 0; iter < params.iterations; ++iter) {
         std::string next;
-        next.reserve(current.size() * 2);
+        next.reserve(std::min(current.size() * 2, kMaxLSystemStringLength3D));
 
         for (char c : current) {
             // Check stochastic rules first (they override deterministic ones)
@@ -1708,8 +1716,10 @@ LSystem3D::Result LSystem3D::Generate(const Params& params) {
                     next += c;
                 }
             }
+            if (next.size() > kMaxLSystemStringLength3D) break;
         }
         current = std::move(next);
+        if (current.size() > kMaxLSystemStringLength3D) break;
     }
 
     // ---- 3D turtle interpretation phase ----
