@@ -137,6 +137,14 @@ public:
     void SetHRTFEnabled(bool enabled);
     bool IsHRTFEnabled() const;
     bool IsHRTFAvailable() const;
+
+    // Phase 2: Occlusion & Transmission
+    void SetOcclusionEnabled(bool enabled);
+    bool IsOcclusionEnabled() const;
+    void SetTransmissionEnabled(bool enabled);
+    bool IsTransmissionEnabled() const;
+    void BuildSteamAudioScene();   // Build scene geometry from ECS colliders
+    void RebuildAudioScene();      // Force rebuild (e.g., after scene change)
 #endif
 
 private:
@@ -186,6 +194,9 @@ private:
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
     std::unique_ptr<SteamAudioProcessor> m_SteamAudio;
     bool m_HRTFEnabled = true;
+    bool m_OcclusionEnabled = true;
+    bool m_TransmissionEnabled = true;
+    f32 m_OcclusionTimer = 0.0f;
 #endif
 };
 

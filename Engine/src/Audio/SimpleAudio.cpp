@@ -10,6 +10,7 @@
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
 #include "Enjin/Audio/SteamAudioProcessor.h"
+#include "Enjin/ECS/Components/Gameplay.h"
 
 // Custom binaural processing node for Steam Audio HRTF
 struct BinauralNode {
@@ -646,6 +647,22 @@ void SimpleAudio::Update(f32 deltaTime) {
     for (SoundHandle h : toRemove) {
         m_Sounds.erase(h);
     }
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Throttled occlusion updates (~10Hz)
+    if (m_SteamAudio && m_SteamAudio->IsInitialized() && m_SteamAudio->HasScene() && m_OcclusionEnabled) {
+        m_OcclusionTimer += deltaTime;
+        if (m_OcclusionTimer >= 0.1f) {
+            m_OcclusionTimer = 0.0f;
+
+            for (auto& [handle, sound] : m_Sounds) {
+                if (sound.is3D && sound.binauralNode && sound.isPlaying) {
+                    m_SteamAudio->UpdateOcclusion(handle, sound.position, m_ListenerPosition);
+                }
+            }
+        }
+    }
+#endif
 }
 
 void SimpleAudio::UpdateAudioSources(f32 deltaTime) {
@@ -723,6 +740,173 @@ bool SimpleAudio::IsHRTFEnabled() const {
 
 bool SimpleAudio::IsHRTFAvailable() const {
     return m_SteamAudio && m_SteamAudio->IsInitialized();
+}
+
+void SimpleAudio::SetOcclusionEnabled(bool enabled) {
+    m_OcclusionEnabled = enabled;
+    if (m_SteamAudio) {
+        m_SteamAudio->SetOcclusionEnabled(enabled);
+    }
+}
+
+bool SimpleAudio::IsOcclusionEnabled() const {
+    return m_OcclusionEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
+}
+
+void SimpleAudio::SetTransmissionEnabled(bool enabled) {
+    m_TransmissionEnabled = enabled;
+    if (m_SteamAudio) {
+        m_SteamAudio->SetTransmissionEnabled(enabled);
+    }
+}
+
+bool SimpleAudio::IsTransmissionEnabled() const {
+    return m_TransmissionEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
+}
+
+void SimpleAudio::BuildSteamAudioScene() {
+    if (!m_SteamAudio || !m_SteamAudio->IsInitialized() || !m_World) return;
+
+    std::vector<Math::Vector3> vertices;
+    std::vector<i32> indices;
+    std::vector<IPLMaterial> materials;
+    std::vector<IPLint32> materialIndices;
+
+    // Default acoustic material (roughly concrete/wood)
+    IPLMaterial defaultMat{};
+    defaultMat.absorption[0] = 0.10f;  // low freq
+    defaultMat.absorption[1] = 0.20f;  // mid freq
+    defaultMat.absorption[2] = 0.30f;  // high freq
+    defaultMat.scattering = 0.05f;
+    defaultMat.transmission[0] = 0.04f;   // low freq
+    defaultMat.transmission[1] = 0.01f;   // mid freq
+    defaultMat.transmission[2] = 0.005f;  // high freq
+    materials.push_back(defaultMat);
+
+    // Collect box colliders -> 8 vertices + 12 triangles per box
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::BoxColliderComponent>()) {
+        auto* box = m_World->GetComponent<ECS::BoxColliderComponent>(entity);
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!box || !transform) continue;
+
+        Math::Vector3 halfSize = box->size * 0.5f;
+        Math::Vector3 center = box->center;
+
+        // 8 corners of the box in local space
+        Math::Vector3 localVerts[8] = {
+            center + Math::Vector3(-halfSize.x, -halfSize.y, -halfSize.z),
+            center + Math::Vector3( halfSize.x, -halfSize.y, -halfSize.z),
+            center + Math::Vector3( halfSize.x, -halfSize.y,  halfSize.z),
+            center + Math::Vector3(-halfSize.x, -halfSize.y,  halfSize.z),
+            center + Math::Vector3(-halfSize.x,  halfSize.y, -halfSize.z),
+            center + Math::Vector3( halfSize.x,  halfSize.y, -halfSize.z),
+            center + Math::Vector3( halfSize.x,  halfSize.y,  halfSize.z),
+            center + Math::Vector3(-halfSize.x,  halfSize.y,  halfSize.z),
+        };
+
+        // Transform to world space
+        Math::Matrix4 worldMatrix = transform->ToMatrix();
+        i32 baseIdx = static_cast<i32>(vertices.size());
+
+        for (int i = 0; i < 8; ++i) {
+            f32 x = localVerts[i].x;
+            f32 y = localVerts[i].y;
+            f32 z = localVerts[i].z;
+            Math::Vector3 worldPos;
+            worldPos.x = worldMatrix(0, 0) * x + worldMatrix(0, 1) * y + worldMatrix(0, 2) * z + worldMatrix(0, 3);
+            worldPos.y = worldMatrix(1, 0) * x + worldMatrix(1, 1) * y + worldMatrix(1, 2) * z + worldMatrix(1, 3);
+            worldPos.z = worldMatrix(2, 0) * x + worldMatrix(2, 1) * y + worldMatrix(2, 2) * z + worldMatrix(2, 3);
+            vertices.push_back(worldPos);
+        }
+
+        // 12 triangles (6 faces x 2 tris each)
+        // Bottom face (v0-v3)
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 1); indices.push_back(baseIdx + 2);
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 2); indices.push_back(baseIdx + 3);
+        // Top face (v4-v7)
+        indices.push_back(baseIdx + 4); indices.push_back(baseIdx + 6); indices.push_back(baseIdx + 5);
+        indices.push_back(baseIdx + 4); indices.push_back(baseIdx + 7); indices.push_back(baseIdx + 6);
+        // Front face (v0,v1,v5,v4)
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 5); indices.push_back(baseIdx + 1);
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 4); indices.push_back(baseIdx + 5);
+        // Back face (v2,v3,v7,v6)
+        indices.push_back(baseIdx + 2); indices.push_back(baseIdx + 7); indices.push_back(baseIdx + 3);
+        indices.push_back(baseIdx + 2); indices.push_back(baseIdx + 6); indices.push_back(baseIdx + 7);
+        // Left face (v0,v3,v7,v4)
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 3); indices.push_back(baseIdx + 7);
+        indices.push_back(baseIdx + 0); indices.push_back(baseIdx + 7); indices.push_back(baseIdx + 4);
+        // Right face (v1,v2,v6,v5)
+        indices.push_back(baseIdx + 1); indices.push_back(baseIdx + 5); indices.push_back(baseIdx + 6);
+        indices.push_back(baseIdx + 1); indices.push_back(baseIdx + 6); indices.push_back(baseIdx + 2);
+
+        for (int t = 0; t < 12; ++t) materialIndices.push_back(0);
+    }
+
+    // Collect sphere colliders -> icosahedron approximation (12 vertices, 20 triangles)
+    for (ECS::Entity entity : m_World->GetEntitiesWithComponent<ECS::SphereColliderComponent>()) {
+        auto* sphere = m_World->GetComponent<ECS::SphereColliderComponent>(entity);
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!sphere || !transform) continue;
+
+        f32 r = sphere->radius;
+        Math::Vector3 center = sphere->center;
+
+        // Icosahedron vertices (golden ratio construction)
+        static constexpr f32 PHI = 1.6180339887f;
+        static const f32 NORM = 1.0f / Math::Sqrt(1.0f + PHI * PHI);
+        static const f32 A = NORM;
+        static const f32 B = PHI * NORM;
+
+        Math::Vector3 icoVerts[12] = {
+            { -A,  B,  0}, {  A,  B,  0}, { -A, -B,  0}, {  A, -B,  0},
+            {  0, -A,  B}, {  0,  A,  B}, {  0, -A, -B}, {  0,  A, -B},
+            {  B,  0, -A}, {  B,  0,  A}, { -B,  0, -A}, { -B,  0,  A},
+        };
+
+        static const i32 icoIndices[60] = {
+            0,11,5, 0,5,1, 0,1,7, 0,7,10, 0,10,11,
+            1,5,9, 5,11,4, 11,10,2, 10,7,6, 7,1,8,
+            3,9,4, 3,4,2, 3,2,6, 3,6,8, 3,8,9,
+            4,9,5, 2,4,11, 6,2,10, 8,6,7, 9,8,1,
+        };
+
+        // Transform to world space
+        Math::Matrix4 worldMatrix = transform->ToMatrix();
+        i32 baseIdx = static_cast<i32>(vertices.size());
+
+        for (int i = 0; i < 12; ++i) {
+            f32 lx = center.x + icoVerts[i].x * r;
+            f32 ly = center.y + icoVerts[i].y * r;
+            f32 lz = center.z + icoVerts[i].z * r;
+            Math::Vector3 worldPos;
+            worldPos.x = worldMatrix(0, 0) * lx + worldMatrix(0, 1) * ly + worldMatrix(0, 2) * lz + worldMatrix(0, 3);
+            worldPos.y = worldMatrix(1, 0) * lx + worldMatrix(1, 1) * ly + worldMatrix(1, 2) * lz + worldMatrix(1, 3);
+            worldPos.z = worldMatrix(2, 0) * lx + worldMatrix(2, 1) * ly + worldMatrix(2, 2) * lz + worldMatrix(2, 3);
+            vertices.push_back(worldPos);
+        }
+
+        for (int i = 0; i < 60; ++i) {
+            indices.push_back(baseIdx + icoIndices[i]);
+        }
+        for (int t = 0; t < 20; ++t) materialIndices.push_back(0);
+    }
+
+    if (vertices.empty()) {
+        ENJIN_LOG_INFO(Audio, "Steam Audio: no colliders found for audio scene");
+        return;
+    }
+
+    if (m_SteamAudio->BuildScene(vertices, indices, materials, materialIndices)) {
+        ENJIN_LOG_INFO(Audio, "Steam Audio: audio scene built (%zu verts, %zu tris)",
+                       vertices.size(), indices.size() / 3);
+    }
+}
+
+void SimpleAudio::RebuildAudioScene() {
+    if (m_SteamAudio) {
+        m_SteamAudio->DestroyScene();
+    }
+    BuildSteamAudioScene();
 }
 #endif
 

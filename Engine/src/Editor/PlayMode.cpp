@@ -195,7 +195,11 @@ void PlayMode::Play() {
     // Apply HRTF setting from editor
     if (m_EditorSettings) {
         m_SimpleAudio.SetHRTFEnabled(m_EditorSettings->enableHRTF);
+        m_SimpleAudio.SetOcclusionEnabled(m_EditorSettings->enableOcclusion);
+        m_SimpleAudio.SetTransmissionEnabled(m_EditorSettings->enableTransmission);
     }
+    // Build audio scene geometry from colliders for occlusion
+    m_SimpleAudio.BuildSteamAudioScene();
 #endif
     m_DestructibleSystem.Initialize(m_World);
     m_AudioGraphRuntime.Initialize(&m_SimpleAudio);

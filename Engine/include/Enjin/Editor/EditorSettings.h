@@ -140,7 +140,9 @@ struct EditorSettings {
     f32 gizmoRotateNudge = 5.0f;      // Degrees per rotate nudge (1-45)
 
     // Audio
-    bool enableHRTF = true;  // HRTF binaural audio (requires Steam Audio SDK)
+    bool enableHRTF = true;           // HRTF binaural audio (requires Steam Audio SDK)
+    bool enableOcclusion = true;      // Audio occlusion by geometry
+    bool enableTransmission = true;   // Frequency-dependent sound through walls
 
     // Surface Snap
     bool surfaceSnap = false;

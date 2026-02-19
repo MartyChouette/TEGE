@@ -9290,11 +9290,35 @@ void EditorLayer::DrawProjectSettingsPanel() {
             } else {
                 ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.3f, 1.0f), "Status: Init failed");
             }
+
+            // Occlusion checkbox
+            bool occlusionEnabled = m_EditorSettings.enableOcclusion;
+            if (ImGui::Checkbox("Sound Occlusion", &occlusionEnabled)) {
+                m_EditorSettings.enableOcclusion = occlusionEnabled;
+                audio->SetOcclusionEnabled(occlusionEnabled);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("Sounds are blocked/attenuated by collider geometry");
+            }
+
+            // Transmission checkbox (requires occlusion)
+            if (!occlusionEnabled) ImGui::BeginDisabled();
+            bool transmissionEnabled = m_EditorSettings.enableTransmission;
+            if (ImGui::Checkbox("Sound Transmission", &transmissionEnabled)) {
+                m_EditorSettings.enableTransmission = transmissionEnabled;
+                audio->SetTransmissionEnabled(transmissionEnabled);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Frequency-dependent sound passing through walls.\n"
+                    "Requires occlusion to be enabled.");
+            }
+            if (!occlusionEnabled) ImGui::EndDisabled();
         } else {
-            ImGui::TextDisabled("HRTF available (start Play Mode to configure)");
+            ImGui::TextDisabled("Steam Audio available (start Play Mode to configure)");
         }
 #else
-        ImGui::TextDisabled("HRTF: Not compiled (ENJIN_AUDIO_STEAM_AUDIO=OFF)");
+        ImGui::TextDisabled("Steam Audio: Not compiled (ENJIN_AUDIO_STEAM_AUDIO=OFF)");
 #endif
     }
 

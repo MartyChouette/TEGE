@@ -1260,6 +1260,11 @@ private:
             // JSON parse failure for content warnings is non-fatal
         }
 
+        // Build audio occlusion scene from colliders
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+        m_SimpleAudio.BuildSteamAudioScene();
+#endif
+
         ENJIN_LOG_INFO(Player, "Loaded scene: %s (%zu entities)", scenePath.c_str(), result.entities.size());
         return true;
     }

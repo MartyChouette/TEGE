@@ -42,6 +42,7 @@ bool SteamAudioProcessor::Initialize(u32 sampleRate, u32 frameSize) {
         return false;
     }
 
+    m_AudioSettings = audioSettings;
     m_SampleRate = sampleRate;
     m_FrameSize = frameSize;
     m_Initialized = true;
@@ -57,14 +58,27 @@ void SteamAudioProcessor::Shutdown() {
     {
         std::lock_guard<std::mutex> lock(m_SourceMutex);
         for (auto& [handle, src] : m_Sources) {
+            if (src.simulationSource) {
+                if (m_Simulator) {
+                    iplSourceRemove(src.simulationSource, m_Simulator);
+                }
+                iplSourceRelease(&src.simulationSource);
+            }
+            if (src.directEffect) {
+                iplDirectEffectRelease(&src.directEffect);
+            }
             if (src.effect) {
                 iplBinauralEffectRelease(&src.effect);
             }
             delete[] src.inData;
             delete[] src.outData;
+            delete[] src.directOutData;
         }
         m_Sources.clear();
     }
+
+    // Destroy scene geometry before context
+    DestroyScene();
 
     if (m_HRTF) {
         iplHRTFRelease(&m_HRTF);
@@ -78,6 +92,171 @@ void SteamAudioProcessor::Shutdown() {
 
     m_Initialized = false;
     ENJIN_LOG_INFO(Audio, "Steam Audio HRTF shutdown");
+}
+
+bool SteamAudioProcessor::BuildScene(const std::vector<Math::Vector3>& vertices,
+                                      const std::vector<i32>& indices,
+                                      const std::vector<IPLMaterial>& materials,
+                                      const std::vector<IPLint32>& materialIndices) {
+    if (!m_Initialized || !m_Context) return false;
+    if (vertices.empty() || indices.empty()) return false;
+    if (indices.size() % 3 != 0) return false;
+
+    // Destroy existing scene if rebuilding
+    DestroyScene();
+
+    // Create scene
+    IPLSceneSettings sceneSettings{};
+    sceneSettings.type = IPL_SCENETYPE_DEFAULT;
+
+    IPLerror err = iplSceneCreate(m_Context, &sceneSettings, &m_Scene);
+    if (err != IPL_STATUS_SUCCESS) {
+        ENJIN_LOG_ERROR(Audio, "Steam Audio: failed to create scene (error %d)", static_cast<int>(err));
+        return false;
+    }
+
+    // Convert vertices to IPL format (negate Z for LH -> RH)
+    std::vector<IPLVector3> iplVertices(vertices.size());
+    for (usize i = 0; i < vertices.size(); ++i) {
+        iplVertices[i].x = vertices[i].x;
+        iplVertices[i].y = vertices[i].y;
+        iplVertices[i].z = -vertices[i].z;  // LH to RH
+    }
+
+    // Convert index triples to IPLTriangle
+    usize numTriangles = indices.size() / 3;
+    std::vector<IPLTriangle> iplTriangles(numTriangles);
+    for (usize i = 0; i < numTriangles; ++i) {
+        iplTriangles[i].indices[0] = indices[i * 3 + 0];
+        iplTriangles[i].indices[1] = indices[i * 3 + 1];
+        iplTriangles[i].indices[2] = indices[i * 3 + 2];
+    }
+
+    // Create static mesh
+    IPLStaticMeshSettings meshSettings{};
+    meshSettings.numVertices = static_cast<IPLint32>(iplVertices.size());
+    meshSettings.numTriangles = static_cast<IPLint32>(numTriangles);
+    meshSettings.numMaterials = static_cast<IPLint32>(materials.size());
+    meshSettings.vertices = iplVertices.data();
+    meshSettings.triangles = iplTriangles.data();
+    meshSettings.materialIndices = materialIndices.data();
+    meshSettings.materials = materials.data();
+
+    err = iplStaticMeshCreate(m_Scene, &meshSettings, &m_StaticMesh);
+    if (err != IPL_STATUS_SUCCESS) {
+        ENJIN_LOG_ERROR(Audio, "Steam Audio: failed to create static mesh (error %d)", static_cast<int>(err));
+        iplSceneRelease(&m_Scene);
+        m_Scene = nullptr;
+        return false;
+    }
+
+    iplStaticMeshAdd(m_StaticMesh, m_Scene);
+    iplSceneCommit(m_Scene);
+
+    // Create simulator for direct sound path computation (occlusion/transmission)
+    IPLSimulationSettings simSettings{};
+    simSettings.flags = IPL_SIMULATIONFLAGS_DIRECT;
+    simSettings.sceneType = IPL_SCENETYPE_DEFAULT;
+
+    err = iplSimulatorCreate(m_Context, &simSettings, &m_Simulator);
+    if (err != IPL_STATUS_SUCCESS) {
+        ENJIN_LOG_WARN(Audio, "Steam Audio: failed to create simulator (error %d), occlusion unavailable",
+                       static_cast<int>(err));
+        // Non-fatal — HRTF still works, just no occlusion
+    } else {
+        iplSimulatorSetScene(m_Simulator, m_Scene);
+        iplSimulatorCommit(m_Simulator);
+    }
+
+    ENJIN_LOG_INFO(Audio, "Steam Audio: scene built (%zu vertices, %zu triangles)",
+                   vertices.size(), numTriangles);
+    return true;
+}
+
+void SteamAudioProcessor::DestroyScene() {
+    if (m_Simulator) {
+        iplSimulatorRelease(&m_Simulator);
+        m_Simulator = nullptr;
+    }
+    if (m_StaticMesh) {
+        iplStaticMeshRelease(&m_StaticMesh);
+        m_StaticMesh = nullptr;
+    }
+    if (m_Scene) {
+        iplSceneRelease(&m_Scene);
+        m_Scene = nullptr;
+    }
+}
+
+void SteamAudioProcessor::UpdateOcclusion(SoundHandle handle,
+                                           const Math::Vector3& sourceWorldPos,
+                                           const Math::Vector3& listenerWorldPos) {
+    if (!m_Scene || !m_Simulator || !m_OcclusionEnabled) return;
+
+    auto it = m_Sources.find(handle);
+    if (it == m_Sources.end() || !it->second.active || !it->second.simulationSource) return;
+
+    auto& src = it->second;
+
+    // Set listener position on the simulator (negate Z for LH -> RH)
+    IPLSimulationSharedInputs sharedInputs{};
+    sharedInputs.listener.origin.x = listenerWorldPos.x;
+    sharedInputs.listener.origin.y = listenerWorldPos.y;
+    sharedInputs.listener.origin.z = -listenerWorldPos.z;
+    sharedInputs.listener.ahead.x = 0.0f;
+    sharedInputs.listener.ahead.y = 0.0f;
+    sharedInputs.listener.ahead.z = -1.0f;  // default forward in RH
+    sharedInputs.listener.up.x = 0.0f;
+    sharedInputs.listener.up.y = 1.0f;
+    sharedInputs.listener.up.z = 0.0f;
+    sharedInputs.listener.right.x = 1.0f;
+    sharedInputs.listener.right.y = 0.0f;
+    sharedInputs.listener.right.z = 0.0f;
+
+    iplSimulatorSetSharedInputs(m_Simulator, IPL_SIMULATIONFLAGS_DIRECT, &sharedInputs);
+
+    // Set source position (negate Z for LH -> RH)
+    IPLSimulationInputs sourceInputs{};
+    sourceInputs.flags = IPL_SIMULATIONFLAGS_DIRECT;
+    sourceInputs.directFlags = static_cast<IPLDirectSimulationFlags>(
+        IPL_DIRECTSIMULATIONFLAGS_OCCLUSION |
+        (m_TransmissionEnabled ? IPL_DIRECTSIMULATIONFLAGS_TRANSMISSION : 0));
+    sourceInputs.source.origin.x = sourceWorldPos.x;
+    sourceInputs.source.origin.y = sourceWorldPos.y;
+    sourceInputs.source.origin.z = -sourceWorldPos.z;
+    sourceInputs.source.ahead.x = 0.0f;
+    sourceInputs.source.ahead.y = 0.0f;
+    sourceInputs.source.ahead.z = -1.0f;
+    sourceInputs.source.up.x = 0.0f;
+    sourceInputs.source.up.y = 1.0f;
+    sourceInputs.source.up.z = 0.0f;
+    sourceInputs.source.right.x = 1.0f;
+    sourceInputs.source.right.y = 0.0f;
+    sourceInputs.source.right.z = 0.0f;
+    sourceInputs.occlusionType = IPL_OCCLUSIONTYPE_RAYCAST;
+    sourceInputs.occlusionRadius = 1.0f;
+    sourceInputs.numOcclusionSamples = 1;
+
+    iplSourceSetInputs(src.simulationSource, IPL_SIMULATIONFLAGS_DIRECT, &sourceInputs);
+
+    // Run direct simulation
+    iplSimulatorRunDirect(m_Simulator);
+
+    // Read back results
+    IPLSimulationOutputs outputs{};
+    iplSourceGetOutputs(src.simulationSource, IPL_SIMULATIONFLAGS_DIRECT, &outputs);
+
+    src.occlusion = outputs.direct.occlusion;
+
+    if (m_TransmissionEnabled) {
+        src.transmissionLow = outputs.direct.transmission[0];
+        src.transmissionMid = outputs.direct.transmission[1];
+        src.transmissionHigh = outputs.direct.transmission[2];
+    } else {
+        src.transmissionLow = 1.0f;
+        src.transmissionMid = 1.0f;
+        src.transmissionHigh = 1.0f;
+    }
 }
 
 void SteamAudioProcessor::CreateSource(SoundHandle handle) {
@@ -103,9 +282,38 @@ void SteamAudioProcessor::CreateSource(SoundHandle handle) {
         return;
     }
 
+    // Create direct effect for occlusion/transmission if scene exists
+    if (m_Scene) {
+        IPLDirectEffectSettings directSettings{};
+        directSettings.numChannels = 1;
+
+        err = iplDirectEffectCreate(m_Context, &audioSettings, &directSettings, &src.directEffect);
+        if (err != IPL_STATUS_SUCCESS) {
+            ENJIN_LOG_WARN(Audio, "Steam Audio: failed to create direct effect for sound %u (error %d)",
+                           handle, static_cast<int>(err));
+            // Non-fatal — source will work without occlusion
+        }
+
+        // Create simulation source for occlusion queries
+        if (m_Simulator) {
+            IPLSourceSettings srcSettings{};
+            srcSettings.flags = IPL_SIMULATIONFLAGS_DIRECT;
+
+            err = iplSourceCreate(m_Simulator, &srcSettings, &src.simulationSource);
+            if (err == IPL_STATUS_SUCCESS) {
+                iplSourceAdd(src.simulationSource, m_Simulator);
+                iplSimulatorCommit(m_Simulator);
+            } else {
+                ENJIN_LOG_WARN(Audio, "Steam Audio: failed to create simulation source for sound %u (error %d)",
+                               handle, static_cast<int>(err));
+            }
+        }
+    }
+
     // Allocate buffers
     src.inData = new f32[m_FrameSize]();      // mono
     src.outData = new f32[m_FrameSize * 2]();  // interleaved stereo
+    src.directOutData = new f32[m_FrameSize](); // mono buffer for direct effect output
     src.direction = Math::Vector3(0, 0, 1);    // default: ahead
     src.active = true;
 
@@ -119,11 +327,22 @@ void SteamAudioProcessor::DestroySource(SoundHandle handle) {
     if (it == m_Sources.end()) return;
 
     auto& src = it->second;
+    if (src.simulationSource) {
+        if (m_Simulator) {
+            iplSourceRemove(src.simulationSource, m_Simulator);
+            iplSimulatorCommit(m_Simulator);
+        }
+        iplSourceRelease(&src.simulationSource);
+    }
+    if (src.directEffect) {
+        iplDirectEffectRelease(&src.directEffect);
+    }
     if (src.effect) {
         iplBinauralEffectRelease(&src.effect);
     }
     delete[] src.inData;
     delete[] src.outData;
+    delete[] src.directOutData;
 
     m_Sources.erase(it);
 }
@@ -159,6 +378,39 @@ bool SteamAudioProcessor::Process(SoundHandle handle, const f32* inMono, f32* ou
     f32* inChannels[1] = { src.inData };
     inBuffer.data = inChannels;
 
+    // Determine which mono buffer to feed into HRTF
+    // If occlusion is active, run direct effect first: mono -> filtered mono
+    f32* hrtfInputData = src.inData;
+
+    if (m_OcclusionEnabled && src.directEffect) {
+        IPLAudioBuffer directOutBuffer{};
+        directOutBuffer.numChannels = 1;
+        directOutBuffer.numSamples = static_cast<IPLint32>(m_FrameSize);
+        f32* directOutChannels[1] = { src.directOutData };
+        directOutBuffer.data = directOutChannels;
+
+        IPLDirectEffectParams directParams{};
+        directParams.flags = static_cast<IPLDirectEffectFlags>(
+            IPL_DIRECTEFFECTFLAGS_APPLYDISTANCEATTENUATION |
+            IPL_DIRECTEFFECTFLAGS_APPLYOCCLUSION |
+            (m_TransmissionEnabled ? IPL_DIRECTEFFECTFLAGS_APPLYTRANSMISSION : 0));
+        directParams.distanceAttenuation = 1.0f;  // distance handled by miniaudio
+        directParams.occlusion = src.occlusion;
+        directParams.transmissionType = IPL_TRANSMISSIONTYPE_FREQINDEPENDENT;
+        // Use average of 3-band transmission as frequency-independent value
+        directParams.transmission = (src.transmissionLow + src.transmissionMid + src.transmissionHigh) / 3.0f;
+
+        iplDirectEffectApply(src.directEffect, &directParams, &inBuffer, &directOutBuffer);
+        hrtfInputData = src.directOutData;
+    }
+
+    // Build HRTF input buffer from (possibly filtered) mono data
+    IPLAudioBuffer hrtfInBuffer{};
+    hrtfInBuffer.numChannels = 1;
+    hrtfInBuffer.numSamples = static_cast<IPLint32>(m_FrameSize);
+    f32* hrtfInChannels[1] = { hrtfInputData };
+    hrtfInBuffer.data = hrtfInChannels;
+
     // Output: 2 channels, need deinterleaved temp buffers
     f32* outLeft = src.outData;                    // reuse first half
     f32* outRight = src.outData + m_FrameSize;     // second half (we have 2*frameSize allocated)
@@ -182,7 +434,7 @@ bool SteamAudioProcessor::Process(SoundHandle handle, const f32* inMono, f32* ou
     params.hrtf = m_HRTF;
     params.peakDelays = nullptr;
 
-    IPLAudioEffectState state = iplBinauralEffectApply(src.effect, &params, &inBuffer, &outBuffer);
+    IPLAudioEffectState state = iplBinauralEffectApply(src.effect, &params, &hrtfInBuffer, &outBuffer);
     (void)state;
 
     // Interleave output: L0 R0 L1 R1 ...

@@ -373,6 +373,8 @@ bool EditorSettings::Save(const std::string& path) const {
 
         // Audio
         j["enableHRTF"] = enableHRTF;
+        j["enableOcclusion"] = enableOcclusion;
+        j["enableTransmission"] = enableTransmission;
 
         // Surface Snap
         j["surfaceSnap"] = surfaceSnap;
@@ -529,6 +531,8 @@ bool EditorSettings::Load(const std::string& path) {
 
         // Audio
         if (j.contains("enableHRTF")) enableHRTF = j["enableHRTF"].get<bool>();
+        if (j.contains("enableOcclusion")) enableOcclusion = j["enableOcclusion"].get<bool>();
+        if (j.contains("enableTransmission")) enableTransmission = j["enableTransmission"].get<bool>();
 
         // Surface Snap
         if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();
