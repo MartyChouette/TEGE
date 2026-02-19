@@ -38,10 +38,15 @@ Adopted a 4-tier feature maturity system:
 - VulkanBuffer: null context guard, zero-size rejection, 2 resource leak fixes, overflow-safe bounds, double-map prevention
 - VulkanSwapchain: vkBindImageMemory check, vkGetSwapchainImages check, Recreate() error propagation
 
-**Serialization & Asset Pack Audit — 28 findings identified:**
-- SceneSerializer deep scan: 12 findings (2 CRIT, 5 HIGH, 3 MED, 2 LOW)
-- AssetReader/Packer: 16 findings (3 CRIT, 4 HIGH, 5 MED, 4 LOW)
-- Fixes pending — next session priority
+**Serialization & Asset Pack Audit — 31 findings, 18 fixed:**
+- SceneSerializer: 14/17 fixed (array caps, type safety, enum clamping)
+- AssetReader/Packer: 4/14 fixed (integer overflow, path traversal, decompression safety)
+- Remaining 13 are MED/LOW risk, deferred
+
+**Physics & Audio Audit — 8 findings, all fixed:**
+- Jolt: constraint null check, zero-axis defaults for hinge/slider, spring param clamping
+- Box2D: shape/body validity in ResolveEntity, stale collision pair cleanup, sensor carry-forward
+- Audio: volume/pitch clamping at entry, 3D distance validation, 256 active sound cap
 
 ### Decisions Made
 
