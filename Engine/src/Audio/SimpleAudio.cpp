@@ -166,13 +166,24 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
         return INVALID_SOUND;
     }
 
+    // Cap active sound count to prevent unbounded growth
+    static constexpr usize MAX_ACTIVE_SOUNDS = 256;
+    if (m_Sounds.size() >= MAX_ACTIVE_SOUNDS) {
+        ENJIN_LOG_WARN(Audio, "Max active sounds reached (%zu), cannot play", MAX_ACTIVE_SOUNDS);
+        return INVALID_SOUND;
+    }
+
     SoundHandle handle = m_NextSoundHandle++;
     if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
+    // Clamp parameters to valid ranges
+    f32 clampedVolume = Math::Clamp(volume, 0.0f, 1.0f);
+    f32 clampedPitch = Math::Clamp(pitch, 0.1f, 3.0f);
+
     SoundInstance sound;
     sound.clip = clip;
-    sound.volume = volume;
-    sound.pitch = pitch;
+    sound.volume = clampedVolume;
+    sound.pitch = clampedPitch;
     sound.loop = loop;
     sound.is3D = false;
     sound.channel = channel;
@@ -191,8 +202,8 @@ SoundHandle SimpleAudio::Play(AudioClipHandle clip, f32 volume, f32 pitch, bool 
         );
 
         if (result == MA_SUCCESS) {
-            ma_sound_set_volume(maS, EffectiveVolume(volume, channel));
-            ma_sound_set_pitch(maS, pitch);
+            ma_sound_set_volume(maS, EffectiveVolume(clampedVolume, channel));
+            ma_sound_set_pitch(maS, clampedPitch);
             ma_sound_set_looping(maS, loop ? MA_TRUE : MA_FALSE);
             ma_sound_start(maS);
             sound.maSound = maS;
@@ -228,17 +239,29 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
         return INVALID_SOUND;
     }
 
+    // Cap active sound count
+    static constexpr usize MAX_ACTIVE_SOUNDS = 256;
+    if (m_Sounds.size() >= MAX_ACTIVE_SOUNDS) {
+        ENJIN_LOG_WARN(Audio, "Max active sounds reached (%zu), cannot play 3D sound", MAX_ACTIVE_SOUNDS);
+        return INVALID_SOUND;
+    }
+
     SoundHandle handle = m_NextSoundHandle++;
     if (m_NextSoundHandle == 0) m_NextSoundHandle = 1;
 
+    // Clamp parameters to valid ranges
+    f32 clampedVolume = Math::Clamp(volume, 0.0f, 1.0f);
+    f32 clampedMinDist = std::max(minDist, 0.01f);
+    f32 clampedMaxDist = std::max(maxDist, clampedMinDist + 0.01f);
+
     SoundInstance sound;
     sound.clip = clip;
-    sound.volume = volume;
+    sound.volume = clampedVolume;
     sound.is3D = true;
     sound.channel = channel;
     sound.position = position;
-    sound.minDistance = minDist;
-    sound.maxDistance = maxDist;
+    sound.minDistance = clampedMinDist;
+    sound.maxDistance = clampedMaxDist;
     sound.isPlaying = true;
 
     // Create miniaudio 3D spatialized sound
@@ -253,10 +276,10 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
         );
 
         if (result == MA_SUCCESS) {
-            ma_sound_set_volume(maS, EffectiveVolume(volume, channel));
+            ma_sound_set_volume(maS, EffectiveVolume(clampedVolume, channel));
             ma_sound_set_position(maS, position.x, position.y, position.z);
-            ma_sound_set_min_distance(maS, minDist);
-            ma_sound_set_max_distance(maS, maxDist);
+            ma_sound_set_min_distance(maS, clampedMinDist);
+            ma_sound_set_max_distance(maS, clampedMaxDist);
             ma_sound_set_attenuation_model(maS, ma_attenuation_model_inverse);
             ma_sound_start(maS);
             sound.maSound = maS;

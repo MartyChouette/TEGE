@@ -299,6 +299,21 @@ void Box2DBackend::DestroyBodyForEntity(ECS::Entity entity) {
     b2DestroyBody(it->second);
     m_BodyUserDataToEntity.erase(static_cast<uint64_t>(entity));
     m_EntityToBody.erase(it);
+
+    // Clean up stale collision/sensor pairs involving this entity
+    auto purgeEntity = [entity](std::unordered_set<u64>& pairs) {
+        for (auto pit = pairs.begin(); pit != pairs.end(); ) {
+            u64 key = *pit;
+            ECS::Entity a = static_cast<ECS::Entity>(key >> 32);
+            ECS::Entity b = static_cast<ECS::Entity>(key & 0xFFFFFFFF);
+            if (a == entity || b == entity)
+                pit = pairs.erase(pit);
+            else
+                ++pit;
+        }
+    };
+    purgeEntity(m_ActiveContacts);
+    purgeEntity(m_ActiveSensorContacts);
 }
 
 // ============================================================================
@@ -348,7 +363,9 @@ void Box2DBackend::SyncBox2DToECS() {
 // ============================================================================
 
 ECS::Entity Box2DBackend::ResolveEntity(b2ShapeId shapeId) const {
+    if (!b2Shape_IsValid(shapeId)) return 0;
     b2BodyId bodyId = b2Shape_GetBody(shapeId);
+    if (!b2Body_IsValid(bodyId)) return 0;
     void* userData = b2Body_GetUserData(bodyId);
     if (!userData) return 0;
     return UserDataToEntity(userData);
@@ -444,6 +461,11 @@ void Box2DBackend::ProcessEvents() {
 
             if (m_OnSensorEnter) m_OnSensorEnter(contact);
         }
+    }
+
+    // Carry forward active sensor contacts that haven't ended this frame
+    for (u64 prevKey : m_ActiveSensorContacts) {
+        newSensorContacts.insert(prevKey);
     }
 
     for (int i = 0; i < sensors.endCount; ++i) {

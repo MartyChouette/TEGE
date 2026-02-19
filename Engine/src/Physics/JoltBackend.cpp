@@ -815,6 +815,7 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         if (!lockA.Succeeded() || !lockB.Succeeded()) return nullptr;
 
         auto* c = settings.Create(lockA.GetBody(), lockB.GetBody());
+        if (!c) return nullptr;
         postCreate(c, lockA.GetBody(), lockB.GetBody());
         m_PhysicsSystem->AddConstraint(c);
         return c;
@@ -837,7 +838,7 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
         settings.mMinDistance = joint->restDistance - joint->tolerance;
         settings.mMaxDistance = joint->restDistance + joint->tolerance;
-        if (joint->stiffness < 1.0f) {
+        if (joint->stiffness < 1.0f && joint->stiffness > 0.0f) {
             settings.mLimitsSpringSettings.mFrequency = joint->stiffness * 10.0f;
             settings.mLimitsSpringSettings.mDamping = 0.5f;
         }
@@ -855,7 +856,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         JPH::HingeConstraintSettings settings;
         settings.mPoint1 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyA)) + joint->anchorA);
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
-        settings.mHingeAxis1 = ToJolt(joint->axis).Normalized();
+        JPH::Vec3 rawHingeAxis = ToJolt(joint->axis);
+        if (rawHingeAxis.LengthSq() < 1e-12f) rawHingeAxis = JPH::Vec3::sAxisY();
+        settings.mHingeAxis1 = rawHingeAxis.Normalized();
         settings.mHingeAxis2 = settings.mHingeAxis1;
         // Compute a perpendicular normal axis
         JPH::Vec3 up = JPH::Vec3::sAxisY();
@@ -900,9 +903,10 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
                     JPH::ConeConstraintSettings coneSettings;
                     coneSettings.mHalfConeAngle = coneAngle * (3.14159265358979323846f / 180.0f);
                     auto* cc = coneSettings.Create(bA, bB);
-                    m_PhysicsSystem->AddConstraint(cc);
-                    // PH-H8 fix: store cone constraint for cleanup in DestroyJointForEntity
-                    m_EntityToConeConstraint[jointEntity] = cc;
+                    if (cc) {
+                        m_PhysicsSystem->AddConstraint(cc);
+                        m_EntityToConeConstraint[jointEntity] = cc;
+                    }
                 }
             });
         break;
@@ -919,8 +923,8 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mPoint2 = ToJoltR(FromJoltR(bodyInterface.GetPosition(bodyB)) + joint->anchorB);
         settings.mMinDistance = joint->minDistance > 0 ? joint->minDistance : 0.0f;
         settings.mMaxDistance = joint->maxDistance > 0 ? joint->maxDistance : 1000.0f;
-        settings.mLimitsSpringSettings.mStiffness = joint->springConstant;
-        settings.mLimitsSpringSettings.mDamping = joint->dampingCoefficient;
+        settings.mLimitsSpringSettings.mStiffness = std::max(joint->springConstant, 0.0f);
+        settings.mLimitsSpringSettings.mDamping = std::max(joint->dampingCoefficient, 0.0f);
 
         constraint = createConstraint(bodyA, bodyB, settings, noop);
         break;
@@ -947,7 +951,9 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
 
         JPH::SliderConstraintSettings settings;
         settings.mAutoDetectPoint = true;
-        settings.mSliderAxis1 = ToJolt(joint->slideAxis).Normalized();
+        JPH::Vec3 rawSliderAxis = ToJolt(joint->slideAxis);
+        if (rawSliderAxis.LengthSq() < 1e-12f) rawSliderAxis = JPH::Vec3::sAxisX();
+        settings.mSliderAxis1 = rawSliderAxis.Normalized();
         settings.mSliderAxis2 = settings.mSliderAxis1;
 
         if (joint->useLimits) {
