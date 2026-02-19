@@ -12880,62 +12880,63 @@ namespace {
         const char* description;
         ImVec4 accentColor;
         u32 categoryFlags;
+        Editor::MaturityTier maturity;
     };
 
     static const HubTemplateInfo s_BuiltinTemplates[] = {
-        // -- Foundations --
-        { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL },
-        { "platformer",   "2D Platformer",      "Side-scrolling\nWall jump + particles + tweens",        ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D },
-        { "topdown2d",    "2D Top-Down Action", "Top-down action\nDash + health + AI patrol",            ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D },
-        { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D },
-        { "firstperson",  "3D First Person",    "Eye-level FPS\nCorridor walls + warm lighting",         ImVec4(0.7f, 0.3f, 0.8f, 1.0f), kTMPL_3D },
+        // -- Foundations (Stable) --
+        { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
+        { "platformer",   "2D Platformer",      "Side-scrolling\nWall jump + particles + tweens",        ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        { "topdown2d",    "2D Top-Down Action", "Top-down action\nDash + health + AI patrol",            ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "firstperson",  "3D First Person",    "Eye-level FPS\nCorridor walls + warm lighting",         ImVec4(0.7f, 0.3f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Genre Showcases --
-        { "puzzle",       "Sokoban Puzzle",     "Pushable blocks\nGoal plates + switches + grid snap",   ImVec4(0.4f, 0.8f, 0.9f, 1.0f), kTMPL_3D },
-        { "survival",     "Survival",           "Survive the cold\nTemperature + weather + stamina",     ImVec4(0.7f, 0.5f, 0.2f, 1.0f), kTMPL_3D },
-        { "rpg_village",  "RPG Village",        "Talk to NPCs\nDialogue + pickups + lantern",            ImVec4(0.3f, 0.6f, 0.3f, 1.0f), kTMPL_3D },
-        { "horror",       "Horror",             "Dark atmosphere\nFlashlight + fog + proximity door",    ImVec4(0.3f, 0.1f, 0.3f, 1.0f), kTMPL_3D },
-        { "racing",       "Vehicle Racing",     "Split-screen race\nVehicle + checkpoints + cinematic",  ImVec4(0.9f, 0.25f, 0.1f, 1.0f), kTMPL_MULTI },
-        { "ps1rpg",       "PS1 RPG",            "Retro 3D RPG\nPixelation + dither + save point",       ImVec4(0.2f, 0.2f, 0.8f, 1.0f), kTMPL_3D },
-        { "arena",        "Arena Fighter",      "2-player brawl\nSplitscreen + health + stamina",       ImVec4(1.0f, 0.5f, 0.0f, 1.0f), kTMPL_MULTI },
+        { "puzzle",       "Sokoban Puzzle",     "Pushable blocks\nGoal plates + switches + grid snap",   ImVec4(0.4f, 0.8f, 0.9f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "survival",     "Survival",           "Survive the cold\nTemperature + weather + stamina",     ImVec4(0.7f, 0.5f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "rpg_village",  "RPG Village",        "Talk to NPCs\nDialogue + pickups + lantern",            ImVec4(0.3f, 0.6f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "horror",       "Horror",             "Dark atmosphere\nFlashlight + fog + proximity door",    ImVec4(0.3f, 0.1f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "racing",       "Vehicle Racing",     "Split-screen race\nVehicle + checkpoints + cinematic",  ImVec4(0.9f, 0.25f, 0.1f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        { "ps1rpg",       "PS1 RPG",            "Retro 3D RPG\nPixelation + dither + save point",       ImVec4(0.2f, 0.2f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "arena",        "Arena Fighter",      "2-player brawl\nSplitscreen + health + stamina",       ImVec4(1.0f, 0.5f, 0.0f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
         // -- Systems Deep-Dives --
-        { "physics",      "Physics Playground", "Rigidbody sandbox\nGravity zones + conveyors + ramps",  ImVec4(0.3f, 0.75f, 0.7f, 1.0f), kTMPL_3D },
-        { "narrative",    "Dialogue & Narrative","NPC conversations\nQuests + dialogue box + branching",  ImVec4(0.7f, 0.6f, 0.85f, 1.0f), kTMPL_3D },
-        { "savesystem",   "Save System Demo",   "3-tier persistence\nCheckpoints + meta + save menu",   ImVec4(0.4f, 0.55f, 0.75f, 1.0f), kTMPL_3D },
-        { "visualscript", "Visual Scripting",   "Node-based logic\nSwitch triggers + particle events",  ImVec4(0.85f, 0.7f, 0.2f, 1.0f), kTMPL_3D },
-        { "uicanvas",     "UI Canvas Demo",     "In-game UI\nButtons + health bar + HUD overlay",       ImVec4(0.8f, 0.3f, 0.7f, 1.0f), kTMPL_3D },
-        { "accessibility","Accessibility Menu","Settings menu\nSubtitles + colorblind + focus nav",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL },
+        { "physics",      "Physics Playground", "Rigidbody sandbox\nGravity zones + conveyors + ramps",  ImVec4(0.3f, 0.75f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "narrative",    "Dialogue & Narrative","NPC conversations\nQuests + dialogue box + branching",  ImVec4(0.7f, 0.6f, 0.85f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "savesystem",   "Save System Demo",   "3-tier persistence\nCheckpoints + meta + save menu",   ImVec4(0.4f, 0.55f, 0.75f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "visualscript", "Visual Scripting",   "Node-based logic\nSwitch triggers + particle events",  ImVec4(0.85f, 0.7f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        { "uicanvas",     "UI Canvas Demo",     "In-game UI\nButtons + health bar + HUD overlay",       ImVec4(0.8f, 0.3f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "accessibility","Accessibility Menu","Settings menu\nSubtitles + colorblind + focus nav",    ImVec4(0.3f, 0.75f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
         // -- Retro & Flash --
-        { "pointclick",   "Point & Click",      "Adventure game\nClick hotspots + inventory + dialogue", ImVec4(1.0f, 0.55f, 0.2f, 1.0f), kTMPL_2D },
-        { "bullethell",   "Bullet Hell",        "Danmaku shmup\nObject pool + particles + health",      ImVec4(0.95f, 0.2f, 0.5f, 1.0f), kTMPL_2D },
-        { "idleclicker",  "Idle/Clicker",       "Incremental game\nUI canvas + meta saves + tweens",    ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D },
+        { "pointclick",   "Point & Click",      "Adventure game\nClick hotspots + inventory + dialogue", ImVec4(1.0f, 0.55f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "bullethell",   "Bullet Hell",        "Danmaku shmup\nObject pool + particles + health",      ImVec4(0.95f, 0.2f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "idleclicker",  "Idle/Clicker",       "Incremental game\nUI canvas + meta saves + tweens",    ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
         // -- Advanced --
-        { "planetgravity","Planet Gravity",     "Spherical gravity\nWalk on a planet surface",           ImVec4(0.3f, 0.6f, 0.95f, 1.0f), kTMPL_3D },
-        { "dungeon",      "Dungeon Crawler",    "Grid-based FPS\nSnap turns + enemies + dark corridors", ImVec4(0.15f, 0.5f, 0.15f, 1.0f), kTMPL_3D },
+        { "planetgravity","Planet Gravity",     "Spherical gravity\nWalk on a planet surface",           ImVec4(0.3f, 0.6f, 0.95f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "dungeon",      "Dungeon Crawler",    "Grid-based FPS\nSnap turns + enemies + dark corridors", ImVec4(0.15f, 0.5f, 0.15f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
         // -- Restored: Genre Showcases --
-        { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), kTMPL_3D },
-        { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), kTMPL_ALL },
-        { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), kTMPL_ALL },
-        { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), kTMPL_3D },
-        { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), kTMPL_3D },
-        { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), kTMPL_3D },
-        { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_3D },
-        { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), kTMPL_2D },
-        { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), kTMPL_3D },
-        { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), kTMPL_3D },
-        { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), kTMPL_2D },
-        { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), kTMPL_3D },
-        { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), kTMPL_2D },
-        { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), kTMPL_2D },
+        { "isometric",   "3D Isometric",    "45-degree CRPG\nPerspective + player",               ImVec4(0.9f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "visualnovel", "Visual Novel",     "Story-driven\nDialogue + sprites",                   ImVec4(0.9f, 0.7f, 0.9f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        { "gamemanager", "Game Manager",    "Singleton pattern\nScore + state machine",            ImVec4(0.6f, 0.6f, 0.8f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Beta },
+        { "citybuilder", "City Builder",   "Isometric city sim\n3D or faux-iso mode",             ImVec4(0.2f, 0.7f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "fpsarena",    "FPS Arena",      "First-person shooter\nWeapons + respawn + ammo",       ImVec4(0.9f, 0.2f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "teamsports",  "Team Sports",    "3D soccer/basketball\n2 teams + ball + goals",         ImVec4(0.2f, 0.8f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "towerdefense","Tower Defense",  "Isometric TD\nPaths + turrets + waves",                ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "runner",      "Endless Runner", "Auto-scroll\nLanes + obstacles + score",               ImVec4(0.9f, 0.6f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "flower",      "Flower Garden", "Procedural flower\nPluckable petals + score",             ImVec4(0.9f, 0.4f, 0.6f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
+        { "fixedcam",    "Fixed Camera",  "Fixed-angle 3rd person\nClassic RE / God of War",           ImVec4(0.6f, 0.25f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "metroidvania","2D Metroidvania","Interconnected map\nAbilities + locked doors",             ImVec4(0.4f, 0.2f, 0.7f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "soulslike",   "3D Souls-like", "Challenging melee\nBonfires + stamina + fog gates",        ImVec4(0.5f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "vampsurvivor","Survivor-like", "Top-down auto-attack\nWaves + XP + level-up",              ImVec4(0.1f, 0.7f, 0.5f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "roguelike",   "2D Rogue-like", "Grid-based dungeon\nRandom rooms + permadeath",            ImVec4(0.6f, 0.5f, 0.1f, 1.0f), kTMPL_2D, Editor::MaturityTier::Preview },
         // -- Restored: Multiplayer --
-        { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), kTMPL_MULTI },
-        { "justtwo",     "Just the Two of Us","Co-op puzzles + physics\nIt Takes Two inspired",       ImVec4(0.85f, 0.45f, 0.65f, 1.0f), kTMPL_MULTI },
+        { "couchcoop",   "2P Couch Co-op","Splitscreen co-op\n2 players + shared world",              ImVec4(0.8f, 0.4f, 0.2f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
+        { "justtwo",     "Just the Two of Us","Co-op puzzles + physics\nIt Takes Two inspired",       ImVec4(0.85f, 0.45f, 0.65f, 1.0f), kTMPL_MULTI, Editor::MaturityTier::Beta },
         // -- Restored: Debug/Test --
-        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), kTMPL_3D },
+        { "shadowtest",  "Shadow Test",   "Shadow debug scene\nGround + objects + light",             ImVec4(0.9f, 0.9f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Restored: Retro & Flash --
-        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_2D },
-        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), kTMPL_2D },
-        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D },
-        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D },
+        { "flash_td",    "Flash TD",      "Classic Flash TD\nPath + towers + waves",                 ImVec4(0.8f, 0.6f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
     };
     constexpr int s_BuiltinCount = 44;
 } // anonymous namespace
@@ -13159,6 +13160,24 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
 
         DrawCenteredClippedText(gridDl, s_BuiltinTemplates[i].name, cardPos.x, cardW,
             cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
+
+        // Maturity tier badge (top-left corner)
+        {
+            const char* tierLabel = Editor::TemplateMarketplace::GetMaturityName(s_BuiltinTemplates[i].maturity);
+            ImU32 tierCol;
+            switch (s_BuiltinTemplates[i].maturity) {
+                case Editor::MaturityTier::Stable:       tierCol = IM_COL32(80, 140, 220, 200); break;
+                case Editor::MaturityTier::Beta:         tierCol = IM_COL32(80, 180, 80, 200); break;
+                case Editor::MaturityTier::Preview:      tierCol = IM_COL32(210, 170, 50, 200); break;
+                case Editor::MaturityTier::Experimental: tierCol = IM_COL32(210, 70, 70, 200); break;
+                default: tierCol = IM_COL32(120, 120, 120, 200); break;
+            }
+            ImVec2 tierSize = ImGui::CalcTextSize(tierLabel);
+            ImVec2 tierPos(cardPos.x + 6.0f, cardPos.y + 8.0f);
+            gridDl->AddRectFilled(ImVec2(tierPos.x - 3.0f, tierPos.y - 1.0f),
+                ImVec2(tierPos.x + tierSize.x + 3.0f, tierPos.y + tierSize.y + 1.0f), tierCol, 3.0f);
+            gridDl->AddText(tierPos, IM_COL32(255, 255, 255, 240), tierLabel);
+        }
 
         const char* desc = s_BuiltinTemplates[i].description;
         std::string descStr(desc);
@@ -23072,6 +23091,18 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
             ImGui::TextDisabled("[%s]", entry->category.c_str());
             ImGui::SameLine();
             ImGui::TextDisabled("[%s]", entry->projectMode.c_str());
+            ImGui::SameLine();
+            {
+                ImVec4 tierColor;
+                switch (entry->maturity) {
+                    case Editor::MaturityTier::Stable:       tierColor = ImVec4(0.3f, 0.55f, 0.86f, 1.0f); break;
+                    case Editor::MaturityTier::Beta:         tierColor = ImVec4(0.3f, 0.7f, 0.3f, 1.0f); break;
+                    case Editor::MaturityTier::Preview:      tierColor = ImVec4(0.82f, 0.67f, 0.2f, 1.0f); break;
+                    case Editor::MaturityTier::Experimental: tierColor = ImVec4(0.82f, 0.27f, 0.27f, 1.0f); break;
+                    default: tierColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f); break;
+                }
+                ImGui::TextColored(tierColor, "[%s]", Editor::TemplateMarketplace::GetMaturityName(entry->maturity));
+            }
 
             // Rating stars + download count
             ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f + ImGui::GetCursorPosX());
@@ -23094,8 +23125,9 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
                 // Metadata
                 ImGui::TextDisabled("Author: %s  |  Version: %s  |  License: %s",
                     entry->author.c_str(), entry->version.c_str(), entry->license.c_str());
-                ImGui::TextDisabled("Quality: %s  |  Size: %s",
+                ImGui::TextDisabled("Quality: %s  |  Maturity: %s  |  Size: %s",
                     Editor::TemplateMarketplace::GetQualityName(entry->quality),
+                    Editor::TemplateMarketplace::GetMaturityName(entry->maturity),
                     entry->fileSizeBytes < 1024 ? (std::to_string(entry->fileSizeBytes) + " B").c_str() :
                     (std::to_string(entry->fileSizeBytes / 1024) + " KB").c_str());
 
