@@ -277,7 +277,7 @@
     <a href="#releases">Releases</a>
     <a href="#timeline">Timeline</a>
     <span class="spacer"></span>
-    <span class="version-badge">v0.9 pre-release</span>
+    <span class="version-badge">v0.7</span>
 </nav>
 
 <div class="container">
@@ -586,17 +586,17 @@ graph LR
             <div class="channel-card ch-stable">
                 <h4>Stable Channel</h4>
                 <p>Production releases. Only Tier 1 features are on by default. Tier 2 features available via opt-in CMake flags. Fully audited and tested.</p>
-                <p style="margin-top:0.5rem"><code>v1.0.0</code> &nbsp; <code>v1.1.0</code> &nbsp; <code>v1.2.0</code></p>
+                <p style="margin-top:0.5rem"><code>v0.8.0</code> &nbsp; <code>v0.9.0</code> &nbsp; <code>v1.0.0</code></p>
             </div>
             <div class="channel-card ch-beta">
                 <h4>Beta Channel</h4>
                 <p>Feature-complete releases under final testing. Tier 1 + Tier 2 enabled. Tier 3 features available via opt-in. API may have minor changes.</p>
-                <p style="margin-top:0.5rem"><code>v1.1.0-beta.1</code> &nbsp; <code>v1.1.0-beta.2</code></p>
+                <p style="margin-top:0.5rem"><code>v0.8.0-beta.1</code> &nbsp; <code>v0.8.0-beta.2</code></p>
             </div>
             <div class="channel-card ch-alpha">
                 <h4>Alpha Channel</h4>
                 <p>In-progress releases for early adopters. Tiers 1-3 enabled. Experimental (Tier 4) stripped out. Expect breaking changes between alphas.</p>
-                <p style="margin-top:0.5rem"><code>v1.1.0-alpha.1</code></p>
+                <p style="margin-top:0.5rem"><code>v0.8.0-alpha.1</code></p>
             </div>
             <div class="channel-card ch-nightly">
                 <h4>Nightly / Dev</h4>
@@ -638,22 +638,22 @@ graph LR
         <div class="diagram-container">
             <div class="mermaid">
 gitgraph
-    commit id: "v0.9.0"
-    branch "beta/1.0"
-    checkout "beta/1.0"
+    commit id: "v0.7.0"
+    branch "beta/0.8"
+    checkout "beta/0.8"
     commit id: "Tier 1 audit"
     commit id: "Tier 1 tests"
     checkout main
     commit id: "T3 feature work"
     commit id: "T4 experiments"
-    checkout "beta/1.0"
+    checkout "beta/0.8"
     commit id: "Tier 2 hardening"
-    branch "release/1.0"
-    checkout "release/1.0"
-    commit id: "v1.0.0-rc.1" tag: "v1.0.0-rc.1"
-    commit id: "v1.0.0" tag: "v1.0.0"
+    branch "release/0.8"
+    checkout "release/0.8"
+    commit id: "v0.8.0-rc.1" tag: "v0.8.0-rc.1"
+    commit id: "v0.8.0" tag: "v0.8.0"
     checkout main
-    merge "release/1.0"
+    merge "release/0.8"
     commit id: "post-release"
             </div>
         </div>
@@ -680,7 +680,7 @@ gantt
     Audio &amp; Input polish           :t1f, after t1c, 7d
     Build pipeline audit             :t1g, after t1f, 7d
     Tier 1 documentation             :t1doc, after t1d, 14d
-    v1.0.0-beta.1                    :milestone, after t1doc, 0d
+    v0.8.0-beta.1                    :milestone, after t1doc, 0d
 
     section Tier 2 — Essential
     Scripting audit &amp; bindings     :t2a, after t1doc, 21d
@@ -689,19 +689,19 @@ gantt
     UI system stabilization          :t2d, after t2c, 14d
     Save system + prefab audit       :t2e, after t2c, 10d
     Tier 2 documentation             :t2doc, after t2d, 14d
-    v1.0.0-rc.1                      :milestone, after t2doc, 0d
+    v0.8.0-rc.1                      :milestone, after t2doc, 0d
 
     section Tier 3 — Extended
     Feature-flag all T3 systems      :t3a, after t2doc, 14d
     Networking hardening             :t3b, after t3a, 21d
     Effects &amp; procedural audit    :t3c, after t3a, 21d
     AI &amp; dialogue stabilization   :t3d, after t3a, 14d
-    v1.0.0 Stable                    :milestone, after t3c, 0d
+    v0.8.0 Stable                    :milestone, after t3c, 0d
 
     section Release
     Public documentation site        :rel1, after t3a, 28d
     Example projects                 :rel2, after t2doc, 28d
-    v1.0.0 Launch                    :milestone, after rel1, 0d
+    v0.8.0 Launch                    :milestone, after rel1, 0d
             </div>
         </div>
 
@@ -712,17 +712,17 @@ gantt
             </thead>
             <tbody>
                 <tr>
-                    <td><span class="status-pill active">v1.0.0-beta.1</span></td>
+                    <td><span class="status-pill active">v0.8.0-beta.1</span></td>
                     <td>Tier 1 Complete</td>
                     <td>All Tier 1 systems audited, zero critical/high bugs, full test coverage, API documentation complete</td>
                 </tr>
                 <tr>
-                    <td><span class="status-pill planned">v1.0.0-rc.1</span></td>
+                    <td><span class="status-pill planned">v0.8.0-rc.1</span></td>
                     <td>Tier 2 Complete</td>
                     <td>Scripting + animation + UI audited, save/load round-trip tested, visual script debugger stable</td>
                 </tr>
                 <tr>
-                    <td><span class="status-pill planned">v1.0.0</span></td>
+                    <td><span class="status-pill planned">v0.8.0</span></td>
                     <td>Stable Release</td>
                     <td>Tier 3 feature-flagged, public docs live, 3+ example projects, zero known regressions</td>
                 </tr>
