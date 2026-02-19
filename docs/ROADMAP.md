@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-16)
+## Status Summary (2026-02-18)
 
-**150+ features complete.** The remaining work is platform ports, infrastructure polish, and QA.
+**150+ features complete.** Beta 0.8 hardening in progress on `beta/0.8` branch. ECS and Renderer audits complete (26 fixes). Serialization and Asset Pack audits identified (28 findings pending). See `docs/DEV_JOURNAL.md` for session log.
 
 ### Still Remaining
 
@@ -23,7 +23,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **RT** | RT Caustics (photon mapping / path traced) | P4 |
 | **RT** | RT Translucency (subsurface scattering) | P4 |
 | **Flash** | Yarn Spinner / Twine dialogue import/export | P4 |
-| **QA** | Comprehensive testing across all 150+ features | P1 |
+| **QA** | Beta 0.8 hardening: ECS ✅, Renderer ✅, Serialization (in progress), Asset Pack (in progress), Physics, Audio, Build Pipeline | P1 |
 | **Known Bug** | RT pipeline crash on pool-allocated entity BLAS builds (parked) | P2 |
 
 ---
@@ -1497,4 +1497,4 @@ All 24 previously-tracked stubs have been resolved (Audit #4, 2026-02-14). Notab
 
 No outstanding stubs remain.
 
-*Last updated: 2026-02-17 — Session 31: Physics/scripting/serialization audit (26 fixes): Jolt BodyID generation counter, Box2D body validity, event/coroutine/entity caps, serialization completeness (Health/Rigidbody/Damage runtime state), enum bounds, include depth limit. All 8 test executables pass.*
+*Last updated: 2026-02-18 — Session 32: Beta 0.8 branch created for systematic hardening. ECS audit (5 findings fixed: O(1) entity validity, deferred destruction, event bus, 40 tests). Renderer audit (16 findings fixed: VkResult checks on enumeration/surface/queues, VulkanBuffer resource leaks and null guards, VulkanSwapchain error propagation). Serialization deep audit (12 findings) and Asset Pack audit (16 findings) identified — fixes in progress. See docs/AUDIT_2026_02_18.md and docs/DEV_JOURNAL.md.*
