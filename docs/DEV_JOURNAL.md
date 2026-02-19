@@ -4,6 +4,43 @@ Chronological log of major development sessions, decisions, and milestones.
 
 ---
 
+## 2026-02-19 — MaturityTier Badges, Test Hardening, Steam Audio Phase 2
+
+**Branch:** `beta/0.8`
+
+### Work Completed
+
+**Steam Audio Phase 2 — Occlusion & Transmission:**
+- `BuildScene()` creates IPLScene + IPLStaticMesh from ECS box/sphere collider geometry
+- `UpdateOcclusion()` raycasts source↔listener at ~10Hz, stores per-source occlusion/transmission factors
+- IPLDirectEffect applies low-pass filtering before HRTF in the audio callback
+- Default acoustic material: concrete-like absorption/transmission coefficients
+- Editor UI: Occlusion + Transmission toggles in Project Settings (Transmission disabled when Occlusion off)
+- Wired into PlayMode start and Player scene load via `SimpleAudio::BuildSteamAudioScene()`
+
+**MaturityTier Badges on Templates:**
+- Added `MaturityTier` enum (Stable/Beta/Preview/Experimental) with color-coded badges (Blue/Green/Amber/Red)
+- Tagged all 44 hub wizard templates and 15 marketplace catalog entries with maturity tiers
+- Hub wizard: color-coded pill badge rendered in top-left corner of each template card
+- Marketplace: colored `[Tier]` tag in list rows + "Maturity:" field in expanded detail view
+
+**Test Suite Reorganization & New Tests:**
+- Moved 4 integration tests (SerializerRoundTrip, DungeonCrawlerTest, SMTTemplateTest, StressTest) into `Tests/Integration/` subfolder
+- Added 3 new rigorous unit test suites:
+  - `TestMarketplace` — Catalog integrity, search/filter, maturity tiers, ID uniqueness
+  - `TestCollisionFiltering` — Bilateral bitmask rules, group isolation, trigger semantics, serialization round-trip
+  - `TestSaveSystem` — Meta-progression KV stores, persistence tiers, slot management, SaveDataComponent helpers
+
+### Files Changed
+
+| Commit | Files | Summary |
+|--------|-------|---------|
+| Steam Audio Phase 2 | SteamAudioProcessor.h/cpp, SimpleAudio.h/cpp, EditorLayer.cpp | Occlusion + transmission for geometry-aware audio |
+| MaturityTier badges | TemplateMarketplace.h/cpp, EditorLayer.cpp | 4-tier maturity labels on all templates |
+| Test reorganization | Tests/CMakeLists.txt, Tests/Integration/*, Tests/Unit/* | Subfolder split + 3 new test suites |
+
+---
+
 ## 2026-02-18 — Beta 0.8 Branch: Systematic Hardening
 
 **Branch:** `beta/0.8` (created from `main`)
