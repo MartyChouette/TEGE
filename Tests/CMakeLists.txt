@@ -77,6 +77,11 @@ enjin_add_test(TestStressFuzz         Unit/TestStressFuzz.cpp)
 enjin_add_test(TestMarketplace        Unit/TestMarketplace.cpp)
 enjin_add_test(TestCollisionFiltering Unit/TestCollisionFiltering.cpp)
 enjin_add_test(TestSaveSystem         Unit/TestSaveSystem.cpp)
+enjin_add_test(TestSerializerComponents Unit/TestSceneSerializerComponents.cpp)
+enjin_add_test(TestInputAction        Unit/TestInputAction.cpp)
+enjin_add_test(TestScriptEngine       Unit/TestScriptEngine.cpp)
+enjin_add_test(TestEditorSettings     Unit/TestEditorSettings.cpp)
+enjin_add_test(TestNetworkAdversarial Unit/TestNetworkAdversarial.cpp)
 
 # Register integration tests with CTest
 add_test(NAME SerializerRoundTrip COMMAND SerializerRoundTrip)
