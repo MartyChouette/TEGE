@@ -59,7 +59,10 @@ bool VulkanContext::Initialize() {
 
 void VulkanContext::Shutdown() {
     if (m_Device != VK_NULL_HANDLE) {
-        vkDeviceWaitIdle(m_Device);
+        VkResult waitResult = vkDeviceWaitIdle(m_Device);
+        if (waitResult != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "vkDeviceWaitIdle failed during shutdown: %d", waitResult);
+        }
         vkDestroyDevice(m_Device, nullptr);
         m_Device = VK_NULL_HANDLE;
     }
@@ -113,7 +116,11 @@ bool VulkanContext::CreateInstance() {
 
 bool VulkanContext::SelectPhysicalDevice() {
     u32 deviceCount = 0;
-    vkEnumeratePhysicalDevices(m_Instance, &deviceCount, nullptr);
+    VkResult enumResult = vkEnumeratePhysicalDevices(m_Instance, &deviceCount, nullptr);
+    if (enumResult != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to enumerate physical devices: %d", enumResult);
+        return false;
+    }
 
     if (deviceCount == 0) {
         ENJIN_LOG_ERROR(Renderer, "No Vulkan-compatible devices found");
@@ -121,7 +128,11 @@ bool VulkanContext::SelectPhysicalDevice() {
     }
 
     std::vector<VkPhysicalDevice> devices(deviceCount);
-    vkEnumeratePhysicalDevices(m_Instance, &deviceCount, devices.data());
+    enumResult = vkEnumeratePhysicalDevices(m_Instance, &deviceCount, devices.data());
+    if (enumResult != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to enumerate physical devices (fetch): %d", enumResult);
+        return false;
+    }
 
     // Log all available devices
     ENJIN_LOG_INFO(Renderer, "Found %u Vulkan device(s):", deviceCount);
@@ -331,11 +342,19 @@ bool VulkanContext::CreateLogicalDevice() {
 
 bool VulkanContext::CreateQueues() {
     vkGetDeviceQueue(m_Device, m_GraphicsQueueFamily, 0, &m_GraphicsQueue);
+    if (m_GraphicsQueue == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "Graphics queue is null after vkGetDeviceQueue");
+        return false;
+    }
     // Present queue will be set when we have a surface
     m_PresentQueueFamily = m_GraphicsQueueFamily;
     m_PresentQueue = m_GraphicsQueue;
     // Get compute queue (may be same as graphics if no dedicated compute family)
     vkGetDeviceQueue(m_Device, m_ComputeQueueFamily, 0, &m_ComputeQueue);
+    if (m_ComputeQueue == VK_NULL_HANDLE) {
+        ENJIN_LOG_ERROR(Renderer, "Compute queue is null after vkGetDeviceQueue");
+        return false;
+    }
     return true;
 }
 
@@ -348,7 +367,11 @@ u32 VulkanContext::FindPresentQueueFamily(VkSurfaceKHR surface) const {
 
     for (u32 i = 0; i < queueFamilyCount; ++i) {
         VkBool32 presentSupport = false;
-        vkGetPhysicalDeviceSurfaceSupportKHR(m_PhysicalDevice, i, surface, &presentSupport);
+        VkResult result = vkGetPhysicalDeviceSurfaceSupportKHR(m_PhysicalDevice, i, surface, &presentSupport);
+        if (result != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "vkGetPhysicalDeviceSurfaceSupportKHR failed for family %u: %d", i, result);
+            continue;
+        }
         if (presentSupport) {
             return i;
         }
@@ -389,11 +412,17 @@ std::vector<const char*> VulkanContext::GetRequiredExtensions() const {
 }
 
 bool VulkanContext::CheckValidationLayerSupport() const {
-    u32 layerCount;
-    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    u32 layerCount = 0;
+    VkResult result = vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+    if (result != VK_SUCCESS || layerCount == 0) {
+        return false;
+    }
 
     std::vector<VkLayerProperties> availableLayers(layerCount);
-    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+    result = vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+    if (result != VK_SUCCESS) {
+        return false;
+    }
 
     for (const char* layerName : VALIDATION_LAYERS) {
         bool layerFound = false;
@@ -418,10 +447,16 @@ bool VulkanContext::IsDeviceSuitable(VkPhysicalDevice device) const {
     vkGetPhysicalDeviceFeatures(device, &features);
 
     // Check for required extensions
-    u32 extensionCount;
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+    u32 extensionCount = 0;
+    VkResult extResult = vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, nullptr);
+    if (extResult != VK_SUCCESS || extensionCount == 0) {
+        return false;
+    }
     std::vector<VkExtensionProperties> availableExtensions(extensionCount);
-    vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+    extResult = vkEnumerateDeviceExtensionProperties(device, nullptr, &extensionCount, availableExtensions.data());
+    if (extResult != VK_SUCCESS) {
+        return false;
+    }
 
     std::set<std::string> requiredExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
     for (const auto& extension : availableExtensions) {

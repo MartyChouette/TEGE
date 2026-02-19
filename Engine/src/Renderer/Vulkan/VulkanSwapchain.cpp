@@ -36,7 +36,7 @@ void VulkanSwapchain::Shutdown() {
     }
 }
 
-void VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
+bool VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
     if (!gpuAlreadyIdle) {
         vkDeviceWaitIdle(m_Context->GetDevice());
     }
@@ -53,17 +53,18 @@ void VulkanSwapchain::Recreate(u32 width, u32 height, bool gpuAlreadyIdle) {
 
     if (!CreateSwapchain(m_Surface, width, height) || !CreateImageViews()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain");
-        return;
+        return false;
     }
-    
+
     if (!CreateDepthResources()) {
         ENJIN_LOG_ERROR(Renderer, "Failed to recreate depth resources");
-        return;
+        return false;
     }
 
     if (m_RenderPass != VK_NULL_HANDLE) {
         RecreateFramebuffers();
     }
+    return true;
 }
 
 SwapchainSupportDetails VulkanSwapchain::QuerySwapchainSupport(VkPhysicalDevice device, VkSurfaceKHR surface) {
@@ -222,9 +223,17 @@ bool VulkanSwapchain::CreateSwapchain(VkSurfaceKHR surface, u32 width, u32 heigh
         return false;
     }
 
-    vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, nullptr);
+    result = vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, nullptr);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to get swapchain image count: %d", result);
+        return false;
+    }
     m_Images.resize(imageCount);
-    vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, m_Images.data());
+    result = vkGetSwapchainImagesKHR(m_Context->GetDevice(), m_Swapchain, &imageCount, m_Images.data());
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to get swapchain images: %d", result);
+        return false;
+    }
 
     m_ImageFormat = surfaceFormat.format;
     m_Extent = extent;
@@ -382,7 +391,15 @@ bool VulkanSwapchain::CreateDepthResources() {
         return false;
     }
 
-    vkBindImageMemory(m_Context->GetDevice(), m_DepthImage, m_DepthImageMemory, 0);
+    result = vkBindImageMemory(m_Context->GetDevice(), m_DepthImage, m_DepthImageMemory, 0);
+    if (result != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind depth image memory: %d", result);
+        vkFreeMemory(m_Context->GetDevice(), m_DepthImageMemory, nullptr);
+        vkDestroyImage(m_Context->GetDevice(), m_DepthImage, nullptr);
+        m_DepthImage = VK_NULL_HANDLE;
+        m_DepthImageMemory = VK_NULL_HANDLE;
+        return false;
+    }
 
     VkImageViewCreateInfo viewInfo{};
     viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -433,7 +450,9 @@ void VulkanSwapchain::SetVSyncEnabled(bool enabled) {
     ENJIN_LOG_INFO(Renderer, "VSync %s, recreating swapchain...", enabled ? "enabled" : "disabled");
 
     // Recreate swapchain with new present mode
-    Recreate(m_Extent.width, m_Extent.height);
+    if (!Recreate(m_Extent.width, m_Extent.height)) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to recreate swapchain for VSync change");
+    }
 }
 
 } // namespace Renderer
