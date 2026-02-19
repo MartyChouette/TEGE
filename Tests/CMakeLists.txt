@@ -82,6 +82,11 @@ enjin_add_test(TestInputAction        Unit/TestInputAction.cpp)
 enjin_add_test(TestScriptEngine       Unit/TestScriptEngine.cpp)
 enjin_add_test(TestEditorSettings     Unit/TestEditorSettings.cpp)
 enjin_add_test(TestNetworkAdversarial Unit/TestNetworkAdversarial.cpp)
+enjin_add_test(TestNetworkSecurity   Unit/TestNetworkSecurity.cpp)
+enjin_add_test(TestLocalization      Unit/TestLocalization.cpp)
+enjin_add_test(TestIKSolver          Unit/TestIKSolver.cpp)
+enjin_add_test(TestDataAsset         Unit/TestDataAsset.cpp)
+enjin_add_test(TestTimeline          Unit/TestTimeline.cpp)
 
 # Register integration tests with CTest
 add_test(NAME SerializerRoundTrip COMMAND SerializerRoundTrip)
