@@ -203,25 +203,13 @@ const vec2 poissonDisk[16] = vec2[16](
 );
 
 // Calculate cascaded shadow factor using PCF (Percentage Closer Filtering)
-float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) {
-    if (lighting.shadowEnabled == 0) return 1.0;
-    if ((material.flags & FLAG_RECEIVE_SHADOWS) == 0) return 1.0;
-
-    // Select cascade based on view-space depth
-    int cascadeIdx = 3;  // default to furthest
-    for (int i = 0; i < 4; ++i) {
-        if (viewDepth < lighting.cascadeSplits[i]) {
-            cascadeIdx = i;
-            break;
-        }
-    }
-
-    // Transform world position to this cascade's light space
+// Sample shadow from a single cascade (helper for blending)
+float sampleShadowCascade(int cascadeIdx, vec3 worldPos, vec2 texelSize) {
     vec4 lightSpacePos = lighting.cascadeViewProj[cascadeIdx] * vec4(worldPos, 1.0);
     vec3 projCoords = lightSpacePos.xyz / lightSpacePos.w;
     projCoords.xy = projCoords.xy * 0.5 + 0.5;
 
-    // Out-of-bounds check
+    // Out-of-bounds: no shadow
     if (projCoords.x < 0.0 || projCoords.x > 1.0 ||
         projCoords.y < 0.0 || projCoords.y > 1.0 ||
         projCoords.z < 0.0 || projCoords.z > 1.0) {
@@ -229,10 +217,7 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
     }
 
     float currentDepth = projCoords.z;
-
-    // PCF filtering
     float shadow = 0.0;
-    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0).xy);
 
     if (lighting.shadowSoftness <= 0.0) {
         // Hard shadows: fast 3x3 grid (9 samples)
@@ -258,6 +243,38 @@ float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) 
                                               float(cascadeIdx), currentDepth));
         }
         shadow /= 16.0;
+    }
+
+    return shadow;
+}
+
+float calcShadowCSM(float viewDepth, vec3 worldPos, vec3 normal, vec3 lightDir) {
+    if (lighting.shadowEnabled == 0) return 1.0;
+    if ((material.flags & FLAG_RECEIVE_SHADOWS) == 0) return 1.0;
+
+    // Select cascade based on view-space depth
+    int cascadeIdx = 3;  // default to furthest
+    for (int i = 0; i < 4; ++i) {
+        if (viewDepth < lighting.cascadeSplits[i]) {
+            cascadeIdx = i;
+            break;
+        }
+    }
+
+    vec2 texelSize = 1.0 / vec2(textureSize(shadowMap, 0).xy);
+
+    // Sample primary cascade
+    float shadow = sampleShadowCascade(cascadeIdx, worldPos, texelSize);
+
+    // Blend with next cascade near boundaries to eliminate seam lines
+    if (cascadeIdx < 3) {
+        float splitDist = lighting.cascadeSplits[cascadeIdx];
+        float blendRange = splitDist * 0.1;  // 10% blend zone
+        if (viewDepth > splitDist - blendRange) {
+            float nextShadow = sampleShadowCascade(cascadeIdx + 1, worldPos, texelSize);
+            float blend = smoothstep(splitDist - blendRange, splitDist, viewDepth);
+            shadow = mix(shadow, nextShadow, blend);
+        }
     }
 
     // Distance fade: smoothly fade shadows near max distance

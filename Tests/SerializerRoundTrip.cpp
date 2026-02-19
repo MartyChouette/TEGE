@@ -386,19 +386,24 @@ int main() {
         auto& te = srcWorld.AddComponent<ECS::TetherComponent>(e);
         te.attachLocalPos = Math::Vector3(0, 1, 0);
         te.connectedEntity = e;  // Self-ref for test purposes
-        te.breakDistance = 3.0f;
-        te.tensionRamp = 3.0f;
+        te.maxDistance = 3.0f;
+        te.relativeSpeedThreshold = 8.0f;
+        te.ownSpeedThreshold = 10.0f;
+        te.absoluteTravelThreshold = 7.0f;
+        te.relativeTravelThreshold = 7.0f;
+        te.armDelay = 0.1f;
         te.autoMass = 0.5f;
         te.autoSpringK = 200.0f;
         te.autoDamping = 12.0f;
-        te.autoBreakForce = 60.0f;
         te.autoDrag = 2.0f;
+        te.driveMaxForce = 600.0f;
 
         auto& gr = srcWorld.AddComponent<ECS::GrabbableComponent>(e);
-        gr.pullForce = 20.0f;
+        gr.grabSpring = 150.0f;
+        gr.grabDamper = 20.0f;
+        gr.maxAccel = 70.0f;
+        gr.maxSpeed = 15.0f;
         gr.grabRadius = 1.0f;
-        gr.maxPullDistance = 3.0f;
-        gr.maxVelocity = 75.0f;
         gr.windSwayScale = 0.25f;
 
         auto& fs = srcWorld.AddComponent<ECS::FlowerStemComponent>(e);
@@ -828,22 +833,27 @@ int main() {
         auto* te = dstWorld.GetComponent<ECS::TetherComponent>(e);
         if (te) {
             CHECK_VEC3(te->attachLocalPos, 0, 1, 0, "te.attachLocalPos");
-            CHECK_FLOAT(te->breakDistance, 3.0f, "te.breakDistance");
-            CHECK_FLOAT(te->tensionRamp, 3.0f, "te.tensionRamp");
+            CHECK_FLOAT(te->maxDistance, 3.0f, "te.maxDistance");
+            CHECK_FLOAT(te->relativeSpeedThreshold, 8.0f, "te.relativeSpeedThreshold");
+            CHECK_FLOAT(te->ownSpeedThreshold, 10.0f, "te.ownSpeedThreshold");
+            CHECK_FLOAT(te->absoluteTravelThreshold, 7.0f, "te.absoluteTravelThreshold");
+            CHECK_FLOAT(te->relativeTravelThreshold, 7.0f, "te.relativeTravelThreshold");
+            CHECK_FLOAT(te->armDelay, 0.1f, "te.armDelay");
             CHECK_FLOAT(te->autoMass, 0.5f, "te.autoMass");
             CHECK_FLOAT(te->autoSpringK, 200.0f, "te.autoSpringK");
             CHECK_FLOAT(te->autoDamping, 12.0f, "te.autoDamping");
-            CHECK_FLOAT(te->autoBreakForce, 60.0f, "te.autoBreakForce");
             CHECK_FLOAT(te->autoDrag, 2.0f, "te.autoDrag");
+            CHECK_FLOAT(te->driveMaxForce, 600.0f, "te.driveMaxForce");
             CHECK_BOOL(te->isBroken, false, "te.isBroken (runtime reset)");
         }
         HAS_COMPONENT(dstWorld, e, ECS::GrabbableComponent, "GrabbableComponent");
         auto* gr = dstWorld.GetComponent<ECS::GrabbableComponent>(e);
         if (gr) {
-            CHECK_FLOAT(gr->pullForce, 20.0f, "gr.pullForce");
+            CHECK_FLOAT(gr->grabSpring, 150.0f, "gr.grabSpring");
+            CHECK_FLOAT(gr->grabDamper, 20.0f, "gr.grabDamper");
+            CHECK_FLOAT(gr->maxAccel, 70.0f, "gr.maxAccel");
+            CHECK_FLOAT(gr->maxSpeed, 15.0f, "gr.maxSpeed");
             CHECK_FLOAT(gr->grabRadius, 1.0f, "gr.grabRadius");
-            CHECK_FLOAT(gr->maxPullDistance, 3.0f, "gr.maxPullDistance");
-            CHECK_FLOAT(gr->maxVelocity, 75.0f, "gr.maxVelocity");
             CHECK_FLOAT(gr->windSwayScale, 0.25f, "gr.windSwayScale");
             CHECK_BOOL(gr->isGrabbed, false, "gr.isGrabbed (runtime reset)");
         }

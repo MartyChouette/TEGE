@@ -162,17 +162,17 @@ void FlowerSystem::ProcessInput() {
             auto* grab = m_World->GetComponent<GrabbableComponent>(m_GrabbedEntity);
             if (grab) {
                 if (grab->isBroken) {
-                    // Broken petal released: let it fall with gravity.
-                    // CheckGroundImpact will spawn splash particles on ground hit.
-                    auto* rb = m_World->GetComponent<RigidbodyComponent>(m_GrabbedEntity);
-                    if (rb) {
-                        rb->useGravity = true;
-                        rb->velocity = Math::Vector3(0, 0, 0);
+                    // Broken petal released: zero velocity so it falls cleanly.
+                    // UpdateBrokenParts applies gravity, CheckGroundImpact handles landing.
+                    auto* tether = m_World->GetComponent<TetherComponent>(m_GrabbedEntity);
+                    if (tether) {
+                        tether->velocity = Math::Vector3(0, 0, 0);
                     }
                 }
                 grab->isGrabbed = false;
             }
             m_GrabbedEntity = INVALID_ENTITY;
+            m_DripAccumulator = 0.0f;  // Stop pending tension drips on release
         }
     }
 
@@ -202,25 +202,13 @@ void FlowerSystem::ProcessInput() {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2: SetupJointsIfNeeded — one-time: create RBs + SpringJoints
+// Phase 2: SetupJointsIfNeeded — one-time: capture rest distances, init state
 // ---------------------------------------------------------------------------
 void FlowerSystem::SetupJointsIfNeeded() {
     if (!m_World || m_JointsInitialized) return;
     m_JointsInitialized = true;
 
-    // Add Kinematic RigidbodyComponent to stem entities
-    for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
-        auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
-        if (!stem) continue;
-        if (!m_World->HasComponent<RigidbodyComponent>(entity)) {
-            auto& rb = m_World->AddComponent<RigidbodyComponent>(entity);
-            rb.bodyType = RigidbodyComponent::BodyType::Kinematic;
-            rb.mass = 5.0f;
-            rb.useGravity = false;
-        }
-    }
-
-    // For each tethered entity, add Dynamic RB + SpringJointComponent
+    // For each tethered entity, capture rest distance and init runtime state
     for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
@@ -235,112 +223,119 @@ void FlowerSystem::SetupJointsIfNeeded() {
         auto* connectedTransform = m_World->GetComponent<TransformComponent>(connected);
         if (!connectedTransform) continue;
 
-        // Read physics tuning from TetherComponent auto-physics fields
-        f32 mass = tether->autoMass;
-        f32 springK = tether->autoSpringK;
-        f32 dampingC = tether->autoDamping;
-        f32 breakForce = tether->autoBreakForce;
-        f32 rbDrag = tether->autoDrag;
-
-        // Add Dynamic RigidbodyComponent if not present
-        if (!m_World->HasComponent<RigidbodyComponent>(entity)) {
-            auto& rb = m_World->AddComponent<RigidbodyComponent>(entity);
-            rb.bodyType = RigidbodyComponent::BodyType::Dynamic;
-            rb.mass = mass;
-            rb.useGravity = false;
-            rb.drag = rbDrag;
-        }
-
-        // Compute rest length from initial positions
+        // Capture rest distance from initial positions
         Math::Vector3 attachWorld = connectedTransform->position + tether->attachLocalPos;
-        f32 restLen = (transform->position - attachWorld).Length();
-        if (restLen < 0.01f) restLen = 0.1f;
+        tether->restDistance = (transform->position - attachWorld).Length();
+        if (tether->restDistance < 0.01f) tether->restDistance = 0.1f;
 
-        // Cache initial junction position
+        // Cache initial positions
         tether->junctionWorldPos = transform->position + (attachWorld - transform->position) * 0.3f;
         tether->lastAnchorWorldA = transform->position;
         tether->lastAnchorWorldB = attachWorld;
-
-        // Add SpringJointComponent
-        auto& joint = m_World->AddComponent<SpringJointComponent>(entity);
-        joint.entityA = entity;
-        joint.entityB = connected;
-        joint.anchorA = Math::Vector3(0, 0, 0);
-        joint.anchorB = tether->attachLocalPos;
-        joint.restLength = restLen;
-        joint.springConstant = springK;
-        joint.dampingCoefficient = dampingC;
-        joint.breakable = true;
-        joint.breakForce = breakForce;
+        tether->prevAnchorWorldA = transform->position;
+        tether->prevRelVec = transform->position - attachWorld;
+        tether->absoluteTravel = 0.0f;
+        tether->relativeTravel = 0.0f;
+        tether->aliveTime = 0.0f;
 
         tether->hadJoint = true;
     }
 }
 
 // ---------------------------------------------------------------------------
-// Phase 2b: ProcessGrabForces — apply grab pull + wind to rigidbody velocity
+// Phase 2b: ProcessGrabForces — spring-damped grab pull + tether spring + wind
+// Ref: GrabPull.cs (grab), XYTetherJoint (auto spring/damper)
 // ---------------------------------------------------------------------------
 void FlowerSystem::ProcessGrabForces(f32 dt) {
-    if (!m_World) return;
+    if (!m_World || dt <= 0.0f) return;
 
     for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
-
-        // Joint was just removed by ConstraintSolver this frame — skip force processing.
-        // Don't set isBroken here; let UpdateJointTracking handle break cleanup
-        // (sets grab->isBroken, spawns particles, clears jelly data).
-        if (tether->hadJoint && !m_World->HasComponent<SpringJointComponent>(entity)) {
-            continue;
-        }
+        if (!tether->hadJoint) continue;  // Not yet initialized
 
         auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
-        auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (!rb || !transform) continue;
+        if (!transform) continue;
 
-        Math::Vector3 force(0, 0, 0);
+        Math::Vector3 velocity = tether->velocity;
 
-        // Read per-entity grab parameters (with defaults for backward compat)
-        f32 maxPullDist = grab ? grab->maxPullDistance : 2.0f;
-        f32 maxVel = grab ? grab->maxVelocity : 50.0f;
-        f32 windSway = grab ? grab->windSwayScale : 0.15f;
+        // --- Tether spring: ALWAYS pull back toward anchor (ref: XYTetherJoint auto-drive) ---
+        // This is the resistance the user fights against when dragging.
+        // Uses adaptive drive: spring/damper scale with tension for "feel".
+        Entity connected = tether->connectedEntity;
+        if (connected == INVALID_ENTITY) connected = tether->stemEntity;
+        auto* connTransform = m_World->GetComponent<TransformComponent>(connected);
+        if (connTransform) {
+            Math::Vector3 anchor = connTransform->position + tether->attachLocalPos;
+            Math::Vector3 toAnchor = anchor - transform->position;
+            f32 dist = toAnchor.Length();
 
-        // Apply pull force toward cursor when grabbed
-        if (grab && grab->isGrabbed) {
-            Math::Vector3 pullDir = grab->cursorWorldPoint - transform->position;
-            f32 pullLen = pullDir.Length();
-            if (pullLen > maxPullDist) {
-                pullDir = pullDir * (maxPullDist / pullLen);
+            if (dist > 0.001f) {
+                Math::Vector3 dir = toAnchor * (1.0f / dist);
+                f32 stretch = dist - tether->restDistance;
+                if (stretch > 0.0f) {
+                    // Adaptive drive: scale spring/damper based on tension (ref: XYTetherJoint ritual feel)
+                    // Low tension = soft (easy initial pull), high tension = stiff (strong resistance near break)
+                    f32 tensionNorm = Math::Clamp(stretch / tether->maxDistance, 0.0f, 1.0f);
+                    f32 springMult = tether->adaptiveMinSpringMult + tensionNorm * (tether->adaptiveMaxSpringMult - tether->adaptiveMinSpringMult);
+                    f32 damperMult = tether->adaptiveMinDamperMult + tensionNorm * (tether->adaptiveMaxDamperMult - tether->adaptiveMinDamperMult);
+
+                    f32 springForce = tether->autoSpringK * springMult * stretch;
+                    f32 dampForce = tether->autoDamping * damperMult * velocity.Dot(dir * -1.0f);
+                    f32 totalForce = springForce - dampForce;
+                    if (totalForce > tether->driveMaxForce) totalForce = tether->driveMaxForce;
+                    if (totalForce > 0.0f) {
+                        Math::Vector3 accel = dir * (totalForce / tether->autoMass);
+                        velocity = velocity + accel * dt;
+                    }
+                }
             }
-            force = force + pullDir * grab->pullForce;
+
+            // Drag (always active, damps idle oscillation)
+            velocity = velocity * std::max(0.0f, 1.0f - tether->autoDrag * dt);
         }
 
-        // Wind sway
-        if (m_WindSystem) {
+        // --- Grab: direct smooth follow toward cursor ---
+        // NOT a spring (springs oscillate = "tug tug" feel). Instead, set velocity
+        // directly toward cursor. The tether spring above provides all the resistance
+        // and tension. This gives: smooth drag → tension builds → snap.
+        if (grab && grab->isGrabbed) {
+            Math::Vector3 toTarget = grab->cursorWorldPoint - transform->position;
+            f32 dist = toTarget.Length();
+
+            if (dist > 0.001f) {
+                Math::Vector3 dir = toTarget * (1.0f / dist);
+                // Desired speed scales with distance but caps out
+                f32 desiredSpeed = std::min(dist * grab->grabSpring, grab->maxSpeed);
+                Math::Vector3 desiredVel = dir * desiredSpeed;
+
+                // Smooth blend toward desired velocity (critically damped, no overshoot)
+                f32 blend = 1.0f - std::exp(-grab->grabDamper * dt);
+                velocity = velocity * (1.0f - blend) + desiredVel * blend;
+            }
+        }
+
+        // --- Wind sway (subtle, always active) ---
+        f32 windSway = grab ? grab->windSwayScale : 0.15f;
+        if (m_WindSystem && windSway > 0.0f) {
             Math::Vector4 windVec = m_WindSystem->GetWindVector();
             Math::Vector3 windForce(windVec.x, windVec.y, windVec.z);
             f32 heightFactor = Math::Clamp(transform->position.y / 2.0f, 0.1f, 1.0f);
             f32 phase = transform->position.x * 0.5f + transform->position.z * 0.3f + windVec.w * 2.0f;
             f32 sway = std::sin(phase) * heightFactor;
-            force = force + windForce * sway * windSway;
+            velocity = velocity + windForce * (sway * windSway * dt);
         }
 
-        // Apply force as velocity change (F/m * dt)
-        if (force.Length() > 1e-6f && rb->mass > 0.0f) {
-            Math::Vector3 dv = force * (dt / rb->mass);
-            rb->velocity = rb->velocity + dv;
-
-            // Clamp velocity
-            f32 speed = rb->velocity.Length();
-            if (speed > maxVel) {
-                rb->velocity = rb->velocity * (maxVel / speed);
-            }
-            // NaN guard
-            if (std::isnan(rb->velocity.x) || std::isnan(rb->velocity.y) || std::isnan(rb->velocity.z)) {
-                rb->velocity = Math::Vector3(0, 0, 0);
-            }
+        // NaN guard
+        if (std::isnan(velocity.x) || std::isnan(velocity.y) || std::isnan(velocity.z)) {
+            velocity = Math::Vector3(0, 0, 0);
         }
+
+        tether->velocity = velocity;
+
+        // Move entity by velocity (FlowerSystem owns all petal movement — no physics backend)
+        transform->position = transform->position + velocity * dt;
     }
 }
 
@@ -361,13 +356,7 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
         if (tetherCheck && tetherCheck->isBroken) {
             continue;
         }
-        // Also detect joints that were just removed THIS frame by the
-        // ConstraintSolver (isBroken hasn't been set yet — that happens later
-        // in UpdateJointTracking which does the full cleanup).
-        if (tetherCheck && tetherCheck->hadJoint &&
-            !m_World->HasComponent<SpringJointComponent>(entity)) {
-            continue;
-        }
+        // (Break cleanup in UpdateJointTracking sets isBroken — checked above)
 
         auto* mesh = m_World->GetComponent<MeshComponent>(entity);
         if (!mesh || mesh->vertices.empty()) continue;
@@ -494,19 +483,23 @@ void FlowerSystem::UpdateJellyMeshes(f32 dt) {
 }
 
 // ---------------------------------------------------------------------------
-// Phase 4: UpdateJointTracking — detect joint breaks, cache anchors, particles
+// Phase 4: UpdateJointTracking — distance/speed/travel break detection
+// Ref: XYTetherJoint break criteria from Iris v3.0
 // ---------------------------------------------------------------------------
 void FlowerSystem::UpdateJointTracking() {
     if (!m_World) return;
 
     // Collect break events first — spawning particles during iteration would
     // create entities and invalidate the entity list iterator, causing a freeze.
-    // P-19: Reuse member vector to avoid per-frame allocation
     m_BreakEvents.clear();
+
+    // Use a fixed dt for travel accumulators (assumes ~60fps, safe approximation)
+    f32 dt = 1.0f / 60.0f;
 
     for (Entity entity : m_World->GetEntitiesWithComponent<TetherComponent>()) {
         auto* tether = m_World->GetComponent<TetherComponent>(entity);
         if (!tether || tether->isBroken) continue;
+        if (!tether->hadJoint) continue;
 
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
         if (!transform) continue;
@@ -520,85 +513,144 @@ void FlowerSystem::UpdateJointTracking() {
         }
 
         auto* connectedTransform = m_World->GetComponent<TransformComponent>(connected);
+        if (!connectedTransform) continue;
 
-        // Check if SpringJointComponent still exists
-        bool hasJoint = m_World->HasComponent<SpringJointComponent>(entity);
+        // Current anchor positions
+        Math::Vector3 anchorA = transform->position;
+        Math::Vector3 anchorB = connectedTransform->position + tether->attachLocalPos;
+        Math::Vector3 relVec = anchorA - anchorB;
+        f32 distance = relVec.Length();
 
-        if (hasJoint) {
-            auto* joint = m_World->GetComponent<SpringJointComponent>(entity);
-            if (joint && connectedTransform) {
-                // Cache anchor world positions
-                tether->lastAnchorWorldA = transform->position;
-                tether->lastAnchorWorldB = connectedTransform->position + tether->attachLocalPos;
+        // Update junction position (30% from entity toward anchor — for particle spawn)
+        tether->junctionWorldPos = anchorA + (anchorB - anchorA) * 0.3f;
 
-                // Update junction pos (30% from entity toward connected attachment)
-                tether->junctionWorldPos = transform->position +
-                    (tether->lastAnchorWorldB - transform->position) * 0.3f;
+        // Compute tension (normalized distance beyond rest / maxDistance)
+        f32 stretch = distance - tether->restDistance;
+        if (stretch < 0.0f) stretch = 0.0f;
+        tether->currentTension = Math::Clamp(stretch / tether->maxDistance, 0.0f, 1.0f);
 
-                // Read tension from joint stress
-                if (joint->breakForce > 0.0f) {
-                    tether->currentTension = Math::Clamp(joint->currentStress / joint->breakForce, 0.0f, 1.0f);
-                }
-            }
-            tether->hadJoint = true;
+        // --- Travel accumulators (ref: XYTetherJoint.FixedUpdate) ---
+        // Absolute travel: total distance anchor A has moved
+        f32 anchorADelta = (anchorA - tether->prevAnchorWorldA).Length();
+        tether->absoluteTravel += anchorADelta;
 
-            // Spawn sap drip particles when grabbed and under tension
-            auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
-            auto* stemComp = m_World->GetComponent<FlowerStemComponent>(tether->stemEntity);
-            auto* particleConfig = stemComp ? m_World->GetComponent<FlowerParticleConfigComponent>(tether->stemEntity) : nullptr;
-            f32 dripThreshold = particleConfig ? particleConfig->tensionDripThreshold : 0.15f;
-            if (grab && grab->isGrabbed && tether->currentTension > dripThreshold) {
-                f32 liquidIntensity = stemComp ? stemComp->liquidIntensity : 1.0f;
-                if (liquidIntensity > 0.0f) {
-                    Math::Vector3 sapClr = stemComp ? stemComp->sapColor : Math::Vector3(0.15f, 0.45f, 0.1f);
-                    Math::Vector3 squirtDir = transform->position - tether->junctionWorldPos;
-                    f32 squirtLen = squirtDir.Length();
-                    if (squirtLen > 0.01f) squirtDir = squirtDir * (1.0f / squirtLen);
-                    SpawnTensionDrip(tether->junctionWorldPos, sapClr, tether->currentTension,
-                                     squirtDir, liquidIntensity, particleConfig);
-                }
-            }
+        // Relative travel: total change in the A-B vector (stretch accumulator)
+        f32 relDelta = (relVec - tether->prevRelVec).Length();
+        tether->relativeTravel += relDelta;
+
+        // Velocity estimates
+        f32 ownSpeed = anchorADelta / dt;  // How fast the petal itself is moving
+        Math::Vector3 anchorBVelocity = (anchorB - tether->lastAnchorWorldB);
+        f32 relativeSpeed = ((anchorA - tether->prevAnchorWorldA) - anchorBVelocity).Length() / dt;
+
+        // Cache for next frame
+        tether->prevAnchorWorldA = anchorA;
+        tether->prevRelVec = relVec;
+        tether->lastAnchorWorldA = anchorA;
+        tether->lastAnchorWorldB = anchorB;
+
+        // Advance alive timer
+        tether->aliveTime += dt;
+
+        // Grab pointer needed for break detection below
+        auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
+
+        // --- Break detection (ref: XYTetherJoint) ---
+        // Don't check breaks during arm delay grace period
+        if (tether->aliveTime < tether->armDelay) continue;
+
+        bool shouldBreak = false;
+
+        // Distance break: stretched beyond max
+        if (distance > tether->restDistance + tether->maxDistance) {
+            shouldBreak = true;
         }
-        else if (tether->hadJoint) {
-            // Joint was destroyed by physics solver — this is a break!
-            // Cap breaks per frame to avoid GPU overload from simultaneous vertex
-            // buffer mutations + particle spawns. Leftover breaks will be detected
-            // next frame (SpringJointComponent is already removed, hadJoint is still true).
-            if (m_BreakEvents.size() >= 3) continue;
-
-            tether->isBroken = true;
-            tether->justBroke = true;
-
-            auto* grab = m_World->GetComponent<GrabbableComponent>(entity);
-            if (grab) {
-                grab->isBroken = true;
-            }
-
-            // Enable gravity so the broken part falls (was disabled while spring-connected).
-            // If the petal is still grabbed, UpdateBrokenParts moves it to cursor instead.
-            auto* breakRb = m_World->GetComponent<RigidbodyComponent>(entity);
-            if (breakRb) {
-                breakRb->useGravity = true;
-            }
-
-            BreakEvent evt;
-            evt.entity = entity;
-            evt.junctionPos = tether->junctionWorldPos;  // Last cached value
-            evt.color = Math::Vector3(1.0f, 1.0f, 1.0f);
-            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
-            if (mat) evt.color = mat->baseColor;
-            evt.stemEntity = tether->stemEntity;
-            auto* tags = m_World->GetComponent<TagComponent>(entity);
-            evt.hasWitheredTag = tags && tags->HasTag("withered");
-            evt.hasHealthyTag = tags && tags->HasTag("healthy");
-            m_BreakEvents.push_back(evt);
+        // Relative speed break: petal separating too fast from anchor
+        if (relativeSpeed > tether->relativeSpeedThreshold) {
+            shouldBreak = true;
         }
+        // Own speed break: petal moving too fast (absolute)
+        if (ownSpeed > tether->ownSpeedThreshold) {
+            shouldBreak = true;
+        }
+        // Absolute travel break: petal has traveled too far total
+        if (tether->absoluteTravel > tether->absoluteTravelThreshold) {
+            shouldBreak = true;
+        }
+        // Relative travel break: cumulative stretch exceeded
+        if (tether->relativeTravel > tether->relativeTravelThreshold) {
+            shouldBreak = true;
+        }
+
+        // --- Pluck dwell: hold at high tension for N seconds → auto-break (ref: XYTetherJoint) ---
+        if (tether->currentTension >= tether->pluckDwellThreshold) {
+            tether->pluckDwellTimer += dt;
+            if (tether->pluckDwellTimer >= tether->pluckDwellSeconds) {
+                shouldBreak = true;
+            }
+        } else {
+            tether->pluckDwellTimer = 0.0f;  // Reset if tension drops below threshold
+        }
+
+        // --- Release pop: pull above high threshold, release below low → auto-break ---
+        // Track if we've reached high tension during this grab
+        if (tether->currentTension >= tether->releasePopHighThreshold) {
+            tether->reachedHighTension = true;
+        }
+        // If we reached high and now dropped below low → pop!
+        if (tether->reachedHighTension && tether->currentTension < tether->releasePopLowThreshold) {
+            shouldBreak = true;
+        }
+        // Reset flag when grab releases (tension returns near zero)
+        if (tether->currentTension < 0.05f) {
+            tether->reachedHighTension = false;
+        }
+
+        if (!shouldBreak) continue;
+
+        // Cap to 1 break per frame to avoid GPU vertex buffer race from
+        // simultaneous jelly mesh mutations + particle spawns.
+        if (m_BreakEvents.size() >= 1) continue;
+
+        tether->isBroken = true;
+        tether->justBroke = true;
+        m_DripAccumulator = 0.0f;  // Stop any pending tension drip spawns
+
+        // Pop impulse: kick the petal outward from the anchor point
+        // This gives a satisfying snap when the tether breaks
+        Math::Vector3 popDir = anchorA - anchorB;
+        f32 popLen = popDir.Length();
+        if (popLen > 1e-6f) {
+            popDir = popDir * (1.0f / popLen);
+        } else {
+            popDir = Math::Vector3(0.0f, 1.0f, 0.0f);
+        }
+        // Scale pop by tension — harder pull = bigger pop
+        f32 popStrength = 3.0f + tether->currentTension * 5.0f;
+        tether->velocity = popDir * popStrength + Math::Vector3(0.0f, 2.0f, 0.0f);
+
+        if (grab) {
+            grab->isBroken = true;
+        }
+
+        BreakEvent evt;
+        evt.entity = entity;
+        evt.junctionPos = tether->junctionWorldPos;
+        evt.petalPos = anchorA;  // Current petal/leaf position
+        evt.color = Math::Vector3(1.0f, 1.0f, 1.0f);
+        auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+        if (mat) evt.color = mat->baseColor;
+        evt.stemEntity = tether->stemEntity;
+        auto* tags = m_World->GetComponent<TagComponent>(entity);
+        evt.hasWitheredTag = tags && tags->HasTag("withered");
+        evt.hasHealthyTag = tags && tags->HasTag("healthy");
+        m_BreakEvents.push_back(evt);
     }
 
     // Spawn particles and update counters outside the entity iteration
     for (const auto& evt : m_BreakEvents) {
         auto* pConfig = m_World->GetComponent<FlowerParticleConfigComponent>(evt.stemEntity);
-        SpawnBreakParticles(evt.junctionPos, evt.color, pConfig);
+        SpawnBreakParticles(evt.junctionPos, evt.petalPos, evt.color, pConfig);
 
         auto* stemComp = m_World->GetComponent<FlowerStemComponent>(evt.stemEntity);
         if (stemComp) {
@@ -607,27 +659,16 @@ void FlowerSystem::UpdateJointTracking() {
             else if (evt.hasHealthyTag) stemComp->healthyRemoved++;
         }
 
-        // Restore mesh to undeformed rest positions, then flag one final clean
-        // upload so the GPU gets safe vertex data.  After that the RenderSystem
-        // will clear meshDirty itself, stopping future uploads and eliminating
-        // the host-visible vertex buffer race that causes VK_ERROR_DEVICE_LOST.
-        auto* jelly = m_World->GetComponent<JellyMeshComponent>(evt.entity);
-        if (jelly) {
-            auto* mesh = m_World->GetComponent<MeshComponent>(evt.entity);
-            if (mesh && !jelly->restPositions.empty()) {
-                for (usize i = 0; i < jelly->restPositions.size() && i < mesh->vertices.size(); ++i) {
-                    mesh->vertices[i].position = jelly->restPositions[i];
-                }
-                jelly->meshDirty = true;  // One final upload of clean data
-            } else {
-                jelly->meshDirty = false;
-            }
-            jelly->initialized = false;
-            jelly->velocities.clear();
-            jelly->restPositions.clear();
-        }
+        // DO NOT remove JellyMeshComponent or toggle visibility here.
+        // The jelly update already skips broken entities (isBroken check).
+        // Removing components or hiding entities during break can cause
+        // VK_ERROR_DEVICE_LOST because the render path uses persistently
+        // mapped GPU buffers with no per-frame synchronization — any
+        // structural change (component removal, render data invalidation,
+        // pool re-eligibility) while in-flight frames reference the buffer
+        // is unsafe. The entity just keeps its last deformed mesh and falls.
 
-        ENJIN_LOG_INFO(Editor, "Joint broken for entity %llu", (unsigned long long)evt.entity);
+        ENJIN_LOG_INFO(Editor, "Tether broken for entity %llu", (unsigned long long)evt.entity);
     }
 }
 
@@ -657,12 +698,12 @@ void FlowerSystem::UpdateBrokenParts(f32 dt) {
             continue;
         }
 
-        // If released (has rigidbody), apply gravity
-        auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
+        // If released, apply gravity (FlowerSystem owns all petal movement)
+        // Skip already-landed entities (visible=false set by CheckGroundImpact)
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        if (rb && transform && rb->useGravity) {
-            rb->velocity = rb->velocity + Math::Vector3(0.0f, -9.81f * rb->mass, 0.0f) * dt;
-            transform->position = transform->position + rb->velocity * dt;
+        if (transform && transform->visible) {
+            tether->velocity = tether->velocity + Math::Vector3(0.0f, -9.81f, 0.0f) * dt;
+            transform->position = transform->position + tether->velocity * dt;
         }
     }
 }
@@ -680,9 +721,19 @@ void FlowerSystem::UpdateParticles(f32 dt) {
         }
     }
 
+    // Find ground level from first stem (default 0)
+    f32 groundY = -10.0f;
+    if (m_World) {
+        for (Entity entity : m_World->GetEntitiesWithComponent<FlowerStemComponent>()) {
+            auto* stem = m_World->GetComponent<FlowerStemComponent>(entity);
+            if (stem) { groundY = stem->groundLevel - 0.5f; break; }
+        }
+    }
+
     for (auto it = m_Particles.begin(); it != m_Particles.end(); ) {
         it->lifetime += dt;
-        if (it->lifetime >= it->maxLifetime) {
+        // Kill if expired OR fallen below ground
+        if (it->lifetime >= it->maxLifetime || it->position.y < groundY) {
             it = m_Particles.erase(it);
             continue;
         }
@@ -691,9 +742,10 @@ void FlowerSystem::UpdateParticles(f32 dt) {
         it->velocity = it->velocity + Math::Vector3(0.0f, -gravity, 0.0f) * dt;
         it->position = it->position + it->velocity * dt;
 
-        // Quadratic fade-out
+        // Fade out: shrink based on initial scale (not hardcoded)
         f32 t = it->lifetime / it->maxLifetime;
-        it->scale = 0.06f * (1.0f - t * t);
+        it->scale *= (1.0f - t * 0.3f * dt * 60.0f);  // Gradual shrink per frame
+        if (it->scale < 0.005f) it->scale = 0.005f;
 
         ++it;
     }
@@ -718,8 +770,10 @@ void FlowerSystem::CheckGroundImpact() {
         if (grab && grab->isGrabbed) continue; // Still held
 
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
-        auto* rb = m_World->GetComponent<RigidbodyComponent>(entity);
-        if (!transform || !rb) continue;
+        if (!transform) continue;
+
+        // Skip already-landed entities (visible=false means already processed)
+        if (!transform->visible) continue;
 
         // Read ground level from stem's FlowerStemComponent (default 0)
         f32 groundY = 0.0f;
@@ -731,8 +785,7 @@ void FlowerSystem::CheckGroundImpact() {
         // Check if fallen to ground level
         if (transform->position.y <= groundY) {
             transform->position.y = groundY;
-            rb->velocity = Math::Vector3(0, 0, 0);
-            rb->useGravity = false;
+            tether->velocity = Math::Vector3(0, 0, 0);
 
             ImpactEvent evt;
             evt.entity = entity;
@@ -744,7 +797,7 @@ void FlowerSystem::CheckGroundImpact() {
         }
     }
 
-    // Spawn splash particles and remove rigidbodies outside the entity iteration
+    // Spawn splash particles, hide petal, and sprout a new flower at impact
     for (const auto& evt : m_ImpactEvents) {
         // Find particle config from this entity's tether -> stem
         const FlowerParticleConfigComponent* splashConfig = nullptr;
@@ -753,14 +806,15 @@ void FlowerSystem::CheckGroundImpact() {
             splashConfig = m_World->GetComponent<FlowerParticleConfigComponent>(tetherForSplash->stemEntity);
         }
         SpawnGroundSplash(evt.position, evt.color, splashConfig);
-        if (m_World->HasComponent<RigidbodyComponent>(evt.entity)) {
-            m_World->RemoveComponent<RigidbodyComponent>(evt.entity);
-        }
-        // Hide the petal — only particles remain
+
+        // Hide the fallen petal/leaf
         auto* impactTransform = m_World->GetComponent<TransformComponent>(evt.entity);
         if (impactTransform) {
             impactTransform->visible = false;
         }
+
+        // Sprout a tiny new flower at the impact point
+        SpawnSproutFlower(evt.position, evt.color);
     }
 }
 
@@ -768,66 +822,85 @@ void FlowerSystem::CheckGroundImpact() {
 // SpawnBreakParticles — violent sap burst when a petal/leaf tears off.
 // Green liquid jets outward + drips down. Big, dramatic, satisfying.
 // ---------------------------------------------------------------------------
-void FlowerSystem::SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color,
-                                       const FlowerParticleConfigComponent* config) {
-    // Green sap color mixed with petal color
-    Math::Vector3 sapColor(0.1f, 0.5f, 0.08f);
-    Math::Vector3 mixColor = sapColor * 0.7f + color * 0.3f;
+void FlowerSystem::SpawnBreakParticles(const Math::Vector3& junctionPos, const Math::Vector3& petalPos,
+                                       const Math::Vector3& color, const FlowerParticleConfigComponent* config) {
+    // Sap color (dark green) and mixed color
+    Math::Vector3 sapColor(0.08f, 0.35f, 0.05f);
+    Math::Vector3 mixColor = sapColor * 0.6f + color * 0.4f;
 
-    // Read config values with fallback defaults
-    const int burstCount = config ? config->breakBurstCount : 20;
-    const f32 burstSpeed = config ? config->breakBurstSpeed : 2.5f;
-    const f32 burstUpKick = config ? config->breakBurstUpKick : 2.0f;
-    const f32 burstLifetime = config ? config->breakBurstLifetime : 0.9f;
-    const f32 burstScale = config ? config->breakBurstScale : 0.08f;
-    const int dripCount = config ? config->breakDripCount : 8;
-    const f32 dripSpeed = config ? config->breakDripSpeed : 0.5f;
-    const f32 dripLifetime = config ? config->breakDripLifetime : 1.2f;
+    // Direction from junction toward petal (spray direction)
+    Math::Vector3 breakDir = petalPos - junctionPos;
+    f32 breakLen = breakDir.Length();
+    if (breakLen > 1e-6f) breakDir = breakDir * (1.0f / breakLen);
+    else breakDir = Math::Vector3(0.0f, 1.0f, 0.0f);
 
-    // Reserve space for all particles we're about to add
-    m_Particles.reserve(m_Particles.size() + burstCount + dripCount);
+    const int sprayCount = config ? config->breakBurstCount : 10;
+    const f32 spraySpeed = config ? config->breakBurstSpeed : 2.5f;
+    const f32 sprayLifetime = config ? config->breakBurstLifetime : 0.3f;
+    const int dripCount = config ? config->breakDripCount : 6;
+    const f32 dripSpeed = config ? config->breakDripSpeed : 3.0f;
+    const f32 dripLifetime = config ? config->breakDripLifetime : 0.5f;
 
-    // Main burst — violent jets radiating outward
-    for (int i = 0; i < burstCount; ++i) {
+    m_Particles.reserve(m_Particles.size() + sprayCount + dripCount + 6);
+
+    // TYPE 1: Long thin sprays — fast streaks from JUNCTION (stem side)
+    // These shoot outward from where the tether was attached
+    for (int i = 0; i < sprayCount; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
-        f32 angle = static_cast<f32>(i) / static_cast<f32>(burstCount) * 6.28318f;
-        f32 speed = burstSpeed + static_cast<f32>(i % 5) * 0.8f;
-        f32 upKick = burstUpKick + static_cast<f32>(i % 4) * 0.8f;
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(sprayCount) * 6.28318f;
+        f32 speed = spraySpeed * (0.7f + static_cast<f32>(i % 3) * 0.2f);
+        // Spray mostly in break direction with some radial spread
+        f32 spread = 0.4f;
 
         FlowerParticle fp;
-        fp.position = position;
-        fp.color = mixColor;
-        fp.velocity = Math::Vector3(
-            std::cos(angle) * speed,
-            upKick,
-            std::sin(angle) * speed
+        fp.position = junctionPos;
+        fp.color = sapColor;
+        fp.velocity = breakDir * speed * 0.6f + Math::Vector3(
+            std::cos(angle) * spread * speed,
+            -1.0f - static_cast<f32>(i % 3) * 0.5f,
+            std::sin(angle) * spread * speed
         );
         fp.lifetime = 0.0f;
-        fp.maxLifetime = burstLifetime + static_cast<f32>(i % 3) * 0.3f;
-        fp.scale = burstScale + static_cast<f32>(i % 3) * 0.03f;
+        fp.maxLifetime = sprayLifetime;
+        fp.scale = 0.035f;  // Thin streaks
         fp.isLiquid = true;
         m_Particles.push_back(fp);
     }
 
-    // Secondary drips — slower, fall straight down like dripping sap
+    // TYPE 2: Thick heavy drops — from PETAL (the part that tore off)
+    // These are fat sap globules that drip from the torn edge
     for (int i = 0; i < dripCount; ++i) {
         if (m_Particles.size() >= MAX_PARTICLES) break;
 
         f32 angle = static_cast<f32>(i) / static_cast<f32>(dripCount) * 6.28318f;
 
         FlowerParticle fp;
-        fp.position = position + Math::Vector3(
-            std::cos(angle) * 0.05f, -0.02f, std::sin(angle) * 0.05f);
-        fp.color = sapColor;
+        fp.position = petalPos;
+        fp.color = mixColor;
         fp.velocity = Math::Vector3(
-            std::cos(angle) * 0.3f,
-            -dripSpeed - static_cast<f32>(i % 3) * 0.5f,
-            std::sin(angle) * 0.3f
+            std::cos(angle) * 0.4f,
+            -dripSpeed - static_cast<f32>(i % 3) * 1.0f,
+            std::sin(angle) * 0.4f
         );
         fp.lifetime = 0.0f;
-        fp.maxLifetime = dripLifetime + static_cast<f32>(i % 3) * 0.3f;
-        fp.scale = 0.05f;
+        fp.maxLifetime = dripLifetime;
+        fp.scale = 0.08f;  // Fat drops
+        fp.isLiquid = true;
+        m_Particles.push_back(fp);
+    }
+
+    // A few extra drips from junction (stem wound)
+    for (int i = 0; i < 3; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+        f32 angle = static_cast<f32>(i) * 2.09f;  // 120 degree spacing
+        FlowerParticle fp;
+        fp.position = junctionPos;
+        fp.color = sapColor;
+        fp.velocity = Math::Vector3(std::cos(angle) * 0.2f, -dripSpeed * 0.7f, std::sin(angle) * 0.2f);
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = dripLifetime * 0.8f;
+        fp.scale = 0.06f;
         fp.isLiquid = true;
         m_Particles.push_back(fp);
     }
@@ -883,6 +956,7 @@ void FlowerSystem::SpawnTensionDrip(const Math::Vector3& position, const Math::V
 
     // Accumulate — higher tension + intensity = more particles per frame
     m_DripAccumulator += tension * intensity * dripRate;
+    if (m_DripAccumulator > 3.0f) m_DripAccumulator = 3.0f;  // Cap backlog
     i32 spawnCount = static_cast<i32>(m_DripAccumulator);
     m_DripAccumulator -= static_cast<f32>(spawnCount);
     if (spawnCount < 1) return;
@@ -906,12 +980,12 @@ void FlowerSystem::SpawnTensionDrip(const Math::Vector3& position, const Math::V
         fp.color = color;
         fp.velocity = squirtDir * squirtSpeed + Math::Vector3(
             std::cos(angle) * spread,
-            0.5f + seed * 1.5f,  // Slight upward squirt
+            -0.5f - seed * 1.5f,  // Drip downward
             std::sin(angle) * spread
         );
         fp.lifetime = 0.0f;
-        fp.maxLifetime = 0.4f + tension * 0.4f;
-        fp.scale = 0.04f + tension * 0.04f;
+        fp.maxLifetime = 0.25f + tension * 0.15f;
+        fp.scale = 0.04f + tension * 0.03f;
         fp.isLiquid = true;
         m_Particles.push_back(fp);
     }
@@ -1008,6 +1082,63 @@ void FlowerSystem::Evaluate() {
                  totalScore, totalHealthy, totalWithered, totalParts);
         text->text = buf;
         text->dirty = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SpawnSproutFlower — particle burst that looks like a tiny flower sprouting
+// from the ground where a petal/leaf landed. Uses particles only (no entity
+// creation) to avoid GPU buffer allocation races during the render frame.
+// ---------------------------------------------------------------------------
+void FlowerSystem::SpawnSproutFlower(const Math::Vector3& position, const Math::Vector3& petalColor) {
+    // Sprout particles: small green stems shooting up + colored petal bits
+    const int stemCount = 4;
+    const int petalBits = 3;
+
+    m_Particles.reserve(m_Particles.size() + stemCount + petalBits);
+
+    // Green stem particles — shoot upward from ground
+    for (int i = 0; i < stemCount; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        f32 seed = static_cast<f32>((m_Particles.size() * 53 + i * 29) % 100) / 100.0f;
+        f32 angle = seed * 6.28318f;
+
+        FlowerParticle fp;
+        fp.position = position + Math::Vector3(seed * 0.05f, 0.02f, (1.0f - seed) * 0.05f);
+        fp.color = Math::Vector3(0.15f + seed * 0.1f, 0.55f + seed * 0.2f, 0.1f); // Green
+        fp.velocity = Math::Vector3(
+            std::cos(angle) * 0.15f,
+            1.5f + seed * 1.0f,  // Upward sprout
+            std::sin(angle) * 0.15f
+        );
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 0.5f + seed * 0.3f;
+        fp.scale = 0.03f + seed * 0.02f;
+        fp.isLiquid = false;  // Round burst, not streak
+        m_Particles.push_back(fp);
+    }
+
+    // Colored petal-like particles — small burst with the petal's color
+    for (int i = 0; i < petalBits; ++i) {
+        if (m_Particles.size() >= MAX_PARTICLES) break;
+
+        f32 seed = static_cast<f32>((m_Particles.size() * 41 + i * 67) % 100) / 100.0f;
+        f32 angle = static_cast<f32>(i) / static_cast<f32>(petalBits) * 6.28318f + seed;
+
+        FlowerParticle fp;
+        fp.position = position + Math::Vector3(0.0f, 0.1f + seed * 0.05f, 0.0f);
+        fp.color = petalColor;
+        fp.velocity = Math::Vector3(
+            std::cos(angle) * 0.3f,
+            2.0f + seed * 0.8f,
+            std::sin(angle) * 0.3f
+        );
+        fp.lifetime = 0.0f;
+        fp.maxLifetime = 0.4f + seed * 0.2f;
+        fp.scale = 0.04f + seed * 0.02f;
+        fp.isLiquid = false;
+        m_Particles.push_back(fp);
     }
 }
 

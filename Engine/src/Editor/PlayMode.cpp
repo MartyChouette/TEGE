@@ -449,25 +449,8 @@ void PlayMode::Stop() {
     // Release mouse
     Input::SetMouseCaptured(false);
 
-    // Keep the scene as-is after stopping (no restore — play mode changes persist).
-    // Compute diff so the user can see what changed during play.
-    {
-        Scene::SceneSerializer serializer(m_World);
-        if (m_RenderSystem) {
-            serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
-        }
-        m_PlayedSceneJson = serializer.SaveToString();
-
-        m_PlayModeDiff = ComputePlayModeDiff(m_SavedSceneJson, m_PlayedSceneJson);
-        m_ShowDiffDialog = m_PlayModeDiff.HasChanges();
-    }
-
-    // Restore only camera state (so editor camera returns to its pre-play position)
-    if (m_Camera) {
-        m_Camera->SetPosition(m_SavedCameraPos);
-        m_Camera->SetRotation(m_SavedCameraRot);
-        m_Camera->SetPerspective(m_SavedCameraFov, 16.0f / 9.0f, 0.1f, 1000.0f);
-    }
+    // Restore the scene to its pre-play state
+    RestoreEditorState();
 
     // Re-enable main-pass shadow rendering for editor mode
     if (m_RenderSystem) {

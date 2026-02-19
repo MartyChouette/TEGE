@@ -334,6 +334,28 @@ void JoltBackend::SyncECSToJolt() {
         DestroyBodyForEntity(entity);
     }
 
+    // Detect body type changes (e.g. rigidbody added/changed after collider was created)
+    // and recreate the body with the correct motion type.
+    m_ToRemoveCache.clear();
+    for (auto& [entity, bodyID] : m_EntityToBody) {
+        auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
+        JPH::EMotionType currentMotion = bodyInterface.GetMotionType(bodyID);
+        JPH::EMotionType desiredMotion = JPH::EMotionType::Static;
+        if (rb) {
+            if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic)
+                desiredMotion = JPH::EMotionType::Dynamic;
+            else if (rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic)
+                desiredMotion = JPH::EMotionType::Kinematic;
+        }
+        if (currentMotion != desiredMotion) {
+            m_ToRemoveCache.push_back(entity);
+        }
+    }
+    for (ECS::Entity entity : m_ToRemoveCache) {
+        DestroyBodyForEntity(entity);
+        CreateBodyForEntity(entity);
+    }
+
     // Update kinematic bodies and property changes
     for (auto& [entity, bodyID] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
@@ -343,6 +365,18 @@ void JoltBackend::SyncECSToJolt() {
         if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Kinematic) {
             // Kinematic bodies: drive position from ECS
             bodyInterface.MoveKinematic(bodyID, ToJoltR(transform->position), ToJolt(transform->rotation), m_LastDeltaTime);
+        } else if (rb && rb->bodyType == ECS::RigidbodyComponent::BodyType::Dynamic) {
+            // Dynamic bodies: sync gravity and velocity from ECS when externally modified
+            // (e.g. FlowerSystem applies pull force via rb->velocity)
+            bodyInterface.SetGravityFactor(bodyID, rb->useGravity ? std::clamp(rb->gravityScale, -10.0f, 10.0f) : 0.0f);
+            // Push ECS velocity to Jolt so external force application works
+            JPH::Vec3 joltVel = bodyInterface.GetLinearVelocity(bodyID);
+            JPH::Vec3 ecsVel = ToJolt(rb->velocity);
+            // Only override if ECS velocity meaningfully differs (external force was applied)
+            f32 diff = (ecsVel - joltVel).Length();
+            if (diff > 0.01f) {
+                bodyInterface.SetLinearVelocity(bodyID, ecsVel);
+            }
         } else if (!rb || rb->bodyType == ECS::RigidbodyComponent::BodyType::Static) {
             // Static bodies: just set position if it changed
             bodyInterface.SetPosition(bodyID, ToJoltR(transform->position), JPH::EActivation::DontActivate);
@@ -703,6 +737,35 @@ void JoltBackend::SyncJointsToJolt() {
     }
     for (ECS::Entity e : m_JointToRemoveCache) {
         DestroyJointForEntity(e);
+    }
+
+    // Compute currentStress for spring joints from entity positions (Hooke's law)
+    // Jolt manages constraint forces internally but doesn't expose them back to ECS,
+    // so we derive stress from displacement * springConstant + damping.
+    for (auto& [entity, constraint] : m_EntityToConstraint) {
+        if (auto* sj = m_World->GetComponent<ECS::SpringJointComponent>(entity)) {
+            if (!sj->breakable) continue;
+            auto* tA = m_World->GetComponent<ECS::TransformComponent>(sj->entityA);
+            auto* tB = m_World->GetComponent<ECS::TransformComponent>(sj->entityB);
+            if (tA && tB) {
+                Math::Vector3 wA = tA->position + sj->anchorA;
+                Math::Vector3 wB = tB->position + sj->anchorB;
+                f32 dist = (wB - wA).Length();
+                f32 displacement = dist - sj->restLength;
+                f32 springForce = sj->springConstant * displacement;
+                // Add damping contribution from relative velocity
+                auto* rbA = m_World->GetComponent<ECS::RigidbodyComponent>(sj->entityA);
+                auto* rbB = m_World->GetComponent<ECS::RigidbodyComponent>(sj->entityB);
+                if (dist > 1e-6f) {
+                    Math::Vector3 dir = (wB - wA) * (1.0f / dist);
+                    Math::Vector3 velA = rbA ? rbA->velocity : Math::Vector3(0, 0, 0);
+                    Math::Vector3 velB = rbB ? rbB->velocity : Math::Vector3(0, 0, 0);
+                    f32 relVel = (velB - velA).Dot(dir);
+                    springForce += sj->dampingCoefficient * relVel;
+                }
+                sj->currentStress = std::abs(springForce);
+            }
+        }
     }
 
     // Check breakable joints

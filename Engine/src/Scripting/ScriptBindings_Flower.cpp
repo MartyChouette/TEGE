@@ -49,16 +49,16 @@ static bool Flower_JustBroke(u64 entity) {
     return tether ? tether->justBroke : false;
 }
 
-static void Flower_SetBreakForce(u64 entity, float force) {
+static void Flower_SetMaxDistance(u64 entity, float dist) {
     if (!s_World) return;
     auto* tether = s_World->GetComponent<ECS::TetherComponent>(static_cast<ECS::Entity>(entity));
-    if (tether) tether->autoBreakForce = force;
+    if (tether) tether->maxDistance = dist;
 }
 
-static float Flower_GetBreakForce(u64 entity) {
+static float Flower_GetMaxDistance(u64 entity) {
     if (!s_World) return 0.0f;
     auto* tether = s_World->GetComponent<ECS::TetherComponent>(static_cast<ECS::Entity>(entity));
-    return tether ? tether->autoBreakForce : 0.0f;
+    return tether ? tether->maxDistance : 0.0f;
 }
 
 static void Flower_SetSpringK(u64 entity, float k) {
@@ -95,16 +95,16 @@ static float Flower_GetGrabRadius(u64 entity) {
     return grab ? grab->grabRadius : 0.0f;
 }
 
-static void Flower_SetPullForce(u64 entity, float force) {
+static void Flower_SetGrabSpring(u64 entity, float spring) {
     if (!s_World) return;
     auto* grab = s_World->GetComponent<ECS::GrabbableComponent>(static_cast<ECS::Entity>(entity));
-    if (grab) grab->pullForce = force;
+    if (grab) grab->grabSpring = spring;
 }
 
-static float Flower_GetPullForce(u64 entity) {
+static float Flower_GetGrabSpring(u64 entity) {
     if (!s_World) return 0.0f;
     auto* grab = s_World->GetComponent<ECS::GrabbableComponent>(static_cast<ECS::Entity>(entity));
-    return grab ? grab->pullForce : 0.0f;
+    return grab ? grab->grabSpring : 0.0f;
 }
 
 // ============================================================================
@@ -202,10 +202,10 @@ void RegisterFlowerBindings(asIScriptEngine* engine) {
         asFUNCTION(Flower_IsBroken), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("bool Flower_JustBroke(uint64)",
         asFUNCTION(Flower_JustBroke), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetBreakForce(uint64, float)",
-        asFUNCTION(Flower_SetBreakForce), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetBreakForce(uint64)",
-        asFUNCTION(Flower_GetBreakForce), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetMaxDistance(uint64, float)",
+        asFUNCTION(Flower_SetMaxDistance), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetMaxDistance(uint64)",
+        asFUNCTION(Flower_GetMaxDistance), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetSpringK(uint64, float)",
         asFUNCTION(Flower_SetSpringK), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetDamping(uint64, float)",
@@ -218,10 +218,10 @@ void RegisterFlowerBindings(asIScriptEngine* engine) {
         asFUNCTION(Flower_SetGrabRadius), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetGrabRadius(uint64)",
         asFUNCTION(Flower_GetGrabRadius), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetPullForce(uint64, float)",
-        asFUNCTION(Flower_SetPullForce), asCALL_CDECL));
-    AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetPullForce(uint64)",
-        asFUNCTION(Flower_GetPullForce), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Flower_SetGrabSpring(uint64, float)",
+        asFUNCTION(Flower_SetGrabSpring), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetGrabSpring(uint64)",
+        asFUNCTION(Flower_GetGrabSpring), asCALL_CDECL));
 
     // Stem / scoring
     AS_CHECK(engine->RegisterGlobalFunction("float Flower_GetScore(uint64)",

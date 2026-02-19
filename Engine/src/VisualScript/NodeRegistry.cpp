@@ -4293,31 +4293,31 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
-    // Set Break Force (action)
+    // Set Max Distance (action)
     {
         NodeDefinition def;
         def.typeId = NodeTypes::FlowerSetBreakForce;
-        def.displayName = "Set Break Force";
-        def.description = "Set the break force threshold for a tethered flower part";
+        def.displayName = "Set Max Distance";
+        def.description = "Set the break distance threshold for a tethered flower part";
         def.category = NodeCategory::Gameplay;
         def.headerColor = Math::Vector3(0.9f, 0.4f, 0.6f);
         def.inputs = {
             FlowIn(),
             EntityPin("Entity", PK::Input),
-            Float("Force", PK::Input, 25.0f)
+            Float("Distance", PK::Input, 0.75f)
         };
         def.outputs = {FlowOut()};
-        def.keywords = {"flower", "break", "force", "tether", "strength"};
+        def.keywords = {"flower", "break", "distance", "tether", "stretch"};
         def.execute = [](ExecutionContext& ctx,
                          const std::vector<ECS::VariableValue>& inputs,
                          std::vector<ECS::VariableValue>& outputs) {
             ECS::Entity target = ctx.entity;
             if (inputs.size() > 1 && std::holds_alternative<u64>(inputs[1]) && std::get<u64>(inputs[1]) != 0)
                 target = static_cast<ECS::Entity>(std::get<u64>(inputs[1]));
-            f32 force = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
-                ? std::get<f32>(inputs[2]) : 25.0f;
+            f32 dist = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 0.75f;
             auto* tether = ctx.world->GetComponent<ECS::TetherComponent>(target);
-            if (tether) tether->autoBreakForce = force;
+            if (tether) tether->maxDistance = dist;
             ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);

@@ -78,13 +78,14 @@ private:
     void UpdateParticles(f32 dt);
     void CheckGroundImpact();
 
-    void SpawnBreakParticles(const Math::Vector3& position, const Math::Vector3& color,
-                             const FlowerParticleConfigComponent* config = nullptr);
+    void SpawnBreakParticles(const Math::Vector3& junctionPos, const Math::Vector3& petalPos,
+                             const Math::Vector3& color, const FlowerParticleConfigComponent* config = nullptr);
     void SpawnGroundSplash(const Math::Vector3& position, const Math::Vector3& color,
                            const FlowerParticleConfigComponent* config = nullptr);
     void SpawnTensionDrip(const Math::Vector3& position, const Math::Vector3& color,
                           f32 tension, const Math::Vector3& squirtDir, f32 intensity,
                           const FlowerParticleConfigComponent* config = nullptr);
+    void SpawnSproutFlower(const Math::Vector3& position, const Math::Vector3& petalColor);
     void UpdateScoreDisplay();
 
     // Helper: project screen point to world plane at given depth facing camera
@@ -118,7 +119,8 @@ private:
     // P-19: Reusable per-frame event vectors (avoid per-call allocation)
     struct BreakEvent {
         Entity entity;
-        Math::Vector3 junctionPos;
+        Math::Vector3 junctionPos;  // Where the tether attaches (stem/crown side)
+        Math::Vector3 petalPos;     // Where the petal/leaf is
         Math::Vector3 color;
         Entity stemEntity;
         bool hasWitheredTag;
