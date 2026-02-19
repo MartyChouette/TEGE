@@ -374,17 +374,20 @@ ECS::MeshComponent DeserializeMeshComponent(const json& j) {
                 vertex.boneWeights = DeserializeVector4(v["boneWeights"]);
             }
             if (v.contains("boneIndices") && v["boneIndices"].is_array() && v["boneIndices"].size() >= 4) {
-                vertex.boneIndices[0] = v["boneIndices"][0].get<u32>();
-                vertex.boneIndices[1] = v["boneIndices"][1].get<u32>();
-                vertex.boneIndices[2] = v["boneIndices"][2].get<u32>();
-                vertex.boneIndices[3] = v["boneIndices"][3].get<u32>();
+                vertex.boneIndices[0] = std::min(v["boneIndices"][0].get<u32>(), 255u);
+                vertex.boneIndices[1] = std::min(v["boneIndices"][1].get<u32>(), 255u);
+                vertex.boneIndices[2] = std::min(v["boneIndices"][2].get<u32>(), 255u);
+                vertex.boneIndices[3] = std::min(v["boneIndices"][3].get<u32>(), 255u);
             }
             mesh.vertices.push_back(vertex);
         }
     }
 
     if (j.contains("indices") && j["indices"].is_array()) {
-        mesh.indices = j["indices"].get<std::vector<u32>>();
+        static constexpr usize kMaxIndices = 10'000'000;
+        if (j["indices"].size() <= kMaxIndices) {
+            mesh.indices = j["indices"].get<std::vector<u32>>();
+        }
     }
 
     return mesh;
@@ -636,15 +639,21 @@ ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
     if (j.contains("gridHeight")) terrain.gridHeight = std::min(j["gridHeight"].get<u32>(), 4096u);
     if (j.contains("cellSize")) terrain.cellSize = j["cellSize"].get<f32>();
     if (j.contains("maxHeight")) terrain.maxHeight = j["maxHeight"].get<f32>();
-    if (j.contains("heightmap")) {
-        auto hm = j["heightmap"].get<std::vector<f32>>();
+    if (j.contains("heightmap") && j["heightmap"].is_array()) {
+        static constexpr usize kMaxGridElements = 4096ull * 4096ull;
         usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight;
-        if (hm.size() <= expected) terrain.heightmap = std::move(hm); // SN-H2: validate size
+        if (expected <= kMaxGridElements && j["heightmap"].size() <= expected) {
+            auto hm = j["heightmap"].get<std::vector<f32>>();
+            terrain.heightmap = std::move(hm);
+        }
     }
-    if (j.contains("splatmap")) {
-        auto sm = j["splatmap"].get<std::vector<f32>>();
+    if (j.contains("splatmap") && j["splatmap"].is_array()) {
+        static constexpr usize kMaxGridElements = 4096ull * 4096ull * 4;
         usize expected = static_cast<usize>(terrain.gridWidth) * terrain.gridHeight * 4;
-        if (sm.size() <= expected) terrain.splatmap = std::move(sm);
+        if (expected <= kMaxGridElements && j["splatmap"].size() <= expected) {
+            auto sm = j["splatmap"].get<std::vector<f32>>();
+            terrain.splatmap = std::move(sm);
+        }
     }
     if (j.contains("layers")) {
         const auto& layersArr = j["layers"];
@@ -2222,7 +2231,12 @@ ECS::TilemapComponent DeserializeTilemapComponent(const json& j) {
     if (j.contains("worldTileWidth")) tm.worldTileWidth = j["worldTileWidth"].get<f32>();
     if (j.contains("worldTileHeight")) tm.worldTileHeight = j["worldTileHeight"].get<f32>();
     if (j.contains("hasCollision")) tm.hasCollision = JB(j["hasCollision"]);
-    if (j.contains("collisionMask")) tm.collisionMask = j["collisionMask"].get<std::vector<bool>>();
+    if (j.contains("collisionMask") && j["collisionMask"].is_array()) {
+        usize maxSize = static_cast<usize>(tm.width) * tm.height;
+        if (j["collisionMask"].size() <= maxSize) {
+            tm.collisionMask = j["collisionMask"].get<std::vector<bool>>();
+        }
+    }
     return tm;
 }
 
@@ -2477,7 +2491,9 @@ json SerializeDialogueComponent(const ECS::DialogueComponent& d) {
 
 ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
     ECS::DialogueComponent d;
-    if (j.contains("dialogueLines")) d.dialogueLines = j["dialogueLines"].get<std::vector<std::string>>();
+    if (j.contains("dialogueLines") && j["dialogueLines"].is_array() && j["dialogueLines"].size() <= 10000) {
+        d.dialogueLines = j["dialogueLines"].get<std::vector<std::string>>();
+    }
     if (j.contains("charDelay")) d.charDelay = j["charDelay"].get<f32>();
     if (j.contains("speakerName")) d.speakerName = j["speakerName"].get<std::string>();
     if (j.contains("portraitPath")) d.portraitPath = j["portraitPath"].get<std::string>();
@@ -2534,22 +2550,22 @@ ECS::DialogueBoxComponent DeserializeDialogueBoxComponent(const json& j) {
     if (j.contains("boxMargin")) b.boxMargin = j["boxMargin"].get<f32>();
     if (j.contains("boxPadding")) b.boxPadding = j["boxPadding"].get<f32>();
     if (j.contains("boxColor") && j["boxColor"].is_array() && j["boxColor"].size() >= 3)
-        b.boxColor = Math::Vector3(j["boxColor"][0], j["boxColor"][1], j["boxColor"][2]);
+        b.boxColor = Math::Vector3(j["boxColor"][0].get<f32>(), j["boxColor"][1].get<f32>(), j["boxColor"][2].get<f32>());
     if (j.contains("boxAlpha")) b.boxAlpha = j["boxAlpha"].get<f32>();
     if (j.contains("boxBorderRadius")) b.boxBorderRadius = j["boxBorderRadius"].get<f32>();
     if (j.contains("speakerFontSize")) b.speakerFontSize = j["speakerFontSize"].get<f32>();
     if (j.contains("defaultSpeakerColor") && j["defaultSpeakerColor"].is_array() && j["defaultSpeakerColor"].size() >= 3)
-        b.defaultSpeakerColor = Math::Vector3(j["defaultSpeakerColor"][0], j["defaultSpeakerColor"][1], j["defaultSpeakerColor"][2]);
+        b.defaultSpeakerColor = Math::Vector3(j["defaultSpeakerColor"][0].get<f32>(), j["defaultSpeakerColor"][1].get<f32>(), j["defaultSpeakerColor"][2].get<f32>());
     if (j.contains("textFontSize")) b.textFontSize = j["textFontSize"].get<f32>();
     if (j.contains("textColor") && j["textColor"].is_array() && j["textColor"].size() >= 3)
-        b.textColor = Math::Vector3(j["textColor"][0], j["textColor"][1], j["textColor"][2]);
+        b.textColor = Math::Vector3(j["textColor"][0].get<f32>(), j["textColor"][1].get<f32>(), j["textColor"][2].get<f32>());
     if (j.contains("showPortrait")) b.showPortrait = JB(j["showPortrait"]);
     if (j.contains("portraitSize")) b.portraitSize = j["portraitSize"].get<f32>();
     if (j.contains("choiceSpacing")) b.choiceSpacing = j["choiceSpacing"].get<f32>();
     if (j.contains("choiceColor") && j["choiceColor"].is_array() && j["choiceColor"].size() >= 3)
-        b.choiceColor = Math::Vector3(j["choiceColor"][0], j["choiceColor"][1], j["choiceColor"][2]);
+        b.choiceColor = Math::Vector3(j["choiceColor"][0].get<f32>(), j["choiceColor"][1].get<f32>(), j["choiceColor"][2].get<f32>());
     if (j.contains("choiceTextColor") && j["choiceTextColor"].is_array() && j["choiceTextColor"].size() >= 3)
-        b.choiceTextColor = Math::Vector3(j["choiceTextColor"][0], j["choiceTextColor"][1], j["choiceTextColor"][2]);
+        b.choiceTextColor = Math::Vector3(j["choiceTextColor"][0].get<f32>(), j["choiceTextColor"][1].get<f32>(), j["choiceTextColor"][2].get<f32>());
     if (j.contains("continueText")) b.continueText = j["continueText"].get<std::string>();
     if (j.contains("continueBlinkSpeed")) b.continueBlinkSpeed = j["continueBlinkSpeed"].get<f32>();
     return b;
@@ -3331,7 +3347,9 @@ ECS::InventoryComponent DeserializeInventoryComponent(const json& j) {
     if (j.contains("maxSlots")) inv.maxSlots = j["maxSlots"].get<u64>();
     if (j.contains("coins")) inv.coins = j["coins"].get<i32>();
     if (j.contains("gems")) inv.gems = j["gems"].get<i32>();
-    if (j.contains("keys")) inv.keys = j["keys"].get<std::vector<std::string>>();
+    if (j.contains("keys") && j["keys"].is_array() && j["keys"].size() <= 10000) {
+        inv.keys = j["keys"].get<std::vector<std::string>>();
+    }
     return inv;
 }
 
@@ -3366,7 +3384,7 @@ ECS::SaveDataComponent DeserializeSaveDataComponent(const json& j) {
         if (t < static_cast<u8>(ECS::PersistenceTier::COUNT))
             sd.tier = static_cast<ECS::PersistenceTier>(t);
     }
-    if (j.contains("tags") && j["tags"].is_array()) {
+    if (j.contains("tags") && j["tags"].is_array() && j["tags"].size() <= 1000) {
         for (const auto& t : j["tags"]) {
             sd.tags.push_back(t.get<std::string>());
         }
@@ -4893,7 +4911,7 @@ ECS::SkeletonComponent DeserializeSkeletonComponent(const json& j) {
     auto skeleton = std::make_shared<Animation::Skeleton>();
     if (j.contains("name")) skeleton->name = j["name"].get<std::string>();
 
-    if (j.contains("bones") && j["bones"].is_array()) {
+    if (j.contains("bones") && j["bones"].is_array() && j["bones"].size() <= 1000) {
         for (const auto& bj : j["bones"]) {
             Animation::Bone bone;
             if (bj.contains("name")) bone.name = bj["name"].get<std::string>();
@@ -5064,33 +5082,35 @@ ECS::AnimatorComponent DeserializeAnimatorComponent(const json& j, std::shared_p
             if (aj.contains("ticksPerSecond")) anim.ticksPerSecond = aj["ticksPerSecond"].get<f32>();
             if (aj.contains("playMode")) { i32 v = aj["playMode"].get<i32>(); if (v >= 0 && v <= 3) anim.playMode = static_cast<Animation::PlayMode>(v); }
 
-            if (aj.contains("tracks") && aj["tracks"].is_array()) {
+            static constexpr usize kMaxTracks = 1000;
+            static constexpr usize kMaxKeyframes = 100'000;
+            if (aj.contains("tracks") && aj["tracks"].is_array() && aj["tracks"].size() <= kMaxTracks) {
                 for (const auto& tj : aj["tracks"]) {
                     Animation::BoneTrack track;
                     if (tj.contains("boneName")) track.boneName = tj["boneName"].get<std::string>();
                     if (tj.contains("boneIndex")) track.boneIndex = tj["boneIndex"].get<i32>();
 
                     // Position keyframes
-                    if (tj.contains("positionTimes") && tj["positionTimes"].is_array()) {
+                    if (tj.contains("positionTimes") && tj["positionTimes"].is_array() && tj["positionTimes"].size() <= kMaxKeyframes) {
                         for (const auto& t : tj["positionTimes"]) track.positionTimes.push_back(t.get<f32>());
                     }
-                    if (tj.contains("positions") && tj["positions"].is_array()) {
+                    if (tj.contains("positions") && tj["positions"].is_array() && tj["positions"].size() <= kMaxKeyframes) {
                         for (const auto& p : tj["positions"]) track.positions.push_back(DeserializeVector3(p));
                     }
 
                     // Rotation keyframes
-                    if (tj.contains("rotationTimes") && tj["rotationTimes"].is_array()) {
+                    if (tj.contains("rotationTimes") && tj["rotationTimes"].is_array() && tj["rotationTimes"].size() <= kMaxKeyframes) {
                         for (const auto& t : tj["rotationTimes"]) track.rotationTimes.push_back(t.get<f32>());
                     }
-                    if (tj.contains("rotations") && tj["rotations"].is_array()) {
+                    if (tj.contains("rotations") && tj["rotations"].is_array() && tj["rotations"].size() <= kMaxKeyframes) {
                         for (const auto& r : tj["rotations"]) track.rotations.push_back(DeserializeQuaternion(r));
                     }
 
                     // Scale keyframes
-                    if (tj.contains("scaleTimes") && tj["scaleTimes"].is_array()) {
+                    if (tj.contains("scaleTimes") && tj["scaleTimes"].is_array() && tj["scaleTimes"].size() <= kMaxKeyframes) {
                         for (const auto& t : tj["scaleTimes"]) track.scaleTimes.push_back(t.get<f32>());
                     }
-                    if (tj.contains("scales") && tj["scales"].is_array()) {
+                    if (tj.contains("scales") && tj["scales"].is_array() && tj["scales"].size() <= kMaxKeyframes) {
                         for (const auto& s : tj["scales"]) track.scales.push_back(DeserializeVector3(s));
                     }
 

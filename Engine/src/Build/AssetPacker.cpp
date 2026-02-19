@@ -128,6 +128,10 @@ bool AssetPacker::AddData(const std::string& virtualPath, const void* data, usiz
     // Write data block
     m_File.write(reinterpret_cast<const char*>(packed.data()),
                  static_cast<std::streamsize>(packed.size()));
+    if (!m_File.good()) {
+        ENJIN_LOG_ERROR(Build, "Failed to write packed data for: %s", virtualPath.c_str());
+        return false;
+    }
 
     m_Entries.push_back(std::move(entry));
     m_TotalOriginalSize += size;

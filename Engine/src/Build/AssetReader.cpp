@@ -115,9 +115,21 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
 
         // Cap path length to prevent overflow and excessive allocation
         static constexpr u32 MAX_PATH_LEN = 4096u;
-        if (pathLen > MAX_PATH_LEN || pathLen > indexBuf.size() - pos) break;
+        if (pathLen > MAX_PATH_LEN || pos > indexBuf.size() || pathLen > indexBuf.size() - pos) break;
         std::string vpath(reinterpret_cast<const char*>(indexBuf.data() + pos), pathLen);
         pos += pathLen;
+
+        // Reject path traversal and absolute paths
+        if (vpath.find("..") != std::string::npos || (!vpath.empty() && (vpath[0] == '/' || vpath[0] == '\\'))) {
+            ENJIN_LOG_WARN(Build, "Rejecting virtual path with traversal/absolute: %s", vpath.c_str());
+            // Still need to read the entry fields to advance pos
+            Entry skip;
+            if (!readVal(&skip.offset, sizeof(skip.offset))) break;
+            if (!readVal(&skip.compressedSize, sizeof(skip.compressedSize))) break;
+            if (!readVal(&skip.originalSize, sizeof(skip.originalSize))) break;
+            if (!readVal(&skip.crc32, sizeof(skip.crc32))) break;
+            continue;
+        }
 
         Entry entry;
         if (!readVal(&entry.offset, sizeof(entry.offset))) break;
@@ -297,9 +309,11 @@ std::vector<u8> AssetReader::DecompressData(const std::vector<u8>& compressed, u
         return compressed;  // stored raw
     }
 
-    // If sizes differ, this would be compressed data — for now treat as raw
-    ENJIN_LOG_WARN(Build, "Compressed data detected but decompression not yet implemented, returning raw");
-    return compressed;
+    // Size mismatch means data is compressed but we have no decompressor yet.
+    // Return empty to avoid silently returning corrupt (compressed) data.
+    ENJIN_LOG_ERROR(Build, "Compressed data detected (compressed=%zu, original=%llu) but decompression not implemented",
+                    compressed.size(), static_cast<unsigned long long>(originalSize));
+    return {};
 }
 
 } // namespace Enjin::Build
