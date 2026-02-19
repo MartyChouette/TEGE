@@ -191,6 +191,12 @@ void PlayMode::Play() {
     // Initialize owned systems
     m_SimpleAudio.Initialize();
     m_SimpleAudio.SetWorld(m_World);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Apply HRTF setting from editor
+    if (m_EditorSettings) {
+        m_SimpleAudio.SetHRTFEnabled(m_EditorSettings->enableHRTF);
+    }
+#endif
     m_DestructibleSystem.Initialize(m_World);
     m_AudioGraphRuntime.Initialize(&m_SimpleAudio);
     if (m_CurlNoiseSystem) m_CurlNoiseSystem->Initialize(m_World);

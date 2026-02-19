@@ -139,6 +139,9 @@ struct EditorSettings {
     f32 gizmoNudgeFine = 0.01f;       // Fine nudge (Ctrl+Arrow) units (0.001-1.0)
     f32 gizmoRotateNudge = 5.0f;      // Degrees per rotate nudge (1-45)
 
+    // Audio
+    bool enableHRTF = true;  // HRTF binaural audio (requires Steam Audio SDK)
+
     // Surface Snap
     bool surfaceSnap = false;
     bool surfaceAlignNormal = true;

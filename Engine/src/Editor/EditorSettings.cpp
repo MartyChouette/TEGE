@@ -371,6 +371,9 @@ bool EditorSettings::Save(const std::string& path) const {
         j["gizmoNudgeFine"] = gizmoNudgeFine;
         j["gizmoRotateNudge"] = gizmoRotateNudge;
 
+        // Audio
+        j["enableHRTF"] = enableHRTF;
+
         // Surface Snap
         j["surfaceSnap"] = surfaceSnap;
         j["surfaceAlignNormal"] = surfaceAlignNormal;
@@ -523,6 +526,9 @@ bool EditorSettings::Load(const std::string& path) {
         if (j.contains("gizmoNudgeAmount")) gizmoNudgeAmount = j["gizmoNudgeAmount"].get<f32>();
         if (j.contains("gizmoNudgeFine")) gizmoNudgeFine = j["gizmoNudgeFine"].get<f32>();
         if (j.contains("gizmoRotateNudge")) gizmoRotateNudge = j["gizmoRotateNudge"].get<f32>();
+
+        // Audio
+        if (j.contains("enableHRTF")) enableHRTF = j["enableHRTF"].get<bool>();
 
         // Surface Snap
         if (j.contains("surfaceSnap")) surfaceSnap = j["surfaceSnap"].get<bool>();

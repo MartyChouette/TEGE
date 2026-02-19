@@ -30,6 +30,7 @@
 #include "Enjin/Gameplay/CinematicSystem.h"
 #include "Enjin/Gameplay/TieredSaveSystem.h"
 #include "Enjin/Editor/PlayModeDiff.h"
+#include "Enjin/Editor/EditorSettings.h"
 #include "Enjin/Scene/LevelStreaming.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Effects/Destructible.h"
@@ -136,6 +137,7 @@ public:
     void SetFluidSimulation(Effects::FluidSimulation* fs) { m_FluidSimulation = fs; }
     void SetFluidTerrainCoupling(Effects::FluidTerrainCoupling* ftc) { m_FluidTerrainCoupling = ftc; }
     void SetCurlNoiseSystem(Effects::CurlNoiseSystem* cn) { m_CurlNoiseSystem = cn; }
+    void SetEditorSettings(EditorSettings* settings) { m_EditorSettings = settings; }
 
     // Play mode diff dialog
     bool HasPendingDiff() const { return m_ShowDiffDialog; }
@@ -217,6 +219,7 @@ private:
     Effects::FluidSimulation* m_FluidSimulation = nullptr;
     Effects::FluidTerrainCoupling* m_FluidTerrainCoupling = nullptr;
     Effects::CurlNoiseSystem* m_CurlNoiseSystem = nullptr;
+    EditorSettings* m_EditorSettings = nullptr;
 
     // Audio system (owned by PlayMode for script bindings)
     Audio::SimpleAudio m_SimpleAudio;

@@ -1128,6 +1128,7 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetFluidSimulation(&m_FluidSimulation);
         m_PlayMode.SetFluidTerrainCoupling(&m_FluidTerrainCoupling);
         m_PlayMode.SetCurlNoiseSystem(m_CurlNoiseSystem.get());
+        m_PlayMode.SetEditorSettings(&m_EditorSettings);
 
         // Wire accessibility systems
         m_PlayMode.SetSubtitleSystem(&m_SubtitleSystem);
@@ -9267,6 +9268,34 @@ void EditorLayer::DrawProjectSettingsPanel() {
 
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1.0f), "These settings apply to Play Mode and exported builds");
+    }
+
+    if (ImGui::CollapsingHeader("Audio")) {
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+        auto* audio = m_PlayMode.GetSimpleAudio();
+        if (audio) {
+            bool hrtfEnabled = m_EditorSettings.enableHRTF;
+            if (ImGui::Checkbox("HRTF Binaural Audio (Steam Audio)", &hrtfEnabled)) {
+                m_EditorSettings.enableHRTF = hrtfEnabled;
+                audio->SetHRTFEnabled(hrtfEnabled);
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip(
+                    "Enables physics-based HRTF binaural rendering for 3D sounds.\n"
+                    "Best experienced with headphones.");
+            }
+
+            if (audio->IsHRTFAvailable()) {
+                ImGui::TextColored(ImVec4(0.4f, 0.9f, 0.4f, 1.0f), "Status: Available");
+            } else {
+                ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.3f, 1.0f), "Status: Init failed");
+            }
+        } else {
+            ImGui::TextDisabled("HRTF available (start Play Mode to configure)");
+        }
+#else
+        ImGui::TextDisabled("HRTF: Not compiled (ENJIN_AUDIO_STEAM_AUDIO=OFF)");
+#endif
     }
 
     if (ImGui::CollapsingHeader("Collision Groups")) {

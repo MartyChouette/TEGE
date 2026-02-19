@@ -9,6 +9,10 @@
 #include <functional>
 #include <memory>
 
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+#include "Enjin/Audio/SteamAudioProcessor.h"
+#endif
+
 namespace Enjin {
 namespace Audio {
 
@@ -45,6 +49,10 @@ struct SoundInstance {
 
     // Opaque pointer to ma_sound (owned by this instance, heap-allocated)
     void* maSound = nullptr;
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    void* binauralNode = nullptr;  // Custom ma_node for HRTF processing
+#endif
 };
 
 // SoundHandle may already be defined by AudioSystem.h — guard against redefinition
@@ -124,6 +132,13 @@ public:
     using SoundPlayedCallback = std::function<void(const std::string& soundName)>;
     void SetOnSoundPlayed(SoundPlayedCallback cb) { m_OnSoundPlayed = std::move(cb); }
 
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // HRTF binaural audio (requires Steam Audio SDK)
+    void SetHRTFEnabled(bool enabled);
+    bool IsHRTFEnabled() const;
+    bool IsHRTFAvailable() const;
+#endif
+
 private:
     f32 Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f32 maxDist) const;
     f32 EffectiveVolume(f32 instanceVolume, AudioChannel channel) const;
@@ -167,6 +182,11 @@ private:
 
     // Accessibility callback
     SoundPlayedCallback m_OnSoundPlayed;
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    std::unique_ptr<SteamAudioProcessor> m_SteamAudio;
+    bool m_HRTFEnabled = true;
+#endif
 };
 
 } // namespace Audio

@@ -8,6 +8,46 @@
 
 #include "miniaudio.h"
 
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+#include "Enjin/Audio/SteamAudioProcessor.h"
+
+// Custom binaural processing node for Steam Audio HRTF
+struct BinauralNode {
+    ma_node_base base;
+    Enjin::Audio::SteamAudioProcessor* processor;
+    Enjin::Audio::SoundHandle soundHandle;
+};
+
+static void binaural_node_process(ma_node* pNode, const float** ppFramesIn,
+                                   ma_uint32* pFrameCountIn, float** ppFramesOut,
+                                   ma_uint32* pFrameCountOut)
+{
+    (void)pFrameCountIn;
+    auto* node = reinterpret_cast<BinauralNode*>(pNode);
+    ma_uint32 frameCount = *pFrameCountOut;
+
+    if (node->processor && node->processor->IsEnabled() && node->processor->IsInitialized()) {
+        if (node->processor->Process(node->soundHandle, ppFramesIn[0], ppFramesOut[0], frameCount)) {
+            return;
+        }
+    }
+
+    // Fallback: copy mono to both stereo channels
+    for (ma_uint32 i = 0; i < frameCount; ++i) {
+        ppFramesOut[0][i * 2]     = ppFramesIn[0][i];
+        ppFramesOut[0][i * 2 + 1] = ppFramesIn[0][i];
+    }
+}
+
+static ma_node_vtable g_binauralNodeVTable = {
+    binaural_node_process,
+    nullptr,  // onGetRequiredInputFrameCount
+    1,        // inputBusCount
+    1,        // outputBusCount
+    0         // flags
+};
+#endif // ENJIN_AUDIO_STEAM_AUDIO
+
 namespace Enjin {
 namespace Audio {
 
@@ -39,6 +79,27 @@ bool SimpleAudio::Initialize() {
     m_Impl->initialized = true;
     m_Initialized = true;
     ENJIN_LOG_INFO(Audio, "SimpleAudio initialized (miniaudio backend)");
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Initialize Steam Audio HRTF processor
+    if (m_HRTFEnabled) {
+        m_SteamAudio = std::make_unique<SteamAudioProcessor>();
+        ma_uint32 sampleRate = ma_engine_get_sample_rate(&m_Impl->engine);
+        // Use engine's period size for frame size (typically 480 for 48kHz)
+        ma_uint32 periodSize = 0;
+        ma_device* pDevice = ma_engine_get_device(&m_Impl->engine);
+        if (pDevice) {
+            periodSize = pDevice->playback.internalPeriodSizeInFrames;
+        }
+        if (periodSize == 0) periodSize = 480;  // safe default
+
+        if (!m_SteamAudio->Initialize(sampleRate, periodSize)) {
+            ENJIN_LOG_WARN(Audio, "Steam Audio HRTF initialization failed, HRTF disabled");
+            m_SteamAudio.reset();
+        }
+    }
+#endif
+
     return true;
 }
 
@@ -47,6 +108,14 @@ void SimpleAudio::Shutdown() {
 
     StopAll();
     m_Clips.clear();
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Shutdown Steam Audio before miniaudio engine
+    if (m_SteamAudio) {
+        m_SteamAudio->Shutdown();
+        m_SteamAudio.reset();
+    }
+#endif
 
     if (m_Impl && m_Impl->initialized) {
         ma_engine_uninit(&m_Impl->engine);
@@ -67,6 +136,26 @@ void SimpleAudio::SetListenerPosition(const Math::Vector3& position, const Math:
         ma_engine_listener_set_direction(&m_Impl->engine, 0, forward.x, forward.y, forward.z);
         ma_engine_listener_set_world_up(&m_Impl->engine, 0, up.x, up.y, up.z);
     }
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    // Update all active binaural source directions (listener moved)
+    if (m_SteamAudio && m_SteamAudio->IsInitialized()) {
+        for (auto& [handle, sound] : m_Sounds) {
+            if (sound.is3D && sound.binauralNode) {
+                auto dir = SteamAudioProcessor::ComputeListenerRelativeDirection(
+                    position, forward, up, sound.position);
+                m_SteamAudio->SetSourceDirection(handle, dir);
+
+                // Update distance attenuation (spatialization is off for HRTF sounds)
+                if (sound.maSound) {
+                    f32 distVol = Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance);
+                    ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound),
+                        EffectiveVolume(sound.volume, sound.channel) * distVol);
+                }
+            }
+        }
+    }
+#endif
 }
 
 bool SimpleAudio::LoadWAV(const std::string& filepath, AudioClipData& clip) {
@@ -148,6 +237,19 @@ void SimpleAudio::CleanupUnusedClips() {
 }
 
 void SimpleAudio::CleanupSound(SoundInstance& sound) {
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+    if (sound.binauralNode) {
+        auto* bNode = static_cast<BinauralNode*>(sound.binauralNode);
+        ma_node_detach_all_output_buses(&bNode->base);
+        ma_node_uninit(&bNode->base, nullptr);
+        if (m_SteamAudio) {
+            m_SteamAudio->DestroySource(bNode->soundHandle);
+        }
+        delete bNode;
+        sound.binauralNode = nullptr;
+    }
+#endif
+
     if (sound.maSound) {
         auto* maS = static_cast<ma_sound*>(sound.maSound);
         ma_sound_stop(maS);
@@ -281,8 +383,62 @@ SoundHandle SimpleAudio::Play3D(AudioClipHandle clip, const Math::Vector3& posit
             ma_sound_set_min_distance(maS, clampedMinDist);
             ma_sound_set_max_distance(maS, clampedMaxDist);
             ma_sound_set_attenuation_model(maS, ma_attenuation_model_inverse);
-            ma_sound_start(maS);
             sound.maSound = maS;
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+            // Wire HRTF binaural processing if available
+            if (m_SteamAudio && m_SteamAudio->IsInitialized() && m_HRTFEnabled) {
+                // Disable miniaudio's built-in spatialization — HRTF replaces it
+                ma_sound_set_spatialization_enabled(maS, MA_FALSE);
+
+                // Apply distance attenuation manually
+                f32 distVol = Calculate3DVolume(position, clampedMinDist, clampedMaxDist);
+                ma_sound_set_volume(maS, EffectiveVolume(clampedVolume, channel) * distVol);
+
+                // Create Steam Audio binaural source
+                m_SteamAudio->CreateSource(handle);
+                auto dir = SteamAudioProcessor::ComputeListenerRelativeDirection(
+                    m_ListenerPosition, m_ListenerForward, m_ListenerUp, position);
+                m_SteamAudio->SetSourceDirection(handle, dir);
+
+                // Create and wire binaural node into the audio graph
+                auto* bNode = new BinauralNode();
+                bNode->processor = m_SteamAudio.get();
+                bNode->soundHandle = handle;
+
+                ma_uint32 inputChannels[1] = {1};   // mono from sound
+                ma_uint32 outputChannels[1] = {2};  // stereo binaural output
+
+                ma_node_config nodeConfig = ma_node_config_init();
+                nodeConfig.vtable = &g_binauralNodeVTable;
+                nodeConfig.pInputChannels = inputChannels;
+                nodeConfig.pOutputChannels = outputChannels;
+                nodeConfig.inputBusCount = 1;
+                nodeConfig.outputBusCount = 1;
+
+                ma_result nodeResult = ma_node_init(
+                    ma_engine_get_node_graph(&m_Impl->engine),
+                    &nodeConfig, nullptr, &bNode->base);
+
+                if (nodeResult == MA_SUCCESS) {
+                    // Detach sound from endpoint, wire through binaural node
+                    ma_node_detach_output_bus(reinterpret_cast<ma_node*>(maS), 0);
+                    ma_node_attach_output_bus(reinterpret_cast<ma_node*>(maS), 0, &bNode->base, 0);
+                    ma_node_attach_output_bus(&bNode->base, 0,
+                        ma_engine_get_endpoint(&m_Impl->engine), 0);
+                    sound.binauralNode = bNode;
+                } else {
+                    ENJIN_LOG_WARN(Audio, "Failed to create binaural node (error %d), falling back to basic spatialization",
+                                   nodeResult);
+                    ma_sound_set_spatialization_enabled(maS, MA_TRUE);
+                    ma_sound_set_volume(maS, EffectiveVolume(clampedVolume, channel));
+                    m_SteamAudio->DestroySource(handle);
+                    delete bNode;
+                }
+            }
+#endif
+
+            ma_sound_start(maS);
         } else {
             ENJIN_LOG_ERROR(Audio, "Failed to play 3D audio '%s' (error %d)",
                 clipIt->second.filepath.c_str(), result);
@@ -350,8 +506,14 @@ void SimpleAudio::SetVolume(SoundHandle sound, f32 volume) {
     if (it != m_Sounds.end()) {
         it->second.volume = Math::Clamp(volume, 0.0f, 1.0f);
         if (it->second.maSound) {
-            ma_sound_set_volume(static_cast<ma_sound*>(it->second.maSound),
-                EffectiveVolume(it->second.volume, it->second.channel));
+            f32 vol = EffectiveVolume(it->second.volume, it->second.channel);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+            // HRTF sounds need manual distance attenuation
+            if (it->second.binauralNode && it->second.is3D) {
+                vol *= Calculate3DVolume(it->second.position, it->second.minDistance, it->second.maxDistance);
+            }
+#endif
+            ma_sound_set_volume(static_cast<ma_sound*>(it->second.maSound), vol);
         }
     }
 }
@@ -371,8 +533,23 @@ void SimpleAudio::SetPosition(SoundHandle sound, const Math::Vector3& position) 
     if (it != m_Sounds.end()) {
         it->second.position = position;
         if (it->second.maSound) {
-            ma_sound_set_position(static_cast<ma_sound*>(it->second.maSound),
-                position.x, position.y, position.z);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+            if (it->second.binauralNode && m_SteamAudio && m_SteamAudio->IsInitialized()) {
+                // Update HRTF direction
+                auto dir = SteamAudioProcessor::ComputeListenerRelativeDirection(
+                    m_ListenerPosition, m_ListenerForward, m_ListenerUp, position);
+                m_SteamAudio->SetSourceDirection(sound, dir);
+
+                // Update distance attenuation (spatialization disabled for HRTF sounds)
+                f32 distVol = Calculate3DVolume(position, it->second.minDistance, it->second.maxDistance);
+                ma_sound_set_volume(static_cast<ma_sound*>(it->second.maSound),
+                    EffectiveVolume(it->second.volume, it->second.channel) * distVol);
+            } else
+#endif
+            {
+                ma_sound_set_position(static_cast<ma_sound*>(it->second.maSound),
+                    position.x, position.y, position.z);
+            }
         }
     }
 }
@@ -393,8 +570,13 @@ void SimpleAudio::SetMasterVolume(f32 volume) {
     // Update all active sounds with new effective volume
     for (auto& [handle, sound] : m_Sounds) {
         if (sound.maSound) {
-            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound),
-                EffectiveVolume(sound.volume, sound.channel));
+            f32 vol = EffectiveVolume(sound.volume, sound.channel);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+            if (sound.binauralNode && sound.is3D) {
+                vol *= Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance);
+            }
+#endif
+            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound), vol);
         }
     }
 }
@@ -406,8 +588,13 @@ void SimpleAudio::SetChannelVolume(AudioChannel channel, f32 volume) {
     // Update all active sounds on this channel
     for (auto& [handle, sound] : m_Sounds) {
         if (sound.channel == channel && sound.maSound) {
-            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound),
-                EffectiveVolume(sound.volume, channel));
+            f32 vol = EffectiveVolume(sound.volume, channel);
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+            if (sound.binauralNode && sound.is3D) {
+                vol *= Calculate3DVolume(sound.position, sound.minDistance, sound.maxDistance);
+            }
+#endif
+            ma_sound_set_volume(static_cast<ma_sound*>(sound.maSound), vol);
         }
     }
 }
@@ -521,6 +708,23 @@ f32 SimpleAudio::Calculate3DVolume(const Math::Vector3& soundPos, f32 minDist, f
 
     return 1.0f - (distance - minDist) / (maxDist - minDist);
 }
+
+#ifdef ENJIN_AUDIO_STEAM_AUDIO
+void SimpleAudio::SetHRTFEnabled(bool enabled) {
+    m_HRTFEnabled = enabled;
+    if (m_SteamAudio) {
+        m_SteamAudio->SetEnabled(enabled);
+    }
+}
+
+bool SimpleAudio::IsHRTFEnabled() const {
+    return m_HRTFEnabled && m_SteamAudio && m_SteamAudio->IsInitialized();
+}
+
+bool SimpleAudio::IsHRTFAvailable() const {
+    return m_SteamAudio && m_SteamAudio->IsInitialized();
+}
+#endif
 
 } // namespace Audio
 } // namespace Enjin
