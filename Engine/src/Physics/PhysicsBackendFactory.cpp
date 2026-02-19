@@ -1,11 +1,6 @@
 #include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/Logging/Log.h"
 
-#ifdef ENJIN_PHYSICS_SIMPLE
-#include "Enjin/Physics/SimplePhysicsBackend.h"
-#include "Enjin/Physics/SimplePhysicsBackend2D.h"
-#endif
-
 #ifdef ENJIN_PHYSICS_JOLT
 #include "Enjin/Physics/JoltBackend.h"
 #endif
@@ -19,7 +14,6 @@ namespace Physics {
 
 std::unique_ptr<IPhysicsBackend> CreatePhysicsBackend(PhysicsBackendType type, Scene::ProjectMode mode) {
 #ifdef ENJIN_PHYSICS_JOLT
-    // Use Jolt when explicitly requested, or when Auto-selecting for 3D/Mixed modes
     bool useJolt = (type == PhysicsBackendType::Jolt) ||
                    (type == PhysicsBackendType::Auto &&
                     (mode == Scene::ProjectMode::Mode3D || mode == Scene::ProjectMode::Mixed));
@@ -35,33 +29,16 @@ std::unique_ptr<IPhysicsBackend> CreatePhysicsBackend(PhysicsBackendType type, S
     }
 #endif
 
-    // Explicit Simple request or fallback
-#ifdef ENJIN_PHYSICS_SIMPLE
-    if (type == PhysicsBackendType::Simple || type == PhysicsBackendType::Auto) {
-        if (type == PhysicsBackendType::Auto) {
-            ENJIN_LOG_WARN(Physics, "No production 3D backend matched for Auto — falling back to SimplePhysics");
-        }
-        auto backend = std::make_unique<SimplePhysicsBackend>();
-        ENJIN_LOG_INFO(Physics, "Created physics backend: %s", backend->GetName());
-        return backend;
-    }
-    // Box2D requested for 3D backend — dimension mismatch, fall back
     if (type == PhysicsBackendType::Box2D) {
-        ENJIN_LOG_WARN(Physics, "Box2D is a 2D backend — cannot use for 3D physics, falling back to SimplePhysics");
-        auto backend = std::make_unique<SimplePhysicsBackend>();
-        ENJIN_LOG_INFO(Physics, "Created physics backend: %s", backend->GetName());
-        return backend;
+        ENJIN_LOG_WARN(Physics, "Box2D is a 2D backend — cannot use for 3D physics");
     }
-#else
-    ENJIN_LOG_ERROR(Physics, "No 3D physics backend available (ENJIN_PHYSICS_SIMPLE=OFF, Jolt not matched)");
-#endif
 
+    ENJIN_LOG_ERROR(Physics, "No 3D physics backend available");
     return nullptr;
 }
 
 std::unique_ptr<IPhysicsBackend2D> CreatePhysicsBackend2D(PhysicsBackendType type, Scene::ProjectMode mode) {
 #ifdef ENJIN_PHYSICS_BOX2D
-    // Use Box2D when explicitly requested, or when Auto-selecting for 2D/Mixed modes
     bool useBox2D = (type == PhysicsBackendType::Box2D) ||
                     (type == PhysicsBackendType::Auto &&
                      (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed));
@@ -77,27 +54,11 @@ std::unique_ptr<IPhysicsBackend2D> CreatePhysicsBackend2D(PhysicsBackendType typ
     }
 #endif
 
-    // Explicit Simple request or fallback
-#ifdef ENJIN_PHYSICS_SIMPLE
-    if (type == PhysicsBackendType::Simple || type == PhysicsBackendType::Auto) {
-        if (type == PhysicsBackendType::Auto) {
-            ENJIN_LOG_WARN(Physics, "No production 2D backend matched for Auto — falling back to SimplePhysics2D");
-        }
-        auto backend = std::make_unique<SimplePhysicsBackend2D>();
-        ENJIN_LOG_INFO(Physics, "Created 2D physics backend: %s", backend->GetName());
-        return backend;
-    }
-    // Jolt requested for 2D backend — dimension mismatch, fall back
     if (type == PhysicsBackendType::Jolt) {
-        ENJIN_LOG_WARN(Physics, "Jolt is a 3D backend — cannot use for 2D physics, falling back to SimplePhysics2D");
-        auto backend = std::make_unique<SimplePhysicsBackend2D>();
-        ENJIN_LOG_INFO(Physics, "Created 2D physics backend: %s", backend->GetName());
-        return backend;
+        ENJIN_LOG_WARN(Physics, "Jolt is a 3D backend — cannot use for 2D physics");
     }
-#else
-    ENJIN_LOG_ERROR(Physics, "No 2D physics backend available (ENJIN_PHYSICS_SIMPLE=OFF, Box2D not matched)");
-#endif
 
+    ENJIN_LOG_ERROR(Physics, "No 2D physics backend available");
     return nullptr;
 }
 
@@ -115,12 +76,6 @@ const char* ResolveBackendName(PhysicsBackendType type, Scene::ProjectMode mode)
 #else
             return "Box2D (not compiled)";
 #endif
-        case PhysicsBackendType::Simple:
-#ifdef ENJIN_PHYSICS_SIMPLE
-            return "SimplePhysics (Legacy)";
-#else
-            return "SimplePhysics (not compiled)";
-#endif
         case PhysicsBackendType::Auto:
         default:
 #ifdef ENJIN_PHYSICS_JOLT
@@ -131,11 +86,7 @@ const char* ResolveBackendName(PhysicsBackendType type, Scene::ProjectMode mode)
             if (mode == Scene::ProjectMode::Mode2D || mode == Scene::ProjectMode::Mixed)
                 return "Box2D";
 #endif
-#ifdef ENJIN_PHYSICS_SIMPLE
-            return "SimplePhysics (fallback)";
-#else
             return "None available";
-#endif
     }
 }
 

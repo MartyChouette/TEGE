@@ -49,7 +49,7 @@ static void RaycastHit_CopyConstruct(const RaycastHit& other, RaycastHit* self) 
 }
 
 // ============================================================================
-// Physics functions — wired to SimplePhysics
+// Physics functions — wired to IPhysicsBackend
 // ============================================================================
 
 static bool Physics_Raycast(const Vector3& origin, const Vector3& direction, f32 maxDistance) {

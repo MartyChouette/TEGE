@@ -4,9 +4,7 @@
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Physics/PhysicsTypes2D.h"
 
-#ifdef ENJIN_PHYSICS_SIMPLE
-#include "Enjin/Physics/Physics2D.h"
-#endif
+// Physics2D tests now use Box2D backend via IPhysicsBackend2D
 
 using namespace Enjin;
 using namespace Enjin::Math;

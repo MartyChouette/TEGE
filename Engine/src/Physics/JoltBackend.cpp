@@ -1167,7 +1167,7 @@ Math::Vector3 JoltBackend::MoveAndSlide(const Math::Vector3& position, const Mat
                                          const AABB& collider, f32 deltaTime, u32 layerMask) {
     if (!m_Initialized) return position + velocity * deltaTime;
 
-    // Fallback to simple AABB-based slide resolution (same as SimplePhysics)
+    // Fallback to simple AABB-based slide resolution
     // A full Jolt character controller would use JPH::CharacterVirtual,
     // but for API compatibility we do iterative shape cast + slide.
     Math::Vector3 newPos = position + velocity * deltaTime;
@@ -1287,7 +1287,7 @@ std::vector<ECS::Entity> JoltBackend::OverlapBox(const Math::Vector3& center, co
 }
 
 // ============================================================================
-// Stateless Collision Checks (same math as SimplePhysics)
+// Stateless Collision Checks
 // ============================================================================
 
 bool JoltBackend::CheckAABBCollision(const AABB& a, const AABB& b, CollisionResult& result) {

@@ -145,12 +145,6 @@ if(ENJIN_PHYSICS_BOX2D)
     message(STATUS "Box2D v3 enabled")
 endif()
 
-# Built-in SimplePhysics fallback (legacy) — can be disabled when Jolt+Box2D are available
-option(ENJIN_PHYSICS_SIMPLE "Enable built-in SimplePhysics fallback (legacy)" ON)
-if(ENJIN_PHYSICS_SIMPLE)
-    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_SIMPLE)
-    message(STATUS "SimplePhysics fallback enabled")
-endif()
 
 # Intel Open Image Denoise — optional alternative RT denoiser (OFF by default, requires OIDN install)
 option(ENJIN_RAYTRACING_OIDN "Enable Intel OIDN denoiser backend for ray tracing" OFF)

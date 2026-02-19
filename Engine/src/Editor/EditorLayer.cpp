@@ -9130,10 +9130,10 @@ void EditorLayer::DrawProjectSettingsPanel() {
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Physics Backend selection
         {
-            const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)", "Simple (Legacy)" };
+            const char* backendNames[] = { "Auto", "Jolt (3D)", "Box2D (2D)" };
             int currentBackend = static_cast<int>(m_SceneManager.GetPhysicsBackendType());
-            if (currentBackend > 3) currentBackend = 0;
-            if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 4)) {
+            if (currentBackend > 2) currentBackend = 0;
+            if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 3)) {
                 m_SceneManager.SetPhysicsBackendType(static_cast<Physics::PhysicsBackendType>(currentBackend));
                 if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
                     ShowNotification("Failed to save project settings", NotificationType::Error);
@@ -9145,8 +9145,7 @@ void EditorLayer::DrawProjectSettingsPanel() {
                     "  3D/Mixed -> Jolt Physics\n"
                     "  2D -> Box2D\n"
                     "Jolt: Force Jolt Physics (3D)\n"
-                    "Box2D: Force Box2D v3 (2D)\n"
-                    "Simple: Built-in legacy physics (fallback)");
+                    "Box2D: Force Box2D v3 (2D)");
             }
 
             // Show resolved backend name
@@ -9156,10 +9155,9 @@ void EditorLayer::DrawProjectSettingsPanel() {
             ImGui::TextDisabled("Resolves to: %s", resolved);
 
             // Availability indicators
-            ImGui::TextDisabled("Available: Jolt %s | Box2D %s | Simple %s",
+            ImGui::TextDisabled("Available: Jolt %s | Box2D %s",
                 Physics::IsJoltAvailable() ? "[YES]" : "[NO]",
-                Physics::IsBox2DAvailable() ? "[YES]" : "[NO]",
-                Physics::IsSimpleAvailable() ? "[YES]" : "[NO]");
+                Physics::IsBox2DAvailable() ? "[YES]" : "[NO]");
 
             ImGui::Spacing();
         }

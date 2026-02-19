@@ -14,9 +14,6 @@
 #include "Enjin/ECS/Components/Gameplay.h"
 #include "Enjin/ECS/Components/Script.h"
 #include "Enjin/Physics/PhysicsTypes.h"
-#ifdef ENJIN_PHYSICS_SIMPLE
-#include "Enjin/Physics/SimplePhysics.h"
-#endif
 #include "Enjin/Scene/LevelStreaming.h"
 
 #include <cstdio>
@@ -121,80 +118,6 @@ void SpawnInertEntities(ECS::World& world, u32 count, std::mt19937& rng) {
         world.AddComponent<ECS::NameComponent>(e, "Inert_" + std::to_string(i));
     }
 }
-
-// ─── Benchmark: Physics Update ───────────────────────────────────────────────
-
-#ifdef ENJIN_PHYSICS_SIMPLE
-BenchResult BenchPhysicsUpdate(u32 colliderCount, u32 rigidbodyCount, u32 inertCount, u32 frames) {
-    ECS::World world;
-    Physics::SimplePhysics physics;
-    physics.SetWorld(&world);
-
-    std::mt19937 rng(42);
-    SpawnColliderEntities(world, colliderCount, rng);
-    SpawnRigidbodyEntities(world, rigidbodyCount, rng);
-    SpawnInertEntities(world, inertCount, rng);
-
-    // Warm-up
-    for (u32 i = 0; i < 10; ++i) {
-        physics.Update(1.0f / 60.0f);
-        physics.ClearPendingCollisionEvents();
-    }
-
-    std::vector<f64> samples;
-    samples.reserve(frames);
-
-    for (u32 i = 0; i < frames; ++i) {
-        auto start = Clock::now();
-        physics.Update(1.0f / 60.0f);
-        physics.ClearPendingCollisionEvents();
-        samples.push_back(ElapsedMs(start));
-    }
-
-    return Analyze(samples);
-}
-#endif // ENJIN_PHYSICS_SIMPLE
-
-// ─── Benchmark: Raycast Throughput ───────────────────────────────────────────
-
-#ifdef ENJIN_PHYSICS_SIMPLE
-BenchResult BenchRaycast(u32 colliderCount, u32 raysPerFrame, u32 frames) {
-    ECS::World world;
-    Physics::SimplePhysics physics;
-    physics.SetWorld(&world);
-
-    std::mt19937 rng(42);
-    SpawnColliderEntities(world, colliderCount, rng);
-
-    // Must call Update once to build collider cache
-    physics.Update(1.0f / 60.0f);
-    physics.ClearPendingCollisionEvents();
-
-    std::uniform_real_distribution<f32> dir(-1.0f, 1.0f);
-
-    std::vector<f64> samples;
-    samples.reserve(frames);
-
-    for (u32 f = 0; f < frames; ++f) {
-        // Rebuild cache each frame like a real frame would
-        physics.Update(1.0f / 60.0f);
-        physics.ClearPendingCollisionEvents();
-
-        auto start = Clock::now();
-        for (u32 r = 0; r < raysPerFrame; ++r) {
-            Physics::Ray ray;
-            ray.origin = Math::Vector3(0.0f, 5.0f, 0.0f);
-            Math::Vector3 d(dir(rng), dir(rng), dir(rng));
-            f32 len = std::sqrt(d.x * d.x + d.y * d.y + d.z * d.z);
-            ray.direction = (len > 0.001f) ? d * (1.0f / len) : Math::Vector3(0, -1, 0);
-            physics.Raycast(ray, 200.0f);
-        }
-        samples.push_back(ElapsedMs(start));
-    }
-
-    return Analyze(samples);
-}
-#endif // ENJIN_PHYSICS_SIMPLE
 
 // ─── Benchmark: ECS Entity Creation + Destruction ────────────────────────────
 
@@ -347,41 +270,7 @@ int main(int argc, char* argv[]) {
     std::printf("  %-36s %7s  %9s  %9s  %9s  %9s\n",
         "--------", "---", "---", "---", "---", "---");
 
-#ifdef ENJIN_PHYSICS_SIMPLE
-    for (u32 n : tiers) {
-        u32 colliders = n;
-        u32 rigidbodies = n / 5;  // 20% have rigidbodies
-        u32 inert = n;            // Equal inert entities (should be skipped by collider cache)
-
-        char label[64];
-        std::snprintf(label, sizeof(label), "%u colliders + %u rb + %u inert", colliders, rigidbodies, inert);
-        auto r = BenchPhysicsUpdate(colliders, rigidbodies, inert, framesPerTier);
-        PrintBench(label, r);
-    }
-
-    // Raycast throughput
-    PrintSection("RAYCAST THROUGHPUT (rays per frame against N colliders)");
-    std::printf("  %-36s %7s  %9s  %9s  %9s  %9s\n",
-        "Scenario", "avg", "p50", "p95", "p99", "max");
-    std::printf("  %-36s %7s  %9s  %9s  %9s  %9s\n",
-        "--------", "---", "---", "---", "---", "---");
-
-    for (u32 n : { 100u, 500u, 1000u, 5000u }) {
-        char label[64];
-        std::snprintf(label, sizeof(label), "10 rays vs %u colliders", n);
-        auto r = BenchRaycast(n, 10, framesPerTier);
-        PrintBench(label, r);
-    }
-
-    for (u32 rays : { 50u, 100u }) {
-        char label[64];
-        std::snprintf(label, sizeof(label), "%u rays vs 1000 colliders", rays);
-        auto r = BenchRaycast(1000, rays, framesPerTier);
-        PrintBench(label, r);
-    }
-#else
-    std::printf("  (SimplePhysics not compiled — skipping physics benchmarks)\n");
-#endif
+    std::printf("  (Physics benchmarks removed — use Jolt/Box2D profiling instead)\n");
 
     // ECS entity churn (create + destroy)
     PrintSection("ECS ENTITY CHURN (create N with 3 components + destroy half)");

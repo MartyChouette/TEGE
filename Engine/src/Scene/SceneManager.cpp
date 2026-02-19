@@ -100,7 +100,7 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         m_PhysicsBackendType = Physics::PhysicsBackendType::Auto;
         if (root.contains("physicsBackend")) {
             int val = root["physicsBackend"].get<int>();
-            if (val >= 0 && val <= 3) m_PhysicsBackendType = static_cast<Physics::PhysicsBackendType>(val);
+            if (val >= 0 && val <= 2) m_PhysicsBackendType = static_cast<Physics::PhysicsBackendType>(val);
         }
 
         // Load project-level render defaults
