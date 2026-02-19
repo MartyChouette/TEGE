@@ -894,7 +894,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.fxaaReduceMin = GF("fxaaReduceMin", 1.0f / 128.0f);
     s.fxaaReduceMul = GF("fxaaReduceMul", 1.0f / 8.0f);
     s.ditherEnabled = GU("ditherEnabled");
-    s.ditherPattern = GU("ditherPattern");
+    s.ditherPattern = std::min(GU("ditherPattern"), 2u);
     s.ditherStrength = GF("ditherStrength", 1.0f);
     s.colorQuantEnabled = GU("colorQuantEnabled");
     s.colorBitDepth = GU("colorBitDepth");
@@ -914,7 +914,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.lutSize = GU("lutSize");
     if (s.lutSize == 0) s.lutSize = 32;
     s.crtPhosphorEnabled = GU("crtPhosphorEnabled");
-    s.crtMaskType = GU("crtMaskType");
+    s.crtMaskType = std::min(GU("crtMaskType"), 2u);
     s.crtMaskPitch = GF("crtMaskPitch", 1.0f);
     s.crtBloomRadius = GF("crtBloomRadius", 1.5f);
     s.crtBloomStrength = GF("crtBloomStrength", 0.3f);
@@ -937,7 +937,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.dofNearBlurStrength = GF("dofNearBlurStrength", 1.0f);
     s.dofFarBlurStrength = GF("dofFarBlurStrength", 1.0f);
     s.dofBokehSize = GF("dofBokehSize", 4.0f);
-    s.dofApertureShape = GU("dofApertureShape");
+    s.dofApertureShape = std::min(GU("dofApertureShape"), 2u);
     s.dofDebugCoC = GU("dofDebugCoC");
     s.tiltShiftEnabled = GU("tiltShiftEnabled");
     s.tiltShiftFocusY = GF("tiltShiftFocusY", 0.5f);
@@ -950,7 +950,7 @@ Renderer::PostProcessSettings DeserializePPSettings(const json& j) {
     s.stippleEnabled = GU("stippleEnabled");
     s.stipplePatternMask = GU("stipplePatternMask");
     if (s.stipplePatternMask == 0) s.stipplePatternMask = 1;
-    s.stippleColorMode = GU("stippleColorMode");
+    s.stippleColorMode = std::min(GU("stippleColorMode"), 2u);
     s.stippleScale = GF("stippleScale", 1.0f);
     s.stippleDensity = GF("stippleDensity", 0.5f);
     s.stippleStrength = GF("stippleStrength", 1.0f);
@@ -3373,7 +3373,9 @@ ECS::SaveDataComponent DeserializeSaveDataComponent(const json& j) {
     }
     if (j.contains("customData") && j["customData"].is_array()) {
         for (const auto& p : j["customData"]) {
-            sd.customData.push_back({p[0].get<std::string>(), p[1].get<std::string>()});
+            if (p.is_array() && p.size() >= 2) {
+                sd.customData.push_back({p[0].get<std::string>(), p[1].get<std::string>()});
+            }
         }
     }
     return sd;

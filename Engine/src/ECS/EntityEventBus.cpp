@@ -5,6 +5,7 @@ namespace ECS {
 
 u32 EntityEventBus::Listen(const std::string& eventName, EventCallback callback, Entity entity) {
     u32 id = m_NextId++;
+    if (m_NextId == 0) m_NextId = 1;  // Skip 0 on wraparound
     m_Listeners[eventName].push_back({id, eventName, std::move(callback), entity});
     return id;
 }

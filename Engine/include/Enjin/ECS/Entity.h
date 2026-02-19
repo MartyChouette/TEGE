@@ -2,6 +2,7 @@
 
 #include "Enjin/Platform/Platform.h"
 #include "Enjin/Platform/Types.h"
+#include <unordered_set>
 #include <vector>
 
 namespace Enjin {
@@ -31,6 +32,7 @@ public:
 private:
     Entity m_NextEntity = 1;
     std::vector<Entity> m_ActiveEntities;
+    std::unordered_set<Entity> m_ActiveEntitySet;  // O(1) validity lookup
     std::vector<Entity> m_FreeEntities; // Recycled entity IDs
 };
 

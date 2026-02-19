@@ -81,9 +81,9 @@ void World::DestroyEntityInternal(Entity entity) {
 }
 
 void World::FlushPendingDestructions() {
+    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     if (m_PendingDestructions.empty()) return;
 
-    std::lock_guard<std::recursive_mutex> lock(m_Mutex);
     // Move to local to allow new destructions during flush
     std::vector<Entity> pending = std::move(m_PendingDestructions);
     m_PendingDestructions.clear();

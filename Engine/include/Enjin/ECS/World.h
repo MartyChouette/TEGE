@@ -104,7 +104,8 @@ public:
 
     template<typename T>
     T* GetComponent(Entity entity) {
-        auto storage = GetOrCreateStorage<T>();
+        auto* storage = GetStorageMut<T>();
+        if (!storage) return nullptr;
         return storage->Get(entity);
     }
 
@@ -260,6 +261,16 @@ private:
             ComponentStorage<T>* ptr = &wrapper->storage;
             m_ComponentStorages[typeId] = std::move(wrapper);
             return ptr;
+        }
+        return &static_cast<StorageWrapper<T>*>(it->second.get())->storage;
+    }
+
+    template<typename T>
+    ComponentStorage<T>* GetStorageMut() {
+        ComponentTypeId typeId = ComponentRegistry::GetTypeId<T>();
+        auto it = m_ComponentStorages.find(typeId);
+        if (it == m_ComponentStorages.end()) {
+            return nullptr;
         }
         return &static_cast<StorageWrapper<T>*>(it->second.get())->storage;
     }
