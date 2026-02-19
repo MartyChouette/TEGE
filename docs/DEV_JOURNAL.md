@@ -26,10 +26,39 @@ Chronological log of major development sessions, decisions, and milestones.
 
 **Test Suite Reorganization & New Tests:**
 - Moved 4 integration tests (SerializerRoundTrip, DungeonCrawlerTest, SMTTemplateTest, StressTest) into `Tests/Integration/` subfolder
-- Added 3 new rigorous unit test suites:
+- Added 3 new rigorous unit test suites (68 tests):
   - `TestMarketplace` — Catalog integrity, search/filter, maturity tiers, ID uniqueness
   - `TestCollisionFiltering` — Bilateral bitmask rules, group isolation, trigger semantics, serialization round-trip
   - `TestSaveSystem` — Meta-progression KV stores, persistence tiers, slot management, SaveDataComponent helpers
+
+**HIGH Priority Test Suites — Round 1 (108 tests):**
+- `TestSceneSerializerComponents` (20) — Material PBR/alpha/retro/dither/parallax, Light point/spot/dir, Camera, Notes, PostProcessVolume, multi-component
+- `TestInputAction` (28) — Defaults, config mutation, sprint/crouch toggle, presets (LeftHand/RightHand/Gamepad), JSON round-trip, remapping
+- `TestScriptEngine` (19) — Headless init, binding registration (680+ functions), type registration (Vector2/3/4, Quaternion, Entity), context pool, compilation, execution, global variable access
+- `TestEditorSettings` (19) — Defaults (theme, UI scale, audio, accessibility, input, motor, keyboard nav, frame rate, colorblind), JSON round-trips (theme, FPS, motor, recent projects), missing file handling, accent colors, enum ranges
+- `TestNetworkAdversarial` (22) — Buffer underruns (empty/truncated), string overflow, exact-fit strings, max-length strings, exhausted buffer, primitive edge cases (max u32, negative i32, NaN/Inf f32), Vector3/Quaternion partial reads, sequential multi-field parsing
+
+**HIGH Priority Test Suites — Round 2 (126 tests):**
+- `TestNetworkSecurity` (29) — SHA256 known vectors (empty, "abc", single byte), incremental vs one-shot, block boundary cases (55/56/1000 bytes), HMAC-SHA256 compute/verify/tamper/wrong-key/wrong-data/deterministic/empty, ReplayWindow (sequential, duplicate, out-of-order, too-old, boundary, large jump, reset, zero sequence), GenerateSessionKey (non-zero, uniqueness)
+- `TestLocalization` (26) — Singleton, defaults, set/get/overwrite/has/count/getAllKeys, locale switching, English fallback, invalid locale, add locale, parameterized formatting (single/multiple/repeated/missing params), JSON round-trip, CSV round-trip
+- `TestIKSolver` (16) — LookAtIK (basic solve, degenerate target, angle clamp, large max angle, zero dt), RotationFromDirection (forward Z, unit quaternion), FABRIK (2-joint reachable, root fixed, bone lengths preserved, unreachable stretch, single joint, empty chain, 3-bone, iteration accuracy, target at root)
+- `TestDataAsset` (24) — Schema CRUD (register/find/remove/getAll/fieldCount), Asset CRUD (create/find/remove/bySchema/getAll), typed getters/setters (float/int/bool/string/Vector3, fallbacks, float↔int coercion), JSON round-trips (schema .enjschema, asset .enjdata), field type string conversions, Clear()
+- `TestTimeline` (31) — Defaults, Play/Pause/Stop/Seek, forward playback, loop wrapping, ping-pong direction flip, event firing/no-double-fire/reset, keyframe storage (float/Vector3/bool/string), AnimationTrack defaults, easing functions (Linear/EaseIn/EaseOut/EaseInOut/Step at boundary values)
+
+### Key Findings During Testing
+- **ScriptEngine `AS_CHECK` macro uses `assert()` (stripped in Release):** `RegisterAllBindings` silently ignores binding registration failures, leaving the engine misconfigured for compilation. Tests restructured to compile against base engine only.
+- **`vertexSnapResolution` clamped to ≤31:** Serializer rejects values >31 (encoded as /8 value in push constant bits 24-28).
+- **SceneSerializer requires `World*` constructor:** No default constructor available, unlike what research suggested.
+
+### Test Summary
+
+| Test Run | Targets | Tests | Status |
+|----------|---------|-------|--------|
+| Round 0 (prior) | 18 | ~300+ | All pass |
+| Round 1 (new) | 3 | 68 | All pass |
+| HIGH R1 | 5 | 108 | All pass |
+| HIGH R2 | 5 | 126 | All pass |
+| **Total** | **31** | **~600+** | **31/31 CTest pass** |
 
 ### Files Changed
 
@@ -38,6 +67,22 @@ Chronological log of major development sessions, decisions, and milestones.
 | Steam Audio Phase 2 | SteamAudioProcessor.h/cpp, SimpleAudio.h/cpp, EditorLayer.cpp | Occlusion + transmission for geometry-aware audio |
 | MaturityTier badges | TemplateMarketplace.h/cpp, EditorLayer.cpp | 4-tier maturity labels on all templates |
 | Test reorganization | Tests/CMakeLists.txt, Tests/Integration/*, Tests/Unit/* | Subfolder split + 3 new test suites |
+| HIGH R1 tests | 5 new TestUnit/*.cpp, Tests/CMakeLists.txt | Trust-boundary test suites |
+| HIGH R2 tests | 5 new TestUnit/*.cpp, Tests/CMakeLists.txt | Security & algorithm test suites |
+
+### Next Steps — MEDIUM Priority Test Suites (researched, not yet written)
+11 subsystems identified and APIs fully researched:
+1. **Quest System** — QuestFlowStatus state machine, QuestNodeType categories, ResetRuntimeState
+2. **Navmesh/A*** — Navmesh polygon CRUD, Pathfinder A*, NavmeshGenerator grid, NavmeshUtils geometry helpers
+3. **Object Pool** — CreatePool/Acquire/Release lifecycle (needs ECS::World)
+4. **Prefab System** — Prefab data structures, PrefabManager singleton (needs ECS::World for instantiation)
+5. **Reaction-Diffusion** — RDConfig presets, Initialize/Step/SeedCircle, BakeToRGBA8/Heightmap
+6. **Interactive Water** — InteractiveWaterComponent defaults, Initialize, GetWaterHeight, CreateSplash
+7. **WorldTime/TimeOfDay** — CalendarConfig, Season enum, sun position, IsDay/IsNight, time wrapping
+8. **Screen Transitions** — 9 TransitionTypes, phase progression (Idle→Out→Hold→In), midpoint detection
+9. **Cinematic System** — CinematicCameraComponent waypoints, easing, play/stop state
+10. **Profiler** — Singleton, RecordScope, frame history, FPS, Reset
+11. **Plugin System** — PluginManifest struct, PluginEntry state, scan/query (DLL loading not testable headlessly)
 
 ---
 

@@ -1,6 +1,6 @@
 # Enjin Engine -- Comprehensive Technical Analysis
 
-*Analysis Date: 2026-02-17*
+*Analysis Date: 2026-02-19*
 *Engine Version: Pre-release (Active Development)*
 *Language: C++20 | Graphics API: Vulkan | Build System: CMake*
 
@@ -110,13 +110,13 @@ graph TB
         IPhysicsBackend2D["IPhysicsBackend2D<br/>(Abstract 2D Interface)"]
         JoltBackend["JoltBackend<br/>(Jolt v5.2.0, Multi-threaded,<br/>CCD, 6 Joint Types)"]
         Box2DBackend["Box2DBackend<br/>(Box2D v3.0.0, Sub-stepping,<br/>5 Joint Types, CCD)"]
-        SimplePhysics["SimplePhysics<br/>(Legacy, Compile-Guarded)"]
-        PhysicsFactory["PhysicsBackendFactory<br/>(Auto/Jolt/Box2D/Simple)"]
+        PhysicsFactory["PhysicsBackendFactory<br/>(Auto/Jolt/Box2D)"]
         SpatialHash["SpatialHashGrid<br/>(Broad-Phase O(N) vs O(N^2))"]
     end
 
     subgraph AudioLayer["Audio"]
         SimpleAudio["SimpleAudio<br/>(miniaudio Backend)"]
+        SteamAudio["SteamAudioProcessor<br/>(HRTF Binaural Rendering,<br/>Occlusion + Transmission,<br/>Geometry-Aware 3D)"]
         Audio3D["3D Spatialization"]
         AudioMixing["Multi-Channel Mixing"]
         MIDIInput["MIDI Input<br/>(WinMM, 12 AS Bindings)"]
@@ -325,9 +325,11 @@ graph TB
 ### Architectural Highlights
 
 - **Strict layering**: Core has zero Engine dependencies. Engine never references Editor or Player.
-- **Physics abstraction**: `IPhysicsBackend` / `IPhysicsBackend2D` interfaces allow swapping Jolt, Box2D, or SimplePhysics at runtime via `PhysicsBackendFactory`.
-- **Thread safety**: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start.
-- **Compile guards**: SimplePhysics can be entirely compiled out via `ENJIN_PHYSICS_SIMPLE=OFF`.
+- **Physics abstraction**: `IPhysicsBackend` / `IPhysicsBackend2D` interfaces allow swapping Jolt or Box2D at runtime via `PhysicsBackendFactory`. The legacy SimplePhysics backend was removed entirely in Feb 2026, eliminating technical debt.
+- **Thread safety**: ECS World uses recursive mutex for structural operations; entity destruction is deferred and flushed at frame start. O(1) entity validation via `unordered_set` (Feb 2026 ECS audit).
+- **Spatial audio pipeline**: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission, layered on top of the miniaudio backend.
+- **Hardened codebase**: 10+ audit rounds, 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting subsystems. All VkResult calls checked; null guards on all physics/audio paths.
+- **Test infrastructure**: 26 test executables (22 unit + 4 integration) organized into `Tests/Unit/` and `Tests/Integration/` with a shared `EnjinTest.h` framework.
 
 ---
 
@@ -397,6 +399,10 @@ This matrix compares Enjin's current feature set against five established game e
 | **Retro/CRT Effects** | Full | Basic | None | None | None | None |
 | **Flash/SWF Import** | Full | None | None | None | None | None |
 | **Newgrounds Integration** | Full | None | None | None | None | None |
+| **HRTF Binaural Audio** | Full | Partial | None | Full | None | None |
+| **Audio Occlusion/Transmission** | Full | Partial | None | Full | None | None |
+| **Sprite Normal Map Lighting** | Full | Full | Full | N/A | None | None |
+| **Automated Test Suite** | Full | Full | Partial | Full | None | None |
 
 ### Summary by Engine
 
@@ -499,6 +505,23 @@ gantt
     Networking Security (HMAC-SHA256)           :done, q4, 2026-02-16, 2026-02-17
     5+ Security/Stability Audit Rounds          :done, q5, 2026-02-11, 2026-02-17
 
+    section Hardening & Audio (Week 12)
+    SimplePhysics Legacy Backend Removed        :done, h1, 2026-02-18, 2026-02-18
+    Steam Audio HRTF Phase 1 (Binaural)         :done, h2, 2026-02-18, 2026-02-18
+    Steam Audio Phase 2 (Occlusion/Transmission):done, h3, 2026-02-18, 2026-02-18
+    ECS Tier 1 Audit (O(1) Validation, 40 Tests):done, h4, 2026-02-17, 2026-02-17
+    Vulkan Renderer Hardening (VkResult/Leaks)  :done, h5, 2026-02-17, 2026-02-18
+    80+ Medium-Severity Audit Fixes (23 Files)  :done, h6, 2026-02-17, 2026-02-18
+    42 More Audit Fixes (Physics/Script/Scene)  :done, h7, 2026-02-18, 2026-02-18
+    Serialization & Asset Pack Hardening        :done, h8, 2026-02-18, 2026-02-18
+    6 New Test Suites (Physics2D, VS, BT, UI, Net, Fuzz) :done, h9, 2026-02-17, 2026-02-17
+    3 More Test Suites + Unit/Integration Reorg :done, h10, 2026-02-19, 2026-02-19
+    MaturityTier Badges (Hub + Marketplace)     :done, h11, 2026-02-19, 2026-02-19
+    Sprite Normal Map Lighting + Drop Shadows   :done, h12, 2026-02-18, 2026-02-18
+    CSM Cascade Blending + Tether Rework        :done, h13, 2026-02-18, 2026-02-18
+    Player Auto Title Screen + Pause Menu       :done, h14, 2026-02-18, 2026-02-18
+    Editor Viewport Camera/Gizmos in Play Mode  :done, h15, 2026-02-18, 2026-02-18
+
     section Planned
     macOS (MoltenVK)                            :active, pl1, 2026-03-01, 2026-06-01
     Console Platforms                           :active, pl2, 2026-06-01, 2027-06-01
@@ -506,7 +529,7 @@ gantt
     VR/XR (OpenXR)                              :active, pl4, 2027-01-01, 2027-06-01
 ```
 
-**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026).
+**Note:** There is a ~4-week gap between the initial Dec 23-25, 2025 foundation commits and the resumption of active development on Jan 22, 2026. The bulk of the engine (150+ features) was built in the subsequent 4 weeks (Jan 22 - Feb 17, 2026). Week 12 (Feb 17–19) focused on hardening: 120+ audit findings fixed, SimplePhysics removed, Steam Audio integrated, and test coverage expanded from 8 to 26 executables.
 
 ---
 
@@ -675,12 +698,13 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 | Audience Segment | Why Enjin Appeals | Primary Competitors |
 |---|---|---|
-| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for | Unity, Godot |
+| **Indie Developers** | All-in-one 2D+3D with built-in gameplay systems (save, quest, dialogue, AI) that competitors require plugins for. Hardened codebase with 26 test suites builds production confidence | Unity, Godot |
 | **Flash Game Creators** | SWF import, AS2/AS3 transpiler, Newgrounds.io API, HTML5 export, Flash-style timeline editor -- no other engine offers this combination | None (Enjin is unique) |
 | **Retro Game Makers** | CRT effects, pixel editor, 9 retro resolution presets, dithered gradients, stipple patterns, sprite sheet workflow | GameMaker, Pico-8 |
 | **Students & Educators** | Built-in behavior trees, visual scripting, procedural generation, and comprehensive accessibility -- strong teaching tool | Godot, Scratch |
 | **Accessibility-First Developers** | 8 colorblind modes, screen reader, switch access, dwell-click, high contrast (WCAG AAA), font scaling, reduced motion -- most comprehensive in any engine | None (Enjin leads) |
-| **Hobbyist/Prototypers** | 44 startup templates, template marketplace, pixel editor, drag-and-drop import, visual scripting -- minimal barrier to entry | Construct, GameMaker |
+| **Hobbyist/Prototypers** | 44 startup templates with MaturityTier badges, template marketplace, pixel editor, drag-and-drop import, visual scripting -- minimal barrier to entry | Construct, GameMaker |
+| **Audio-Focused Developers** | Steam Audio HRTF binaural rendering with geometry-aware occlusion/transmission -- professional spatial audio without middleware | Unity (via plugin), Unreal |
 
 ### Competitive Advantages
 
@@ -691,6 +715,8 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Flash ecosystem support** (SWF import, Newgrounds API)
 - **Deeper accessibility** (switch access, eye tracking, dwell-click, WCAG AAA themes)
 - **Shader graph with GLSL codegen** (Godot has visual shaders but different approach)
+- **Steam Audio HRTF spatial audio** with occlusion/transmission (Godot has no equivalent)
+- **Hardened codebase** with 10+ audit rounds and 26 test suites (Godot community-tested only)
 
 #### vs. Unity
 - **No license fees or runtime fees** (Unity's pricing has alienated developers)
@@ -699,6 +725,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Retro/pixel art pipeline** built-in (Unity requires third-party assets)
 - **Accessibility-first design** (Unity's accessibility is addon-dependent)
 - **Simpler, focused scope** (less bloat than Unity's multi-purpose platform)
+- **Built-in Steam Audio HRTF** without middleware setup (Unity requires separate Steam Audio plugin)
 
 #### vs. Unreal
 - **Dramatically simpler** -- approachable for solo devs and small teams
@@ -733,6 +760,10 @@ Enjin occupies a unique position in the game engine market by targeting several 
 
 5. **9+ Procedural Generation Algorithms**: Cellular automata, BSP, diamond-square, L-system (3D stochastic), WFC, Voronoi, random walker, grammar rules, prefab assembler, fractal terrain with hydraulic/thermal erosion -- all with editor preview panels and script bindings.
 
+6. **Physics-Based Spatial Audio**: Steam Audio HRTF binaural rendering with geometry-aware occlusion and transmission. Collider meshes double as acoustic geometry -- no separate audio mesh authoring required. Fallback to miniaudio built-in spatialization on hardware without HRTF support.
+
+7. **Audited, Hardened Codebase**: 10+ systematic audit rounds with 205+ findings fixed across Vulkan renderer, ECS, serialization, physics, and scripting. Published audit reports demonstrate production-grade code quality. Trust zone boundary map documents all system interaction points.
+
 ### Market Gaps Filled
 
 - **Post-Flash web game development**: No engine specifically targets the Flash game community
@@ -740,6 +771,7 @@ Enjin occupies a unique position in the game engine market by targeting several 
 - **Solo dev all-in-one**: Reduces dependency on plugin ecosystems and third-party assets
 - **Retro game creation with modern tooling**: Bridges pixel art workflow with modern rendering pipeline
 - **Educational game engine**: Built-in visual scripting, behavior trees, and procedural generation make it ideal for teaching
+- **Indie spatial audio**: Professional HRTF audio without Wwise/FMOD middleware costs or setup complexity
 
 ---
 
@@ -872,11 +904,11 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 | Risk | Severity | Mitigation |
 |---|---|---|
 | **Single-developer bus factor** | Critical | Open-source core, contributor onboarding docs, modular architecture |
-| **Godot momentum** | High | Differentiate via Flash revival, accessibility, built-in gameplay systems |
+| **Godot momentum** | High | Differentiate via Flash revival, accessibility, built-in gameplay systems, Steam Audio HRTF, and audited codebase |
 | **Unity/Unreal price corrections** | Medium | Enjin's unique features (retro, Flash, accessibility) are not price-dependent |
 | **Console certification barriers** | Medium | Partner with porting houses; focus on PC/web/mobile first |
 | **Community building** | High | Invest in documentation, tutorials, Discord, game jams |
-| **Performance perception** | Medium | Benchmark comparisons, demo projects, stress test results |
+| **Performance perception** | Medium | Benchmark comparisons, demo projects, 26 test suites, published audit reports build confidence |
 | **API stability concerns** | Medium | Semver, deprecation policy, migration guides |
 
 ---
@@ -885,7 +917,7 @@ For context, Godot reached ~2,500 monthly contributors and an estimated 500K-1M 
 
 ### Optimization Status
 
-All performance issues from P0 through P5 have been resolved. The engine has undergone 8+ rounds of auditing (performance + security + stability + feature wiring) with 350+ findings addressed across 5 formal audit reports.
+All performance issues from P0 through P6 have been resolved. The engine has undergone 10+ rounds of auditing (performance + security + stability + feature wiring) with 205+ findings fixed across 7 formal audit reports (AUDIT_2026_02_11 through AUDIT_2026_02_18, plus per-subsystem reports for ECS, Renderer, Serialization, Asset Pack, and Physics/Audio).
 
 #### Resolved Optimizations (Good Patterns)
 
@@ -918,14 +950,15 @@ All performance issues from P0 through P5 have been resolved. The engine has und
 | **Descriptor Cache Hit Rate** | > 70% | ~75-85% | Material sort driven |
 | **Entity Lookup (by name)** | < 0.01ms | O(1) | Hash map cache |
 | **Physics (1000 Colliders, Jolt)** | < 4ms | ~2-3ms | Multi-threaded Jolt |
-| **Physics (1000 Colliders, Simple)** | < 16ms | ~18ms | Legacy -- not recommended |
+| **Entity Validation** | O(1) | O(1) | `unordered_set` for `IsValid()` (ECS audit) |
 
 #### Performance Tier Classification
 
 **Enjin sits firmly in the "Indie Production" tier**, capable of handling:
-- 2D games with thousands of sprites at 60fps (atlas batching)
-- 3D games with hundreds of entities and full shadow/lighting at 60fps
+- 2D games with thousands of sprites at 60fps (atlas batching + normal map lighting)
+- 3D games with hundreds of entities and full shadow/lighting at 60fps (CSM w/ cascade blending)
 - Ray tracing on supported hardware (RT-capable GPU required)
+- HRTF spatial audio with geometry-aware occlusion (Steam Audio)
 - LAN multiplayer with 20Hz state sync and client-side prediction
 
 It is **not positioned for AAA-scale** rendering (no virtual texturing, no Nanite-style mesh LOD, no massive open-world streaming), but it exceeds the requirements of its target market (indie/hobbyist/retro/Flash).
@@ -955,11 +988,11 @@ pie title Frame Budget Breakdown (3D, 60fps)
 |---|---|---|
 | **Architecture** | Strong | Clean 3-layer separation (Core/Engine/App), no circular dependencies |
 | **Thread Safety** | Good | ECS World uses recursive mutex (incl. IsValid/IsPendingDestruction), deferred destruction with set-cleared on Clear(), atomic refcounts |
-| **Error Handling** | Good | Vulkan error checks at 9+ sites, JSON `.contains()` validation, bounds checking, GPU loop caps (god rays 256, contact shadows 64) |
-| **Memory Management** | Good | Custom allocators (Stack/Pool/Linear), `reserve()` on hot-path vectors, no known leaks |
+| **Error Handling** | Strong | Vulkan VkResult checks at 25+ sites (all hardened Feb 2026), JSON `.contains()` validation, bounds checking, GPU loop caps, null guards on all physics/audio paths |
+| **Memory Management** | Good | Custom allocators (Stack/Pool/Linear), `reserve()` on hot-path vectors, leak-free Vulkan failure paths (verified in renderer audit) |
 | **API Consistency** | Good | Consistent naming conventions (Get/Set/Is), ENJIN_API export macro |
-| **Test Coverage** | Basic | Custom CTest framework with 4 unit tests (Math, ECS, PhysicsTypes, Memory) + 4 integration tests (Serializer, DungeonCrawler, SMT, StressTest). No third-party test framework (Catch2/GTest) |
-| **Documentation** | Strong | CLAUDE.md (~450 lines), 17+ doc files, generated API docs, inline tooltips |
+| **Test Coverage** | Good | Custom CTest framework with 22 unit test suites + 4 integration tests = 26 executables. 40 ECS test cases. Tests organized into `Tests/Unit/` and `Tests/Integration/` (expanded from 8 in Feb 2026 audit campaign) |
+| **Documentation** | Strong | CLAUDE.md (~470 lines), 20+ doc files (incl. 7 audit reports), trust zone boundary map, generated API docs, inline tooltips |
 
 ### Areas Needing Refactoring
 
@@ -972,7 +1005,7 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | **XOR obfuscation** | Asset pack uses trivially breakable XOR (not cryptographically secure) | Medium | Medium -- replace with AES-GCM |
 | **Script #include paths** | Resolved via `lexically_normal()` but not restricted to script directory | Medium | Low -- add path validation |
 | **32 editor panel bits** | All 32 bits of `EditorPanel` used; graph editors use `IsOpen()/SetOpen()` workaround | Low | Medium -- refactor to bitset or map |
-| **SimplePhysics legacy** | Still compilable via `ENJIN_PHYSICS_SIMPLE=ON` but redundant with Jolt/Box2D | Low | Low -- deprecation timeline |
+| ~~**SimplePhysics legacy**~~ | **RESOLVED** — Removed entirely (Feb 2026). Source files deleted, enum entry removed, factory updated. | ~~Low~~ | ~~Low~~ |
 
 ### Scalability Concerns
 
@@ -998,19 +1031,22 @@ pie title Frame Budget Breakdown (3D, 60fps)
 | Effects & Procedural | ~68 | Low | Self-contained, rarely touched after creation |
 | Build & Assets | ~43 | Low | Stable pipeline, import/export |
 | GUI & Localization | ~31 | Medium | UI canvas, dialogue, menus, localization |
-| Physics (3 backends) | ~24 | Low | Backends are stable, interfaces fixed |
+| Physics (2 backends) | ~18 | Low | Jolt + Box2D stable, SimplePhysics removed. Both hardened (null guards, input clamping) |
 | Gameplay & Networking | ~40 | Medium | Save system, quests, LAN multiplayer |
-| Accessibility & Audio | ~23 | Low | Content warnings, miniaudio backend |
+| Accessibility & Audio | ~25 | Low | Content warnings, miniaudio + Steam Audio HRTF backend |
+| Tests | ~27 | Low | 22 unit + 4 integration test files, shared EnjinTest.h framework |
 | Other (AI, Animation, Scene, Plugin, Input, Debug) | ~57 | Low | Many small self-contained modules |
-| **Total** | **~614** | **Medium overall** | Modular architecture helps |
+| **Total** | **~637** | **Medium overall** | Modular architecture helps; major debt reduced by audit campaign |
 
 ### Recommended Priority Actions
 
-1. **Expand unit test coverage** -- custom CTest framework exists with 4 unit + 4 integration tests, but coverage is minimal relative to codebase size. Consider adding Catch2 or GoogleTest for richer assertions
+1. ~~**Expand unit test coverage**~~ — **SIGNIFICANT PROGRESS**: Expanded from 8 to 26 test executables (22 unit + 4 integration) covering Physics2D, VisualScript, BehaviorTree, UISystem, Networking, and StressFuzz. Next: add coverage for Renderer and Build subsystems
 2. **Extract EditorLayer panels** into individual classes to reduce file size and improve maintainability
 3. **Replace XOR obfuscation** with authenticated encryption for commercial releases
-4. **Restrict script #include paths** to project directory to prevent path traversal
-5. **Deprecation timeline for SimplePhysics** -- set a version target for removal
+4. **Restrict script #include paths** to project directory to prevent path traversal — *partially mitigated by `lexically_normal()` validation*
+5. ~~**Deprecation timeline for SimplePhysics**~~ — **COMPLETE**: Removed entirely Feb 2026
+6. **Asset pack format versioning** — Add version header to `.enjpak` format for forward compatibility (identified in serialization audit)
+7. **Address 13 remaining deferred audit findings** — Mostly low-severity items across asset pack format and string length validation
 
 ---
 
