@@ -913,6 +913,7 @@ private:
     bool m_BuildFinished = false;
     float m_BuildProgress = 0.0f;
     std::string m_BuildProgressPhase;
+    bool m_BuildQuickCreateReset = true;  // Reset quick-create form when build dialog reopens
 
     // ImGui texture descriptor cache for sprite/tilemap previews
     std::unordered_map<std::string, VkDescriptorSet> m_ImGuiTextureCache;

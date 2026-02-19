@@ -150,6 +150,9 @@ struct EditorSettings {
     u32 externalIDE = 0;          // 0=Auto, 1=VS Code, 2=Visual Studio, 3=Rider, 4=Custom
     std::string customIDEPath;     // Only used when externalIDE == 4
 
+    // Last directory used for project creation/open (persisted across sessions)
+    std::string lastProjectDir;
+
     // Recent projects (most recent first, max 8)
     std::vector<std::string> recentProjects;
     static constexpr int MAX_RECENT_PROJECTS = 8;

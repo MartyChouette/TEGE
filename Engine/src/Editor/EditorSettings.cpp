@@ -382,6 +382,11 @@ bool EditorSettings::Save(const std::string& path) const {
         j["externalIDE"] = externalIDE;
         j["customIDEPath"] = customIDEPath;
 
+        // Last project directory
+        if (!lastProjectDir.empty()) {
+            j["lastProjectDir"] = lastProjectDir;
+        }
+
         // Recent projects
         j["recentProjects"] = json::array();
         for (const auto& rp : recentProjects) {
@@ -529,6 +534,9 @@ bool EditorSettings::Load(const std::string& path) {
         // External IDE
         if (j.contains("externalIDE")) externalIDE = j["externalIDE"].get<u32>();
         if (j.contains("customIDEPath")) customIDEPath = j["customIDEPath"].get<std::string>();
+
+        // Last project directory
+        if (j.contains("lastProjectDir")) lastProjectDir = j["lastProjectDir"].get<std::string>();
 
         // Recent projects
         if (j.contains("recentProjects") && j["recentProjects"].is_array()) {
