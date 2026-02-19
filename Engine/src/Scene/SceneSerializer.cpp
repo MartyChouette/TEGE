@@ -3428,13 +3428,17 @@ json SerializeTetherComponent(const ECS::TetherComponent& t) {
     j["stemEntity"] = static_cast<u64>(t.stemEntity);
     j["connectedEntity"] = static_cast<u64>(t.connectedEntity);
     j["attachLocalPos"] = SerializeVector3(t.attachLocalPos);
-    j["breakDistance"] = RF(t.breakDistance);
-    j["tensionRamp"] = RF(t.tensionRamp);
+    j["maxDistance"] = RF(t.maxDistance);
+    j["relativeSpeedThreshold"] = RF(t.relativeSpeedThreshold);
+    j["ownSpeedThreshold"] = RF(t.ownSpeedThreshold);
+    j["absoluteTravelThreshold"] = RF(t.absoluteTravelThreshold);
+    j["relativeTravelThreshold"] = RF(t.relativeTravelThreshold);
+    j["armDelay"] = RF(t.armDelay);
     j["autoMass"] = RF(t.autoMass);
     j["autoSpringK"] = RF(t.autoSpringK);
     j["autoDamping"] = RF(t.autoDamping);
-    j["autoBreakForce"] = RF(t.autoBreakForce);
     j["autoDrag"] = RF(t.autoDrag);
+    j["driveMaxForce"] = RF(t.driveMaxForce);
     return j;
 }
 
@@ -3443,13 +3447,19 @@ ECS::TetherComponent DeserializeTetherComponent(const json& j) {
     if (j.contains("stemEntity")) t.stemEntity = static_cast<ECS::Entity>(j["stemEntity"].get<u64>());
     if (j.contains("connectedEntity")) t.connectedEntity = static_cast<ECS::Entity>(j["connectedEntity"].get<u64>());
     if (j.contains("attachLocalPos")) t.attachLocalPos = DeserializeVector3(j["attachLocalPos"]);
-    if (j.contains("breakDistance")) t.breakDistance = j["breakDistance"].get<f32>();
-    if (j.contains("tensionRamp")) t.tensionRamp = j["tensionRamp"].get<f32>();
+    if (j.contains("maxDistance")) t.maxDistance = j["maxDistance"].get<f32>();
+    // Backward compat: old breakDistance maps to maxDistance
+    else if (j.contains("breakDistance")) t.maxDistance = j["breakDistance"].get<f32>();
+    if (j.contains("relativeSpeedThreshold")) t.relativeSpeedThreshold = j["relativeSpeedThreshold"].get<f32>();
+    if (j.contains("ownSpeedThreshold")) t.ownSpeedThreshold = j["ownSpeedThreshold"].get<f32>();
+    if (j.contains("absoluteTravelThreshold")) t.absoluteTravelThreshold = j["absoluteTravelThreshold"].get<f32>();
+    if (j.contains("relativeTravelThreshold")) t.relativeTravelThreshold = j["relativeTravelThreshold"].get<f32>();
+    if (j.contains("armDelay")) t.armDelay = j["armDelay"].get<f32>();
     if (j.contains("autoMass")) t.autoMass = j["autoMass"].get<f32>();
     if (j.contains("autoSpringK")) t.autoSpringK = j["autoSpringK"].get<f32>();
     if (j.contains("autoDamping")) t.autoDamping = j["autoDamping"].get<f32>();
-    if (j.contains("autoBreakForce")) t.autoBreakForce = j["autoBreakForce"].get<f32>();
     if (j.contains("autoDrag")) t.autoDrag = j["autoDrag"].get<f32>();
+    if (j.contains("driveMaxForce")) t.driveMaxForce = j["driveMaxForce"].get<f32>();
     // Backward compat: if connectedEntity missing, default to stemEntity
     if (!j.contains("connectedEntity") && t.connectedEntity == ECS::INVALID_ENTITY) {
         t.connectedEntity = t.stemEntity;
@@ -3459,20 +3469,22 @@ ECS::TetherComponent DeserializeTetherComponent(const json& j) {
 
 json SerializeGrabbableComponent(const ECS::GrabbableComponent& g) {
     json j;
-    j["pullForce"] = RF(g.pullForce);
+    j["grabSpring"] = RF(g.grabSpring);
+    j["grabDamper"] = RF(g.grabDamper);
+    j["maxAccel"] = RF(g.maxAccel);
+    j["maxSpeed"] = RF(g.maxSpeed);
     j["grabRadius"] = RF(g.grabRadius);
-    j["maxPullDistance"] = RF(g.maxPullDistance);
-    j["maxVelocity"] = RF(g.maxVelocity);
     j["windSwayScale"] = RF(g.windSwayScale);
     return j;
 }
 
 ECS::GrabbableComponent DeserializeGrabbableComponent(const json& j) {
     ECS::GrabbableComponent g;
-    if (j.contains("pullForce")) g.pullForce = j["pullForce"].get<f32>();
+    if (j.contains("grabSpring")) g.grabSpring = j["grabSpring"].get<f32>();
+    if (j.contains("grabDamper")) g.grabDamper = j["grabDamper"].get<f32>();
+    if (j.contains("maxAccel")) g.maxAccel = j["maxAccel"].get<f32>();
+    if (j.contains("maxSpeed")) g.maxSpeed = j["maxSpeed"].get<f32>();
     if (j.contains("grabRadius")) g.grabRadius = j["grabRadius"].get<f32>();
-    if (j.contains("maxPullDistance")) g.maxPullDistance = j["maxPullDistance"].get<f32>();
-    if (j.contains("maxVelocity")) g.maxVelocity = j["maxVelocity"].get<f32>();
     if (j.contains("windSwayScale")) g.windSwayScale = j["windSwayScale"].get<f32>();
     return g;
 }
@@ -5205,6 +5217,38 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
         result.error = "No world set";
         result.filepath = filepath;
         return result;
+    }
+
+    if (filepath.empty()) {
+        SerializationResult result;
+        result.success = false;
+        result.error = "Cannot save: file path is empty";
+        result.filepath = filepath;
+        return result;
+    }
+
+    // Reject path traversal in save paths (symmetric with Load)
+    auto normalized = std::filesystem::path(filepath).lexically_normal().string();
+    if (normalized.find("..") != std::string::npos) {
+        SerializationResult result;
+        result.success = false;
+        result.error = "Path traversal rejected: " + filepath;
+        result.filepath = filepath;
+        return result;
+    }
+
+    // Ensure parent directory exists
+    auto parentDir = std::filesystem::path(filepath).parent_path();
+    if (!parentDir.empty() && !std::filesystem::exists(parentDir)) {
+        std::error_code ec;
+        std::filesystem::create_directories(parentDir, ec);
+        if (ec) {
+            SerializationResult result;
+            result.success = false;
+            result.error = "Failed to create directory: " + parentDir.string() + " (" + ec.message() + ")";
+            result.filepath = filepath;
+            return result;
+        }
     }
 
     try {

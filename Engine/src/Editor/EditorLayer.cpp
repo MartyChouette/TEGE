@@ -1202,6 +1202,19 @@ void EditorLayer::Update(f32 deltaTime) {
     // Begin profiler frame measurement
     Debug::Profiler::Instance().BeginFrame();
 
+    // Handle deferred scene load (requested during Render-phase ImGui callbacks).
+    // World::Clear() must not run during Render to avoid invalidating entity
+    // references still in use by the current frame's draw calls.
+    if (!m_PendingSceneLoadPath.empty()) {
+        std::string path = std::move(m_PendingSceneLoadPath);
+        m_PendingSceneLoadPath.clear();
+        if (!m_PlayMode.IsStopped()) {
+            m_PlayMode.Stop();
+            ClearSelection();
+        }
+        OpenSceneImmediate(path);
+    }
+
     // Handle deferred model import (requested during previous frame's Render).
     // The one-frame delay ensures the "Importing..." overlay is visible on screen
     // before the blocking import call runs.
@@ -1423,7 +1436,8 @@ void EditorLayer::Update(f32 deltaTime) {
                     { "Enjin Scene", "*.enjin" },
                     { "All Files", "*.*" }
                 };
-                std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
+                auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+                std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
                 if (!path.empty()) {
                     SaveScene(path);
                 }
@@ -3266,7 +3280,10 @@ void EditorLayer::DrawMenuBar() {
                     { "Enjin Scene", "*.enjin" },
                     { "All Files", "*.*" }
                 };
-                std::string path = FileDialog::OpenFile("Open Scene", filters);
+                auto sceneDir = m_CurrentScenePath.empty()
+                    ? std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string()
+                    : std::filesystem::path(m_CurrentScenePath).parent_path().string();
+                std::string path = FileDialog::OpenFile("Open Scene", filters, sceneDir);
                 if (!path.empty()) {
                     OpenScene(path);
                 }
@@ -3280,7 +3297,8 @@ void EditorLayer::DrawMenuBar() {
                         { "Enjin Scene", "*.enjin" },
                         { "All Files", "*.*" }
                     };
-                    std::string path = FileDialog::SaveFile("Save Scene", filters, "", "scene.enjin");
+                    auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+                    std::string path = FileDialog::SaveFile("Save Scene", filters, projRoot, "scene.enjin");
                     if (!path.empty()) {
                         SaveScene(path);
                     }
@@ -3293,7 +3311,10 @@ void EditorLayer::DrawMenuBar() {
                 };
                 std::string defaultName = m_CurrentScenePath.empty() ? "scene.enjin" :
                     std::filesystem::path(m_CurrentScenePath).filename().string();
-                std::string path = FileDialog::SaveFile("Save Scene As", filters, "", defaultName);
+                auto saveDir = m_CurrentScenePath.empty()
+                    ? std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string()
+                    : std::filesystem::path(m_CurrentScenePath).parent_path().string();
+                std::string path = FileDialog::SaveFile("Save Scene As", filters, saveDir, defaultName);
                 if (!path.empty()) {
                     SaveScene(path);
                 }
@@ -3323,13 +3344,25 @@ void EditorLayer::DrawMenuBar() {
                     { "Enjin Project", "*.enjinproject" },
                     { "All Files", "*.*" }
                 };
-                std::string path = FileDialog::OpenFile("Open Project", filters);
+                auto projDir = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+                std::string path = FileDialog::OpenFile("Open Project", filters, projDir);
                 if (!path.empty()) {
                     if (m_SceneManager.LoadProject(path)) {
                         ENJIN_LOG_INFO(Editor, "Loaded project: %s", m_SceneManager.GetProjectName().c_str());
-                        // Auto-load start scene if available
-                        if (m_SceneManager.GetSceneCount() > 0) {
-                            m_SceneManager.LoadStartScene();
+                        // OpenScene defers to Update to avoid World::Clear during Render
+                        auto& scenes = m_SceneManager.GetScenes();
+                        std::string scenePath;
+                        for (const auto& s : scenes) {
+                            if (s.isStartScene) {
+                                scenePath = (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / s.path).string();
+                                break;
+                            }
+                        }
+                        if (scenePath.empty() && !scenes.empty()) {
+                            scenePath = (std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path() / scenes[0].path).string();
+                        }
+                        if (!scenePath.empty()) {
+                            OpenScene(scenePath);
                         }
                     }
                 }
@@ -3342,10 +3375,14 @@ void EditorLayer::DrawMenuBar() {
                     };
                     std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
                     if (!path.empty()) {
-                        m_SceneManager.SaveProject(path);
+                        if (!m_SceneManager.SaveProject(path)) {
+                            ShowNotification("Failed to save project", NotificationType::Error);
+                        }
                     }
                 } else {
-                    m_SceneManager.SaveProject();
+                    if (!m_SceneManager.SaveProject()) {
+                        ShowNotification("Failed to save project", NotificationType::Error);
+                    }
                 }
             }
             if (ImGui::MenuItem("Save Project As...")) {
@@ -3357,7 +3394,9 @@ void EditorLayer::DrawMenuBar() {
                     std::filesystem::path(m_SceneManager.GetProjectPath()).filename().string();
                 std::string path = FileDialog::SaveFile("Save Project As", filters, "", defaultName);
                 if (!path.empty()) {
-                    m_SceneManager.SaveProject(path);
+                    if (!m_SceneManager.SaveProject(path)) {
+                        ShowNotification("Failed to save project", NotificationType::Error);
+                    }
                 }
             }
             ImGui::Separator();
@@ -3367,7 +3406,8 @@ void EditorLayer::DrawMenuBar() {
                     { "glTF Files", "*.gltf;*.glb" },
                     { "All Files", "*.*" }
                 };
-                std::string path = FileDialog::OpenFile("Import Model", filters);
+                auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+                std::string path = FileDialog::OpenFile("Import Model", filters, projRoot);
                 if (!path.empty()) {
                     ImportModel(path);
                 }
@@ -7404,7 +7444,8 @@ void EditorLayer::DrawAssetBrowserPanel() {
             { "3D Models", "*.gltf;*.glb;*.fbx;*.obj;*.dae;*.3ds" },
             { "All Files", "*.*" }
         };
-        std::string path = FileDialog::OpenFile("Import Model", filters);
+        auto projRoot = std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string();
+        std::string path = FileDialog::OpenFile("Import Model", filters, projRoot);
         if (!path.empty()) {
             ImportModel(path);
         }
@@ -7415,7 +7456,10 @@ void EditorLayer::DrawAssetBrowserPanel() {
             { "Enjin Scene", "*.enjin;*.json" },
             { "All Files", "*.*" }
         };
-        std::string path = FileDialog::OpenFile("Open Scene", filters);
+        auto sceneDir = m_CurrentScenePath.empty()
+            ? std::filesystem::path(m_SceneManager.GetProjectPath()).parent_path().string()
+            : std::filesystem::path(m_CurrentScenePath).parent_path().string();
+        std::string path = FileDialog::OpenFile("Open Scene", filters, sceneDir);
         if (!path.empty()) {
             OpenScene(path);
         }
@@ -8715,8 +8759,6 @@ void EditorLayer::DrawEditorSettingsPanel() {
                 ImGui::SetTooltip("Automatically enter fullscreen focus mode when pressing Play");
             }
 
-
-
             ImGui::TreePop();
         }
 
@@ -9031,8 +9073,8 @@ void EditorLayer::DrawProjectSettingsPanel() {
         int currentMode = static_cast<int>(m_SceneManager.GetProjectMode());
         if (ImGui::Combo("Project Mode", &currentMode, modeNames, 3)) {
             m_SceneManager.SetProjectMode(static_cast<Scene::ProjectMode>(currentMode));
-            if (!m_SceneManager.GetProjectPath().empty()) {
-                m_SceneManager.SaveProject();
+            if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+                ShowNotification("Failed to save project settings", NotificationType::Error);
             }
         }
         if (ImGui::IsItemHovered()) {
@@ -9089,8 +9131,8 @@ void EditorLayer::DrawProjectSettingsPanel() {
             if (currentBackend > 3) currentBackend = 0;
             if (ImGui::Combo("Physics Backend", &currentBackend, backendNames, 4)) {
                 m_SceneManager.SetPhysicsBackendType(static_cast<Physics::PhysicsBackendType>(currentBackend));
-                if (!m_SceneManager.GetProjectPath().empty()) {
-                    m_SceneManager.SaveProject();
+                if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+                    ShowNotification("Failed to save project settings", NotificationType::Error);
                 }
             }
             if (ImGui::IsItemHovered()) {
@@ -9216,8 +9258,8 @@ void EditorLayer::DrawProjectSettingsPanel() {
 
         if (changed) {
             m_SceneManager.SetGameFrameSettings(frameSettings);
-            if (!m_SceneManager.GetProjectPath().empty()) {
-                m_SceneManager.SaveProject();
+            if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+                ShowNotification("Failed to save project settings", NotificationType::Error);
             }
         }
 
@@ -10667,6 +10709,8 @@ void EditorLayer::DrawGameViewPanel() {
                 auto* flowerSys = m_PlayMode.GetFlowerSystem();
                 const auto& particles = flowerSys->GetParticles();
                 if (!particles.empty()) {
+                    // Clip all particle draws to the game view rectangle
+                    drawList->PushClipRect(p0, p1, true);
                     // Build view-projection matrix from game camera
                     Renderer::Camera projCam;
                     f32 camAspect = gameCameraComp->GetAspectRatio(m_GameViewWidth, m_GameViewHeight);
@@ -10691,7 +10735,8 @@ void EditorLayer::DrawGameViewPanel() {
                         f32 ndcY = clip.y / clip.w;
                         if (ndcX < -1.5f || ndcX > 1.5f || ndcY < -1.5f || ndcY > 1.5f) continue;
                         f32 sx = p0.x + (ndcX * 0.5f + 0.5f) * gvW;
-                        f32 sy = p0.y + (1.0f - (ndcY * 0.5f + 0.5f)) * gvH;
+                        // Vulkan projection already flips Y — no extra inversion needed
+                        f32 sy = p0.y + (ndcY * 0.5f + 0.5f) * gvH;
 
                         f32 t = fp.lifetime / fp.maxLifetime;
                         f32 alpha = (1.0f - t * t) * 255.0f;
@@ -10706,26 +10751,29 @@ void EditorLayer::DrawGameViewPanel() {
                         ImU32 col = IM_COL32(r, g, b, a);
 
                         if (fp.isLiquid) {
-                            // Streak rendering: draw thick line from head to tail
-                            // Tail position = where the particle was a moment ago
-                            Math::Vector3 tailPos = fp.position - fp.velocity * 0.03f;
+                            // Liquid streak: longer trail scaled by velocity for drippy look
+                            f32 velLen = fp.velocity.Length();
+                            f32 trailTime = 0.06f + velLen * 0.008f; // longer trail at high speed
+                            Math::Vector3 tailPos = fp.position - fp.velocity * trailTime;
                             Math::Vector4 tailClip = vp * Math::Vector4(tailPos.x, tailPos.y, tailPos.z, 1.0f);
                             f32 tx = sx, ty = sy;
                             if (tailClip.w > 0.01f) {
                                 f32 tndcX = tailClip.x / tailClip.w;
                                 f32 tndcY = tailClip.y / tailClip.w;
                                 tx = p0.x + (tndcX * 0.5f + 0.5f) * gvW;
-                                ty = p0.y + (1.0f - (tndcY * 0.5f + 0.5f)) * gvH;
+                                ty = p0.y + (tndcY * 0.5f + 0.5f) * gvH;
                             }
-                            f32 thickness = radius * 0.8f;
-                            if (thickness < 2.0f) thickness = 2.0f;
+                            // Thick at head, thin at tail (draw two lines for taper)
+                            f32 thickness = radius * 1.2f;
+                            if (thickness < 2.5f) thickness = 2.5f;
                             drawList->AddLine(ImVec2(sx, sy), ImVec2(tx, ty), col, thickness);
-                            // Head blob
-                            drawList->AddCircleFilled(ImVec2(sx, sy), radius * 0.6f, col);
+                            // Fat droplet head
+                            drawList->AddCircleFilled(ImVec2(sx, sy), radius * 0.9f, col);
                         } else {
                             drawList->AddCircleFilled(ImVec2(sx, sy), radius, col);
                         }
                     }
+                    drawList->PopClipRect();
                 }
             }
 
@@ -11337,8 +11385,8 @@ void EditorLayer::DrawRenderingPanel() {
             auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
                 m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
             m_SceneManager.SetDefaultRenderSettings(current);
-            if (!m_SceneManager.GetProjectPath().empty()) {
-                m_SceneManager.SaveProject();
+            if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+                ShowNotification("Failed to save project settings", NotificationType::Error);
             }
             ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
         }
@@ -11593,10 +11641,14 @@ void EditorLayer::DrawSceneListPanel() {
             };
             std::string path = FileDialog::SaveFile("Save Project", filters, "", "project.enjinproject");
             if (!path.empty()) {
-                m_SceneManager.SaveProject(path);
+                if (!m_SceneManager.SaveProject(path)) {
+                    ShowNotification("Failed to save project", NotificationType::Error);
+                }
             }
         } else {
-            m_SceneManager.SaveProject();
+            if (!m_SceneManager.SaveProject()) {
+                ShowNotification("Failed to save project", NotificationType::Error);
+            }
         }
     }
 
@@ -12464,14 +12516,13 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
             ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
             statusCol, statusText);
 
-        // Click to open
+        // Click to open (OpenScene defers to Update to avoid World::Clear during Render)
         if (hovered && exists && ImGui::IsMouseClicked(0)) {
             if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
                 auto& scenes = m_SceneManager.GetScenes();
                 if (!scenes.empty()) {
                     auto projDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path();
-                    std::string scenePath = (projDir / scenes[0].path).string();
-                    OpenScene(scenePath);
+                    OpenScene((projDir / scenes[0].path).string());
                 }
             }
             m_ShowProjectHub = false;
@@ -12567,8 +12618,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 con
                 auto& scenes = m_SceneManager.GetScenes();
                 if (!scenes.empty()) {
                     auto projDir = std::filesystem::path(path).parent_path();
-                    std::string scenePath = (projDir / scenes[0].path).string();
-                    OpenScene(scenePath);
+                    OpenScene((projDir / scenes[0].path).string());
                 }
                 m_ShowProjectHub = false;
             }
@@ -19202,16 +19252,18 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& crTether = m_World->AddComponent<ECS::TetherComponent>(crownEntity);
             crTether.stemEntity = stemEntity;
             crTether.connectedEntity = stemEntity;  // Crown connects to stem
-            crTether.attachLocalPos = Math::Vector3(0.0f, 0.8f, 0.0f);  // Offset below stem top so restLength > 0
-            crTether.breakDistance = 1.0f;
-            crTether.tensionRamp = 3.0f;
+            crTether.attachLocalPos = Math::Vector3(0.0f, 0.8f, 0.0f);
+            crTether.maxDistance = 1.0f;
+            crTether.relativeSpeedThreshold = 8.0f;
+            crTether.ownSpeedThreshold = 10.0f;
+            crTether.absoluteTravelThreshold = 8.0f;
+            crTether.relativeTravelThreshold = 8.0f;
             crTether.autoMass = 0.5f;
-            crTether.autoSpringK = 200.0f;
-            crTether.autoDamping = 12.0f;
-            crTether.autoBreakForce = 60.0f;
+            crTether.autoSpringK = 1500.0f;
+            crTether.autoDamping = 80.0f;
             crTether.autoDrag = 2.0f;
+            crTether.driveMaxForce = 600.0f;
             auto& crGrab = m_World->AddComponent<ECS::GrabbableComponent>(crownEntity);
-            crGrab.pullForce = 40.0f;
             crGrab.grabRadius = 0.25f;
         }
 
@@ -19249,25 +19301,24 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(petal);
             tether.stemEntity = stemEntity;           // For scoring
-            tether.connectedEntity = crownEntity;     // Physics connection to crown
-            tether.attachLocalPos = Math::Vector3(0.0f, 0.0f, 0.0f);  // Attach at crown center
-            tether.breakDistance = 0.8f;
-            tether.tensionRamp = 2.5f;
-            // Petal auto-physics (matches struct defaults)
+            tether.connectedEntity = crownEntity;     // Tether connection to crown
+            tether.attachLocalPos = Math::Vector3(0.0f, 0.0f, 0.0f);
+            tether.maxDistance = 0.75f;
+            tether.relativeSpeedThreshold = 6.0f;
+            tether.ownSpeedThreshold = 8.0f;
+            tether.absoluteTravelThreshold = 5.0f;
+            tether.relativeTravelThreshold = 5.0f;
             tether.autoMass = 0.3f;
-            tether.autoSpringK = 120.0f;
-            tether.autoDamping = 8.0f;
-            tether.autoBreakForce = 25.0f;
+            tether.autoSpringK = 1200.0f;
+            tether.autoDamping = 60.0f;
             tether.autoDrag = 1.5f;
+            tether.driveMaxForce = 500.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(petal);
-            grab.pullForce = 50.0f;
             grab.grabRadius = 0.3f;
 
-            // Collision filtering: petals don't collide with other petals
-            auto& petalCol = m_World->AddComponent<ECS::SphereColliderComponent>(petal);
-            petalCol.radius = 0.2f;
-            petalCol.categoryBits = (1u << 1);       // "Petals" group
-            petalCol.collisionMask = ~(1u << 1);      // Collide with everything except petals
+            // No physics collider — FlowerSystem uses ray-sphere picking via grabRadius,
+            // not physics-backed collision. Adding a collider would cause Jolt to create
+            // a body and fight with FlowerSystem's direct position control.
         }
 
         // Leaves along the stem (connected to stem)
@@ -19299,25 +19350,22 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             jelly.maxStretch = 0.8f;
             auto& tether = m_World->AddComponent<ECS::TetherComponent>(leaf);
             tether.stemEntity = stemEntity;           // For scoring
-            tether.connectedEntity = stemEntity;      // Physics connection to stem
+            tether.connectedEntity = stemEntity;      // Tether connection to stem
             tether.attachLocalPos = Math::Vector3(0.0f, height - 0.8f, 0.0f);
-            tether.breakDistance = 0.8f;
-            tether.tensionRamp = 2.0f;
-            // Leaf auto-physics
+            tether.maxDistance = 0.75f;
+            tether.relativeSpeedThreshold = 6.0f;
+            tether.ownSpeedThreshold = 8.0f;
+            tether.absoluteTravelThreshold = 5.0f;
+            tether.relativeTravelThreshold = 5.0f;
             tether.autoMass = 0.2f;
-            tether.autoSpringK = 100.0f;
-            tether.autoDamping = 6.0f;
-            tether.autoBreakForce = 20.0f;
+            tether.autoSpringK = 1000.0f;
+            tether.autoDamping = 50.0f;
             tether.autoDrag = 1.5f;
+            tether.driveMaxForce = 400.0f;
             auto& grab = m_World->AddComponent<ECS::GrabbableComponent>(leaf);
-            grab.pullForce = 60.0f;
             grab.grabRadius = 0.25f;
 
-            // Collision filtering: leaves don't collide with other leaves
-            auto& leafCol = m_World->AddComponent<ECS::SphereColliderComponent>(leaf);
-            leafCol.radius = 0.15f;
-            leafCol.categoryBits = (1u << 2);        // "Leaves" group
-            leafCol.collisionMask = ~(1u << 2);       // Collide with everything except leaves
+            // No physics collider — FlowerSystem uses ray-sphere picking via grabRadius.
         }
 
         // Camera
@@ -24551,6 +24599,12 @@ void EditorLayer::SaveScene(const std::string& path) {
         return;
     }
 
+    if (path.empty()) {
+        ENJIN_LOG_ERROR(Editor, "Cannot save scene: path is empty");
+        m_ConsoleLog.push_back("[Error] Cannot save scene: path is empty");
+        return;
+    }
+
     Scene::SceneSerializer serializer(m_World);
     if (m_RenderSystem) {
         serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
@@ -24585,9 +24639,21 @@ void EditorLayer::SaveScene(const std::string& path) {
 }
 
 void EditorLayer::OpenScene(const std::string& path) {
+    // Defer to Update phase — World::Clear() must not run during Render
+    // to avoid invalidating entity references used by the current frame.
+    m_PendingSceneLoadPath = path;
+}
+
+void EditorLayer::OpenSceneImmediate(const std::string& path) {
     if (!m_World) {
         ENJIN_LOG_ERROR(Editor, "Cannot open scene: no world loaded");
         m_ConsoleLog.push_back("[Error] Cannot open scene: no world loaded");
+        return;
+    }
+
+    if (path.empty()) {
+        ENJIN_LOG_ERROR(Editor, "Cannot open scene: path is empty");
+        m_ConsoleLog.push_back("[Error] Cannot open scene: path is empty");
         return;
     }
 
@@ -24634,6 +24700,7 @@ void EditorLayer::OpenScene(const std::string& path) {
         ss << "[Error] Failed to load scene: " << result.error;
         m_ConsoleLog.push_back(ss.str());
         ENJIN_LOG_ERROR(Editor, "Failed to load scene from %s: %s", path.c_str(), result.error.c_str());
+        ShowNotification("Failed to load scene: " + std::filesystem::path(path).filename().string(), NotificationType::Error);
     }
 }
 
@@ -27740,15 +27807,23 @@ void EditorLayer::DrawTetherComponent(ECS::Entity entity) {
 
         f32 attachPos[3] = { tether->attachLocalPos.x, tether->attachLocalPos.y, tether->attachLocalPos.z };
         InspectorUndo::DragFloat3(m_UndoRedo, "Attach Local Pos", attachPos, [tether](f32 x, f32 y, f32 z) { tether->attachLocalPos = Math::Vector3(x, y, z); }, 0.01f);
-        InspectorUndo::SliderFloat(m_UndoRedo, "Break Distance", &tether->breakDistance, 0.1f, 5.0f);
-        InspectorUndo::SliderFloat(m_UndoRedo, "Tension Ramp", &tether->tensionRamp, 0.5f, 5.0f);
 
-        if (ImGui::TreeNode("Auto Physics Setup")) {
+        if (ImGui::TreeNode("Break Criteria")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Max Distance##tether", &tether->maxDistance, 0.05f, 0.1f, 5.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Relative Speed##tether", &tether->relativeSpeedThreshold, 0.5f, 1.0f, 30.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Own Speed##tether", &tether->ownSpeedThreshold, 0.5f, 1.0f, 30.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Abs Travel##tether", &tether->absoluteTravelThreshold, 0.5f, 1.0f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Rel Travel##tether", &tether->relativeTravelThreshold, 0.5f, 1.0f, 50.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Arm Delay##tether", &tether->armDelay, 0.01f, 0.0f, 1.0f);
+            ImGui::TreePop();
+        }
+
+        if (ImGui::TreeNode("Spring/Damper")) {
             InspectorUndo::DragFloat(m_UndoRedo, "Mass##tether", &tether->autoMass, 0.05f, 0.01f, 10.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Spring K##tether", &tether->autoSpringK, 1.0f, 1.0f, 500.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Damping##tether", &tether->autoDamping, 0.5f, 0.0f, 50.0f);
-            InspectorUndo::DragFloat(m_UndoRedo, "Break Force##tether", &tether->autoBreakForce, 1.0f, 1.0f, 200.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Spring K##tether", &tether->autoSpringK, 10.0f, 1.0f, 5000.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Damping##tether", &tether->autoDamping, 1.0f, 0.0f, 200.0f);
             InspectorUndo::DragFloat(m_UndoRedo, "Drag##tether", &tether->autoDrag, 0.1f, 0.0f, 20.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Max Force##tether", &tether->driveMaxForce, 10.0f, 1.0f, 2000.0f);
             ImGui::TreePop();
         }
 
@@ -27772,10 +27847,11 @@ void EditorLayer::DrawGrabbableComponent(ECS::Entity entity) {
         auto* grab = m_World->GetComponent<ECS::GrabbableComponent>(entity);
         if (!grab) return;
 
-        InspectorUndo::SliderFloat(m_UndoRedo, "Pull Force", &grab->pullForce, 1.0f, 50.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Grab Spring", &grab->grabSpring, 1.0f, 1.0f, 500.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Grab Damper", &grab->grabDamper, 0.5f, 0.0f, 100.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Accel", &grab->maxAccel, 1.0f, 1.0f, 200.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Speed", &grab->maxSpeed, 0.5f, 1.0f, 50.0f);
         InspectorUndo::SliderFloat(m_UndoRedo, "Grab Radius", &grab->grabRadius, 0.1f, 5.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Max Pull Distance", &grab->maxPullDistance, 0.1f, 0.5f, 10.0f);
-        InspectorUndo::DragFloat(m_UndoRedo, "Max Velocity", &grab->maxVelocity, 1.0f, 5.0f, 200.0f);
         InspectorUndo::SliderFloat(m_UndoRedo, "Wind Sway Scale", &grab->windSwayScale, 0.0f, 1.0f);
 
         if (grab->isGrabbed) {
@@ -30959,6 +31035,7 @@ void EditorLayer::DrawBuildDialog() {
             auto p = std::filesystem::path(path);
             if (p.has_extension()) p = p.parent_path();
             std::strncpy(outputDir, p.string().c_str(), sizeof(outputDir) - 1);
+            outputDir[sizeof(outputDir) - 1] = '\0';
         }
     }
     m_BuildConfig.outputDir = outputDir;
@@ -37272,8 +37349,11 @@ void EditorLayer::DrawHTML5ExportDialog() {
 
     if (!initialized || ImGui::IsWindowAppearing()) {
         strncpy(titleBuf, m_HTML5Config.title.c_str(), sizeof(titleBuf) - 1);
+        titleBuf[sizeof(titleBuf) - 1] = '\0';
         strncpy(outputBuf, m_HTML5Config.outputDir.c_str(), sizeof(outputBuf) - 1);
+        outputBuf[sizeof(outputBuf) - 1] = '\0';
         strncpy(bgColorBuf, m_HTML5Config.backgroundColor.c_str(), sizeof(bgColorBuf) - 1);
+        bgColorBuf[sizeof(bgColorBuf) - 1] = '\0';
         initialized = true;
     }
 
@@ -37337,6 +37417,7 @@ void EditorLayer::DrawHTML5ExportDialog() {
         if (!path.empty()) {
             m_HTML5Config.outputDir = path;
             strncpy(outputBuf, path.c_str(), sizeof(outputBuf) - 1);
+            outputBuf[sizeof(outputBuf) - 1] = '\0';
         }
     }
 

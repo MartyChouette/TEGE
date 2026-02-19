@@ -35,6 +35,16 @@ void SceneManager::NewProject(const std::string& projectName) {
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
     try {
+        if (manifestPath.empty()) {
+            ENJIN_LOG_ERROR(Asset, "Cannot load project: path is empty");
+            return false;
+        }
+
+        if (!std::filesystem::is_regular_file(manifestPath)) {
+            ENJIN_LOG_ERROR(Asset, "Project path is not a file: %s", manifestPath.c_str());
+            return false;
+        }
+
         std::ifstream file(manifestPath);
         if (!file.is_open()) {
             ENJIN_LOG_ERROR(Asset, "Failed to open project file: %s", manifestPath.c_str());
@@ -45,6 +55,7 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
         file >> root;
         file.close();
 
+        // Only update state after successful parse
         m_ManifestPath = manifestPath;
         m_ProjectRoot = std::filesystem::path(manifestPath).parent_path().string();
         m_ProjectName = root.value("projectName", "Untitled Project");
@@ -57,6 +68,13 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
                 entry.path = sceneJson.value("path", "");
                 entry.buildIndex = sceneJson.value("buildIndex", -1);
                 entry.isStartScene = sceneJson.value("isStartScene", false);
+
+                // Skip entries with empty paths
+                if (entry.path.empty()) {
+                    ENJIN_LOG_WARN(Asset, "Scene '%s' has empty path, skipping", entry.name.c_str());
+                    continue;
+                }
+
                 m_Scenes.push_back(entry);
             }
         }
@@ -115,6 +133,10 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
 
     } catch (const std::exception& e) {
         ENJIN_LOG_ERROR(Asset, "Error loading project: %s", e.what());
+        // Clear state so stale manifest path isn't used for subsequent saves
+        m_ManifestPath.clear();
+        m_ProjectRoot.clear();
+        m_Scenes.clear();
         return false;
     }
 }
@@ -284,6 +306,10 @@ bool SceneManager::LoadScene(const std::string& name) {
     } else {
         // Load from filesystem (Editor)
         std::string fullPath = ResolvePath(entry->path);
+        if (fullPath.empty()) {
+            ENJIN_LOG_ERROR(Asset, "Failed to resolve scene path: %s", entry->path.c_str());
+            return false;
+        }
         result = serializer.Load(fullPath, true);
     }
 
@@ -348,6 +374,10 @@ bool SceneManager::LoadSceneAdditive(const std::string& name) {
     } else {
         // Load from filesystem (Editor)
         std::string fullPath = ResolvePath(entry->path);
+        if (fullPath.empty()) {
+            ENJIN_LOG_ERROR(Asset, "Failed to resolve scene path: %s", entry->path.c_str());
+            return false;
+        }
         result = serializer.LoadAdditive(fullPath);
     }
 
@@ -418,16 +448,25 @@ void SceneManager::UpdateTransition(f32 deltaTime) {
 // --- Helpers ---
 
 std::string SceneManager::ResolvePath(const std::string& relativePath) const {
-    if (m_ProjectRoot.empty()) {
-        return relativePath;
+    if (relativePath.empty()) {
+        ENJIN_LOG_ERROR(Asset, "ResolvePath: empty path");
+        return "";
     }
+
+    if (m_ProjectRoot.empty()) {
+        ENJIN_LOG_ERROR(Asset, "ResolvePath: no project loaded, cannot resolve '%s'", relativePath.c_str());
+        return "";
+    }
+
     std::filesystem::path full = std::filesystem::path(m_ProjectRoot) / relativePath;
     // SN-C5: Validate resolved path stays within project root
     auto resolved = full.lexically_normal();
     auto root = std::filesystem::path(m_ProjectRoot).lexically_normal();
     auto resolvedStr = resolved.string();
     auto rootStr = root.string();
-    if (resolvedStr.find(rootStr) != 0) {
+    // Ensure resolved path is either the root itself or starts with root + separator
+    if (resolvedStr != rootStr &&
+        resolvedStr.find(rootStr + std::string(1, std::filesystem::path::preferred_separator)) != 0) {
         ENJIN_LOG_ERROR(Asset, "ResolvePath: path traversal rejected: %s", relativePath.c_str());
         return "";
     }

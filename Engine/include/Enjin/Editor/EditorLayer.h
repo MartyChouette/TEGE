@@ -474,6 +474,7 @@ private:
     // Scene management
     void SaveScene(const std::string& path);
     void OpenScene(const std::string& path);
+    void OpenSceneImmediate(const std::string& path);
 
     // Entity operations
     void DuplicateEntity(ECS::Entity entity);
@@ -891,6 +892,9 @@ private:
     bool m_ImportDialogIsReimport = false; // Cached on dialog open
     Assets::SourceApp m_ImportDialogDetectedApp = Assets::SourceApp::Auto;  // Auto-detected source app
     bool m_ImportDialogScaleFromPreset = false;  // True if scale was auto-filled from preset
+
+    // Deferred scene open (prevents World::Clear during Render-phase ImGui callbacks)
+    std::string m_PendingSceneLoadPath;
 
     // Deferred import (renders one "Loading..." frame before the blocking import)
     bool m_ImportPending = false;
