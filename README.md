@@ -1,504 +1,510 @@
-# Enjin Engine
+<div align="center">
 
-A proprietary, licensable game engine built from scratch using C++20 and the Vulkan graphics API. Features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering capabilities.
+# TEGE
 
-## Features
+### The Enjin Game Engine
 
-### Rendering
-- **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
-- **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
-- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), receiveShadows toggle, dithered gradient banding (2-8 bands, 6 dither patterns)
-- **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes), post-process volumes with spatial blending (Box/Sphere shapes, priority-based, smoothstep falloff, selective override mask)
-- **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
-- **Weather System** - Rain, snow, fog, storms with toggleable lightning
-- **Water Rendering** - 3D water plane with Gerstner waves, shore foam, freeze system, ocean mode
-- **Skybox** - Procedural gradient sky, solid color, or six-face cubemap with rotation and sun direction
-- **Vegetation** - Instanced grass, shrub, and tree rendering with wind sway
-- **Terrain** - 3D heightmap terrain with sculpting brushes (raise, lower, flatten, smooth, paint) and 2D polyline terrain with drag-to-edit control points
-- **Multiple Light Sources** - Directional, point, and spot lights with shadow support for all three types
-- **GPU Skinning** - Skeletal animation via bone matrix SSBO
-- **Wireframe Rendering** - Toggle wireframe mode with wide line support
-- **World Curvature** - Vertex-shader horizon bending effect
-- **Render-to-Texture** - Offscreen rendering for Game View with separate uniform buffers
-- **Per-Scene Render Settings** - Full rendering config per scene with project-level defaults and editor UI
-- **Particle System** - CPU particle simulation (5 emitter shapes, size/speed curves, gravity/drag) with GPU instanced billboard rendering
-- **Shadow Quality Settings** - Configurable resolution (512-4096), shadow distance, shadow strength, per-entity dither modes, point/spot shadow light selection by intensity/distance scoring
-- **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
-- **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
-- **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser + OIDN (Intel Open Image Denoise, fully wired), real depth buffer, RT composition pass
-- **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and renderer integration (LightingUBO + ambient blending)
-- **SDF Scene** - CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
-- **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures, fullscreen composite pipeline
-- **Depth of Field** - Bokeh DoF with aperture shapes (circle/hexagon/octagon), focal distance/range, CoC debug visualization
-- **Tilt-Shift** - Miniature/toy-model post-process blur with configurable focus band and falloff
-- **Camera Presets** - 9 built-in presets (Isometric 45/30, TopDown, SideScroller, FPS, TPS, Cinematic, SecurityCam, BirdsEye)
+**A production-grade game engine built from scratch in C++20 and Vulkan 1.3.**\
+**2D, 2.5D, and 3D. Editor, player, visual scripting, ray tracing, and more.**\
+**Built in 9 weeks. 150+ features. 400+ audit findings resolved.**
 
-### Editor
-- **Full ImGui Editor** - Hierarchy, inspector, viewport, effects, and settings panels
-- **Transform Gizmos** - Translate, rotate, scale via ImGuizmo
-- **Entity Selection** - Click-to-select with ray casting, double-click to focus
-- **Play Mode** - Play/pause/stop game preview with input isolation, scene changes persist on stop
-- **Game View** - Renders from in-scene camera components independently from the editor camera
-- **Scene Serialization** - JSON save/load with full component support
-- **Undo/Redo** - Command-pattern undo/redo system
-- **Entity Clipboard** - Cut/copy/paste entities via JSON serialization
-- **Native File Dialogs** - Cross-platform (Win32, macOS osascript, Linux zenity/kdialog)
-- **Startup Templates** - 44 templates across 7 categories (Foundations, Genre Showcases, Systems Deep-Dives, Retro & Flash, Advanced, Multiplayer, Debug/Test)
-- **Template Creator** - Save current scene as reusable template with metadata (View > Tools > Template Creator), custom templates stored in templates/ directory
-- **Template Marketplace** - Bundled catalog of 15 curated templates across 5 categories with search, filter by category, sort by name/rating/downloads, install/uninstall (View > Tools > Template Marketplace)
-- **Terrain Brushes** - Viewport sculpting with 5 brush modes (raise, lower, flatten, smooth, paint), adjustable radius/strength/falloff, real-time cursor feedback
-- **Stats Overlay** - FPS, frame time, draw calls, triangle count
-- **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
-- **Asset Hot-Reload** - File watcher polls texture files for changes
-- **Build Dialog** - Configure and export standalone game builds from the editor
-- **Particle Editor** - 7 presets, color gradient bar, size/speed curves, shape preview, playback controls
-- **UI Editor** - Viewport WYSIWYG editing with click-select, drag-move, resize handles, and element tree
-- **Project Settings** - Dedicated panel for rendering/physics defaults separated from editor preferences
-- **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
-- **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
-- **Animation Graph** - Dual-mode visual state machine editor: AnimatorComponent mode (clip dropdown from loaded animations, speed, blend/exit time, ASM parameters) and StateMachineComponent mode (game logic SM with script callbacks), Entry pseudo-node, transitions, play-mode state highlighting
-- **Shader Graph** - Visual shader authoring with 54 node types, topological sort GLSL code generation, .enjshader save/load
-- **Audio Event Graph** - Dynamic audio mixing with runtime execution (trigger events, parameter thresholds, delay scheduling), .enjaudiopkg save/load
-- **Particle Graph** - Visual particle system authoring with compiler to ParticleEmitterComponent, .enjparticle save/load
-- **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
-- **Visual Script Editor** - Blueprint-style visual scripting with 136+ nodes, breakpoint debugging, execution profiler
-- **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
-- **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
-- **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
-- **Newgrounds Game Page** - Themed HTML5 export template with medal sidebar, scoreboard, embed codes, and NG.io API integration
-- **Command Palette** - Ctrl+P fuzzy-search popup with 25+ commands for quick access
-- **Project Hub** - Startup wizard with template browser, recent projects, and project creation flow
-- **Entity Icons** - Bracket-tag icons in hierarchy by component type ([C] Camera, [L] Light, [M] Mesh, etc.)
-- **Empty State Patterns** - Helpful empty-state messages with call-to-action buttons in all panels
-- **Collaborative Editing** - Real-time multi-user scene editing with OT protocol, peer cursors, conflict resolution, lock enforcement
-- **Symbol Library** - Reusable graphic symbols as prefabs with nested editing, category browser, update propagation, Flash timeline sync
-- **Notification Toasts** - Stacked bottom-right toast notifications (Info/Success/Warning/Error) with slide-in animation and fade-out, wired to save/build/template events
-- **Accent Color Presets** - 6 harmony presets (Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal) with auto-derived accent colors and fine-tune controls
-- **Theme Preview** - 250x160 live preview pane in Editor Settings showing current theme appearance in real-time
-- **Keyboard Shortcuts Help** - Ctrl+Shift+/ searchable modal listing all editor shortcuts grouped by category (General, Viewport, Selection, Play Mode, Editor)
+---
 
-### Entity-Component System
-- **70+ Component Types** - Full inspector UI for all components
-- **Character Controllers** - Platformer 2D, Top-Down 2D/3D, Third Person, First Person
-- **Camera Component** - In-game cameras with projection settings and frustum visualization
-- **Physics** - `IPhysicsBackend` abstraction with Jolt Physics v5.2.0 (3D) and Box2D v3.0.0 (2D) backends enabled by default, plus legacy SimplePhysics fallback (compile-optional via `ENJIN_PHYSICS_SIMPLE`). Collision detection, 2D/3D ground detection for character controllers, debug wireframes for colliders and joints
-- **Gravity Zones** - Per-entity gravity override with directional, point, and zero-G modes
-- **Temperature Zones** - Heat/cold environmental effects
-- **Camera Trigger Zones** - Camera override volumes
-- **Text Rendering** - TextComponent with stb_truetype rasterization to texture
-- **Vegetation Components** - Grass, shrub, tree volume definitions
-- **Physics Joints** - 6 joint types (Distance, Hinge, BallSocket, Spring, Fixed, Slider) with breakable mode
-- **Ragdoll System** - Bone-to-joint mapping, animation-to-ragdoll blend, auto-settle
-- **LOD System** - Distance-based mesh swapping
-- **Level Streaming** - Chunk-based distance loading with priority queue and async support
-- **Runtime UI** - Anchor-based layout, 8 widget types, event bus, 6 theme presets (incl. high contrast), font scaling, accessible labels
-- **Behavior Tree AI** - 20 node types with visual editor, blackboard system, play-mode debugging
-- **Dialogue Box** - Auto-built UICanvas dialogue display with speaker, portrait, choices
-- **Surface Aligned Controller** - Planet gravity walking on spherical surfaces
+![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C?style=flat-square&logo=cplusplus&logoColor=white)
+![Vulkan](https://img.shields.io/badge/Vulkan-1.3-AC162C?style=flat-square&logo=vulkan&logoColor=white)
+![CMake](https://img.shields.io/badge/CMake-3.20+-064F8C?style=flat-square&logo=cmake&logoColor=white)
+![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-grey?style=flat-square)
+![License](https://img.shields.io/badge/License-Proprietary-lightgrey?style=flat-square)
 
-### Animation
-- **Skeletal Animation** - glTF skin/joint/animation import, GPU skinning, auto-play
-- **Animation State Machines** - FSM with blending and transitions
-- **2D Sprite Animation** - Frame-based flipbook animation
-- **Inverse Kinematics** - LookAt IK, FABRIK chain solving, interaction IK
+</div>
 
-### Audio
-- **Cross-Platform Audio** - miniaudio backend (WAV, MP3, FLAC, Vorbis)
-- **3D Spatialization** - Positional audio with distance attenuation models
-- **Audio Channels** - SFX/Music/UI/Voice with independent volume (Music/UI force non-diegetic 2D)
-- **Multi-Channel Mixing** - Multiple simultaneous sounds
-- **Category Volumes** - Separate master, SFX, music, ambient, voice volumes
-- **Scene Serialization** - AudioSource and AudioListener components saved/loaded with scenes
+---
 
-### Accessibility
-- **Editor Themes** - Dark, Light, High Contrast Dark, High Contrast Light
-- **Colorblind Correction** - 8 GPU modes (protanopia, deuteranopia, tritanopia, anomalous variants, achromatopsia)
-- **Remappable Input** - Semantic game actions with hold/toggle modes and one-handed presets
-- **Reduced Motion** - Weather particle reduction, head-bob disable
-- **Subtitles** - Configurable font size, background, speaker names, direction indicators
-- **Content Warnings** - Per-scene warning flags with dismissable overlay
-- **Quick Presets** - Low Vision, Motor Impaired, Photosensitive, Reset All
-- **Keyboard Navigation** - Panel focus shortcuts (Ctrl+1-5), gizmo nudge (Arrow/PageUp/PageDown), focus rings
-- **Motor Accessibility** - Adjustable click/drag thresholds, dwell-click, sticky drag, motor impaired preset
-- **Command Palette** - Ctrl+P for keyboard-driven command access
-- **Alternative Input** - Switch access, eye tracking, sip-and-puff, head tracking support
-- **Scene & Entity Locking** - Advisory .enjinlock files for collaborative editing, stale lock detection, collaborative editing UI (peer cursors, conflict dialog, session management)
-- **Screen Reader Support** - Priority-queued text announcer with visual status bar
-- **Audio Visual Indicators** - Colored dot overlays for audio events
-- **High Contrast UI Themes** - HighContrastDark and HighContrastLight presets with WCAG AAA 7:1+ contrast ratios
-- **Font Scaling** - Runtime font size multiplier for UISystem (0.5-3.0x)
-- **Accessible Labels** - Per-element screen reader labels on UICanvas elements
-- **Dyslexia Mode** - Configurable letter/word/line spacing for improved readability
-- **Colorblind-Safe Theme** - Blue/orange palette universally distinguishable across all color vision types
-- **Colorblind-Safe UI Palettes** - 9 palettes with patterns (Stripes/Dots/Crosshatch/Chevron) + icons alongside color
-- **Switch Access** - One-button auto-scan mode for UICanvas focus navigation
-- **OpenDyslexic Font** - FontLibrary with Default/Monospace/OpenDyslexic families, letter/word/line spacing controls
-- **Motor Accessibility Runtime** - Dwell-click and sticky drag on UICanvas elements, configurable timings
-- **Content Warnings in Player** - Pre-scene dismissable warning overlay driven by per-scene content flags
+## At a Glance
 
-### Scene Management
-- **Project File Format** - .enjinproject JSON manifest
-- **Scene Manager** - Project manifests, scene lists, build indices
-- **Scene Transitions** - Instant, Fade Black, Fade White, Cross Fade with configurable duration
-- **Prefab System** - Save/load entity templates
+| | |
+|---|---|
+| **49** production features | **44** starter templates |
+| **70+** component types | **222+** visual scripting nodes |
+| **~844** script bindings | **32** editor panels |
+| **19** ray tracing shaders | **9+** procedural generation algorithms |
+| **40** unit tests across 18 build targets | **400+** audit findings, 300+ resolved |
 
-### Gameplay Systems
-- **Save/Load System** - 10-slot save system with quick save/load support
-- **HUD Overlay** - Health bars, resource bars, labels, and crosshair rendering
-- **Quest/Objective Tracking** - Start, complete, and fail quests with objective tracking
-- **Damage Resistance/Weakness** - Per-type damage multipliers for resistance and weakness
-- **Stamina/Resource System** - Generic resource with regeneration and controller integration
-- **Footstep Audio** - Surface-based footstep sounds with walk/run interval support
-- **Object Pooling** - Entity recycling with configurable pool sizes and auto-release
-- **Cinematic Camera** - Waypoint sequences with easing curves for cutscenes
-- **Entity Event Bus** - Decoupled C++ entity communication system
-- **Raw Mouse Input** - Bypass OS mouse acceleration with smoothing options
-- **Destructible Environments** - 4 fracture patterns (Voronoi, Grid, Radial, Shatter) with debris physics
-- **2D Physics** - Circle, box, polygon shapes with 5 joint types, CCD, SAT collision
-- **Fluid-Terrain Coupling** - Bidirectional FluidSimulation-to-TerrainComponent coupling with erosion and accumulation modes
-- **Localization** - String tables, CSV/JSON I/O, parameterized strings, LOC() macro
-- **Dialogue Assets** - .enjdlg dialogue files with visual tree editor
-- **Reaction-Diffusion** - Gray-Scott model Turing pattern simulation with 9 presets, bake-to-texture and heightmap export
-- **Cellular Automata Geometry** - 7 CA rules (GameOfLife, BriansBrain, Rule110, etc.) with 3 mesh modes (Voxels, Marching Cubes, Point Cloud)
-- **Physarum Simulation** - Agent-based slime mold network generation with 5 presets, food sources, trail diffusion/decay
-- **Timeline Editor** - Flash-style keyframe animation editor with layers, 4 interpolation modes (Constant/Linear/Bezier/CatmullRom), curve editor, onion skinning, auto-key
-- **Fourier Transform Meshes** - DFT decomposition of 2D contours, progressive reconstruction animation, 3D extrusion from contour
-- **4D Stereographic Projection** - 5 polytopes (Tesseract, 5-Cell, 16-Cell, 24-Cell, 120-Cell), 6 rotation planes, wireframe mesh generation
-- **Inverse/Differentiable Rendering** - CPU-based scene parameter optimization via gradient descent with finite differences
-- **Non-Euclidean Geometry** - Portal rendering with stencil-buffer recursion, hyperbolic/spherical/toroidal space warping, oblique near-plane clipping
-- **Metaball / Blob Rendering** - Implicit surface field evaluation with marching cubes mesh extraction, gradient-based normals, per-group color blending
-- **Voxel Cone Tracing (VXGI)** - Voxel grid with mip chain, conservative triangle rasterization, cone-traced diffuse/specular GI, AO, and volumetric god rays
-- **SDF Rendering** - Mesh-to-SDF conversion, sphere tracing, marching cubes isosurface extraction, 8SSEDT text rendering with outline/shadow, SDF volume blending
-- **Framebuffer Feedback Effects** - Ping-pong compositing with 8 presets (Echo, Melt, InfiniteMirror, VHS, Kaleidoscope, Phosphor, DreamSequence), 5 blend modes
-- **Screen-Space Distortion** - 7 distortion types (HeatHaze, Shockwave, Underwater, PortalEdge, Ripple, BarrelFisheye, Custom), composited UV offset field
-- **IK-Driven Mesh Deformation** - FABRIK solver with Verlet physics, Catmull-Rom spline subdivision, tube/ribbon mesh generation for tentacles/ropes/tails
-- **Interactive Water** - Grid-based spring-damper wave propagation, object splashes and V-wakes, buoyancy, shallow/deep/foam color blending, boundary modes
-- **Mesh Audio Reactivity** - Cooley-Tukey radix-2 FFT, bass/mid/treble band analysis, per-vertex displacement with 4 mapping modes and 4 displacement axes
+---
 
-### Asset Libraries
-- **Font Library** - 42 curated OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) with editor browser, search, and install
-- **3D Asset Library** - 16 CC0 3D model packs (Kenney, Quaternius) across Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi
-- **2D Asset Library** - 15 CC0 2D sprite/tileset/UI packs across UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures
+## What Is TEGE?
 
-### Build & Distribution
-- **Build Pipeline** - Scan project → validate assets → compress/obfuscate → pack into `.enjpak` with CRC32 integrity verification
-- **Asset Packer** - `.enjpak` archive format with compression, XOR obfuscation, and per-file CRC32 checksums
-- **Build Dialog** - Editor UI for configuring and running builds with progress tracking
-- **Build Manifest** - Window title, resolution, fullscreen, and start scene baked into the pack
-- **Standalone Player** - Editor-free runtime that loads `game.enjpak`, reads the build manifest, and runs the game loop with full particle, subtitle, announcer, alternative input, and post-processing support
-- **Import Presets** - Source-app import presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp) with auto-detection and per-axis flip toggles
-- **Texture Compression** - CPU-side BCn/ASTC compression (BC1/BC3/BC4/BC5/BC7, ASTC 4x4/6x6/8x8) with mipmap generation and quality presets
-- **Asset Thumbnails** - Auto-generated preview thumbnails for images, 3D models (software rasterizer), and scenes with caching
-- **Binary Distribution** - CMake install rules + CPack config for Windows ZIP + NSIS installer (Start Menu shortcuts, file associations, uninstaller), one-command build scripts (package.bat/package.sh)
-- **Linux AppImage** - AppImageBuilder for Linux packaging with .desktop file generation
-- **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
+TEGE is a complete game engine &mdash; not a framework, not a library. It ships with a full editor, a standalone player runtime, visual scripting, production physics (Jolt + Box2D), AngelScript integration, a build pipeline, and everything you need to make and ship a game.
 
-### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~686 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, Flash API shim), hot-reload
-- **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
-- **Script Event System** - String-named events with typed EventData payloads
-- **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
-- **C++ Hot-Reload** - File watching, DLL reload with state save/restore
-- **Animation Timeline** - Property/event/animation tracks with easing, loop, and ping-pong modes; Flash-style timeline editor with layers, curve editor, and onion skinning
-- **Newgrounds.io API** - Session management, medals, scoreboards, cloud saves for web games
-- **DataAsset System** - Schema definitions with typed instances, JSON I/O, script bindings
-- **Flash API Shim** - ~40 AngelScript bindings emulating Flash APIs (DisplayObject, MovieClip, Stage, Mouse, TextField, Sound, Timer)
-- **AS2/AS3 Transpiler** - Pattern-based ActionScript to AngelScript conversion (type mapping, class syntax, Flash API calls)
-- **SWF Converter** - SWF binary import to ECS entities (shapes→sprites, MovieClips→entity hierarchy with timeline)
+It was built from a blank `main.cpp` to a 150+ feature engine in roughly 9 weeks (Dec 23, 2025 &ndash; Feb 19, 2026), then hardened through 7 rounds of systematic security and stability auditing.
 
-### Platform Support
-- **Linux** - LinuxPlatform helpers (XDG paths, zenity dialogs, fork/exec), AppImage packaging, CMake Linux targets
-- **Steam Deck** - Auto-detection, adaptive quality, gyro input stubs, suspend/resume lifecycle, Steam Input API stubs
-- **Nintendo Switch 1** - NVN render backend stub, Joy-Con/touch/docked mode stubs (requires licensed devkit)
-- **Hub Application** - Standalone project launcher with project manager, engine version manager, template browser
+**Target audience:** Indie developers, Flash game revivalists, solo devs who want a lightweight alternative to Godot/Unity with built-in gameplay systems, accessibility, and retro aesthetics.
 
-### Visual Scripting
-- **Blueprint-Style Editor** - Node graph visual programming without code
-- **138+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, debug
-- **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
-- **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
-- **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through
-- **Execution Profiler** - Color-coded timeline of node execution with duration tooltips
-- **Multi-Select Editing** - Box selection, Ctrl+click, multi-node drag, copy/paste with preserved links
-- **Undo/Redo** - Full undo support for nodes, links, properties, and variables
-- **Collision Callbacks** - OnCollisionEnter/Exit, OnTriggerEnter/Exit events
+---
 
-## Project Structure
+## Architecture
 
 ```
 enjin/
-├── Core/           # Foundation layer (Memory, Math, Logging, Platform)
-├── Engine/         # Engine layer (Renderer, ECS, Audio, Effects, Editor, Build, Assets)
-├── Editor/         # Editor application entry point
-├── Player/         # Standalone game player entry point
-├── third_party/    # External dependencies (GLFW, ImGui, ImGuizmo)
-└── build/          # Build output (bin/, lib/)
+├── Core/           Zero-dependency foundation layer
+│   ├── Memory      Stack, Pool, Linear allocators
+│   ├── Math        Vectors, Matrices, Quaternions, Noise
+│   ├── Logging     Thread-safe, categorized
+│   └── Platform    Window management (GLFW), entry point abstraction
+│
+├── Engine/         Full engine layer
+│   ├── Renderer    Vulkan 1.3 (forward + deferred, RT pipeline)
+│   ├── ECS         Entity Component System (70+ component types)
+│   ├── Physics     Jolt v5.2.0 (3D) + Box2D v3.0.0 (2D)
+│   ├── Audio       miniaudio backend, 3D spatial, mixer
+│   ├── Scripting   AngelScript (~844 bindings) + Visual Scripting (222+ nodes)
+│   ├── Assets      glTF, FBX, SWF import, texture atlas, asset packs
+│   ├── Shaders     SPIR-V pipeline, hot-reload, shader graph (58+ nodes)
+│   └── Systems     AI, navigation, dialogue, quests, save, weather, terrain...
+│
+├── Editor/         ImGui-based editor (32 panels)
+│   ├── Hierarchy, Inspector, Console, Asset Browser
+│   ├── Scene Picker, Gizmos, Profiler, Command Palette
+│   ├── Terrain Brushes, Tilemap Editor, Vector Editor
+│   └── PlayMode with PlayModeDiff (cherry-pick runtime changes)
+│
+├── Player/         Standalone game player runtime
+├── Tests/          Unit + integration tests (CTest)
+├── Examples/       Example projects
+├── third_party/    GLFW, ImGui, ImGuizmo
+└── docs/           40+ documentation files
 ```
 
-## Roadmap
+---
 
-### Phase 1: Foundation ✅
-- [x] Memory Management (Stack, Pool, Linear allocators)
-- [x] Math Library (Vectors, Matrices, Quaternions, Splines)
-- [x] Logging System (Thread-safe, categorized)
-- [x] Platform Abstraction Layer
-- [x] Entry Point Abstraction
+## Features
 
-### Phase 2: Vulkan Renderer ✅
-- [x] Vulkan Context Initialization
-- [x] Swapchain Management
-- [x] Command Buffer System
-- [x] SPIR-V Shader Pipeline
-- [x] Depth Buffer / Z-testing
-- [x] Blinn-Phong Lighting
-- [x] Uniform Buffer Objects (MVP, Lighting, Material)
+<details>
+<summary><b>Rendering</b></summary>
 
-### Phase 3: Engine Core ✅
-- [x] ECS (Entity Component System)
-- [x] glTF Asset Loading (.gltf/.glb)
-- [x] Scene Importer (glTF to ECS conversion)
-- [x] Input System (Keyboard/Mouse)
-- [x] Camera System (Fly camera with WASD + mouse)
+### 3D Pipeline
+- Vulkan 1.3 with GPU-driven frustum culling
+- PBR + Blinn-Phong materials with normal mapping, parallax occlusion (4 modes)
+- 4-Cascade Directional Shadow Maps with PCF, texel stabilization, distance fade, shadow dither (6 patterns)
+- Point light cubemap shadows + spot light 2D array shadows (up to 4 each)
+- Bindless resource management
+- Descriptor caching (75-85% hit rate)
+- Material sorting by texture key
+- Deferred rendering framework
 
-### Phase 4: Editor Tooling ✅
-- [x] Editor GUI (Dear ImGui integration)
-- [x] Scene Hierarchy Panel
-- [x] Entity Inspector Panel (50+ component types)
-- [x] Transform Gizmos (ImGuizmo - translate/rotate/scale)
-- [x] Entity Selection via Ray Casting
-- [x] Viewport Panel with camera controls
-- [x] Settings Panel (gizmo options, render settings)
-- [x] Stats Overlay (FPS, frame time, draw calls, triangles)
-- [x] Play Mode (play/pause/stop)
-- [x] Undo/Redo System
-- [x] Entity Clipboard (Cut/Copy/Paste)
-- [x] Startup Template Selector (44 templates)
+### 2D Pipeline
+- GPU-instanced sprite batching
+- 4096x4096 sprite texture atlas (shelf-pack algorithm)
+- 2.5D lit sprite support with normal maps and drop shadows
+- Sprite animation system
 
-### Phase 5: Advanced Rendering ✅
-- [x] PBR Material System (baseColor, metallic, roughness, emissive)
-- [x] Alpha cutoff / transparency support
-- [x] Multiple Light Sources (point, spot, directional)
-- [x] Cascaded Shadow Maps (4-cascade CSM with PCF, texel stabilization, distance fade, shadow dither)
-- [x] Point/Spot Light Shadow Maps (cubemap array for point, 2D array for spot, Poisson disk soft shadows)
-- [x] Texture Support (albedo, normal, height, metallic-roughness, emissive)
-- [x] Normal Mapping (tangent-space)
-- [x] Parallax Occlusion Mapping
-- [x] Post-Processing Effects (bloom, tone mapping, vignette, color grading, FXAA, film grain)
-- [x] Retro Effects (PSX, CRT, dithering, vertex jitter)
-- [x] Weather System (rain, snow, fog, storms)
-- [x] Water Rendering (Gerstner waves, shore foam, freeze, ocean)
-- [x] Environment Mapping / Skybox
-- [x] Render-to-Texture (Game View offscreen rendering)
-- [x] Wireframe Rendering
-- [x] GPU-Driven Frustum Culling
-- [x] Deferred Rendering Framework
+### Ray Tracing
+- RT Shadows, Reflections, Ambient Occlusion, Global Illumination
+- Path Tracer
+- SVGF + Intel OIDN denoisers
+- RT Compositor
+- Graceful fallback on non-RT hardware
 
-### Phase 6: Production Features ✅
-- [x] Scene Serialization (JSON save/load)
-- [x] Undo/Redo System (command pattern)
-- [x] Prefab System (save/load entity templates)
-- [x] Asset Hot-Reloading (file watcher)
-- [x] Scene Management (project manifests, scene lists)
-- [x] Scene Transitions (fade, cross-fade)
-- [x] Native File Dialogs (cross-platform)
+### Post-Processing
+Bloom, Depth of Field (bokeh, 3 aperture shapes), FXAA, Vignette, Film Grain, Color Grading, SSAO, God Rays, Caustics, Stipple/Dither (8 patterns, 3 color modes), Tilt-Shift, Post-Process Volumes (spatial blending, priority-based, selective override)
 
-### Phase 7: Animation & Audio ✅
-- [x] 2D Sprite Animation (frame-based, flipbook)
-- [x] 3D Skeletal Animation (bone hierarchy, GPU skinning)
-- [x] Animation Blending & State Machines
-- [x] Inverse Kinematics (LookAt, FABRIK)
-- [x] Audio System (miniaudio - cross-platform, multi-channel)
-- [x] 3D Spatialized Audio
+### Advanced
+- Spherical Harmonics Light Probes (L2)
+- Signed Distance Field scenes (6 primitives, 6 boolean ops)
+- Order-Independent Transparency (weighted blended OIT)
+- Voxel Cone Tracing (VXGI)
+- Cel shading with outlines
+- Non-Euclidean geometry (portal rendering, hyperbolic/spherical/toroidal space)
+- Metaball / implicit surface rendering
+- Framebuffer feedback effects (8 presets: Echo, Melt, InfiniteMirror, VHS, Kaleidoscope, Phosphor, DreamSequence)
+- Screen-space distortion (7 types: HeatHaze, Shockwave, Underwater, PortalEdge, Ripple, BarrelFisheye, Custom)
 
-### Phase 8: AI & Procedural Generation ✅
-- [x] Spline System (Linear, Bezier, Catmull-Rom, B-Spline)
-- [x] Enemy AI Behaviors (patrol, chase, flee, attack patterns)
-- [x] AI State Machines (FSM with transitions)
-- [x] 2D Procedural Level Generation (prefab-based)
-- [x] 3D Procedural Level Generation (room/corridor system, fractal terrain, advanced L-system)
-- [x] Navmesh Generation & Pathfinding (A*)
+### Retro / Stylization
+CRT shader, PSX-style rendering (flat shading, affine texturing, vertex snapping), pixelation, dithering, color quantization, stipple transparency
 
-### Phase 9: Gameplay Systems ✅
-- [x] Character Controllers (5 types)
-- [x] Gravity Zones
-- [x] Temperature Zones
-- [x] Camera Trigger Zones
-- [x] Wind System with Vegetation Sway
-- [x] Terrain Editing with Brushes
-- [x] World Time & Seasonal Weather
-- [x] In-Game Text Rendering
+### Environment
+- Skybox (cubemap + procedural with 5 presets)
+- Weather system (rain, snow, fog, storms with lightning)
+- Water (Gerstner waves, shore foam, reflections, refraction, underwater, freeze, ocean mode)
+- Interactive water (spring-damper propagation, splashes, V-wakes, buoyancy)
+- Vegetation with wind sway (grass, shrubs, trees)
+- Terrain with sculpting (5 brush modes)
+- GPU-instanced particle system (5 emitter shapes, size/speed curves)
+- Destructible environments (4 fracture patterns: Voronoi, Grid, Radial, Shatter)
+- World curvature (vertex-shader horizon bending)
 
-### Phase 10: Accessibility ✅
-- [x] Editor Themes (4 themes)
-- [x] GPU Colorblind Correction (8 modes)
-- [x] Remappable Input System
-- [x] Reduced Motion Support
-- [x] Subtitle/Caption System
-- [x] Content Warning System
-- [x] Accessibility Quick Presets
-- [x] Keyboard Navigation (panel focus, gizmo nudge)
-- [x] Motor Accessibility (dwell-click, sticky drag, thresholds)
-- [x] Command Palette (Ctrl+P, 25+ commands)
-- [x] Alternative Input Devices (switch, eye tracking, sip-and-puff)
-- [x] Scene & Entity Locking
-- [x] Screen Reader Announcer
-- [x] Audio Visual Indicators
+</details>
 
-### Phase 11: Distribution
-- [x] Standalone Game Player
-- [x] Asset Pack Build Pipeline (.enjpak)
-- [x] Splitscreen Rendering
-- [x] Scripting Language (AngelScript with hot-reload, coroutines, event bus)
-- [x] Visual Scripting System (Blueprint-style nodes, debugging, profiler)
-- [x] Dialogue Tree Editor (7 node types, EntityEventBus, SubtitleSystem)
-- [x] Behavior Tree Editor (20 node types, visual editor)
-- [x] Bug Reporting & Feedback System
-- [x] Vector Drawing Editor (SVG)
-- [x] HTML5 Export
-- [x] Newgrounds.io API Integration
-- [x] Procedural Generation (9+ algorithms incl. fractal terrain + erosion + 3D L-system, graph editor)
-- [x] Destructible Environments
-- [x] 2D Physics System
-- [x] Localization System
-- [x] LAN Multiplayer (host-authoritative UDP, HMAC-SHA256 auth, 20Hz entity sync, RPC, lobby, reliable delivery)
+<details>
+<summary><b>Physics</b></summary>
 
-### Phase 12: Advanced Gameplay
-- [x] Save/Load System (10-slot persistence)
-- [x] HUD Overlay System
-- [x] Quest/Objective System
-- [x] Damage Resistance System
-- [x] Stamina/Resource System
-- [x] Footstep Audio System
-- [x] Object Pooling
-- [x] Cinematic Camera System
-- [x] Entity Event Bus
-- [x] Raw Mouse Input + Smoothing
-- [x] Window Icon Support
-- [x] Dialogue Assets (.enjdlg)
-- [x] DataAsset System
-- [x] Tweening (25 easing functions)
+### 3D &mdash; Jolt Physics v5.2.0
+- Production-grade rigid body simulation
+- 6 joint types (hinge, slider, spring, cone, distance, fixed) with breakable mode
+- Ragdoll support (bone-to-joint mapping, animation blend, auto-settle)
+- Destructible physics
+- 1000 colliders in ~2-3ms (multi-threaded)
 
-## Editor Controls
+### 2D &mdash; Box2D v3.0.0
+- Full 2D rigid body simulation
+- Circle, box, polygon shapes with 5 joint types
+- Continuous collision detection (CCD)
+- SAT collision
+
+### Shared
+- Runtime backend swapping via `IPhysicsBackend` abstraction
+- Spatial hash grid broad-phase
+- Gravity zones (directional, point, zero-G)
+- Debug wireframes for colliders and joints
+- Ground detection for character controllers (2D + 3D)
+
+</details>
+
+<details>
+<summary><b>Scripting</b></summary>
+
+### AngelScript
+- ~844 script bindings covering the full engine API
+- `TegeBehavior` base class with lifecycle callbacks
+- Hot-reload support
+- Script coroutines (YieldSeconds, YieldFrames, StartCoroutine)
+- Script event system (string-named events with typed payloads)
+- Flash API shim (~40 bindings: DisplayObject, MovieClip, Stage, Mouse, TextField, Sound, Timer)
+- AS2/AS3 transpiler (pattern-based ActionScript to AngelScript conversion)
+- SWF binary import to ECS entities
+
+### Visual Scripting
+- 222+ node types (events, flow control, math, physics, AI, dialogue, audio, networking, procgen, debug)
+- Blueprint-style node graph editor
+- Breakpoint debugging (F9 toggle, F5 continue, F10 step)
+- Execution profiler with color-coded timeline
+- State machines and behavior trees
+- Latent nodes (Delay, WaitForAudio, WaitForAnimation)
+- Variable system (Bool, Int, Float, String, Vector3, Entity)
+- Multi-select editing, undo/redo, copy/paste
+
+### Shader Graph
+- 58+ nodes
+- Topological sort GLSL code generation
+- Hot-reload
+- .enjshader save/load
+
+### Audio Event Graph
+- Dynamic audio mixing with runtime execution
+- Trigger events, parameter thresholds, delay scheduling
+- .enjaudiopkg save/load
+
+### Particle Graph
+- Visual particle system authoring
+- Compiler to ParticleEmitterComponent
+- .enjparticle save/load
+
+</details>
+
+<details>
+<summary><b>Gameplay Systems</b></summary>
+
+| System | Details |
+|--------|---------|
+| **Quest System** | Full quest tracking, start/complete/fail with objective tracking |
+| **Dialogue Trees** | 7 node types, visual editor, EntityEventBus + SubtitleSystem integration |
+| **Save System** | 10 slots + quick save/load, SharedObject persistence |
+| **AI / Behavior Trees** | 20 node types, blackboard system, visual editor, play-mode debugging |
+| **Navmesh + Pathfinding** | A* pathfinding with navigation mesh generation |
+| **Animation** | GPU skinning (skeletal), sprite animation, IK (LookAt, FABRIK), tweening (25 easing functions) |
+| **Character Controllers** | FPS, TPS, platformer, 2D platformer, flying, swimming, surface-aligned |
+| **HUD Overlay** | Health bars, resource bars, labels, crosshair |
+| **Damage System** | Per-type resistance/weakness multipliers |
+| **Stamina / Resources** | Generic resource with regeneration and controller integration |
+| **Object Pooling** | Entity recycling with configurable pool sizes and auto-release |
+| **Cinematic Camera** | Waypoint sequences with easing curves for cutscenes |
+| **Localization** | String tables, CSV/JSON I/O, parameterized strings, LOC() macro |
+| **Networking** | LAN multiplayer (host-authoritative UDP, HMAC-SHA256, 20Hz sync, RPC, lobby) |
+| **Footstep Audio** | Surface-based footstep sounds with walk/run intervals |
+| **Entity Event Bus** | Decoupled C++ entity communication |
+
+### Procedural Generation (9+ algorithms)
+Cellular automata, BSP, Diamond-Square, L-Systems (3D stochastic), Wave Function Collapse, Voronoi, Random walker, Grammar rules, Fractal terrain with hydraulic/thermal erosion, Reaction-Diffusion (Gray-Scott), Physarum simulation
+
+### Advanced Systems
+- Timeline editor (Flash-style keyframe animation, layers, curve editor, onion skinning)
+- Fourier transform meshes (DFT decomposition, progressive reconstruction)
+- 4D stereographic projection (5 polytopes, 6 rotation planes)
+- Inverse/differentiable rendering (CPU gradient descent optimization)
+- IK-driven mesh deformation (FABRIK + Verlet, tube/ribbon generation)
+- Mesh audio reactivity (FFT analysis, per-vertex displacement)
+- Fluid-terrain coupling (bidirectional erosion and accumulation)
+
+</details>
+
+<details>
+<summary><b>Editor</b></summary>
+
+32 ImGui panels including:
+
+- **Hierarchy** &mdash; Scene tree with drag-and-drop, entity icons by component type
+- **Inspector** &mdash; 70+ component types with undo/redo (PropertyEditCommand)
+- **Console** &mdash; Logging and command input
+- **Asset Browser** &mdash; File management with auto-generated thumbnails
+- **Scene Picker** &mdash; Ray-cast entity selection, double-click to focus
+- **Gizmos** &mdash; Translate, rotate, scale (ImGuizmo)
+- **Profiler** &mdash; Per-frame breakdown, FPS graph, scope-based profiling
+- **Terrain Brushes** &mdash; 5 brush modes with adjustable radius/strength/falloff
+- **Tilemap Editor** &mdash; 2D level design
+- **Vector Editor** &mdash; 7 shape types, layers, SVG export
+- **Command Palette** &mdash; Ctrl+P fuzzy search (25+ commands)
+- **Shader Graph** &mdash; Visual shader authoring (58+ nodes)
+- **Visual Script Editor** &mdash; Blueprint-style with debugging and profiler
+- **Dialogue Editor** &mdash; Visual dialogue tree (7 node types)
+- **Animation Graph** &mdash; Dual-mode state machine editor
+- **Audio Event Graph** &mdash; Dynamic audio mixing
+- **Particle Editor** &mdash; 7 presets, color gradients, size/speed curves
+- **UI Editor** &mdash; WYSIWYG with click-select, drag-move, resize handles
+- **PlayMode** &mdash; Play/Pause/Stop with PlayModeDiff to cherry-pick runtime changes
+- **Game View** &mdash; Renders from in-scene camera independently from editor camera
+- **Collaborative Editing** &mdash; Real-time multi-user with OT protocol, peer cursors, conflict resolution
+- **Bug Reporter** &mdash; Built-in reports with auto-captured diagnostics
+
+### Project Management
+- 44 starter templates across 7 categories
+- Template creator + marketplace (15 curated templates)
+- Project hub with startup wizard
+- Scene serialization (JSON)
+- Scene transitions (Instant, Fade Black, Fade White, Cross Fade)
+- Prefab system
+- Build dialog with progress tracking
+- Import presets for 10 DCC tools (Blender, Maya, 3ds Max, Houdini, Cinema 4D, ZBrush, Substance Painter, Unreal, Unity, SketchUp)
+
+### Editor Controls
 
 | Action | Control |
 |--------|---------|
 | Move Camera | `W/A/S/D` |
 | Look Around | Hold Right-click + Mouse |
-| Camera Up | `Space` / `E` |
-| Camera Down | `Q` / `Ctrl` |
+| Camera Up/Down | `Space/E` and `Q/Ctrl` |
 | Sprint | `Shift` |
 | Select Entity | Left-click in viewport |
-| Focus Entity | Double-click entity |
-| Adjust Move Speed | Scroll wheel |
-| Translate Gizmo | `1` |
-| Rotate Gizmo | `2` |
-| Scale Gizmo | `3` |
+| Focus Entity | Double-click |
+| Multi-Select | `Ctrl+click` or marquee drag |
+| Translate / Rotate / Scale | `1` / `2` / `3` |
 | Toggle Local/World | `4` |
-| Toggle Multi-Select | `Ctrl+click` |
-| Range Select (Hierarchy) | `Shift+click` |
-| Marquee Select | Viewport drag |
-| Undo | `Ctrl+Z` |
-| Redo | `Ctrl+Y` |
+| Undo / Redo | `Ctrl+Z` / `Ctrl+Y` |
+| Command Palette | `Ctrl+P` |
 
-**Visual Script Editor:**
-| Action | Control |
-|--------|---------|
-| Toggle Breakpoint | `F9` |
-| Continue Execution | `F5` |
-| Step Over | `F10` |
-| Copy Nodes | `Ctrl+C` |
-| Cut Nodes | `Ctrl+X` |
-| Paste Nodes | `Ctrl+V` |
-| Duplicate Nodes | `Ctrl+D` |
-| Delete Nodes | `Delete` |
+</details>
 
-## Skybox
+<details>
+<summary><b>Audio</b></summary>
 
-The engine includes a dedicated Skybox panel (View > Skybox) for configuring the scene background.
+- **miniaudio backend** &mdash; Cross-platform (WAV, MP3, FLAC, Vorbis)
+- **3D spatial audio** &mdash; Positional audio with distance attenuation models
+- **Steam Audio integration** &mdash; HRTF, occlusion, transmission (geometry-aware)
+- **Audio channels** &mdash; SFX/Music/UI/Voice with independent volume
+- **Multi-channel mixing** &mdash; Multiple simultaneous sounds
+- **Audio event graph** &mdash; Visual dynamic mixing
+- **MIDI input** support
+- **Scene serialization** &mdash; AudioSource and AudioListener components persist
 
-**Supported types:**
-- **None** - No skybox rendered
-- **Procedural** - Gradient sky with configurable top, horizon, and bottom colors plus sun direction
-- **Solid Color** - Single flat color fill
-- **Cubemap** - Six-face cubemap with individual texture paths (Right, Left, Top, Bottom, Front, Back)
+</details>
 
-**Procedural presets:**
-Quick-apply presets that configure colors and sun direction in one click:
-- **Midday** - Bright blue sky with overhead sun
-- **Sunset** - Warm orange horizon with low sun
-- **Dawn** - Soft pinks and purples with rising sun
-- **Night** - Deep dark sky with sun below horizon
-- **Overcast** - Flat grey tones with diffused light
+<details>
+<summary><b>Accessibility</b></summary>
 
-All non-None types support a rotation slider (0-360 degrees) around the Y axis. Skybox configuration is persisted with scene save/load, including sun direction.
+| Category | Features |
+|----------|----------|
+| **Vision** | 8 colorblind modes (GPU), WCAG AAA high-contrast themes, dyslexia-friendly fonts (OpenDyslexic), reduced motion, runtime font scaling (0.5-3.0x), colorblind-safe UI palettes (9 palettes with patterns + icons) |
+| **Motor** | Switch access scanning, dwell-click, sticky drag, adjustable thresholds, one-handed presets, input remapping |
+| **Audio** | Screen reader announcer (priority queue), audio visual indicators, MIDI input |
+| **Input** | Eye tracking, sip-and-puff, head tracking support, full rebinding |
+| **Content** | Per-scene content warnings with dismissable overlay |
+| **Presets** | Low Vision, Motor Impaired, Photosensitive, Reset All |
+
+</details>
+
+<details>
+<summary><b>Asset Libraries</b></summary>
+
+| Library | Contents |
+|---------|----------|
+| **Font Library** | 42 OFL/Apache fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi) |
+| **3D Asset Library** | 16 CC0 model packs (Kenney, Quaternius) &mdash; Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi |
+| **2D Asset Library** | 15 CC0 sprite/tileset/UI packs &mdash; UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures |
+
+</details>
+
+<details>
+<summary><b>Platforms & Export</b></summary>
+
+### Supported Now
+- **Windows** &mdash; Standalone .exe, NSIS installer (Start Menu, file associations, uninstaller)
+- **Linux** &mdash; AppImage packaging
+- **HTML5** &mdash; Web export with preloader and responsive scaling
+- **Steam Deck** &mdash; Auto-detection, adaptive quality, gyro input stubs
+
+### Planned
+- macOS (MoltenVK) &mdash; Q2 2026+
+- WebAssembly / WebGPU
+- Console platforms (Switch stub exists, requires licensed devkit)
+- Mobile (Android/iOS)
+- VR/XR (OpenXR)
+
+### Build & Distribution
+- Asset pack pipeline (`.enjpak` with compression, CRC32 integrity)
+- Texture compression (BCn/ASTC with mipmap generation)
+- Asset thumbnails (auto-generated previews for images, 3D models, scenes)
+- Adaptive quality (FPS-based auto-adjustment of render scale, shadow quality, particle count)
+
+### Integrations
+- Newgrounds.io API (medals, scoreboards, cloud saves, themed game page template)
+- Steam Audio (HRTF, occlusion, transmission)
+- Plugin system (IPlugin interface, DLL/SO hot-reload, manifest JSON, editor panel)
+
+</details>
+
+---
+
+## Performance
+
+| Metric | Target | Achieved |
+|--------|--------|----------|
+| Empty scene | < 2ms | ~1ms |
+| 1000 3D entities | < 16ms | < 16ms with Jolt |
+| 1000 2D sprites | < 8ms | < 5ms |
+| Descriptor cache hit rate | > 70% | 75-85% |
+
+**Frame budget breakdown (60fps, 3D scene):**
+
+```
+Shadow Passes (CSM + Point + Spot)    3.0ms  ████████████
+Main Render Pass (Opaque)             4.0ms  ████████████████
+Sprite Batch Rendering                1.5ms  ██████
+Particle Rendering                    1.0ms  ████
+Post-Processing                       2.5ms  ██████████
+ECS Systems (Physics, AI, Scripts)    3.0ms  ████████████
+Editor / ImGui                        1.0ms  ████
+Scene Classification + UBO            0.5ms  ██
+Headroom                              0.2ms  █
+                                     ──────
+                                     16.7ms  (60fps)
+```
+
+---
+
+## Quality Assurance
+
+TEGE has been through **7 rounds of systematic auditing** covering security, stability, performance, and API contracts.
+
+| | |
+|---|---|
+| **400+** total findings | **300+** resolved (75%+) |
+| **All CRITICAL/HIGH** fixed in Tier 1 systems | **40** unit tests (up from 13) |
+| **18** build targets, all clean | **3x** test coverage increase |
+
+### Tier 1 (Stable) Systems
+ECS, Renderer (Vulkan), Physics (Jolt + Box2D), Audio &mdash; all CRITICAL and HIGH findings resolved.
+
+### Tier 2 (Beta) Systems
+Serialization (14/17 fixed), Networking (16/18 fixed) &mdash; deferred items are LOW risk or design-level.
+
+See the [full audit documentation](docs/) for per-subsystem breakdowns.
+
+---
 
 ## Building
 
 ### Prerequisites
+
 - CMake 3.20+
-- C++20 compatible compiler (GCC 10+, Clang 12+, MSVC 2019+)
+- C++20 compiler (MSVC 2019+, GCC 10+, Clang 12+)
 - Vulkan SDK
 - GLFW3
 
-### Build Instructions
+### Windows
 
-**Linux / macOS:**
+```cmd
+mkdir build && cd build
+cmake .. -G "Visual Studio 16 2019" -A x64 -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake
+cmake --build . --config Release
+```
+
+### Linux
+
 ```bash
 mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc)
 ```
 
-**Windows:**
-```cmd
-mkdir build && cd build
-cmake .. -G "Visual Studio 16 2019" -A x64
-cmake --build . --config Release
-```
-
-**See [BUILD.md](docs/BUILD.md) for detailed build instructions on all platforms.**
+See [WINDOWS_BUILD.md](docs/WINDOWS_BUILD.md) for detailed Windows setup instructions.
 
 ### Build Options
-- `ENJIN_BUILD_EDITOR=ON` - Build the editor (default: ON)
-- `ENJIN_BUILD_PLAYER=ON` - Build the standalone game player (default: ON)
-- `ENJIN_BUILD_TESTS=OFF` - Build unit tests (default: OFF)
-- `ENJIN_BUILD_EXAMPLES=OFF` - Build example projects (default: OFF)
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `ENJIN_BUILD_EDITOR` | `ON` | Build the editor application |
+| `ENJIN_BUILD_PLAYER` | `ON` | Build the standalone game player |
+| `ENJIN_BUILD_TESTS` | `OFF` | Build unit and integration tests |
+| `ENJIN_BUILD_EXAMPLES` | `OFF` | Build example projects |
 
 ### Running
+
 ```bash
 # Editor
-./build/bin/Release/EnjinEditor.exe   # Windows
-./build/bin/EnjinEditor               # Linux/macOS
+./build/bin/Release/EnjinEditor.exe     # Windows
+./build/bin/EnjinEditor                  # Linux
 
 # Standalone Player (requires game.enjpak in same directory)
-./build/bin/Release/EnjinPlayer.exe   # Windows
-./build/bin/EnjinPlayer               # Linux/macOS
+./build/bin/Release/EnjinPlayer.exe     # Windows
+./build/bin/EnjinPlayer                  # Linux
 ```
 
-## Technology Stack
+---
 
-- **Language**: C++20
-- **Graphics API**: Vulkan 1.3
-- **Audio**: miniaudio (public domain)
-- **Windowing**: GLFW3 (zlib/libpng)
-- **3D Import**: Assimp (BSD)
-- **UI**: Dear ImGui (MIT) + ImGuizmo (MIT)
-- **JSON**: nlohmann/json (MIT)
-- **Build System**: CMake
+## Dependencies
 
-## License Compatibility
+All dependencies use permissive licenses compatible with proprietary licensing.
 
-All dependencies use permissive licenses compatible with proprietary licensing:
-- GLFW3: zlib/libpng (permissive)
-- Vulkan SDK: Apache 2.0 (permissive)
-- Dear ImGui: MIT (permissive)
-- ImGuizmo: MIT (permissive)
-- Assimp: BSD (permissive)
-- miniaudio: Public domain (permissive)
-- nlohmann/json: MIT (permissive)
-- stb libraries: Public domain (permissive)
+| Dependency | License | Purpose |
+|-----------|---------|---------|
+| GLFW3 | zlib/libpng | Windowing and input |
+| Vulkan SDK | Apache 2.0 | Graphics API |
+| Dear ImGui | MIT | Editor UI |
+| ImGuizmo | MIT | Transform gizmos |
+| Assimp | BSD | 3D model import (glTF, FBX) |
+| nlohmann/json | MIT | JSON serialization |
+| stb libraries | Public Domain | Image loading, font rasterization |
+| Jolt Physics | MIT | 3D physics |
+| Box2D | MIT | 2D physics |
+| miniaudio | Public Domain | Audio backend |
+| AngelScript | zlib | Scripting language |
+
+---
+
+## Timeline
+
+```
+Dec 23-25  Foundation          Core layer, Vulkan context, 3D pipeline
+Jan 22-28  Renderer & Editor   Shaders, ImGui, PBR, CSM shadows, FBX
+Jan 29-31  Core Systems        Weather, water, animation, physics, audio
+Feb  1-5   2D & Build          Terrain, UI, sprite batch, dialogue, tweening
+Feb  6-8   Visual Scripting    222+ nodes, GPU sync, descriptor caching
+Feb  9-10  Massive Expansion   AI, proc gen, RT pipeline, Newgrounds API
+Feb 11-14  Physics & Advanced  Jolt, Box2D, OIT, SH probes, SDF, shaders
+Feb 15-19  Audit & Hardening   7 audit rounds, 400+ findings, test expansion
+```
+
+---
 
 ## License
 
-Proprietary - All rights reserved.
+Proprietary &mdash; All rights reserved.
+
+---
+
+<div align="center">
+
+**TEGE** &mdash; The Enjin Game Engine
+
+C++20 &middot; Vulkan 1.3 &middot; CMake &middot; Proprietary Software
+
+</div>
