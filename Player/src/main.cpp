@@ -1,4 +1,6 @@
 #include "Enjin/Core/Application.h"
+#include "Enjin/Core/Version.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Input.h"
 #include "Enjin/Platform/Paths.h"
@@ -87,6 +89,11 @@
 #include <algorithm>
 
 namespace fs = std::filesystem;
+
+// Crash context — file-scope pointers for function-pointer providers
+static Enjin::ECS::World* s_CrashWorld = nullptr;
+static char s_PlayerGPUNameBuf[256] = {};
+static char s_PlayerSceneNameBuf[256] = {};
 
 // Standalone game player — no editor, no ImGui
 class GamePlayer : public Enjin::Application {
@@ -404,12 +411,33 @@ public:
         // Show splash screen before loading game
         SetupSplashScreen();
 
+        // Register crash context providers
+        s_CrashWorld = m_World.get();
+        if (m_Renderer && m_Renderer->GetContext()) {
+            VkPhysicalDeviceProperties props = {};
+            vkGetPhysicalDeviceProperties(m_Renderer->GetContext()->GetPhysicalDevice(), &props);
+            snprintf(s_PlayerGPUNameBuf, sizeof(s_PlayerGPUNameBuf), "%s", props.deviceName);
+        }
+        snprintf(s_PlayerSceneNameBuf, sizeof(s_PlayerSceneNameBuf), "%s", m_StartScene.c_str());
+
+        Enjin::Debug::CrashContext ctx;
+        ctx.engineVersion = []() -> const char* { return ENJIN_VERSION_STRING; };
+        ctx.gpuName = []() -> const char* { return s_PlayerGPUNameBuf; };
+        ctx.sceneName = []() -> const char* { return s_PlayerSceneNameBuf; };
+        ctx.entityCount = []() -> Enjin::u32 {
+            return s_CrashWorld ? static_cast<Enjin::u32>(s_CrashWorld->GetEntityCount()) : 0;
+        };
+        Enjin::Debug::SetCrashContext(ctx);
+
         m_Initialized = true;
         ENJIN_LOG_INFO(Player, "Player initialized");
     }
 
     void Shutdown() override {
         ENJIN_LOG_INFO(Player, "Player shutting down...");
+
+        s_CrashWorld = nullptr;
+        Enjin::Debug::SetCrashContext({});
 
         // Clear 2D physics collision callbacks before destroying systems they reference
         if (m_Physics2D) {

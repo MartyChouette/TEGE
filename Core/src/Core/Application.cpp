@@ -1,6 +1,7 @@
 #include "Enjin/Core/Application.h"
 #include "Enjin/Core/Version.h"
 #include "Enjin/Logging/Log.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include "Enjin/Platform/Window.h"
 #include "Enjin/Platform/Paths.h"
 #include "Enjin/Platform/Input.h"
@@ -74,6 +75,7 @@ void Application::InitializeEngine() {
     Platform::SetWorkingDirectoryToExecutableDirectory();
 
     Logger::Get().Initialize();
+    Debug::InstallCrashHandler();
     ENJIN_LOG_INFO(Core, "Initializing Enjin Engine...");
     
     // Create window (windowed mode)
@@ -129,6 +131,7 @@ void Application::ShutdownEngine() {
         m_Window = nullptr;
     }
 
+    Debug::UninstallCrashHandler();
     Logger::Get().Shutdown();
 
 #if defined(ENJIN_PLATFORM_WINDOWS)

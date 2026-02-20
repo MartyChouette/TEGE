@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -2090,6 +2091,59 @@ void EditorLayer::DrawPlayModeDiffDialog() {
     ImGui::End();
 }
 
+
+// ============================================================================
+// Console Log Callback (wires Logger output to editor console panel)
+// ============================================================================
+
+void EditorLayer::PushConsoleMessage(const std::string& message) {
+    m_ConsoleLog.push_back(message);
+    if (m_ConsoleLog.size() > MAX_CONSOLE_LINES) {
+        m_ConsoleLog.erase(m_ConsoleLog.begin(),
+            m_ConsoleLog.begin() + static_cast<ptrdiff_t>(m_ConsoleLog.size() - MAX_CONSOLE_LINES));
+    }
+}
+
+void EditorLayer::CheckForCrashReport() {
+    if (Debug::HasPreviousCrashReport()) {
+        m_PreviousCrashReport = Debug::ReadPreviousCrashReport();
+        if (!m_PreviousCrashReport.empty()) {
+            m_ShowCrashDialog = true;
+        } else {
+            Debug::ClearPreviousCrashReport();
+        }
+    }
+}
+
+void EditorLayer::DrawCrashReportDialog() {
+    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
+    if (!ImGui::Begin("Crash Report — Previous Session", &m_ShowCrashDialog)) {
+        ImGui::End();
+        return;
+    }
+
+    ImGui::TextWrapped("The engine crashed during the previous session. "
+                       "The crash report below may help diagnose the issue.");
+    ImGui::Spacing();
+
+    // Scrollable text area with monospace font
+    ImGui::BeginChild("CrashReportText", ImVec2(0, -ImGui::GetFrameHeightWithSpacing() - 4), true);
+    ImGui::TextUnformatted(m_PreviousCrashReport.c_str());
+    ImGui::EndChild();
+
+    // Action buttons
+    if (ImGui::Button("Copy to Clipboard")) {
+        ImGui::SetClipboardText(m_PreviousCrashReport.c_str());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Dismiss")) {
+        Debug::ClearPreviousCrashReport();
+        m_ShowCrashDialog = false;
+        m_PreviousCrashReport.clear();
+    }
+
+    ImGui::End();
+}
 
 } // namespace Editor
 } // namespace Enjin

@@ -2,6 +2,7 @@
 #include "Enjin/Editor/InspectorUndo.h"
 #include "Enjin/Editor/ScenePicker.h"
 #include "Enjin/Core/Version.h"
+#include "Enjin/Debug/CrashHandler.h"
 #include <GLFW/glfw3.h>
 #include <chrono>
 #include "Enjin/Logging/Log.h"
@@ -122,6 +123,22 @@ extern Enjin::Effects::Water3D* s_VisualScriptWater;
 
 namespace Enjin {
 namespace Editor {
+
+// File-scope pointer for the log callback (same pattern as GLFW callbacks).
+static EditorLayer* s_EditorLayerInstance = nullptr;
+
+static void EditorLogCallback(LogLevel /*level*/, LogCategory /*category*/, const char* formatted) {
+    if (!s_EditorLayerInstance) return;
+
+    // formatted already ends with \n — strip it for console display
+    std::string line(formatted);
+    while (!line.empty() && (line.back() == '\n' || line.back() == '\r')) {
+        line.pop_back();
+    }
+    if (line.empty()) return;
+
+    s_EditorLayerInstance->PushConsoleMessage(line);
+}
 
 // S19/S20/S23: Shell-escape a string for safe interpolation into shell commands (Unix only).
 // Wraps the string in single quotes and escapes any embedded single quotes.
@@ -314,6 +331,13 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
         serializer.LoadFromString(json, true);
     });
 
+    // Wire Logger output to the editor console panel
+    s_EditorLayerInstance = this;
+    Logger::Get().SetLogCallback(EditorLogCallback);
+
+    // Check for crash report from previous session
+    CheckForCrashReport();
+
     ENJIN_LOG_INFO(Editor, "EditorLayer initialized");
     return true;
 }
@@ -405,6 +429,10 @@ void EditorLayer::InitializePlayMode() {
 }
 
 void EditorLayer::Shutdown() {
+    // Disconnect log callback
+    Logger::Get().SetLogCallback(nullptr);
+    s_EditorLayerInstance = nullptr;
+
     // Save feedback data before shutdown
     if (m_FeedbackLoaded) {
         m_FeedbackManager.SaveAll();
@@ -1871,6 +1899,11 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Entity delete confirmation modal
     if (m_ShowDeleteConfirm) {
         DrawDeleteConfirmModal();
+    }
+
+    // Crash report dialog (previous session)
+    if (m_ShowCrashDialog) {
+        DrawCrashReportDialog();
     }
 
     // Clear the force flag after one frame

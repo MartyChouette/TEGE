@@ -9,7 +9,7 @@
 /build/
 out/
 x64/
-Debug/
+/Debug/
 Release/
 MinSizeRel/
 RelWithDebInfo/

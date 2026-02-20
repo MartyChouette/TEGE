@@ -254,6 +254,9 @@ public:
     bool WantsKeyboardInput() const;
     bool WantsMouseInput() const;
 
+    // Push a message to the editor console (used by Logger callback)
+    void PushConsoleMessage(const std::string& message);
+
 private:
     void InitializePlayMode();
     void StartPlayMode();  // Starts play mode and applies game VSync settings
@@ -1201,6 +1204,12 @@ private:
     bool m_ShowDeleteConfirm = false;
     std::vector<ECS::Entity> m_PendingDeleteEntities;
     void DrawDeleteConfirmModal();
+
+    // Crash report dialog (shown on next launch after a crash)
+    bool m_ShowCrashDialog = false;
+    std::string m_PreviousCrashReport;
+    void CheckForCrashReport();
+    void DrawCrashReportDialog();
 };
 
 } // namespace Editor

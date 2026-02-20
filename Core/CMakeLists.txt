@@ -132,7 +132,7 @@ endif()
 # Platform-specific settings
 if(WIN32)
     target_compile_definitions(EnjinCore PUBLIC ENJIN_PLATFORM_WINDOWS)
-    target_link_libraries(EnjinCore PUBLIC winmm)  # timeBeginPeriod/timeEndPeriod for precise frame pacing
+    target_link_libraries(EnjinCore PUBLIC winmm dbghelp)  # winmm: frame pacing, dbghelp: crash handler stack walks
 elseif(UNIX AND NOT APPLE)
     target_compile_definitions(EnjinCore PUBLIC ENJIN_PLATFORM_LINUX)
     # Linux system libraries
