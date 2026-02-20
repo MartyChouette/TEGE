@@ -1,8 +1,10 @@
 #include "Enjin/Scripting/ScriptSystem.h"
 #include "Enjin/Scripting/ScriptEngine.h"
+#include "Enjin/Scripting/ScriptPropertyParser.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
 #include <angelscript.h>
+#include <fstream>
 
 namespace Enjin {
 namespace Scripting {
@@ -159,6 +161,37 @@ void ScriptSystem::InitScript(ECS::Entity entity, ECS::ScriptAttachment& script)
 
     // Compile if not already compiled
     m_ScriptEngine->CompileScript(script.scriptPath);
+
+    // Parse [Property] annotations from source for editor metadata
+    {
+        std::ifstream file(script.scriptPath);
+        if (file.is_open()) {
+            std::string source((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+            auto parsed = Scripting::ParseProperties(source);
+            for (const auto& pp : parsed) {
+                auto sp = Scripting::ToScriptProperty(pp);
+                bool found = false;
+                for (auto& existing : script.properties) {
+                    if (existing.name == sp.name) {
+                        // Refresh metadata from source, preserve overridden instance values
+                        existing.hasRange = sp.hasRange;
+                        existing.rangeMin = sp.rangeMin;
+                        existing.rangeMax = sp.rangeMax;
+                        existing.tooltip = sp.tooltip;
+                        existing.header = sp.header;
+                        existing.type = sp.type;
+                        existing.defaultValue = sp.defaultValue;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    script.properties.push_back(sp);
+                }
+            }
+        }
+    }
 
     // Create instance
     asIScriptObject* obj = m_ScriptEngine->CreateInstance(moduleName, script.className);

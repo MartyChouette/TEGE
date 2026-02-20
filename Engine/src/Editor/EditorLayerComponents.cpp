@@ -5283,6 +5283,12 @@ void EditorLayer::DrawScriptComponent(ECS::Entity entity) {
                     for (auto& prop : script.properties) {
                         ImGui::PushID(prop.name.c_str());
 
+                        // Show section header if present
+                        if (!prop.header.empty()) {
+                            ImGui::Separator();
+                            ImGui::TextColored(ImVec4(0.8f, 0.8f, 0.8f, 1.0f), "%s", prop.header.c_str());
+                        }
+
                         // Show tooltip if available
                         if (!prop.tooltip.empty()) {
                             ImGui::TextDisabled("(?)");

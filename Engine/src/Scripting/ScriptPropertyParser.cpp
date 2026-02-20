@@ -42,6 +42,15 @@ static void ParseTooltipAttribute(const std::string& attrs, ParsedProperty& prop
     }
 }
 
+static void ParseHeaderAttribute(const std::string& attrs, ParsedProperty& prop) {
+    // Match Header("Section Name")
+    std::regex headerRegex(R"re(Header\s*\(\s*"([^"]*)"\s*\))re");
+    std::smatch match;
+    if (std::regex_search(attrs, match, headerRegex)) {
+        prop.header = match[1].str();
+    }
+}
+
 static ECS::ScriptPropertyValue ParseDefaultValue(const std::string& literal, ECS::ScriptPropertyType type) {
     ECS::ScriptPropertyValue val;
     if (literal.empty()) return val;
@@ -137,6 +146,7 @@ std::vector<ParsedProperty> ParseProperties(const std::string& source) {
         prop.type = TypeNameToPropertyType(prop.typeName);
         ParseRangeAttribute(attrs, prop);
         ParseTooltipAttribute(attrs, prop);
+        ParseHeaderAttribute(attrs, prop);
 
         results.push_back(prop);
     }
@@ -158,6 +168,7 @@ ECS::ScriptProperty ToScriptProperty(const ParsedProperty& parsed) {
     prop.rangeMin = parsed.rangeMin;
     prop.rangeMax = parsed.rangeMax;
     prop.tooltip = parsed.tooltip;
+    prop.header = parsed.header;
     prop.defaultValue = ParseDefaultValue(parsed.defaultLiteral, parsed.type);
     prop.instanceValue = prop.defaultValue;
     prop.isOverridden = false;
