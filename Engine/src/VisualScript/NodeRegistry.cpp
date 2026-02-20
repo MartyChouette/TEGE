@@ -34,6 +34,9 @@
 #include "Enjin/Accessibility/SubtitleSystem.h"
 #include "Enjin/Accessibility/Announcer.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
+#include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Material.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
@@ -71,6 +74,9 @@ Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer = nullptr;
 
 // Global pointer for visual script post-processing access (set by PlayMode)
 Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
+
+// Global pointer for visual script object pool access (set by PlayMode)
+Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -6824,6 +6830,770 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 if (vol) vol->priority = priority;
             }
             ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // SPRITE 2D NODES
+    // ========================================================================
+
+    // Set Sprite Texture
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteSetTexture;
+        def.displayName = "Set Sprite Texture";
+        def.description = "Set the texture path of a Sprite2D component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.4f, 0.7f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Path", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "texture", "image", "set"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string path;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                path = std::get<std::string>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* sprite = ctx.world->GetComponent<ECS::Sprite2DComponent>(target);
+                if (sprite) sprite->texturePath = path;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Sprite Color
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteSetColor;
+        def.displayName = "Set Sprite Color";
+        def.description = "Set the tint color and alpha of a Sprite2D component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.4f, 0.7f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Tint", PK::Input),
+            Float("Alpha", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "color", "tint", "alpha", "opacity"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            Math::Vector3 tint(1.0f, 1.0f, 1.0f);
+            if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) {
+                tint = std::get<Math::Vector3>(inputs[1]);
+            }
+            f32 alpha = 1.0f;
+            if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) {
+                alpha = std::get<f32>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* sprite = ctx.world->GetComponent<ECS::Sprite2DComponent>(target);
+                if (sprite) {
+                    sprite->tint = tint;
+                    sprite->alpha = alpha;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Sprite Flip
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteSetFlip;
+        def.displayName = "Set Sprite Flip";
+        def.description = "Set horizontal and vertical flip of a Sprite2D component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.4f, 0.7f, 0.3f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Flip X", PK::Input, false),
+            Bool("Flip Y", PK::Input, false)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"sprite", "flip", "mirror", "horizontal", "vertical"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            bool flipX = false, flipY = false;
+            if (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) {
+                flipX = std::get<bool>(inputs[1]);
+            }
+            if (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2])) {
+                flipY = std::get<bool>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* sprite = ctx.world->GetComponent<ECS::Sprite2DComponent>(target);
+                if (sprite) {
+                    sprite->flipX = flipX;
+                    sprite->flipY = flipY;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Get Sprite Flip
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SpriteGetFlip;
+        def.displayName = "Get Sprite Flip";
+        def.description = "Get horizontal and vertical flip state of a Sprite2D component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.4f, 0.7f, 0.3f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {
+            Bool("Flip X", PK::Output),
+            Bool("Flip Y", PK::Output)
+        };
+        def.keywords = {"sprite", "flip", "mirror", "get"};
+        // Pure nodes with multiple outputs: executor handles indexing; we return Flip X
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* sprite = ctx.world->GetComponent<ECS::Sprite2DComponent>(target);
+                if (sprite) return sprite->flipX;
+            }
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // LIGHT NODES
+    // ========================================================================
+
+    // Set Light Color
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::LightSetColor;
+        def.displayName = "Set Light Color";
+        def.description = "Set the color of a light component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Color", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"light", "color", "set"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            Math::Vector3 color(1.0f, 1.0f, 1.0f);
+            if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) {
+                color = std::get<Math::Vector3>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* light = ctx.world->GetComponent<ECS::LightComponent>(target);
+                if (light) light->color = color;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Light Intensity
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::LightSetIntensity;
+        def.displayName = "Set Light Intensity";
+        def.description = "Set the intensity of a light component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Intensity", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"light", "intensity", "brightness", "set"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            f32 intensity = 1.0f;
+            if (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) {
+                intensity = std::get<f32>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* light = ctx.world->GetComponent<ECS::LightComponent>(target);
+                if (light) light->intensity = intensity;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Get Light Intensity
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::LightGetIntensity;
+        def.displayName = "Get Light Intensity";
+        def.description = "Get the intensity of a light component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.9f, 0.8f, 0.2f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Float("Intensity", PK::Output)};
+        def.keywords = {"light", "intensity", "brightness", "get"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* light = ctx.world->GetComponent<ECS::LightComponent>(target);
+                if (light) return light->intensity;
+            }
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // CAMERA NODES
+    // ========================================================================
+
+    // Set Camera FOV
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::CameraSetFOV;
+        def.displayName = "Set Camera FOV";
+        def.description = "Set the field of view of a camera component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("FOV", PK::Input, 60.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"camera", "fov", "field of view", "zoom"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            f32 fov = 60.0f;
+            if (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) {
+                fov = std::get<f32>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* cam = ctx.world->GetComponent<ECS::CameraComponent>(target);
+                if (cam) cam->fieldOfView = fov;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Camera Active
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::CameraSetActive;
+        def.displayName = "Set Camera Active";
+        def.description = "Enable or disable a camera component";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.3f, 0.5f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Active", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"camera", "active", "enable", "disable"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            bool active = true;
+            if (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) {
+                active = std::get<bool>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* cam = ctx.world->GetComponent<ECS::CameraComponent>(target);
+                if (cam) cam->isActive = active;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // MATERIAL NODES
+    // ========================================================================
+
+    // Set Material Color
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MaterialSetColor;
+        def.displayName = "Set Material Color";
+        def.description = "Set the base color and opacity of a material";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Color", PK::Input),
+            Float("Opacity", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"material", "color", "albedo", "opacity"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            Math::Vector3 color(1.0f, 1.0f, 1.0f);
+            if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) {
+                color = std::get<Math::Vector3>(inputs[1]);
+            }
+            f32 opacity = 1.0f;
+            if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) {
+                opacity = std::get<f32>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* mat = ctx.world->GetComponent<ECS::MaterialComponent>(target);
+                if (mat) {
+                    mat->baseColor = color;
+                    mat->opacity = opacity;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Material Emissive
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MaterialSetEmissive;
+        def.displayName = "Set Material Emissive";
+        def.description = "Set the emissive color and strength of a material";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Color", PK::Input),
+            Float("Strength", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"material", "emissive", "glow", "emission"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            Math::Vector3 color(0.0f, 0.0f, 0.0f);
+            if (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1])) {
+                color = std::get<Math::Vector3>(inputs[1]);
+            }
+            f32 strength = 1.0f;
+            if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) {
+                strength = std::get<f32>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* mat = ctx.world->GetComponent<ECS::MaterialComponent>(target);
+                if (mat) {
+                    mat->emissiveColor = color;
+                    mat->emissiveStrength = strength;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // VISIBILITY NODES
+    // ========================================================================
+
+    // Set Visible
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntitySetVisible;
+        def.displayName = "Set Visible";
+        def.description = "Show or hide an entity by setting its transform visibility";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.5f, 0.5f, 0.5f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Visible", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"visible", "show", "hide", "visibility"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            bool visible = true;
+            if (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) {
+                visible = std::get<bool>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* transform = ctx.world->GetComponent<ECS::TransformComponent>(target);
+                if (transform) transform->visible = visible;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Is Visible
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::EntityIsVisible;
+        def.displayName = "Is Visible";
+        def.description = "Check if an entity is visible";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.5f, 0.5f, 0.5f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Bool("Visible", PK::Output)};
+        def.keywords = {"visible", "visibility", "shown", "hidden"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* transform = ctx.world->GetComponent<ECS::TransformComponent>(target);
+                if (transform) return transform->visible;
+            }
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // OBJECT POOL NODES
+    // ========================================================================
+
+    // Pool Acquire
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PoolAcquire;
+        def.displayName = "Pool Acquire";
+        def.description = "Acquire an entity from an object pool";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            String("Pool ID", PK::Input)
+        };
+        def.outputs = {
+            {PinDefinition{"Success", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}},
+            {PinDefinition{"Failed", Editor::PinType::Flow, Editor::PinKind::Output, {}, false}},
+            EntityPin("Entity", PK::Output)
+        };
+        def.keywords = {"pool", "acquire", "get", "spawn", "object"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string poolId;
+            if (!inputs.empty() && std::holds_alternative<std::string>(inputs[0])) {
+                poolId = std::get<std::string>(inputs[0]);
+            }
+            extern Gameplay::ObjectPool* s_VisualScriptObjectPool;
+            ECS::Entity entity = ECS::INVALID_ENTITY;
+            if (s_VisualScriptObjectPool && !poolId.empty()) {
+                entity = s_VisualScriptObjectPool->Acquire(poolId);
+            }
+            outputs.resize(1);
+            outputs[0] = entity;
+            ctx.nextFlowIndex = (entity != ECS::INVALID_ENTITY) ? 0 : 1;
+        };
+        RegisterNode(def);
+    }
+
+    // Pool Release
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PoolRelease;
+        def.displayName = "Pool Release";
+        def.description = "Release an entity back to an object pool";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.7f, 0.4f);
+        def.inputs = {
+            FlowIn(),
+            String("Pool ID", PK::Input),
+            EntityPin("Entity", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"pool", "release", "return", "recycle", "object"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            std::string poolId;
+            if (!inputs.empty() && std::holds_alternative<std::string>(inputs[0])) {
+                poolId = std::get<std::string>(inputs[0]);
+            }
+            ECS::Entity entity = ECS::INVALID_ENTITY;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                entity = std::get<ECS::Entity>(inputs[1]);
+            }
+            extern Gameplay::ObjectPool* s_VisualScriptObjectPool;
+            if (s_VisualScriptObjectPool && !poolId.empty() && entity != ECS::INVALID_ENTITY) {
+                s_VisualScriptObjectPool->Release(poolId, entity);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // SAVE DATA NODES
+    // ========================================================================
+
+    // Save Data Set
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SaveDataSet;
+        def.displayName = "Save Data Set";
+        def.description = "Set a key-value pair on an entity's SaveDataComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Key", PK::Input),
+            String("Value", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"save", "data", "set", "key", "value", "persist"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string key, value;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                key = std::get<std::string>(inputs[1]);
+            }
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) {
+                value = std::get<std::string>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY && !key.empty()) {
+                auto* saveData = ctx.world->GetComponent<ECS::SaveDataComponent>(target);
+                if (saveData) saveData->SetData(key, value);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Save Data Get
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SaveDataGet;
+        def.displayName = "Save Data Get";
+        def.description = "Get a value by key from an entity's SaveDataComponent";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {
+            EntityPin("Entity", PK::Input),
+            String("Key", PK::Input),
+            String("Default", PK::Input)
+        };
+        def.outputs = {String("Value", PK::Output)};
+        def.keywords = {"save", "data", "get", "key", "value", "read"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string key, defaultVal;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                key = std::get<std::string>(inputs[1]);
+            }
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2])) {
+                defaultVal = std::get<std::string>(inputs[2]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* saveData = ctx.world->GetComponent<ECS::SaveDataComponent>(target);
+                if (saveData) return saveData->GetData(key, defaultVal);
+            }
+            return defaultVal;
+        };
+        RegisterNode(def);
+    }
+
+    // Save Data Has Tag
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::SaveDataHasTag;
+        def.displayName = "Save Data Has Tag";
+        def.description = "Check if an entity's SaveDataComponent has a specific tag";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.3f, 0.7f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {
+            EntityPin("Entity", PK::Input),
+            String("Tag", PK::Input)
+        };
+        def.outputs = {Bool("Has Tag", PK::Output)};
+        def.keywords = {"save", "data", "tag", "has", "check"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string tag;
+            if (inputs.size() > 1 && std::holds_alternative<std::string>(inputs[1])) {
+                tag = std::get<std::string>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* saveData = ctx.world->GetComponent<ECS::SaveDataComponent>(target);
+                if (saveData) return saveData->HasTag(tag);
+            }
+            return false;
+        };
+        RegisterNode(def);
+    }
+
+    // ========================================================================
+    // RIGIDBODY NODES
+    // ========================================================================
+
+    // Set Kinematic
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PhysicsSetKinematic;
+        def.displayName = "Set Kinematic";
+        def.description = "Set whether a rigidbody is kinematic or dynamic";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Kinematic", PK::Input, false)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"physics", "kinematic", "dynamic", "rigidbody", "body type"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            bool kinematic = false;
+            if (inputs.size() > 1 && std::holds_alternative<bool>(inputs[1])) {
+                kinematic = std::get<bool>(inputs[1]);
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* rb = ctx.world->GetComponent<ECS::RigidbodyComponent>(target);
+                if (rb) {
+                    rb->bodyType = kinematic ? ECS::RigidbodyComponent::BodyType::Kinematic
+                                             : ECS::RigidbodyComponent::BodyType::Dynamic;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Get Angular Velocity
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::PhysicsGetAngularVelocity;
+        def.displayName = "Get Angular Velocity";
+        def.description = "Get the angular velocity of a rigidbody";
+        def.category = NodeCategory::Physics;
+        def.headerColor = Math::Vector3(0.4f, 0.6f, 0.8f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {Vec3("Angular Velocity", PK::Output)};
+        def.keywords = {"physics", "angular", "velocity", "rotation", "spin"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* rb = ctx.world->GetComponent<ECS::RigidbodyComponent>(target);
+                if (rb) return rb->angularVelocity;
+            }
+            return Math::Vector3(0.0f, 0.0f, 0.0f);
         };
         RegisterNode(def);
     }

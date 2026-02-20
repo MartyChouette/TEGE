@@ -354,6 +354,42 @@ constexpr const char* WaterSetColor          = "Water_SetColor";
 constexpr const char* HUDSetEnabled  = "HUD_SetEnabled";
 constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
 
+// Sprite2D
+constexpr const char* SpriteSetTexture       = "Sprite_SetTexture";
+constexpr const char* SpriteSetColor         = "Sprite_SetColor";
+constexpr const char* SpriteSetFlip          = "Sprite_SetFlip";
+constexpr const char* SpriteGetFlip          = "Sprite_GetFlip";
+
+// Light
+constexpr const char* LightSetColor          = "Light_SetColor";
+constexpr const char* LightSetIntensity      = "Light_SetIntensity";
+constexpr const char* LightGetIntensity      = "Light_GetIntensity";
+
+// Camera
+constexpr const char* CameraSetFOV           = "Camera_SetFOV";
+constexpr const char* CameraSetActive        = "Camera_SetActive";
+
+// Material
+constexpr const char* MaterialSetColor       = "Material_SetColor";
+constexpr const char* MaterialSetEmissive    = "Material_SetEmissive";
+
+// Visibility
+constexpr const char* EntitySetVisible       = "Entity_SetVisible";
+constexpr const char* EntityIsVisible        = "Entity_IsVisible";
+
+// Object Pool
+constexpr const char* PoolAcquire            = "Pool_Acquire";
+constexpr const char* PoolRelease            = "Pool_Release";
+
+// Save Data
+constexpr const char* SaveDataSet            = "SaveData_Set";
+constexpr const char* SaveDataGet            = "SaveData_Get";
+constexpr const char* SaveDataHasTag         = "SaveData_HasTag";
+
+// Rigidbody
+constexpr const char* PhysicsSetKinematic    = "Physics_SetKinematic";
+constexpr const char* PhysicsGetAngularVelocity = "Physics_GetAngularVelocity";
+
 // Post-Process Volume
 constexpr const char* PPVolumeSetActive      = "PPVolume_SetActive";
 constexpr const char* PPVolumeSetWeight      = "PPVolume_SetWeight";

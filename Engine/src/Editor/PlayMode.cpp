@@ -34,6 +34,7 @@ extern Enjin::Accessibility::AccessibilityAnnouncer* s_VisualScriptAnnouncer;
 extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
 extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
 extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
+extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
 
 namespace Enjin {
 namespace Editor {
@@ -186,6 +187,7 @@ void PlayMode::Play() {
     s_VisualScriptPostProcessing = m_PostProcessing;
     s_VisualScriptWater = m_Water3D;
     s_VisualScriptAudioGraphRuntime = &m_AudioGraphRuntime;
+    s_VisualScriptObjectPool = &m_ObjectPool;
     ENJIN_LOG_INFO(Editor, "PlayMode: Script bindings set");
 
     // Initialize owned systems
@@ -395,6 +397,7 @@ void PlayMode::Stop() {
     s_VisualScriptAudio = nullptr;
     s_VisualScriptPostProcessing = nullptr;
     s_VisualScriptAudioGraphRuntime = nullptr;
+    s_VisualScriptObjectPool = nullptr;
     Scripting::SetBindingsWorld(nullptr);
     Scripting::SetBindingsRenderSystem(nullptr);
     Scripting::SetBindingsDialogueSystem(nullptr);
