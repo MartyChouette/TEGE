@@ -75,7 +75,7 @@ void PlayMode::Initialize(ECS::World* world, Renderer::Camera* camera,
     m_StreamingManager.SetEnabled(false);
 
     // Initialize scripting engine
-    if (m_ScriptEngine.Init()) {
+    if (m_ScriptEngine.Initialize()) {
         Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
         m_ScriptEngine.SetWorld(world);
         m_ScriptEngine.SetScriptDirectory("scripts");

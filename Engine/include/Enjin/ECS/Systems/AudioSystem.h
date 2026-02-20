@@ -12,7 +12,7 @@ namespace Enjin {
 namespace ECS {
 
 // ECS system that drives audio playback from AudioSourceComponent / AudioListenerComponent
-class AudioSystem {
+class ENJIN_API AudioSystem {
 public:
     explicit AudioSystem(World* world) : m_World(world) {}
     ~AudioSystem() { Shutdown(); }

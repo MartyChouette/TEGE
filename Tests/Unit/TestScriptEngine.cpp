@@ -11,13 +11,13 @@ using namespace Enjin::Scripting;
 
 ENJIN_TEST(Init, HeadlessInitSucceeds) {
     ScriptEngine engine;
-    ENJIN_EXPECT_TRUE(engine.Init());
+    ENJIN_EXPECT_TRUE(engine.Initialize());
     engine.Shutdown();
 }
 
 ENJIN_TEST(Init, DoubleInitIsSafe) {
     ScriptEngine engine;
-    ENJIN_EXPECT_TRUE(engine.Init());
+    ENJIN_EXPECT_TRUE(engine.Initialize());
     // Second init should be safe (either succeeds or no-ops)
     engine.Shutdown();
 }
@@ -29,14 +29,14 @@ ENJIN_TEST(Init, ShutdownWithoutInitIsSafe) {
 
 ENJIN_TEST(Init, GetASEngineNonNull) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     ENJIN_EXPECT_NOT_NULL(engine.GetASEngine());
     engine.Shutdown();
 }
 
 ENJIN_TEST(Init, LastErrorEmptyOnSuccess) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     ENJIN_EXPECT_TRUE(engine.GetLastError().empty());
     engine.Shutdown();
 }
@@ -47,14 +47,14 @@ ENJIN_TEST(Init, LastErrorEmptyOnSuccess) {
 
 ENJIN_TEST(Bindings, RegisterAllDoesNotCrash) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     RegisterAllBindings(engine.GetASEngine());
     engine.Shutdown();
 }
 
 ENJIN_TEST(Bindings, MinimumFunctionCount) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     RegisterAllBindings(engine.GetASEngine());
 
     // Query total registered global functions via AngelScript API
@@ -70,7 +70,7 @@ ENJIN_TEST(Bindings, MinimumFunctionCount) {
 
 ENJIN_TEST(Bindings, MathTypesRegistered) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     RegisterAllBindings(engine.GetASEngine());
 
     asIScriptEngine* as = engine.GetASEngine();
@@ -85,7 +85,7 @@ ENJIN_TEST(Bindings, MathTypesRegistered) {
 
 ENJIN_TEST(Bindings, EntityTypeRegistered) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     RegisterAllBindings(engine.GetASEngine());
 
     asIScriptEngine* as = engine.GetASEngine();
@@ -100,7 +100,7 @@ ENJIN_TEST(Bindings, EntityTypeRegistered) {
 
 ENJIN_TEST(ContextPool, AcquireReturnsNonNull) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
     asIScriptContext* ctx = engine.AcquireContext();
     ENJIN_EXPECT_NOT_NULL(ctx);
     engine.ReturnContext(ctx);
@@ -109,7 +109,7 @@ ENJIN_TEST(ContextPool, AcquireReturnsNonNull) {
 
 ENJIN_TEST(ContextPool, AcquireMultiple) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     asIScriptContext* c1 = engine.AcquireContext();
     asIScriptContext* c2 = engine.AcquireContext();
@@ -135,7 +135,7 @@ ENJIN_TEST(ContextPool, AcquireMultiple) {
 
 ENJIN_TEST(Compile, ValidScriptFromMemory) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     bool ok = engine.CompileScriptFromMemory("test_module",
         "void main() { float x = 1.0f + 2.0f; }");
@@ -146,7 +146,7 @@ ENJIN_TEST(Compile, ValidScriptFromMemory) {
 
 ENJIN_TEST(Compile, SyntaxErrorFails) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     bool ok = engine.CompileScriptFromMemory("bad_module",
         "void main() { this is not valid code!!! }");
@@ -158,7 +158,7 @@ ENJIN_TEST(Compile, SyntaxErrorFails) {
 
 ENJIN_TEST(Compile, EmptyScriptDoesNotCrash) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     // Empty source — may succeed or fail depending on AngelScript version,
     // but must not crash or leave engine in a bad state
@@ -174,7 +174,7 @@ ENJIN_TEST(Compile, EmptyScriptDoesNotCrash) {
 
 ENJIN_TEST(Compile, EmptyModuleNameFails) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     bool ok = engine.CompileScriptFromMemory("", "void main() {}");
     ENJIN_EXPECT_FALSE(ok);
@@ -184,7 +184,7 @@ ENJIN_TEST(Compile, EmptyModuleNameFails) {
 
 ENJIN_TEST(Compile, UsesStdStringBinding) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     // Init registers std::string — verify we can compile using it
     bool ok = engine.CompileScriptFromMemory("string_test",
@@ -196,7 +196,7 @@ ENJIN_TEST(Compile, UsesStdStringBinding) {
 
 ENJIN_TEST(Compile, UsesBuiltinMathFunctions) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     // Init registers RegisterScriptMath — cos, sin, sqrt, etc.
     bool ok = engine.CompileScriptFromMemory("mathfunc_test",
@@ -212,7 +212,7 @@ ENJIN_TEST(Compile, UsesBuiltinMathFunctions) {
 
 ENJIN_TEST(Execution, TrivialScriptRuns) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     bool ok = engine.CompileScriptFromMemory("run_test",
         "int result = 0;\nvoid main() { result = 42; }");
@@ -235,7 +235,7 @@ ENJIN_TEST(Execution, TrivialScriptRuns) {
 
 ENJIN_TEST(Execution, GlobalVariableAccess) {
     ScriptEngine engine;
-    engine.Init();
+    engine.Initialize();
 
     bool ok = engine.CompileScriptFromMemory("globals_test",
         "int counter = 0;\nvoid Increment() { counter += 10; }");

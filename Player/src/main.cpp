@@ -240,7 +240,7 @@ public:
         Enjin::Audio::AudioManager::Get().Initialize();
 
         // Initialize scripting engine
-        if (m_ScriptEngine.Init()) {
+        if (m_ScriptEngine.Initialize()) {
             Enjin::Scripting::RegisterAllBindings(m_ScriptEngine.GetASEngine());
             m_ScriptEngine.SetWorld(m_World.get());
             m_ScriptEngine.SetScriptDirectory("scripts");

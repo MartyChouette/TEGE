@@ -5,6 +5,7 @@
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
 #include "Enjin/GUI/DialogueTree.h"
+#include <nlohmann/json.hpp>
 #include "Enjin/ECS/World.h"
 
 #include <string>

@@ -1,4 +1,5 @@
 #include "Enjin/GUI/DialogueTree.h"
+#include <nlohmann/json.hpp>
 #include "Enjin/Logging/Log.h"
 
 #include <imgui.h>

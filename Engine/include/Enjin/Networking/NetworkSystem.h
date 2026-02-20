@@ -11,7 +11,7 @@
 namespace Enjin {
 namespace Networking {
 
-class NetworkSystem {
+class ENJIN_API NetworkSystem {
 public:
     NetworkSystem() = default;
     ~NetworkSystem() = default;

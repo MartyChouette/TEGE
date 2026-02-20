@@ -1,6 +1,7 @@
 #include "EnjinTest.h"
 #include "Enjin/Platform/Types.h"
 #include "Enjin/GUI/DialogueTree.h"
+#include <nlohmann/json.hpp>
 
 using namespace Enjin;
 using namespace Enjin::GUI;

@@ -20,7 +20,7 @@ public:
     ScriptEngine();
     ~ScriptEngine();
 
-    bool Init();
+    bool Initialize();
     void Shutdown();
 
     // Compile a script file into a module, returns true on success

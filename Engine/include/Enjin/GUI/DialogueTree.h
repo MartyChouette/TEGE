@@ -8,7 +8,7 @@
 #include <vector>
 #include <unordered_map>
 #include <functional>
-#include <nlohmann/json.hpp>
+#include <nlohmann/json_fwd.hpp>
 
 namespace Enjin::GUI {
 

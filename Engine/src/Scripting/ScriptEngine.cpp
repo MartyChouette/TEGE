@@ -35,10 +35,10 @@ ScriptEngine::~ScriptEngine()
 // Init
 // ---------------------------------------------------------------------------
 
-bool ScriptEngine::Init()
+bool ScriptEngine::Initialize()
 {
     if (m_Engine) {
-        ENJIN_LOG_WARN(Script, "ScriptEngine::Init called but engine already initialized");
+        ENJIN_LOG_WARN(Script, "ScriptEngine::Initialize called but engine already initialized");
         return true;
     }
 
