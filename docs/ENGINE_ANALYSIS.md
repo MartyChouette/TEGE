@@ -408,14 +408,14 @@ This matrix compares Enjin's current feature set against five established game e
 
 | Engine | Full | Partial | Basic | Stub | None |
 |--------|------|---------|-------|------|------|
-| **Enjin** | 49 | 1 | 1 | 1 | 1 |
+| **Enjin** | 53 | 1 | 1 | 1 | 1 |
 | **Unity** | 37 | 7 | 2 | 0 | 7 |
 | **Godot** | 31 | 10 | 1 | 0 | 11 |
 | **Unreal** | 38 | 6 | 0 | 0 | 9 |
 | **GameMaker** | 14 | 5 | 9 | 0 | 24 |
 | **Construct** | 13 | 9 | 5 | 0 | 25 |
 
-Enjin achieves surprisingly broad feature coverage for a single-developer engine. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
+Enjin achieves surprisingly broad feature coverage for a single-developer engine, now including Steam Audio HRTF spatial audio, sprite normal map lighting, and a 26-executable automated test suite. Its main gaps are mobile platform support and console certification (which require licensed devkits and partnership agreements).
 
 ---
 
@@ -1067,7 +1067,7 @@ graph TB
     end
 
     subgraph VulkanDeps["Vulkan Foundation"]
-        VkContext["VulkanContext"]
+        VkContext["VulkanContext<br/>(25+ VkResult Checks)"]
         VkRenderer["VulkanRenderer"]
         VkPipeline["VulkanPipeline"]
         VkBuffer["VulkanBuffer"]
@@ -1075,16 +1075,16 @@ graph TB
     end
 
     subgraph ECSDeps["ECS Foundation"]
-        World["ECS::World"]
+        World["ECS::World<br/>(O(1) Entity Validation)"]
         Entity["ECS::Entity"]
         Components["Component Types"]
     end
 
     subgraph RenderFeatures["Rendering Features"]
         RenderSys["RenderSystem"]
-        Shadows["Shadow Mapping<br/>(CSM/Point/Spot)"]
+        Shadows["Shadow Mapping<br/>(CSM w/ Cascade Blending,<br/>Point/Spot)"]
         PostProc["Post-Processing"]
-        SpriteBatch["Sprite Batching"]
+        SpriteBatch["Sprite Batching<br/>(Normal Map Lighting,<br/>Drop Shadows)"]
         SpriteAtlas["Sprite Atlas"]
         ParticleRend["Particle Renderer"]
         Skybox["Skybox"]
@@ -1113,8 +1113,7 @@ graph TB
         IPhysics2D["IPhysicsBackend2D"]
         Jolt["Jolt Backend"]
         Box2D["Box2D Backend"]
-        SimplePhy["SimplePhysics"]
-        PhysicsFactory["Backend Factory"]
+        PhysicsFactory["Backend Factory<br/>(Jolt/Box2D Only)"]
         Collision["Collision Detection"]
         SpatialHash["Spatial Hash Grid"]
         Joints["Joint System"]
@@ -1157,7 +1156,7 @@ graph TB
         Hierarchy["Hierarchy Panel"]
         ScenePicker["Scene Picker"]
         Gizmos["Transform Gizmos"]
-        Templates["Template System"]
+        Templates["Template System<br/>(MaturityTier Badges)"]
         Marketplace["Template Marketplace"]
         Undo["Undo/Redo"]
         CmdPalette["Command Palette"]
@@ -1172,6 +1171,19 @@ graph TB
         ProcGen["Procedural Generation"]
         WindSys["Wind System"]
         WorldTime["World Time"]
+    end
+
+    subgraph AudioFeatures["Audio Features"]
+        SimpleAudioSys["SimpleAudio<br/>(miniaudio)"]
+        SteamAudioProc["SteamAudioProcessor<br/>(HRTF, Occlusion,<br/>Transmission)"]
+        AudioEvents["Audio Event Graph"]
+        MIDI["MIDI Input"]
+    end
+
+    subgraph TestFeatures["Test Infrastructure"]
+        TestFramework["EnjinTest.h Framework"]
+        UnitTests["22 Unit Test Suites"]
+        IntegrationTests["4 Integration Tests"]
     end
 
     subgraph NetworkFeatures["Networking"]
@@ -1269,12 +1281,8 @@ graph TB
     World --> IPhysics2D
     IPhysics --> Jolt
     IPhysics2D --> Box2D
-    IPhysics --> SimplePhy
-    IPhysics2D --> SimplePhy
     PhysicsFactory --> Jolt
     PhysicsFactory --> Box2D
-    PhysicsFactory --> SimplePhy
-    SimplePhy --> Collision
     Collision --> SpatialHash
     IPhysics --> Joints
     Joints --> Ragdoll
@@ -1359,6 +1367,23 @@ graph TB
     UISys --> SwitchAccess
     UISys --> FontScale
 
+    %% Audio Dependencies
+    SimpleAudioSys --> SteamAudioProc
+    SteamAudioProc --> IPhysics
+    PlayMode --> SteamAudioProc
+    PlayerApp --> SteamAudioProc
+    Bindings --> SimpleAudioSys
+    SimpleAudioSys --> AudioEvents
+    Input --> MIDI
+
+    %% Test Infrastructure
+    TestFramework --> UnitTests
+    TestFramework --> IntegrationTests
+    World --> UnitTests
+    IPhysics --> UnitTests
+    SceneSerial --> IntegrationTests
+    ASEngine --> IntegrationTests
+
     %% Graph Editor Dependencies
     VkPipeline --> ShaderGraph
     Particles --> ParticleGraph
@@ -1370,6 +1395,8 @@ graph TB
     style VulkanDeps fill:#1a1a2a,stroke:#4a4a8a
     style ECSDeps fill:#2a1a1a,stroke:#8a4a4a
     style RTFeatures fill:#2a1a2a,stroke:#8a4a8a
+    style AudioFeatures fill:#2a2a2a,stroke:#9a6a3a
+    style TestFeatures fill:#1a2a1a,stroke:#6a9a6a
     style PhysicsFeatures fill:#1a2a2a,stroke:#4a8a8a
     style ScriptFeatures fill:#2a2a1a,stroke:#8a8a4a
     style GameplayFeatures fill:#2a1a2a,stroke:#8a4a8a
@@ -1381,7 +1408,7 @@ graph TB
 
 2. **ECS::World is the central hub**: Almost every system depends on World for entity management. This is appropriate for an ECS architecture but means World stability is critical.
 
-3. **Physics abstraction is well-isolated**: `IPhysicsBackend` cleanly separates consumers from implementations. Swapping backends requires zero changes to gameplay code.
+3. **Physics abstraction is well-isolated**: `IPhysicsBackend` cleanly separates consumers from implementations. Swapping between Jolt and Box2D requires zero changes to gameplay code. The legacy SimplePhysics backend has been fully removed.
 
 4. **Scripting has broad reach**: Script bindings touch nearly every system (physics, audio, UI, gameplay, effects, procedural gen). Adding new systems requires adding new bindings to remain accessible.
 
@@ -1391,12 +1418,18 @@ graph TB
 
 7. **RT pipeline is cleanly optional**: Ray tracing flows through `RTCapabilities` detection and gracefully falls back. The raster pipeline is completely independent.
 
+8. **Steam Audio is a cross-system dependency**: `SteamAudioProcessor` bridges audio with physics — it uses collider geometry for occlusion/transmission calculations. This is the only place audio and physics directly interact, and it gracefully falls back to miniaudio built-in spatialization when Steam Audio is unavailable.
+
+9. **Test infrastructure is a parallel tree**: Tests depend on core systems (World, Physics, Serializer, ScriptEngine) but nothing in production depends on tests. The 22 unit + 4 integration suites can be added or removed without affecting the engine.
+
+10. **Serializer is a trust boundary**: The scene serializer and asset packer have been hardened (array caps, type safety, path traversal prevention) because they process external data. The trust zone boundary map documents all such interaction points.
+
 ---
 
 ## Appendix: Data Sources
 
 All data in this document is derived from:
-- `CLAUDE.md` -- Primary project context (~450 lines of verified feature documentation)
+- `CLAUDE.md` -- Primary project context (~470 lines of verified feature documentation)
 - `docs/ROADMAP.md` -- Technical roadmap with implementation details and priority matrices
 - `docs/ARCHITECTURE.md` -- System architecture documentation
 - `docs/ENGINE_ANALYSIS.md` -- This document (comprehensive technical analysis)
@@ -1404,6 +1437,12 @@ All data in this document is derived from:
 - `docs/AUDIT_2026_02_12.md` -- Follow-up audit (96 findings)
 - `docs/AUDIT_2026_02_12_R2.md` -- Third audit round (83 findings)
 - `docs/AUDIT_2026_02_13.md` -- Fourth audit round
+- `docs/AUDIT_2026_02_18.md` -- Beta 0.8 audit report
+- `docs/AUDIT_ECS.md` -- ECS subsystem audit (O(1) validation, 40 tests)
+- `docs/AUDIT_RENDERER.md` -- Vulkan renderer hardening audit
+- `docs/AUDIT_SERIALIZATION.md` -- Serialization and type safety audit
+- `docs/AUDIT_ASSET_PACK.md` -- Asset packer security audit
+- `docs/AUDIT_PHYSICS_AUDIO.md` -- Physics and audio hardening audit
 - `docs/SECURITY_AUDIT.md` -- Security audit (35 findings)
 
 Feature counts, component counts, binding counts, node counts, and all technical specifications reference verified codebase data as documented in these files. Market analysis figures are estimates based on publicly available industry data and reasonable projections for a new entrant.

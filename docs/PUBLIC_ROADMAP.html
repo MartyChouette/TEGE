@@ -189,6 +189,17 @@
             overflow-x: auto;
         }
         .diagram-container .mermaid { display: flex; justify-content: center; }
+        .diagram-container.full-width {
+            width: 100vw;
+            position: relative;
+            left: 50%;
+            transform: translateX(-50%);
+            border-radius: 0;
+            border-left: none;
+            border-right: none;
+            padding: 2rem 3rem;
+        }
+        .diagram-container.full-width .mermaid { min-width: 100%; }
 
         /* ===== RELEASE CHANNELS ===== */
         .channel-grid {
@@ -277,7 +288,7 @@
     <a href="#releases">Releases</a>
     <a href="#timeline">Timeline</a>
     <span class="spacer"></span>
-    <span class="version-badge">v0.7</span>
+    <span class="version-badge">v0.8-beta</span>
 </nav>
 
 <div class="container">
@@ -286,7 +297,7 @@
     <div class="hero">
         <h1>Development Roadmap</h1>
         <p>A tiered, quality-first approach to building a production-grade game engine. Core systems are hardened first — features ship only when they're ready.</p>
-        <div class="date">Last updated: February 18, 2026</div>
+        <div class="date">Last updated: February 19, 2026</div>
     </div>
 
     <!-- ===== LEGEND ===== -->
@@ -316,8 +327,12 @@
             <div class="metric-label">Visual Script Nodes</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">4</div>
-            <div class="metric-label">Tier Levels</div>
+            <div class="metric-value">600+</div>
+            <div class="metric-label">Tests Passing</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-value">31</div>
+            <div class="metric-label">Test Suites</div>
         </div>
     </div>
 
@@ -468,7 +483,7 @@ graph TB
                     <div class="feature-item"><div class="dot done"></div> ECS World &amp; Entities</div>
                     <div class="feature-item"><div class="dot done"></div> Component Queries</div>
                     <div class="feature-item"><div class="dot done"></div> Deferred Destruction</div>
-                    <div class="feature-item"><div class="dot wip"></div> Vulkan Render Pipeline</div>
+                    <div class="feature-item"><div class="dot done"></div> Vulkan Render Pipeline</div>
                     <div class="feature-item"><div class="dot done"></div> PBR Materials</div>
                     <div class="feature-item"><div class="dot done"></div> 4-Cascade CSM Shadows</div>
                     <div class="feature-item"><div class="dot done"></div> Sprite Batching &amp; Atlas</div>
@@ -637,23 +652,23 @@ graph LR
         <h3>Branch Strategy</h3>
         <div class="diagram-container">
             <div class="mermaid">
-gitgraph
+gitGraph
     commit id: "v0.7.0"
-    branch "beta/0.8"
-    checkout "beta/0.8"
+    branch beta-0.8
+    checkout beta-0.8
     commit id: "Tier 1 audit"
     commit id: "Tier 1 tests"
     checkout main
     commit id: "T3 feature work"
     commit id: "T4 experiments"
-    checkout "beta/0.8"
+    checkout beta-0.8
     commit id: "Tier 2 hardening"
-    branch "release/0.8"
-    checkout "release/0.8"
+    branch release-0.8
+    checkout release-0.8
     commit id: "v0.8.0-rc.1" tag: "v0.8.0-rc.1"
     commit id: "v0.8.0" tag: "v0.8.0"
     checkout main
-    merge "release/0.8"
+    merge release-0.8
     commit id: "post-release"
             </div>
         </div>
@@ -664,7 +679,7 @@ gitgraph
         <h2>Milestone Timeline</h2>
         <p>Concrete milestones with acceptance criteria. Dates are targets, not promises — quality gates take priority over deadlines.</p>
 
-        <div class="diagram-container">
+        <div class="diagram-container full-width">
             <div class="mermaid">
 gantt
     title Enjin Engine Development Timeline
@@ -833,9 +848,10 @@ flowchart LR
             barHeight: 24,
             barGap: 6,
             topPadding: 50,
-            sidePadding: 75,
+            sidePadding: 50,
             numberSectionStyles: 4,
-            axisFormat: '%b %Y'
+            axisFormat: '%b %Y',
+            useWidth: undefined
         },
         gitGraph: {
             showBranches: true,
