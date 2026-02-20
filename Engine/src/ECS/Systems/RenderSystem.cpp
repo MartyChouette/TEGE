@@ -5302,6 +5302,14 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
 
     m_ASManager->ResetInstances();
 
+    // Cache pool buffer device addresses (computed once, reused for all pool entities)
+    VkDeviceAddress poolVertBase = 0;
+    VkDeviceAddress poolIdxBase = 0;
+    if (m_GeometryPool && m_GeometryPool->GetVertexBuffer() && m_GeometryPool->GetIndexBuffer()) {
+        poolVertBase = m_GeometryPool->GetVertexBuffer()->GetDeviceAddress();
+        poolIdxBase = m_GeometryPool->GetIndexBuffer()->GetDeviceAddress();
+    }
+
     // Add all mesh entities to the TLAS
     for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
         auto* transform = m_World->GetComponent<TransformComponent>(entity);
@@ -5309,24 +5317,40 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         if (!transform || !mesh || !transform->visible) continue;
         if (mesh->vertices.empty() || mesh->indices.empty()) continue;
 
-        // Get or create entity render data for buffer addresses
-        // Pool-allocated entities are skipped — only per-entity buffers support BLAS building
-        // TODO: Add pool buffer BLAS support (requires debugging device address issues)
         if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
         const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
-        if (!rd.valid || !rd.vertexBuffer || !rd.indexBuffer) continue;
+        if (!rd.valid) continue;
 
-        VkDeviceAddress vertAddr = rd.vertexBuffer->GetDeviceAddress();
-        VkDeviceAddress idxAddr = rd.indexBuffer->GetDeviceAddress();
+        VkDeviceAddress vertAddr = 0;
+        VkDeviceAddress idxAddr = 0;
+        u32 vertexCount = 0;
+        u32 indexCount = 0;
+
+        if (rd.vertexBuffer && rd.indexBuffer) {
+            // Per-entity buffers (dynamic meshes, skinned, pool overflow)
+            vertAddr = rd.vertexBuffer->GetDeviceAddress();
+            idxAddr = rd.indexBuffer->GetDeviceAddress();
+            vertexCount = static_cast<u32>(mesh->vertices.size());
+            indexCount = static_cast<u32>(mesh->indices.size());
+        } else if (rd.poolAlloc.valid && poolVertBase != 0 && poolIdxBase != 0) {
+            // Pool-allocated: base address + byte offset into merged buffer
+            vertAddr = poolVertBase + static_cast<VkDeviceAddress>(rd.poolAlloc.vertexOffset) * sizeof(MeshComponent::Vertex);
+            idxAddr = poolIdxBase + static_cast<VkDeviceAddress>(rd.poolAlloc.indexOffset) * sizeof(u32);
+            vertexCount = rd.poolAlloc.vertexCount;
+            indexCount = rd.poolAlloc.indexCount;
+        } else {
+            continue;
+        }
+
         if (vertAddr == 0 || idxAddr == 0) continue;
 
-        // Hash based on buffer addresses (unique per mesh data)
+        // Hash based on buffer addresses (unique per mesh region)
         u64 meshHash = vertAddr ^ (idxAddr << 32) ^ (idxAddr >> 32);
 
         u32 blasId = m_ASManager->RegisterMesh(
             meshHash,
-            vertAddr, static_cast<u32>(mesh->vertices.size()), sizeof(MeshComponent::Vertex),
-            idxAddr, static_cast<u32>(mesh->indices.size()));
+            vertAddr, vertexCount, sizeof(MeshComponent::Vertex),
+            idxAddr, indexCount);
 
         // Build world model matrix (includes parent chain)
         Math::Matrix4 model = ECS::ComputeWorldMatrix(m_World, entity);
