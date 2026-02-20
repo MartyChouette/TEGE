@@ -425,6 +425,23 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             }
         }
 
+        // Dithered transparency (CRT-style alternating pixel transparency)
+        InspectorUndo::Checkbox(m_UndoRedo, "Dithered Transparency##Mat", &material->ditherTransparency);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("CRT-style transparency: alternating pixels with blend color, naturally blurred by phosphor bloom");
+        if (material->ditherTransparency) {
+            const char* dtPatterns[] = { "Checkerboard", "H-Stripe", "V-Stripe", "Bayer 2x2" };
+            int dtPat = static_cast<int>(material->ditherTransPattern);
+            if (ImGui::Combo("Trans Pattern##DT", &dtPat, dtPatterns, 4)) {
+                material->ditherTransPattern = static_cast<u8>(dtPat);
+            }
+            float blendCol[3] = { material->ditherTransBlendColor.x, material->ditherTransBlendColor.y, material->ditherTransBlendColor.z };
+            if (ImGui::ColorEdit3("Blend Color##DT", blendCol)) {
+                material->ditherTransBlendColor = Math::Vector3(blendCol[0], blendCol[1], blendCol[2]);
+            }
+            InspectorUndo::DragFloat(m_UndoRedo, "Trans Opacity##DT", &material->ditherTransOpacity, 0.01f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("0=all blend color, 1=all original, 0.5=even mix");
+        }
+
         // Alpha mode
         const char* alphaModes[] = { "Opaque", "Mask", "Blend" };
         int currentMode = static_cast<int>(material->alphaMode);

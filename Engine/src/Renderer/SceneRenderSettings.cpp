@@ -179,6 +179,9 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.crtMaskPitch                 = pp->crtMaskPitch;
         s.crtBloomRadius               = pp->crtBloomRadius;
         s.crtBloomStrength             = pp->crtBloomStrength;
+        s.crtBloomSigma                = pp->crtBloomSigma;
+        s.crtModelPreset               = pp->crtModelPreset;
+        s.crtTVL                       = pp->crtTVL;
 
         // VHS
         s.vhsEnabled                   = pp->vhsEnabled != 0;
@@ -420,6 +423,9 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->crtMaskPitch                 = crtMaskPitch;
         pp->crtBloomRadius               = crtBloomRadius;
         pp->crtBloomStrength             = crtBloomStrength;
+        pp->crtBloomSigma                = crtBloomSigma;
+        pp->crtModelPreset               = crtModelPreset;
+        pp->crtTVL                       = crtTVL;
 
         // VHS
         pp->vhsEnabled                   = vhsEnabled ? 1 : 0;
@@ -625,6 +631,9 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["crtMaskPitch"]        = RF(s.crtMaskPitch);
     j["crtBloomRadius"]      = RF(s.crtBloomRadius);
     j["crtBloomStrength"]    = RF(s.crtBloomStrength);
+    j["crtBloomSigma"]       = RF(s.crtBloomSigma);
+    j["crtModelPreset"]      = RF(s.crtModelPreset);
+    j["crtTVL"]              = RF(s.crtTVL);
 
     // VHS
     j["vhsEnabled"]            = s.vhsEnabled;
@@ -839,6 +848,9 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("crtMaskPitch"))        s.crtMaskPitch        = j["crtMaskPitch"].get<f32>();
     if (j.contains("crtBloomRadius"))      s.crtBloomRadius      = j["crtBloomRadius"].get<f32>();
     if (j.contains("crtBloomStrength"))    s.crtBloomStrength    = j["crtBloomStrength"].get<f32>();
+    if (j.contains("crtBloomSigma"))       s.crtBloomSigma       = j["crtBloomSigma"].get<f32>();
+    if (j.contains("crtModelPreset"))      s.crtModelPreset      = j["crtModelPreset"].get<f32>();
+    if (j.contains("crtTVL"))              s.crtTVL              = j["crtTVL"].get<f32>();
 
     // VHS
     if (j.contains("vhsEnabled"))            s.vhsEnabled            = JB(j["vhsEnabled"]);

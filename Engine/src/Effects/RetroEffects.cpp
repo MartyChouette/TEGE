@@ -459,6 +459,25 @@ void RetroEffects::ApplyPCEnginePreset() {
     m_Fog.enabled = false;
 }
 
+void RetroEffects::ApplyCRTModelPreset(CRTModel model) {
+    if (model == CRTModel::Custom || static_cast<u8>(model) >= static_cast<u8>(CRTModel::Count))
+        return;
+
+    const auto& spec = CRT_MODEL_SPECS[static_cast<u8>(model)];
+    m_CRT.enabled = true;
+    m_CRT.maskType = spec.maskType;
+    m_CRT.maskPitch = spec.maskPitch;
+    m_CRT.bloomRadius = spec.bloomRadius;
+    m_CRT.bloomStrength = spec.bloomStrength;
+    m_CRT.bloomSigma = spec.bloomSigma;
+    m_CRT.scanlineIntensity = spec.scanlineIntensity;
+    m_CRT.scanlineWidth = spec.scanlineWidth;
+    m_CRT.curvature = spec.curvature;
+    m_CRT.tvl = spec.tvl;
+    m_CRT.curvedScreen = (spec.curvature > 0.0f);
+    m_CRT.phosphorGlow = true;
+}
+
 void RetroEffects::ClearAllEffects() {
     m_Enabled = false;
 

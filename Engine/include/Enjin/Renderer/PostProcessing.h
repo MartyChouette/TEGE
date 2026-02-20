@@ -140,9 +140,9 @@ struct alignas(16) PostProcessSettings {
     alignas(4) f32 crtMaskPitch = 1.0f;
     alignas(4) f32 crtBloomRadius = 1.5f;
     alignas(4) f32 crtBloomStrength = 0.3f;
-    alignas(4) f32 _crtPad0 = 0.0f;
-    alignas(4) f32 _crtPad1 = 0.0f;
-    alignas(4) f32 _crtPad2 = 0.0f;
+    alignas(4) f32 crtBloomSigma = 0.8f;      // Gaussian spread control for phosphor bloom
+    alignas(4) f32 crtModelPreset = 0.0f;      // Cast to uint in shader: CRT model index
+    alignas(4) f32 crtTVL = 400.0f;            // TV lines resolution
 
     // VHS filter
     alignas(4) u32 vhsEnabled = 0;

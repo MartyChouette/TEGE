@@ -1307,6 +1307,16 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                         + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
                 }
+                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+                if (material->ditherTransparency) {
+                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
+                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+                    u32 packed = (r << 20) | (g << 10) | b;
+                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1660,6 +1670,16 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     pushConstants.flags |= (1 << 20); // Force flat shading
                     pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                         + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
+                }
+                // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+                if (material->ditherTransparency) {
+                    pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+                    pushConstants.surfaceParam2 = material->ditherTransOpacity;
+                    u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+                    u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+                    u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+                    u32 packed = (r << 20) | (g << 10) | b;
+                    pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -3567,6 +3587,16 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.flags |= (1 << 20); // Force flat shading
             pushConstants.surfaceParam1 = 100.0f + static_cast<f32>(material->ditherGradientBands)
                 + static_cast<f32>(material->ditherGradientPattern) * 0.1f;
+        }
+        // Dithered transparency: encode pattern + opacity + blend color into surfaceParams
+        if (material->ditherTransparency) {
+            pushConstants.surfaceParam1 = 200.0f + static_cast<f32>(material->ditherTransPattern);
+            pushConstants.surfaceParam2 = material->ditherTransOpacity;
+            u32 r = static_cast<u32>(material->ditherTransBlendColor.x * 1023.0f) & 0x3FF;
+            u32 g = static_cast<u32>(material->ditherTransBlendColor.y * 1023.0f) & 0x3FF;
+            u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
+            u32 packed = (r << 20) | (g << 10) | b;
+            pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
         }
     } else {
         // Default material (light gray, non-metallic)

@@ -98,9 +98,9 @@ layout(binding = 1) uniform PostProcessSettings {
     float crtMaskPitch;
     float crtBloomRadius;
     float crtBloomStrength;
-    float _crtPad0;
-    float _crtPad1;
-    float _crtPad2;
+    float crtBloomSigma;
+    float crtModelPreset;
+    float crtTVL;
 
     // VHS filter
     uint vhsEnabled;
@@ -677,17 +677,19 @@ vec3 applyCRTPhosphor(vec3 color, vec2 uv) {
         else mask = vec3(0.2, 0.2, 1.0);
     }
 
-    // Phosphor bloom: sample neighbors weighted by gaussian
+    // Phosphor bloom: sample neighbors weighted by configurable-sigma gaussian
     vec2 texelSize = 1.0 / vec2(settings.screenWidth, settings.screenHeight);
     float radius = settings.crtBloomRadius;
+    float sigma = max(settings.crtBloomSigma, 0.3);
+    int kernelRadius = min(int(ceil(sigma * 3.0)), 3);
     vec3 bloom = vec3(0.0);
     float totalWeight = 0.0;
 
-    for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -kernelRadius; dy <= kernelRadius; dy++) {
+        for (int dx = -kernelRadius; dx <= kernelRadius; dx++) {
             vec2 offset = vec2(float(dx), float(dy)) * texelSize * radius;
             float dist = length(vec2(float(dx), float(dy)));
-            float weight = exp(-dist * dist * 0.5);
+            float weight = exp(-dist * dist / (2.0 * sigma * sigma));
             bloom += texture(sceneTexture, uv + offset).rgb * weight;
             totalWeight += weight;
         }

@@ -197,6 +197,10 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["ditherGradient"] = material.ditherGradient;
     j["ditherGradientBands"] = material.ditherGradientBands;
     j["ditherGradientPattern"] = material.ditherGradientPattern;
+    j["ditherTransparency"] = material.ditherTransparency;
+    j["ditherTransPattern"] = material.ditherTransPattern;
+    j["ditherTransBlendColor"] = { material.ditherTransBlendColor.x, material.ditherTransBlendColor.y, material.ditherTransBlendColor.z };
+    j["ditherTransOpacity"] = material.ditherTransOpacity;
     return j;
 }
 
@@ -361,6 +365,16 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("ditherGradient")) material.ditherGradient = JB(j["ditherGradient"]);
     if (j.contains("ditherGradientBands")) { u8 v = j["ditherGradientBands"].get<u8>(); if (v >= 2 && v <= 8) material.ditherGradientBands = v; }
     if (j.contains("ditherGradientPattern")) { u8 v = j["ditherGradientPattern"].get<u8>(); if (v <= 5) material.ditherGradientPattern = v; }
+    if (j.contains("ditherTransparency")) material.ditherTransparency = JB(j["ditherTransparency"]);
+    if (j.contains("ditherTransPattern")) { u8 v = j["ditherTransPattern"].get<u8>(); if (v <= 3) material.ditherTransPattern = v; }
+    if (j.contains("ditherTransBlendColor") && j["ditherTransBlendColor"].is_array() && j["ditherTransBlendColor"].size() >= 3) {
+        material.ditherTransBlendColor = Math::Vector3(
+            j["ditherTransBlendColor"][0].get<f32>(),
+            j["ditherTransBlendColor"][1].get<f32>(),
+            j["ditherTransBlendColor"][2].get<f32>()
+        );
+    }
+    if (j.contains("ditherTransOpacity")) material.ditherTransOpacity = j["ditherTransOpacity"].get<f32>();
     return material;
 }
 

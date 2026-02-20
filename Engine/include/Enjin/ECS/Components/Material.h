@@ -81,6 +81,13 @@ struct MaterialComponent {
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands
     u8 ditherGradientPattern = 0;      // 0=Bayer4x4, 1=Bayer8x8, 2=BlueNoise, 3=Halftone, 4=Crosshatch, 5=Overlook
 
+    // Dithered transparency (CRT-style: alternating pixels between original and blend color,
+    // naturally blurred by phosphor bloom in post-process for perceived transparency)
+    bool ditherTransparency = false;
+    u8 ditherTransPattern = 0;  // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
+    Math::Vector3 ditherTransBlendColor = Math::Vector3(0.7f, 0.85f, 1.0f); // light blue default
+    f32 ditherTransOpacity = 0.5f; // 0=all blend color, 1=all original, 0.5=even mix
+
     // Lightweight key for comparing/sorting texture combinations by pointer identity.
     // Texture cache guarantees pointer stability, so pointer comparison is sufficient.
     struct TextureKey {

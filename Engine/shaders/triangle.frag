@@ -812,6 +812,44 @@ void main() {
         }
     }
 
+    // Dithered transparency: alternating pixels between fragment color and blend color
+    // Encoded in surfaceParam1 >= 200: pattern in fractional part, opacity in surfaceParam2,
+    // blend color packed as 10-bit RGB in surfaceParam3
+    if (material.surfaceParam1 >= 199.5 && material.surfaceParam1 < 300.0) {
+        float encoded = material.surfaceParam1 - 200.0;
+        int dtPattern = int(floor(encoded + 0.5)); // 0=Checkerboard, 1=HStripe, 2=VStripe, 3=Bayer2x2
+        float dtOpacity = material.surfaceParam2;
+
+        // Unpack blend color from 10-bit packed float
+        uint packedColor = floatBitsToUint(material.surfaceParam3);
+        vec3 blendColor = vec3(
+            float((packedColor >> 20) & 0x3FFu) / 1023.0,
+            float((packedColor >> 10) & 0x3FFu) / 1023.0,
+            float(packedColor & 0x3FFu) / 1023.0
+        );
+
+        // Generate pattern based on screen-space pixel coordinates
+        ivec2 dtPos = ivec2(gl_FragCoord.xy);
+        bool useBlend = false;
+
+        if (dtPattern == 0) // Checkerboard
+            useBlend = ((dtPos.x + dtPos.y) % 2) == 1;
+        else if (dtPattern == 1) // H-Stripe
+            useBlend = (dtPos.y % 2) == 1;
+        else if (dtPattern == 2) // V-Stripe
+            useBlend = (dtPos.x % 2) == 1;
+        else // Bayer 2x2
+        {
+            int bx = dtPos.x % 2;
+            int by = dtPos.y % 2;
+            int val = bx + by * 2;
+            useBlend = val >= 2;
+        }
+
+        if (useBlend)
+            result = mix(blendColor, result, dtOpacity);
+    }
+
     // Dithered gradient: quantize lighting into bands with dither transitions
     // Encoded in surfaceParam1 when > 1.0: surfaceParam1 = 100 + bands + pattern * 0.1
     bool isDitherGradient = false;

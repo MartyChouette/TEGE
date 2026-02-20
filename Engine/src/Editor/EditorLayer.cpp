@@ -938,6 +938,8 @@ void EditorLayer::Update(f32 deltaTime) {
         settings.crtMaskPitch = crt.maskPitch;
         settings.crtBloomRadius = crt.bloomRadius;
         settings.crtBloomStrength = crt.bloomStrength;
+        settings.crtBloomSigma = crt.bloomSigma;
+        settings.crtTVL = crt.tvl;
 
         // VHS
         auto& vhs = m_RetroEffects.GetVHSSettings();

@@ -908,10 +908,25 @@ void EditorLayer::DrawRetroEffectsPanel() {
             // CRT Phosphor Subpixel Blending
             if (ImGui::TreeNode("CRT Phosphor")) {
                 auto& crt = m_RetroEffects.GetCRTSettings();
+
+                // CRT Model Preset dropdown
+                const char* crtModels[] = {
+                    "Custom", "Sony Trinitron KV-27V42", "Sony PVM-20M4U", "JVC TM-H150CG",
+                    "Toshiba 14AF46", "Sony GDM-FW900", "ViewSonic G810", "NEC MultiSync FE2111SB",
+                    "Generic 15kHz Arcade", "Wells Gardner K7000", "Commodore 1084S"
+                };
+                static int selectedModel = 0;
+                if (ImGui::Combo("CRT Model", &selectedModel, crtModels, 11)) {
+                    if (selectedModel > 0) {
+                        m_RetroEffects.ApplyCRTModelPreset(static_cast<Effects::CRTModel>(selectedModel));
+                    }
+                }
+
                 const char* maskTypes[] = { "Aperture Grille", "Shadow Mask", "Slot Mask" };
                 int maskType = static_cast<int>(crt.maskType);
                 if (ImGui::Combo("Mask Type", &maskType, maskTypes, 3)) {
                     crt.maskType = static_cast<u32>(maskType);
+                    selectedModel = 0; // Switch to Custom when manually editing
                 }
                 ImGui::DragFloat("Mask Pitch", &crt.maskPitch, 0.1f, 0.5f, 4.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spacing between RGB triplets in pixels");
@@ -919,6 +934,10 @@ void EditorLayer::DrawRetroEffectsPanel() {
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far phosphor light bleeds between dots");
                 ImGui::DragFloat("Bloom Strength##Phosphor", &crt.bloomStrength, 0.01f, 0.0f, 1.0f);
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip("Intensity of phosphor bleeding effect");
+                ImGui::DragFloat("Bloom Sigma##Phosphor", &crt.bloomSigma, 0.01f, 0.3f, 2.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gaussian spread: higher = softer bloom (>= 0.5 for dither blending)");
+                ImGui::DragFloat("TV Lines##Phosphor", &crt.tvl, 10.0f, 100.0f, 1200.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Horizontal resolution measure of the CRT display");
                 ImGui::TreePop();
             }
 

@@ -110,6 +110,9 @@ struct SceneRenderSettings {
     f32 crtMaskPitch = 1.0f;
     f32 crtBloomRadius = 1.5f;
     f32 crtBloomStrength = 0.3f;
+    f32 crtBloomSigma = 0.8f;
+    f32 crtModelPreset = 0.0f;
+    f32 crtTVL = 400.0f;
 
     // VHS filter
     bool vhsEnabled = false;
