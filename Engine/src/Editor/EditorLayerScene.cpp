@@ -1,0 +1,535 @@
+#include "Enjin/Editor/EditorLayer.h"
+#include "Enjin/Editor/InspectorUndo.h"
+#include "Enjin/Editor/ScenePicker.h"
+#include "Enjin/Core/Version.h"
+#include <GLFW/glfw3.h>
+#include <chrono>
+#include "Enjin/Logging/Log.h"
+#include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/Mesh.h"
+#include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Light.h"
+#include "Enjin/ECS/Components/Name.h"
+#include "Enjin/ECS/Components/Camera.h"
+#include "Enjin/ECS/Components/Notes.h"
+#include "Enjin/ECS/Components/Controllers/CharacterController.h"
+#include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/VisualScript.h"
+#include "Enjin/AI/BehaviorTree.h"
+#include "Enjin/Gameplay/QuestFlow.h"
+#include "Enjin/Gameplay/TieredSaveSystem.h"
+#include "Enjin/Editor/PlayModeDiff.h"
+#include "Enjin/Physics/PhysicsBackendType.h"
+#include "Enjin/Physics/PhysicsBackendFactory.h"
+#include "Enjin/Physics/PhysicsTypes2D.h"
+#include "Enjin/ECS/Components/WeatherZone.h"
+#include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/GrassVolume.h"
+#include "Enjin/ECS/Components/ShrubVolume.h"
+#include "Enjin/ECS/Components/TreeVolume.h"
+#include "Enjin/ECS/Components/Terrain.h"
+#include "Enjin/ECS/Components/Terrain2D.h"
+#include "Enjin/ECS/Components/Vegetation.h"
+#include "Enjin/ECS/Components/CameraTrigger.h"
+#include "Enjin/ECS/Components/TemperatureZone.h"
+#include "Enjin/ECS/Components/GravityZone.h"
+#include "Enjin/ECS/Components/PostProcessVolume.h"
+#include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/Text.h"
+#include "Enjin/ECS/Components/IKComponents.h"
+#include "Enjin/ECS/Components/Flower.h"
+#ifndef _WIN32
+#include <unistd.h>
+#endif
+#include "Enjin/ECS/Components/LOD.h"
+#include "Enjin/ECS/Components/Script.h"
+#include "Enjin/ECS/Components/Tween.h"
+#include "Enjin/ECS/Components/Hierarchy.h"
+#include "Enjin/ECS/Components/Skeleton.h"
+#include "Enjin/Renderer/MeshSimplifier.h"
+#include "Enjin/Renderer/Skybox.h"
+#include "Enjin/ECS/Systems/RenderSystem.h"
+#include "Enjin/Renderer/RayTracing/RTShadows.h"
+#include "Enjin/Renderer/RayTracing/RTReflections.h"
+#include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
+#include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/PathTracer.h"
+#include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
+#include "Enjin/Renderer/RayTracing/RTCompositor.h"
+#include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
+#include "Enjin/Renderer/SHLightProbe.h"
+#include "Enjin/Renderer/SDFScene.h"
+#include "Enjin/Renderer/OITManager.h"
+#include "Enjin/Effects/TreeRenderer.h"
+#include "Enjin/Effects/Weather.h"
+#include "Enjin/Assets/SceneImporter.h"
+#include "Enjin/Assets/FontLibrary.h"
+#include "Enjin/Assets/AssetLibrary.h"
+#include "Enjin/Assets/AssetMetadata.h"
+#include "Enjin/Scene/SceneSerializer.h"
+#include "Enjin/Renderer/MeshFactory.h"
+#include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Platform/Input.h"
+#include "Enjin/Platform/FileDialog.h"
+#include "Enjin/Assets/Prefab.h"
+#include "Enjin/Build/BuildPipeline.h"
+#include "Enjin/Assets/DataAsset.h"
+#include "Enjin/Plugin/PluginRepository.h"
+#include "Enjin/Audio/AudioSystem.h"
+#include "Enjin/Renderer/NormalMapGenerator.h"
+#include "Enjin/Editor/SpriteContourTracer.h"
+#include "Enjin/GUI/UICanvas.h"
+#include "Enjin/GUI/UITemplates.h"
+#include "Enjin/GUI/DialogueImportExport.h"
+#include "Enjin/Assets/SWFLoader.h"
+#include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Scripting/ScriptBindings.h"
+#include "Enjin/Scene/LevelStreaming.h"
+#include "Enjin/Effects/VoronoiMeshFracture.h"
+#include "Enjin/Effects/InteractiveWater.h"
+#include "Enjin/Math/Math.h"
+#include <stb_image.h>
+#include <imgui.h>
+#include <ImGuizmo.h>
+#include <backends/imgui_impl_vulkan.h>
+#include <vulkan/vulkan.h>
+#include <sstream>
+#include <fstream>
+#include <filesystem>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
+// Undefine Windows macros that collide with engine methods
+#undef LoadImage
+#undef CreateWindow
+#undef min
+#undef max
+#else
+#include <spawn.h>
+#include <sys/wait.h>
+#endif
+#include <climits>
+#include <cmath>
+#include <algorithm>
+
+namespace Enjin {
+namespace Editor {
+
+void EditorLayer::SaveScene(const std::string& path) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot save scene: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot save scene: no world loaded");
+        return;
+    }
+
+    if (path.empty()) {
+        ENJIN_LOG_ERROR(Editor, "Cannot save scene: path is empty");
+        m_ConsoleLog.push_back("[Error] Cannot save scene: path is empty");
+        return;
+    }
+
+    Scene::SceneSerializer serializer(m_World);
+    if (m_RenderSystem) {
+        serializer.SetSkyboxConfig(m_RenderSystem->GetSkyboxConfig());
+    }
+
+    // Capture current render settings for serialization
+    auto renderSettings = Renderer::SceneRenderSettings::CaptureFromRuntime(
+        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+    renderSettings.useProjectDefaults = m_CurrentSceneUsesProjectDefaults;
+    serializer.SetRenderSettings(renderSettings);
+
+    auto result = serializer.Save(path);
+
+    if (result.success) {
+        m_CurrentScenePath = path;
+        usize entityCount = m_World->GetEntityCount();
+        std::stringstream ss;
+        ss << "[Info] Saved scene to " << path << " (" << entityCount << " entities)";
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_INFO(Editor, "Saved scene to %s (%zu entities)", path.c_str(), entityCount);
+        ShowNotification("Scene saved: " + std::filesystem::path(path).filename().string(), NotificationType::Success);
+
+        // Track in recent projects
+        m_EditorSettings.AddRecentProject(path);
+        m_EditorSettings.Save();
+    } else {
+        std::stringstream ss;
+        ss << "[Error] Failed to save scene: " << result.error;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_ERROR(Editor, "Failed to save scene to %s: %s", path.c_str(), result.error.c_str());
+    }
+}
+
+void EditorLayer::OpenScene(const std::string& path) {
+    // Defer to Update phase — World::Clear() must not run during Render
+    // to avoid invalidating entity references used by the current frame.
+    m_PendingSceneLoadPath = path;
+}
+
+void EditorLayer::OpenSceneImmediate(const std::string& path) {
+    if (!m_World) {
+        ENJIN_LOG_ERROR(Editor, "Cannot open scene: no world loaded");
+        m_ConsoleLog.push_back("[Error] Cannot open scene: no world loaded");
+        return;
+    }
+
+    if (path.empty()) {
+        ENJIN_LOG_ERROR(Editor, "Cannot open scene: path is empty");
+        m_ConsoleLog.push_back("[Error] Cannot open scene: path is empty");
+        return;
+    }
+
+    Scene::SceneSerializer serializer(m_World);
+    auto result = serializer.Load(path, true); // Clear existing entities
+
+    // Apply loaded skybox config
+    if (result.success && m_RenderSystem) {
+        m_RenderSystem->SetSkybox(serializer.GetSkyboxConfig());
+    }
+
+    // Apply loaded render settings
+    if (result.success) {
+        const auto& loaded = serializer.GetRenderSettings();
+        m_CurrentSceneUsesProjectDefaults = loaded.useProjectDefaults;
+        if (loaded.useProjectDefaults) {
+            m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        } else {
+            loaded.ApplyToRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+        }
+    }
+
+    if (result.success) {
+        m_CurrentScenePath = path;
+        ClearSelection();
+        m_UndoRedo.Clear();
+
+        // Initialize scene lock manager for this scene
+        m_SceneLockManager.SetScenePath(path);
+
+        usize entityCount = result.entities.size();
+        std::stringstream ss;
+        ss << "[Info] Loaded scene from " << path << " (" << entityCount << " entities)";
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_INFO(Editor, "Loaded scene from %s (%zu entities)", path.c_str(), entityCount);
+
+        // Track in recent projects
+        m_EditorSettings.AddRecentProject(path);
+        m_EditorSettings.Save();
+    } else {
+        std::stringstream ss;
+        ss << "[Error] Failed to load scene: " << result.error;
+        m_ConsoleLog.push_back(ss.str());
+        ENJIN_LOG_ERROR(Editor, "Failed to load scene from %s: %s", path.c_str(), result.error.c_str());
+        ShowNotification("Failed to load scene: " + std::filesystem::path(path).filename().string(), NotificationType::Error);
+    }
+}
+
+void EditorLayer::OnFileDrop(int count, const char** paths) {
+    for (int i = 0; i < count; ++i) {
+        std::filesystem::path filePath(paths[i]);
+        std::string ext = filePath.extension().string();
+        // Case-insensitive extension comparison
+        std::transform(ext.begin(), ext.end(), ext.begin(),
+            [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+        if (ext == ".fbx" || ext == ".obj" || ext == ".gltf" || ext == ".glb" ||
+            ext == ".dae" || ext == ".3ds") {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop import: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop import: ") + paths[i]);
+            ImportModel(filePath.string());
+        } else if (ext == ".enjin") {
+            ENJIN_LOG_INFO(Editor, "Drag-and-drop scene open: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Info] Drag-and-drop scene open: ") + paths[i]);
+            OpenScene(filePath.string());
+        } else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".tga" || ext == ".bmp") {
+            // Assign texture to selected entity's material (or all mesh children if container)
+            ECS::Entity selected = m_PrimarySelected;
+            if (selected != ECS::INVALID_ENTITY && m_World) {
+                std::string texPath = filePath.string();
+
+                // Helper: assign texture to a single entity
+                auto assignTexture = [&](ECS::Entity e) {
+                    auto* mat = m_World->GetComponent<ECS::MaterialComponent>(e);
+                    if (mat) {
+                        mat->baseColorTexturePath = texPath;
+                        mat->baseColorTexture = -1;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(texPath);
+                        return true;
+                    }
+                    if (m_World->HasComponent<ECS::MeshComponent>(e)) {
+                        auto& newMat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                        newMat.baseColorTexturePath = texPath;
+                        if (m_RenderSystem) m_RenderSystem->ClearFailedTexture(texPath);
+                        return true;
+                    }
+                    return false;
+                };
+
+                if (assignTexture(selected)) {
+                    ENJIN_LOG_INFO(Editor, "Assigned texture to entity %llu: %s",
+                        (unsigned long long)selected, paths[i]);
+                    m_ConsoleLog.push_back(std::string("[Info] Texture assigned: ") + paths[i]);
+                } else {
+                    // Selected entity has no mesh — walk all descendants and apply to mesh children
+                    int applied = 0;
+                    std::function<void(ECS::Entity)> walkChildren = [&](ECS::Entity e) {
+                        auto* ch = m_World->GetComponent<ECS::ChildrenComponent>(e);
+                        if (!ch) return;
+                        for (ECS::Entity child : ch->children) {
+                            if (assignTexture(child)) ++applied;
+                            walkChildren(child);
+                        }
+                    };
+                    walkChildren(selected);
+                    if (applied > 0) {
+                        ENJIN_LOG_INFO(Editor, "Assigned texture to %d mesh children: %s", applied, paths[i]);
+                        m_ConsoleLog.push_back(std::string("[Info] Texture assigned to ") +
+                            std::to_string(applied) + " mesh children: " + paths[i]);
+                    } else {
+                        ENJIN_LOG_WARN(Editor, "No mesh entities found for texture: %s", paths[i]);
+                        m_ConsoleLog.push_back(std::string("[Warn] Select a mesh entity first, then drop texture: ") + paths[i]);
+                    }
+                }
+            } else {
+                ENJIN_LOG_WARN(Editor, "No entity selected for texture drop: %s", paths[i]);
+                m_ConsoleLog.push_back(std::string("[Warn] Select an entity first, then drop texture: ") + paths[i]);
+            }
+        } else {
+            ENJIN_LOG_WARN(Editor, "Unsupported file dropped: %s", paths[i]);
+            m_ConsoleLog.push_back(std::string("[Warn] Unsupported file type: ") + paths[i]);
+        }
+    }
+}
+
+void EditorLayer::UpdateDialogue(f32 deltaTime) {
+    // DialogueSystem handles all logic (tree + legacy) via PlayMode.
+    // Just query active entity for overlay rendering.
+    m_ActiveDialogueEntity = m_PlayMode.GetDialogueSystem()->GetActiveDialogueEntity();
+
+    // Update subtitle system timers
+    m_SubtitleSystem.Update(deltaTime);
+}
+
+void EditorLayer::DrawDialogueOverlay() {
+    if (!m_World || m_ActiveDialogueEntity == ECS::INVALID_ENTITY) return;
+
+    auto* dlg = m_World->GetComponent<ECS::DialogueComponent>(m_ActiveDialogueEntity);
+    if (!dlg) return;
+
+    // Determine speaker, visible text, and choices based on mode
+    std::string speaker;
+    std::string visibleText;
+    bool isTyping = dlg->isTyping;
+    bool waiting = dlg->waitingForInput;
+    bool hasChoices = false;
+    i32 selectedChoice = dlg->selectedChoice;
+    i32 choiceCount = 0;
+
+    if (dlg->IsTreeMode()) {
+        if (!dlg->treeActive) return;
+        speaker = dlg->currentSpeaker;
+        visibleText = dlg->GetTreeVisibleText();
+        hasChoices = waiting && !dlg->currentChoices.empty();
+        choiceCount = static_cast<i32>(dlg->currentChoices.size());
+    } else {
+        if (dlg->IsComplete()) return;
+        speaker = dlg->speakerName;
+        visibleText = dlg->GetVisibleText();
+        hasChoices = waiting && !dlg->choices.empty() &&
+                     dlg->currentLine + 1 >= dlg->dialogueLines.size();
+        choiceCount = static_cast<i32>(dlg->choices.size());
+    }
+
+    ImGuiIO& io = ImGui::GetIO();
+    f32 screenW = io.DisplaySize.x;
+    f32 screenH = io.DisplaySize.y;
+
+    f32 boxW = screenW * 0.75f;
+    f32 boxH = 140.0f;
+    f32 boxX = (screenW - boxW) * 0.5f;
+    f32 boxY = screenH - boxH - 30.0f;
+    f32 padding = 16.0f;
+
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize |
+        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoCollapse |
+        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNav;
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 6.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 2.0f);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.1f, 0.92f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.4f, 0.45f, 0.65f, 0.8f));
+
+    ImGui::SetNextWindowPos(ImVec2(boxX, boxY));
+    ImGui::SetNextWindowSize(ImVec2(boxW, boxH));
+
+    if (ImGui::Begin("##DialogueBox", nullptr, flags)) {
+        if (!speaker.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.75f, 1.0f, 1.0f));
+            ImGui::Text("%s", speaker.c_str());
+            ImGui::PopStyleColor();
+            ImGui::Separator();
+            ImGui::Spacing();
+        }
+
+        if (!visibleText.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.95f, 0.98f, 1.0f));
+            ImGui::TextWrapped("%s", visibleText.c_str());
+            ImGui::PopStyleColor();
+        }
+
+        if (isTyping) {
+            ImGui::SameLine(0, 0);
+            f32 blink = std::fmod(static_cast<f32>(ImGui::GetTime()) * 3.0f, 2.0f);
+            if (blink < 1.0f) {
+                ImGui::TextColored(ImVec4(0.7f, 0.8f, 1.0f, 0.8f), "_");
+            }
+        }
+
+        if (waiting && !hasChoices) {
+            f32 bounce = std::sin(static_cast<f32>(ImGui::GetTime()) * 4.0f) * 0.3f + 0.7f;
+            ImGui::SetCursorPosY(boxH - padding - ImGui::GetTextLineHeight());
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.6f, 0.8f, bounce));
+            ImGui::Text("[Space]");
+            ImGui::PopStyleColor();
+        }
+    }
+    ImGui::End();
+
+    if (hasChoices) {
+        f32 choiceH = static_cast<f32>(choiceCount) * 28.0f + padding * 2.0f;
+        f32 choiceW = 300.0f;
+        f32 choiceX = boxX + boxW - choiceW - 10.0f;
+        f32 choiceY = boxY - choiceH - 8.0f;
+
+        ImGui::SetNextWindowPos(ImVec2(choiceX, choiceY));
+        ImGui::SetNextWindowSize(ImVec2(choiceW, choiceH));
+
+        if (ImGui::Begin("##ChoiceBox", nullptr, flags)) {
+            if (dlg->IsTreeMode()) {
+                for (usize i = 0; i < dlg->currentChoices.size(); ++i) {
+                    bool sel = (static_cast<i32>(i) == selectedChoice);
+                    if (sel) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                        ImGui::Text("> %s", dlg->currentChoices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                        ImGui::Text("  %s", dlg->currentChoices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                }
+            } else {
+                for (usize i = 0; i < dlg->choices.size(); ++i) {
+                    bool sel = (static_cast<i32>(i) == selectedChoice);
+                    if (sel) {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.6f, 1.0f));
+                        ImGui::Text("> %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.75f, 1.0f));
+                        ImGui::Text("  %s", dlg->choices[i].text.c_str());
+                        ImGui::PopStyleColor();
+                    }
+                }
+            }
+        }
+        ImGui::End();
+    }
+
+    ImGui::PopStyleColor(2);
+    ImGui::PopStyleVar(3);
+}
+
+void EditorLayer::DuplicateEntity(ECS::Entity entity) {
+    if (!m_World || entity == ECS::INVALID_ENTITY) return;
+
+    // Full-fidelity duplicate via serialize/deserialize (copies all 60+ components)
+    std::string snapshot = Scene::SceneSerializer::SerializeEntityToString(m_World, entity);
+    if (snapshot.empty()) return;
+
+    ECS::Entity newEntity = Scene::SceneSerializer::DeserializeEntityFromString(m_World, snapshot);
+    if (newEntity == ECS::INVALID_ENTITY) return;
+
+    // Append "(Copy)" to name
+    if (m_World->HasComponent<ECS::NameComponent>(newEntity)) {
+        auto* nameComp = m_World->GetComponent<ECS::NameComponent>(newEntity);
+        nameComp->name += " (Copy)";
+    }
+
+    // Offset position slightly so the duplicate is visible
+    if (m_World->HasComponent<ECS::TransformComponent>(newEntity)) {
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(newEntity);
+        transform->position = transform->position + Math::Vector3(0.5f, 0.0f, 0.5f);
+    }
+
+    // Track via undo system
+    auto cmd = std::make_unique<FullCreateEntityCommand>(
+        m_World, newEntity,
+        [this](ECS::Entity restored) { SelectEntity(restored); });
+    m_UndoRedo.Execute(std::move(cmd));
+
+    SelectEntity(newEntity);
+    ENJIN_LOG_INFO(Editor, "Duplicated entity %llu -> %llu", entity, newEntity);
+}
+
+void EditorLayer::DeleteSelectedEntities() {
+    if (!m_World || m_SelectedEntities.empty()) return;
+
+    // Pre-validate: only delete entities that still exist
+    std::vector<ECS::Entity> validEntities;
+    for (ECS::Entity e : m_SelectedEntities) {
+        if (m_World->IsValid(e)) {
+            validEntities.push_back(e);
+        }
+    }
+    if (validEntities.empty()) return;
+
+    ClearSelection();
+
+    if (validEntities.size() == 1) {
+        auto cmd = std::make_unique<FullDeleteEntityCommand>(
+            m_World, validEntities[0],
+            [this](ECS::Entity restored) { SelectEntity(restored); });
+        m_UndoRedo.Execute(std::move(cmd));
+    } else {
+        m_UndoRedo.BeginCompound("Delete Entities");
+        for (ECS::Entity e : validEntities) {
+            auto cmd = std::make_unique<FullDeleteEntityCommand>(m_World, e);
+            m_UndoRedo.Execute(std::move(cmd));
+        }
+        m_UndoRedo.EndCompound();
+    }
+    ENJIN_LOG_INFO(Editor, "Deleted %zu entities", validEntities.size());
+
+    // Accessibility announcement
+    if (m_Announcer.enabled) {
+        m_Announcer.Announce("Deleted " + std::to_string(validEntities.size()) + " entities",
+            Accessibility::AnnouncePriority::Normal);
+    }
+}
+
+void EditorLayer::DuplicateSelectedEntities() {
+    if (!m_World || m_SelectedEntities.empty()) return;
+
+    auto originals = m_SelectedEntities;
+    ClearSelection();
+    for (ECS::Entity e : originals) {
+        DuplicateEntity(e);
+    }
+    // After DuplicateEntity calls, the last duplicated entity is selected;
+    // re-select all duplicated entities (they were selected one by one via DuplicateEntity's SelectEntity call)
+    ENJIN_LOG_INFO(Editor, "Duplicated %zu entities", originals.size());
+}
+
+} // namespace Editor
+} // namespace Enjin
