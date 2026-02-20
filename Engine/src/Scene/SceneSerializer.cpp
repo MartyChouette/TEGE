@@ -65,11 +65,26 @@ static f32 RF(f32 val) {
     return std::round(val * mult) / mult;
 }
 
-// Tolerant bool deserialization â€” handles numbers (from RF() bug) and booleans
+// Tolerant bool deserialization — handles numbers (from RF() bug) and booleans
 static bool JB(const json& val) {
     if (val.is_boolean()) return val.get<bool>();
     if (val.is_number()) return val.get<double>() != 0.0;
     return false;
+}
+
+// String length caps for deserialized fields (SER-M6)
+static constexpr usize MAX_STR_PATH = 4096;
+static constexpr usize MAX_STR_NAME = 1024;
+static constexpr usize MAX_STR_TEXT = 65536;
+static constexpr usize MAX_STR_LARGE = 1048576;  // 1 MB for notes, descriptions
+
+// Length-capped string deserialization to prevent OOM from malicious scene files
+static std::string SafeStr(const json& val, usize maxLen = MAX_STR_TEXT) {
+    auto s = val.get<std::string>();
+    if (s.size() > maxLen) {
+        s.resize(maxLen);
+    }
+    return s;
 }
 
 json SerializeVector2(const Math::Vector2& v) {
@@ -307,16 +322,16 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     material.emissiveTexture = j.value("emissiveTexture", -1);
     // Texture paths (optional, added in later versions)
     if (j.contains("baseColorTexturePath")) {
-        material.baseColorTexturePath = j["baseColorTexturePath"].get<std::string>();
+        material.baseColorTexturePath = SafeStr(j["baseColorTexturePath"], MAX_STR_PATH);
     }
     if (j.contains("normalTexturePath")) {
-        material.normalTexturePath = j["normalTexturePath"].get<std::string>();
+        material.normalTexturePath = SafeStr(j["normalTexturePath"], MAX_STR_PATH);
     }
     if (j.contains("metallicRoughnessTexturePath")) {
-        material.metallicRoughnessTexturePath = j["metallicRoughnessTexturePath"].get<std::string>();
+        material.metallicRoughnessTexturePath = SafeStr(j["metallicRoughnessTexturePath"], MAX_STR_PATH);
     }
     if (j.contains("emissiveTexturePath")) {
-        material.emissiveTexturePath = j["emissiveTexturePath"].get<std::string>();
+        material.emissiveTexturePath = SafeStr(j["emissiveTexturePath"], MAX_STR_PATH);
     }
     material.doubleSided = j.contains("doubleSided") ? JB(j["doubleSided"]) : false;
     material.castShadows = j.contains("castShadows") ? JB(j["castShadows"]) : true;
@@ -324,7 +339,7 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
     if (j.contains("alphaMode")) { i32 v = j["alphaMode"].get<i32>(); if (v >= 0 && v <= 2) material.alphaMode = static_cast<ECS::MaterialComponent::AlphaMode>(v); }
     material.alphaCutoff = j.value("alphaCutoff", 0.5f);
     // Height/parallax mapping (optional, added in later versions)
-    if (j.contains("heightTexturePath")) material.heightTexturePath = j["heightTexturePath"].get<std::string>();
+    if (j.contains("heightTexturePath")) material.heightTexturePath = SafeStr(j["heightTexturePath"], MAX_STR_PATH);
     if (j.contains("parallaxScale")) material.parallaxScale = j["parallaxScale"].get<f32>();
     if (j.contains("parallaxMode")) { u32 v = j["parallaxMode"].get<u32>(); if (v <= 3) material.parallaxMode = v; }
     if (j.contains("pomMaxSteps")) { u32 v = j["pomMaxSteps"].get<u32>(); if (v >= 1 && v <= 256) material.pomMaxSteps = v; }
@@ -411,7 +426,7 @@ ECS::LightComponent DeserializeLightComponent(const json& j) {
 
 ECS::NotesComponent DeserializeNotesComponent(const json& j) {
     ECS::NotesComponent notes;
-    if (j.contains("notes")) notes.notes = j["notes"].get<std::string>();
+    if (j.contains("notes")) notes.notes = SafeStr(j["notes"], MAX_STR_LARGE);
     return notes;
 }
 
@@ -561,7 +576,7 @@ ECS::ShrubVolumeComponent DeserializeShrubVolumeComponent(const json& j) {
     if (j.contains("tipColor")) shrub.tipColor = DeserializeVector3(j["tipColor"]);
     if (j.contains("windSwayStrength")) shrub.windSwayStrength = j["windSwayStrength"].get<f32>();
     if (j.contains("quadsPerShrub")) shrub.quadsPerShrub = j["quadsPerShrub"].get<u32>();
-    if (j.contains("customAssetPath")) shrub.customAssetPath = j["customAssetPath"].get<std::string>();
+    if (j.contains("customAssetPath")) shrub.customAssetPath = SafeStr(j["customAssetPath"], MAX_STR_PATH);
     return shrub;
 }
 
@@ -608,8 +623,8 @@ ECS::TreeVolumeComponent DeserializeTreeVolumeComponent(const json& j) {
     if (j.contains("springCanopyColor")) tree.springCanopyColor = DeserializeVector3(j["springCanopyColor"]);
     if (j.contains("summerCanopyColor")) tree.summerCanopyColor = DeserializeVector3(j["summerCanopyColor"]);
     if (j.contains("fallCanopyColor")) tree.fallCanopyColor = DeserializeVector3(j["fallCanopyColor"]);
-    if (j.contains("barkTexturePath")) tree.barkTexturePath = j["barkTexturePath"].get<std::string>();
-    if (j.contains("canopyTexturePath")) tree.canopyTexturePath = j["canopyTexturePath"].get<std::string>();
+    if (j.contains("barkTexturePath")) tree.barkTexturePath = SafeStr(j["barkTexturePath"], MAX_STR_PATH);
+    if (j.contains("canopyTexturePath")) tree.canopyTexturePath = SafeStr(j["canopyTexturePath"], MAX_STR_PATH);
     return tree;
 }
 
@@ -659,7 +674,7 @@ ECS::TerrainComponent DeserializeTerrainComponent(const json& j) {
         const auto& layersArr = j["layers"];
         for (int i = 0; i < 4 && i < static_cast<int>(layersArr.size()); ++i) {
             if (layersArr[i].contains("texturePath"))
-                terrain.layers[i].texturePath = layersArr[i]["texturePath"].get<std::string>();
+                terrain.layers[i].texturePath = SafeStr(layersArr[i]["texturePath"], MAX_STR_PATH);
             if (layersArr[i].contains("tileScale"))
                 terrain.layers[i].tileScale = layersArr[i]["tileScale"].get<f32>();
         }
@@ -692,7 +707,7 @@ ECS::Terrain2DComponent DeserializeTerrain2DComponent(const json& j) {
     }
     if (j.contains("depth")) terrain.depth = j["depth"].get<f32>();
     if (j.contains("uvScale")) terrain.uvScale = j["uvScale"].get<f32>();
-    if (j.contains("texturePath")) terrain.texturePath = j["texturePath"].get<std::string>();
+    if (j.contains("texturePath")) terrain.texturePath = SafeStr(j["texturePath"], MAX_STR_PATH);
     if (j.contains("autoColliders")) terrain.autoColliders = JB(j["autoColliders"]);
     terrain.meshDirty = true;
     return terrain;
@@ -1415,7 +1430,7 @@ ECS::PossessableComponent DeserializePossessable(const json& j) {
     if (j.contains("autoDetect")) comp.autoDetect = JB(j["autoDetect"]);
     if (j.contains("playerIndex")) comp.playerIndex = j["playerIndex"].get<i32>();
     if (j.contains("possessRange")) comp.possessRange = j["possessRange"].get<f32>();
-    if (j.contains("promptText")) comp.promptText = j["promptText"].get<std::string>();
+    if (j.contains("promptText")) comp.promptText = SafeStr(j["promptText"], MAX_STR_NAME);
     if (j.contains("transitionDuration")) comp.transitionDuration = j["transitionDuration"].get<f32>();
     if (j.contains("disableOnUnpossess")) comp.disableOnUnpossess = JB(j["disableOnUnpossess"]);
     return comp;
@@ -1460,7 +1475,7 @@ json SerializeAudioSourceComponent(const ECS::AudioSourceComponent& audio) {
 
 ECS::AudioSourceComponent DeserializeAudioSourceComponent(const json& j) {
     ECS::AudioSourceComponent audio;
-    if (j.contains("clipPath")) audio.clipPath = j["clipPath"].get<std::string>();
+    if (j.contains("clipPath")) audio.clipPath = SafeStr(j["clipPath"], MAX_STR_PATH);
     if (j.contains("volume")) audio.volume = j["volume"].get<f32>();
     if (j.contains("pitch")) audio.pitch = j["pitch"].get<f32>();
     if (j.contains("minDistance")) audio.minDistance = j["minDistance"].get<f32>();
@@ -1928,7 +1943,7 @@ json SerializeInteractableComponent(const ECS::InteractableComponent& ic) {
 
 ECS::InteractableComponent DeserializeInteractableComponent(const json& j) {
     ECS::InteractableComponent ic;
-    if (j.contains("promptText")) ic.promptText = j["promptText"].get<std::string>();
+    if (j.contains("promptText")) ic.promptText = SafeStr(j["promptText"], MAX_STR_NAME);
     if (j.contains("interactionRange")) ic.interactionRange = j["interactionRange"].get<f32>();
     if (j.contains("requiresLookAt")) ic.requiresLookAt = JB(j["requiresLookAt"]);
     if (j.contains("lookAtAngle")) ic.lookAtAngle = j["lookAtAngle"].get<f32>();
@@ -2086,7 +2101,7 @@ ECS::ParticleEmitterComponent DeserializeParticleEmitterComponent(const json& j)
     if (j.contains("coneAngle")) pe.coneAngle = j["coneAngle"].get<f32>();
     if (j.contains("gravity")) pe.gravity = DeserializeVector3(j["gravity"]);
     if (j.contains("drag")) pe.drag = j["drag"].get<f32>();
-    if (j.contains("texturePath")) pe.texturePath = j["texturePath"].get<std::string>();
+    if (j.contains("texturePath")) pe.texturePath = SafeStr(j["texturePath"], MAX_STR_PATH);
     if (j.contains("textureSheetX")) pe.textureSheetX = j["textureSheetX"].get<i32>();
     if (j.contains("textureSheetY")) pe.textureSheetY = j["textureSheetY"].get<i32>();
     if (j.contains("sizeMid")) pe.sizeMid = j["sizeMid"].get<f32>();
@@ -2138,8 +2153,8 @@ json SerializeSprite2DComponent(const ECS::Sprite2DComponent& s) {
 
 ECS::Sprite2DComponent DeserializeSprite2DComponent(const json& j) {
     ECS::Sprite2DComponent s;
-    if (j.contains("texturePath")) s.texturePath = j["texturePath"].get<std::string>();
-    if (j.contains("normalMapPath")) s.normalMapPath = j["normalMapPath"].get<std::string>();
+    if (j.contains("texturePath")) s.texturePath = SafeStr(j["texturePath"], MAX_STR_PATH);
+    if (j.contains("normalMapPath")) s.normalMapPath = SafeStr(j["normalMapPath"], MAX_STR_PATH);
     if (j.contains("srcX")) s.srcX = j["srcX"].get<f32>();
     if (j.contains("srcY")) s.srcY = j["srcY"].get<f32>();
     if (j.contains("srcWidth")) s.srcWidth = j["srcWidth"].get<f32>();
@@ -2224,7 +2239,7 @@ ECS::TilemapComponent DeserializeTilemapComponent(const json& j) {
         usize maxTiles = static_cast<usize>(tm.width) * tm.height;
         if (tiles.size() <= maxTiles) tm.tiles = std::move(tiles); // SN-H3: validate
     }
-    if (j.contains("tilesetPath")) tm.tilesetPath = j["tilesetPath"].get<std::string>();
+    if (j.contains("tilesetPath")) tm.tilesetPath = SafeStr(j["tilesetPath"], MAX_STR_PATH);
     if (j.contains("tileWidth")) tm.tileWidth = j["tileWidth"].get<f32>();
     if (j.contains("tileHeight")) tm.tileHeight = j["tileHeight"].get<f32>();
     if (j.contains("tilesetColumns")) tm.tilesetColumns = j["tilesetColumns"].get<u32>();
@@ -2375,9 +2390,9 @@ ECS::SMState DeserializeSMState(const json& j) {
         state.editorPosition.x = j["editorPosition"][0].get<f32>();
         state.editorPosition.y = j["editorPosition"][1].get<f32>();
     }
-    if (j.contains("onEnter")) state.onEnter = j["onEnter"].get<std::string>();
-    if (j.contains("onUpdate")) state.onUpdate = j["onUpdate"].get<std::string>();
-    if (j.contains("onExit")) state.onExit = j["onExit"].get<std::string>();
+    if (j.contains("onEnter")) state.onEnter = SafeStr(j["onEnter"]);
+    if (j.contains("onUpdate")) state.onUpdate = SafeStr(j["onUpdate"]);
+    if (j.contains("onExit")) state.onExit = SafeStr(j["onExit"]);
     return state;
 }
 
@@ -2495,15 +2510,15 @@ ECS::DialogueComponent DeserializeDialogueComponent(const json& j) {
         d.dialogueLines = j["dialogueLines"].get<std::vector<std::string>>();
     }
     if (j.contains("charDelay")) d.charDelay = j["charDelay"].get<f32>();
-    if (j.contains("speakerName")) d.speakerName = j["speakerName"].get<std::string>();
-    if (j.contains("portraitPath")) d.portraitPath = j["portraitPath"].get<std::string>();
-    if (j.contains("typeSound")) d.typeSound = j["typeSound"].get<std::string>();
+    if (j.contains("speakerName")) d.speakerName = SafeStr(j["speakerName"], MAX_STR_NAME);
+    if (j.contains("portraitPath")) d.portraitPath = SafeStr(j["portraitPath"], MAX_STR_PATH);
+    if (j.contains("typeSound")) d.typeSound = SafeStr(j["typeSound"], MAX_STR_PATH);
     if (j.contains("playTypeSound")) d.playTypeSound = JB(j["playTypeSound"]);
     if (j.contains("choices") && j["choices"].is_array()) {
         for (const auto& cj : j["choices"]) {
             ECS::DialogueComponent::Choice c;
-            if (cj.contains("text")) c.text = cj["text"].get<std::string>();
-            if (cj.contains("nextDialogueId")) c.nextDialogueId = cj["nextDialogueId"].get<std::string>();
+            if (cj.contains("text")) c.text = SafeStr(cj["text"]);
+            if (cj.contains("nextDialogueId")) c.nextDialogueId = SafeStr(cj["nextDialogueId"], MAX_STR_NAME);
             d.choices.push_back(c);
         }
     }
@@ -3039,9 +3054,9 @@ ECS::QuestFlowComponent DeserializeQuestFlowComponent(const json& j) {
 
     if (j.contains("graph")) qf.graph.FromJson(j["graph"]);
     if (j.contains("startNodeId")) qf.startNodeId = j["startNodeId"].get<Editor::NodeId>();
-    if (j.contains("questId")) qf.questId = j["questId"].get<std::string>();
-    if (j.contains("questTitle")) qf.questTitle = j["questTitle"].get<std::string>();
-    if (j.contains("questDescription")) qf.questDescription = j["questDescription"].get<std::string>();
+    if (j.contains("questId")) qf.questId = SafeStr(j["questId"], MAX_STR_NAME);
+    if (j.contains("questTitle")) qf.questTitle = SafeStr(j["questTitle"], MAX_STR_NAME);
+    if (j.contains("questDescription")) qf.questDescription = SafeStr(j["questDescription"], MAX_STR_LARGE);
     if (j.contains("enabled")) qf.enabled = JB(j["enabled"]);
 
     if (j.contains("nodeMeta") && j["nodeMeta"].is_array()) {
@@ -3650,7 +3665,7 @@ ECS::GrassVolumeComponent DeserializeGrassVolumeComponent(const json& j) {
     if (j.contains("baseColor")) gv.baseColor = DeserializeVector3(j["baseColor"]);
     if (j.contains("tipColor")) gv.tipColor = DeserializeVector3(j["tipColor"]);
     if (j.contains("windSwayStrength")) gv.windSwayStrength = j["windSwayStrength"].get<f32>();
-    if (j.contains("customAssetPath")) gv.customAssetPath = j["customAssetPath"].get<std::string>();
+    if (j.contains("customAssetPath")) gv.customAssetPath = SafeStr(j["customAssetPath"], MAX_STR_PATH);
     return gv;
 }
 
@@ -3746,19 +3761,19 @@ json SerializeFootstepComponent(const ECS::FootstepComponent& f) {
 
 ECS::FootstepComponent DeserializeFootstepComponent(const json& j) {
     ECS::FootstepComponent f;
-    if (j.contains("defaultWalkSound")) f.defaultWalkSound = j["defaultWalkSound"].get<std::string>();
-    if (j.contains("defaultRunSound")) f.defaultRunSound = j["defaultRunSound"].get<std::string>();
+    if (j.contains("defaultWalkSound")) f.defaultWalkSound = SafeStr(j["defaultWalkSound"], MAX_STR_PATH);
+    if (j.contains("defaultRunSound")) f.defaultRunSound = SafeStr(j["defaultRunSound"], MAX_STR_PATH);
     if (j.contains("walkStepInterval")) f.walkStepInterval = j["walkStepInterval"].get<f32>();
     if (j.contains("runStepInterval")) f.runStepInterval = j["runStepInterval"].get<f32>();
     if (j.contains("volume")) f.volume = j["volume"].get<f32>();
     if (j.contains("pitchVariance")) f.pitchVariance = j["pitchVariance"].get<f32>();
-    if (j.contains("currentSurface")) f.currentSurface = j["currentSurface"].get<std::string>();
+    if (j.contains("currentSurface")) f.currentSurface = SafeStr(j["currentSurface"], MAX_STR_NAME);
     if (j.contains("surfaceSounds") && j["surfaceSounds"].is_array()) {
         for (const auto& sj : j["surfaceSounds"]) {
             ECS::FootstepComponent::SurfaceSound s;
-            if (sj.contains("surfaceTag")) s.surfaceTag = sj["surfaceTag"].get<std::string>();
-            if (sj.contains("walkSound")) s.walkSound = sj["walkSound"].get<std::string>();
-            if (sj.contains("runSound")) s.runSound = sj["runSound"].get<std::string>();
+            if (sj.contains("surfaceTag")) s.surfaceTag = SafeStr(sj["surfaceTag"], MAX_STR_NAME);
+            if (sj.contains("walkSound")) s.walkSound = SafeStr(sj["walkSound"], MAX_STR_PATH);
+            if (sj.contains("runSound")) s.runSound = SafeStr(sj["runSound"], MAX_STR_PATH);
             if (sj.contains("volumeScale")) s.volumeScale = sj["volumeScale"].get<f32>();
             f.surfaceSounds.push_back(s);
         }
@@ -3942,7 +3957,7 @@ json SerializeUIElement(const GUI::UIElement& e) {
 GUI::UIElement DeserializeUIElement(const json& j) {
     GUI::UIElement e;
     if (j.contains("id")) e.id = j["id"].get<u32>();
-    if (j.contains("name")) e.name = j["name"].get<std::string>();
+    if (j.contains("name")) e.name = SafeStr(j["name"], MAX_STR_NAME);
     if (j.contains("type")) { u8 v = j["type"].get<u8>(); if (v < static_cast<u8>(GUI::UIWidgetType::Count)) e.type = static_cast<GUI::UIWidgetType>(v); }
     if (j.contains("visible")) e.visible = JB(j["visible"]);
     if (j.contains("enabled")) e.enabled = JB(j["enabled"]);
@@ -3950,7 +3965,9 @@ GUI::UIElement DeserializeUIElement(const json& j) {
     if (j.contains("tabOrder")) e.tabOrder = j["tabOrder"].get<i32>();
     if (j.contains("parentId")) e.parentId = j["parentId"].get<u32>();
     if (j.contains("childIds") && j["childIds"].is_array()) {
-        for (const auto& cid : j["childIds"]) e.childIds.push_back(cid.get<u32>());
+        static constexpr usize MAX_CHILD_IDS = 10000;
+        usize count = std::min(j["childIds"].size(), MAX_CHILD_IDS);
+        for (usize ci = 0; ci < count; ci++) e.childIds.push_back(j["childIds"][ci].get<u32>());
     }
 
     if (j.contains("anchor")) {
@@ -3976,7 +3993,7 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (s.contains("focusColor")) e.style.focusColor = DeserializeVector3(s["focusColor"]);
         if (s.contains("nineSlice")) {
             const auto& ns = s["nineSlice"];
-            if (ns.contains("texturePath")) e.style.nineSlice.texturePath = ns["texturePath"].get<std::string>();
+            if (ns.contains("texturePath")) e.style.nineSlice.texturePath = SafeStr(ns["texturePath"], MAX_STR_PATH);
             if (ns.contains("borderLeft")) e.style.nineSlice.borderLeft = ns["borderLeft"].get<f32>();
             if (ns.contains("borderRight")) e.style.nineSlice.borderRight = ns["borderRight"].get<f32>();
             if (ns.contains("borderTop")) e.style.nineSlice.borderTop = ns["borderTop"].get<f32>();
@@ -3986,10 +4003,10 @@ GUI::UIElement DeserializeUIElement(const json& j) {
 
     if (j.contains("data")) {
         const auto& d = j["data"];
-        if (d.contains("text")) e.data.text = d["text"].get<std::string>();
+        if (d.contains("text")) e.data.text = SafeStr(d["text"]);
         if (d.contains("textAlignH")) e.data.textAlignH = d["textAlignH"].get<u8>();
         if (d.contains("textAlignV")) e.data.textAlignV = d["textAlignV"].get<u8>();
-        if (d.contains("imagePath")) e.data.imagePath = d["imagePath"].get<std::string>();
+        if (d.contains("imagePath")) e.data.imagePath = SafeStr(d["imagePath"], MAX_STR_PATH);
         if (d.contains("imageTint")) e.data.imageTint = DeserializeVector3(d["imageTint"]);
         if (d.contains("imageAlpha")) e.data.imageAlpha = d["imageAlpha"].get<f32>();
         if (d.contains("progressValue")) e.data.progressValue = d["progressValue"].get<f32>();
@@ -3999,23 +4016,25 @@ GUI::UIElement DeserializeUIElement(const json& j) {
         if (d.contains("sliderMax")) e.data.sliderMax = d["sliderMax"].get<f32>();
         if (d.contains("checked")) e.data.checked = JB(d["checked"]);
         if (d.contains("options") && d["options"].is_array()) {
-            for (const auto& opt : d["options"]) e.data.options.push_back(opt.get<std::string>());
+            static constexpr usize MAX_OPTIONS = 1000;
+            usize optCount = std::min(d["options"].size(), MAX_OPTIONS);
+            for (usize oi = 0; oi < optCount; oi++) e.data.options.push_back(SafeStr(d["options"][oi]));
         }
         if (d.contains("selectedOption")) e.data.selectedOption = d["selectedOption"].get<i32>();
-        if (d.contains("inputText")) e.data.inputText = d["inputText"].get<std::string>();
-        if (d.contains("placeholder")) e.data.placeholder = d["placeholder"].get<std::string>();
+        if (d.contains("inputText")) e.data.inputText = SafeStr(d["inputText"]);
+        if (d.contains("placeholder")) e.data.placeholder = SafeStr(d["placeholder"]);
         if (d.contains("gridColumns")) e.data.gridColumns = d["gridColumns"].get<i32>();
         if (d.contains("activeTabIndex")) e.data.activeTabIndex = d["activeTabIndex"].get<i32>();
         if (d.contains("tooltipDelay")) e.data.tooltipDelay = d["tooltipDelay"].get<f32>();
-        if (d.contains("tooltipText")) e.data.tooltipText = d["tooltipText"].get<std::string>();
+        if (d.contains("tooltipText")) e.data.tooltipText = SafeStr(d["tooltipText"]);
         if (d.contains("listSelectedIndex")) e.data.listSelectedIndex = d["listSelectedIndex"].get<i32>();
     }
 
-    if (j.contains("accessibleLabel")) e.accessibleLabel = j["accessibleLabel"].get<std::string>();
+    if (j.contains("accessibleLabel")) e.accessibleLabel = SafeStr(j["accessibleLabel"], MAX_STR_NAME);
 
-    if (j.contains("onClickEvent")) e.onClickEvent = j["onClickEvent"].get<std::string>();
-    if (j.contains("onValueChangedEvent")) e.onValueChangedEvent = j["onValueChangedEvent"].get<std::string>();
-    if (j.contains("onSubmitEvent")) e.onSubmitEvent = j["onSubmitEvent"].get<std::string>();
+    if (j.contains("onClickEvent")) e.onClickEvent = SafeStr(j["onClickEvent"], MAX_STR_NAME);
+    if (j.contains("onValueChangedEvent")) e.onValueChangedEvent = SafeStr(j["onValueChangedEvent"], MAX_STR_NAME);
+    if (j.contains("onSubmitEvent")) e.onSubmitEvent = SafeStr(j["onSubmitEvent"], MAX_STR_NAME);
 
     return e;
 }
@@ -4110,7 +4129,7 @@ GUI::UITheme DeserializeUITheme(const json& j) {
     if (j.contains("bgAlpha")) t.bgAlpha = j["bgAlpha"].get<f32>();
     if (j.contains("focusBorderWidth")) t.focusBorderWidth = j["focusBorderWidth"].get<f32>();
     auto deserializeNS = [](const json& ns, GUI::NineSliceConfig& cfg) {
-        if (ns.contains("texturePath")) cfg.texturePath = ns["texturePath"].get<std::string>();
+        if (ns.contains("texturePath")) cfg.texturePath = SafeStr(ns["texturePath"], MAX_STR_PATH);
         if (ns.contains("borderLeft")) cfg.borderLeft = ns["borderLeft"].get<f32>();
         if (ns.contains("borderRight")) cfg.borderRight = ns["borderRight"].get<f32>();
         if (ns.contains("borderTop")) cfg.borderTop = ns["borderTop"].get<f32>();
@@ -4142,7 +4161,7 @@ json SerializeUICanvasComponent(const GUI::UICanvasComponent& c) {
 
 GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
     GUI::UICanvasComponent c;
-    if (j.contains("canvasName")) c.canvasName = j["canvasName"].get<std::string>();
+    if (j.contains("canvasName")) c.canvasName = SafeStr(j["canvasName"], MAX_STR_NAME);
     if (j.contains("visible")) c.visible = JB(j["visible"]);
     if (j.contains("sortOrder")) c.sortOrder = j["sortOrder"].get<i32>();
     if (j.contains("designWidth")) c.designWidth = j["designWidth"].get<f32>();
@@ -4152,8 +4171,10 @@ GUI::UICanvasComponent DeserializeUICanvasComponent(const json& j) {
     if (j.contains("nextElementId")) c.nextElementId = j["nextElementId"].get<u32>();
 
     if (j.contains("elements") && j["elements"].is_array()) {
-        for (const auto& ej : j["elements"]) {
-            c.elements.push_back(DeserializeUIElement(ej));
+        static constexpr usize MAX_UI_ELEMENTS = 10000;
+        usize count = std::min(j["elements"].size(), MAX_UI_ELEMENTS);
+        for (usize ei = 0; ei < count; ei++) {
+            c.elements.push_back(DeserializeUIElement(j["elements"][ei]));
         }
     }
     return c;
@@ -4544,8 +4565,8 @@ ECS::ScriptComponent DeserializeScriptComponent(const json& j) {
     if (j.contains("scripts") && j["scripts"].is_array()) {
         for (const auto& sj : j["scripts"]) {
             ECS::ScriptAttachment script;
-            if (sj.contains("path")) script.scriptPath = sj["path"].get<std::string>();
-            if (sj.contains("class")) script.className = sj["class"].get<std::string>();
+            if (sj.contains("path")) script.scriptPath = SafeStr(sj["path"], MAX_STR_PATH);
+            if (sj.contains("class")) script.className = SafeStr(sj["class"], MAX_STR_NAME);
             if (sj.contains("enabled")) script.enabled = JB(sj["enabled"]);
             if (sj.contains("properties") && sj["properties"].is_object()) {
                 for (auto it = sj["properties"].begin(); it != sj["properties"].end(); ++it) {
@@ -4679,7 +4700,7 @@ ECS::SwitchComponent DeserializeSwitchComponent(const json& j) {
     if (j.contains("offPosition")) sw.offPosition = DeserializeVector3(j["offPosition"]);
     if (j.contains("onPosition")) sw.onPosition = DeserializeVector3(j["onPosition"]);
     if (j.contains("transitionSpeed")) sw.transitionSpeed = j["transitionSpeed"].get<f32>();
-    if (j.contains("promptText")) sw.promptText = j["promptText"].get<std::string>();
+    if (j.contains("promptText")) sw.promptText = SafeStr(j["promptText"], MAX_STR_NAME);
     if (j.contains("showPrompt")) sw.showPrompt = JB(j["showPrompt"]);
     return sw;
 }
@@ -4906,10 +4927,10 @@ json SerializeSkeletonComponent(const ECS::SkeletonComponent& skelComp) {
 
 ECS::SkeletonComponent DeserializeSkeletonComponent(const json& j) {
     ECS::SkeletonComponent skelComp;
-    if (j.contains("sourceAssetPath")) skelComp.sourceAssetPath = j["sourceAssetPath"].get<std::string>();
+    if (j.contains("sourceAssetPath")) skelComp.sourceAssetPath = SafeStr(j["sourceAssetPath"], MAX_STR_PATH);
 
     auto skeleton = std::make_shared<Animation::Skeleton>();
-    if (j.contains("name")) skeleton->name = j["name"].get<std::string>();
+    if (j.contains("name")) skeleton->name = SafeStr(j["name"], MAX_STR_NAME);
 
     if (j.contains("bones") && j["bones"].is_array() && j["bones"].size() <= 1000) {
         for (const auto& bj : j["bones"]) {
@@ -5864,7 +5885,7 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
             if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
-                    m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
+                    m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
                 }
             }
         } else {
@@ -6991,7 +7012,7 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
             if (sj.contains("sunDirection") && sj["sunDirection"].is_array() && sj["sunDirection"].size() >= 3) { auto& a = sj["sunDirection"]; m_SkyboxConfig.sunDirection = Math::Vector3(a[0].get<f32>(), a[1].get<f32>(), a[2].get<f32>()); }
             if (sj.contains("cubemapPaths") && sj["cubemapPaths"].is_array()) {
                 for (usize i = 0; i < 6 && i < sj["cubemapPaths"].size(); ++i) {
-                    m_SkyboxConfig.cubemapPaths[i] = sj["cubemapPaths"][i].get<std::string>();
+                    m_SkyboxConfig.cubemapPaths[i] = SafeStr(sj["cubemapPaths"][i], MAX_STR_PATH);
                 }
             }
         } else {

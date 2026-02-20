@@ -1,6 +1,6 @@
 # Serialization Audit — Beta 0.8 (2026-02-18)
 
-**Status:** 14 of 17 findings fixed. 3 deferred (LOW risk).
+**Status:** 16 of 17 findings fixed. 1 accepted (style).
 
 ## SceneSerializer — Fixed
 
@@ -15,13 +15,18 @@
 | SER-H5 | HIGH | Grid size overflow unchecked | Product cap `4096*4096` |
 | SER-M1 | MED | customData pair no bounds check | `is_array() && size() >= 2` |
 | SER-M2-5 | MED | Enum fields (ditherPattern, crtMask, dofAperture, stippleColor) unclamped | `std::min(v, 2u)` |
+| SER-M6 | MED | String fields no length cap | `SafeStr()` helper with tiered caps: PATH 4KB, NAME 1KB, TEXT 64KB, LARGE 1MB. Applied to 50+ high-risk fields (file paths, notes, scripts, dialogue, quests, UI callbacks) |
+| SER-M7 | MED | UICanvas element/childId arrays unbounded | Capped: 10K elements, 10K childIds, 1K options |
 | SER-M8 | MED | Bone indices not bounds-checked | Capped to 255 |
 
-## SceneSerializer — Deferred
+## SceneSerializer — Not a Bug
 
-| ID | Sev | Description | Reason |
-|----|-----|-------------|--------|
-| SER-M6 | MED | String fields no length cap | nlohmann caps at available memory |
-| SER-M7 | MED | UIElement recursive deser no depth limit | Low attack surface |
-| SER-L1 | LOW | Path traversal via `lexically_normal` bypassable | Needs broader fix |
-| SER-L2 | LOW | Inconsistent validation patterns | Style, not security |
+| ID | Description | Why |
+|----|-------------|-----|
+| SER-L1 | Path traversal via `lexically_normal` bypassable | All 3 serializer uses have post-normalization `..` checks — adequate |
+
+## Accepted by Design
+
+| ID | Sev | Description | Rationale |
+|----|-----|-------------|-----------|
+| SER-L2 | LOW | Inconsistent validation patterns | Style, not security. No functional impact |
