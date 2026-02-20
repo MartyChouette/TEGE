@@ -1371,6 +1371,18 @@ std::string NewgroundsGamePage::GenerateEmbedCodes(const GamePageConfig& config)
     u32 safeHeight = std::clamp(config.canvasHeight, 1u, 4320u);
     std::string safeTitle = EscapeHTML(config.title);
 
+    // Sanitize title for use as an HTML id attribute (alphanumeric + hyphens only)
+    std::string safeId;
+    for (char c : config.title) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_') {
+            safeId += c;
+        } else if (c == ' ') {
+            safeId += '-';
+        }
+    }
+    if (safeId.empty()) safeId = "game";
+
     std::ostringstream embed;
 
     // Standard iframe embed
@@ -1384,7 +1396,7 @@ std::string NewgroundsGamePage::GenerateEmbedCodes(const GamePageConfig& config)
 
     // Newgrounds-compatible responsive embed
     embed << "\n<!-- Newgrounds Container Embed -->\n"
-          << "<div id=\"game-" << EscapeHTML(config.title) << "\" style=\""
+          << "<div id=\"game-" << safeId << "\" style=\""
           << "position:relative; width:100%; max-width:" << safeWidth << "px; "
           << "aspect-ratio:" << safeWidth << "/" << safeHeight << "; "
           << "margin:0 auto; background:#000; border-radius:8px; overflow:hidden;\">\n"

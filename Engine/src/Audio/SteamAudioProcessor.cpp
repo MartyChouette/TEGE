@@ -102,6 +102,13 @@ bool SteamAudioProcessor::BuildScene(const std::vector<Math::Vector3>& vertices,
     if (vertices.empty() || indices.empty()) return false;
     if (indices.size() % 3 != 0) return false;
 
+    usize numTris = indices.size() / 3;
+    if (materialIndices.size() != numTris) {
+        ENJIN_LOG_ERROR(Audio, "Steam Audio: materialIndices size (%zu) != triangle count (%zu)",
+                        materialIndices.size(), numTris);
+        return false;
+    }
+
     // Destroy existing scene if rebuilding
     DestroyScene();
 
@@ -357,6 +364,7 @@ void SteamAudioProcessor::SetSourceDirection(SoundHandle handle, const Math::Vec
 
 bool SteamAudioProcessor::Process(SoundHandle handle, const f32* inMono, f32* outStereo, u32 frameCount) {
     if (!m_Initialized || !m_Enabled) return false;
+    if (!inMono || !outStereo || frameCount == 0) return false;
 
     // No lock — source lifetime is managed so it's alive during audio callback
     auto it = m_Sources.find(handle);

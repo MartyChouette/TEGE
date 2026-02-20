@@ -189,6 +189,13 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
     auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
     if (!transform || !body2d) return;
 
+    // Guard against duplicate body creation — destroy existing body first
+    if (m_EntityToBody.find(entity) != m_EntityToBody.end()) {
+        ENJIN_LOG_WARN(Physics, "CreateBodyForEntity called for entity %llu that already has a body — replacing",
+                       static_cast<unsigned long long>(entity));
+        DestroyBodyForEntity(entity);
+    }
+
     Math::Vector2 pos = GetPosition2D(*transform);
     f32 angle = GetRotationZ(*transform);
 
@@ -265,6 +272,8 @@ void Box2DBackend::CreateBodyForEntity(ECS::Entity entity) {
                 }
             } else {
                 // Fallback to a unit box if polygon is invalid
+                ENJIN_LOG_WARN(Physics, "Polygon has %zu vertices (must be 3-8) for entity %llu — using unit box fallback",
+                               verts.size(), static_cast<unsigned long long>(entity));
                 b2Polygon box = b2MakeBox(0.5f, 0.5f);
                 b2CreatePolygonShape(bodyId, &shapeDef, &box);
             }
@@ -500,7 +509,9 @@ bool Box2DBackend::Raycast(const Math::Vector2& origin, const Math::Vector2& dir
                            f32 maxDistance, RayHit2D& outHit, u32 layerMask) const {
     if (!m_Initialized) return false;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < 0.0001f) return false;  // Zero-length direction
+    Math::Vector2 dir = direction * (1.0f / dirLen);
     b2Vec2 translation = { dir.x * maxDistance, dir.y * maxDistance };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
@@ -545,7 +556,9 @@ std::vector<RayHit2D> Box2DBackend::RaycastAll(const Math::Vector2& origin, cons
     std::vector<RayHit2D> hits;
     if (!m_Initialized) return hits;
 
-    Math::Vector2 dir = direction.Normalized();
+    f32 dirLen = direction.Length();
+    if (dirLen < 0.0001f) return hits;  // Zero-length direction
+    Math::Vector2 dir = direction * (1.0f / dirLen);
     b2Vec2 translation = { dir.x * maxDistance, dir.y * maxDistance };
 
     b2QueryFilter filter = b2DefaultQueryFilter();
@@ -709,7 +722,11 @@ void Box2DBackend::CreateJointForEntity(ECS::Entity entity) {
             def.bodyIdB = bodyB;
             def.localAnchorA = ToBox2D(joint->anchorA);
             def.localAnchorB = ToBox2D(joint->anchorB);
-            def.localAxisA = ToBox2D(joint->axis.Normalized());
+            Math::Vector2 axis = joint->axis;
+            f32 axisLen = axis.Length();
+            if (axisLen < 0.0001f) axis = Math::Vector2(1.0f, 0.0f);  // Default to X axis
+            else axis = axis * (1.0f / axisLen);
+            def.localAxisA = ToBox2D(axis);
             def.collideConnected = joint->collideConnected;
             def.enableLimit = joint->enableLimit;
             def.lowerTranslation = joint->lowerTranslation;

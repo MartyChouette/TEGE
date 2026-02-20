@@ -89,6 +89,13 @@ bool AssetPacker::AddFile(const std::string& virtualPath, const std::string& dis
 
     std::vector<u8> fileData(static_cast<usize>(fileSize));
     input.read(reinterpret_cast<char*>(fileData.data()), fileSize);
+    if (!input.good() || input.gcount() != fileSize) {
+        ENJIN_LOG_ERROR(Build, "Incomplete read for file: %s (expected %lld, got %lld)",
+                        diskPath.c_str(), static_cast<long long>(fileSize),
+                        static_cast<long long>(input.gcount()));
+        input.close();
+        return false;
+    }
     input.close();
 
     return AddData(virtualPath, fileData.data(), fileData.size());

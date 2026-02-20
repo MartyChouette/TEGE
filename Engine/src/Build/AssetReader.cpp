@@ -278,6 +278,10 @@ std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
 
     // Decompress
     std::vector<u8> original = DecompressData(compressed, entry.originalSize);
+    if (original.empty() && entry.originalSize > 0) {
+        ENJIN_LOG_ERROR(Build, "Decompression failed for %s", virtualPath.c_str());
+        return {};
+    }
 
     // Verify CRC
     u32 crc = AssetPacker::ComputeCRC32(original.data(), original.size());

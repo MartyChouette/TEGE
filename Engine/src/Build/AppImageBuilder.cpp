@@ -296,6 +296,12 @@ bool AppImageBuilder::CopyGameFiles(const AppImageConfig& config, const std::str
             ENJIN_LOG_WARN(Build, "Extra file not found: %s", filePath.c_str());
             continue;
         }
+        // Validate path doesn't escape expected directories
+        auto normalPath = std::filesystem::path(filePath).lexically_normal();
+        if (normalPath.string().find("..") != std::string::npos) {
+            ENJIN_LOG_WARN(Build, "Extra file path contains traversal: %s — skipping", filePath.c_str());
+            continue;
+        }
         std::string filename = std::filesystem::path(filePath).filename().string();
         std::string dest = appDir + "/usr/share/enjin/" + filename;
         std::filesystem::copy_file(filePath, dest,

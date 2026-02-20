@@ -395,6 +395,13 @@ void JoltBackend::CreateBodyForEntity(ECS::Entity entity) {
     auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
     if (!transform) return;
 
+    // Guard against duplicate body creation — destroy existing body first
+    if (m_EntityToBody.find(entity) != m_EntityToBody.end()) {
+        ENJIN_LOG_WARN(Physics, "CreateBodyForEntity called for entity %llu that already has a body — replacing",
+                       static_cast<unsigned long long>(entity));
+        DestroyBodyForEntity(entity);
+    }
+
     auto* rb = m_World->GetComponent<ECS::RigidbodyComponent>(entity);
 
     // Determine shape
@@ -867,8 +874,10 @@ void JoltBackend::CreateJointForEntity(ECS::Entity entity, u8 jointType) {
         settings.mNormalAxis2 = settings.mNormalAxis1;
 
         if (joint->useLimits) {
-            settings.mLimitsMin = joint->lowerLimit * DEG_TO_RAD;
-            settings.mLimitsMax = joint->upperLimit * DEG_TO_RAD;
+            f32 lo = std::min(joint->lowerLimit, joint->upperLimit) * DEG_TO_RAD;
+            f32 hi = std::max(joint->lowerLimit, joint->upperLimit) * DEG_TO_RAD;
+            settings.mLimitsMin = lo;
+            settings.mLimitsMax = hi;
         }
 
         bool useMotor = joint->useMotor;
@@ -1037,6 +1046,10 @@ void JoltBackend::ProcessContactEvents() {
     }
 
     // Detect exits: pairs that were in previous frame but not current
+    // Note: MakeCollisionPairKey stores min(a,b) in upper 32 bits, max(a,b) in lower.
+    // Exit events therefore report entities in canonical (min/max) order, which may
+    // differ from the original enter event ordering. This is by design — consumers
+    // should not rely on entityA/entityB ordering for identity.
     for (u64 prevPair : m_PreviousCollisionPairs) {
         if (m_CurrentCollisionPairs.find(prevPair) == m_CurrentCollisionPairs.end()) {
             ECS::Entity entityA = static_cast<ECS::Entity>(prevPair >> 32);

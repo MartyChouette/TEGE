@@ -162,7 +162,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
         html << "    <div id=\"preloader\">\n";
         if (!config.splashImagePath.empty()) {
             std::string ext = std::filesystem::path(config.splashImagePath).extension().string();
-            html << "      <img id=\"splash\" src=\"splash" << ext << "\" alt=\"Loading...\">\n";
+            html << "      <img id=\"splash\" src=\"splash" << HtmlEscape(ext) << "\" alt=\"Loading...\">\n";
         }
         html << "      <div id=\"progress-container\">\n"
              << "        <div id=\"progress-bar\"></div>\n"
