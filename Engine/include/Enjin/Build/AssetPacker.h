@@ -11,6 +11,7 @@ namespace Enjin::Build {
 // .enjpak file format constants
 constexpr const char ENJPAK_MAGIC[8] = {'E','N','J','P','A','K','1','0'};
 constexpr u32 ENJPAK_FLAG_OBFUSCATED = 1 << 0;
+constexpr u16 ENJPAK_FORMAT_VERSION = 1;
 
 struct PakIndexEntry {
     std::string virtualPath;

@@ -5,6 +5,8 @@
 #include <filesystem>
 #include <mutex>
 
+static_assert(sizeof(std::streamoff) >= 8, "Asset packs require 64-bit file offsets");
+
 namespace Enjin::Build {
 
 // CRC32 lookup table (standard polynomial 0xEDB88320)
@@ -32,6 +34,9 @@ AssetPacker::~AssetPacker() {
 bool AssetPacker::Begin(const std::string& outputPath, const std::string& key) {
     InitCRC32Table();
 
+    if (key.empty()) {
+        ENJIN_LOG_WARN(Build, "No encryption key provided — using default obfuscation key");
+    }
     m_Key = key.empty() ? "enjin_default_pack_key_2025" : key;
     m_Entries.clear();
     m_TotalOriginalSize = 0;
@@ -49,6 +54,9 @@ bool AssetPacker::Begin(const std::string& outputPath, const std::string& key) {
     // Flags (4 bytes) - obfuscated
     u32 flags = ENJPAK_FLAG_OBFUSCATED;
     m_File.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
+    // Format version (2 bytes)
+    u16 version = ENJPAK_FORMAT_VERSION;
+    m_File.write(reinterpret_cast<const char*>(&version), sizeof(version));
     // Entry count placeholder (4 bytes) - updated in Finalize
     u32 entryCount = 0;
     m_File.write(reinterpret_cast<const char*>(&entryCount), sizeof(entryCount));
@@ -195,7 +203,7 @@ bool AssetPacker::Finalize() {
     m_File.write(reinterpret_cast<const char*>(&indexCRC), sizeof(indexCRC));
 
     // Patch header with final values
-    m_File.seekp(12);  // after magic(8) + flags(4)
+    m_File.seekp(14);  // after magic(8) + flags(4) + version(2)
     u32 entryCount = static_cast<u32>(m_Entries.size());
     m_File.write(reinterpret_cast<const char*>(&entryCount), sizeof(entryCount));
     m_File.write(reinterpret_cast<const char*>(&indexOffset), sizeof(indexOffset));

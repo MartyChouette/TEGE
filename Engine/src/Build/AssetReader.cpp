@@ -1,8 +1,11 @@
 #include "Enjin/Build/AssetReader.h"
 #include "Enjin/Build/AssetPacker.h"
 #include "Enjin/Logging/Log.h"
+#include <algorithm>
 #include <cstring>
 #include <fstream>
+
+static_assert(sizeof(std::streamoff) >= 8, "Asset packs require 64-bit file offsets");
 
 namespace Enjin::Build {
 
@@ -13,6 +16,9 @@ AssetReader::~AssetReader() {
 bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     Close();
 
+    if (key.empty()) {
+        ENJIN_LOG_WARN(Build, "No encryption key provided — using default obfuscation key");
+    }
     m_Key = key.empty() ? "enjin_default_pack_key_2025" : key;
     m_PakPath = pakPath;
 
@@ -33,6 +39,15 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     // Read flags
     u32 flags = 0;
     file.read(reinterpret_cast<char*>(&flags), sizeof(flags));
+
+    // Read and validate format version
+    u16 formatVersion = 0;
+    file.read(reinterpret_cast<char*>(&formatVersion), sizeof(formatVersion));
+    if (formatVersion == 0 || formatVersion > ENJPAK_FORMAT_VERSION) {
+        ENJIN_LOG_ERROR(Build, "Unsupported pack format version %u (max supported: %u): %s",
+                        formatVersion, ENJPAK_FORMAT_VERSION, pakPath.c_str());
+        return false;
+    }
 
     // Read entry count
     u32 entryCount = 0;
@@ -58,6 +73,14 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
     u32 indexCRC = 0;
     file.read(reinterpret_cast<char*>(&indexSize), sizeof(indexSize));
     file.read(reinterpret_cast<char*>(&indexCRC), sizeof(indexCRC));
+
+    // Validate footer: index data + footer must exactly fill [indexOffset, fileSize)
+    if (indexOffset + static_cast<u64>(indexSize) + 8 != fileSize) {
+        ENJIN_LOG_ERROR(Build, "Pack footer size mismatch (indexOffset=%llu + indexSize=%u + 8 != fileSize=%llu): %s",
+                        static_cast<unsigned long long>(indexOffset), indexSize,
+                        static_cast<unsigned long long>(fileSize), pakPath.c_str());
+        return false;
+    }
 
     // Cap index size to prevent excessive allocation (max 64 MB)
     static constexpr u32 MAX_INDEX_SIZE = 64u * 1024u * 1024u;
@@ -109,6 +132,7 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
         return false;
     }
 
+    u32 parsedCount = 0;
     for (u32 i = 0; i < entryCount; i++) {
         u32 pathLen = 0;
         if (!readVal(&pathLen, sizeof(pathLen))) break;
@@ -128,6 +152,7 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
             if (!readVal(&skip.compressedSize, sizeof(skip.compressedSize))) break;
             if (!readVal(&skip.originalSize, sizeof(skip.originalSize))) break;
             if (!readVal(&skip.crc32, sizeof(skip.crc32))) break;
+            parsedCount++;
             continue;
         }
 
@@ -143,11 +168,39 @@ bool AssetReader::Open(const std::string& pakPath, const std::string& key) {
             continue;
         }
 
+        // Reject entries whose data overlaps the index+footer region
+        if (entry.compressedSize > 0 && entry.offset + entry.compressedSize > indexOffset) {
+            ENJIN_LOG_WARN(Build, "Entry '%s' data region overlaps index, skipping", vpath.c_str());
+            continue;
+        }
+
         m_Index[vpath] = entry;
+        parsedCount++;
     }
 
-    if (m_Index.size() != entryCount) {
-        ENJIN_LOG_WARN(Build, "Pack index partial read: expected %u entries, got %zu", entryCount, m_Index.size());
+    // Post-parse: detect overlapping entries
+    {
+        std::vector<std::pair<u64, u64>> regions; // (offset, end)
+        regions.reserve(m_Index.size());
+        for (auto& [vp, e] : m_Index) {
+            if (e.compressedSize > 0)
+                regions.emplace_back(e.offset, e.offset + e.compressedSize);
+        }
+        std::sort(regions.begin(), regions.end());
+        for (usize i = 1; i < regions.size(); i++) {
+            if (regions[i].first < regions[i - 1].second) {
+                ENJIN_LOG_ERROR(Build, "Pack has overlapping data entries — file corrupt: %s", pakPath.c_str());
+                m_Index.clear();
+                return false;
+            }
+        }
+    }
+
+    if (parsedCount != entryCount) {
+        ENJIN_LOG_ERROR(Build, "Pack index truncated: expected %u entries, parsed %u — rejecting pack: %s",
+                        entryCount, parsedCount, pakPath.c_str());
+        m_Index.clear();
+        return false;
     }
 
     m_Open = true;
@@ -213,9 +266,10 @@ std::vector<u8> AssetReader::ReadFile(const std::string& virtualPath) const {
     std::vector<u8> compressed(static_cast<usize>(entry.compressedSize));
     file.read(reinterpret_cast<char*>(compressed.data()),
               static_cast<std::streamsize>(entry.compressedSize));
-    if (!file.good()) {
-        ENJIN_LOG_ERROR(Build, "Read failed for %s (%llu bytes)",
-                        virtualPath.c_str(), static_cast<unsigned long long>(entry.compressedSize));
+    if (!file.good() || static_cast<u64>(file.gcount()) != entry.compressedSize) {
+        ENJIN_LOG_ERROR(Build, "Read failed for %s (expected %llu bytes, got %lld)",
+                        virtualPath.c_str(), static_cast<unsigned long long>(entry.compressedSize),
+                        static_cast<long long>(file.gcount()));
         return {};
     }
 
@@ -265,7 +319,7 @@ bool AssetReader::VerifyIntegrity() const {
         std::vector<u8> compressed(static_cast<usize>(entry.compressedSize));
         file.read(reinterpret_cast<char*>(compressed.data()),
                   static_cast<std::streamsize>(entry.compressedSize));
-        if (!file.good()) {
+        if (!file.good() || static_cast<u64>(file.gcount()) != entry.compressedSize) {
             ENJIN_LOG_ERROR(Build, "Integrity check read failed: %s", vpath.c_str());
             return false;
         }
