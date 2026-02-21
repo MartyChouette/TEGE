@@ -11,7 +11,7 @@ This document captures detailed technical plans, performance findings, and strat
 | Category | Item | Priority |
 |----------|------|----------|
 | **Platforms** | macOS (MoltenVK) | P2 |
-| **Platforms** | WebAssembly/WebGPU export | P1 (blocks Flash web distribution) |
+| **Platforms** | ~~WebAssembly/WebGPU export~~ | ✅ Complete |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
 | **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
@@ -1031,7 +1031,7 @@ public:
 ### Emerging Platforms (Future)
 
 - **VR/XR Support** — OpenXR integration, stereo rendering, hand tracking, spatial input, roomscale
-- **WebAssembly Export** — Target WebGPU (not WebGL), WASM via Emscripten
+- ~~**WebAssembly Export**~~ ✅ — WebGPU renderer backend, WASM via Emscripten, canvas window, browser input/audio, one-click web export
 
 ---
 
@@ -1246,9 +1246,9 @@ Target audience: Flash game creators and fans of the Flash/Newgrounds era lookin
 - ~~**Starter templates**~~ ✅ — Pre-built project templates for common Flash game genres: point-and-click adventure, dress-up game, tower defense, bullet hell, rhythm game, escape room, idle/clicker. All included in the 43 built-in templates and polished with HUD elements, enemies, inventory, and gameplay setups
 - ~~**Newgrounds-style game page**~~ ✅ — NewgroundsGamePage.h/cpp: dark-theme game page with medal sidebar, scoreboard, NG.io API init, toast notifications, responsive layout, embed codes
 
-### WebAssembly Export (Prerequisite)
-- **WebGPU/WebAssembly target** — Compile engine to WASM with WebGPU renderer backend. Required for browser-based game distribution
-- **Emscripten integration** — Asset pack loading via Fetch API, input mapping for touch/mouse, audio via Web Audio API
+### WebAssembly Export (Prerequisite) ✅ COMPLETE
+- ~~**WebGPU/WebAssembly target**~~ ✅ — WebGPU renderer backend with WGSL shaders (PBR, shadow, post-process), compile-time switching via `ENJIN_RENDERER_WEBGPU`
+- ~~**Emscripten integration**~~ ✅ — Canvas window, browser keyboard/mouse/wheel input, miniaudio Web Audio, `emscripten_set_main_loop_arg` adaptation, web player entry point
 - **Size optimization** — Tree-shaking unused systems, texture compression (Basis Universal), audio compression (Opus), code splitting for progressive loading
 
 ---
