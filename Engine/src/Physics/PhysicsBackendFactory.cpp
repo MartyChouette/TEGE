@@ -1,5 +1,9 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Physics/PhysicsBackendFactory.h"
 #include "Enjin/Logging/Log.h"
+
+// Both Jolt Physics and Box2D v3 compile under Emscripten (WASM).
+// No special handling needed — the backends work identically on web.
 
 #ifdef ENJIN_PHYSICS_JOLT
 #include "Enjin/Physics/JoltBackend.h"

@@ -5,20 +5,33 @@
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/ECS/Components/Mesh.h"
+
+#if ENJIN_RENDERER_WEBGPU
+#include "Enjin/Renderer/WebGPU/WebGPURenderer.h"
+#include "Enjin/Renderer/WebGPU/WebGPUPipeline.h"
+#include "Enjin/Renderer/WebGPU/WebGPUShaderCompiler.h"
+#include "Enjin/Renderer/WebGPU/WebGPUTypes.h"
+#else
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanPipeline.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
 #include "Enjin/Renderer/Vulkan/VulkanShader.h"
+#endif
+
 #include "Enjin/Renderer/Camera.h"
 #include "Enjin/Renderer/RenderTarget.h"
-#include "Enjin/Renderer/ShadowMap.h"
-#include "Enjin/Renderer/PointLightShadowMap.h"
-#include "Enjin/Renderer/SpotLightShadowMap.h"
 #include "Enjin/Renderer/Texture.h"
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Text.h"
+
+#if !ENJIN_RENDERER_WEBGPU
+#include "Enjin/Renderer/ShadowMap.h"
+#include "Enjin/Renderer/PointLightShadowMap.h"
+#include "Enjin/Renderer/SpotLightShadowMap.h"
+#endif
+
 // Forward declarations for effect renderers and systems (stored as unique_ptr/raw pointer)
 namespace Enjin { namespace Effects {
     class WindSystem;
@@ -33,21 +46,30 @@ namespace Enjin { namespace Effects {
     class ShrubRenderer;
     class TreeRenderer;
 }}
+
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/Skybox.h"
 #include "Enjin/Renderer/GPUDriven/GPUCulling.h"
 #include "Enjin/Renderer/GPUDriven/MergedGeometryBuffer.h"
 #include "Enjin/Renderer/GPUDriven/HiZPyramid.h"
 #include "Enjin/Renderer/Vulkan/ThreadPool.h"
 #include "Enjin/Renderer/Vulkan/CommandBufferPool.h"
+#endif
+
 #include "Enjin/Assets/FileWatcher.h"
+
+#if !ENJIN_RENDERER_WEBGPU
 #include "Enjin/Renderer/RayTracing/RTCapabilities.h"
 #include "Enjin/Editor/FlashTimeline.h"
 #include <vulkan/vulkan.h>
+#endif
+
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
 #include <vector>
 
+#if !ENJIN_RENDERER_WEBGPU
 // Forward declarations for RT subsystems and rendering infrastructure
 namespace Enjin { namespace Renderer {
     class AccelerationStructureManager;
@@ -63,6 +85,7 @@ namespace Enjin { namespace Renderer {
     class SHLightingSystem;
     class SDFScene;
 }}
+#endif
 
 namespace Enjin {
 namespace ECS {
@@ -112,6 +135,7 @@ struct ObjectDataGPU {
 };
 static_assert(sizeof(ObjectDataGPU) == 128, "ObjectDataGPU must be 128 bytes for std430");
 
+#if !ENJIN_RENDERER_WEBGPU
 // Per-entity rendering data (stored in dense vector indexed by entity ID)
 struct EntityRenderData {
     std::unique_ptr<Renderer::VulkanBuffer> vertexBuffer;
@@ -131,11 +155,16 @@ struct EntityRenderData {
         poolAlloc = {};
     }
 };
+#endif
 
 // Render system - renders entities with Transform and Mesh components
 class ENJIN_API RenderSystem : public ISystem {
 public:
+#if ENJIN_RENDERER_WEBGPU
+    RenderSystem(World* world, Renderer::WebGPURenderer* renderer);
+#else
     RenderSystem(World* world, Renderer::VulkanRenderer* renderer);
+#endif
     ~RenderSystem();
 
     void Initialize();
@@ -209,9 +238,11 @@ public:
     bool IsWireframeEnabled() const { return m_WireframeMode; }
     void SetWireframeEnabled(bool enabled);
 
+#if !ENJIN_RENDERER_WEBGPU
     // Render line-list geometry with depth testing (for editor overlays)
     void RenderGridLines(Renderer::VulkanBuffer* vertexBuffer, u32 vertexCount,
                          u32 firstVertex, const Math::Vector3& color, f32 opacity);
+#endif
 
     f32 GetAmbientIntensity() const { return m_AmbientIntensity; }
     void SetAmbientIntensity(f32 intensity) { m_AmbientIntensity = intensity; }
@@ -257,8 +288,10 @@ public:
     void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderTrees(u32 viewportWidth = 0, u32 viewportHeight = 0);
 
+#if !ENJIN_RENDERER_WEBGPU
     // Recreate effect renderer pipelines for a specific render pass (e.g. render target)
     void RecreateEffectPipelinesForRenderPass(VkRenderPass renderPass);
+#endif
 
     // Scene composition (auto-detected rendering mode)
     SceneRenderMode GetSceneRenderMode() const { return m_SceneComposition.mode; }
@@ -314,6 +347,7 @@ public:
     f32 GetCelSpecularCutoff() const { return m_CelSpecularCutoff; }
     void SetCelSpecularCutoff(f32 cutoff) { m_CelSpecularCutoff = cutoff; }
 
+#if !ENJIN_RENDERER_WEBGPU
     // Skybox
     void SetSkybox(const Renderer::SkyboxConfig& config);
     const Renderer::SkyboxConfig& GetSkyboxConfig() const { return m_Skybox.GetConfig(); }
@@ -336,7 +370,9 @@ public:
     Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
     Renderer::OIDNDenoiser* GetOIDNDenoiser() { return m_OIDNDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
+#endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Denoiser type selection: 0=SVGF, 1=OIDN
     u32 GetDenoiserType() const { return m_DenoiserType; }
     void SetDenoiserType(u32 type) { m_DenoiserType = type; }
@@ -356,6 +392,7 @@ public:
     void SetOnionSkinGhosts(const std::vector<Editor::OnionSkinGhost>& ghosts) { m_OnionSkinGhosts = ghosts; }
     void ClearOnionSkinGhosts() { m_OnionSkinGhosts.clear(); }
     const std::vector<Editor::OnionSkinGhost>& GetOnionSkinGhosts() const { return m_OnionSkinGhosts; }
+#endif
 
     // Load or retrieve a cached texture (public wrapper for editor/tool use)
     std::shared_ptr<Renderer::Texture> LoadTexture(const std::string& path) { return GetOrLoadTexture(path); }
@@ -363,6 +400,7 @@ public:
     // Clear a path from the failed texture cache so it will be retried on next load
     void ClearFailedTexture(const std::string& path) { m_FailedTextures.erase(path); }
 
+#if !ENJIN_RENDERER_WEBGPU
     // Access descriptor sets for sub-renderers
     const std::vector<VkDescriptorSet>& GetDescriptorSets() const { return m_DescriptorSets; }
 
@@ -370,17 +408,20 @@ public:
     static u32 GetOffscreenBufferIndex(u32 frameIndex, u32 viewportIndex) {
         return frameIndex * MAX_SPLITSCREEN_VIEWPORTS + viewportIndex;
     }
+#endif
 
 private:
     void RenderEntity(Entity entity);
-    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
-    void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
-                           const Math::Vector3& tint, f32 opacity);
-    void RenderOnionSkinGhosts();
     void RenderSprites();  // Sorted 2D sprite pass (after 3D geometry)
     void ClassifySceneComposition();  // Update m_SceneComposition if dirty
     void CreateDefaultMesh();
     void CreatePipeline();
+
+#if !ENJIN_RENDERER_WEBGPU
+    void RenderEntityShadow(Entity entity, VkCommandBuffer commandBuffer);
+    void RenderEntityGhost(Entity entity, const Math::Matrix4& modelMatrix,
+                           const Math::Vector3& tint, f32 opacity);
+    void RenderOnionSkinGhosts();
     void CreateShadowPipeline();
     // Recreate all pipelines. If gpuAlreadyIdle is true, skips vkDeviceWaitIdle (caller guarantees GPU is idle).
     void RecreatePipelines(bool gpuAlreadyIdle = false);
@@ -391,12 +432,27 @@ private:
     // or nullptr if the entity has no valid mesh.
     EntityRenderData* SetupEntityBuffers(Entity entity);
     void RenderShadowPass();
+#endif
 
     World* m_World = nullptr;
+#if ENJIN_RENDERER_WEBGPU
+    Renderer::WebGPURenderer* m_Renderer = nullptr;
+#else
     Renderer::VulkanRenderer* m_Renderer = nullptr;
+#endif
     Renderer::Camera* m_Camera = nullptr;
     Entity m_DefaultEntity = INVALID_ENTITY;
 
+#if ENJIN_RENDERER_WEBGPU
+    // WebGPU rendering resources
+    WGPURenderPipeline m_WGPUPipeline = nullptr;
+    WGPUShaderModule m_WGPUVertexShader = nullptr;
+    WGPUShaderModule m_WGPUFragmentShader = nullptr;
+    WGPUBindGroupLayout m_WGPUBindGroupLayout0 = nullptr;
+    WGPUBindGroupLayout m_WGPUBindGroupLayout1 = nullptr;
+    WGPUBindGroupLayout m_WGPUBindGroupLayout2 = nullptr;
+    WGPUPipelineLayout m_WGPUPipelineLayout = nullptr;
+#else
     // Rendering resources
     std::unique_ptr<Renderer::VulkanPipeline> m_Pipeline;
     std::unique_ptr<Renderer::VulkanShader> m_VertexShader;
@@ -406,7 +462,9 @@ private:
     // Line rendering (editor grid)
     std::unique_ptr<Renderer::VulkanPipeline> m_LinePipeline;
     void CreateLinePipeline();
+#endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Shadow mapping
     std::unique_ptr<Renderer::ShadowMap> m_ShadowMap;
     std::unique_ptr<Renderer::VulkanPipeline> m_ShadowPipeline;
@@ -451,6 +509,8 @@ private:
     void RenderPointShadowPass();
     void RenderSpotShadowPass();
     void SelectShadowLights();
+#endif // !ENJIN_RENDERER_WEBGPU (shadow mapping block)
+
     bool m_BackfaceCulling = false;
     bool m_WireframeMode = false;
     Effects::WindSystem* m_WindSystem = nullptr;
@@ -492,9 +552,11 @@ private:
     Renderer::TextRasterizer m_TextRasterizer;
     std::unordered_map<Entity, std::shared_ptr<Renderer::Texture>> m_TextTextureCache;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Skeletal animation
     std::unique_ptr<Renderer::VulkanBuffer> m_DefaultBoneBuffer;
     void UpdateBoneDescriptor(Renderer::VulkanBuffer* boneBuffer);
+#endif
 
     // Weather, particle, grass, shrub, tree, and sprite batch renderers
     std::unique_ptr<Effects::WeatherRenderer> m_WeatherRenderer;
@@ -520,6 +582,7 @@ private:
     // Per-frame cached light entity list (populated once at start of Update, reused by all sub-functions)
     std::vector<Entity> m_CachedLightEntities;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Merged geometry buffer (single VB+IB for all static 3D meshes)
     std::unique_ptr<Renderer::MergedGeometryBuffer> m_GeometryPool;
     bool IsPoolEligible(Entity entity) const;  // Check if entity should use merged pool
@@ -529,9 +592,13 @@ private:
     std::vector<Renderer::CullableObject> m_CullableObjects;
     std::vector<u32> m_EntityToCullIndex; // Maps entity index to cullable object index
     bool m_GPUCullingEnabled = true;  // Enabled: GPU-driven indirect draws (no readback stall)
+#endif
+
     bool m_IsEditorMode = false;      // When true, skip frustum culling (show all entities)
     bool m_SkipMainPassShadows = false; // When true, skip shadow passes in Update() (play mode)
     bool m_SkipMainPassRendering = false; // When true, skip geometry+effects in Update() (play mode — game view handles rendering)
+
+#if !ENJIN_RENDERER_WEBGPU
     void BuildCullableObjectList();
     void PerformGPUCulling();
     void PerformGPUCullingAsync(); // Record to compute command buffer
@@ -568,9 +635,12 @@ private:
     // Water surface mesh generation
     void EnsureWaterMeshes();
     void EnsureWater3DMeshes();
+#endif
 
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);
+
+#if !ENJIN_RENDERER_WEBGPU
     void UpdateTextureDescriptor(Renderer::Texture* texture);
     void UpdateHeightTextureDescriptor(Renderer::Texture* texture);
     void UpdateNormalMapDescriptor(Renderer::Texture* texture);
@@ -624,7 +694,9 @@ private:
 
     // Splitscreen viewports for the main render pass (set by Player)
     std::vector<ViewportCamera> m_MainPassViewports;
+#endif
 
+#if !ENJIN_RENDERER_WEBGPU
     // Per-entity render data — dense vector indexed by entity ID for cache-friendly O(1) lookup
     std::vector<EntityRenderData> m_EntityRenderData;
 
@@ -637,6 +709,7 @@ private:
     };
     LastBoundState m_LastBound;
     bool m_GeometryPoolBound = false;  // Track if geometry pool buffers are bound this pass
+#endif
     std::vector<Entity> m_SortedRenderList;  // Reused per frame to avoid allocation
     std::vector<Math::Vector3> m_IKChainCache; // Reused per frame for FABRIK IK solving
 
@@ -654,6 +727,7 @@ private:
     Assets::FileWatcher m_TextureWatcher;
     u32 m_WatcherPollCounter = 0;
 
+#if !ENJIN_RENDERER_WEBGPU
     // Shader hot-reload (editor-only)
     Assets::FileWatcher m_ShaderWatcher;
     std::string m_ShaderDir;       // Path to Engine/shaders/ (empty = not found, hot-reload disabled)
@@ -673,9 +747,11 @@ private:
     std::unique_ptr<Renderer::VulkanShader> m_PendingVertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_PendingFragmentShader;
     void ProcessPendingRecreation();
+#endif
 
     bool m_Initialized = false;
 
+#if !ENJIN_RENDERER_WEBGPU
     // --- Ray Tracing subsystems (null when unsupported) ---
     void InitializeRayTracing();
     void ShutdownRayTracing();
@@ -740,6 +816,7 @@ private:
     void TransitionRTOutputImages(VkCommandBuffer cmd);
     void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
                           f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount);
+#endif // !ENJIN_RENDERER_WEBGPU (RT/OIT/SH/SDF block)
 };
 
 } // namespace ECS

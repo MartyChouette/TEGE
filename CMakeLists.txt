@@ -48,8 +48,18 @@ if(ENJIN_ENABLE_ASAN OR ENJIN_ENABLE_UBSAN OR ENJIN_ENABLE_TSAN)
     endif()
 endif()
 
+# WebAssembly / Emscripten support
+option(ENJIN_PLATFORM_WEB "Build for WebAssembly with WebGPU (requires Emscripten)" OFF)
+
+if(ENJIN_PLATFORM_WEB OR EMSCRIPTEN)
+    set(ENJIN_PLATFORM_WEB ON CACHE BOOL "" FORCE)
+    include(${CMAKE_SOURCE_DIR}/cmake/EmscriptenToolchain.cmake)
+endif()
+
 # Platform detection
-if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+if(ENJIN_PLATFORM_WEB)
+    message(STATUS "Building for Web (Emscripten + WebGPU)")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     message(STATUS "Building for Windows")
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     message(STATUS "Building for Linux")

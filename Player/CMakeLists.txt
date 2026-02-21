@@ -1,8 +1,14 @@
 cmake_minimum_required(VERSION 3.20)
 
-add_executable(EnjinPlayer
-    src/main.cpp
-)
+if(ENJIN_PLATFORM_WEB)
+    add_executable(EnjinPlayer
+        src/web_main.cpp
+    )
+else()
+    add_executable(EnjinPlayer
+        src/main.cpp
+    )
+endif()
 
 target_link_libraries(EnjinPlayer PRIVATE
     EnjinEngine

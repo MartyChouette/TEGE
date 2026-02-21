@@ -15,6 +15,10 @@
 #elif defined(__APPLE__)
     #define ENJIN_PLATFORM_MACOS
     #define ENJIN_PLATFORM_POSIX
+#elif defined(__EMSCRIPTEN__)
+    #define ENJIN_PLATFORM_WEB 1
+    #include <emscripten.h>
+    #include <emscripten/html5.h>
 #elif defined(__SWITCH__) || defined(ENJIN_PLATFORM_SWITCH)
     // Nintendo Switch (NVN graphics API)
     // __SWITCH__ is defined by the official Nintendo SDK toolchain.

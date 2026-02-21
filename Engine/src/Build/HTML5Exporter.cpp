@@ -92,6 +92,73 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
 }
 
 // ============================================================================
+// Emscripten Build Invocation
+// ============================================================================
+
+bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
+                                            const std::string& enjpakPath) {
+    // Build command: invoke emcc via cmake to compile the web player target
+    // This requires the Emscripten SDK (emsdk) to be activated in the user's shell.
+    //
+    // The build flow is:
+    //   1. emcmake cmake -B <build-web> -DENJIN_PLATFORM_WEB=ON
+    //   2. emmake cmake --build <build-web> --target EnjinPlayer
+    //   3. Copy output files (game.js, game.wasm) to outputDir
+    //   4. Preload the .enjpak via --preload-file
+
+    std::string buildDir = outputDir + "/build-web";
+    std::filesystem::create_directories(buildDir);
+
+    // Step 1: Configure
+    std::string configCmd = "emcmake cmake -B \"" + buildDir + "\" -DENJIN_PLATFORM_WEB=ON";
+    ENJIN_LOG_INFO(Build, "Web build: configuring... (%s)", configCmd.c_str());
+    int configResult = std::system(configCmd.c_str());
+    if (configResult != 0) {
+        ENJIN_LOG_ERROR(Build, "Web build: CMake configure failed (exit code %d). Is emsdk activated?", configResult);
+        return false;
+    }
+
+    // Step 2: Build
+    std::string buildCmd = "emmake cmake --build \"" + buildDir + "\" --target EnjinPlayer";
+    ENJIN_LOG_INFO(Build, "Web build: compiling... (%s)", buildCmd.c_str());
+    int buildResult = std::system(buildCmd.c_str());
+    if (buildResult != 0) {
+        ENJIN_LOG_ERROR(Build, "Web build: compilation failed (exit code %d)", buildResult);
+        return false;
+    }
+
+    // Step 3: Copy WASM output to export directory
+    std::string wasmSrc = buildDir + "/bin/EnjinPlayer.wasm";
+    std::string jsSrc = buildDir + "/bin/EnjinPlayer.js";
+    try {
+        if (std::filesystem::exists(wasmSrc)) {
+            std::filesystem::copy_file(wasmSrc, outputDir + "/game.wasm",
+                                        std::filesystem::copy_options::overwrite_existing);
+        }
+        if (std::filesystem::exists(jsSrc)) {
+            std::filesystem::copy_file(jsSrc, outputDir + "/game.js",
+                                        std::filesystem::copy_options::overwrite_existing);
+        }
+    } catch (const std::exception& e) {
+        ENJIN_LOG_ERROR(Build, "Web build: failed to copy output files: %s", e.what());
+        return false;
+    }
+
+    // Step 4: Copy asset pack
+    if (!enjpakPath.empty() && std::filesystem::exists(enjpakPath)) {
+        try {
+            std::filesystem::copy_file(enjpakPath, outputDir + "/game.data",
+                                        std::filesystem::copy_options::overwrite_existing);
+        } catch (const std::exception& e) {
+            ENJIN_LOG_WARN(Build, "Web build: failed to copy asset pack: %s", e.what());
+        }
+    }
+
+    ENJIN_LOG_INFO(Build, "Web build: complete — output in %s", outputDir.c_str());
+    return true;
+}
+
+// ============================================================================
 // HTML Generation
 // ============================================================================
 
@@ -188,11 +255,18 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
         html << "  <script src=\"preloader.js\"></script>\n";
     }
 
-    // Emscripten module placeholder
+    // Emscripten module — WebGPU context
     html << "  <script>\n"
-         << "    // Emscripten module configuration (loaded when WASM build is available)\n"
+         << "    // Emscripten module configuration (WebGPU)\n"
          << "    var Module = {\n"
-         << "      canvas: document.getElementById('game-canvas'),\n"
+         << "      canvas: (function() {\n"
+         << "        var c = document.getElementById('game-canvas');\n"
+         << "        // Request WebGPU context (Emscripten's USE_WEBGPU=1 expects this)\n"
+         << "        if (navigator.gpu) {\n"
+         << "          c.getContext('webgpu');\n"
+         << "        }\n"
+         << "        return c;\n"
+         << "      })(),\n"
          << "      onRuntimeInitialized: function() {\n"
          << "        console.log('" << safeTitle << " - Engine initialized');\n";
     if (config.showPreloader) {
@@ -221,8 +295,7 @@ std::string HTML5Exporter::GenerateHTML(const HTML5ExportConfig& config,
     }
 
     html << "  </script>\n"
-         << "  <!-- Add the compiled WASM loader here: -->\n"
-         << "  <!-- <script src=\"" << config.title << ".js\"></script> -->\n"
+         << "  <script src=\"game.js\"></script>\n"
          << "</body>\n"
          << "</html>\n";
 

@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/ECS/Components/Transform.h"
 #include "Enjin/Math/Math.h"
@@ -6,6 +7,8 @@
 #include <fstream>
 #include <unordered_set>
 
+// miniaudio supports Emscripten/Web Audio out of the box (MA_ENABLE_WEBAUDIO).
+// No special handling needed — miniaudio auto-detects the platform.
 #include "miniaudio.h"
 
 #ifdef ENJIN_AUDIO_STEAM_AUDIO

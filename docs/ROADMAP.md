@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-18)
+## Status Summary (2026-02-21)
 
-**150+ features complete.** Beta 0.8 hardening in progress on `beta/0.8` branch. ECS and Renderer audits complete (26 fixes). Serialization and Asset Pack audits identified (28 findings pending). See `docs/DEV_JOURNAL.md` for session log.
+**150+ features complete.** Beta 0.8 QA hardening complete — all 8 subsystem audits done. See `docs/DEV_JOURNAL.md` for session log.
 
 ### Still Remaining
 
@@ -23,7 +23,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **RT** | RT Caustics (photon mapping / path traced) | P4 |
 | **RT** | RT Translucency (subsurface scattering) | P4 |
 | **Flash** | Yarn Spinner / Twine dialogue import/export | P4 |
-| **QA** | Beta 0.8 hardening: ECS ✅, Renderer ✅, Serialization (in progress), Asset Pack (in progress), Physics, Audio, Build Pipeline | P1 |
+| **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
 | **Known Bug** | RT pipeline crash on pool-allocated entity BLAS builds (parked) | P2 |
 
 ---

@@ -1,3 +1,4 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Networking/NetworkSystem.h"
 #include "Enjin/Networking/NetworkSecurity.h"
 #include "Enjin/ECS/Components/Transform.h"
@@ -7,6 +8,12 @@
 #include "Enjin/Debug/Profiler.h"
 #include <cmath>
 #include <algorithm>
+
+// NOTE: On web (ENJIN_PLATFORM_WEB), the NetworkTransport UDP backend is unavailable.
+// Emscripten does not support raw UDP sockets. A future WebSocket transport layer
+// will replace the UDP transport for web builds. For now, HostGame/JoinGame will
+// log warnings and return false on web, while the rest of the lobby/RPC logic
+// compiles unchanged (it doesn't directly call socket APIs).
 
 namespace Enjin {
 namespace Networking {
@@ -22,6 +29,11 @@ bool NetworkSystem::HostGame(u16 port, const std::string& playerName) {
     }
 
     LoadConfig();
+
+#if ENJIN_PLATFORM_WEB
+    ENJIN_LOG_WARN(Network, "NetworkSystem: Raw UDP not available on web — use WebSocket transport");
+    return false;
+#endif
 
     if (!m_Transport.Bind(port)) {
         ENJIN_LOG_ERROR(Network, "NetworkSystem: Failed to bind as host on port %u", port);

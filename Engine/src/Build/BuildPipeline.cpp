@@ -1,6 +1,7 @@
 #include "Enjin/Build/BuildPipeline.h"
 #include "Enjin/Build/AssetPacker.h"
 #include "Enjin/Build/AssetReader.h"
+#include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Platform/Paths.h"
 #include <nlohmann/json.hpp>
@@ -64,11 +65,31 @@ BuildResult BuildPipeline::Execute(const BuildConfig& config) {
         return m_Result;
     }
 
-    // Phase 4: Copy player
-    ReportProgress("Copying player", 0.8f);
-    if (!CopyPlayer(config.outputDir)) {
-        // Non-fatal: warn but continue (user may not have built the player)
-        AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
+    // Phase 4: Copy player (desktop) or invoke Emscripten build (web)
+    ReportProgress("Building player", 0.8f);
+    if (config.target == BuildTargetPlatform::Web) {
+        std::string pakPath = (fs::path(config.outputDir) / "game.enjpak").string();
+        if (!HTML5Exporter::InvokeEmscriptenBuild(config.outputDir, pakPath)) {
+            AddMessage(MessageSeverity::Warning, "Emscripten build failed — WASM output may be missing. Ensure Emscripten SDK is installed.");
+        }
+
+        // Generate HTML shell
+        HTML5ExportConfig htmlConfig;
+        htmlConfig.outputDir = config.outputDir;
+        htmlConfig.title = config.windowTitle.empty() ? "Enjin Game" : config.windowTitle;
+        htmlConfig.width = config.windowWidth;
+        htmlConfig.height = config.windowHeight;
+        auto htmlResult = HTML5Exporter::Export(htmlConfig, config);
+        if (!htmlResult.success) {
+            AddMessage(MessageSeverity::Warning, "HTML export failed: " + htmlResult.error);
+        } else {
+            AddMessage(MessageSeverity::Info, "Web export: " + htmlResult.outputPath);
+        }
+    } else {
+        if (!CopyPlayer(config.outputDir)) {
+            // Non-fatal: warn but continue (user may not have built the player)
+            AddMessage(MessageSeverity::Warning, "Player executable not found. Build the player target (EnjinPlayer) separately.");
+        }
     }
 
     // Phase 5: Verify

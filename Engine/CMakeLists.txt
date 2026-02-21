@@ -67,7 +67,9 @@ target_link_libraries(EnjinEngine PUBLIC
 target_compile_features(EnjinEngine PUBLIC cxx_std_20)
 
 # Platform-specific networking and system libraries
-if(WIN32)
+if(ENJIN_PLATFORM_WEB)
+    # Emscripten provides networking via fetch API and WebSocket — no native libs needed
+elseif(WIN32)
     target_link_libraries(EnjinEngine PUBLIC ws2_32 winhttp)
 elseif(UNIX)
     # Linux/macOS: POSIX sockets are in libc (no extra link needed),
@@ -87,21 +89,29 @@ if(MSVC)
     target_compile_options(EnjinEngine PRIVATE /bigobj)
 endif()
 
-# Find Vulkan
-find_package(Vulkan REQUIRED)
-target_link_libraries(EnjinEngine PUBLIC Vulkan::Vulkan)
-
-# GLFW is already linked via EnjinCore, no need to link again
-# But we can verify it's available
-if(TARGET glfw)
-    message(STATUS "GLFW found via EnjinCore")
-elseif(TARGET glfw3)
-    message(STATUS "GLFW3 found")
+# --- Renderer backend selection (Vulkan vs WebGPU) ---
+if(ENJIN_PLATFORM_WEB)
+    # WebGPU backend — Emscripten provides <webgpu/webgpu.h> via -sUSE_WEBGPU=1
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_RENDERER_WEBGPU=1)
+    message(STATUS "Renderer backend: WebGPU (Emscripten)")
 else()
-    # GLFW should be found by Core, but check anyway
-    find_package(glfw3 QUIET)
-    if(glfw3_FOUND)
-        target_link_libraries(EnjinEngine PUBLIC glfw)
+    # Vulkan backend (desktop)
+    find_package(Vulkan REQUIRED)
+    target_link_libraries(EnjinEngine PUBLIC Vulkan::Vulkan)
+    message(STATUS "Renderer backend: Vulkan")
+
+    # GLFW is already linked via EnjinCore, no need to link again
+    # But we can verify it's available
+    if(TARGET glfw)
+        message(STATUS "GLFW found via EnjinCore")
+    elseif(TARGET glfw3)
+        message(STATUS "GLFW3 found")
+    else()
+        # GLFW should be found by Core, but check anyway
+        find_package(glfw3 QUIET)
+        if(glfw3_FOUND)
+            target_link_libraries(EnjinEngine PUBLIC glfw)
+        endif()
     endif()
 endif()
 

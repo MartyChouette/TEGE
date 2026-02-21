@@ -1,6 +1,11 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Scripting/ScriptEngine.h"
 #include "Enjin/Scripting/CoroutineScheduler.h"
 #include "Enjin/Logging/Log.h"
+
+// AngelScript compiles under Emscripten with AS_MAX_PORTABILITY (set in
+// cmake/EmscriptenToolchain.cmake). This disables JIT and uses generic
+// calling conventions, which is required for WASM.
 #include <scriptbuilder/scriptbuilder.h>
 #include <scriptstdstring/scriptstdstring.h>
 #include <scriptarray/scriptarray.h>

@@ -1,8 +1,11 @@
+#include "Enjin/Platform/Platform.h"
 #include "Enjin/Networking/HTTPClient.h"
 #include "Enjin/Logging/Log.h"
 #include <sstream>
 
-#ifdef _WIN32
+#if ENJIN_PLATFORM_WEB
+#include <emscripten/fetch.h>
+#elif defined(_WIN32)
 #include <windows.h>
 #include <winhttp.h>
 #pragma comment(lib, "winhttp.lib")
