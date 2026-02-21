@@ -86,6 +86,11 @@ void TemplateMarketplace::BuildCatalog() {
         0.3f, 0.6f, 0.9f, 1450, 4.6f, 48, 62400,
         {"topdown", "action", "dungeon", "2d", "enemies", "particles", "hud"});
 
+    add("platformer_adventure", "2D Platformer", "4-zone side-scrolling adventure across meadow, cave, tower, and sky. Wall jump, double jump, 7 enemies, destructible crates, lava hazards, locked door, teleporter, boss fight, HUD, and vignette post-processing.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Stable,
+        0.3f, 0.8f, 0.3f, 1680, 4.7f, 52, 58200,
+        {"platformer", "2d", "adventure", "walljump", "boss", "enemies", "particles", "hud"});
+
     add("fps_arena", "FPS Arena", "Fast-paced first-person shooter arena with weapon pickups, respawn points, and basic AI bots.",
         "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
         0.8f, 0.1f, 0.1f, 1100, 4.5f, 40, 68200,
