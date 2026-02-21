@@ -118,7 +118,7 @@ When you launch the editor for the first time:
 
 To set a custom window icon, place an `icon.png` file next to the editor executable. The engine will load it automatically on startup.
 
-You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon** (or via the Build Config section in Project Settings). Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in editor settings and auto-applied on startup. Use **Clear** to revert to the OS default.
+You can also set a custom icon from within the editor via **View > Settings > Project Settings > Window Icon**. Browse for any PNG file, click **Apply**, and the window icon updates immediately. The path is saved in the project file (`.enjinproject`) and auto-applied on startup. Use **Clear** to revert to the OS default.
 
 ---
 
@@ -134,12 +134,9 @@ The Enjin editor is a panel-based workspace. All panels can be toggled from the 
 | **Inspector** | Component editor for the selected entity. Displays and edits all attached components (50+ component types). Includes an "Add Component" button. |
 | **Console** | Log output for engine messages, warnings, and errors. |
 | **Asset Browser** | Browse and manage project files with grid/list view, thumbnails, search, and drag-and-drop. |
-| **Editor Settings** | Grid display, gizmo settings, accent colors, and editor preferences. |
-| **Post Processing** | Configure bloom, vignette, color grading, FXAA, and film grain. |
-| **Retro Effects** | CRT scanlines, pixelation, dithering, and color quantization post-processing. |
+| **Settings** | Unified settings window with 3 tabs: **System** (camera, performance, IDE, accessibility, fonts), **Project** (project mode, window icon, physics, frame rate, audio, collision groups, build config), **Scene** (skybox, shadows, lighting, cel shading, display, ray tracing, light probes, post processing, retro effects, environment). Opened via View > Settings. |
 | **Game View** | Rendered game camera output with Play/Pause/Stop controls. |
 | **Scene List** | Multi-scene project management. Add, reorder, load scenes, and set the start scene. |
-| **Rendering** | Skybox configuration, shadow settings, ambient lighting, cel shading, ray tracing, and fog. |
 | **Stats Overlay** | Real-time performance metrics: FPS, frame time, draw calls, and triangle count. |
 | **Visual Script** | Blueprint-style visual scripting editor with 76+ node types and debugger. |
 | **Behavior Tree** | AI behavior tree editor with 20 node types, blackboard editor, and play-mode visualization. |
@@ -1620,7 +1617,7 @@ When you press **Stop**, the engine compares the scene state before and after pl
 
 ### Skybox
 
-Configure the skybox from the **Rendering** panel (View > Rendering > Rendering).
+Configure the skybox from the **Settings** window, **Scene** tab (View > Settings > Scene Settings).
 
 #### Skybox Types
 
@@ -1662,7 +1659,7 @@ All skybox types support a **Y-axis rotation** slider (0-360 degrees) to orient 
 
 ### Weather
 
-Configure weather effects from the **Project Settings** panel (View > Settings > Project Settings > Environment).
+Configure weather effects from the **Settings** window, **Scene** tab > Environment (View > Settings > Scene Settings).
 
 | Effect | Description |
 |--------|-------------|
@@ -1684,7 +1681,7 @@ Per-zone weather overrides are possible via `WeatherZoneComponent` on entities.
 
 ### Post-Processing
 
-Available from the **Post Processing** panel:
+Available from the **Settings** window, **Scene** tab > Post Processing:
 
 | Effect | Parameters |
 |--------|------------|
@@ -1696,7 +1693,7 @@ Available from the **Post Processing** panel:
 
 #### Screen-Space Effects
 
-Five raster-tier screen-space effects run in the post-process shader using only the scene color and depth buffer. They provide ambient occlusion, contact shadows, volumetric light, caustics, and fog without requiring ray tracing hardware. All are configurable from the Post Processing panel and persist per-scene.
+Five raster-tier screen-space effects run in the post-process shader using only the scene color and depth buffer. They provide ambient occlusion, contact shadows, volumetric light, caustics, and fog without requiring ray tracing hardware. All are configurable from Settings > Scene > Post Processing and persist per-scene.
 
 | Effect | Description | Key Parameters |
 |--------|-------------|---------------|
@@ -1725,7 +1722,7 @@ These are set on individual `MaterialComponent` instances:
 
 #### Post-Process
 
-These are global effects from the **Retro Effects** panel (View > Rendering > Retro Effects):
+These are global effects from the **Settings** window, **Scene** tab > Retro Effects:
 
 - **CRT scanlines** -- horizontal scanline overlay.
 - **Dithering** -- ordered dithering pattern.
@@ -1734,7 +1731,7 @@ These are global effects from the **Retro Effects** panel (View > Rendering > Re
 
 ### World Time
 
-A day/night cycle system with configurable speed. As time advances, the sun position and sky colors change accordingly. Configure from Project Settings > Environment.
+A day/night cycle system with configurable speed. As time advances, the sun position and sky colors change accordingly. Configure from Settings > Scene > Environment.
 
 ### Wind
 
@@ -1748,7 +1745,7 @@ A global wind system that affects:
 
 ## 9. Accessibility
 
-Enjin includes comprehensive accessibility features, configurable from the **Editor Settings** panel (View > Settings > Editor Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
+Enjin includes comprehensive accessibility features, configurable from the **Settings** window, **System** tab (View > Settings > System Settings). Settings are saved persistently to disk (JSON format in `%APPDATA%/enjin/` on Windows).
 
 ### Editor Themes
 
@@ -1770,7 +1767,7 @@ Eleven themes are available, including four standard themes and seven retro cons
 
 ### Customizable Accent Colors
 
-Beyond the built-in themes, you can fully customize the editor's accent colors from **Editor Settings > Accent Colors**:
+Beyond the built-in themes, you can fully customize the editor's accent colors from **Settings > System > Accent Colors**:
 
 - **Enable Custom Colors** checkbox activates per-color overrides.
 - 11 accent color fields are available: Button, Button Hover, Button Active, Check Mark, Slider Grab, Slider Grab Active, Resize Grip, Text Selected, Drag Drop Target, Tab Active, Tab Hovered.
@@ -2938,7 +2935,7 @@ Enjin includes a full Vulkan ray tracing pipeline for hybrid raster+RT rendering
 
 ### Editor Panel
 
-The Ray Tracing settings are located in the **Rendering** panel (View > Rendering > Rendering):
+The Ray Tracing settings are located in the **Settings** window, **Scene** tab > Ray Tracing (View > Settings > Scene Settings):
 
 - **Supported indicator** — Green "Supported" or red "Not Supported" text based on GPU capabilities
 - **Enable toggle** — Master on/off for the RT pipeline
