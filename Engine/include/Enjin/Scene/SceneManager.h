@@ -175,6 +175,28 @@ public:
     void SetGameFrameSettings(const GameFrameSettings& s) { m_GameFrameSettings = s; }
     const GameFrameSettings& GetGameFrameSettings() const { return m_GameFrameSettings; }
 
+    // --- Audio settings (project-level) ---
+    void SetEnableHRTF(bool v) { m_EnableHRTF = v; }
+    bool GetEnableHRTF() const { return m_EnableHRTF; }
+    void SetEnableOcclusion(bool v) { m_EnableOcclusion = v; }
+    bool GetEnableOcclusion() const { return m_EnableOcclusion; }
+    void SetEnableTransmission(bool v) { m_EnableTransmission = v; }
+    bool GetEnableTransmission() const { return m_EnableTransmission; }
+
+    // --- Window icon (project-level) ---
+    void SetWindowIconPath(const std::string& path) { m_WindowIconPath = path; }
+    const std::string& GetWindowIconPath() const { return m_WindowIconPath; }
+
+    // --- Build config (project-level, persisted in .enjinproject) ---
+    void SetWindowTitle(const std::string& t) { m_WindowTitle = t; }
+    const std::string& GetWindowTitle() const { return m_WindowTitle; }
+    void SetWindowWidth(u32 w) { m_WindowWidth = w; }
+    u32 GetWindowWidth() const { return m_WindowWidth; }
+    void SetWindowHeight(u32 h) { m_WindowHeight = h; }
+    u32 GetWindowHeight() const { return m_WindowHeight; }
+    void SetFullscreen(bool f) { m_Fullscreen = f; }
+    bool GetFullscreen() const { return m_Fullscreen; }
+
     // --- Callbacks ---
     using SceneLoadedCallback = std::function<void(const std::string& sceneName)>;
     using SceneUnloadedCallback = std::function<void(const std::string& sceneName)>;
@@ -206,6 +228,20 @@ private:
 
     // Game frame rate settings
     GameFrameSettings m_GameFrameSettings;
+
+    // Audio settings (project-level, migrated from EditorSettings)
+    bool m_EnableHRTF = true;
+    bool m_EnableOcclusion = true;
+    bool m_EnableTransmission = true;
+
+    // Window icon path (project-level, migrated from EditorSettings)
+    std::string m_WindowIconPath;
+
+    // Build config (project-level, persisted in .enjinproject)
+    std::string m_WindowTitle = "Enjin Game";
+    u32 m_WindowWidth = 1280;
+    u32 m_WindowHeight = 720;
+    bool m_Fullscreen = false;
 
     // Runtime state
     std::string m_CurrentSceneName;

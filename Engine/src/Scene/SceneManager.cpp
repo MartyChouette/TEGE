@@ -31,6 +31,14 @@ void SceneManager::NewProject(const std::string& projectName) {
     m_CollisionGroupNames.clear();
     m_CollisionGroupNames.resize(32);
     m_CollisionGroupNames[0] = "Default";
+    m_EnableHRTF = true;
+    m_EnableOcclusion = true;
+    m_EnableTransmission = true;
+    m_WindowIconPath.clear();
+    m_WindowTitle = "Enjin Game";
+    m_WindowWidth = 1280;
+    m_WindowHeight = 720;
+    m_Fullscreen = false;
 }
 
 bool SceneManager::LoadProject(const std::string& manifestPath) {
@@ -127,6 +135,28 @@ bool SceneManager::LoadProject(const std::string& manifestPath) {
             }
         }
 
+        // Load audio settings
+        if (root.contains("audio") && root["audio"].is_object()) {
+            const auto& audio = root["audio"];
+            if (audio.contains("enableHRTF")) m_EnableHRTF = audio["enableHRTF"].get<bool>();
+            if (audio.contains("enableOcclusion")) m_EnableOcclusion = audio["enableOcclusion"].get<bool>();
+            if (audio.contains("enableTransmission")) m_EnableTransmission = audio["enableTransmission"].get<bool>();
+        }
+
+        // Load window icon path
+        if (root.contains("windowIconPath")) {
+            m_WindowIconPath = root["windowIconPath"].get<std::string>();
+        }
+
+        // Load build config
+        if (root.contains("buildConfig") && root["buildConfig"].is_object()) {
+            const auto& bc = root["buildConfig"];
+            if (bc.contains("windowTitle")) m_WindowTitle = bc["windowTitle"].get<std::string>();
+            if (bc.contains("windowWidth")) m_WindowWidth = bc["windowWidth"].get<u32>();
+            if (bc.contains("windowHeight")) m_WindowHeight = bc["windowHeight"].get<u32>();
+            if (bc.contains("fullscreen")) m_Fullscreen = bc["fullscreen"].get<bool>();
+        }
+
         ENJIN_LOG_INFO(Asset, "Loaded project '%s' with %zu scenes from %s",
             m_ProjectName.c_str(), m_Scenes.size(), manifestPath.c_str());
         return true;
@@ -180,6 +210,26 @@ bool SceneManager::SaveProject(const std::string& manifestPath) const {
         frameSettingsJson["vSync"] = m_GameFrameSettings.vSync;
         frameSettingsJson["backgroundBehavior"] = static_cast<u32>(m_GameFrameSettings.backgroundBehavior);
         root["frameSettings"] = frameSettingsJson;
+
+        // Save audio settings
+        nlohmann::json audioJson;
+        audioJson["enableHRTF"] = m_EnableHRTF;
+        audioJson["enableOcclusion"] = m_EnableOcclusion;
+        audioJson["enableTransmission"] = m_EnableTransmission;
+        root["audio"] = audioJson;
+
+        // Save window icon path
+        if (!m_WindowIconPath.empty()) {
+            root["windowIconPath"] = m_WindowIconPath;
+        }
+
+        // Save build config
+        nlohmann::json buildConfigJson;
+        buildConfigJson["windowTitle"] = m_WindowTitle;
+        buildConfigJson["windowWidth"] = m_WindowWidth;
+        buildConfigJson["windowHeight"] = m_WindowHeight;
+        buildConfigJson["fullscreen"] = m_Fullscreen;
+        root["buildConfig"] = buildConfigJson;
 
         std::ofstream file(manifestPath);
         if (!file.is_open()) {

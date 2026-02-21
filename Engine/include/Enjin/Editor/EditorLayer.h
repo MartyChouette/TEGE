@@ -233,6 +233,9 @@ public:
     void SetPanelVisibility(EditorPanel panel, bool visible);
     bool IsPanelVisible(EditorPanel panel) const;
 
+    // Unified settings window
+    void OpenSettings(int tab);
+
     // Multi-select entity management
     void SelectEntity(ECS::Entity entity, bool addToSelection = false);
     void DeselectEntity(ECS::Entity entity);
@@ -266,16 +269,40 @@ private:
     void DrawViewportPanel();
     void DrawConsolePanel();
     void DrawAssetBrowserPanel();
-    void DrawEditorSettingsPanel();
-    void DrawPostProcessingPanel();
     void DrawPostProcessVolumeComponent(ECS::Entity entity);
     void EvaluatePostProcessVolumes(const Math::Vector3& cameraPosition);
-    void DrawRetroEffectsPanel();
     void DrawGameViewPanel();
     void DrawSceneListPanel();
-    void DrawRenderingPanel();
-    void DrawBuildConfigSection();
-    void DrawProjectSettingsPanel();
+
+    // Unified settings window (3 tabs: System / Project / Scene)
+    void DrawSettingsWindow();
+
+    // Settings section drawers (extracted from monolithic panel functions)
+    // System tab sections
+    void DrawSettingsSection_Camera();
+    void DrawSettingsSection_EditorPerformance();
+    void DrawSettingsSection_ExternalIDE();
+    void DrawSettingsSection_Accessibility();
+    void DrawSettingsSection_Fonts();
+    // Project tab sections
+    void DrawSettingsSection_ProjectMode();
+    void DrawSettingsSection_WindowIcon();
+    void DrawSettingsSection_Physics();
+    void DrawSettingsSection_FrameRate();
+    void DrawSettingsSection_Audio();
+    void DrawSettingsSection_CollisionGroups();
+    void DrawSettingsSection_BuildConfig();
+    // Scene tab sections
+    void DrawSettingsSection_Skybox();
+    void DrawSettingsSection_Shadows();
+    void DrawSettingsSection_AmbientLighting();
+    void DrawSettingsSection_CelShading();
+    void DrawSettingsSection_DisplayOptions();
+    void DrawSettingsSection_RayTracing();
+    void DrawSettingsSection_LightProbes();
+    void DrawSettingsSection_PostProcessing();
+    void DrawSettingsSection_RetroEffects();
+    void DrawSettingsSection_Environment();
     void DrawParticleEditorPanel();
     void DrawAnimGraphPanel();
     void DrawDialoguePanel();
@@ -775,6 +802,12 @@ private:
     // World curvature
     f32 m_WorldCurvature = 0.0f;
     bool m_WorldCurvatureEnabled = false;
+
+    // Unified settings window state
+    int m_SettingsActiveTab = 0;  // 0=System, 1=Project, 2=Scene
+
+    // One-time migration of deprecated EditorSettings fields to .enjinproject
+    void MigrateEditorSettingsToProject();
 
     // Per-scene render settings
     bool m_CurrentSceneUsesProjectDefaults = true;

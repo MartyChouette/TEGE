@@ -120,9 +120,9 @@
 namespace Enjin {
 namespace Editor {
 
-void EditorLayer::DrawEditorSettingsPanel() {
-    ImGui::Begin("Editor Settings");
+// ── System settings section drawers ──
 
+void EditorLayer::DrawSettingsSection_Camera() {
     if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen)) {
         if (m_CameraController) {
             // View preset buttons
@@ -310,7 +310,9 @@ void EditorLayer::DrawEditorSettingsPanel() {
             ImGui::TextDisabled("No game camera in scene");
         }
     }
+}
 
+void EditorLayer::DrawSettingsSection_EditorPerformance() {
     if (ImGui::CollapsingHeader("Grid", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::Checkbox("Show Grid", &m_ShowGrid);
         if (m_ShowGrid) {
@@ -690,7 +692,9 @@ void EditorLayer::DrawEditorSettingsPanel() {
         ImGui::BulletText("Ctrl+S - Save scene");
         ImGui::BulletText("F11 - Toggle focus mode");
     }
+}
 
+void EditorLayer::DrawSettingsSection_ExternalIDE() {
     if (ImGui::CollapsingHeader("External IDE")) {
         bool ideChanged = false;
 
@@ -735,7 +739,9 @@ void EditorLayer::DrawEditorSettingsPanel() {
             m_EditorSettings.Save();
         }
     }
+}
 
+void EditorLayer::DrawSettingsSection_Accessibility() {
     if (ImGui::CollapsingHeader("Accessibility")) {
         bool settingsChanged = false;
 
@@ -1169,7 +1175,9 @@ void EditorLayer::DrawEditorSettingsPanel() {
             Input::SetMouseSmoothing(m_EditorSettings.mouseSmoothing);
         }
     }
+}
 
+void EditorLayer::DrawSettingsSection_Fonts() {
     if (ImGui::CollapsingHeader("Fonts")) {
         static char bodyFontPath[512] = "";
         static char headingFontPath[512] = "";
@@ -1288,13 +1296,11 @@ void EditorLayer::DrawEditorSettingsPanel() {
         }
         ImGui::EndChild();
     }
-
-    ImGui::End();
 }
 
-void EditorLayer::DrawProjectSettingsPanel() {
-    ImGui::Begin("Project Settings");
+// ── Project settings section drawers ──
 
+void EditorLayer::DrawSettingsSection_ProjectMode() {
     if (ImGui::CollapsingHeader("Project", ImGuiTreeNodeFlags_DefaultOpen)) {
         const char* modeNames[] = { "2D", "3D", "Mixed (2.5D)" };
         int currentMode = static_cast<int>(m_SceneManager.GetProjectMode());
@@ -1318,38 +1324,46 @@ void EditorLayer::DrawProjectSettingsPanel() {
         };
         ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "%s", desc[currentMode]);
     }
+}
 
+void EditorLayer::DrawSettingsSection_WindowIcon() {
     if (ImGui::CollapsingHeader("Window Icon")) {
+        std::string iconPath = m_SceneManager.GetWindowIconPath();
         char iconBuf[256];
-        strncpy(iconBuf, m_EditorSettings.windowIconPath.c_str(), sizeof(iconBuf) - 1);
+        strncpy(iconBuf, iconPath.c_str(), sizeof(iconBuf) - 1);
         iconBuf[sizeof(iconBuf) - 1] = '\0';
         if (ImGui::InputText("Icon Path", iconBuf, sizeof(iconBuf))) {
-            m_EditorSettings.windowIconPath = iconBuf;
+            m_SceneManager.SetWindowIconPath(iconBuf);
+            m_SceneManager.SaveProject();
         }
         ImGui::SameLine();
         if (ImGui::Button("Browse...##icon")) {
             std::vector<FileFilter> filters = {{ "Image Files", "*.png;*.jpg;*.bmp" }};
             std::string path = FileDialog::OpenFile("Select Window Icon", filters);
             if (!path.empty()) {
-                m_EditorSettings.windowIconPath = path;
+                m_SceneManager.SetWindowIconPath(path);
+                m_SceneManager.SaveProject();
             }
         }
-        if (!m_EditorSettings.windowIconPath.empty()) {
-            ImGui::TextDisabled("Icon: %s", m_EditorSettings.windowIconPath.c_str());
+        if (!m_SceneManager.GetWindowIconPath().empty()) {
+            ImGui::TextDisabled("Icon: %s", m_SceneManager.GetWindowIconPath().c_str());
             if (ImGui::Button("Apply Icon")) {
                 if (m_Window) {
-                    m_Window->SetIcon(m_EditorSettings.windowIconPath.c_str());
+                    m_Window->SetIcon(m_SceneManager.GetWindowIconPath().c_str());
                 }
             }
             ImGui::SameLine();
             if (ImGui::Button("Clear")) {
-                m_EditorSettings.windowIconPath.clear();
+                m_SceneManager.SetWindowIconPath("");
+                m_SceneManager.SaveProject();
             }
         } else {
             ImGui::TextDisabled("Using default icon (icon.png next to executable)");
         }
     }
+}
 
+void EditorLayer::DrawSettingsSection_Physics() {
     if (ImGui::CollapsingHeader("Physics", ImGuiTreeNodeFlags_DefaultOpen)) {
         // Physics Backend selection
         {
@@ -1414,7 +1428,9 @@ void EditorLayer::DrawProjectSettingsPanel() {
             ImGui::TextDisabled("No physics backend active");
         }
     }
+}
 
+void EditorLayer::DrawSettingsSection_FrameRate() {
     if (ImGui::CollapsingHeader("Frame Rate")) {
         Scene::GameFrameSettings frameSettings = m_SceneManager.GetGameFrameSettings();
         bool changed = false;
@@ -1491,15 +1507,18 @@ void EditorLayer::DrawProjectSettingsPanel() {
         ImGui::Spacing();
         ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.8f, 1.0f), "These settings apply to Play Mode and exported builds");
     }
+}
 
+void EditorLayer::DrawSettingsSection_Audio() {
     if (ImGui::CollapsingHeader("Audio")) {
 #ifdef ENJIN_AUDIO_STEAM_AUDIO
         auto* audio = m_PlayMode.GetSimpleAudio();
         if (audio) {
-            bool hrtfEnabled = m_EditorSettings.enableHRTF;
+            bool hrtfEnabled = m_SceneManager.GetEnableHRTF();
             if (ImGui::Checkbox("HRTF Binaural Audio (Steam Audio)", &hrtfEnabled)) {
-                m_EditorSettings.enableHRTF = hrtfEnabled;
+                m_SceneManager.SetEnableHRTF(hrtfEnabled);
                 audio->SetHRTFEnabled(hrtfEnabled);
+                m_SceneManager.SaveProject();
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(
@@ -1514,10 +1533,11 @@ void EditorLayer::DrawProjectSettingsPanel() {
             }
 
             // Occlusion checkbox
-            bool occlusionEnabled = m_EditorSettings.enableOcclusion;
+            bool occlusionEnabled = m_SceneManager.GetEnableOcclusion();
             if (ImGui::Checkbox("Sound Occlusion", &occlusionEnabled)) {
-                m_EditorSettings.enableOcclusion = occlusionEnabled;
+                m_SceneManager.SetEnableOcclusion(occlusionEnabled);
                 audio->SetOcclusionEnabled(occlusionEnabled);
+                m_SceneManager.SaveProject();
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip("Sounds are blocked/attenuated by collider geometry");
@@ -1525,10 +1545,11 @@ void EditorLayer::DrawProjectSettingsPanel() {
 
             // Transmission checkbox (requires occlusion)
             if (!occlusionEnabled) ImGui::BeginDisabled();
-            bool transmissionEnabled = m_EditorSettings.enableTransmission;
+            bool transmissionEnabled = m_SceneManager.GetEnableTransmission();
             if (ImGui::Checkbox("Sound Transmission", &transmissionEnabled)) {
-                m_EditorSettings.enableTransmission = transmissionEnabled;
+                m_SceneManager.SetEnableTransmission(transmissionEnabled);
                 audio->SetTransmissionEnabled(transmissionEnabled);
+                m_SceneManager.SaveProject();
             }
             if (ImGui::IsItemHovered()) {
                 ImGui::SetTooltip(
@@ -1543,7 +1564,9 @@ void EditorLayer::DrawProjectSettingsPanel() {
         ImGui::TextDisabled("Steam Audio: Not compiled (ENJIN_AUDIO_STEAM_AUDIO=OFF)");
 #endif
     }
+}
 
+void EditorLayer::DrawSettingsSection_CollisionGroups() {
     if (ImGui::CollapsingHeader("Collision Groups")) {
         auto& groupNames = m_SceneManager.GetCollisionGroupNames();
 
@@ -1580,9 +1603,9 @@ void EditorLayer::DrawProjectSettingsPanel() {
 
         ImGui::TextDisabled("Named groups appear as checkboxes on collider components.");
     }
+}
 
-    DrawBuildConfigSection();
-
+void EditorLayer::DrawSettingsSection_Environment() {
     if (ImGui::CollapsingHeader("Environment")) {
         // === WORLD TIME / DAY-NIGHT CYCLE ===
         if (ImGui::TreeNode("World Time / Day-Night")) {
@@ -1747,28 +1770,169 @@ void EditorLayer::DrawProjectSettingsPanel() {
             ImGui::TreePop();
         }
     }
+}
+
+// ── Wrapper functions ──
+
+// --- Unified Settings Window (3 tabs: System / Project / Scene) ---
+
+void EditorLayer::OpenSettings(int tab) {
+    m_SettingsActiveTab = tab;
+    // Enable the EditorSettings panel bit to show the unified window
+    SetPanelVisibility(EditorPanel::EditorSettings, true);
+}
+
+void EditorLayer::MigrateEditorSettingsToProject() {
+    bool needsSave = false;
+
+    // Migrate window icon path (empty = not set)
+    if (!m_EditorSettings.windowIconPath.empty() && m_SceneManager.GetWindowIconPath().empty()) {
+        m_SceneManager.SetWindowIconPath(m_EditorSettings.windowIconPath);
+        m_EditorSettings.windowIconPath.clear();
+        needsSave = true;
+    }
+
+    // Migrate audio settings (only if user disabled something — defaults are all true)
+    if (!m_EditorSettings.enableHRTF && m_SceneManager.GetEnableHRTF()) {
+        m_SceneManager.SetEnableHRTF(false);
+        needsSave = true;
+    }
+    if (!m_EditorSettings.enableOcclusion && m_SceneManager.GetEnableOcclusion()) {
+        m_SceneManager.SetEnableOcclusion(false);
+        needsSave = true;
+    }
+    if (!m_EditorSettings.enableTransmission && m_SceneManager.GetEnableTransmission()) {
+        m_SceneManager.SetEnableTransmission(false);
+        needsSave = true;
+    }
+
+    if (needsSave) {
+        m_SceneManager.SaveProject();
+        m_EditorSettings.Save();
+        ENJIN_LOG_INFO(Editor, "Migrated audio/icon settings from editor_settings.json to .enjinproject");
+    }
+
+    // Sync project build config into the runtime m_BuildConfig (so build dialog picks them up)
+    if (!m_SceneManager.GetWindowTitle().empty()) {
+        m_BuildConfig.windowTitle = m_SceneManager.GetWindowTitle();
+    }
+    m_BuildConfig.windowWidth = m_SceneManager.GetWindowWidth();
+    m_BuildConfig.windowHeight = m_SceneManager.GetWindowHeight();
+    m_BuildConfig.fullscreen = m_SceneManager.GetFullscreen();
+}
+
+void EditorLayer::DrawSettingsWindow() {
+    bool open = IsPanelVisible(EditorPanel::EditorSettings);
+    if (!ImGui::Begin("Settings", &open)) {
+        ImGui::End();
+        if (!open) SetPanelVisibility(EditorPanel::EditorSettings, false);
+        return;
+    }
+    if (!open) SetPanelVisibility(EditorPanel::EditorSettings, false);
+
+    if (ImGui::BeginTabBar("SettingsTabs")) {
+        // --- System tab ---
+        ImGuiTabItemFlags systemFlags = (m_SettingsActiveTab == 0) ? ImGuiTabItemFlags_SetSelected : 0;
+        if (ImGui::BeginTabItem("System", nullptr, systemFlags)) {
+            if (m_SettingsActiveTab == 0) m_SettingsActiveTab = -1;  // consume one-shot selection
+            ImGui::PushID("System");
+            DrawSettingsSection_Camera();
+            DrawSettingsSection_EditorPerformance();
+            DrawSettingsSection_ExternalIDE();
+            DrawSettingsSection_Accessibility();
+            DrawSettingsSection_Fonts();
+            ImGui::PopID();
+            ImGui::EndTabItem();
+        }
+
+        // --- Project tab ---
+        ImGuiTabItemFlags projectFlags = (m_SettingsActiveTab == 1) ? ImGuiTabItemFlags_SetSelected : 0;
+        if (ImGui::BeginTabItem("Project", nullptr, projectFlags)) {
+            if (m_SettingsActiveTab == 1) m_SettingsActiveTab = -1;
+            ImGui::PushID("Project");
+            DrawSettingsSection_ProjectMode();
+            DrawSettingsSection_WindowIcon();
+            DrawSettingsSection_Physics();
+            DrawSettingsSection_FrameRate();
+            DrawSettingsSection_Audio();
+            DrawSettingsSection_CollisionGroups();
+            DrawSettingsSection_BuildConfig();
+            ImGui::PopID();
+            ImGui::EndTabItem();
+        }
+
+        // --- Scene tab ---
+        ImGuiTabItemFlags sceneFlags = (m_SettingsActiveTab == 2) ? ImGuiTabItemFlags_SetSelected : 0;
+        if (ImGui::BeginTabItem("Scene", nullptr, sceneFlags)) {
+            if (m_SettingsActiveTab == 2) m_SettingsActiveTab = -1;
+            ImGui::PushID("Scene");
+
+            // "Use Project Defaults" toggle at the top
+            if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
+                if (m_CurrentSceneUsesProjectDefaults) {
+                    m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                        m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+                }
+            }
+            if (ImGui::IsItemHovered()) {
+                ImGui::SetTooltip("When enabled, this scene uses the project's default render settings.\nDisable to customize settings per-scene.");
+            }
+            ImGui::Separator();
+
+            DrawSettingsSection_Skybox();
+            DrawSettingsSection_Shadows();
+            DrawSettingsSection_AmbientLighting();
+            DrawSettingsSection_CelShading();
+            DrawSettingsSection_DisplayOptions();
+            DrawSettingsSection_RayTracing();
+            DrawSettingsSection_LightProbes();
+            DrawSettingsSection_PostProcessing();
+            DrawSettingsSection_RetroEffects();
+            DrawSettingsSection_Environment();
+            ImGui::PopID();
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
+    }
 
     ImGui::End();
 }
 
-void EditorLayer::DrawBuildConfigSection() {
+void EditorLayer::DrawSettingsSection_BuildConfig() {
     if (ImGui::CollapsingHeader("Build Config")) {
+        bool changed = false;
+
+        // Window title — synced between SceneManager (persisted) and m_BuildConfig (build-time)
+        std::string title = m_SceneManager.GetWindowTitle();
         char titleBuf[256];
-        strncpy(titleBuf, m_BuildConfig.windowTitle.c_str(), sizeof(titleBuf) - 1);
+        strncpy(titleBuf, title.c_str(), sizeof(titleBuf) - 1);
         titleBuf[sizeof(titleBuf) - 1] = '\0';
         if (ImGui::InputText("Window Title", titleBuf, sizeof(titleBuf))) {
+            m_SceneManager.SetWindowTitle(titleBuf);
             m_BuildConfig.windowTitle = titleBuf;
+            changed = true;
         }
 
-        int w = static_cast<int>(m_BuildConfig.windowWidth);
-        int h = static_cast<int>(m_BuildConfig.windowHeight);
+        int w = static_cast<int>(m_SceneManager.GetWindowWidth());
+        int h = static_cast<int>(m_SceneManager.GetWindowHeight());
         if (ImGui::DragInt("Window Width", &w, 1, 320, 3840)) {
+            m_SceneManager.SetWindowWidth(static_cast<u32>(w));
             m_BuildConfig.windowWidth = static_cast<u32>(w);
+            changed = true;
         }
         if (ImGui::DragInt("Window Height", &h, 1, 240, 2160)) {
+            m_SceneManager.SetWindowHeight(static_cast<u32>(h));
             m_BuildConfig.windowHeight = static_cast<u32>(h);
+            changed = true;
         }
-        ImGui::Checkbox("Fullscreen", &m_BuildConfig.fullscreen);
+
+        bool fullscreen = m_SceneManager.GetFullscreen();
+        if (ImGui::Checkbox("Fullscreen", &fullscreen)) {
+            m_SceneManager.SetFullscreen(fullscreen);
+            m_BuildConfig.fullscreen = fullscreen;
+            changed = true;
+        }
 
         char outputBuf[512];
         strncpy(outputBuf, m_BuildConfig.outputDir.c_str(), sizeof(outputBuf) - 1);
@@ -1779,6 +1943,10 @@ void EditorLayer::DrawBuildConfigSection() {
 
         ImGui::Spacing();
         ImGui::TextDisabled("Use File > Build Game to export with these settings.");
+
+        if (changed) {
+            m_SceneManager.SaveProject();
+        }
     }
 }
 

@@ -362,6 +362,7 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         // Click to open (OpenScene defers to Update to avoid World::Clear during Render)
         if (hovered && exists && ImGui::IsMouseClicked(0)) {
             if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
+                MigrateEditorSettingsToProject();
                 m_EditorSettings.lastProjectDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path().parent_path().string();
                 m_EditorSettings.Save();
                 auto& scenes = m_SceneManager.GetScenes();
@@ -458,6 +459,7 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 con
         std::string path = FileDialog::OpenFile("Open Project", filters);
         if (!path.empty()) {
             if (m_SceneManager.LoadProject(path)) {
+                MigrateEditorSettingsToProject();
                 m_EditorSettings.AddRecentProject(path);
                 m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().parent_path().string();
                 m_EditorSettings.Save();

@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
 
 using namespace Enjin;
 using namespace Enjin::Editor;
@@ -96,14 +97,12 @@ ENJIN_TEST(JSONRoundTrip, SaveAndLoadPreservesTheme) {
     EditorSettings s1;
     s1.theme = EditorTheme::HighContrastDark;
     s1.uiScale = 1.5f;
-    s1.enableHRTF = false;
-    s1.enableOcclusion = false;
-    s1.enableTransmission = false;
+    // Note: enableHRTF, enableOcclusion, enableTransmission, windowIconPath
+    // are no longer written by Save() — migrated to SceneManager / .enjinproject
     s1.reducedMotion = true;
     s1.subtitlesEnabled = true;
     s1.subtitleFontSize = 32.0f;
     s1.colorblindMode = 3;
-    s1.windowIconPath = "icons/custom.png";
     s1.mouseSensitivity = 2.0f;
     s1.dwellClickEnabled = true;
     s1.dwellClickDelay = 2.0f;
@@ -116,14 +115,15 @@ ENJIN_TEST(JSONRoundTrip, SaveAndLoadPreservesTheme) {
 
     ENJIN_EXPECT_EQ((int)s2.theme, (int)EditorTheme::HighContrastDark);
     ENJIN_EXPECT_FLOAT_EQ(s2.uiScale, 1.5f);
-    ENJIN_EXPECT_FALSE(s2.enableHRTF);
-    ENJIN_EXPECT_FALSE(s2.enableOcclusion);
-    ENJIN_EXPECT_FALSE(s2.enableTransmission);
+    // Migrated fields keep defaults after fresh Save (not written)
+    ENJIN_EXPECT_TRUE(s2.enableHRTF);
+    ENJIN_EXPECT_TRUE(s2.enableOcclusion);
+    ENJIN_EXPECT_TRUE(s2.enableTransmission);
+    ENJIN_EXPECT_STR_EQ(s2.windowIconPath.c_str(), "");
     ENJIN_EXPECT_TRUE(s2.reducedMotion);
     ENJIN_EXPECT_TRUE(s2.subtitlesEnabled);
     ENJIN_EXPECT_FLOAT_EQ(s2.subtitleFontSize, 32.0f);
     ENJIN_EXPECT_EQ(s2.colorblindMode, 3u);
-    ENJIN_EXPECT_STR_EQ(s2.windowIconPath.c_str(), "icons/custom.png");
     ENJIN_EXPECT_FLOAT_EQ(s2.mouseSensitivity, 2.0f);
     ENJIN_EXPECT_TRUE(s2.dwellClickEnabled);
     ENJIN_EXPECT_FLOAT_EQ(s2.dwellClickDelay, 2.0f);
@@ -250,6 +250,37 @@ ENJIN_TEST(EnumRanges, FrameRateLimitValues) {
     ENJIN_EXPECT_EQ((int)FrameRateLimit::FPS120, 120);
     ENJIN_EXPECT_EQ((int)FrameRateLimit::FPS144, 144);
     ENJIN_EXPECT_EQ((int)FrameRateLimit::FPS240, 240);
+}
+
+// ===========================================================================
+// Backward Compatibility — migrated fields still readable from legacy JSON
+// ===========================================================================
+
+ENJIN_TEST(BackwardCompat, LegacyAudioAndIconFieldsStillRead) {
+    std::string tmpPath = "test_editor_settings_legacy.json";
+
+    // Write a legacy-format JSON with fields that are no longer written by Save()
+    {
+        std::ofstream f(tmpPath);
+        f << R"({
+            "theme": 0,
+            "enableHRTF": false,
+            "enableOcclusion": false,
+            "enableTransmission": false,
+            "windowIconPath": "icons/legacy.png"
+        })";
+    }
+
+    EditorSettings s;
+    s.Load(tmpPath);
+
+    // Load() still reads these fields for backward compat / migration
+    ENJIN_EXPECT_FALSE(s.enableHRTF);
+    ENJIN_EXPECT_FALSE(s.enableOcclusion);
+    ENJIN_EXPECT_FALSE(s.enableTransmission);
+    ENJIN_EXPECT_STR_EQ(s.windowIconPath.c_str(), "icons/legacy.png");
+
+    std::remove(tmpPath.c_str());
 }
 
 ENJIN_TEST_MAIN()

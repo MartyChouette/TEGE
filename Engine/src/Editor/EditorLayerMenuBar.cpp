@@ -214,6 +214,7 @@ void EditorLayer::DrawMenuBar() {
                 std::string path = FileDialog::OpenFile("Open Project", filters, projDir);
                 if (!path.empty()) {
                     if (m_SceneManager.LoadProject(path)) {
+                        MigrateEditorSettingsToProject();
                         ENJIN_LOG_INFO(Editor, "Loaded project: %s", m_SceneManager.GetProjectName().c_str());
                         // Persist last project directory (grandparent: .enjinproject -> project dir -> parent)
                         m_EditorSettings.lastProjectDir = std::filesystem::path(path).parent_path().parent_path().string();
@@ -397,28 +398,14 @@ void EditorLayer::DrawMenuBar() {
                 ImGui::EndMenu();
             }
             if (ImGui::BeginMenu("Settings")) {
-                bool editorSettings = IsPanelVisible(EditorPanel::EditorSettings);
-                bool projectSettings = IsPanelVisible(EditorPanel::ProjectSettings);
-                if (ImGui::MenuItem("Editor Settings", nullptr, &editorSettings)) {
-                    SetPanelVisibility(EditorPanel::EditorSettings, editorSettings);
+                if (ImGui::MenuItem("System Settings")) {
+                    OpenSettings(0);
                 }
-                if (ImGui::MenuItem("Project Settings", nullptr, &projectSettings)) {
-                    SetPanelVisibility(EditorPanel::ProjectSettings, projectSettings);
+                if (ImGui::MenuItem("Project Settings")) {
+                    OpenSettings(1);
                 }
-                ImGui::EndMenu();
-            }
-            if (ImGui::BeginMenu("Rendering")) {
-                bool rendering = IsPanelVisible(EditorPanel::Rendering);
-                bool postProcessing = IsPanelVisible(EditorPanel::PostProcessing);
-                bool retroEffects = IsPanelVisible(EditorPanel::RetroEffects);
-                if (ImGui::MenuItem("Rendering", nullptr, &rendering)) {
-                    SetPanelVisibility(EditorPanel::Rendering, rendering);
-                }
-                if (ImGui::MenuItem("Post Processing", nullptr, &postProcessing)) {
-                    SetPanelVisibility(EditorPanel::PostProcessing, postProcessing);
-                }
-                if (ImGui::MenuItem("Retro Effects", nullptr, &retroEffects)) {
-                    SetPanelVisibility(EditorPanel::RetroEffects, retroEffects);
+                if (ImGui::MenuItem("Scene Settings")) {
+                    OpenSettings(2);
                 }
                 ImGui::EndMenu();
             }

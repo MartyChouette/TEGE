@@ -4250,6 +4250,23 @@ void EditorLayer::RegisterPaletteCommands() {
         [this]() { SetPanelVisibility(EditorPanel::Profiler, !IsPanelVisible(EditorPanel::Profiler)); }
     });
 
+    // Settings commands
+    m_CommandPalette.RegisterCommand({
+        "System Settings", "Settings", "",
+        "Open system settings (theme, accessibility, camera, performance)",
+        [this]() { OpenSettings(0); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Project Settings", "Settings", "",
+        "Open project settings (physics, audio, build config)",
+        [this]() { OpenSettings(1); }
+    });
+    m_CommandPalette.RegisterCommand({
+        "Scene Settings", "Settings", "",
+        "Open scene settings (rendering, post-processing, retro effects)",
+        [this]() { OpenSettings(2); }
+    });
+
     // Gizmo commands
     m_CommandPalette.RegisterCommand({
         "Translate Mode", "Gizmo", "1",

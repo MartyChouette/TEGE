@@ -371,17 +371,15 @@ bool EditorSettings::Save(const std::string& path) const {
         j["gizmoNudgeFine"] = gizmoNudgeFine;
         j["gizmoRotateNudge"] = gizmoRotateNudge;
 
-        // Audio
-        j["enableHRTF"] = enableHRTF;
-        j["enableOcclusion"] = enableOcclusion;
-        j["enableTransmission"] = enableTransmission;
+        // Audio: enableHRTF/enableOcclusion/enableTransmission migrated to .enjinproject
+        // (still loaded from here for backward compat, but no longer written)
 
         // Surface Snap
         j["surfaceSnap"] = surfaceSnap;
         j["surfaceAlignNormal"] = surfaceAlignNormal;
 
-        // Window Icon
-        j["windowIconPath"] = windowIconPath;
+        // Window Icon: windowIconPath migrated to .enjinproject
+        // (still loaded from here for backward compat, but no longer written)
 
         // External IDE
         j["externalIDE"] = externalIDE;

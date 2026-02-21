@@ -400,600 +400,6 @@ void EditorLayer::DrawPostProcessVolumeComponent(ECS::Entity entity) {
 }
 
 
-void EditorLayer::DrawPostProcessingPanel() {
-    ImGui::Begin("Post Processing");
-
-    if (!m_PostProcessing) {
-        ImGui::TextDisabled("Post-processing not initialized");
-        ImGui::End();
-        return;
-    }
-
-    auto& settings = m_PostProcessing->GetSettings();
-
-    // Tone Mapping
-    if (ImGui::CollapsingHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
-        const char* toneMappingModes[] = { "None", "Reinhard", "Reinhard Extended", "ACES", "Uncharted 2", "AgX" };
-        int currentMode = static_cast<int>(settings.toneMappingMode);
-        if (ImGui::Combo("Mode", &currentMode, toneMappingModes, 6)) {
-            settings.toneMappingMode = static_cast<u32>(currentMode);
-        }
-
-        ImGui::DragFloat("Exposure", &settings.exposure, 0.01f, 0.01f, 10.0f);
-        ImGui::DragFloat("Gamma", &settings.gamma, 0.01f, 1.0f, 3.0f);
-
-        if (settings.toneMappingMode == 2) { // Reinhard Extended
-            ImGui::DragFloat("White Point", &settings.whitePoint, 0.1f, 1.0f, 20.0f);
-        }
-    }
-
-    // Bloom
-    if (ImGui::CollapsingHeader("Bloom")) {
-        bool bloomEnabled = settings.bloomEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Bloom", &bloomEnabled)) {
-            settings.bloomEnabled = bloomEnabled ? 1 : 0;
-        }
-
-        if (settings.bloomEnabled) {
-            ImGui::DragFloat("Threshold", &settings.bloomThreshold, 0.01f, 0.0f, 5.0f);
-            ImGui::DragFloat("Intensity##Bloom", &settings.bloomIntensity, 0.01f, 0.0f, 2.0f);
-            ImGui::DragFloat("Radius", &settings.bloomRadius, 0.001f, 0.001f, 0.1f);
-        }
-    }
-
-    // Vignette
-    if (ImGui::CollapsingHeader("Vignette")) {
-        bool vignetteEnabled = settings.vignetteEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Vignette", &vignetteEnabled)) {
-            settings.vignetteEnabled = vignetteEnabled ? 1 : 0;
-        }
-
-        if (settings.vignetteEnabled) {
-            ImGui::DragFloat("Intensity##Vignette", &settings.vignetteIntensity, 0.01f, 0.0f, 2.0f);
-            ImGui::DragFloat("Smoothness", &settings.vignetteSmoothness, 0.01f, 0.0f, 1.0f);
-        }
-    }
-
-    // Chromatic Aberration
-    if (ImGui::CollapsingHeader("Chromatic Aberration")) {
-        bool caEnabled = settings.chromaticAberrationEnabled != 0;
-        if (ImGui::Checkbox("Enabled##CA", &caEnabled)) {
-            settings.chromaticAberrationEnabled = caEnabled ? 1 : 0;
-        }
-
-        if (settings.chromaticAberrationEnabled) {
-            ImGui::DragFloat("Intensity##CA", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.05f);
-        }
-    }
-
-    // Color Grading
-    if (ImGui::CollapsingHeader("Color Grading")) {
-        f32 colorFilter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
-        if (ImGui::ColorEdit3("Color Filter", colorFilter)) {
-            settings.colorFilter = Math::Vector3(colorFilter[0], colorFilter[1], colorFilter[2]);
-        }
-
-        ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 2.0f);
-        ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.5f, 2.0f);
-        ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
-    }
-
-    // Film Grain
-    if (ImGui::CollapsingHeader("Film Grain")) {
-        bool grainEnabled = settings.filmGrainEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Grain", &grainEnabled)) {
-            settings.filmGrainEnabled = grainEnabled ? 1 : 0;
-        }
-
-        if (settings.filmGrainEnabled) {
-            ImGui::DragFloat("Intensity##Grain", &settings.filmGrainIntensity, 0.001f, 0.0f, 0.2f);
-        }
-    }
-
-    // Depth of Field
-    if (ImGui::CollapsingHeader("Depth of Field")) {
-        bool dofEnabled = settings.dofEnabled != 0;
-        if (ImGui::Checkbox("Enabled##DOF", &dofEnabled)) {
-            settings.dofEnabled = dofEnabled ? 1 : 0;
-        }
-
-        if (settings.dofEnabled) {
-            ImGui::DragFloat("Focal Distance", &settings.dofFocalDistance, 0.5f, 0.1f, 500.0f);
-            ImGui::DragFloat("Focal Range", &settings.dofFocalRange, 0.1f, 0.0f, 50.0f);
-            ImGui::DragFloat("Near Blur", &settings.dofNearBlurStrength, 0.01f, 0.0f, 1.0f);
-            ImGui::DragFloat("Far Blur", &settings.dofFarBlurStrength, 0.01f, 0.0f, 1.0f);
-            ImGui::DragFloat("Bokeh Size", &settings.dofBokehSize, 0.1f, 0.5f, 16.0f);
-
-            const char* apertureShapes[] = { "Circle", "Hexagon", "Octagon" };
-            int shape = static_cast<int>(settings.dofApertureShape);
-            if (ImGui::Combo("Aperture Shape", &shape, apertureShapes, 3)) {
-                settings.dofApertureShape = static_cast<u32>(shape);
-            }
-
-            bool debugCoC = settings.dofDebugCoC != 0;
-            if (ImGui::Checkbox("Debug CoC", &debugCoC)) {
-                settings.dofDebugCoC = debugCoC ? 1 : 0;
-            }
-            if (ImGui::IsItemHovered()) {
-                ImGui::SetTooltip("Visualize Circle of Confusion (red=near blur, green=in focus, blue=far blur)");
-            }
-        }
-    }
-
-    // Tilt-Shift
-    if (ImGui::CollapsingHeader("Tilt-Shift")) {
-        bool tsEnabled = settings.tiltShiftEnabled != 0;
-        if (ImGui::Checkbox("Enabled##TiltShift", &tsEnabled)) {
-            settings.tiltShiftEnabled = tsEnabled ? 1 : 0;
-        }
-
-        if (settings.tiltShiftEnabled) {
-            ImGui::SliderFloat("Focus Y", &settings.tiltShiftFocusY, 0.0f, 1.0f);
-            ImGui::DragFloat("Band Width", &settings.tiltShiftBandWidth, 0.01f, 0.01f, 1.0f);
-            ImGui::DragFloat("Blur Amount", &settings.tiltShiftBlurAmount, 0.1f, 0.0f, 10.0f);
-        }
-    }
-
-    // FXAA
-    if (ImGui::CollapsingHeader("Anti-Aliasing (FXAA)")) {
-        bool fxaaEnabled = settings.fxaaEnabled != 0;
-        if (ImGui::Checkbox("Enabled##FXAA", &fxaaEnabled)) {
-            settings.fxaaEnabled = fxaaEnabled ? 1 : 0;
-        }
-
-        if (settings.fxaaEnabled) {
-            ImGui::DragFloat("Span Max", &settings.fxaaSpanMax, 0.5f, 2.0f, 16.0f);
-            ImGui::DragFloat("Reduce Min", &settings.fxaaReduceMin, 0.001f, 0.0f, 0.1f, "%.4f");
-            ImGui::DragFloat("Reduce Mul", &settings.fxaaReduceMul, 0.01f, 0.0f, 0.5f);
-        }
-    }
-
-    // LUT Color Grading
-    if (ImGui::CollapsingHeader("LUT Color Grading")) {
-        bool lutEnabled = settings.lutEnabled != 0;
-        if (ImGui::Checkbox("Enabled##LUT", &lutEnabled)) {
-            settings.lutEnabled = lutEnabled ? 1 : 0;
-        }
-
-        if (settings.lutEnabled) {
-            ImGui::DragFloat("Strength##LUT", &settings.lutStrength, 0.01f, 0.0f, 1.0f);
-
-            if (m_PostProcessing->IsLUTLoaded()) {
-                std::string lutPath = m_PostProcessing->GetLUTPath();
-                // Show just the filename
-                size_t lastSlash = lutPath.find_last_of("/\\");
-                std::string filename = (lastSlash != std::string::npos) ? lutPath.substr(lastSlash + 1) : lutPath;
-                ImGui::Text("Loaded: %s", filename.c_str());
-
-                if (ImGui::Button("Clear LUT")) {
-                    m_PostProcessing->ClearLUT();
-                    settings.lutEnabled = 0;
-                }
-            }
-
-            ImGui::SameLine();
-            if (ImGui::Button("Load LUT")) {
-                std::string path = FileDialog::OpenFile("Load LUT", {{ "PNG Images", "*.png" }});
-                if (!path.empty()) {
-                    m_PostProcessing->LoadLUT(path);
-                }
-            }
-        }
-    }
-
-    // Color Palette Lock
-    if (ImGui::CollapsingHeader("Palette Lock")) {
-        bool paletteEnabled = settings.paletteEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Palette", &paletteEnabled)) {
-            settings.paletteEnabled = paletteEnabled ? 1 : 0;
-        }
-
-        if (settings.paletteEnabled) {
-            int colors = static_cast<int>(settings.paletteColors);
-            if (ImGui::SliderInt("Colors", &colors, 2, 256)) {
-                settings.paletteColors = static_cast<u32>(colors);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of color levels per channel");
-        }
-    }
-
-    // Stipple / Dither
-    if (ImGui::CollapsingHeader("Stipple / Dither")) {
-        bool stippleEnabled = settings.stippleEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Stipple", &stippleEnabled)) {
-            settings.stippleEnabled = stippleEnabled ? 1 : 0;
-        }
-
-        if (settings.stippleEnabled) {
-            const char* stipplePatterns[] = {
-                "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone",
-                "Crosshatch", "Overlook", "Ordered 2x2", "Floyd-Steinberg"
-            };
-            ImGui::Text("Patterns (combine any):");
-            for (int i = 0; i < 8; i++) {
-                bool on = (settings.stipplePatternMask & (1u << i)) != 0;
-                if (ImGui::Checkbox(stipplePatterns[i], &on)) {
-                    if (on) settings.stipplePatternMask |= (1u << i);
-                    else    settings.stipplePatternMask &= ~(1u << i);
-                }
-                if (i % 2 == 0 && i < 7) ImGui::SameLine(200.0f);
-            }
-
-            const char* colorModes[] = { "Monochrome", "Duo-Tone", "Full Color" };
-            int currentColorMode = static_cast<int>(settings.stippleColorMode);
-            if (ImGui::Combo("Color Mode##Stipple", &currentColorMode, colorModes, 3)) {
-                settings.stippleColorMode = static_cast<u32>(currentColorMode);
-            }
-
-            ImGui::DragFloat("Scale##Stipple", &settings.stippleScale, 0.1f, 0.5f, 8.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pattern pixel scale (1.0 = native resolution)");
-
-            ImGui::DragFloat("Density##Stipple", &settings.stippleDensity, 0.01f, 0.0f, 1.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Threshold bias — lower = more dots, higher = fewer dots");
-
-            ImGui::DragFloat("Strength##Stipple", &settings.stippleStrength, 0.01f, 0.0f, 1.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Blend with original image (0 = no effect, 1 = full stipple)");
-
-            // Show color pickers for mono and duo-tone modes
-            if (settings.stippleColorMode <= 1) {
-                f32 fg[3] = { settings.stippleFgColor.x, settings.stippleFgColor.y, settings.stippleFgColor.z };
-                if (ImGui::ColorEdit3("Foreground##Stipple", fg)) {
-                    settings.stippleFgColor = Math::Vector3(fg[0], fg[1], fg[2]);
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ink / dot color");
-
-                f32 bg[3] = { settings.stippleBgColor.x, settings.stippleBgColor.y, settings.stippleBgColor.z };
-                if (ImGui::ColorEdit3("Background##Stipple", bg)) {
-                    settings.stippleBgColor = Math::Vector3(bg[0], bg[1], bg[2]);
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Paper / gap color");
-            }
-        }
-    }
-
-    // Cel outline
-    {
-        auto& s = m_PostProcessing->GetSettings();
-        bool outlineOn = s.celOutlineEnabled != 0;
-        if (ImGui::Checkbox("Cel Outline##PP", &outlineOn)) {
-            s.celOutlineEnabled = outlineOn ? 1 : 0;
-        }
-        if (outlineOn) {
-            ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
-            ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
-            ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
-        }
-    }
-
-    // ================================================================
-    // Screen-Space Effects
-    // ================================================================
-
-    // SSAO
-    if (ImGui::CollapsingHeader("SSAO (Ambient Occlusion)")) {
-        bool ssaoOn = settings.ssaoEnabled != 0;
-        if (ImGui::Checkbox("Enabled##SSAO", &ssaoOn)) {
-            settings.ssaoEnabled = ssaoOn ? 1 : 0;
-        }
-        if (settings.ssaoEnabled) {
-            ImGui::DragFloat("Radius##SSAO", &settings.ssaoRadius, 0.01f, 0.01f, 5.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space sample radius");
-            ImGui::DragFloat("Intensity##SSAO", &settings.ssaoIntensity, 0.01f, 0.0f, 5.0f);
-            ImGui::DragFloat("Bias##SSAO", &settings.ssaoBias, 0.001f, 0.0f, 0.1f, "%.4f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth bias to reduce self-occlusion");
-            int samples = static_cast<int>(settings.ssaoSamples);
-            if (ImGui::SliderInt("Samples##SSAO", &samples, 4, 32)) {
-                settings.ssaoSamples = static_cast<u32>(samples);
-            }
-        }
-    }
-
-    // Contact Shadows
-    if (ImGui::CollapsingHeader("Contact Shadows")) {
-        bool csOn = settings.contactShadowsEnabled != 0;
-        if (ImGui::Checkbox("Enabled##ContactShadows", &csOn)) {
-            settings.contactShadowsEnabled = csOn ? 1 : 0;
-        }
-        if (settings.contactShadowsEnabled) {
-            ImGui::DragFloat("Ray Length##CS", &settings.contactShadowsLength, 0.001f, 0.001f, 0.5f, "%.4f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-space ray march length (UV space)");
-            int steps = static_cast<int>(settings.contactShadowsSteps);
-            if (ImGui::SliderInt("Steps##CS", &steps, 4, 32)) {
-                settings.contactShadowsSteps = static_cast<u32>(steps);
-            }
-            ImGui::DragFloat("Intensity##CS", &settings.contactShadowsIntensity, 0.01f, 0.0f, 2.0f);
-        }
-    }
-
-    // God Rays
-    if (ImGui::CollapsingHeader("God Rays")) {
-        bool grOn = settings.godRaysEnabled != 0;
-        if (ImGui::Checkbox("Enabled##GodRays", &grOn)) {
-            settings.godRaysEnabled = grOn ? 1 : 0;
-        }
-        if (settings.godRaysEnabled) {
-            ImGui::DragFloat("Intensity##GR", &settings.godRaysIntensity, 0.01f, 0.0f, 2.0f);
-            ImGui::DragFloat("Decay##GR", &settings.godRaysDecay, 0.001f, 0.9f, 1.0f, "%.4f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample falloff (closer to 1 = longer rays)");
-            ImGui::DragFloat("Density##GR", &settings.godRaysDensity, 0.01f, 0.1f, 3.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample spacing multiplier");
-            int samples = static_cast<int>(settings.godRaysSamples);
-            if (ImGui::SliderInt("Samples##GR", &samples, 16, 128)) {
-                settings.godRaysSamples = static_cast<u32>(samples);
-            }
-            ImGui::DragFloat("Weight##GR", &settings.godRaysWeight, 0.001f, 0.001f, 0.1f, "%.4f");
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample contribution weight");
-        }
-    }
-
-    // Fake Caustics
-    if (ImGui::CollapsingHeader("Fake Caustics")) {
-        bool fcOn = settings.causticsEnabled != 0;
-        if (ImGui::Checkbox("Enabled##Caustics", &fcOn)) {
-            settings.causticsEnabled = fcOn ? 1 : 0;
-        }
-        if (settings.causticsEnabled) {
-            ImGui::DragFloat("Intensity##Caustics", &settings.causticsIntensity, 0.01f, 0.0f, 2.0f);
-            ImGui::DragFloat("Scale##Caustics", &settings.causticsScale, 0.01f, 0.1f, 10.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Voronoi pattern scale");
-            ImGui::DragFloat("Speed##Caustics", &settings.causticsSpeed, 0.01f, 0.0f, 5.0f);
-            ImGui::DragFloat("Water Y##Caustics", &settings.causticsWaterY, 0.1f, -100.0f, 100.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space Y height of the water surface");
-        }
-    }
-
-    // Fog Shafts
-    if (ImGui::CollapsingHeader("Fog Shafts")) {
-        bool fsOn = settings.fogShaftsEnabled != 0;
-        if (ImGui::Checkbox("Enabled##FogShafts", &fsOn)) {
-            settings.fogShaftsEnabled = fsOn ? 1 : 0;
-        }
-        if (settings.fogShaftsEnabled) {
-            ImGui::DragFloat("Intensity##FS", &settings.fogShaftsIntensity, 0.01f, 0.0f, 2.0f);
-            ImGui::DragFloat("Fog Density##FS", &settings.fogShaftsDensity, 0.001f, 0.001f, 0.5f, "%.4f");
-            ImGui::DragFloat("Decay##FS", &settings.fogShaftsDecay, 0.001f, 0.8f, 1.0f, "%.4f");
-            int samples = static_cast<int>(settings.fogShaftsSamples);
-            if (ImGui::SliderInt("Samples##FS", &samples, 4, 32)) {
-                settings.fogShaftsSamples = static_cast<u32>(samples);
-            }
-            ImGui::DragFloat("Max Distance##FS", &settings.fogShaftsMaxDistance, 1.0f, 5.0f, 500.0f);
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space max march distance");
-        }
-    }
-
-    ImGui::End();
-}
-
-
-void EditorLayer::DrawRetroEffectsPanel() {
-    ImGui::Begin("Retro Effects");
-
-    // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
-    if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
-        bool retroEnabled = m_RetroEffects.IsEnabled();
-        if (ImGui::Checkbox("Enable Retro Effects", &retroEnabled)) {
-            m_RetroEffects.SetEnabled(retroEnabled);
-        }
-
-        if (retroEnabled) {
-            ImGui::Text("Console Presets:");
-            if (ImGui::Button("PS1")) { m_RetroEffects.ApplyPS1Preset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("N64")) { m_RetroEffects.ApplyN64Preset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("PS2")) { m_RetroEffects.ApplyPS2Preset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("GameCube")) { m_RetroEffects.ApplyGameCubePreset(); }
-
-            if (ImGui::Button("SNES")) { m_RetroEffects.ApplySNESPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Dreamcast")) { m_RetroEffects.ApplyDreamcastPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Saturn")) { m_RetroEffects.ApplySaturnPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("3DO")) { m_RetroEffects.Apply3DOPreset(); }
-
-            if (ImGui::Button("NES")) { m_RetroEffects.ApplyNESPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Game Boy")) { m_RetroEffects.ApplyGameBoyPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("GBA")) { m_RetroEffects.ApplyGBAPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Genesis")) { m_RetroEffects.ApplyGenesisPreset(); }
-
-            if (ImGui::Button("Master System")) { m_RetroEffects.ApplyMasterSystemPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("PSP")) { m_RetroEffects.ApplyPSPPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("DOS/VGA")) { m_RetroEffects.ApplyDOSVGAPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("PC Engine")) { m_RetroEffects.ApplyPCEnginePreset(); }
-
-            if (ImGui::Button("Virtual Boy")) { m_RetroEffects.ApplyVirtualBoyPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Neo Geo")) { m_RetroEffects.ApplyNeoGeoPreset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Atari 2600")) { m_RetroEffects.ApplyAtari2600Preset(); }
-            ImGui::SameLine();
-            if (ImGui::Button("Xbox")) { m_RetroEffects.ApplyXboxPreset(); }
-
-            if (ImGui::Button("Clear All")) { m_RetroEffects.ClearAllEffects(); }
-
-            ImGui::Separator();
-
-            // Resolution settings
-            if (ImGui::TreeNode("Resolution")) {
-                auto& res = m_RetroEffects.GetResolution();
-                int width = static_cast<int>(res.renderWidth);
-                int height = static_cast<int>(res.renderHeight);
-                if (ImGui::DragInt("Render Width", &width, 1, 160, 1920)) {
-                    res.renderWidth = static_cast<u32>(width);
-                }
-                if (ImGui::DragInt("Render Height", &height, 1, 120, 1080)) {
-                    res.renderHeight = static_cast<u32>(height);
-                }
-                ImGui::Checkbox("Point Filtering", &res.pointFiltering);
-                ImGui::Checkbox("Integer Scaling", &res.integerScaling);
-                ImGui::DragFloat("Aspect Ratio", &res.aspectRatio, 0.01f, 1.0f, 2.5f);
-                ImGui::TreePop();
-            }
-
-            // Dithering
-            if (ImGui::TreeNode("Dithering")) {
-                const char* ditherPatterns[] = { "None", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Ordered" };
-                int currentDither = static_cast<int>(m_RetroEffects.GetDitherPattern());
-                if (ImGui::Combo("Pattern", &currentDither, ditherPatterns, 6)) {
-                    m_RetroEffects.SetDitherPattern(static_cast<Effects::DitherPattern>(currentDither));
-                }
-                ImGui::TreePop();
-            }
-
-            // Color Mode
-            if (ImGui::TreeNode("Color Mode")) {
-                const char* colorModes[] = { "True Color (24-bit)", "High Color (16-bit)", "256 Colors", "16 Colors", "Monochrome" };
-                int currentMode = static_cast<int>(m_RetroEffects.GetColorMode());
-                if (ImGui::Combo("Mode", &currentMode, colorModes, 5)) {
-                    m_RetroEffects.SetColorMode(static_cast<Effects::ColorMode>(currentMode));
-                }
-                ImGui::TreePop();
-            }
-
-            // Vertex Jitter (PS1 style)
-            if (ImGui::TreeNode("Vertex Jitter (PS1)")) {
-                auto& jitter = m_RetroEffects.GetVertexJitter();
-                ImGui::Checkbox("Enabled##Jitter", &jitter.enabled);
-                if (jitter.enabled) {
-                    ImGui::DragFloat("Amount", &jitter.jitterAmount, 0.1f, 0.0f, 5.0f);
-                    ImGui::Checkbox("Snap to Grid", &jitter.snapToGrid);
-                    int gridRes = static_cast<int>(jitter.gridResolution);
-                    if (ImGui::DragInt("Grid Resolution", &gridRes, 1, 80, 320)) {
-                        jitter.gridResolution = static_cast<u32>(gridRes);
-                    }
-                }
-                ImGui::TreePop();
-            }
-
-            // Affine Texture Warping (PS1)
-            if (ImGui::TreeNode("Affine Warping (PS1)")) {
-                auto& affine = m_RetroEffects.GetAffineSettings();
-                ImGui::Checkbox("Enabled##Affine", &affine.enabled);
-                if (affine.enabled) {
-                    ImGui::DragFloat("Warp Strength", &affine.warpStrength, 0.1f, 0.0f, 2.0f);
-                    ImGui::Checkbox("Vertex Snapping", &affine.vertexSnapping);
-                    ImGui::DragFloat("Snap Grid Size", &affine.snapGridSize, 0.1f, 0.5f, 4.0f);
-                }
-                ImGui::TreePop();
-            }
-
-            // CRT Filter
-            if (ImGui::TreeNode("CRT Filter")) {
-                auto& crt = m_RetroEffects.GetCRTSettings();
-                ImGui::Checkbox("Enabled##CRT", &crt.enabled);
-                if (crt.enabled) {
-                    ImGui::DragFloat("Scanline Intensity", &crt.scanlineIntensity, 0.01f, 0.0f, 1.0f);
-                    ImGui::DragFloat("Scanline Width", &crt.scanlineWidth, 0.1f, 0.5f, 3.0f);
-                    ImGui::Checkbox("Curved Screen", &crt.curvedScreen);
-                    if (crt.curvedScreen) {
-                        ImGui::DragFloat("Curvature", &crt.curvature, 0.01f, 0.0f, 0.5f);
-                    }
-                    ImGui::DragFloat("Vignette", &crt.vignette, 0.01f, 0.0f, 1.0f);
-                    ImGui::Checkbox("Phosphor Glow", &crt.phosphorGlow);
-                    if (crt.phosphorGlow) {
-                        ImGui::DragFloat("Glow Strength", &crt.glowStrength, 0.01f, 0.0f, 1.0f);
-                    }
-                }
-                ImGui::TreePop();
-            }
-
-            // CRT Phosphor Subpixel Blending
-            if (ImGui::TreeNode("CRT Phosphor")) {
-                auto& crt = m_RetroEffects.GetCRTSettings();
-
-                // CRT Model Preset dropdown
-                const char* crtModels[] = {
-                    "Custom", "Sony Trinitron KV-27V42", "Sony PVM-20M4U", "JVC TM-H150CG",
-                    "Toshiba 14AF46", "Sony GDM-FW900", "ViewSonic G810", "NEC MultiSync FE2111SB",
-                    "Generic 15kHz Arcade", "Wells Gardner K7000", "Commodore 1084S"
-                };
-                static int selectedModel = 0;
-                if (ImGui::Combo("CRT Model", &selectedModel, crtModels, 11)) {
-                    if (selectedModel > 0) {
-                        m_RetroEffects.ApplyCRTModelPreset(static_cast<Effects::CRTModel>(selectedModel));
-                    }
-                }
-
-                const char* maskTypes[] = { "Aperture Grille", "Shadow Mask", "Slot Mask" };
-                int maskType = static_cast<int>(crt.maskType);
-                if (ImGui::Combo("Mask Type", &maskType, maskTypes, 3)) {
-                    crt.maskType = static_cast<u32>(maskType);
-                    selectedModel = 0; // Switch to Custom when manually editing
-                }
-                ImGui::DragFloat("Mask Pitch", &crt.maskPitch, 0.1f, 0.5f, 4.0f);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spacing between RGB triplets in pixels");
-                ImGui::DragFloat("Bloom Radius##Phosphor", &crt.bloomRadius, 0.1f, 0.5f, 5.0f);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far phosphor light bleeds between dots");
-                ImGui::DragFloat("Bloom Strength##Phosphor", &crt.bloomStrength, 0.01f, 0.0f, 1.0f);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Intensity of phosphor bleeding effect");
-                ImGui::DragFloat("Bloom Sigma##Phosphor", &crt.bloomSigma, 0.01f, 0.3f, 2.0f);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gaussian spread: higher = softer bloom (>= 0.5 for dither blending)");
-                ImGui::DragFloat("TV Lines##Phosphor", &crt.tvl, 10.0f, 100.0f, 1200.0f);
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Horizontal resolution measure of the CRT display");
-                ImGui::TreePop();
-            }
-
-            // VHS Filter
-            if (ImGui::TreeNode("VHS Filter")) {
-                auto& vhs = m_RetroEffects.GetVHSSettings();
-                ImGui::Checkbox("Enabled##VHS", &vhs.enabled);
-                if (vhs.enabled) {
-                    ImGui::DragFloat("Tracking Intensity", &vhs.trackingIntensity, 0.01f, 0.0f, 1.0f);
-                    ImGui::DragFloat("Tracking Speed", &vhs.trackingSpeed, 0.1f, 0.1f, 5.0f);
-                    ImGui::DragFloat("Wobble Intensity", &vhs.wobbleIntensity, 0.0005f, 0.0f, 0.02f, "%.4f");
-                    ImGui::DragFloat("Wobble Speed", &vhs.wobbleSpeed, 0.1f, 0.1f, 10.0f);
-                    ImGui::DragFloat("Color Bleed", &vhs.colorBleedAmount, 0.0005f, 0.0f, 0.02f, "%.4f");
-                    ImGui::DragFloat("Noise Intensity", &vhs.noiseIntensity, 0.005f, 0.0f, 0.3f);
-                    ImGui::DragFloat("Blue Shift", &vhs.blueShift, 0.01f, 0.0f, 0.3f);
-                    ImGui::Checkbox("Screen Tear", &vhs.screenTear);
-                    ImGui::Checkbox("Interlacing", &vhs.interlacing);
-                }
-                ImGui::TreePop();
-            }
-
-            // Global Gouraud-only mode
-            if (ImGui::TreeNode("Global Retro Shading")) {
-                bool gouraud = m_RetroEffects.GetGouraudOnly();
-                if (ImGui::Checkbox("Force Gouraud Shading", &gouraud)) {
-                    m_RetroEffects.SetGouraudOnly(gouraud);
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use vertex-interpolated lighting for all entities (faceted look)");
-                ImGui::TreePop();
-            }
-
-            // Retro Fog
-            if (ImGui::TreeNode("Fog (Distance)")) {
-                auto& fog = m_RetroEffects.GetFogSettings();
-                ImGui::Checkbox("Enabled##Fog", &fog.enabled);
-                if (fog.enabled) {
-                    f32 fogColor[3] = { fog.color.x, fog.color.y, fog.color.z };
-                    if (ImGui::ColorEdit3("Color##Fog", fogColor)) {
-                        fog.color = Math::Vector3(fogColor[0], fogColor[1], fogColor[2]);
-                    }
-                    ImGui::DragFloat("Start Distance", &fog.start, 0.5f, 0.0f, 100.0f);
-                    ImGui::DragFloat("End Distance", &fog.end, 0.5f, 1.0f, 200.0f);
-                    ImGui::Checkbox("Hard Cutoff", &fog.hardCutoff);
-                    if (fog.hardCutoff) {
-                        ImGui::DragFloat("Cutoff Distance", &fog.cutoffDistance, 1.0f, 10.0f, 200.0f);
-                    }
-                }
-                ImGui::TreePop();
-            }
-        }
-    }
-
-    ImGui::End();
-}
-
-
 void EditorLayer::DrawGameViewPanel() {
     // Set window to be larger by default for Game View
     ImGui::SetNextWindowSize(ImVec2(640, 480), ImGuiCond_FirstUseEver);
@@ -1483,14 +889,597 @@ void EditorLayer::DrawGameViewPanel() {
 }
 
 
-void EditorLayer::DrawRenderingPanel() {
-    ImGui::Begin("Rendering", nullptr, ImGuiWindowFlags_None);
+// ============================================================================
+// Section drawer methods for Rendering, Post Processing, and Retro Effects
+// ============================================================================
 
-    if (!m_RenderSystem) {
-        ImGui::TextDisabled("No render system available");
-        ImGui::End();
+void EditorLayer::DrawSettingsSection_PostProcessing() {
+    if (!m_PostProcessing) {
+        ImGui::TextDisabled("Post-processing not initialized");
         return;
     }
+
+    if (ImGui::CollapsingHeader("Post Processing", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& settings = m_PostProcessing->GetSettings();
+
+        // Tone Mapping
+        if (ImGui::CollapsingHeader("Tone Mapping", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const char* toneMappingModes[] = { "None", "Reinhard", "Reinhard Extended", "ACES", "Uncharted 2", "AgX" };
+            int currentMode = static_cast<int>(settings.toneMappingMode);
+            if (ImGui::Combo("Mode", &currentMode, toneMappingModes, 6)) {
+                settings.toneMappingMode = static_cast<u32>(currentMode);
+            }
+
+            ImGui::DragFloat("Exposure", &settings.exposure, 0.01f, 0.01f, 10.0f);
+            ImGui::DragFloat("Gamma", &settings.gamma, 0.01f, 1.0f, 3.0f);
+
+            if (settings.toneMappingMode == 2) { // Reinhard Extended
+                ImGui::DragFloat("White Point", &settings.whitePoint, 0.1f, 1.0f, 20.0f);
+            }
+        }
+
+        // Bloom
+        if (ImGui::CollapsingHeader("Bloom")) {
+            bool bloomEnabled = settings.bloomEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Bloom", &bloomEnabled)) {
+                settings.bloomEnabled = bloomEnabled ? 1 : 0;
+            }
+
+            if (settings.bloomEnabled) {
+                ImGui::DragFloat("Threshold", &settings.bloomThreshold, 0.01f, 0.0f, 5.0f);
+                ImGui::DragFloat("Intensity##Bloom", &settings.bloomIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Radius", &settings.bloomRadius, 0.001f, 0.001f, 0.1f);
+            }
+        }
+
+        // Vignette
+        if (ImGui::CollapsingHeader("Vignette")) {
+            bool vignetteEnabled = settings.vignetteEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Vignette", &vignetteEnabled)) {
+                settings.vignetteEnabled = vignetteEnabled ? 1 : 0;
+            }
+
+            if (settings.vignetteEnabled) {
+                ImGui::DragFloat("Intensity##Vignette", &settings.vignetteIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Smoothness", &settings.vignetteSmoothness, 0.01f, 0.0f, 1.0f);
+            }
+        }
+
+        // Chromatic Aberration
+        if (ImGui::CollapsingHeader("Chromatic Aberration")) {
+            bool caEnabled = settings.chromaticAberrationEnabled != 0;
+            if (ImGui::Checkbox("Enabled##CA", &caEnabled)) {
+                settings.chromaticAberrationEnabled = caEnabled ? 1 : 0;
+            }
+
+            if (settings.chromaticAberrationEnabled) {
+                ImGui::DragFloat("Intensity##CA", &settings.chromaticAberrationIntensity, 0.001f, 0.0f, 0.05f);
+            }
+        }
+
+        // Color Grading
+        if (ImGui::CollapsingHeader("Color Grading")) {
+            f32 colorFilter[3] = { settings.colorFilter.x, settings.colorFilter.y, settings.colorFilter.z };
+            if (ImGui::ColorEdit3("Color Filter", colorFilter)) {
+                settings.colorFilter = Math::Vector3(colorFilter[0], colorFilter[1], colorFilter[2]);
+            }
+
+            ImGui::DragFloat("Saturation", &settings.saturation, 0.01f, 0.0f, 2.0f);
+            ImGui::DragFloat("Contrast", &settings.contrast, 0.01f, 0.5f, 2.0f);
+            ImGui::DragFloat("Brightness", &settings.brightness, 0.01f, -1.0f, 1.0f);
+        }
+
+        // Film Grain
+        if (ImGui::CollapsingHeader("Film Grain")) {
+            bool grainEnabled = settings.filmGrainEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Grain", &grainEnabled)) {
+                settings.filmGrainEnabled = grainEnabled ? 1 : 0;
+            }
+
+            if (settings.filmGrainEnabled) {
+                ImGui::DragFloat("Intensity##Grain", &settings.filmGrainIntensity, 0.001f, 0.0f, 0.2f);
+            }
+        }
+
+        // Depth of Field
+        if (ImGui::CollapsingHeader("Depth of Field")) {
+            bool dofEnabled = settings.dofEnabled != 0;
+            if (ImGui::Checkbox("Enabled##DOF", &dofEnabled)) {
+                settings.dofEnabled = dofEnabled ? 1 : 0;
+            }
+
+            if (settings.dofEnabled) {
+                ImGui::DragFloat("Focal Distance", &settings.dofFocalDistance, 0.5f, 0.1f, 500.0f);
+                ImGui::DragFloat("Focal Range", &settings.dofFocalRange, 0.1f, 0.0f, 50.0f);
+                ImGui::DragFloat("Near Blur", &settings.dofNearBlurStrength, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Far Blur", &settings.dofFarBlurStrength, 0.01f, 0.0f, 1.0f);
+                ImGui::DragFloat("Bokeh Size", &settings.dofBokehSize, 0.1f, 0.5f, 16.0f);
+
+                const char* apertureShapes[] = { "Circle", "Hexagon", "Octagon" };
+                int shape = static_cast<int>(settings.dofApertureShape);
+                if (ImGui::Combo("Aperture Shape", &shape, apertureShapes, 3)) {
+                    settings.dofApertureShape = static_cast<u32>(shape);
+                }
+
+                bool debugCoC = settings.dofDebugCoC != 0;
+                if (ImGui::Checkbox("Debug CoC", &debugCoC)) {
+                    settings.dofDebugCoC = debugCoC ? 1 : 0;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Visualize Circle of Confusion (red=near blur, green=in focus, blue=far blur)");
+                }
+            }
+        }
+
+        // Tilt-Shift
+        if (ImGui::CollapsingHeader("Tilt-Shift")) {
+            bool tsEnabled = settings.tiltShiftEnabled != 0;
+            if (ImGui::Checkbox("Enabled##TiltShift", &tsEnabled)) {
+                settings.tiltShiftEnabled = tsEnabled ? 1 : 0;
+            }
+
+            if (settings.tiltShiftEnabled) {
+                ImGui::SliderFloat("Focus Y", &settings.tiltShiftFocusY, 0.0f, 1.0f);
+                ImGui::DragFloat("Band Width", &settings.tiltShiftBandWidth, 0.01f, 0.01f, 1.0f);
+                ImGui::DragFloat("Blur Amount", &settings.tiltShiftBlurAmount, 0.1f, 0.0f, 10.0f);
+            }
+        }
+
+        // FXAA
+        if (ImGui::CollapsingHeader("Anti-Aliasing (FXAA)")) {
+            bool fxaaEnabled = settings.fxaaEnabled != 0;
+            if (ImGui::Checkbox("Enabled##FXAA", &fxaaEnabled)) {
+                settings.fxaaEnabled = fxaaEnabled ? 1 : 0;
+            }
+
+            if (settings.fxaaEnabled) {
+                ImGui::DragFloat("Span Max", &settings.fxaaSpanMax, 0.5f, 2.0f, 16.0f);
+                ImGui::DragFloat("Reduce Min", &settings.fxaaReduceMin, 0.001f, 0.0f, 0.1f, "%.4f");
+                ImGui::DragFloat("Reduce Mul", &settings.fxaaReduceMul, 0.01f, 0.0f, 0.5f);
+            }
+        }
+
+        // LUT Color Grading
+        if (ImGui::CollapsingHeader("LUT Color Grading")) {
+            bool lutEnabled = settings.lutEnabled != 0;
+            if (ImGui::Checkbox("Enabled##LUT", &lutEnabled)) {
+                settings.lutEnabled = lutEnabled ? 1 : 0;
+            }
+
+            if (settings.lutEnabled) {
+                ImGui::DragFloat("Strength##LUT", &settings.lutStrength, 0.01f, 0.0f, 1.0f);
+
+                if (m_PostProcessing->IsLUTLoaded()) {
+                    std::string lutPath = m_PostProcessing->GetLUTPath();
+                    // Show just the filename
+                    size_t lastSlash = lutPath.find_last_of("/\\");
+                    std::string filename = (lastSlash != std::string::npos) ? lutPath.substr(lastSlash + 1) : lutPath;
+                    ImGui::Text("Loaded: %s", filename.c_str());
+
+                    if (ImGui::Button("Clear LUT")) {
+                        m_PostProcessing->ClearLUT();
+                        settings.lutEnabled = 0;
+                    }
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("Load LUT")) {
+                    std::string path = FileDialog::OpenFile("Load LUT", {{ "PNG Images", "*.png" }});
+                    if (!path.empty()) {
+                        m_PostProcessing->LoadLUT(path);
+                    }
+                }
+            }
+        }
+
+        // Color Palette Lock
+        if (ImGui::CollapsingHeader("Palette Lock")) {
+            bool paletteEnabled = settings.paletteEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Palette", &paletteEnabled)) {
+                settings.paletteEnabled = paletteEnabled ? 1 : 0;
+            }
+
+            if (settings.paletteEnabled) {
+                int colors = static_cast<int>(settings.paletteColors);
+                if (ImGui::SliderInt("Colors", &colors, 2, 256)) {
+                    settings.paletteColors = static_cast<u32>(colors);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Number of color levels per channel");
+            }
+        }
+
+        // Stipple / Dither
+        if (ImGui::CollapsingHeader("Stipple / Dither")) {
+            bool stippleEnabled = settings.stippleEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Stipple", &stippleEnabled)) {
+                settings.stippleEnabled = stippleEnabled ? 1 : 0;
+            }
+
+            if (settings.stippleEnabled) {
+                const char* stipplePatterns[] = {
+                    "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Halftone",
+                    "Crosshatch", "Overlook", "Ordered 2x2", "Floyd-Steinberg"
+                };
+                ImGui::Text("Patterns (combine any):");
+                for (int i = 0; i < 8; i++) {
+                    bool on = (settings.stipplePatternMask & (1u << i)) != 0;
+                    if (ImGui::Checkbox(stipplePatterns[i], &on)) {
+                        if (on) settings.stipplePatternMask |= (1u << i);
+                        else    settings.stipplePatternMask &= ~(1u << i);
+                    }
+                    if (i % 2 == 0 && i < 7) ImGui::SameLine(200.0f);
+                }
+
+                const char* colorModes[] = { "Monochrome", "Duo-Tone", "Full Color" };
+                int currentColorMode = static_cast<int>(settings.stippleColorMode);
+                if (ImGui::Combo("Color Mode##Stipple", &currentColorMode, colorModes, 3)) {
+                    settings.stippleColorMode = static_cast<u32>(currentColorMode);
+                }
+
+                ImGui::DragFloat("Scale##Stipple", &settings.stippleScale, 0.1f, 0.5f, 8.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Pattern pixel scale (1.0 = native resolution)");
+
+                ImGui::DragFloat("Density##Stipple", &settings.stippleDensity, 0.01f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Threshold bias — lower = more dots, higher = fewer dots");
+
+                ImGui::DragFloat("Strength##Stipple", &settings.stippleStrength, 0.01f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Blend with original image (0 = no effect, 1 = full stipple)");
+
+                // Show color pickers for mono and duo-tone modes
+                if (settings.stippleColorMode <= 1) {
+                    f32 fg[3] = { settings.stippleFgColor.x, settings.stippleFgColor.y, settings.stippleFgColor.z };
+                    if (ImGui::ColorEdit3("Foreground##Stipple", fg)) {
+                        settings.stippleFgColor = Math::Vector3(fg[0], fg[1], fg[2]);
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ink / dot color");
+
+                    f32 bg[3] = { settings.stippleBgColor.x, settings.stippleBgColor.y, settings.stippleBgColor.z };
+                    if (ImGui::ColorEdit3("Background##Stipple", bg)) {
+                        settings.stippleBgColor = Math::Vector3(bg[0], bg[1], bg[2]);
+                    }
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Paper / gap color");
+                }
+            }
+        }
+
+        // Cel outline
+        {
+            auto& s = m_PostProcessing->GetSettings();
+            bool outlineOn = s.celOutlineEnabled != 0;
+            if (ImGui::Checkbox("Cel Outline##PP", &outlineOn)) {
+                s.celOutlineEnabled = outlineOn ? 1 : 0;
+            }
+            if (outlineOn) {
+                ImGui::SliderFloat("Outline Thickness##PP", &s.celOutlineThickness, 0.5f, 5.0f);
+                ImGui::SliderFloat("Outline Threshold##PP", &s.celOutlineThreshold, 0.001f, 0.5f);
+                ImGui::ColorEdit3("Outline Color##PP", &s.celOutlineColor.x);
+            }
+        }
+
+        // ================================================================
+        // Screen-Space Effects
+        // ================================================================
+
+        // SSAO
+        if (ImGui::CollapsingHeader("SSAO (Ambient Occlusion)")) {
+            bool ssaoOn = settings.ssaoEnabled != 0;
+            if (ImGui::Checkbox("Enabled##SSAO", &ssaoOn)) {
+                settings.ssaoEnabled = ssaoOn ? 1 : 0;
+            }
+            if (settings.ssaoEnabled) {
+                ImGui::DragFloat("Radius##SSAO", &settings.ssaoRadius, 0.01f, 0.01f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space sample radius");
+                ImGui::DragFloat("Intensity##SSAO", &settings.ssaoIntensity, 0.01f, 0.0f, 5.0f);
+                ImGui::DragFloat("Bias##SSAO", &settings.ssaoBias, 0.001f, 0.0f, 0.1f, "%.4f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Depth bias to reduce self-occlusion");
+                int samples = static_cast<int>(settings.ssaoSamples);
+                if (ImGui::SliderInt("Samples##SSAO", &samples, 4, 32)) {
+                    settings.ssaoSamples = static_cast<u32>(samples);
+                }
+            }
+        }
+
+        // Contact Shadows
+        if (ImGui::CollapsingHeader("Contact Shadows")) {
+            bool csOn = settings.contactShadowsEnabled != 0;
+            if (ImGui::Checkbox("Enabled##ContactShadows", &csOn)) {
+                settings.contactShadowsEnabled = csOn ? 1 : 0;
+            }
+            if (settings.contactShadowsEnabled) {
+                ImGui::DragFloat("Ray Length##CS", &settings.contactShadowsLength, 0.001f, 0.001f, 0.5f, "%.4f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Screen-space ray march length (UV space)");
+                int steps = static_cast<int>(settings.contactShadowsSteps);
+                if (ImGui::SliderInt("Steps##CS", &steps, 4, 32)) {
+                    settings.contactShadowsSteps = static_cast<u32>(steps);
+                }
+                ImGui::DragFloat("Intensity##CS", &settings.contactShadowsIntensity, 0.01f, 0.0f, 2.0f);
+            }
+        }
+
+        // God Rays
+        if (ImGui::CollapsingHeader("God Rays")) {
+            bool grOn = settings.godRaysEnabled != 0;
+            if (ImGui::Checkbox("Enabled##GodRays", &grOn)) {
+                settings.godRaysEnabled = grOn ? 1 : 0;
+            }
+            if (settings.godRaysEnabled) {
+                ImGui::DragFloat("Intensity##GR", &settings.godRaysIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Decay##GR", &settings.godRaysDecay, 0.001f, 0.9f, 1.0f, "%.4f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample falloff (closer to 1 = longer rays)");
+                ImGui::DragFloat("Density##GR", &settings.godRaysDensity, 0.01f, 0.1f, 3.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample spacing multiplier");
+                int samples = static_cast<int>(settings.godRaysSamples);
+                if (ImGui::SliderInt("Samples##GR", &samples, 16, 128)) {
+                    settings.godRaysSamples = static_cast<u32>(samples);
+                }
+                ImGui::DragFloat("Weight##GR", &settings.godRaysWeight, 0.001f, 0.001f, 0.1f, "%.4f");
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Per-sample contribution weight");
+            }
+        }
+
+        // Fake Caustics
+        if (ImGui::CollapsingHeader("Fake Caustics")) {
+            bool fcOn = settings.causticsEnabled != 0;
+            if (ImGui::Checkbox("Enabled##Caustics", &fcOn)) {
+                settings.causticsEnabled = fcOn ? 1 : 0;
+            }
+            if (settings.causticsEnabled) {
+                ImGui::DragFloat("Intensity##Caustics", &settings.causticsIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Scale##Caustics", &settings.causticsScale, 0.01f, 0.1f, 10.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Voronoi pattern scale");
+                ImGui::DragFloat("Speed##Caustics", &settings.causticsSpeed, 0.01f, 0.0f, 5.0f);
+                ImGui::DragFloat("Water Y##Caustics", &settings.causticsWaterY, 0.1f, -100.0f, 100.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space Y height of the water surface");
+            }
+        }
+
+        // Fog Shafts
+        if (ImGui::CollapsingHeader("Fog Shafts")) {
+            bool fsOn = settings.fogShaftsEnabled != 0;
+            if (ImGui::Checkbox("Enabled##FogShafts", &fsOn)) {
+                settings.fogShaftsEnabled = fsOn ? 1 : 0;
+            }
+            if (settings.fogShaftsEnabled) {
+                ImGui::DragFloat("Intensity##FS", &settings.fogShaftsIntensity, 0.01f, 0.0f, 2.0f);
+                ImGui::DragFloat("Fog Density##FS", &settings.fogShaftsDensity, 0.001f, 0.001f, 0.5f, "%.4f");
+                ImGui::DragFloat("Decay##FS", &settings.fogShaftsDecay, 0.001f, 0.8f, 1.0f, "%.4f");
+                int samples = static_cast<int>(settings.fogShaftsSamples);
+                if (ImGui::SliderInt("Samples##FS", &samples, 4, 32)) {
+                    settings.fogShaftsSamples = static_cast<u32>(samples);
+                }
+                ImGui::DragFloat("Max Distance##FS", &settings.fogShaftsMaxDistance, 1.0f, 5.0f, 500.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("World-space max march distance");
+            }
+        }
+    }
+}
+
+void EditorLayer::DrawSettingsSection_RetroEffects() {
+    // === RETRO EFFECTS (PS1/N64/PS2/GameCube presets) ===
+    if (ImGui::CollapsingHeader("Retro Effects", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool retroEnabled = m_RetroEffects.IsEnabled();
+        if (ImGui::Checkbox("Enable Retro Effects", &retroEnabled)) {
+            m_RetroEffects.SetEnabled(retroEnabled);
+        }
+
+        if (retroEnabled) {
+            ImGui::Text("Console Presets:");
+            if (ImGui::Button("PS1")) { m_RetroEffects.ApplyPS1Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("N64")) { m_RetroEffects.ApplyN64Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PS2")) { m_RetroEffects.ApplyPS2Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("GameCube")) { m_RetroEffects.ApplyGameCubePreset(); }
+
+            if (ImGui::Button("SNES")) { m_RetroEffects.ApplySNESPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Dreamcast")) { m_RetroEffects.ApplyDreamcastPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Saturn")) { m_RetroEffects.ApplySaturnPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("3DO")) { m_RetroEffects.Apply3DOPreset(); }
+
+            if (ImGui::Button("NES")) { m_RetroEffects.ApplyNESPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Game Boy")) { m_RetroEffects.ApplyGameBoyPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("GBA")) { m_RetroEffects.ApplyGBAPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Genesis")) { m_RetroEffects.ApplyGenesisPreset(); }
+
+            if (ImGui::Button("Master System")) { m_RetroEffects.ApplyMasterSystemPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PSP")) { m_RetroEffects.ApplyPSPPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("DOS/VGA")) { m_RetroEffects.ApplyDOSVGAPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("PC Engine")) { m_RetroEffects.ApplyPCEnginePreset(); }
+
+            if (ImGui::Button("Virtual Boy")) { m_RetroEffects.ApplyVirtualBoyPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Neo Geo")) { m_RetroEffects.ApplyNeoGeoPreset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Atari 2600")) { m_RetroEffects.ApplyAtari2600Preset(); }
+            ImGui::SameLine();
+            if (ImGui::Button("Xbox")) { m_RetroEffects.ApplyXboxPreset(); }
+
+            if (ImGui::Button("Clear All")) { m_RetroEffects.ClearAllEffects(); }
+
+            ImGui::Separator();
+
+            // Resolution settings
+            if (ImGui::TreeNode("Resolution")) {
+                auto& res = m_RetroEffects.GetResolution();
+                int width = static_cast<int>(res.renderWidth);
+                int height = static_cast<int>(res.renderHeight);
+                if (ImGui::DragInt("Render Width", &width, 1, 160, 1920)) {
+                    res.renderWidth = static_cast<u32>(width);
+                }
+                if (ImGui::DragInt("Render Height", &height, 1, 120, 1080)) {
+                    res.renderHeight = static_cast<u32>(height);
+                }
+                ImGui::Checkbox("Point Filtering", &res.pointFiltering);
+                ImGui::Checkbox("Integer Scaling", &res.integerScaling);
+                ImGui::DragFloat("Aspect Ratio", &res.aspectRatio, 0.01f, 1.0f, 2.5f);
+                ImGui::TreePop();
+            }
+
+            // Dithering
+            if (ImGui::TreeNode("Dithering")) {
+                const char* ditherPatterns[] = { "None", "Bayer 2x2", "Bayer 4x4", "Bayer 8x8", "Blue Noise", "Ordered" };
+                int currentDither = static_cast<int>(m_RetroEffects.GetDitherPattern());
+                if (ImGui::Combo("Pattern", &currentDither, ditherPatterns, 6)) {
+                    m_RetroEffects.SetDitherPattern(static_cast<Effects::DitherPattern>(currentDither));
+                }
+                ImGui::TreePop();
+            }
+
+            // Color Mode
+            if (ImGui::TreeNode("Color Mode")) {
+                const char* colorModes[] = { "True Color (24-bit)", "High Color (16-bit)", "256 Colors", "16 Colors", "Monochrome" };
+                int currentMode = static_cast<int>(m_RetroEffects.GetColorMode());
+                if (ImGui::Combo("Mode", &currentMode, colorModes, 5)) {
+                    m_RetroEffects.SetColorMode(static_cast<Effects::ColorMode>(currentMode));
+                }
+                ImGui::TreePop();
+            }
+
+            // Vertex Jitter (PS1 style)
+            if (ImGui::TreeNode("Vertex Jitter (PS1)")) {
+                auto& jitter = m_RetroEffects.GetVertexJitter();
+                ImGui::Checkbox("Enabled##Jitter", &jitter.enabled);
+                if (jitter.enabled) {
+                    ImGui::DragFloat("Amount", &jitter.jitterAmount, 0.1f, 0.0f, 5.0f);
+                    ImGui::Checkbox("Snap to Grid", &jitter.snapToGrid);
+                    int gridRes = static_cast<int>(jitter.gridResolution);
+                    if (ImGui::DragInt("Grid Resolution", &gridRes, 1, 80, 320)) {
+                        jitter.gridResolution = static_cast<u32>(gridRes);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            // Affine Texture Warping (PS1)
+            if (ImGui::TreeNode("Affine Warping (PS1)")) {
+                auto& affine = m_RetroEffects.GetAffineSettings();
+                ImGui::Checkbox("Enabled##Affine", &affine.enabled);
+                if (affine.enabled) {
+                    ImGui::DragFloat("Warp Strength", &affine.warpStrength, 0.1f, 0.0f, 2.0f);
+                    ImGui::Checkbox("Vertex Snapping", &affine.vertexSnapping);
+                    ImGui::DragFloat("Snap Grid Size", &affine.snapGridSize, 0.1f, 0.5f, 4.0f);
+                }
+                ImGui::TreePop();
+            }
+
+            // CRT Filter
+            if (ImGui::TreeNode("CRT Filter")) {
+                auto& crt = m_RetroEffects.GetCRTSettings();
+                ImGui::Checkbox("Enabled##CRT", &crt.enabled);
+                if (crt.enabled) {
+                    ImGui::DragFloat("Scanline Intensity", &crt.scanlineIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::DragFloat("Scanline Width", &crt.scanlineWidth, 0.1f, 0.5f, 3.0f);
+                    ImGui::Checkbox("Curved Screen", &crt.curvedScreen);
+                    if (crt.curvedScreen) {
+                        ImGui::DragFloat("Curvature", &crt.curvature, 0.01f, 0.0f, 0.5f);
+                    }
+                    ImGui::DragFloat("Vignette", &crt.vignette, 0.01f, 0.0f, 1.0f);
+                    ImGui::Checkbox("Phosphor Glow", &crt.phosphorGlow);
+                    if (crt.phosphorGlow) {
+                        ImGui::DragFloat("Glow Strength", &crt.glowStrength, 0.01f, 0.0f, 1.0f);
+                    }
+                }
+                ImGui::TreePop();
+            }
+
+            // CRT Phosphor Subpixel Blending
+            if (ImGui::TreeNode("CRT Phosphor")) {
+                auto& crt = m_RetroEffects.GetCRTSettings();
+
+                // CRT Model Preset dropdown
+                const char* crtModels[] = {
+                    "Custom", "Sony Trinitron KV-27V42", "Sony PVM-20M4U", "JVC TM-H150CG",
+                    "Toshiba 14AF46", "Sony GDM-FW900", "ViewSonic G810", "NEC MultiSync FE2111SB",
+                    "Generic 15kHz Arcade", "Wells Gardner K7000", "Commodore 1084S"
+                };
+                static int selectedModel = 0;
+                if (ImGui::Combo("CRT Model", &selectedModel, crtModels, 11)) {
+                    if (selectedModel > 0) {
+                        m_RetroEffects.ApplyCRTModelPreset(static_cast<Effects::CRTModel>(selectedModel));
+                    }
+                }
+
+                const char* maskTypes[] = { "Aperture Grille", "Shadow Mask", "Slot Mask" };
+                int maskType = static_cast<int>(crt.maskType);
+                if (ImGui::Combo("Mask Type", &maskType, maskTypes, 3)) {
+                    crt.maskType = static_cast<u32>(maskType);
+                    selectedModel = 0; // Switch to Custom when manually editing
+                }
+                ImGui::DragFloat("Mask Pitch", &crt.maskPitch, 0.1f, 0.5f, 4.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Spacing between RGB triplets in pixels");
+                ImGui::DragFloat("Bloom Radius##Phosphor", &crt.bloomRadius, 0.1f, 0.5f, 5.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("How far phosphor light bleeds between dots");
+                ImGui::DragFloat("Bloom Strength##Phosphor", &crt.bloomStrength, 0.01f, 0.0f, 1.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Intensity of phosphor bleeding effect");
+                ImGui::DragFloat("Bloom Sigma##Phosphor", &crt.bloomSigma, 0.01f, 0.3f, 2.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Gaussian spread: higher = softer bloom (>= 0.5 for dither blending)");
+                ImGui::DragFloat("TV Lines##Phosphor", &crt.tvl, 10.0f, 100.0f, 1200.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Horizontal resolution measure of the CRT display");
+                ImGui::TreePop();
+            }
+
+            // VHS Filter
+            if (ImGui::TreeNode("VHS Filter")) {
+                auto& vhs = m_RetroEffects.GetVHSSettings();
+                ImGui::Checkbox("Enabled##VHS", &vhs.enabled);
+                if (vhs.enabled) {
+                    ImGui::DragFloat("Tracking Intensity", &vhs.trackingIntensity, 0.01f, 0.0f, 1.0f);
+                    ImGui::DragFloat("Tracking Speed", &vhs.trackingSpeed, 0.1f, 0.1f, 5.0f);
+                    ImGui::DragFloat("Wobble Intensity", &vhs.wobbleIntensity, 0.0005f, 0.0f, 0.02f, "%.4f");
+                    ImGui::DragFloat("Wobble Speed", &vhs.wobbleSpeed, 0.1f, 0.1f, 10.0f);
+                    ImGui::DragFloat("Color Bleed", &vhs.colorBleedAmount, 0.0005f, 0.0f, 0.02f, "%.4f");
+                    ImGui::DragFloat("Noise Intensity", &vhs.noiseIntensity, 0.005f, 0.0f, 0.3f);
+                    ImGui::DragFloat("Blue Shift", &vhs.blueShift, 0.01f, 0.0f, 0.3f);
+                    ImGui::Checkbox("Screen Tear", &vhs.screenTear);
+                    ImGui::Checkbox("Interlacing", &vhs.interlacing);
+                }
+                ImGui::TreePop();
+            }
+
+            // Global Gouraud-only mode
+            if (ImGui::TreeNode("Global Retro Shading")) {
+                bool gouraud = m_RetroEffects.GetGouraudOnly();
+                if (ImGui::Checkbox("Force Gouraud Shading", &gouraud)) {
+                    m_RetroEffects.SetGouraudOnly(gouraud);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Use vertex-interpolated lighting for all entities (faceted look)");
+                ImGui::TreePop();
+            }
+
+            // Retro Fog
+            if (ImGui::TreeNode("Fog (Distance)")) {
+                auto& fog = m_RetroEffects.GetFogSettings();
+                ImGui::Checkbox("Enabled##Fog", &fog.enabled);
+                if (fog.enabled) {
+                    f32 fogColor[3] = { fog.color.x, fog.color.y, fog.color.z };
+                    if (ImGui::ColorEdit3("Color##Fog", fogColor)) {
+                        fog.color = Math::Vector3(fogColor[0], fogColor[1], fogColor[2]);
+                    }
+                    ImGui::DragFloat("Start Distance", &fog.start, 0.5f, 0.0f, 100.0f);
+                    ImGui::DragFloat("End Distance", &fog.end, 0.5f, 1.0f, 200.0f);
+                    ImGui::Checkbox("Hard Cutoff", &fog.hardCutoff);
+                    if (fog.hardCutoff) {
+                        ImGui::DragFloat("Cutoff Distance", &fog.cutoffDistance, 1.0f, 10.0f, 200.0f);
+                    }
+                }
+                ImGui::TreePop();
+            }
+        }
+    }
+}
+
+void EditorLayer::DrawSettingsSection_Skybox() {
+    if (!m_RenderSystem) return;
 
     // === SKYBOX ===
     if (ImGui::CollapsingHeader("Skybox", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1590,6 +1579,10 @@ void EditorLayer::DrawRenderingPanel() {
             m_RenderSystem->SetSkybox(config);
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_Shadows() {
+    if (!m_RenderSystem) return;
 
     // === SHADOWS ===
     if (ImGui::CollapsingHeader("Shadows", ImGuiTreeNodeFlags_DefaultOpen)) {
@@ -1631,6 +1624,10 @@ void EditorLayer::DrawRenderingPanel() {
             if (ImGui::IsItemHovered()) ImGui::SetTooltip("0 = hard edges, 1-5 = soft penumbra radius");
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_AmbientLighting() {
+    if (!m_RenderSystem) return;
 
     // === AMBIENT LIGHTING ===
     if (ImGui::CollapsingHeader("Ambient Lighting")) {
@@ -1645,6 +1642,10 @@ void EditorLayer::DrawRenderingPanel() {
             m_RenderSystem->SetAmbientIntensity(ambientIntensity);
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_CelShading() {
+    if (!m_RenderSystem) return;
 
     // === CEL SHADING ===
     if (ImGui::CollapsingHeader("Cel Shading")) {
@@ -1663,6 +1664,10 @@ void EditorLayer::DrawRenderingPanel() {
             }
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_DisplayOptions() {
+    if (!m_RenderSystem) return;
 
     // === DISPLAY OPTIONS ===
     if (ImGui::CollapsingHeader("Display Options")) {
@@ -1679,6 +1684,96 @@ void EditorLayer::DrawRenderingPanel() {
             m_RenderSystem->SetWireframeEnabled(wireframe);
         }
     }
+
+    // === SDF SCENE ===
+    {
+        if (ImGui::CollapsingHeader("SDF Primitives")) {
+            if (auto* sdfScene = m_RenderSystem->GetSDFScene()) {
+                ImGui::Text("Objects: %u", sdfScene->GetObjectCount());
+                ImGui::TextDisabled("CPU-side SDF evaluation. GPU ray march requires compute shader.");
+
+                if (ImGui::Button("Add Sphere##SDF")) {
+                    Renderer::SDFObject obj;
+                    obj.type = Renderer::SDFPrimitive::Sphere;
+                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    sdfScene->AddObject(obj);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Add Box##SDF")) {
+                    Renderer::SDFObject obj;
+                    obj.type = Renderer::SDFPrimitive::Box;
+                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
+                    sdfScene->AddObject(obj);
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear##SDF")) {
+                    sdfScene->Clear();
+                }
+            } else {
+                ImGui::TextDisabled("SDF scene not initialized");
+            }
+        }
+    }
+
+    // === ORDER-INDEPENDENT TRANSPARENCY ===
+    {
+        if (ImGui::CollapsingHeader("Transparency (OIT)")) {
+            bool oitEnabled = m_RenderSystem->IsOITEnabled();
+            if (ImGui::Checkbox("Enable Weighted Blended OIT", &oitEnabled)) {
+                m_RenderSystem->SetOITEnabled(oitEnabled);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Weighted Blended Order-Independent Transparency\n"
+                "(McGuire & Bavoil 2013).\n"
+                "Requires composite shader — stub until SPIR-V compiled.");
+        }
+    }
+
+    // === PER-SCENE OVERRIDE & PROJECT DEFAULTS ===
+    if (ImGui::CollapsingHeader("Scene Overrides")) {
+        if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
+            if (m_CurrentSceneUsesProjectDefaults) {
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "When checked, this scene uses the project's default rendering settings.\n"
+            "Uncheck to override settings per-scene.");
+
+        if (m_CurrentSceneUsesProjectDefaults) {
+            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "This scene uses project default rendering settings");
+        }
+
+        ImGui::Spacing();
+
+        if (ImGui::Button("Set Current as Project Default")) {
+            auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
+                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            m_SceneManager.SetDefaultRenderSettings(current);
+            if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
+                ShowNotification("Failed to save project settings", NotificationType::Error);
+            }
+            ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+            "Save the current rendering settings as the project-level default.\n"
+            "New scenes and scenes using project defaults will use these settings.");
+
+        if (!m_CurrentSceneUsesProjectDefaults) {
+            ImGui::SameLine();
+            if (ImGui::Button("Reset to Project Default")) {
+                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
+                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Reset this scene's rendering settings to the project default values.");
+        }
+    }
+}
+
+void EditorLayer::DrawSettingsSection_RayTracing() {
+    if (!m_RenderSystem) return;
 
     // === RAY TRACING ===
     {
@@ -1868,6 +1963,10 @@ void EditorLayer::DrawRenderingPanel() {
             }
         }
     }
+}
+
+void EditorLayer::DrawSettingsSection_LightProbes() {
+    if (!m_RenderSystem) return;
 
     // === LIGHT PROBES ===
     {
@@ -1973,95 +2072,8 @@ void EditorLayer::DrawRenderingPanel() {
             }
         }
     }
-
-    // === SDF SCENE ===
-    {
-        if (ImGui::CollapsingHeader("SDF Primitives")) {
-            if (auto* sdfScene = m_RenderSystem->GetSDFScene()) {
-                ImGui::Text("Objects: %u", sdfScene->GetObjectCount());
-                ImGui::TextDisabled("CPU-side SDF evaluation. GPU ray march requires compute shader.");
-
-                if (ImGui::Button("Add Sphere##SDF")) {
-                    Renderer::SDFObject obj;
-                    obj.type = Renderer::SDFPrimitive::Sphere;
-                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
-                    sdfScene->AddObject(obj);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Add Box##SDF")) {
-                    Renderer::SDFObject obj;
-                    obj.type = Renderer::SDFPrimitive::Box;
-                    obj.scale = Math::Vector3(1.0f, 1.0f, 1.0f);
-                    sdfScene->AddObject(obj);
-                }
-                ImGui::SameLine();
-                if (ImGui::Button("Clear##SDF")) {
-                    sdfScene->Clear();
-                }
-            } else {
-                ImGui::TextDisabled("SDF scene not initialized");
-            }
-        }
-    }
-
-    // === ORDER-INDEPENDENT TRANSPARENCY ===
-    {
-        if (ImGui::CollapsingHeader("Transparency (OIT)")) {
-            bool oitEnabled = m_RenderSystem->IsOITEnabled();
-            if (ImGui::Checkbox("Enable Weighted Blended OIT", &oitEnabled)) {
-                m_RenderSystem->SetOITEnabled(oitEnabled);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Weighted Blended Order-Independent Transparency\n"
-                "(McGuire & Bavoil 2013).\n"
-                "Requires composite shader — stub until SPIR-V compiled.");
-        }
-    }
-
-    // === PER-SCENE OVERRIDE & PROJECT DEFAULTS ===
-    if (ImGui::CollapsingHeader("Scene Overrides")) {
-        if (ImGui::Checkbox("Use Project Defaults", &m_CurrentSceneUsesProjectDefaults)) {
-            if (m_CurrentSceneUsesProjectDefaults) {
-                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            }
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "When checked, this scene uses the project's default rendering settings.\n"
-            "Uncheck to override settings per-scene.");
-
-        if (m_CurrentSceneUsesProjectDefaults) {
-            ImGui::TextColored(ImVec4(0.6f, 0.8f, 0.6f, 1.0f), "This scene uses project default rendering settings");
-        }
-
-        ImGui::Spacing();
-
-        if (ImGui::Button("Set Current as Project Default")) {
-            auto current = Renderer::SceneRenderSettings::CaptureFromRuntime(
-                m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            m_SceneManager.SetDefaultRenderSettings(current);
-            if (!m_SceneManager.GetProjectPath().empty() && !m_SceneManager.SaveProject()) {
-                ShowNotification("Failed to save project settings", NotificationType::Error);
-            }
-            ENJIN_LOG_INFO(Editor, "Saved current rendering settings as project default");
-        }
-        if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-            "Save the current rendering settings as the project-level default.\n"
-            "New scenes and scenes using project defaults will use these settings.");
-
-        if (!m_CurrentSceneUsesProjectDefaults) {
-            ImGui::SameLine();
-            if (ImGui::Button("Reset to Project Default")) {
-                m_SceneManager.GetDefaultRenderSettings().ApplyToRuntime(
-                    m_RenderSystem, m_PostProcessing ? &m_PostProcessing->GetSettings() : nullptr);
-            }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Reset this scene's rendering settings to the project default values.");
-        }
-    }
-
-    ImGui::End();
 }
+
 
 
 } // namespace Editor

@@ -1715,15 +1715,39 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(rightW, centerH * m_Layout.inspectorSplit), layoutCond);
         DrawInspectorPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::EditorSettings)) {
-        ImGui::SetNextWindowPos(ImVec2(rightX, menuBarH + centerH * m_Layout.inspectorSplit), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(rightW, centerH * (1.0f - m_Layout.inspectorSplit)), layoutCond);
-        DrawEditorSettingsPanel();
-    }
-    if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings)) {
-        ImGui::SetNextWindowPos(ImVec2(rightX - 310, menuBarH + 50), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(300, 500), layoutCond);
-        DrawProjectSettingsPanel();
+    // Unified settings window — any of the 5 old settings bits activates it
+    {
+        bool anySettingsBit =
+            HasPanel(m_VisiblePanels, EditorPanel::EditorSettings) ||
+            HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings) ||
+            HasPanel(m_VisiblePanels, EditorPanel::PostProcessing) ||
+            HasPanel(m_VisiblePanels, EditorPanel::RetroEffects) ||
+            HasPanel(m_VisiblePanels, EditorPanel::Rendering);
+        if (anySettingsBit) {
+            // Route old bits to the correct tab (one-shot on first open)
+            if (HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings) &&
+                !HasPanel(m_VisiblePanels, EditorPanel::EditorSettings)) {
+                m_SettingsActiveTab = 1;
+            }
+            if (HasPanel(m_VisiblePanels, EditorPanel::Rendering) ||
+                HasPanel(m_VisiblePanels, EditorPanel::PostProcessing) ||
+                HasPanel(m_VisiblePanels, EditorPanel::RetroEffects)) {
+                if (!HasPanel(m_VisiblePanels, EditorPanel::EditorSettings) &&
+                    !HasPanel(m_VisiblePanels, EditorPanel::ProjectSettings)) {
+                    m_SettingsActiveTab = 2;
+                }
+            }
+            // Consolidate all bits into EditorSettings for the unified window
+            SetPanelVisibility(EditorPanel::EditorSettings, true);
+            SetPanelVisibility(EditorPanel::ProjectSettings, false);
+            SetPanelVisibility(EditorPanel::PostProcessing, false);
+            SetPanelVisibility(EditorPanel::RetroEffects, false);
+            SetPanelVisibility(EditorPanel::Rendering, false);
+
+            ImGui::SetNextWindowPos(ImVec2(rightX - 310, menuBarH + 50), layoutCond);
+            ImGui::SetNextWindowSize(ImVec2(450, 700), layoutCond);
+            DrawSettingsWindow();
+        }
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Console)) {
         ImGui::SetNextWindowPos(ImVec2(centerX, bottomY), layoutCond);
@@ -1735,16 +1759,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(centerW * 0.5f, bottomH), layoutCond);
         DrawAssetBrowserPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::PostProcessing)) {
-        ImGui::SetNextWindowPos(ImVec2(rightX - 300, menuBarH + 50), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(280, 400), layoutCond);
-        DrawPostProcessingPanel();
-    }
-    if (HasPanel(m_VisiblePanels, EditorPanel::RetroEffects)) {
-        ImGui::SetNextWindowPos(ImVec2(rightX - 300, menuBarH + 100), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(280, 450), layoutCond);
-        DrawRetroEffectsPanel();
-    }
+    // PostProcessing and RetroEffects panels are now in the unified Settings window
     if (HasPanel(m_VisiblePanels, EditorPanel::GameView)) {
         ImGui::SetNextWindowPos(ImVec2(gvX, gvY), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(gvW, gvH), layoutCond);
@@ -1755,11 +1770,7 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
         ImGui::SetNextWindowSize(ImVec2(leftW, bottomH), layoutCond);
         DrawSceneListPanel();
     }
-    if (HasPanel(m_VisiblePanels, EditorPanel::Rendering)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 440), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(300, 400), layoutCond);
-        DrawRenderingPanel();
-    }
+    // Rendering panel is now in the unified Settings window
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
         ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
         ImGui::SetNextWindowSize(ImVec2(520, 450), layoutCond);
