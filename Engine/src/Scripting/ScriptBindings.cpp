@@ -41,6 +41,11 @@ ECS::World* s_BindingsWorld = nullptr;
 // ---------------------------------------------------------------------------
 bool ValidateScriptAssetPath(const std::string& path, const char* funcName) {
     if (path.empty()) return false;
+    // SC-2: Reject excessively long paths to prevent abuse
+    if (path.size() > 1024) {
+        ENJIN_LOG_WARN(Script, "%s: path too long (%zu chars, max 1024)", funcName, path.size());
+        return false;
+    }
     // Reject absolute paths
     if (path.size() >= 2 && path[1] == ':') { // Windows drive letter
         ENJIN_LOG_WARN(Script, "%s: absolute path rejected", funcName);
@@ -94,7 +99,7 @@ void SetBindingsScriptEngine(ScriptEngine* engine) {
 // Helper macro to verify registration calls
 // ============================================================================
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 // ============================================================================
 // VECTOR2 WRAPPERS

@@ -211,6 +211,9 @@ struct ConnectionInfo {
     // Replay protection (per-connection sliding window)
     ReplayWindow replayWindow;
 
+    // NET-3: Ownership request rate limiting
+    f32 lastOwnershipRequestTime = 0.0f;
+
     // Authentication sequence (monotonically increasing per-connection)
     u32 authSendSequence = 0;       // Next outgoing auth sequence
     bool authenticated = false;     // True once session key has been exchanged

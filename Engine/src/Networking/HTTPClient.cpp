@@ -43,11 +43,18 @@ HTTPClient::ParsedURL HTTPClient::ParseURL(const std::string& url) {
     // Port in host
     auto colonPos = result.host.find(':');
     if (colonPos != std::string::npos) {
+        std::string portStr = result.host.substr(colonPos + 1);
         try {
-            int p = std::stoi(result.host.substr(colonPos + 1));
-            result.port = (p >= 1 && p <= 65535) ? static_cast<u16>(p) : 443;
+            int p = std::stoi(portStr);
+            if (p >= 1 && p <= 65535) {
+                result.port = static_cast<u16>(p);
+            } else {
+                // NET-4: Log warning instead of silently falling back
+                ENJIN_LOG_WARN(Network, "HTTPClient: Port %d out of range in URL, defaulting to %u", p, result.port);
+            }
         } catch (...) {
-            result.port = 443;
+            // NET-4: Log warning on unparseable port instead of silent fallback
+            ENJIN_LOG_WARN(Network, "HTTPClient: Invalid port '%s' in URL, defaulting to %u", portStr.c_str(), result.port);
         }
         result.host = result.host.substr(0, colonPos);
     }

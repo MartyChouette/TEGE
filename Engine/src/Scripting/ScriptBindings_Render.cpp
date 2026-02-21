@@ -4,6 +4,7 @@
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/Math/Vector.h"
 #include "Enjin/Platform/Platform.h"
+#include "Enjin/Logging/Log.h"
 #include <angelscript.h>
 #include <cassert>
 
@@ -11,7 +12,7 @@ using namespace Enjin;
 using namespace Enjin::Math;
 
 #define AS_CHECK(expr) \
-    do { int _r = (expr); assert(_r >= 0); (void)_r; } while(0)
+    do { int _r = (expr); if (_r < 0) { ENJIN_LOG_ERROR(Script, "AS registration failed (code %d) at %s:%d", _r, __FILE__, __LINE__); } } while(0)
 
 static ECS::RenderSystem* s_BindingsRenderSystem = nullptr;
 static Renderer::PostProcessing* s_BindingsPostProcessing = nullptr;

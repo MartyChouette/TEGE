@@ -245,12 +245,22 @@ void NetworkSystem::RequestOwnership(NetworkId networkId) {
 // ============================================================================
 
 void NetworkSystem::RegisterRPC(const std::string& name, RPCCallback callback, bool reliable) {
+    u32 nameHash = FNV1aHash(name);
+
+    // NET-1: Detect hash collisions — reject if hash already registered with a different name
+    auto it = m_RPCRegistry.find(nameHash);
+    if (it != m_RPCRegistry.end() && it->second.name != name) {
+        ENJIN_LOG_ERROR(Network, "RPC hash collision: '%s' and '%s' produce the same hash 0x%08X — rejecting",
+                        name.c_str(), it->second.name.c_str(), nameHash);
+        return;
+    }
+
     RPCRegistration reg;
     reg.name = name;
-    reg.nameHash = FNV1aHash(name);
+    reg.nameHash = nameHash;
     reg.callback = callback;
     reg.reliable = reliable;
-    m_RPCRegistry[reg.nameHash] = reg;
+    m_RPCRegistry[nameHash] = reg;
 }
 
 void NetworkSystem::CallRPC(const std::string& name, PlayerId target, const u8* data, u32 size) {
@@ -980,9 +990,9 @@ void NetworkSystem::HandleEntitySnapshot(const u8* payload, u32 size) {
     u32 offset = 0;
     u16 count = ReadU16(payload, offset, size);
 
-    // S17: Cap entity count to prevent excessive processing from malicious packets
-    if (count > 1024) {
-        ENJIN_LOG_WARN(Network, "NetworkSystem: Entity snapshot count %u exceeds cap, dropping", count);
+    // NET-5: Cap entity count to prevent excessive processing from malicious packets
+    if (count > 256) {
+        ENJIN_LOG_WARN(Network, "NetworkSystem: Entity snapshot count %u exceeds cap (256), dropping", count);
         return;
     }
 
@@ -1108,6 +1118,18 @@ void NetworkSystem::HandleEntityDestroy(const u8* payload, u32 size) {
 void NetworkSystem::HandleOwnershipRequest(PlayerId senderId, const u8* payload, u32 size) {
     if (m_Role != NetworkRole::Host) return;
     if (size < 4) return;
+
+    // NET-3: Rate-limit ownership requests per player (max 1 per 500ms)
+    ConnectionInfo* senderConn = FindConnectionByPlayerId(senderId);
+    if (senderConn) {
+        f32 elapsed = m_Time - senderConn->lastOwnershipRequestTime;
+        if (elapsed < 0.5f) {
+            ENJIN_LOG_WARN(Network, "NetworkSystem: Ownership request rate-limited for player %u (%.0fms since last)",
+                           senderId, elapsed * 1000.0f);
+            return;
+        }
+        senderConn->lastOwnershipRequestTime = m_Time;
+    }
 
     u32 offset = 0;
     NetworkId netId = ReadU32(payload, offset, size);

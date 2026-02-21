@@ -155,9 +155,13 @@ bool ScriptEngine::CompileScript(const std::string& path)
         }
     }
 
-    // Derive the module name from the filename (strip directory and extension)
+    // SC-3: Derive module name from parent directory + stem to avoid collisions
+    // when the same filename exists in different directories (e.g. "scripts/player.as"
+    // and "scripts/enemy/player.as" become "scripts_player" and "enemy_player").
     std::filesystem::path fsPath(path);
-    std::string moduleName = fsPath.stem().string();
+    std::string stem = fsPath.stem().string();
+    std::string parentDir = fsPath.parent_path().filename().string();
+    std::string moduleName = parentDir.empty() ? stem : (parentDir + "_" + stem);
 
     ENJIN_LOG_INFO(Script, "Compiling script '%s' as module '%s'",
                    path.c_str(), moduleName.c_str());
