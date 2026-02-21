@@ -175,10 +175,10 @@ Full Vulkan RT pipeline with hybrid raster+RT rendering, fully wired end-to-end.
 - **`RTPipeline`** - RT pipeline + shader binding table (SBT) construction
 - **RT Effects** - `RTShadows` (R16F), `RTReflections` (RGBA16F), `RTAmbientOcclusion` (R16F), `RTGlobalIllumination` (RGBA16F), `PathTracer` (progressive accumulation). Each has Initialize/Dispatch/Shutdown + config struct
 - **`SVGFDenoiser`** - 3-pass compute: temporal accumulation (alpha=0.05), variance estimation (3x3 box), a-trous wavelet (5 iterations, ping-pong buffers)
-- **`OIDNDenoiser`** - Intel Open Image Denoise alternative to SVGF. CMake option `ENJIN_RAYTRACING_OIDN` (OFF by default). Editor UI: denoiser type selector (SVGF / OIDN) in Rendering panel RT section. Files: `OIDNDenoiser.h/cpp`
+- **`OIDNDenoiser`** - Intel Open Image Denoise alternative to SVGF. CMake option `ENJIN_RAYTRACING_OIDN` (OFF by default). Editor UI: denoiser type selector (SVGF / OIDN) in Settings > Scene > Ray Tracing section. Files: `OIDNDenoiser.h/cpp`
 - **`RTCompositor`** - Fullscreen compute shader composites RT layers into scene HDR
 - **Integration** - `RenderSystem::InitializeRayTracing()` creates RT descriptor set (14 bindings), all subsystems. Runs after shadow pass, before main render pass. Only for Scene3D mode. Activates automatically on RT-capable hardware
-- **Editor** - "Ray Tracing" TreeNode in Rendering settings: supported indicator, enable toggle, mode dropdown (Hybrid/Path Trace), per-effect config sliders, path tracer SPP progress, SVGF settings, BLAS/instance stats
+- **Editor** - "Ray Tracing" TreeNode in Settings > Scene tab: supported indicator, enable toggle, mode dropdown (Hybrid/Path Trace), per-effect config sliders, path tracer SPP progress, SVGF settings, BLAS/instance stats
 - **`SceneRenderSettings`** - 24 RT config fields with full JSON serialize/deserialize and CaptureFromRuntime/ApplyToRuntime
 
 **RT Descriptor Set (Set 1)**:
@@ -236,17 +236,20 @@ struct PushConstants {
 
 - **`EditorLayer`** - Main editor class with ImGui panels
 - **Default UI sizing:** Body font 17px, heading 23px, monospace 16px. Frame padding 8x5, item spacing 10x7, scrollbar 16px, menu bar height 28px, 4px panel gaps.
-- **View menu:** Sub-menus for Panels, Settings (Editor Settings, Project Settings), Rendering (Rendering, Post Processing, Retro Effects), Tools. Game View and Scene List are top-level. "Show Colliders" toggle for physics debug wireframes.
-- **Panel names:** `EditorSettings` (bit 5), `PostProcessing` (bit 6), `RetroEffects` (bit 7), `Rendering` (bit 10 — skybox + shadows/ambient/cel/RT/display), `SaveDebug` (bit 31 — View > Tools > Save Debug). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
+- **View menu:** Sub-menus for Panels, Settings (System Settings, Project Settings, Scene Settings), Tools. Game View and Scene List are top-level. "Show Colliders" toggle for physics debug wireframes.
+- **Unified Settings window:** Single `Settings` window with 3-tab TabBar (System / Project / Scene). `OpenSettings(tab)` opens with programmatic tab selection. ~22 section drawer methods extracted from old monolithic panels. Any of the legacy panel bits (5/6/7/10/12) route to the unified window with the appropriate tab auto-selected. `EditorSettings` bit 5 is the canonical visibility bit. `SaveDebug` (bit 31 — View > Tools > Save Debug). All templates default to minimal 5-panel layout (Hierarchy, Inspector, Viewport, Console, AssetBrowser).
+  - **System tab:** Camera, Editor Performance, External IDE, Accessibility, Fonts
+  - **Project tab:** Project Mode, Window Icon, Physics, Frame Rate, Audio (HRTF/Occlusion/Transmission), Collision Groups, Build Config
+  - **Scene tab:** "Use Project Defaults" toggle, Skybox, Shadows, Ambient Lighting, Cel Shading, Display Options, Ray Tracing, Light Probes, Post Processing, Retro Effects, Environment
 - **`TemplateMarketplace`** - Bundled catalog of 15 curated templates across 5 categories (Starter, Genre, Systems, Retro, Advanced). `MarketplaceEntry` struct with id, name, description, category, author, version, license, projectMode, tags, accentColor, downloadCount, rating, ratingCount, fileSizeBytes, quality. Search (multi-field fuzzy), filter by category, sort by name/rating/downloads. Install/uninstall to `templates/` directory. Uses `IsOpen()/SetOpen()` pattern. Full marketplace UI: search bar, category filter chips, sort dropdown, grid layout with accent-colored cards. Menu: View > Tools > Template Marketplace. Files: `TemplateMarketplace.h/cpp`
 - **Notification toast system** - Stacked toast notifications in bottom-right corner. 4 types: Info (blue), Success (green), Warning (yellow), Error (red). Slide-in animation from right, fade-out on expiry (3s default, 5s for errors). `ShowNotification(message, type)` callable from EditorLayer. Wired into scene save/load, build complete/fail, template save/install/remove, model import, component remove (with undo hint)
-- **Accent color picker** - 6 harmony presets in Editor Settings (Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal). Click preset to auto-derive all 11 accent colors from single primary. Fine-tune individual colors in collapsible sub-tree. Reset to Theme Defaults button
-- **Theme preview** - Miniature 250x160 live preview pane in Editor Settings showing current theme's window bg, title bar, header, buttons, slider, checkbox, status bar. Updates in real-time when theme/accent changes
+- **Accent color picker** - 6 harmony presets in Settings > System (Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal). Click preset to auto-derive all 11 accent colors from single primary. Fine-tune individual colors in collapsible sub-tree. Reset to Theme Defaults button
+- **Theme preview** - Miniature 250x160 live preview pane in Settings > System showing current theme's window bg, title bar, header, buttons, slider, checkbox, status bar. Updates in real-time when theme/accent changes
 - **Keyboard shortcuts help modal** - Ctrl+Shift+/ opens searchable modal listing all editor shortcuts grouped by category (General, Viewport, Selection, Play Mode, Editor). Fuzzy search across shortcut keys, descriptions, and categories
 - **Hierarchy search** - Case-insensitive text filter in hierarchy panel; non-matching entities are hidden
 - **Delete confirmation** - Modal dialog ("Delete N entities?") before entity deletion with Cancel/Delete buttons
 - **Inspector tooltips** - 50+ tooltips across Transform, Material, Light, Camera, Rigidbody, and Collider component fields
-- **Project Settings panel:** Project mode, Window icon, Physics, Frame rate, Audio (HRTF toggle + status), Collision Groups, Build Config, Environment (weather/wind/world time/curvature).
+- **Settings > Project tab:** Project mode, Window icon, Physics, Frame rate, Audio (HRTF toggle + status), Collision Groups, Build Config. **Settings > Scene tab:** Environment (weather/wind/world time/curvature), plus all rendering/PP/retro sections.
 - **`ScenePicker`** - Ray casting for entity selection (click-to-select, marquee rect-pick)
 - **Physics debug wireframes** — `m_ShowColliderWireframes` toggle draws Box (yellow), Sphere (green-yellow, 3 circles), Capsule (orange) collider outlines + joint lines (6 colors by type)
 - **`PlayMode`** - Play/Pause/Stop game preview controls. Integrates `TieredSaveSystem` for save/load during play. On Stop, scene changes persist (objects are not restored to pre-play state); `PlayModeDiff` shows what changed for informational purposes. Camera position is restored on stop
@@ -298,7 +301,7 @@ struct PushConstants {
 
 ### Asset Libraries
 
-- **`FontLibrary`** - Curated catalog of 42 OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). Editor browser in Editor Settings > Fonts with search, category filter, and install status. Files: `FontLibrary.h/cpp`
+- **`FontLibrary`** - Curated catalog of 42 OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). Editor browser in Settings > System > Fonts with search, category filter, and install status. Files: `FontLibrary.h/cpp`
 - **`AssetLibrary`** - Curated CC0 asset catalog: 16 3D model packs (Kenney/Quaternius) and 15 2D sprite/tileset/UI packs across 14 categories (Architecture, Nature, Props, Characters, Vehicles, Weapons, Dungeon, Sci-Fi, UI Kits, Tilesets, Sprites, VFX, Backgrounds, Textures). Editor browser with search and category filter. Files: `AssetLibrary.h/cpp`
 
 ### Steam Audio HRTF + Occlusion
@@ -309,7 +312,7 @@ struct PushConstants {
 
 **Phase 2 (Occlusion & Transmission):** `BuildScene()` creates an `IPLScene` + `IPLStaticMesh` from ECS collider geometry (box → 12 tris, sphere → 20-tri icosahedron). `UpdateOcclusion()` raycasts source↔listener at ~10Hz, storing per-source `occlusion`/`transmissionFactor[3]`. `IPLDirectEffect` applies low-pass filtering in the audio callback before HRTF. Default acoustic material: absorption `{0.10, 0.20, 0.30}`, transmission `{0.04, 0.01, 0.005}` (concrete-like). `SimpleAudio::BuildSteamAudioScene()` collects geometry from `BoxColliderComponent` and `SphereColliderComponent` entities (capsules skipped). Called at PlayMode start and Player scene load.
 
-Thread safety: CreateSource/DestroySource are mutex-guarded; SetSourceDirection/UpdateOcclusion are main-thread only (benign race with audio thread f32 reads); Process runs on the audio thread; BuildScene/DestroyScene are not concurrent with audio. Editor UI: "Audio" section in Project Settings with HRTF, Occlusion, and Transmission toggles (Transmission disabled when Occlusion off). `EditorSettings::enableHRTF/enableOcclusion/enableTransmission` persisted in JSON. Files: `SteamAudioProcessor.h/cpp`
+Thread safety: CreateSource/DestroySource are mutex-guarded; SetSourceDirection/UpdateOcclusion are main-thread only (benign race with audio thread f32 reads); Process runs on the audio thread; BuildScene/DestroyScene are not concurrent with audio. Editor UI: "Audio" section in Settings > Project tab with HRTF, Occlusion, and Transmission toggles (Transmission disabled when Occlusion off). `SceneManager::m_EnableHRTF/m_EnableOcclusion/m_EnableTransmission` persisted in `.enjinproject` (migrated from EditorSettings; legacy `editor_settings.json` fields still read for backward compat). Files: `SteamAudioProcessor.h/cpp`
 
 ### Audio Mixer
 
@@ -328,7 +331,7 @@ Editor tool window (View > Tools > Audio Mixer) showing all AudioSourceComponent
 
 ### Window Icon
 
-Place `icon.png` (32x32 or 64x64) next to the executable. Loaded via stb_image + `glfwSetWindowIcon()`. Missing file uses OS default silently. Editor also supports a **Window Icon Picker** in Project Settings: `windowIconPath` on `EditorSettings` with JSON persistence, browse/apply/clear UI, and `Window::SetIcon()` virtual method (GLFW `stbi_load` + `glfwSetWindowIcon` implementation). Auto-applies on settings load.
+Place `icon.png` (32x32 or 64x64) next to the executable. Loaded via stb_image + `glfwSetWindowIcon()`. Missing file uses OS default silently. Editor also supports a **Window Icon Picker** in Settings > Project tab: `windowIconPath` on `SceneManager` persisted in `.enjinproject` (migrated from EditorSettings), browse/apply/clear UI, and `Window::SetIcon()` virtual method (GLFW `stbi_load` + `glfwSetWindowIcon` implementation). Auto-applies on settings load.
 
 ## Shader Workflow
 
