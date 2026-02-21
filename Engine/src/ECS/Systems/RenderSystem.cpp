@@ -16,6 +16,7 @@
 #include "Enjin/ECS/Components/Name.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/Vegetation.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -530,6 +531,7 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Auto-create meshes for water volume entities that don't have one yet
     EnsureWaterMeshes();
+    EnsureWater3DMeshes();
 
     // Regenerate terrain meshes when dirty (only iterate entities that have the component)
     {
@@ -1372,6 +1374,8 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
             }
 
             // Rasterize text texture if entity has a TextComponent
@@ -1732,6 +1736,8 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+            } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
             }
 
             // Text rendering
@@ -2767,6 +2773,7 @@ bool RenderSystem::IsPoolEligible(Entity entity) const {
     if (m_World->HasComponent<Terrain2DComponent>(entity)) return false;
     if (m_World->HasComponent<JellyMeshComponent>(entity)) return false;
     if (m_World->HasComponent<WaterVolumeComponent>(entity)) return false;
+    if (m_World->HasComponent<Water3DComponent>(entity)) return false;
     // Skinned meshes stay per-entity (bone deformation updates vertex data)
     if (m_World->HasComponent<AnimatorComponent>(entity)) return false;
     return true;
@@ -3676,6 +3683,8 @@ void RenderSystem::RenderEntity(Entity entity) {
             pushConstants.baseColor.z * (1.0f - fp) + waterVol->iceColor.z * fp
         );
         pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
+    } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+        pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
     }
 
     // Rasterize text texture if entity has a TextComponent
@@ -4602,6 +4611,25 @@ void RenderSystem::EnsureWaterMeshes() {
 
         ENJIN_LOG_INFO(Renderer, "Created water surface mesh for entity %llu (%.0f x %.0f)",
             entity, hx * 2.0f, hz * 2.0f);
+    }
+}
+
+void RenderSystem::EnsureWater3DMeshes() {
+    for (Entity entity : m_World->GetEntitiesWithComponent<Water3DComponent>()) {
+        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
+        if (!water3d) continue;
+        if (water3d->meshCreated && m_World->GetComponent<MeshComponent>(entity)) continue;
+
+        // Use Water3D to build the initial mesh on this entity
+        Effects::Water3D builder;
+        builder.Initialize(water3d->settings);
+        builder.BuildEntityMesh(m_World, entity);
+
+        SetupEntityBuffers(entity);
+        water3d->meshCreated = true;
+
+        ENJIN_LOG_INFO(Renderer, "Created Water3D surface mesh for entity %llu (%.0f x %.0f)",
+            entity, water3d->settings.width, water3d->settings.depth);
     }
 }
 

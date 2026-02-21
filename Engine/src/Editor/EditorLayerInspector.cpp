@@ -24,6 +24,7 @@
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -484,6 +485,11 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::WaterVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::WaterVolumeComponent>(e); },
             "waterVolume", DimensionTag::Only3D},
+        {"Water 3D", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::Water3DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::Water3DComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::Water3DComponent>(e); },
+            "water3D", DimensionTag::Only3D},
         {"Grass Volume", "Effects", nullptr,
             [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::GrassVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::GrassVolumeComponent>(e); },
@@ -933,6 +939,11 @@ void EditorLayer::DrawInspectorPanel() {
         // Water Volume component
         if (m_World->HasComponent<ECS::WaterVolumeComponent>(m_PrimarySelected)) {
             DrawWaterVolumeComponent(m_PrimarySelected);
+        }
+
+        // Water 3D component
+        if (m_World->HasComponent<ECS::Water3DComponent>(m_PrimarySelected)) {
+            DrawWater3DComponent(m_PrimarySelected);
         }
 
         // Grass Volume component

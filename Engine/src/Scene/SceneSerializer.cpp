@@ -8,6 +8,7 @@
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
 #include "Enjin/ECS/Components/Terrain.h"
@@ -562,6 +563,50 @@ ECS::WaterVolumeComponent DeserializeWaterVolumeComponent(const json& j) {
     if (j.contains("freezeRate")) volume.freezeRate = j["freezeRate"].get<f32>();
     if (j.contains("thawRate")) volume.thawRate = j["thawRate"].get<f32>();
     return volume;
+}
+
+json SerializeWater3DComponent(const ECS::Water3DComponent& w) {
+    json j;
+    j["width"] = RF(w.settings.width);
+    j["depth"] = RF(w.settings.depth);
+    j["tileSize"] = RF(w.settings.tileSize);
+    j["style"] = static_cast<u32>(w.settings.style);
+    j["shallowColor"] = SerializeVector3(w.settings.shallowColor);
+    j["deepColor"] = SerializeVector3(w.settings.deepColor);
+    j["opacity"] = RF(w.settings.opacity);
+    j["waveSpeed"] = RF(w.settings.waveSpeed);
+    j["waveHeight"] = RF(w.settings.waveHeight);
+    j["waveFrequency"] = RF(w.settings.waveFrequency);
+    j["waveDirection"] = SerializeVector2(w.settings.waveDirection);
+    j["uvScrollSpeed"] = SerializeVector2(w.settings.uvScrollSpeed);
+    j["reflectionStrength"] = RF(w.settings.reflectionStrength);
+    j["fresnelPower"] = RF(w.settings.fresnelPower);
+    j["enableFoam"] = w.settings.enableFoam;
+    j["foamThreshold"] = RF(w.settings.foamThreshold);
+    j["foamScale"] = RF(w.settings.foamScale);
+    return j;
+}
+
+ECS::Water3DComponent DeserializeWater3DComponent(const json& j) {
+    ECS::Water3DComponent w;
+    if (j.contains("width")) w.settings.width = j["width"].get<f32>();
+    if (j.contains("depth")) w.settings.depth = j["depth"].get<f32>();
+    if (j.contains("tileSize")) w.settings.tileSize = Math::Max(j["tileSize"].get<f32>(), 0.5f);
+    if (j.contains("style")) { u32 v = j["style"].get<u32>(); if (v <= 4) w.settings.style = static_cast<Effects::WaterStyle>(v); }
+    if (j.contains("shallowColor")) w.settings.shallowColor = DeserializeVector3(j["shallowColor"]);
+    if (j.contains("deepColor")) w.settings.deepColor = DeserializeVector3(j["deepColor"]);
+    if (j.contains("opacity")) w.settings.opacity = j["opacity"].get<f32>();
+    if (j.contains("waveSpeed")) w.settings.waveSpeed = j["waveSpeed"].get<f32>();
+    if (j.contains("waveHeight")) w.settings.waveHeight = j["waveHeight"].get<f32>();
+    if (j.contains("waveFrequency")) w.settings.waveFrequency = j["waveFrequency"].get<f32>();
+    if (j.contains("waveDirection")) w.settings.waveDirection = DeserializeVector2(j["waveDirection"]);
+    if (j.contains("uvScrollSpeed")) w.settings.uvScrollSpeed = DeserializeVector2(j["uvScrollSpeed"]);
+    if (j.contains("reflectionStrength")) w.settings.reflectionStrength = j["reflectionStrength"].get<f32>();
+    if (j.contains("fresnelPower")) w.settings.fresnelPower = j["fresnelPower"].get<f32>();
+    if (j.contains("enableFoam")) w.settings.enableFoam = JB(j["enableFoam"]);
+    if (j.contains("foamThreshold")) w.settings.foamThreshold = j["foamThreshold"].get<f32>();
+    if (j.contains("foamScale")) w.settings.foamScale = j["foamScale"].get<f32>();
+    return w;
 }
 
 json SerializeShrubVolumeComponent(const ECS::ShrubVolumeComponent& shrub) {
@@ -5390,6 +5435,11 @@ SerializationResult SceneSerializer::SaveEntities(const std::string& filepath, c
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
             }
 
+            if (m_World->HasComponent<ECS::Water3DComponent>(entity)) {
+                const auto* w3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
+                entityJson["water3D"] = SerializeWater3DComponent(*w3d);
+            }
+
             if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
                 const auto* shrub = m_World->GetComponent<ECS::ShrubVolumeComponent>(entity);
                 entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*shrub);
@@ -6016,6 +6066,10 @@ DeserializationResult SceneSerializer::LoadAdditive(const std::string& filepath)
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
             }
 
+            if (entityJson.contains("water3D")) {
+                m_World->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
+            }
+
             if (entityJson.contains("interactiveWater")) {
                 m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
             }
@@ -6553,6 +6607,11 @@ std::string SceneSerializer::SaveToString(const SerializationOptions& options) {
             if (m_World->HasComponent<ECS::WaterVolumeComponent>(entity)) {
                 const auto* volume = m_World->GetComponent<ECS::WaterVolumeComponent>(entity);
                 entityJson["waterVolume"] = SerializeWaterVolumeComponent(*volume);
+            }
+
+            if (m_World->HasComponent<ECS::Water3DComponent>(entity)) {
+                const auto* w3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
+                entityJson["water3D"] = SerializeWater3DComponent(*w3d);
             }
 
             if (m_World->HasComponent<ECS::ShrubVolumeComponent>(entity)) {
@@ -7133,6 +7192,10 @@ DeserializationResult SceneSerializer::LoadFromString(const std::string& jsonStr
                 m_World->AddComponent<ECS::WaterVolumeComponent>(entity, volume);
             }
 
+            if (entityJson.contains("water3D")) {
+                m_World->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
+            }
+
             if (entityJson.contains("interactiveWater")) {
                 m_World->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
             }
@@ -7620,6 +7683,8 @@ std::string SceneSerializer::SerializeEntityToString(ECS::World* world, ECS::Ent
             entityJson["weatherZone"] = SerializeWeatherZoneComponent(*world->GetComponent<ECS::WeatherZoneComponent>(entity));
         if (world->HasComponent<ECS::WaterVolumeComponent>(entity))
             entityJson["waterVolume"] = SerializeWaterVolumeComponent(*world->GetComponent<ECS::WaterVolumeComponent>(entity));
+        if (world->HasComponent<ECS::Water3DComponent>(entity))
+            entityJson["water3D"] = SerializeWater3DComponent(*world->GetComponent<ECS::Water3DComponent>(entity));
         if (world->HasComponent<ECS::ShrubVolumeComponent>(entity))
             entityJson["shrubVolume"] = SerializeShrubVolumeComponent(*world->GetComponent<ECS::ShrubVolumeComponent>(entity));
         if (world->HasComponent<ECS::TreeVolumeComponent>(entity))
@@ -7917,6 +7982,9 @@ ECS::Entity SceneSerializer::DeserializeEntityFromString(ECS::World* world, cons
         }
         if (entityJson.contains("waterVolume")) {
             world->AddComponent<ECS::WaterVolumeComponent>(entity, DeserializeWaterVolumeComponent(entityJson["waterVolume"]));
+        }
+        if (entityJson.contains("water3D")) {
+            world->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(entityJson["water3D"]));
         }
         if (entityJson.contains("interactiveWater")) {
             world->AddComponent<Effects::InteractiveWaterComponent>(entity, DeserializeInteractiveWaterComponent(entityJson["interactiveWater"]));
@@ -8216,6 +8284,8 @@ std::string SceneSerializer::SerializeOneComponent(ECS::World* world, ECS::Entit
             j = SerializeWeatherZoneComponent(*world->GetComponent<ECS::WeatherZoneComponent>(entity));
         else if (key == "waterVolume" && world->HasComponent<ECS::WaterVolumeComponent>(entity))
             j = SerializeWaterVolumeComponent(*world->GetComponent<ECS::WaterVolumeComponent>(entity));
+        else if (key == "water3D" && world->HasComponent<ECS::Water3DComponent>(entity))
+            j = SerializeWater3DComponent(*world->GetComponent<ECS::Water3DComponent>(entity));
         else if (key == "shrubVolume" && world->HasComponent<ECS::ShrubVolumeComponent>(entity))
             j = SerializeShrubVolumeComponent(*world->GetComponent<ECS::ShrubVolumeComponent>(entity));
         else if (key == "treeVolume" && world->HasComponent<ECS::TreeVolumeComponent>(entity))
@@ -8435,6 +8505,7 @@ bool SceneSerializer::DeserializeOneComponent(ECS::World* world, ECS::Entity ent
         if (key == "camera") { world->AddComponent<ECS::CameraComponent>(entity, DeserializeCameraComponent(j)); return true; }
         if (key == "weatherZone") { world->AddComponent<ECS::WeatherZoneComponent>(entity, DeserializeWeatherZoneComponent(j)); return true; }
         if (key == "waterVolume") { world->AddComponent<ECS::WaterVolumeComponent>(entity, DeserializeWaterVolumeComponent(j)); return true; }
+        if (key == "water3D") { world->AddComponent<ECS::Water3DComponent>(entity, DeserializeWater3DComponent(j)); return true; }
         if (key == "shrubVolume") { world->AddComponent<ECS::ShrubVolumeComponent>(entity, DeserializeShrubVolumeComponent(j)); return true; }
         if (key == "treeVolume") { world->AddComponent<ECS::TreeVolumeComponent>(entity, DeserializeTreeVolumeComponent(j)); return true; }
         if (key == "terrain") { world->AddComponent<ECS::TerrainComponent>(entity, DeserializeTerrainComponent(j)); return true; }

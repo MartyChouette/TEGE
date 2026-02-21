@@ -24,6 +24,7 @@
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -1094,6 +1095,72 @@ void EditorLayer::DrawWaterVolumeComponent(ECS::Entity entity) {
         ImGui::Spacing();
         ImGui::TextDisabled("Water surface is at entity's Y position");
         ImGui::TextDisabled("Half Extents define the area and depth");
+    }
+}
+
+void EditorLayer::DrawWater3DComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("[W] Water 3D", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("Water3DCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::Water3DComponent>(entity, "water3D", "Water 3D");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* w = m_World->GetComponent<ECS::Water3DComponent>(entity);
+        if (!w) return;
+
+        auto oldW = w->settings.width;
+        auto oldD = w->settings.depth;
+        auto oldT = w->settings.tileSize;
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Width", &w->settings.width, 1.0f, 1.0f, 1000.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Depth", &w->settings.depth, 1.0f, 1.0f, 1000.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Tile Size", &w->settings.tileSize, 0.1f, 0.5f, 20.0f);
+
+        const char* styleNames[] = {"Flat", "Animated", "VertexWave", "Reflective", "Refractive"};
+        int style = static_cast<int>(w->settings.style);
+        if (InspectorUndo::Combo(m_UndoRedo, "Style", &style, styleNames, 5))
+            w->settings.style = static_cast<Effects::WaterStyle>(style);
+
+        ImGui::Separator();
+        f32 sc[3] = {w->settings.shallowColor.x, w->settings.shallowColor.y, w->settings.shallowColor.z};
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Shallow Color", sc,
+                [w](f32 r, f32 g, f32 b) { w->settings.shallowColor = Math::Vector3(r, g, b); }))
+            w->settings.shallowColor = Math::Vector3(sc[0], sc[1], sc[2]);
+        f32 dc[3] = {w->settings.deepColor.x, w->settings.deepColor.y, w->settings.deepColor.z};
+        if (InspectorUndo::ColorEdit3(m_UndoRedo, "Deep Color", dc,
+                [w](f32 r, f32 g, f32 b) { w->settings.deepColor = Math::Vector3(r, g, b); }))
+            w->settings.deepColor = Math::Vector3(dc[0], dc[1], dc[2]);
+        InspectorUndo::SliderFloat(m_UndoRedo, "Opacity", &w->settings.opacity, 0.0f, 1.0f);
+
+        ImGui::Separator();
+        InspectorUndo::DragFloat(m_UndoRedo, "Wave Speed", &w->settings.waveSpeed, 0.1f, 0.0f, 10.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Wave Height", &w->settings.waveHeight, 0.01f, 0.0f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Wave Frequency", &w->settings.waveFrequency, 0.01f, 0.01f, 5.0f);
+
+        ImGui::Separator();
+        InspectorUndo::Checkbox(m_UndoRedo, "Enable Foam", &w->settings.enableFoam);
+        if (w->settings.enableFoam) {
+            InspectorUndo::SliderFloat(m_UndoRedo, "Foam Threshold", &w->settings.foamThreshold, 0.0f, 1.0f);
+            InspectorUndo::DragFloat(m_UndoRedo, "Foam Scale", &w->settings.foamScale, 0.1f, 0.1f, 20.0f);
+        }
+
+        // Force mesh rebuild if size/tessellation changed
+        if (w->settings.width != oldW || w->settings.depth != oldD || w->settings.tileSize != oldT) {
+            w->meshCreated = false;
+            if (m_World->HasComponent<ECS::MeshComponent>(entity)) {
+                m_World->RemoveComponent<ECS::MeshComponent>(entity);
+            }
+            if (m_World->HasComponent<ECS::MaterialComponent>(entity)) {
+                m_World->RemoveComponent<ECS::MaterialComponent>(entity);
+            }
+            if (m_RenderSystem) {
+                m_RenderSystem->OnEntityRemoved(entity);
+            }
+        }
     }
 }
 

@@ -24,6 +24,7 @@
 #include "Enjin/Physics/PhysicsTypes2D.h"
 #include "Enjin/ECS/Components/WeatherZone.h"
 #include "Enjin/ECS/Components/WaterVolume.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/ECS/Components/GrassVolume.h"
 #include "Enjin/ECS/Components/ShrubVolume.h"
 #include "Enjin/ECS/Components/TreeVolume.h"
@@ -815,6 +816,15 @@ void EditorLayer::DrawMenuBar() {
                         m_World->AddComponent<ECS::TransformComponent>(entity);
                         m_World->AddComponent<ECS::WaterVolumeComponent>(entity);
                         m_World->AddComponent<ECS::NameComponent>(entity, "Water Volume");
+                        SelectEntity(entity);
+                    }
+                }
+                if (ImGui::MenuItem("Water 3D")) {
+                    if (m_World) {
+                        ECS::Entity entity = m_World->CreateEntity();
+                        m_World->AddComponent<ECS::TransformComponent>(entity);
+                        m_World->AddComponent<ECS::Water3DComponent>(entity);
+                        m_World->AddComponent<ECS::NameComponent>(entity, "Water 3D");
                         SelectEntity(entity);
                     }
                 }

@@ -37,6 +37,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Audio/AudioSystem.h"
 #include "Enjin/Audio/SimpleAudio.h"
 #include "Enjin/Build/AssetReader.h"
@@ -721,6 +722,14 @@ public:
                 *m_World->GetComponent<Enjin::ECS::MeshComponent>(entity) = std::move(mesh);
             else
                 m_World->AddComponent<Enjin::ECS::MeshComponent>(entity, std::move(mesh));
+        }
+        // Update Water3D animated surfaces
+        m_Water3D.Update(deltaTime);
+        for (auto entity : m_World->GetEntitiesWithComponent<Enjin::ECS::Water3DComponent>()) {
+            auto* water3d = m_World->GetComponent<Enjin::ECS::Water3DComponent>(entity);
+            if (!water3d || !water3d->meshCreated) continue;
+            m_Water3D.Initialize(water3d->settings);
+            m_Water3D.UpdateEntityMesh(m_World.get(), entity);
         }
         m_FluidSimulation.Update(deltaTime, m_World.get());
         m_FluidTerrainCoupling.Update(deltaTime, m_World.get(), m_FluidSimulation);
@@ -1552,8 +1561,6 @@ private:
     Enjin::Effects::WorldTimeSystem m_WorldTime;
     Enjin::Effects::SeasonalWeatherSystem m_SeasonalWeather;
 
-    // Water3D — settings object for VS node access; rendering integration pending (no water
-    // render pass or shader pipeline in RenderSystem yet).
     Enjin::Effects::Water3D m_Water3D;
 
     // TODO(F11): RetroEffects — RetroEffects is a settings/config class (resolution, dither,

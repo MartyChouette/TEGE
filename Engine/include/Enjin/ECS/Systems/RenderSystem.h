@@ -567,6 +567,7 @@ private:
 
     // Water surface mesh generation
     void EnsureWaterMeshes();
+    void EnsureWater3DMeshes();
 
     // Helper to load or get cached texture
     std::shared_ptr<Renderer::Texture> GetOrLoadTexture(const std::string& path);

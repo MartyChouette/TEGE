@@ -3,6 +3,7 @@
 #include "Enjin/ECS/Systems/RenderSystem.h"
 #include "Enjin/Effects/ParticleSystem.h"
 #include "Enjin/Effects/Water.h"
+#include "Enjin/ECS/Components/Water3D.h"
 #include "Enjin/Scene/SceneSerializer.h"
 #include "Enjin/Scene/SceneManager.h"
 #include "Enjin/Platform/Input.h"
@@ -546,6 +547,16 @@ void PlayMode::Update(f32 deltaTime) {
                 *m_World->GetComponent<ECS::MeshComponent>(entity) = std::move(mesh);
             else
                 m_World->AddComponent<ECS::MeshComponent>(entity, std::move(mesh));
+        }
+        // Update Water3D animated surfaces
+        if (m_Water3D) {
+            m_Water3D->Update(deltaTime);
+            for (auto entity : m_World->GetEntitiesWithComponent<ECS::Water3DComponent>()) {
+                auto* water3d = m_World->GetComponent<ECS::Water3DComponent>(entity);
+                if (!water3d || !water3d->meshCreated) continue;
+                m_Water3D->Initialize(water3d->settings);
+                m_Water3D->UpdateEntityMesh(m_World, entity);
+            }
         }
         m_EntityEventBus.ProcessDeferred();
 
