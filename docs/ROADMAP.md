@@ -17,7 +17,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
 | **Platforms** | Mobile (Android/iOS) | P4 |
 | **Platforms** | VR/XR (OpenXR) | P4 |
-| **Editor** | Settings UX restructure (System/Project/Scene tiers) | P2 |
+| **Editor** | ~~Settings UX restructure (System/Project/Scene tiers)~~ | ✅ Complete |
 | **Editor** | Networking config editor UI | P3 |
 | **RT** | OptiX AI Denoiser integration (NVIDIA) | P4 |
 | **RT** | RT Caustics (photon mapping / path traced) | P4 |
@@ -41,12 +41,16 @@ This document captures detailed technical plans, performance findings, and strat
 - How: Edit `config/network_settings.json` (loaded at host/join). No editor UI yet.
 - Safe defaults ship in repo; values are runtime-tunable for different games/traffic profiles.
 
-**Needs Restructure (Settings UX)**
-- Consolidate settings into three tiers with clear ownership:
-  - System Settings (editor/app-level, machine or installation scope)
-  - Project Settings (game-specific, shared in repo)
-  - Scene Settings (per-scene overrides, local to scene file)
-- Networking config should live under Project Settings with optional Scene overrides.
+**Settings UX Restructure ✅ COMPLETE (2026-02-20)**
+- Consolidated 5 separate panels (Editor Settings, Project Settings, Rendering, Post Processing, Retro Effects) into a single unified Settings window with 3 tabs:
+  - **System** (machine-local): Camera, Editor Performance, External IDE, Accessibility, Fonts
+  - **Project** (shared in repo via `.enjinproject`): Project Mode, Window Icon, Physics, Frame Rate, Audio (HRTF/Occlusion/Transmission), Collision Groups, Build Config
+  - **Scene** (per-scene overrides): "Use Project Defaults" toggle, Skybox, Shadows, Ambient Lighting, Cel Shading, Display Options, Ray Tracing, Light Probes, Post Processing, Retro Effects, Environment
+- Migrated HRTF/audio, window icon, and build config from machine-local `editor_settings.json` to project-level `SceneManager` (`.enjinproject`) with backward-compat migration on first load
+- ~22 section drawer methods extracted from monolithic panel functions for reusability
+- Menu bar restructured: View > Settings > System Settings / Project Settings / Scene Settings
+- Command palette updated with 3 new settings commands
+- Networking config should live under Project Settings with optional Scene overrides (future).
 
 ## Performance Optimization Findings
 
@@ -600,7 +604,8 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Template marketplace | Medium | Medium | P3 | ✅ Complete (TemplateMarketplace.h/cpp, 15 curated templates, search/filter/sort, install/uninstall, View > Tools) |
 | Notification toast system | Medium | Low | P3 | ✅ Complete (4 types, slide-in/fade-out, wired to save/build/template/scene-load/model-import/component-remove events) |
 | Accent color harmony presets | Medium | Low | P3 | ✅ Complete (6 presets, auto-derive 11 accent colors, fine-tune in sub-tree) |
-| Theme preview pane | Low | Low | P3 | ✅ Complete (250x160 live preview in Editor Settings) |
+| Theme preview pane | Low | Low | P3 | ✅ Complete (250x160 live preview in Settings > System) |
+| Settings UX restructure | High | Medium | P2 | ✅ Complete (unified 3-tab window: System/Project/Scene, data migration to .enjinproject, ~22 section drawers) |
 | Keyboard shortcuts help | Medium | Low | P3 | ✅ Complete (Ctrl+Shift+/, searchable modal, 5 categories) |
 | Hierarchy search bar | Medium | Low | P3 | ✅ Complete (case-insensitive text filter, hides non-matching entities) |
 | Entity delete confirmation | Low | Low | P3 | ✅ Complete (modal dialog with Cancel/Delete) |
@@ -650,7 +655,8 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 - ~~**Planet Gravity Template**~~ ✅ — Super Mario Galaxy-style spherical gravity third-person platformer (GravityZoneComponent Point mode, SurfaceAlignedController, orbit camera, 4 surface platforms, 6 coins)
 - ~~**Editor Accent Color & Theming**~~ ✅ — ~~Replace blue accent with TEGE brand sage green~~ (done), ~~customizable accent colors in editor settings~~ (done), ~~accent color harmony presets~~ (done — 6 presets: Default Blue, Warm Orange, Forest Green, Royal Purple, Crimson Red, Teal, auto-derive 11 colors), ~~theme preview pane~~ (done — 250x160 live preview), ~~notification toasts~~ (done — 4 types, slide-in/fade-out), ~~keyboard shortcuts help~~ (done — Ctrl+Shift+/, searchable, categorized), rounded corners, softer panel borders, distinct visual identity
 - ~~**Curved Grid Snapping**~~ ✅ — Snap entity placement to curved/spherical grid surfaces with orientation alignment. Surface Snap mode projects entities onto terrain heightmaps and sphere gravity zones, with normal alignment (yaw-preserving) and settings persistence. `Quaternion::FromToRotation()` utility added
-- ~~**Improved Icon/Window Inspector**~~ ✅ — Entity icons in hierarchy (bracket-tagged by primary component type), component icons on inspector headers, window icon picker in Project Settings with browse/apply/persist
+- ~~**Improved Icon/Window Inspector**~~ ✅ — Entity icons in hierarchy (bracket-tagged by primary component type), component icons on inspector headers, window icon picker in Settings > Project with browse/apply/persist
+- ~~**Settings UX Restructure**~~ ✅ — Unified 5 separate panels into single Settings window with 3 tabs (System/Project/Scene). Extracted ~22 section drawer methods. Migrated HRTF/audio, window icon, and build config from EditorSettings to SceneManager (.enjinproject) with backward-compat migration. Menu bar restructured (View > Settings > System/Project/Scene). Command palette updated
 - ~~**Asset Browser Panel**~~ ✅ — Grid/list view toggle with cached directory listing, image thumbnails via texture cache, search/filter bar, hover tooltip with 256px preview, drag source for future drag-to-viewport, type-colored labels (3D/SCN/SHD/IMG/AS/SFX/PFB), adjustable thumbnail size
 
 ### Partially Complete
@@ -740,7 +746,7 @@ All pipeline optimization items resolved: multi-threaded command buffer recordin
 - **Tilt-Shift / Miniature Effect** ✅ — Post-process blur with configurable focus Y position, band width, and blur amount. Full PostProcessSettings UBO fields, SceneRenderSettings config, JSON serialization, editor UI. GPU shader: 25-tap blur weighted by screen-Y distance from focus band
 - **Bokeh Depth of Field** ✅ — Focal distance, focal range, near/far blur strength, bokeh size, aperture shape (Circle/Hexagon/Octagon), CoC debug visualization mode. Full pipeline infrastructure with serialization. GPU shader: 16-tap Poisson disc blur weighted by Circle of Confusion, depth linearization with camera near/far planes
 - ~~**Cel Shading / Toon Rendering**~~ ✅ — Configurable diffuse band quantization (2-8 bands) and hard specular cutoff in LightingUBO, per-material opt-out (`excludeFromCelShading`), post-process Sobel edge detection outlines on depth (configurable thickness, threshold, color), full editor UI in Rendering + Post-Processing settings, scene render settings serialization
-- ~~**Full-Screen Stippling & Dither**~~ ✅ — Post-process stipple/dither effect with 8 combinable patterns via bitmask (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook, Ordered 2x2, Floyd-Steinberg — any combination, thresholds averaged), 3 color modes (Monochrome, Duo-Tone, Full Color), configurable scale/density/strength, foreground/background color pickers, full editor UI in Post Processing panel with checkbox grid, scene render settings serialization
+- ~~**Full-Screen Stippling & Dither**~~ ✅ — Post-process stipple/dither effect with 8 combinable patterns via bitmask (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook, Ordered 2x2, Floyd-Steinberg — any combination, thresholds averaged), 3 color modes (Monochrome, Duo-Tone, Full Color), configurable scale/density/strength, foreground/background color pickers, full editor UI in Settings > Scene > Post Processing with checkbox grid, scene render settings serialization
 
 ### Artistic Surface Materials ✅ COMPLETE
 
@@ -1347,7 +1353,7 @@ Every built-in template should ship with a thoughtfully designed default layout:
 - Stored in `editor_settings.json` as `defaultProjectPath`
 - New Project dialog pre-fills this path
 - Open Project browser shows this directory by default
-- Can be changed anytime in Project Settings > General
+- Can be changed anytime in Settings > Project
 
 ### Software Distribution & Installation
 
@@ -1395,7 +1401,7 @@ All planned artistic rendering techniques have been implemented.
 
 ### Lighting & Global Illumination
 
-- ~~**Spherical Harmonics Lighting**~~ ✅ — SH probe baking (L2, 9 coefficients) for diffuse indirect lighting. Probe grid placement tool in editor (per-probe list with bake status colors, individual Bake/Delete buttons, L0 irradiance preview, manual probe placement via DragFloat3 + Add), viewport visualization (green=baked, red=empty spheres, yellow grid bounds AABB), blend weights. Wired to renderer via LightingUBO shProbeIrradiance. Bake button in Rendering settings
+- ~~**Spherical Harmonics Lighting**~~ ✅ — SH probe baking (L2, 9 coefficients) for diffuse indirect lighting. Probe grid placement tool in editor (per-probe list with bake status colors, individual Bake/Delete buttons, L0 irradiance preview, manual probe placement via DragFloat3 + Add), viewport visualization (green=baked, red=empty spheres, yellow grid bounds AABB), blend weights. Wired to renderer via LightingUBO shProbeIrradiance. Bake button in Settings > Scene > Light Probes
 - ~~**Beam Tracing and Cone Tracing (VXGI)**~~ ✅ — Voxel cone tracing for real-time diffuse/specular GI, AO, and god rays via mip pyramid. Voxelized scene representation
 
 ### SDF & Distance Field Rendering
@@ -1452,7 +1458,7 @@ Goal: Ship a curated, commercially licensable library so users have beautiful as
 
 ### Font Library ✅ COMPLETE
 
-42 curated OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). `FontLibrary.h/cpp` + `AssetLibrary.h/cpp`. Editor browser in Editor Settings > Fonts with search, category filter, and install status.
+42 curated OFL/Apache-licensed fonts across 8 categories (Sans-Serif, Serif, Monospace, Display, Handwriting, Pixel, Fantasy, Sci-Fi). `FontLibrary.h/cpp` + `AssetLibrary.h/cpp`. Editor browser in Settings > System > Fonts with search, category filter, and install status.
 
 - Categories: Sans-serif (UI/HUD), Serif (narrative/books), Monospace (code/terminal), Display/decorative (titles/logos), Handwriting/script, Pixel/retro, Fantasy/medieval, Sci-fi/futuristic
 - Sources: Google Fonts (OFL), Font Squirrel (verified commercial licenses), The League of Moveable Type
