@@ -81,6 +81,11 @@ void TemplateMarketplace::BuildCatalog() {
         0.6f, 0.3f, 0.1f, 890, 4.4f, 37, 52800,
         {"roguelike", "dungeon", "procedural", "ai", "topdown"});
 
+    add("topdown2d_action", "2D Top-Down Action", "Multi-room dungeon action with 4 enemy types, destructible crates, fire particles, locked door, teleporter, HUD overlay, and vignette post-processing.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Stable,
+        0.3f, 0.6f, 0.9f, 1450, 4.6f, 48, 62400,
+        {"topdown", "action", "dungeon", "2d", "enemies", "particles", "hud"});
+
     add("fps_arena", "FPS Arena", "Fast-paced first-person shooter arena with weapon pickups, respawn points, and basic AI bots.",
         "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
         0.8f, 0.1f, 0.1f, 1100, 4.5f, 40, 68200,

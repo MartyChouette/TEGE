@@ -671,7 +671,7 @@ namespace {
         // -- Foundations (Stable) --
         { "blank",        "Blank",              "Empty scene\nStart from scratch",                       ImVec4(0.5f, 0.5f, 0.5f, 1.0f), kTMPL_ALL, Editor::MaturityTier::Stable },
         { "platformer",   "2D Platformer",      "Side-scrolling\nWall jump + particles + tweens",        ImVec4(0.3f, 0.8f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
-        { "topdown2d",    "2D Top-Down Action", "Top-down action\nDash + health + AI patrol",            ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        { "topdown2d",    "2D Top-Down Action", "Dungeon action\nMulti-room + enemies + HUD + particles",  ImVec4(0.3f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
         { "thirdperson",  "3D Third Person",    "Over-the-shoulder\nShadows + obstacles + point light",  ImVec4(0.8f, 0.3f, 0.3f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         { "firstperson",  "3D First Person",    "Eye-level FPS\nCorridor walls + warm lighting",         ImVec4(0.7f, 0.3f, 0.8f, 1.0f), kTMPL_3D, Editor::MaturityTier::Stable },
         // -- Genre Showcases --
@@ -2407,20 +2407,75 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         }
 
     } else if (templateId == "topdown2d") {
-        // Ground
+        // ═══════════════════════════════════════════════════
+        // 2D Top-Down Action — Multi-room dungeon
+        // ═══════════════════════════════════════════════════
+
+        // --- Ground planes (per-room tints) ---
         {
-            ECS::Entity ground = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
-            auto& t = m_World->AddComponent<ECS::TransformComponent>(ground);
-            t.position = Math::Vector3(0.0f, 0.0f, -0.1f);
-            t.scale = Math::Vector3(30.0f, 30.0f, 1.0f);
-            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(ground);
-            mat.baseColor = Math::Vector3(0.35f, 0.55f, 0.3f);
-            mat.roughness = 0.9f;
-            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            struct FloorDef { Math::Vector3 pos; Math::Vector3 scl; Math::Vector3 col; const char* name; };
+            const FloorDef floors[] = {
+                {{0, 0, -0.1f},   {20, 20, 1}, {0.25f, 0.25f, 0.28f}, "Ground Main"},
+                {{13, 0, -0.1f},  {6, 4, 1},   {0.28f, 0.25f, 0.25f}, "Ground Corridor East"},
+                {{22, 0, -0.1f},  {12, 12, 1}, {0.30f, 0.22f, 0.22f}, "Ground East Wing"},
+                {{0, 12, -0.1f},  {4, 4, 1},   {0.25f, 0.22f, 0.28f}, "Ground Corridor North"},
+                {{0, 18, -0.1f},  {8, 8, 1},   {0.20f, 0.18f, 0.25f}, "Ground North Alcove"},
+            };
+            for (auto& f : floors) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, f.name);
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = f.pos; t.scale = f.scl;
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = f.col; mat.roughness = 0.9f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            }
         }
 
-        // Player
+        // --- Wall segments (dungeon perimeter + room dividers) ---
+        {
+            struct WallDef { Math::Vector3 pos; f32 hw; f32 hh; };
+            const WallDef walls[] = {
+                // Main room
+                {{0, -10, 0},    10.0f, 0.25f},   // South
+                {{-10, 0, 0},    0.25f, 10.0f},   // West
+                {{-6, 10, 0},    4.0f,  0.25f},   // North-L (gap for north corridor)
+                {{6, 10, 0},     4.0f,  0.25f},   // North-R
+                {{10, 6, 0},     0.25f, 4.0f},    // East-T (gap for east corridor)
+                {{10, -6, 0},    0.25f, 4.0f},    // East-B
+                // East corridor
+                {{13, 2, 0},     3.0f,  0.25f},
+                {{13, -2, 0},    3.0f,  0.25f},
+                // East wing
+                {{22, 6, 0},     6.0f,  0.25f},
+                {{22, -6, 0},    6.0f,  0.25f},
+                {{28, 0, 0},     0.25f, 6.25f},
+                // North corridor
+                {{-2, 12, 0},    0.25f, 2.0f},
+                {{2, 12, 0},     0.25f, 2.0f},
+                // North alcove
+                {{0, 22, 0},     4.0f,  0.25f},
+                {{-4, 18, 0},    0.25f, 4.0f},
+                {{4, 18, 0},     0.25f, 4.0f},
+                {{-3, 14, 0},    1.0f,  0.25f},   // South-L (gap for corridor)
+                {{3, 14, 0},     1.0f,  0.25f},   // South-R
+            };
+            const Math::Vector3 wallColor(0.35f, 0.3f, 0.25f);
+            int wIdx = 0;
+            for (auto& w : walls) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Wall " + std::to_string(wIdx++));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = w.pos;
+                t.scale = Math::Vector3(w.hw * 2.0f, w.hh * 2.0f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = wallColor;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                addBoxCollider2D(e, w.hw, w.hh);
+            }
+        }
+
+        // --- Player (enhanced) ---
         ECS::Entity player = createPlayer2D("Player");
         {
             auto& ctrl = m_World->AddComponent<ECS::TopDown2DController>(player);
@@ -2429,9 +2484,16 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
             hp.maxHealth = 100.0f;
             hp.currentHealth = 100.0f;
+            hp.regenRate = 2.0f;
+            hp.regenDelay = 3.0f;
+            hp.invulnerabilityTime = 0.3f;
+            auto& inv = m_World->AddComponent<ECS::InventoryComponent>(player);
+            inv.maxSlots = 10;
+            m_World->AddComponent<ECS::TagComponent>(player).tags.push_back("player");
+            addCapsuleCollider2D(player, 0.4f, 1.0f, false);
         }
 
-        // Game camera with 2D follow
+        // --- Camera ---
         {
             SetupCameraForController(player, "TopDown2D");
             ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
@@ -2440,133 +2502,410 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 follow.followTarget = player;
                 follow.followSmoothing = 6.0f;
                 follow.deadZoneSize = Math::Vector2(1.5f, 1.5f);
+                follow.lookAheadDistance = 1.5f;
             }
         }
 
-        // Arena walls
+        // --- Enemies (4 types, 6 total) ---
         {
-            const Math::Vector3 wPos[] = { {0, 15, 0}, {0, -15, 0}, {15, 0, 0}, {-15, 0, 0} };
-            const Math::Vector3 wScl[] = { {30, 0.5f, 1}, {30, 0.5f, 1}, {0.5f, 30, 1}, {0.5f, 30, 1} };
-            const char* wNames[] = { "Wall Top", "Wall Bottom", "Wall Right", "Wall Left" };
-            for (int i = 0; i < 4; ++i) {
-                ECS::Entity wall = m_World->CreateEntity();
-                m_World->AddComponent<ECS::NameComponent>(wall, wNames[i]);
-                auto& t = m_World->AddComponent<ECS::TransformComponent>(wall);
-                t.position = wPos[i];
-                t.scale = wScl[i];
-                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(wall);
-                mat.baseColor = Math::Vector3(0.4f, 0.35f, 0.3f);
-                m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                addBoxCollider2D(wall, wScl[i].x * 0.5f, wScl[i].y * 0.5f);
-            }
-        }
-
-        // Enemies - two patrolling
-        {
-            const Math::Vector3 ePos[] = { {5, 5, 0}, {-6, -4, 0} };
-            const Math::Vector3 eCol[] = { {0.9f, 0.2f, 0.2f}, {0.8f, 0.3f, 0.1f} };
-            const char* eNames[] = { "Enemy Scout", "Enemy Brute" };
+            // Scout ×2 (main room — diamond patrol, chase range 8)
+            const Math::Vector3 scoutPos[] = {{5, 5, 0}, {-5, -5, 0}};
+            const std::vector<Math::Vector3> scoutPatrols[] = {
+                {{5, 5, 0}, {5, -5, 0}, {-5, -5, 0}, {-5, 5, 0}},
+                {{-5, -5, 0}, {-5, 5, 0}, {5, 5, 0}, {5, -5, 0}},
+            };
             for (int i = 0; i < 2; ++i) {
-                ECS::Entity enemy = m_World->CreateEntity();
-                m_World->AddComponent<ECS::NameComponent>(enemy, eNames[i]);
-                auto& t = m_World->AddComponent<ECS::TransformComponent>(enemy);
-                t.position = ePos[i];
-                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(enemy);
-                mat.baseColor = eCol[i];
-                m_World->AddComponent<ECS::MeshComponent>(enemy, Renderer::MeshFactory::CreateCapsule2D(0.5f, 1.0f));
-                auto& hp = m_World->AddComponent<ECS::HealthComponent>(enemy);
-                hp.maxHealth = i == 0 ? 30.0f : 60.0f;
-                hp.currentHealth = hp.maxHealth;
-                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(enemy);
-                dmg.damage = i == 0 ? 10.0f : 20.0f;
-                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(enemy);
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Scout " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = scoutPos[i];
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.9f, 0.2f, 0.2f);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCapsule2D(0.5f, 1.0f));
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(e);
+                hp.maxHealth = 30.0f; hp.currentHealth = 30.0f;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
+                dmg.damage = 10.0f;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
                 ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
-                ai.moveSpeed = i == 0 ? 3.0f : 1.5f;
+                ai.moveSpeed = 3.5f;
                 ai.is2D = true;
-                ai.patrolPoints = i == 0
-                    ? std::vector<Math::Vector3>{ {5, 5, 0}, {5, -5, 0}, {-5, -5, 0}, {-5, 5, 0} }
-                    : std::vector<Math::Vector3>{ {-6, -4, 0}, {6, -4, 0} };
+                ai.detectionRange = 8.0f;
+                ai.patrolPoints = scoutPatrols[i];
+                m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+            }
+
+            // Brute (east wing — short patrol, knockback, chase range 6)
+            {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Brute");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(22, 2, 0);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.9f, 0.5f, 0.1f);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCapsule2D(0.6f, 1.2f));
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(e);
+                hp.maxHealth = 80.0f; hp.currentHealth = 80.0f;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
+                dmg.damage = 25.0f;
+                dmg.knockbackForce = 3.0f;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
+                ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                ai.moveSpeed = 1.5f;
+                ai.is2D = true;
+                ai.detectionRange = 6.0f;
+                ai.patrolPoints = {{20, 2, 0}, {24, 2, 0}};
+                m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+            }
+
+            // Archer (east wing — ranged patrol, chase 12, flees when close)
+            {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Archer");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(24, -3, 0);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.6f, 0.2f, 0.8f);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCapsule2D(0.4f, 0.9f));
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(e);
+                hp.maxHealth = 25.0f; hp.currentHealth = 25.0f;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
+                dmg.damage = 15.0f;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
+                ai.currentState = ECS::AIControllerComponent::AIState::Patrol;
+                ai.moveSpeed = 2.5f;
+                ai.is2D = true;
+                ai.detectionRange = 12.0f;
+                ai.fleeDistance = 5.0f;
+                ai.patrolPoints = {{24, -3, 0}, {20, -3, 0}};
+                m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+            }
+
+            // Boss Guardian (north alcove — idle until triggered, chase 15)
+            {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Boss Guardian");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(0, 18, 0);
+                t.scale = Math::Vector3(1.2f, 1.2f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.5f, 0.1f, 0.1f);
+                mat.emissiveColor = Math::Vector3(0.8f, 0.1f, 0.05f);
+                mat.emissiveStrength = 0.4f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCapsule2D(0.6f, 1.2f));
+                auto& hp = m_World->AddComponent<ECS::HealthComponent>(e);
+                hp.maxHealth = 150.0f; hp.currentHealth = 150.0f;
+                auto& dmg = m_World->AddComponent<ECS::DamageComponent>(e);
+                dmg.damage = 30.0f;
+                dmg.knockbackForce = 5.0f;
+                auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(e);
+                ai.currentState = ECS::AIControllerComponent::AIState::Idle;
+                ai.moveSpeed = 2.0f;
+                ai.is2D = true;
+                ai.detectionRange = 15.0f;
+                m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
+                ApplyParticlePreset(pe, "Sparks");
+                pe.emissionRate = 5.0f;
             }
         }
 
-        // Health pickup
+        // --- Pickups & Items ---
         {
-            ECS::Entity pickup = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(pickup, "Health Pickup");
-            auto& t = m_World->AddComponent<ECS::TransformComponent>(pickup);
-            t.position = Math::Vector3(-4.0f, -3.0f, 0.0f);
-            t.scale = Math::Vector3(0.8f, 0.8f, 1.0f);
-            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(pickup);
-            mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.3f);
-            mat.emissiveColor = Math::Vector3(0.2f, 0.9f, 0.3f);
-            mat.emissiveStrength = 0.3f;
-            m_World->AddComponent<ECS::MeshComponent>(pickup, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-            auto& pick = m_World->AddComponent<ECS::PickupComponent>(pickup);
-            pick.type = ECS::PickupComponent::PickupType::Health;
-            pick.value = 25.0f;
-            auto& tw = m_World->AddComponent<ECS::TweenComponent>(pickup);
-            tw.autoPlay = true;
-            ECS::TweenEntry bob;
-            bob.property = ECS::TweenProperty::Position;
-            bob.easing = ECS::EasingType::EaseInOutSine;
-            bob.mode = ECS::TweenMode::PingPong;
-            bob.startValue = Math::Vector3(-4.0f, -3.0f, 0.0f);
-            bob.endValue = Math::Vector3(-4.0f, -2.5f, 0.0f);
-            bob.duration = 1.2f;
-            bob.useCurrentAsStart = false;
-            tw.tweens.push_back(bob);
-        }
+            // Health Potion ×2 (green emissive, bobbing, magnet to player)
+            const Math::Vector3 hpPos[] = {{-7, -7, 0}, {7, 7, 0}};
+            for (int i = 0; i < 2; ++i) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Health Potion " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = hpPos[i];
+                t.scale = Math::Vector3(0.8f, 0.8f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.2f, 0.9f, 0.3f);
+                mat.emissiveColor = Math::Vector3(0.2f, 0.9f, 0.3f);
+                mat.emissiveStrength = 0.3f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
+                pick.type = ECS::PickupComponent::PickupType::Health;
+                pick.value = 25.0f;
+                pick.magnetToPlayer = true;
+                pick.magnetRange = 3.0f;
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
+                tw.autoPlay = true;
+                ECS::TweenEntry bob;
+                bob.property = ECS::TweenProperty::Position;
+                bob.easing = ECS::EasingType::EaseInOutSine;
+                bob.mode = ECS::TweenMode::PingPong;
+                bob.startValue = hpPos[i];
+                bob.endValue = hpPos[i] + Math::Vector3(0, 0.5f, 0);
+                bob.duration = 1.2f;
+                bob.useCurrentAsStart = false;
+                tw.tweens.push_back(bob);
+            }
 
-        // Obstacles
-        {
-            const Math::Vector3 oPos[] = { {-6, 2, 0}, {3, -7, 0}, {8, 4, 0} };
-            const Math::Vector3 oScl[] = { {2, 2, 1}, {1.5f, 1.5f, 1}, {1.8f, 1.8f, 1} };
-            const char* oNames[] = { "Crate", "Barrel", "Crate 2" };
-            const Math::Vector3 oColors[] = { {0.55f, 0.4f, 0.25f}, {0.45f, 0.35f, 0.2f}, {0.5f, 0.38f, 0.22f} };
-            for (int i = 0; i < 3; ++i) {
-                ECS::Entity obs = m_World->CreateEntity();
-                m_World->AddComponent<ECS::NameComponent>(obs, oNames[i]);
-                auto& t = m_World->AddComponent<ECS::TransformComponent>(obs);
-                t.position = oPos[i];
-                t.scale = oScl[i];
-                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(obs);
-                mat.baseColor = oColors[i];
-                m_World->AddComponent<ECS::MeshComponent>(obs, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
-                addBoxCollider2D(obs, oScl[i].x * 0.5f, oScl[i].y * 0.5f);
+            // Coin ×4 (gold emissive, bobbing, scattered)
+            const Math::Vector3 coinPos[] = {{3, -3, 0}, {-3, 6, 0}, {20, 4, 0}, {25, -4, 0}};
+            for (int i = 0; i < 4; ++i) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Coin " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = coinPos[i];
+                t.scale = Math::Vector3(0.5f, 0.5f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+                mat.emissiveColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+                mat.emissiveStrength = 0.3f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
+                pick.type = ECS::PickupComponent::PickupType::Coin;
+                pick.value = 1.0f;
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
+                tw.autoPlay = true;
+                ECS::TweenEntry bob;
+                bob.property = ECS::TweenProperty::Position;
+                bob.easing = ECS::EasingType::EaseInOutSine;
+                bob.mode = ECS::TweenMode::PingPong;
+                bob.startValue = coinPos[i];
+                bob.endValue = coinPos[i] + Math::Vector3(0, 0.4f, 0);
+                bob.duration = 1.0f;
+                bob.useCurrentAsStart = false;
+                tw.tweens.push_back(bob);
+            }
+
+            // Key (east wing, guarded — yellow emissive)
+            {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Dungeon Key");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(26, 0, 0);
+                t.scale = Math::Vector3(0.6f, 0.6f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(1.0f, 0.9f, 0.2f);
+                mat.emissiveColor = Math::Vector3(1.0f, 0.9f, 0.2f);
+                mat.emissiveStrength = 0.5f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
+                pick.type = ECS::PickupComponent::PickupType::Key;
+                pick.value = 1.0f;
+                auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
+                tw.autoPlay = true;
+                ECS::TweenEntry bob;
+                bob.property = ECS::TweenProperty::Position;
+                bob.easing = ECS::EasingType::EaseInOutSine;
+                bob.mode = ECS::TweenMode::PingPong;
+                bob.startValue = Math::Vector3(26, 0, 0);
+                bob.endValue = Math::Vector3(26, 0.5f, 0);
+                bob.duration = 1.4f;
+                bob.useCurrentAsStart = false;
+                tw.tweens.push_back(bob);
+            }
+
+            // Speed Boost (north alcove, behind boss — blue emissive)
+            {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Speed Boost");
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = Math::Vector3(0, 20, 0);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+                mat.emissiveColor = Math::Vector3(0.2f, 0.6f, 1.0f);
+                mat.emissiveStrength = 0.6f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
+                auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
+                pick.type = ECS::PickupComponent::PickupType::Powerup;
+                pick.customId = "speed_boost";
+                pick.value = 1.0f;
             }
         }
 
-        // Speed boost power-up
+        // --- Destructible Crates ×4 (3 HP, drop coin) ---
         {
-            ECS::Entity boost = m_World->CreateEntity();
-            m_World->AddComponent<ECS::NameComponent>(boost, "Speed Boost");
-            auto& t = m_World->AddComponent<ECS::TransformComponent>(boost);
-            t.position = Math::Vector3(0.0f, 8.0f, 0.0f);
-            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(boost);
-            mat.baseColor = Math::Vector3(0.2f, 0.6f, 1.0f);
-            mat.emissiveColor = Math::Vector3(0.2f, 0.6f, 1.0f);
-            mat.emissiveStrength = 0.6f;
-            m_World->AddComponent<ECS::MeshComponent>(boost, Renderer::MeshFactory::CreateCapsule2D(0.3f, 0.6f));
-            auto& pick = m_World->AddComponent<ECS::PickupComponent>(boost);
-            pick.type = ECS::PickupComponent::PickupType::Powerup;
-            pick.customId = "speed_boost";
-            pick.value = 1.0f;
+            const Math::Vector3 cratePos[] = {{-6, 2, 0}, {3, -7, 0}, {8, 4, 0}, {19, -4, 0}};
+            for (int i = 0; i < 4; ++i) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Crate " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = cratePos[i];
+                t.scale = Math::Vector3(1.5f, 1.5f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.55f, 0.4f, 0.25f);
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                addBoxCollider2D(e, 0.75f, 0.75f);
+                auto& dest = m_World->AddComponent<ECS::DestructibleComponent>(e);
+                dest.health = 3.0f;
+                dest.destroyOnHit = false;
+                dest.spawnPickup = true;
+                dest.pickupId = "coin";
+                dest.pickupCount = 1;
+            }
         }
 
-        // Notes
+        // --- Torches ×4 (wall-mounted with fire particles) ---
+        {
+            const Math::Vector3 torchPos[] = {{-9, 8, 0}, {-9, -8, 0}, {9, 8, 0}, {9, -8, 0}};
+            for (int i = 0; i < 4; ++i) {
+                ECS::Entity e = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(e, "Torch " + std::to_string(i + 1));
+                auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+                t.position = torchPos[i];
+                t.scale = Math::Vector3(0.3f, 0.6f, 1.0f);
+                auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+                mat.baseColor = Math::Vector3(0.8f, 0.4f, 0.1f);
+                mat.emissiveColor = Math::Vector3(1.0f, 0.6f, 0.1f);
+                mat.emissiveStrength = 0.8f;
+                m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+                auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
+                ApplyParticlePreset(pe, "Fire");
+            }
+        }
+
+        // --- Locked Door (blocks north alcove corridor) ---
+        {
+            ECS::Entity e = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(e, "Locked Door");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+            t.position = Math::Vector3(0, 12, 0);
+            t.scale = Math::Vector3(3.0f, 0.5f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+            mat.baseColor = Math::Vector3(0.45f, 0.3f, 0.15f);
+            m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            addBoxCollider2D(e, 1.5f, 0.25f);
+            auto& sw = m_World->AddComponent<ECS::SwitchComponent>(e);
+            sw.type = ECS::SwitchComponent::SwitchType::Toggle;
+            sw.promptText = "Unlock Door (requires key)";
+        }
+
+        // --- Teleporter Pad (main room <-> east wing) ---
+        {
+            // Main room pad
+            ECS::Entity padA = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(padA, "Teleporter Main");
+            auto& tA = m_World->AddComponent<ECS::TransformComponent>(padA);
+            tA.position = Math::Vector3(-7, 7, 0);
+            tA.scale = Math::Vector3(1.5f, 1.5f, 1.0f);
+            auto& matA = m_World->AddComponent<ECS::MaterialComponent>(padA);
+            matA.baseColor = Math::Vector3(0.5f, 0.1f, 0.8f);
+            matA.emissiveColor = Math::Vector3(0.6f, 0.2f, 1.0f);
+            matA.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(padA, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& telA = m_World->AddComponent<ECS::TeleporterComponent>(padA);
+            telA.targetPosition = Math::Vector3(22, 0, 0);
+            telA.cooldown = 1.0f;
+            auto& peA = m_World->AddComponent<ECS::ParticleEmitterComponent>(padA);
+            ApplyParticlePreset(peA, "Magic");
+
+            // East wing pad
+            ECS::Entity padB = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(padB, "Teleporter East");
+            auto& tB = m_World->AddComponent<ECS::TransformComponent>(padB);
+            tB.position = Math::Vector3(22, 0, 0);
+            tB.scale = Math::Vector3(1.5f, 1.5f, 1.0f);
+            auto& matB = m_World->AddComponent<ECS::MaterialComponent>(padB);
+            matB.baseColor = Math::Vector3(0.5f, 0.1f, 0.8f);
+            matB.emissiveColor = Math::Vector3(0.6f, 0.2f, 1.0f);
+            matB.emissiveStrength = 0.5f;
+            m_World->AddComponent<ECS::MeshComponent>(padB, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& telB = m_World->AddComponent<ECS::TeleporterComponent>(padB);
+            telB.targetPosition = Math::Vector3(-7, 7, 0);
+            telB.cooldown = 1.0f;
+            auto& peB = m_World->AddComponent<ECS::ParticleEmitterComponent>(padB);
+            ApplyParticlePreset(peB, "Magic");
+
+            // Link bidirectionally
+            telA.linkedTeleporter = padB;
+            telB.linkedTeleporter = padA;
+        }
+
+        // --- Pressure Plate (east wing) ---
+        {
+            ECS::Entity e = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(e, "Pressure Plate");
+            auto& t = m_World->AddComponent<ECS::TransformComponent>(e);
+            t.position = Math::Vector3(19, 0, -0.05f);
+            t.scale = Math::Vector3(1.5f, 1.5f, 1.0f);
+            auto& mat = m_World->AddComponent<ECS::MaterialComponent>(e);
+            mat.baseColor = Math::Vector3(0.5f, 0.5f, 0.4f);
+            m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
+            auto& sw = m_World->AddComponent<ECS::SwitchComponent>(e);
+            sw.type = ECS::SwitchComponent::SwitchType::PressurePlate;
+            auto& trigger = m_World->AddComponent<ECS::TriggerZoneComponent>(e);
+            trigger.shape = ECS::TriggerZoneComponent::Shape::Box;
+            trigger.boxSize = Math::Vector3(1.5f, 1.5f, 1.0f);
+        }
+
+        // --- HUD ---
+        {
+            // Health Bar
+            ECS::Entity hud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(hud, "Health Bar Overlay");
+            m_World->AddComponent<ECS::TransformComponent>(hud);
+            auto& hw = m_World->AddComponent<ECS::HUDWidgetComponent>(hud);
+            hw.type = ECS::HUDWidgetComponent::WidgetType::HealthBar;
+            hw.visible = true;
+            hw.screenSpace = true;
+            hw.anchorX = 0.05f;
+            hw.anchorY = 0.05f;
+            hw.fillColor = Math::Vector3(0.8f, 0.2f, 0.2f);
+            hw.bgColor = Math::Vector3(0.2f, 0.2f, 0.2f);
+
+            // Coin Counter
+            ECS::Entity coinHud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(coinHud, "Coin Counter");
+            m_World->AddComponent<ECS::TransformComponent>(coinHud);
+            auto& tc = m_World->AddComponent<ECS::TextComponent>(coinHud);
+            tc.text = "Coins: 0";
+            tc.fontSize = 24.0f;
+            tc.textColor = Math::Vector3(1.0f, 0.85f, 0.2f);
+            m_World->AddComponent<ECS::TagComponent>(coinHud).tags.push_back("hud_coins");
+
+            // Key Indicator
+            ECS::Entity keyHud = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(keyHud, "Key Indicator");
+            m_World->AddComponent<ECS::TransformComponent>(keyHud);
+            auto& tk = m_World->AddComponent<ECS::TextComponent>(keyHud);
+            tk.text = "Key: --";
+            tk.fontSize = 24.0f;
+            tk.textColor = Math::Vector3(1.0f, 0.9f, 0.2f);
+            m_World->AddComponent<ECS::TagComponent>(keyHud).tags.push_back("hud_key");
+        }
+
+        // --- Notes ---
         {
             ECS::Entity notes = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(notes, "Template Notes");
             m_World->AddComponent<ECS::TransformComponent>(notes);
             auto& n = m_World->AddComponent<ECS::NotesComponent>(notes);
-            n.notes = "2D Top-Down Action Template\n\nFeatures:\n- TopDown2DController with dash\n- Walled arena with colliders\n- 2 patrol enemies (scout + brute)\n- Health pickup with bobbing tween\n- Speed boost power-up\n- Destructible crates\n- Camera follows player\n\nControls: WASD to move, Shift to dash";
+            n.notes = "2D Top-Down Action — Multi-Room Dungeon Template\n\n"
+                "Layout:\n"
+                "- Main room (20x20): Player start, open arena with wall torches\n"
+                "- East wing (12x12): Enemy gauntlet, connected by corridor\n"
+                "- North alcove (8x8): Boss room behind locked door\n\n"
+                "Enemies (6 total):\n"
+                "- Scout x2 (red): Diamond patrol, chase range 8\n"
+                "- Brute (orange): Short patrol, knockback attack, chase range 6\n"
+                "- Archer (purple): Ranged patrol, chase range 12, flees when close\n"
+                "- Boss Guardian (dark red): Idle until triggered, chase range 15\n\n"
+                "Pickups:\n"
+                "- Health Potions x2 (green), Coins x4 (gold), Key x1 (yellow), Speed Boost x1 (blue)\n\n"
+                "Interactive Objects:\n"
+                "- Destructible Crates x4: 3 HP, drop coins\n"
+                "- Torches x4: Fire particles\n"
+                "- Locked Door: Blocks north alcove (key required)\n"
+                "- Teleporter: Links main room to east wing\n"
+                "- Pressure Plate: Trigger zone in east wing\n\n"
+                "HUD: Health bar, coin counter, key indicator\n\n"
+                "Controls: WASD to move, Shift to dash";
         }
 
+        // --- Render settings ---
         m_RenderSystem->SetShadowsEnabled(false);
-        m_RenderSystem->SetAmbientIntensity(0.25f);
+        m_RenderSystem->SetAmbientIntensity(0.3f);
         if (m_PostProcessing) {
             auto& pp = m_PostProcessing->GetSettings();
             pp.fxaaEnabled = 1;
+            pp.vignetteEnabled = 1;
+            pp.vignetteIntensity = 0.3f;
+            pp.vignetteSmoothness = 0.8f;
         }
 
     } else if (templateId == "thirdperson") {
