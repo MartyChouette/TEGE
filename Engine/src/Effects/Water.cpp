@@ -147,12 +147,12 @@ void Water3D::BuildEntityMesh(ECS::World* world, ECS::Entity entity) const {
         f32 minEdgeDist = Math::Min(Math::Min(distL, distR), Math::Min(distT, distB));
         f32 edgeDist = Math::Min(minEdgeDist * 2.0f, 1.0f);
 
-        // Vertex color: shallow/deep blend + edge distance for shader use
+        // Vertex color: water color RGB + edge distance in alpha for shore foam
         v.color = Math::Vector4(
             m_Settings.shallowColor.x,
-            edgeDist,
+            m_Settings.shallowColor.y,
             m_Settings.shallowColor.z,
-            m_Settings.opacity
+            edgeDist
         );
 
         // Tangent along X direction

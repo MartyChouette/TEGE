@@ -1375,7 +1375,13 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
             } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+                pushConstants.parallaxScale = 0.0f; // no freeze — shader reads this as freezeProgress
+                if (water3d) {
+                    pushConstants.baseColor = water3d->settings.shallowColor;
+                    pushConstants.opacity = water3d->settings.opacity;
+                }
             }
 
             // Rasterize text texture if entity has a TextComponent
@@ -1737,7 +1743,13 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                 );
                 pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
             } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+                auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
                 pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+                pushConstants.parallaxScale = 0.0f; // no freeze
+                if (water3d) {
+                    pushConstants.baseColor = water3d->settings.shallowColor;
+                    pushConstants.opacity = water3d->settings.opacity;
+                }
             }
 
             // Text rendering
@@ -3684,7 +3696,13 @@ void RenderSystem::RenderEntity(Entity entity) {
         );
         pushConstants.opacity = pushConstants.opacity * (1.0f - fp) + waterVol->iceOpacity * fp;
     } else if (m_World->HasComponent<Water3DComponent>(entity)) {
+        auto* water3d = m_World->GetComponent<Water3DComponent>(entity);
         pushConstants.flags |= (1 << 5); // FLAG_WATER_SURFACE for Water3D
+        pushConstants.parallaxScale = 0.0f; // no freeze
+        if (water3d) {
+            pushConstants.baseColor = water3d->settings.shallowColor;
+            pushConstants.opacity = water3d->settings.opacity;
+        }
     }
 
     // Rasterize text texture if entity has a TextComponent
