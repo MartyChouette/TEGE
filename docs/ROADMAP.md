@@ -2,7 +2,7 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-21)
+## Status Summary (2026-02-22)
 
 **150+ features complete.** Beta 0.8 QA hardening complete — all 8 subsystem audits done. See `docs/DEV_JOURNAL.md` for session log.
 
@@ -25,7 +25,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Flash** | Yarn Spinner / Twine dialogue import/export | P4 |
 | **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
 | **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
-| **Known Bug** | RT pipeline crash on pool-allocated entity BLAS builds (parked) | P2 |
+| **Known Bug** | ~~RT pipeline crash on pool-allocated entity BLAS builds~~ | ✅ Fixed |
 
 ---
 

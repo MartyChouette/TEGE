@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-02-22 (Session 33)
+
+### Fix RT Pipeline Crash on Pool-Allocated Entity BLAS Reuse
+
+**Bug:** When entities were destroyed and their geometry pool regions freed, new entities could reuse the same pool offsets. The BLAS cache hashed meshes by GPU buffer address only (`vertAddr ^ idxAddr`), so identical addresses returned a stale BLAS pointing to freed GPU memory — crashing on ray trace dispatch.
+
+**Root cause:** Address-only BLAS cache key with no invalidation on entity destruction. The `MergedGeometryBuffer` pool allocator reuses freed regions (with coalescing), producing hash collisions between old (destroyed) and new entities.
+
+**Fix:**
+- Added `InvalidateMesh(meshHash)` to `AccelerationStructureManager` — destroys the BLAS GPU resources, removes from hash map, cancels pending builds, marks TLAS for full rebuild
+- `RenderSystem::OnEntityRemoved()` now computes the entity's mesh hash and calls `InvalidateMesh()` **before** freeing the pool allocation
+- `AddInstance()` already guards on `IsValid()`, so destroyed BLAS slots are safely skipped even in edge cases
+
+3 files changed, 52 insertions. Clean build, zero errors.
+
+---
+
 ## 2026-02-21 (Session 32)
 
 ### Expose Template-Used Features to Users
