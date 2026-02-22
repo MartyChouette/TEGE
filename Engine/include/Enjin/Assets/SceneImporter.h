@@ -6,8 +6,10 @@
 #include "Enjin/Assets/TextureCompressor.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Entity.h"
+#include "Enjin/Animation/Animation.h"
 #include <string>
 #include <vector>
+#include <memory>
 
 namespace Enjin {
 namespace Assets {
@@ -122,6 +124,19 @@ private:
                                                    ECS::World* world, const ImportOptions& options,
                                                    std::vector<ECS::Entity>& outEntities,
                                                    ImportStats& stats);
+
+    // Skeleton context passed through Assimp node recursion
+    struct AssimpSkeletonContext {
+        std::shared_ptr<Animation::Skeleton> skeleton;
+        bool attached = false;  // True after skeleton is attached to first skinned node
+    };
+
+    // Overload with skeleton context for skinned mesh import
+    static ECS::Entity CreateEntityFromAssimpNode(const AssimpScene& scene, i32 nodeIndex,
+                                                   ECS::World* world, const ImportOptions& options,
+                                                   std::vector<ECS::Entity>& outEntities,
+                                                   ImportStats& stats,
+                                                   AssimpSkeletonContext& skelCtx);
 };
 
 } // namespace Assets

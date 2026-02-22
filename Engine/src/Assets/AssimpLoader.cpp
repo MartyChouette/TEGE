@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <algorithm>
 #include <functional>
+#include <unordered_map>
 
 namespace Enjin {
 namespace Assets {
@@ -154,6 +155,7 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
     }
 
     // Load meshes
+    std::unordered_map<std::string, u32> boneNameToGlobal; // Dedup bones across all meshes
     outScene.meshes.resize(scene->mNumMeshes);
     for (unsigned int i = 0; i < scene->mNumMeshes; ++i) {
         const aiMesh* aiMeshData = scene->mMeshes[i];
@@ -207,6 +209,54 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
             primitive.vertices.push_back(vertex);
         }
 
+        // Extract bone weights from aiMesh::mBones
+        if (aiMeshData->HasBones()) {
+            for (unsigned int b = 0; b < aiMeshData->mNumBones; ++b) {
+                const aiBone* aiBoneData = aiMeshData->mBones[b];
+                std::string boneName = aiBoneData->mName.C_Str();
+
+                // Look up or insert into global bone table (dedup across meshes)
+                u32 globalBoneIdx;
+                auto it = boneNameToGlobal.find(boneName);
+                if (it != boneNameToGlobal.end()) {
+                    globalBoneIdx = it->second;
+                } else {
+                    globalBoneIdx = static_cast<u32>(outScene.bones.size());
+                    boneNameToGlobal[boneName] = globalBoneIdx;
+
+                    AssimpBone bone;
+                    bone.name = boneName;
+                    const aiMatrix4x4& m = aiBoneData->mOffsetMatrix;
+                    bone.offsetMatrix = Math::Matrix4(
+                        m.a1, m.b1, m.c1, m.d1,
+                        m.a2, m.b2, m.c2, m.d2,
+                        m.a3, m.b3, m.c3, m.d3,
+                        m.a4, m.b4, m.c4, m.d4
+                    );
+                    outScene.bones.push_back(bone);
+                }
+
+                // Assign bone weights to vertices
+                for (unsigned int w = 0; w < aiBoneData->mNumWeights; ++w) {
+                    unsigned int vertId = aiBoneData->mWeights[w].mVertexId;
+                    f32 weight = aiBoneData->mWeights[w].mWeight;
+                    if (vertId >= primitive.vertices.size()) continue;
+
+                    AssimpVertex& vert = primitive.vertices[vertId];
+                    // Find next free slot (0-3) via weight array access
+                    f32* weights = &vert.boneWeights.x;
+                    for (int slot = 0; slot < 4; ++slot) {
+                        if (weights[slot] == 0.0f) {
+                            weights[slot] = weight;
+                            vert.boneIndices[slot] = globalBoneIdx;
+                            break;
+                        }
+                    }
+                }
+            }
+            outScene.hasSkinning = true;
+        }
+
         // Indices
         primitive.indices.reserve(aiMeshData->mNumFaces * 3);
         for (unsigned int f = 0; f < aiMeshData->mNumFaces; ++f) {
@@ -229,6 +279,7 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
 
         // Populate node data via index (safe across reallocation)
         outScene.nodes[nodeIdx].name = node->mName.C_Str();
+        outScene.nodes[nodeIdx].parentIndex = parentIdx;
 
         // Decompose transformation matrix
         aiVector3D scale, position;
@@ -262,8 +313,65 @@ bool AssimpLoader::Load(const std::string& filepath, AssimpScene& outScene) {
         outScene.rootNodes.push_back(rootIdx);
     }
 
-    ENJIN_LOG_INFO(Asset, "Loaded model: %s (%zu meshes, %zu materials, %zu nodes)",
-        filepath.c_str(), outScene.meshes.size(), outScene.materials.size(), outScene.nodes.size());
+    // Extract animations from aiScene::mAnimations
+    for (unsigned int a = 0; a < scene->mNumAnimations; ++a) {
+        const aiAnimation* aiAnim = scene->mAnimations[a];
+
+        AssimpAnimation anim;
+        anim.name = aiAnim->mName.C_Str();
+        if (anim.name.empty()) {
+            anim.name = "Animation_" + std::to_string(a);
+        }
+
+        anim.ticksPerSecond = (aiAnim->mTicksPerSecond > 0.0) ?
+            static_cast<f32>(aiAnim->mTicksPerSecond) : 25.0f;
+        anim.duration = static_cast<f32>(aiAnim->mDuration) / anim.ticksPerSecond;
+
+        for (unsigned int c = 0; c < aiAnim->mNumChannels; ++c) {
+            const aiNodeAnim* aiChannel = aiAnim->mChannels[c];
+
+            AssimpAnimChannel channel;
+            channel.nodeName = aiChannel->mNodeName.C_Str();
+
+            // Position keys
+            channel.positionTimes.reserve(aiChannel->mNumPositionKeys);
+            channel.positions.reserve(aiChannel->mNumPositionKeys);
+            for (unsigned int k = 0; k < aiChannel->mNumPositionKeys; ++k) {
+                channel.positionTimes.push_back(
+                    static_cast<f32>(aiChannel->mPositionKeys[k].mTime) / anim.ticksPerSecond);
+                const aiVector3D& v = aiChannel->mPositionKeys[k].mValue;
+                channel.positions.push_back(Math::Vector3(v.x, v.y, v.z));
+            }
+
+            // Rotation keys
+            channel.rotationTimes.reserve(aiChannel->mNumRotationKeys);
+            channel.rotations.reserve(aiChannel->mNumRotationKeys);
+            for (unsigned int k = 0; k < aiChannel->mNumRotationKeys; ++k) {
+                channel.rotationTimes.push_back(
+                    static_cast<f32>(aiChannel->mRotationKeys[k].mTime) / anim.ticksPerSecond);
+                const aiQuaternion& q = aiChannel->mRotationKeys[k].mValue;
+                channel.rotations.push_back(Math::Quaternion(q.x, q.y, q.z, q.w));
+            }
+
+            // Scale keys
+            channel.scaleTimes.reserve(aiChannel->mNumScalingKeys);
+            channel.scales.reserve(aiChannel->mNumScalingKeys);
+            for (unsigned int k = 0; k < aiChannel->mNumScalingKeys; ++k) {
+                channel.scaleTimes.push_back(
+                    static_cast<f32>(aiChannel->mScalingKeys[k].mTime) / anim.ticksPerSecond);
+                const aiVector3D& v = aiChannel->mScalingKeys[k].mValue;
+                channel.scales.push_back(Math::Vector3(v.x, v.y, v.z));
+            }
+
+            anim.channels.push_back(std::move(channel));
+        }
+
+        outScene.animations.push_back(std::move(anim));
+    }
+
+    ENJIN_LOG_INFO(Asset, "Loaded model: %s (%zu meshes, %zu materials, %zu nodes, %zu bones, %zu animations)",
+        filepath.c_str(), outScene.meshes.size(), outScene.materials.size(),
+        outScene.nodes.size(), outScene.bones.size(), outScene.animations.size());
 
     return true;
 }
