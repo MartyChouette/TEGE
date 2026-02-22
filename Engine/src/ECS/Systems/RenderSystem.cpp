@@ -1852,6 +1852,30 @@ void RenderSystem::OnEntityAdded(Entity entity) {
 }
 
 void RenderSystem::OnEntityRemoved(Entity entity) {
+    // Invalidate this entity's BLAS cache entry BEFORE freeing the pool allocation.
+    // Without this, freeing the pool region allows a future entity to reuse the same
+    // offsets, producing an identical address-based mesh hash that returns a stale BLAS
+    // built for the old (now-freed) geometry — causing a GPU crash on ray trace dispatch.
+    if (m_ASManager && m_RTEnabled &&
+        static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
+        const auto& rd = m_EntityRenderData[static_cast<usize>(entity)];
+        VkDeviceAddress vertAddr = 0, idxAddr = 0;
+        if (rd.vertexBuffer && rd.indexBuffer) {
+            vertAddr = rd.vertexBuffer->GetDeviceAddress();
+            idxAddr = rd.indexBuffer->GetDeviceAddress();
+        } else if (rd.poolAlloc.valid && m_GeometryPool &&
+                   m_GeometryPool->GetVertexBuffer() && m_GeometryPool->GetIndexBuffer()) {
+            vertAddr = m_GeometryPool->GetVertexBuffer()->GetDeviceAddress()
+                     + static_cast<VkDeviceAddress>(rd.poolAlloc.vertexOffset) * sizeof(MeshComponent::Vertex);
+            idxAddr = m_GeometryPool->GetIndexBuffer()->GetDeviceAddress()
+                    + static_cast<VkDeviceAddress>(rd.poolAlloc.indexOffset) * sizeof(u32);
+        }
+        if (vertAddr != 0 && idxAddr != 0) {
+            u64 meshHash = vertAddr ^ (idxAddr << 32) ^ (idxAddr >> 32);
+            m_ASManager->InvalidateMesh(meshHash);
+        }
+    }
+
     // Free merged geometry pool allocation before erasing render data
     if (static_cast<usize>(entity) < m_EntityRenderData.size() && m_EntityRenderData[static_cast<usize>(entity)].valid) {
         auto& rd = m_EntityRenderData[static_cast<usize>(entity)];

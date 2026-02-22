@@ -59,6 +59,10 @@ public:
     // Invalidate all BLAS (e.g. on scene change)
     void InvalidateAll();
 
+    // Invalidate a specific BLAS by mesh hash (e.g. when entity destroyed and pool region freed).
+    // Prevents stale BLAS references when pool addresses are reused by new entities.
+    void InvalidateMesh(u64 meshHash);
+
 private:
     struct PendingBLASBuild {
         u64 meshHash;

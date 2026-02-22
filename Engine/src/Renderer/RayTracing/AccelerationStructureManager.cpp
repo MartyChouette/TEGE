@@ -1,6 +1,7 @@
 #include "Enjin/Renderer/RayTracing/AccelerationStructureManager.h"
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Logging/Log.h"
+#include <algorithm>
 #include <cstring>
 
 namespace Enjin {
@@ -135,6 +136,29 @@ void AccelerationStructureManager::InvalidateAll() {
     if (m_TLAS) m_TLAS->Destroy();
     m_TLASNeedsFullRebuild = true;
     ENJIN_LOG_INFO(Renderer, "AccelerationStructureManager: all BLAS invalidated");
+}
+
+void AccelerationStructureManager::InvalidateMesh(u64 meshHash) {
+    auto it = m_MeshHashToBLAS.find(meshHash);
+    if (it == m_MeshHashToBLAS.end()) return;
+
+    u32 blasId = it->second;
+
+    // Destroy the BLAS GPU resources so no stale handle can be referenced
+    if (blasId < m_BLASCache.size() && m_BLASCache[blasId]) {
+        m_BLASCache[blasId]->Destroy();
+    }
+
+    // Remove from hash map so the address range can be re-registered fresh
+    m_MeshHashToBLAS.erase(it);
+
+    // Remove any pending builds for this hash (shouldn't happen, but be safe)
+    m_PendingBuilds.erase(
+        std::remove_if(m_PendingBuilds.begin(), m_PendingBuilds.end(),
+            [meshHash](const PendingBLASBuild& b) { return b.meshHash == meshHash; }),
+        m_PendingBuilds.end());
+
+    m_TLASNeedsFullRebuild = true;
 }
 
 } // namespace Renderer
