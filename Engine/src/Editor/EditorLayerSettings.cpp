@@ -1819,6 +1819,8 @@ void EditorLayer::MigrateEditorSettingsToProject() {
     m_BuildConfig.windowWidth = m_SceneManager.GetWindowWidth();
     m_BuildConfig.windowHeight = m_SceneManager.GetWindowHeight();
     m_BuildConfig.fullscreen = m_SceneManager.GetFullscreen();
+
+    m_NetworkConfig.LoadFromFile();
 }
 
 void EditorLayer::DrawSettingsWindow() {
@@ -1857,6 +1859,7 @@ void EditorLayer::DrawSettingsWindow() {
             DrawSettingsSection_Audio();
             DrawSettingsSection_CollisionGroups();
             DrawSettingsSection_BuildConfig();
+            DrawSettingsSection_Networking();
             ImGui::PopID();
             ImGui::EndTabItem();
         }
@@ -1950,6 +1953,111 @@ void EditorLayer::DrawSettingsSection_BuildConfig() {
     }
 }
 
+
+void EditorLayer::DrawSettingsSection_Networking() {
+    if (ImGui::CollapsingHeader("Networking")) {
+        bool changed = false;
+
+        // --- Connection ---
+        ImGui::SeparatorText("Connection");
+
+        int port = static_cast<int>(m_NetworkConfig.port);
+        if (ImGui::DragInt("Port", &port, 1, 1024, 65535)) {
+            m_NetworkConfig.port = static_cast<u16>(std::clamp(port, 1024, 65535));
+            changed = true;
+        }
+
+        int maxPlayers = static_cast<int>(m_NetworkConfig.maxPlayers);
+        if (ImGui::DragInt("Max Players", &maxPlayers, 1, 2, 64)) {
+            m_NetworkConfig.maxPlayers = static_cast<u32>(std::clamp(maxPlayers, 2, 64));
+            changed = true;
+        }
+
+        char ipBuf[128];
+        strncpy(ipBuf, m_NetworkConfig.serverIP.c_str(), sizeof(ipBuf) - 1);
+        ipBuf[sizeof(ipBuf) - 1] = '\0';
+        if (ImGui::InputText("Server IP", ipBuf, sizeof(ipBuf))) {
+            m_NetworkConfig.serverIP = ipBuf;
+            changed = true;
+        }
+
+        // --- Sync ---
+        ImGui::SeparatorText("Sync");
+
+        if (ImGui::DragFloat("Sync Rate (s)", &m_NetworkConfig.syncRate, 0.001f, 0.01f, 1.0f, "%.3f")) {
+            m_NetworkConfig.syncRate = std::clamp(m_NetworkConfig.syncRate, 0.01f, 1.0f);
+            changed = true;
+        }
+
+        if (ImGui::DragFloat("Interpolation Delay (s)", &m_NetworkConfig.interpDelay, 0.001f, 0.0f, 1.0f, "%.3f")) {
+            m_NetworkConfig.interpDelay = std::clamp(m_NetworkConfig.interpDelay, 0.0f, 1.0f);
+            changed = true;
+        }
+
+        if (ImGui::DragFloat("Prediction Correction Speed", &m_NetworkConfig.predictionCorrectionSpeed, 0.1f, 1.0f, 50.0f, "%.1f")) {
+            m_NetworkConfig.predictionCorrectionSpeed = std::clamp(m_NetworkConfig.predictionCorrectionSpeed, 1.0f, 50.0f);
+            changed = true;
+        }
+
+        // --- Rate Limiting ---
+        if (ImGui::TreeNode("Rate Limiting")) {
+            if (ImGui::DragFloat("Max Packets/sec", &m_NetworkConfig.maxPacketsPerSecond, 1.0f, 10.0f, 1000.0f, "%.0f")) {
+                m_NetworkConfig.maxPacketsPerSecond = std::clamp(m_NetworkConfig.maxPacketsPerSecond, 10.0f, 1000.0f);
+                changed = true;
+            }
+
+            float maxKB = m_NetworkConfig.maxBytesPerSecond / 1024.0f;
+            if (ImGui::DragFloat("Max KB/sec", &maxKB, 1.0f, 1.0f, 1024.0f, "%.0f")) {
+                maxKB = std::clamp(maxKB, 1.0f, 1024.0f);
+                m_NetworkConfig.maxBytesPerSecond = maxKB * 1024.0f;
+                changed = true;
+            }
+
+            if (ImGui::DragFloat("Burst Packets", &m_NetworkConfig.burstPackets, 1.0f, 5.0f, 500.0f, "%.0f")) {
+                m_NetworkConfig.burstPackets = std::clamp(m_NetworkConfig.burstPackets, 5.0f, 500.0f);
+                changed = true;
+            }
+
+            float burstKB = m_NetworkConfig.burstBytes / 1024.0f;
+            if (ImGui::DragFloat("Burst KB", &burstKB, 1.0f, 1.0f, 512.0f, "%.0f")) {
+                burstKB = std::clamp(burstKB, 1.0f, 512.0f);
+                m_NetworkConfig.burstBytes = burstKB * 1024.0f;
+                changed = true;
+            }
+
+            ImGui::TreePop();
+        }
+
+        // --- Security ---
+        if (ImGui::TreeNode("Security")) {
+            int maxViol = static_cast<int>(m_NetworkConfig.maxViolations);
+            if (ImGui::DragInt("Max Violations", &maxViol, 1, 1, 100)) {
+                m_NetworkConfig.maxViolations = static_cast<u32>(std::clamp(maxViol, 1, 100));
+                changed = true;
+            }
+
+            if (ImGui::DragFloat("Violation Window (s)", &m_NetworkConfig.violationWindowSeconds, 0.1f, 1.0f, 120.0f, "%.1f")) {
+                m_NetworkConfig.violationWindowSeconds = std::clamp(m_NetworkConfig.violationWindowSeconds, 1.0f, 120.0f);
+                changed = true;
+            }
+
+            if (ImGui::DragFloat("Ban Duration (s)", &m_NetworkConfig.banSeconds, 1.0f, 1.0f, 3600.0f, "%.0f")) {
+                m_NetworkConfig.banSeconds = std::clamp(m_NetworkConfig.banSeconds, 1.0f, 3600.0f);
+                changed = true;
+            }
+
+            if (ImGui::Checkbox("Kick on Violation", &m_NetworkConfig.kickOnViolation)) {
+                changed = true;
+            }
+
+            ImGui::TreePop();
+        }
+
+        if (changed) {
+            m_NetworkConfig.SaveToFile();
+        }
+    }
+}
 
 void EditorLayer::DrawAccentColorPicker() {
     bool accentChanged = false;

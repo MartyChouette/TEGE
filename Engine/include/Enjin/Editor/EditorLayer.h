@@ -66,6 +66,7 @@
 #include "Enjin/Editor/TemplateMarketplace.h"
 #include "Enjin/Scripting/AS3Transpiler.h"
 #include "Enjin/Networking/NewgroundsAPI.h"
+#include "Enjin/Networking/NetworkTypes.h"
 #include "Enjin/Build/HTML5Exporter.h"
 #include "Enjin/Plugin/PluginRepository.h"
 #include "Enjin/Procedural/ProceduralAlgorithms.h"
@@ -292,6 +293,7 @@ private:
     void DrawSettingsSection_Audio();
     void DrawSettingsSection_CollisionGroups();
     void DrawSettingsSection_BuildConfig();
+    void DrawSettingsSection_Networking();
     // Scene tab sections
     void DrawSettingsSection_Skybox();
     void DrawSettingsSection_Shadows();
@@ -945,6 +947,7 @@ private:
     // Build dialog state
     bool m_ShowBuildDialog = false;
     Build::BuildConfig m_BuildConfig;
+    Networking::NetworkConfig m_NetworkConfig;
     Build::BuildResult m_BuildResult;
     bool m_BuildInProgress = false;
     bool m_BuildFinished = false;

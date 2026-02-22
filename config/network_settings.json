@@ -14,5 +14,9 @@
     "violationWindowSeconds": 10.0,
     "banSeconds": 30.0,
     "kickOnViolation": true
+  },
+  "interpolation": {
+    "interpDelay": 0.1,
+    "predictionCorrectionSpeed": 10.0
   }
 }
