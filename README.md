@@ -54,7 +54,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Build Dialog** - Configure and export standalone game builds from the editor
 - **Particle Editor** - 12 presets (inspector dropdown + dedicated panel), color gradient bar, size/speed curves, shape preview, playback controls
 - **UI Editor** - Viewport WYSIWYG editing with click-select, drag-move, resize handles, and element tree
-- **Project Settings** - Dedicated panel for rendering/physics defaults separated from editor preferences
+- **Project Settings** - Dedicated panel for rendering/physics/networking defaults separated from editor preferences
 - **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 - **Animation Graph** - Dual-mode visual state machine editor: AnimatorComponent mode (clip dropdown from loaded animations, speed, blend/exit time, ASM parameters) and StateMachineComponent mode (game logic SM with script callbacks), Entry pseudo-node, transitions, play-mode state highlighting

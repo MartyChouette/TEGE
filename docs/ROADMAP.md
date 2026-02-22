@@ -18,7 +18,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | Mobile (Android/iOS) | P4 |
 | **Platforms** | VR/XR (OpenXR) | P4 |
 | **Editor** | ~~Settings UX restructure (System/Project/Scene tiers)~~ | ✅ Complete |
-| **Editor** | Networking config editor UI | P3 |
+| **Editor** | ~~Networking config editor UI~~ | ✅ Complete |
 | **RT** | OptiX AI Denoiser integration (NVIDIA) | P4 |
 | **RT** | RT Caustics (photon mapping / path traced) | P4 |
 | **RT** | RT Translucency (subsurface scattering) | P4 |
@@ -39,7 +39,7 @@ This document captures detailed technical plans, performance findings, and strat
 
 **User Editability**
 - User-editable: Yes.
-- How: Edit `config/network_settings.json` (loaded at host/join). No editor UI yet.
+- How: Settings > Project > Networking (visual editor), or edit `config/network_settings.json` directly.
 - Safe defaults ship in repo; values are runtime-tunable for different games/traffic profiles.
 
 **Settings UX Restructure ✅ COMPLETE (2026-02-20)**
@@ -51,7 +51,7 @@ This document captures detailed technical plans, performance findings, and strat
 - ~22 section drawer methods extracted from monolithic panel functions for reusability
 - Menu bar restructured: View > Settings > System Settings / Project Settings / Scene Settings
 - Command palette updated with 3 new settings commands
-- Networking config should live under Project Settings with optional Scene overrides (future).
+- ~~Networking config should live under Project Settings with optional Scene overrides (future).~~ ✅ Networking config editor added to Project Settings tab (2026-02-22). Connection, Sync/Interpolation, Rate Limiting, and Security sections. Also added missing `interpDelay`/`predictionCorrectionSpeed` to JSON serialization.
 
 ## Performance Optimization Findings
 

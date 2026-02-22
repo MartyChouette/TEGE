@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-02-22 (Session 34)
+
+### Add Networking Config Editor UI in Project Settings
+
+Added a visual editor section under Settings > Project > Networking so users can configure all 15 `NetworkConfig` fields from within the editor instead of hand-editing `config/network_settings.json`.
+
+**UI layout (CollapsingHeader with sub-sections):**
+- **Connection** — Port (1024–65535), Max Players (2–64), Server IP
+- **Sync** — Sync Rate, Interpolation Delay, Prediction Correction Speed
+- **Rate Limiting** (TreeNode) — Max Packets/sec, Max KB/sec, Burst Packets, Burst KB (KB↔bytes conversion in UI)
+- **Security** (TreeNode) — Max Violations, Violation Window, Ban Duration, Kick on Violation
+
+**Also fixed:** `interpDelay` and `predictionCorrectionSpeed` were missing from JSON serialization — added `"interpolation"` sub-object to both `SaveToFile()` and `LoadFromFile()` in NetworkConfig.cpp, and updated the default `config/network_settings.json`.
+
+Config loads on project open (`MigrateEditorSettingsToProject`), saves on any field change. Follows the same `bool changed` + `SaveToFile()` pattern as `DrawSettingsSection_BuildConfig()`.
+
+4 files changed, 126 insertions. Clean build, zero errors.
+
+---
+
 ## 2026-02-22 (Session 33)
 
 ### Fix RT Pipeline Crash on Pool-Allocated Entity BLAS Reuse
