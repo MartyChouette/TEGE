@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-02-22 (Session 35)
+
+### Add Skeletal Animation Import to Assimp Path (FBX/OBJ/DAE/all formats)
+
+The Assimp import pipeline previously ignored `aiMesh::mBones` and `aiScene::mAnimations`, producing static unskinned models from any rigged FBX/DAE file. This adds full bone weight extraction, skeleton building, and animation clip import using the same `Animation::Skeleton`/`BoneTrack` types the glTF path already uses.
+
+**AssimpLoader changes:**
+- Extract bone weights from `aiMesh::mBones` (up to 4 per vertex, globally deduplicated across meshes via `boneNameToGlobal` map)
+- Store `parentIndex` per node in the hierarchy for parent bone lookup
+- Extract animation channels from `aiScene::mAnimations` with tick-to-seconds conversion (`ticksPerSecond`, default 25 if reported as 0)
+- New structs: `AssimpBone`, `AssimpAnimChannel`, `AssimpAnimation`; new fields on `AssimpVertex` (`boneWeights`, `boneIndices`), `AssimpNode` (`parentIndex`), `AssimpScene` (`bones`, `animations`, `hasSkinning`)
+
+**SceneImporter changes:**
+- `ImportAssimp()` builds `Animation::Skeleton` from `scene.bones` — finds bind pose from matching scene nodes, walks `parentIndex` chain to find parent bones, applies axis conversion
+- `CreateEntityFromAssimpNode()` copies bone weights into `MeshComponent::Vertex`, attaches `SkeletonComponent` + `AnimatorComponent` to first skinned mesh node (flag-guarded to prevent duplicates), converts `AssimpAnimation` channels to `BoneTrack`s with axis conversion, auto-plays first clip
+- New `AssimpSkeletonContext` struct passed through recursion with shared skeleton + attached flag
+- Backward-compatible overload delegates to new signature
+
+**Static formats unaffected** — OBJ/PLY/STL produce empty bones/animations, `hasSkinning` stays false, no skeleton components added.
+
+4 files changed, 337 insertions. Clean build, zero errors.
+
+---
+
 ## 2026-02-22 (Session 34)
 
 ### Add Networking Config Editor UI in Project Settings

@@ -26,6 +26,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
 | **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
 | **Known Bug** | ~~RT pipeline crash on pool-allocated entity BLAS builds~~ | ✅ Fixed |
+| **Assets** | ~~Assimp skeletal animation import (FBX/DAE/all formats)~~ | ✅ Complete |
 
 ---
 
@@ -669,7 +670,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 
 ### Source-App Import Presets ✅ COMPLETE
 
-Smart import presets for common DCC tools with automatic axis/scale/material fixups. Editor dialog with auto-detection from file metadata, per-axis flip toggles, and texture search paths.
+Smart import presets for common DCC tools with automatic axis/scale/material fixups. Editor dialog with auto-detection from file metadata, per-axis flip toggles, and texture search paths. **Skeletal animation import** added to Assimp path (2026-02-22): bone weight extraction, skeleton building, animation clip conversion with axis conversion — FBX/DAE/3DS and all Assimp-supported formats now import rigged/animated models with SkeletonComponent + AnimatorComponent + auto-play, matching glTF parity.
 
 - **Blender** — Z-up → Y-up axis swap, -X forward convention, scale factor (Blender default 1.0 = 1m), auto-detect .blend material names for PBR slot mapping
 - **Maya** — Y-up (native match), cm-to-m scale conversion (0.01), FBX ASCII vs binary handling, Lambert/Phong → PBR material approximation

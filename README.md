@@ -98,7 +98,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Surface Aligned Controller** - Planet gravity walking on spherical surfaces
 
 ### Animation
-- **Skeletal Animation** - glTF skin/joint/animation import, GPU skinning, auto-play
+- **Skeletal Animation** - glTF and Assimp (FBX/DAE/3DS/20+ formats) skin/joint/animation import, bone weight extraction, skeleton building, GPU skinning, auto-play first clip
 - **Animation State Machines** - FSM with blending and transitions
 - **2D Sprite Animation** - Frame-based flipbook animation
 - **Inverse Kinematics** - LookAt IK, FABRIK chain solving, interaction IK
