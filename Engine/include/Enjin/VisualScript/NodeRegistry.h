@@ -214,6 +214,7 @@ constexpr const char* CinematicStop        = "Cinematic_Stop";
 constexpr const char* ParticlePlay         = "Particle_Play";
 constexpr const char* ParticleStop         = "Particle_Stop";
 constexpr const char* ParticleBurst        = "Particle_Burst";
+constexpr const char* ParticlePreset       = "Particle_Preset";
 
 // Destructible
 constexpr const char* DestructibleDamage   = "Destructible_Damage";
@@ -353,6 +354,13 @@ constexpr const char* WaterSetColor          = "Water_SetColor";
 // HUD
 constexpr const char* HUDSetEnabled  = "HUD_SetEnabled";
 constexpr const char* HUDIsEnabled   = "HUD_IsEnabled";
+constexpr const char* HUDSetVisible  = "HUD_SetVisible";
+constexpr const char* HUDSetText     = "HUD_SetText";
+constexpr const char* HUDSetValue    = "HUD_SetValue";
+
+// Text
+constexpr const char* TextSetContent = "Text_SetContent";
+constexpr const char* TextSetColor   = "Text_SetColor";
 
 // Sprite2D
 constexpr const char* SpriteSetTexture       = "Sprite_SetTexture";

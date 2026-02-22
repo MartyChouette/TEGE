@@ -1156,6 +1156,8 @@ void RegisterAllBindings(asIScriptEngine* engine) {
     RegisterFlashAPIBindings(engine);
     RegisterMIDIBindings(engine);
     RegisterInputActionBindings(engine);
+    RegisterHUDBindings(engine);
+    RegisterTextBindings(engine);
 
     ENJIN_LOG_INFO(Script, "AngelScript bindings registered successfully");
 }

@@ -37,6 +37,7 @@
 #include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Camera.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Text.h"
 #include "Enjin/Renderer/PostProcessing.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
@@ -3910,6 +3911,40 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ParticlePreset;
+        def.displayName = "Apply Particle Preset";
+        def.description = "Apply a named preset (Fire, Smoke, Sparks, etc.) to a particle emitter";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Preset", PK::Input, "Fire")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"particle", "preset", "fire", "smoke", "sparks", "effect"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string preset = "Fire";
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                preset = std::get<std::string>(inputs[2]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* emitter = ctx.world->GetComponent<ECS::ParticleEmitterComponent>(target);
+                if (emitter) ECS::ApplyParticlePreset(*emitter, preset);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
     // ========================================================================
     // DESTRUCTIBLE
     // ========================================================================
@@ -6597,6 +6632,182 @@ void NodeRegistry::RegisterBuiltinNodes() {
             extern Gameplay::HUDSystem* s_VisualScriptHUD;
             if (s_VisualScriptHUD) return s_VisualScriptHUD->IsEnabled();
             return false;
+        };
+        RegisterNode(def);
+    }
+
+    // HUD Widget component nodes
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetVisible;
+        def.displayName = "HUD Set Visible";
+        def.description = "Show or hide a HUD widget on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Visible", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "widget", "visible", "show", "hide"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            bool visible = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2]))
+                ? std::get<bool>(inputs[2]) : true;
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
+                if (hud) hud->visible = visible;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetText;
+        def.displayName = "HUD Set Text";
+        def.description = "Set the display text of a HUD widget";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Text", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "widget", "text", "label", "set"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string text;
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                text = std::get<std::string>(inputs[2]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
+                if (hud) hud->text = text;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::HUDSetValue;
+        def.displayName = "HUD Set Value";
+        def.description = "Set the current and max values of a HUD widget (for bars)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Current", PK::Input, 1.0f),
+            Float("Max", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"hud", "widget", "value", "health", "bar", "progress"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            f32 current = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 1.0f;
+            f32 maxVal = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                ? std::get<f32>(inputs[3]) : 1.0f;
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* hud = ctx.world->GetComponent<ECS::HUDWidgetComponent>(target);
+                if (hud) {
+                    hud->currentValue = current;
+                    hud->maxValue = maxVal;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Text component nodes
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TextSetContent;
+        def.displayName = "Text Set Content";
+        def.description = "Set the text content of a TextComponent and trigger re-rasterization";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            String("Text", PK::Input, "")
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"text", "content", "set", "string", "label"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            std::string text;
+            if (inputs.size() > 2 && std::holds_alternative<std::string>(inputs[2]))
+                text = std::get<std::string>(inputs[2]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* tc = ctx.world->GetComponent<ECS::TextComponent>(target);
+                if (tc) { tc->text = text; tc->dirty = true; }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::TextSetColor;
+        def.displayName = "Text Set Color";
+        def.description = "Set the text color of a TextComponent";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.2f, 0.5f, 0.7f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Vec3("Color", PK::Input, Math::Vector3(1.0f, 1.0f, 1.0f))
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"text", "color", "font", "set"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[1]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            Math::Vector3 color(1.0f, 1.0f, 1.0f);
+            if (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                color = std::get<Math::Vector3>(inputs[2]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* tc = ctx.world->GetComponent<ECS::TextComponent>(target);
+                if (tc) { tc->textColor = color; tc->dirty = true; }
+            }
+            ctx.nextFlowIndex = 0;
         };
         RegisterNode(def);
     }

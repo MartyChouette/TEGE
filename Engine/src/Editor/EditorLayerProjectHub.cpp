@@ -1529,331 +1529,6 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
     return true;
 }
 
-static void ApplyParticlePreset(ECS::ParticleEmitterComponent& e, const std::string& preset) {
-    // Reset pool so particles respawn with new settings
-    e.pool.activeCount = 0;
-    e.pool.spawnAccumulator = 0.0f;
-    e.pool.burstTimer = 0.0f;
-    e.pool.systemAge = 0.0f;
-    e.isPlaying = true;
-    e.loop = true;
-
-    if (preset == "Fire") {
-        e.emissionRate = 60.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 1.2f;
-        e.lifetimeVariance = 0.3f;
-        e.startSpeed = 2.5f;
-        e.speedVariance = 0.5f;
-        e.startSize = 0.4f;
-        e.sizeMid = 0.6f;
-        e.endSize = 0.05f;
-        e.startColor = Math::Vector3(1.0f, 0.6f, 0.1f);
-        e.endColor = Math::Vector3(0.8f, 0.1f, 0.0f);
-        e.startAlpha = 0.9f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 0.8f;
-        e.speedMultiplierEnd = 0.3f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
-        e.shapeRadius = 0.2f;
-        e.coneAngle = 15.0f;
-        e.gravity = Math::Vector3(0, 1.5f, 0);
-        e.drag = 0.5f;
-        e.rotationSpeed = 0.5f;
-        e.rotationSpeedVariance = 1.0f;
-        e.maxParticles = 512;
-    } else if (preset == "Smoke") {
-        e.emissionRate = 20.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 3.0f;
-        e.lifetimeVariance = 0.5f;
-        e.startSpeed = 1.0f;
-        e.speedVariance = 0.3f;
-        e.startSize = 0.3f;
-        e.sizeMid = 0.8f;
-        e.endSize = 1.5f;
-        e.startColor = Math::Vector3(0.4f, 0.4f, 0.4f);
-        e.endColor = Math::Vector3(0.2f, 0.2f, 0.2f);
-        e.startAlpha = 0.6f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 0.7f;
-        e.speedMultiplierEnd = 0.2f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
-        e.shapeRadius = 0.3f;
-        e.coneAngle = 20.0f;
-        e.gravity = Math::Vector3(0, 0.5f, 0);
-        e.drag = 0.8f;
-        e.rotationSpeed = 0.3f;
-        e.rotationSpeedVariance = 0.5f;
-        e.maxParticles = 256;
-    } else if (preset == "Sparks") {
-        e.emissionRate = 5.0f;
-        e.burstCount = 10;
-        e.burstInterval = 0.5f;
-        e.lifetime = 0.8f;
-        e.lifetimeVariance = 0.3f;
-        e.startSpeed = 8.0f;
-        e.speedVariance = 3.0f;
-        e.startSize = 0.1f;
-        e.sizeMid = -1.0f;
-        e.endSize = 0.02f;
-        e.startColor = Math::Vector3(1.0f, 0.9f, 0.3f);
-        e.endColor = Math::Vector3(1.0f, 0.3f, 0.0f);
-        e.startAlpha = 1.0f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 0.6f;
-        e.speedMultiplierEnd = 0.1f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
-        e.shapeRadius = 0.05f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0, -9.8f, 0);
-        e.drag = 0.2f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.maxParticles = 256;
-    } else if (preset == "Snow") {
-        e.emissionRate = 40.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 4.0f;
-        e.lifetimeVariance = 1.0f;
-        e.startSpeed = 0.5f;
-        e.speedVariance = 0.2f;
-        e.startSize = 0.15f;
-        e.sizeMid = -1.0f;
-        e.endSize = 0.1f;
-        e.startColor = Math::Vector3(1.0f, 1.0f, 1.0f);
-        e.endColor = Math::Vector3(0.9f, 0.95f, 1.0f);
-        e.startAlpha = 0.8f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 1.0f;
-        e.speedMultiplierEnd = 0.8f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Box;
-        e.shapeRadius = 5.0f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0.3f, -1.5f, 0.1f);
-        e.drag = 0.3f;
-        e.rotationSpeed = 0.5f;
-        e.rotationSpeedVariance = 1.0f;
-        e.maxParticles = 512;
-    } else if (preset == "Rain") {
-        e.emissionRate = 80.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 1.5f;
-        e.lifetimeVariance = 0.3f;
-        e.startSpeed = 12.0f;
-        e.speedVariance = 2.0f;
-        e.startSize = 0.05f;
-        e.sizeMid = -1.0f;
-        e.endSize = 0.03f;
-        e.startColor = Math::Vector3(0.5f, 0.6f, 0.8f);
-        e.endColor = Math::Vector3(0.4f, 0.5f, 0.7f);
-        e.startAlpha = 0.6f;
-        e.endAlpha = 0.1f;
-        e.speedMultiplierMid = 1.0f;
-        e.speedMultiplierEnd = 1.0f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Box;
-        e.shapeRadius = 5.0f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0.5f, -15.0f, 0);
-        e.drag = 0.0f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.maxParticles = 1024;
-    } else if (preset == "Magic") {
-        e.emissionRate = 30.0f;
-        e.burstCount = 5;
-        e.burstInterval = 1.0f;
-        e.lifetime = 2.0f;
-        e.lifetimeVariance = 0.5f;
-        e.startSpeed = 1.5f;
-        e.speedVariance = 0.5f;
-        e.startSize = 0.2f;
-        e.sizeMid = 0.35f;
-        e.endSize = 0.0f;
-        e.startColor = Math::Vector3(0.3f, 0.5f, 1.0f);
-        e.endColor = Math::Vector3(0.8f, 0.2f, 1.0f);
-        e.startAlpha = 1.0f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 1.2f;
-        e.speedMultiplierEnd = 0.4f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Sphere;
-        e.shapeRadius = 0.5f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0, 0.5f, 0);
-        e.drag = 0.3f;
-        e.rotationSpeed = 2.0f;
-        e.rotationSpeedVariance = 1.5f;
-        e.maxParticles = 512;
-    } else if (preset == "Explosion") {
-        e.emissionRate = 0.0f;
-        e.burstCount = 80;
-        e.burstInterval = 0.0f;
-        e.lifetime = 1.0f;
-        e.lifetimeVariance = 0.3f;
-        e.startSpeed = 10.0f;
-        e.speedVariance = 4.0f;
-        e.startSize = 0.5f;
-        e.sizeMid = 0.8f;
-        e.endSize = 0.1f;
-        e.startColor = Math::Vector3(1.0f, 0.8f, 0.2f);
-        e.endColor = Math::Vector3(0.3f, 0.1f, 0.0f);
-        e.startAlpha = 1.0f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 0.4f;
-        e.speedMultiplierEnd = 0.05f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
-        e.shapeRadius = 0.1f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0, -3.0f, 0);
-        e.drag = 1.5f;
-        e.rotationSpeed = 3.0f;
-        e.rotationSpeedVariance = 3.0f;
-        e.loop = false;
-        e.maxParticles = 256;
-    } else if (preset == "Water Splash") {
-        e.emissionRate = 0.0f;
-        e.burstCount = 40;
-        e.burstInterval = 0.0f;
-        e.lifetime = 0.8f;
-        e.lifetimeVariance = 0.2f;
-        e.startSpeed = 8.0f;
-        e.speedVariance = 3.0f;
-        e.startSize = 0.15f;
-        e.sizeMid = 0.2f;
-        e.endSize = 0.05f;
-        e.startColor = Math::Vector3(0.4f, 0.7f, 1.0f);
-        e.endColor = Math::Vector3(0.2f, 0.5f, 0.9f);
-        e.startAlpha = 0.9f;
-        e.endAlpha = 0.1f;
-        e.speedMultiplierMid = 0.6f;
-        e.speedMultiplierEnd = 0.1f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Hemisphere;
-        e.shapeRadius = 0.3f;
-        e.coneAngle = 45.0f;
-        e.gravity = Math::Vector3(0, -12.0f, 0);
-        e.drag = 0.3f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.loop = false;
-        e.maxParticles = 256;
-        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
-        e.velocityStretchScale = 1.5f;
-    } else if (preset == "Blood/Sap") {
-        e.emissionRate = 15.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 1.5f;
-        e.lifetimeVariance = 0.4f;
-        e.startSpeed = 3.0f;
-        e.speedVariance = 1.0f;
-        e.startSize = 0.12f;
-        e.sizeMid = 0.18f;
-        e.endSize = 0.06f;
-        e.startColor = Math::Vector3(0.6f, 0.05f, 0.05f);
-        e.endColor = Math::Vector3(0.3f, 0.0f, 0.0f);
-        e.startAlpha = 1.0f;
-        e.endAlpha = 0.3f;
-        e.speedMultiplierMid = 0.7f;
-        e.speedMultiplierEnd = 0.2f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
-        e.shapeRadius = 0.05f;
-        e.coneAngle = 20.0f;
-        e.gravity = Math::Vector3(0, -6.0f, 0);
-        e.drag = 2.0f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.maxParticles = 256;
-        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
-        e.velocityStretchScale = 2.0f;
-    } else if (preset == "Lava") {
-        e.emissionRate = 8.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 3.0f;
-        e.lifetimeVariance = 0.8f;
-        e.startSpeed = 2.0f;
-        e.speedVariance = 0.8f;
-        e.startSize = 0.6f;
-        e.sizeMid = 0.8f;
-        e.endSize = 0.3f;
-        e.startColor = Math::Vector3(1.0f, 0.5f, 0.0f);
-        e.endColor = Math::Vector3(0.4f, 0.05f, 0.0f);
-        e.startAlpha = 1.0f;
-        e.endAlpha = 0.6f;
-        e.speedMultiplierMid = 0.5f;
-        e.speedMultiplierEnd = 0.1f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Hemisphere;
-        e.shapeRadius = 0.5f;
-        e.coneAngle = 30.0f;
-        e.gravity = Math::Vector3(0, -2.0f, 0);
-        e.drag = 1.0f;
-        e.rotationSpeed = 0.2f;
-        e.rotationSpeedVariance = 0.3f;
-        e.maxParticles = 256;
-        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::Billboard;
-        e.velocityStretchScale = 0.0f;
-    } else if (preset == "Fountain") {
-        e.emissionRate = 40.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 2.0f;
-        e.lifetimeVariance = 0.3f;
-        e.startSpeed = 10.0f;
-        e.speedVariance = 2.0f;
-        e.startSize = 0.1f;
-        e.sizeMid = 0.15f;
-        e.endSize = 0.05f;
-        e.startColor = Math::Vector3(0.6f, 0.85f, 1.0f);
-        e.endColor = Math::Vector3(0.3f, 0.6f, 0.9f);
-        e.startAlpha = 0.8f;
-        e.endAlpha = 0.0f;
-        e.speedMultiplierMid = 0.5f;
-        e.speedMultiplierEnd = 0.1f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Cone;
-        e.shapeRadius = 0.1f;
-        e.coneAngle = 10.0f;
-        e.gravity = Math::Vector3(0, -9.8f, 0);
-        e.drag = 0.2f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.maxParticles = 512;
-        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
-        e.velocityStretchScale = 1.2f;
-    } else if (preset == "Drip") {
-        e.emissionRate = 2.0f;
-        e.burstCount = 0;
-        e.burstInterval = 0.0f;
-        e.lifetime = 2.5f;
-        e.lifetimeVariance = 0.5f;
-        e.startSpeed = 0.5f;
-        e.speedVariance = 0.2f;
-        e.startSize = 0.1f;
-        e.sizeMid = 0.15f;
-        e.endSize = 0.08f;
-        e.startColor = Math::Vector3(0.3f, 0.6f, 0.9f);
-        e.endColor = Math::Vector3(0.2f, 0.4f, 0.7f);
-        e.startAlpha = 0.9f;
-        e.endAlpha = 0.2f;
-        e.speedMultiplierMid = 1.5f;
-        e.speedMultiplierEnd = 2.0f;
-        e.shape = ECS::ParticleEmitterComponent::EmitterShape::Point;
-        e.shapeRadius = 0.02f;
-        e.coneAngle = 5.0f;
-        e.gravity = Math::Vector3(0, -9.8f, 0);
-        e.drag = 0.5f;
-        e.rotationSpeed = 0.0f;
-        e.rotationSpeedVariance = 0.0f;
-        e.maxParticles = 64;
-        e.renderMode = ECS::ParticleEmitterComponent::RenderMode::VelocityStretch;
-        e.velocityStretchScale = 2.5f;
-    }
-}
-
-
 void EditorLayer::ApplyTemplate(const std::string& templateId) {
     if (!m_World) return;
 
@@ -2348,6 +2023,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.moveSpeed = 2.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                addCapsuleCollider2D(e, 0.5f, 0.6f, false);
             }
         }
 
@@ -2395,7 +2071,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             mat.emissiveStrength = 0.4f;
             m_World->AddComponent<ECS::MeshComponent>(torch, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(torch);
-            ApplyParticlePreset(pe, "Sparks");
+            ECS::ApplyParticlePreset(pe, "Sparks");
         }
 
         // ═══════════════════════════════════════════════════
@@ -2504,6 +2180,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 8.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+                addCapsuleCollider2D(e, 0.4f, 0.5f, false);
             }
         }
 
@@ -2747,6 +2424,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 10.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+            addCapsuleCollider2D(e, 0.45f, 0.6f, false);
         }
 
         // Torches ×2 (tower walls, Fire)
@@ -2764,7 +2442,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 mat.emissiveStrength = 0.8f;
                 m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
-                ApplyParticlePreset(pe, "Fire");
+                ECS::ApplyParticlePreset(pe, "Fire");
             }
         }
 
@@ -2845,8 +2523,9 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 12.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
+            addCapsuleCollider2D(e, 0.8f, 1.8f, false);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
-            ApplyParticlePreset(pe, "Sparks");
+            ECS::ApplyParticlePreset(pe, "Sparks");
         }
 
         // Speed boost (past boss)
@@ -2882,7 +2561,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telA.targetPosition = Math::Vector3(0, 1, 0);
             telA.cooldown = 1.0f;
             auto& peA = m_World->AddComponent<ECS::ParticleEmitterComponent>(padA);
-            ApplyParticlePreset(peA, "Magic");
+            ECS::ApplyParticlePreset(peA, "Magic");
 
             ECS::Entity padB = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(padB, "Teleporter Meadow");
@@ -2898,7 +2577,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telB.targetPosition = Math::Vector3(52, 17, 0);
             telB.cooldown = 1.0f;
             auto& peB = m_World->AddComponent<ECS::ParticleEmitterComponent>(padB);
-            ApplyParticlePreset(peB, "Magic");
+            ECS::ApplyParticlePreset(peB, "Magic");
 
             telA.linkedTeleporter = padB;
             telB.linkedTeleporter = padA;
@@ -3213,7 +2892,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 15.0f;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
-                ApplyParticlePreset(pe, "Sparks");
+                ECS::ApplyParticlePreset(pe, "Sparks");
                 pe.emissionRate = 5.0f;
             }
         }
@@ -3363,7 +3042,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 mat.emissiveStrength = 0.8f;
                 m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
-                ApplyParticlePreset(pe, "Fire");
+                ECS::ApplyParticlePreset(pe, "Fire");
             }
         }
 
@@ -3400,7 +3079,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telA.targetPosition = Math::Vector3(22, 0, 0);
             telA.cooldown = 1.0f;
             auto& peA = m_World->AddComponent<ECS::ParticleEmitterComponent>(padA);
-            ApplyParticlePreset(peA, "Magic");
+            ECS::ApplyParticlePreset(peA, "Magic");
 
             // East wing pad
             ECS::Entity padB = m_World->CreateEntity();
@@ -3417,7 +3096,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telB.targetPosition = Math::Vector3(-7, 7, 0);
             telB.cooldown = 1.0f;
             auto& peB = m_World->AddComponent<ECS::ParticleEmitterComponent>(padB);
-            ApplyParticlePreset(peB, "Magic");
+            ECS::ApplyParticlePreset(peB, "Magic");
 
             // Link bidirectionally
             telA.linkedTeleporter = padB;
@@ -3871,7 +3550,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             fmat.baseColor = Math::Vector3(0.3f, 0.2f, 0.1f);
             m_World->AddComponent<ECS::MeshComponent>(fire, Renderer::MeshFactory::CreateCube(1.0f));
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fire);
-            ApplyParticlePreset(pe, "Fire");
+            ECS::ApplyParticlePreset(pe, "Fire");
 
             ECS::Entity fireLight = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(fireLight, "Fire Light");
@@ -4190,7 +3869,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& dt = m_World->AddComponent<ECS::TransformComponent>(dust);
             dt.position = Math::Vector3(0.0f, 2.0f, -4.0f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(dust);
-            ApplyParticlePreset(pe, "Smoke");
+            ECS::ApplyParticlePreset(pe, "Smoke");
             pe.emissionRate = 3.0f;
             pe.startSpeed = 0.2f;
             pe.startSize = 0.3f;
@@ -4468,7 +4147,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& sd = m_World->AddComponent<ECS::SaveDataComponent>(savePoint);
             sd.tier = ECS::PersistenceTier::SceneState;
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(savePoint);
-            ApplyParticlePreset(pe, "Magic");
+            ECS::ApplyParticlePreset(pe, "Magic");
         }
 
         // Treasure chest
@@ -5031,7 +4710,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& sd = m_World->AddComponent<ECS::SaveDataComponent>(cp);
             sd.tier = ECS::PersistenceTier::SceneState;
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(cp);
-            ApplyParticlePreset(pe, "Magic");
+            ECS::ApplyParticlePreset(pe, "Magic");
         }
 
         // Meta-progression entity
@@ -5213,7 +4892,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& ft = m_World->AddComponent<ECS::TransformComponent>(fx);
             ft.position = Math::Vector3(0.0f, 2.0f, 0.0f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fx);
-            ApplyParticlePreset(pe, "Magic");
+            ECS::ApplyParticlePreset(pe, "Magic");
             pe.playOnAwake = false;
         }
 
@@ -5926,7 +5605,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             m_World->AddComponent<ECS::MeshComponent>(spawner, Renderer::MeshFactory::CreateCapsule2D(1.0f, 1.5f));
             m_World->AddComponent<ECS::Sprite2DComponent>(spawner);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(spawner);
-            ApplyParticlePreset(pe, "Sparks");
+            ECS::ApplyParticlePreset(pe, "Sparks");
             pe.emissionRate = 20.0f;
         }
 
@@ -6195,7 +5874,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& bt = m_World->AddComponent<ECS::TransformComponent>(burst);
             bt.position = Math::Vector3(0.0f, 1.0f, 0.5f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(burst);
-            ApplyParticlePreset(pe, "Sparks");
+            ECS::ApplyParticlePreset(pe, "Sparks");
             pe.playOnAwake = false;
             pe.emissionRate = 50.0f;
             pe.startColor = Math::Vector3(1.0f, 0.85f, 0.0f);
@@ -8059,7 +7738,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pft = m_World->AddComponent<ECS::TransformComponent>(portalFx);
             pft.position = Math::Vector3(-12.0f, 1.0f, 0.0f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(portalFx);
-            ApplyParticlePreset(pe, "Fire");
+            ECS::ApplyParticlePreset(pe, "Fire");
         }
 
         {
@@ -9683,7 +9362,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& at = m_World->AddComponent<ECS::TransformComponent>(aura);
             at.position = Math::Vector3(0.0f, 1.0f, 0.0f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(aura);
-            ApplyParticlePreset(pe, "Magic");
+            ECS::ApplyParticlePreset(pe, "Magic");
         }
 
         // Level-up zone (golden pillar of light, triggers level-up UI)
@@ -10377,7 +10056,7 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& fpt = m_World->AddComponent<ECS::TransformComponent>(fireParticle);
             fpt.position = Math::Vector3(0.0f, 0.5f, -8.0f);
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(fireParticle);
-            ApplyParticlePreset(pe, "Fire");
+            ECS::ApplyParticlePreset(pe, "Fire");
         }
 
         // Soul Pickup (dropped by enemies, currency for leveling)

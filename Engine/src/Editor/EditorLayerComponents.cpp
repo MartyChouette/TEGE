@@ -4431,6 +4431,19 @@ void EditorLayer::DrawParticleEmitterComponent(ECS::Entity entity) {
         auto* emitter = m_World->GetComponent<ECS::ParticleEmitterComponent>(entity);
         if (!emitter) return;
 
+        // Preset dropdown
+        {
+            const char* presetNames[] = { "(None)", "Fire", "Smoke", "Sparks", "Snow", "Rain",
+                "Magic", "Explosion", "Water Splash", "Blood/Sap", "Lava", "Fountain", "Drip" };
+            static int currentPreset = 0;
+            if (ImGui::Combo("Preset", &currentPreset, presetNames, IM_ARRAYSIZE(presetNames))) {
+                if (currentPreset > 0) {
+                    ECS::ApplyParticlePreset(*emitter, presetNames[currentPreset]);
+                    currentPreset = 0;
+                }
+            }
+        }
+
         InspectorUndo::Checkbox(m_UndoRedo, "Playing", &emitter->isPlaying);
         InspectorUndo::Checkbox(m_UndoRedo, "Play On Awake", &emitter->playOnAwake);
         InspectorUndo::Checkbox(m_UndoRedo, "Loop", &emitter->loop);
