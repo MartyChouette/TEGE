@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-02-21 (Session 32)
+
+### Expose Template-Used Features to Users
+
+Templates/demos must only use features users can reproduce from a blank project. Three internal-only features (particle presets, HUD widget scripting, text component scripting) were exposed across all user-facing surfaces.
+
+**Particle Presets — Centralized & Exposed:**
+- Moved `ApplyParticlePreset()` from 3 copy-pasted static functions (EditorLayerPanels, EditorLayerViewport, EditorLayerProjectHub) into a single shared `inline` in `Gameplay.h` — net -375 lines
+- Added inspector preset dropdown (combo box with 12 presets) in `DrawParticleEmitterComponent()`
+- Added `Particle_ApplyPreset(uint64, const string &in)` AngelScript binding
+- Added `Particle_Preset` Visual Script node (Entity + String → apply preset)
+
+**HUD Widget Scripting (new):**
+- New `ScriptBindings_HUD.cpp` with 13 AngelScript bindings: visibility, text get/set, value/max get/set, fill/text color, position, size, font size, bind field
+- 3 new VS nodes: HUD Set Visible, HUD Set Text, HUD Set Value
+
+**Text Component Scripting (new):**
+- New `ScriptBindings_Text.cpp` with 8 AngelScript bindings: content get/set, font size, text/bg color, bg opacity, alignment, wrap width — all setters trigger `dirty = true`
+- 2 new VS nodes: Text Set Content, Text Set Color
+
+**Totals:** +22 AS bindings (708 total), +6 VS nodes (144+ total). Clean build, zero errors.
+
+---
+
 ## 2026-02-17 (Session 31)
 
 ### Physics / Scripting / Serialization Audit — 26 Findings Fixed

@@ -24,6 +24,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **RT** | RT Translucency (subsurface scattering) | P4 |
 | **Flash** | Yarn Spinner / Twine dialogue import/export | P4 |
 | **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
+| **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
 | **Known Bug** | RT pipeline crash on pool-allocated entity BLAS builds (parked) | P2 |
 
 ---

@@ -52,7 +52,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Skybox Panel** - Dedicated panel with procedural presets (Midday, Sunset, Dawn, Night, Overcast)
 - **Asset Hot-Reload** - File watcher polls texture files for changes
 - **Build Dialog** - Configure and export standalone game builds from the editor
-- **Particle Editor** - 7 presets, color gradient bar, size/speed curves, shape preview, playback controls
+- **Particle Editor** - 12 presets (inspector dropdown + dedicated panel), color gradient bar, size/speed curves, shape preview, playback controls
 - **UI Editor** - Viewport WYSIWYG editing with click-select, drag-move, resize handles, and element tree
 - **Project Settings** - Dedicated panel for rendering/physics defaults separated from editor preferences
 - **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
@@ -195,7 +195,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~686 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, Flash API shim), hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~708 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, HUD widgets, text components, particle presets, Flash API shim), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
@@ -215,7 +215,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **138+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, debug
+- **144+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, HUD widgets, text, particle presets, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through
