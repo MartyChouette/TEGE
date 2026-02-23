@@ -27,6 +27,7 @@ This document captures detailed technical plans, performance findings, and strat
 | **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
 | **Known Bug** | ~~RT pipeline crash on pool-allocated entity BLAS builds~~ | ✅ Fixed |
 | **Assets** | ~~Assimp skeletal animation import (FBX/DAE/all formats)~~ | ✅ Complete |
+| **Editor** | ~~Context-aware collider selection & expanded smart suggestions~~ | ✅ Complete |
 
 ---
 
@@ -382,17 +383,51 @@ Design pattern for panels with no content:
 
 Ideas for "simple creation of complex games":
 
-### Smart Defaults
+### Smart Defaults ✅ COMPLETE
 
-- When adding "Chase Player" AI node, auto-suggest connecting to "Player Entity" pin
-- When creating dialogue, auto-populate speaker name from entity name
-- When adding physics joint, auto-suggest connected entity from selection
+- ~~When adding "Chase Player" AI node, auto-suggest connecting to "Player Entity" pin~~ ✅ Make Patroller auto-targets player
+- ~~When creating dialogue, auto-populate speaker name from entity name~~ ✅ Setup NPC reads NameComponent
+- ~~When adding physics joint, auto-suggest connected entity from selection~~ ✅ Smart Suggestions detect missing colliders/skeletons/transforms
 
-### One-Click Patterns
+### Context-Aware Collider Selection ✅ COMPLETE (2026-02-23)
 
-- "Make this enemy a patroller" button wires up behavior tree automatically
-- "Add basic movement" creates controller + camera + input bindings
-- "Setup 2D platformer" configures gravity, camera bounds, collision layers
+`ChooseColliderForEntity()` selects optimal collider shape based on entity context:
+1. **Sprite2D** → Box (1,1,0.1) for 2D sprites
+2. **Character/AI controllers** → Capsule sized from mesh AABB (or 0.3r/1.8h default)
+3. **DamageComponent** → Sphere trigger sized from mesh max dimension (or r=1.0 default)
+4. **Mesh with valid AABB** → Aspect-ratio best-fit: tall (h>1.5x width) → Capsule, uniform (min/max>0.7) → Sphere, else → Box sized to AABB
+5. **Fallback** → Box (1,1,1)
+
+`ApplyColliderRecommendation()` applies the recommendation struct to any entity. Used by Smart Suggestions (rules 3, 8, 9), Make Patroller, Setup Destructible, and Add Physics Object patterns.
+
+### Smart Suggestions — 12 Rules ✅ COMPLETE (2026-02-23)
+
+| Rule | Condition | Action |
+|------|-----------|--------|
+| 1 | Dialogue + no DialogueBox | Add DialogueBox |
+| 2 | AIController + no Health | Add Health (100) |
+| 3 | Health + no Collider | Add context-aware collider |
+| 4 | Controller + no Camera | Add camera for controller type |
+| 5 | Mesh + no Material | Add Material |
+| 6 | BehaviorTree + no AIController | Add AIController |
+| 7 | Sprite + Controller + no Camera2D | Add Camera2DBounds |
+| 8 | Damage + no Collider | Add Sphere trigger |
+| 9 | Rigidbody + no Collider | Add best-fit collider |
+| 10 | Animator + no Skeleton | Add Skeleton |
+| 11 | NetworkIdentity + no NetworkTransform | Add NetworkTransform |
+| 12 | Health + no controller/AI + no Destructible | Add Destructible |
+
+### One-Click Patterns — 7 Quick Setup ✅ COMPLETE (2026-02-23)
+
+| Pattern | Components Added |
+|---------|-----------------|
+| Add Basic Movement | Controller + collider + camera (2D/3D aware) |
+| Setup 2D Platformer | Platformer2D + Box + Sprite2D + Camera2D |
+| Make Patroller | AI (Patrol) + Health (50) + BT + capsule/box collider |
+| Setup NPC | Dialogue + DialogueBox + Interactable + sphere/box trigger |
+| Make Collectible | Pickup (Coin) + TriggerZone + Tween (bob) |
+| Setup Destructible | Health (25) + Destructible + best-fit collider |
+| Add Physics Object | Rigidbody (dynamic, gravity) + best-fit collider |
 
 ### Cross-System Integration
 

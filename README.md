@@ -62,6 +62,8 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Audio Event Graph** - Dynamic audio mixing with runtime execution (trigger events, parameter thresholds, delay scheduling), .enjaudiopkg save/load
 - **Particle Graph** - Visual particle system authoring with compiler to ParticleEmitterComponent, .enjparticle save/load
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
+- **Smart Suggestions** - 12 context-aware rules detect missing components (collider, skeleton, network transform, destructible) and recommend the right collider shape (Box/Sphere/Capsule) based on entity context and mesh bounds, with tooltip explanations
+- **Quick Setup Patterns** - 7 one-click patterns (Basic Movement, 2D Platformer, Patroller, NPC, Collectible, Destructible, Physics Object) with context-aware collider selection and 2D/3D adaptation
 - **Visual Script Editor** - Blueprint-style visual scripting with 146+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan

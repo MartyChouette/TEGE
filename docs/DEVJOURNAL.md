@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-02-23 (Session 37)
+
+### Context-Aware Collider Selection & Expanded Smart Suggestions
+
+Smart Suggestions and Quick Setup patterns previously added `BoxColliderComponent` regardless of entity context. This adds intelligent collider shape selection based on entity components and mesh bounds, fixes Quick Setup gaps where enemies/NPCs had no colliders, and adds 4 new suggestion rules and 2 new Quick Setup patterns.
+
+**New helper system (`ChooseColliderForEntity`):**
+- `RecommendedCollider` enum (Box, Sphere, Capsule) and `ColliderRecommendation` struct with shape, sizing, center, isTrigger, reason
+- Priority-based selection: Sprite2D→Box(thin), Character/AI→Capsule(mesh-sized), Damage→Sphere trigger, Mesh AABB→aspect-ratio best-fit (tall→Capsule, uniform→Sphere, else→Box), Fallback→Box(1,1,1)
+- `ApplyColliderRecommendation()` reusable helper adds the correct component with sizing
+
+**Smart Suggestions updated (rules 3, 8 fixed + rules 9-12 added):**
+- `Suggestion::text` changed from `const char*` to `std::string`, added `tooltip` field for hover explanations
+- Added is2D detection (same pattern as Quick Setup)
+- Rule 3 (Health + no collider): Dynamic text "Add {Capsule/Sphere/Box} Collider for damage detection" based on entity context
+- Rule 8 (Damage + no collider): Always adds Sphere trigger for radius-based damage area
+- Rule 9: Rigidbody + no collider → best-fit collider ("Rigidbody needs collider for physics simulation")
+- Rule 10: Animator + no Skeleton → add Skeleton ("Animator requires skeleton with bone data")
+- Rule 11: NetworkIdentity + no NetworkTransform → add NetworkTransform ("Networked entity needs transform sync")
+- Rule 12: Health + no controller/AI + no Destructible → add Destructible ("Non-character health needs break behavior")
+
+**Quick Setup gaps fixed:**
+- "Make Patroller": Now adds capsule collider (3D) or box collider (2D) so enemy can be hit
+- "Setup NPC": Now adds sphere trigger (r=1.5, 3D) or box trigger (2D) for interaction detection
+
+**New Quick Setup patterns:**
+- "Setup Destructible": Health(25) + DestructibleComponent + best-fit collider from mesh
+- "Add Physics Object": Rigidbody(dynamic, gravity) + best-fit collider from mesh bounds
+
+**Totals:** 12 suggestion rules (was 8), 7 Quick Setup patterns (was 5). 1 file changed, 288 insertions. Clean build, zero errors.
+
+---
+
 ## 2026-02-22 (Session 36)
 
 ### RT Translucency, RT Caustics, OptiX Denoiser, Material Transmission/SSS
