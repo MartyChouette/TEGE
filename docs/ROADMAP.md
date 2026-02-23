@@ -2,7 +2,7 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-22)
+## Status Summary (2026-02-23)
 
 **150+ features complete.** Beta 0.8 QA hardening complete — all 8 subsystem audits done. See `docs/DEV_JOURNAL.md` for session log.
 
@@ -19,10 +19,10 @@ This document captures detailed technical plans, performance findings, and strat
 | **Platforms** | VR/XR (OpenXR) | P4 |
 | **Editor** | ~~Settings UX restructure (System/Project/Scene tiers)~~ | ✅ Complete |
 | **Editor** | ~~Networking config editor UI~~ | ✅ Complete |
-| **RT** | OptiX AI Denoiser integration (NVIDIA) | P4 |
-| **RT** | RT Caustics (photon mapping / path traced) | P4 |
-| **RT** | RT Translucency (subsurface scattering) | P4 |
-| **Flash** | Yarn Spinner / Twine dialogue import/export | P4 |
+| **RT** | ~~OptiX AI Denoiser integration (NVIDIA)~~ | ✅ Complete |
+| **RT** | ~~RT Caustics (photon mapping / path traced)~~ | ✅ Complete |
+| **RT** | ~~RT Translucency (subsurface scattering)~~ | ✅ Complete |
+| **Flash** | ~~Yarn Spinner / Twine dialogue import/export~~ | ✅ Complete |
 | **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
 | **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
 | **Known Bug** | ~~RT pipeline crash on pool-allocated entity BLAS builds~~ | ✅ Fixed |
@@ -1039,7 +1039,7 @@ public:
 
 ## Ray Tracing & Path Tracing ✅ COMPLETE
 
-The full Vulkan ray tracing pipeline is implemented and wired end-to-end. `CompositeRTResults()` is called after SVGF denoising, the real depth buffer is bound to RT descriptor binding 2, and camera change detection resets path tracer accumulation. `DenoiseRTOutputs()` executes the full SVGF pass sequence (temporal, variance, a-trous wavelet). All code, shaders (GLSL), editor UI, serialization, and compiled SPIR-V bytecode are in place. All 19 RT shaders are compiled and embedded in `RTShaderData.h` (384–10,964 bytes each). The RT pipeline activates automatically on supported hardware.
+The full Vulkan ray tracing pipeline is implemented and wired end-to-end. `CompositeRTResults()` is called after denoising (SVGF, OIDN, or OptiX), the real depth buffer is bound to RT descriptor binding 2, and camera change detection resets path tracer accumulation. Effects include shadows, reflections, AO, GI, translucency (refraction/SSS), and caustics (photon-traced). Three denoiser options: SVGF (compute), OIDN (Intel neural), OptiX (NVIDIA CUDA). All 25 RT shaders are compiled and embedded in `RTShaderData.h`. The RT pipeline activates automatically on supported hardware.
 
 ### Architecture
 
@@ -1061,8 +1061,8 @@ Hybrid rendering pipeline: rasterization for primary visibility (existing Vulkan
 | **RT Compositor** | Fullscreen compute composite of RT layers into scene HDR | ✅ Complete |
 | **Editor Panel** | Per-effect toggles, config sliders, path tracer progress, stats | ✅ Complete |
 | **Scene Settings** | 24 RT config fields with full JSON serialization | ✅ Complete |
-| **Caustics** | Photon mapping or path traced caustics for glass/water | Planned |
-| **RT Translucency** | Subsurface scattering via random walk in medium | Planned |
+| **Caustics** | Photon-traced caustic patterns from refractive surfaces | ✅ Complete (RTCaustics class, binding 15, 3 shaders) |
+| **RT Translucency** | Refraction rays (Snell's law, Fresnel, SSS approximation) | ✅ Complete (RTTranslucency class, binding 14, 3 shaders) |
 | **OIDN integration** | Intel Open Image Denoise for cross-platform neural denoising | ✅ Complete (OIDNDenoiser.h/cpp, CMake ENJIN_RAYTRACING_OIDN, editor denoiser type selector) |
 
 ### Files
@@ -1079,8 +1079,11 @@ Hybrid rendering pipeline: rasterization for primary visibility (existing Vulkan
 - `PathTracer.h` — Progressive path tracer with accumulation buffer
 - `IDenoiser.h` — Abstract denoiser interface
 - `SVGFDenoiser.h` — 3-pass SVGF compute denoiser
-- `RTCompositor.h` — Compute shader to composite RT layers into scene HDR
-- `RTShaderData.h` — Embedded compiled SPIR-V for all 19 RT + compute shaders (384–10,964 bytes each)
+- `RTCompositor.h` — Compute shader to composite RT layers into scene HDR (enable bits 0-5: shadows/reflections/AO/GI/translucency/caustics)
+- `RTTranslucency.h` — Refraction ray dispatch + config (Snell's law, Fresnel, SSS approximation)
+- `RTCaustics.h` — Photon-traced caustic dispatch + config
+- `OptiXDenoiser.h` — NVIDIA OptiX AI Denoiser (3 modes: LDR/HDR/Temporal), compile-guarded ENJIN_RAYTRACING_OPTIX
+- `RTShaderData.h` — Embedded compiled SPIR-V for all 25 RT + compute shaders
 
 **Sources** (`Engine/src/Renderer/RayTracing/`):
 - Matching `.cpp` files for all headers above (11 source files)
@@ -1093,6 +1096,8 @@ Hybrid rendering pipeline: rasterization for primary visibility (existing Vulkan
 - `rt_gi.rgen/.rmiss/.rchit` — Multi-bounce diffuse GI
 - `rt_pathtrace.rgen/.rmiss/.rchit` — Full progressive path tracer
 - `svgf_temporal.comp`, `svgf_variance.comp`, `svgf_atrous.comp` — SVGF denoiser passes
+- `rt_translucency.rgen/.rmiss/.rchit` — Refraction rays with Snell's law and SSS
+- `rt_caustics.rgen/.rmiss/.rchit` — Photon-traced caustic patterns
 - `rt_composite.comp` — Composite RT layers into scene HDR
 
 ### Render Frame Flow (with RT)
@@ -1105,8 +1110,8 @@ BeginFrame()
   RenderShadowPass()              ← raster shadows (skipped if RT shadows on)
   │
   RebuildTLAS()                   ← update TLAS from entity transforms
-  DispatchRTEffects()             ← trace shadow/reflect/AO/GI rays
-  DenoiseRTOutputs()              ← SVGF 3-pass compute
+  DispatchRTEffects()             ← trace shadow/reflect/AO/GI/translucency/caustics rays
+  DenoiseRTOutputs()              ← SVGF / OIDN / OptiX denoise
   │
   BeginMainRenderPass()
     RenderEntities()              ← existing rasterization
@@ -1114,7 +1119,8 @@ BeginFrame()
   EndMainRenderPass()
   │
   CompositeRTResults()            ← compute: multiply shadows, add reflections,
-  │                                  multiply AO, add GI into scene HDR
+  │                                  multiply AO, add GI, blend translucency,
+  │                                  add caustics into scene HDR
   PostProcessing::Apply()         ← existing tonemapping/bloom/FXAA
   │
   EndFrame()
@@ -1140,28 +1146,30 @@ Only runs for `SceneRenderMode::Scene3D`. 2D/2.5D scenes skip the RT pipeline en
 | 11 | STORAGE_BUFFER | Index data |
 | 12 | STORAGE_BUFFER | Per-instance transforms |
 | 13 | UNIFORM_BUFFER | Light data |
+| 14 | STORAGE_IMAGE | RT Translucency output (RGBA16F) |
+| 15 | STORAGE_IMAGE | RT Caustics output (RGBA16F) |
 
 ### Graceful Fallback
 
 - `RTCapabilities::Query()` checks extension support at physical device selection
 - If unsupported: all RT unique_ptrs remain null, editor shows "Not Supported" badge
-- All 19 RT shaders are compiled SPIR-V (384–10,964 bytes); pipeline creates automatically on supported hardware
+- All 25 RT shaders are compiled SPIR-V; pipeline creates automatically on supported hardware
 - All RT code paths guarded by `if (m_RTEnabled && m_ASManager)` checks
 - Raster shadows/SSAO remain the fallback path
 
 ### Hardware Requirements
 
 - **RT hardware path:** Vulkan RT extensions (NVIDIA RTX 20xx+, AMD RX 6000+, Intel Arc)
-- **Denoising:** SVGF on any Vulkan GPU with compute shaders
+- **Denoising:** SVGF on any Vulkan GPU with compute shaders; OIDN (Intel, cross-platform); OptiX (NVIDIA CUDA)
 - **Minimum for real-time RT:** Target 1080p @ 30fps with 1 SPP + SVGF on RTX 3060-class hardware
 
 ### Remaining Work
 
-1. ~~**Compile RT shaders**~~ ✅ — All 19 GLSL shaders compiled to SPIR-V and embedded in `RTShaderData.h`
+1. ~~**Compile RT shaders**~~ ✅ — All 25 GLSL shaders compiled to SPIR-V and embedded in `RTShaderData.h`
 2. ~~**Embed SPIR-V**~~ ✅ — Real compiled bytecode (384–10,964 bytes each) replaces placeholder stubs
 3. ~~**Wire composition + denoising**~~ ✅ — `CompositeRTResults()` wired after denoising, real depth buffer on binding 2, `DenoiseRTOutputs()` replaced with real SVGF calls, camera change detection for path tracer reset
 4. ~~**OIDN integration**~~ ✅ — Intel Open Image Denoise as alternative cross-platform neural denoiser. `OIDNDenoiser.h/cpp`, `ENJIN_RAYTRACING_OIDN` CMake option, editor denoiser type selector. `RegisterImageMapping()` wired for all RT effect outputs + dummy image in `InitializeRayTracing()`
-5. **OptiX integration** — NVIDIA OptiX AI Denoiser for best quality on NVIDIA GPUs
+5. ~~**OptiX integration**~~ ✅ — NVIDIA OptiX AI Denoiser (CUDA-based GPU denoising, 3 modes: LDR/HDR/Temporal). `OptiXDenoiser.h/cpp`, `ENJIN_RAYTRACING_OPTIX` CMake option
 
 ---
 

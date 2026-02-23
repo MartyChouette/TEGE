@@ -1,0 +1,115 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
+layout(binding = 14, set = 0, rgba16f) uniform image2D translucencyOutput;
+layout(binding = 2, set = 0) uniform sampler2D depthTex;
+layout(binding = 3, set = 0) uniform sampler2D normalTex;
+
+layout(binding = 9, set = 0) readonly buffer MaterialSSBO {
+    float materialData[];  // Per-entity material data (transmission, ior, thickness, sssIntensity, sssColor, sssRadius)
+};
+
+layout(binding = 13, set = 0) uniform LightData {
+    vec4 lightDir;
+    vec4 lightColor;
+    mat4 invViewProj;
+    vec2 screenSize;
+    uint frameCount;
+    float maxDistance;
+    vec4 cameraPos;
+    float roughnessThreshold;
+    float pad1, pad2, pad3;
+} uLight;
+
+layout(location = 0) rayPayloadEXT vec4 transPayload;
+
+#include "rt_common.glsl"
+
+// Snell's law refraction with total internal reflection check
+vec3 refractRay(vec3 I, vec3 N, float eta) {
+    float cosI = dot(-I, N);
+    float sin2T = eta * eta * (1.0 - cosI * cosI);
+    if (sin2T > 1.0) return reflect(I, N); // Total internal reflection
+    float cosT = sqrt(1.0 - sin2T);
+    return eta * I + (eta * cosI - cosT) * N;
+}
+
+// Fresnel (Schlick approximation)
+float fresnelSchlick(float cosTheta, float ior) {
+    float r0 = (1.0 - ior) / (1.0 + ior);
+    r0 = r0 * r0;
+    return r0 + (1.0 - r0) * pow(1.0 - cosTheta, 5.0);
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    vec2 uv = (vec2(pixel) + 0.5) / uLight.screenSize;
+
+    float depth = texture(depthTex, uv).r;
+    if (depth >= 1.0) {
+        imageStore(translucencyOutput, pixel, vec4(0.0));
+        return;
+    }
+
+    // Reconstruct world position
+    vec4 clipPos = vec4(uv * 2.0 - 1.0, depth, 1.0);
+    vec4 worldPos = uLight.invViewProj * clipPos;
+    worldPos /= worldPos.w;
+
+    vec3 worldNormal = normalize(texture(normalTex, uv).xyz * 2.0 - 1.0);
+
+    vec3 viewDir = normalize(worldPos.xyz - uLight.cameraPos.xyz);
+    float cosTheta = max(dot(-viewDir, worldNormal), 0.0);
+
+    // For now, use default material properties (expanded material SSBO will feed per-pixel data)
+    // In the closest-hit shader, we read per-entity material data
+    float transmission = 0.5;  // Will be overridden by material SSBO
+    float ior = 1.5;
+    float sssIntensity = 0.0;
+
+    // Refraction ray (Snell's law)
+    float eta = 1.0 / ior;  // Air -> surface
+    vec3 refractDir = refractRay(viewDir, worldNormal, eta);
+
+    // Fresnel determines how much light is transmitted vs reflected
+    float fresnel = fresnelSchlick(cosTheta, ior);
+    float transmitWeight = (1.0 - fresnel) * transmission;
+
+    if (transmitWeight < 0.01) {
+        imageStore(translucencyOutput, pixel, vec4(0.0));
+        return;
+    }
+
+    // Jitter for rough refraction
+    uint seed = init_rng(uvec2(pixel), uLight.frameCount);
+    vec3 T, B;
+    build_onb(refractDir, T, B);
+    vec2 jitter = rand_vec2(seed) * 0.005;
+    refractDir = normalize(refractDir + jitter.x * T + jitter.y * B);
+
+    // Offset ray origin slightly below the surface
+    vec3 rayOrigin = worldPos.xyz - worldNormal * 0.002;
+
+    transPayload = vec4(0.0);
+
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsNoneEXT,
+        0xFF, 0, 0, 0,
+        rayOrigin, 0.001,
+        refractDir, uLight.maxDistance,
+        0
+    );
+
+    // Apply transmission weight and SSS contribution
+    vec3 result = transPayload.rgb * transmitWeight;
+
+    // Subsurface scattering approximation: back-lit translucency
+    if (sssIntensity > 0.0) {
+        float backLit = max(dot(worldNormal, uLight.lightDir.xyz), 0.0);
+        float sssAmount = backLit * sssIntensity;
+        result += uLight.lightColor.rgb * sssAmount * transmitWeight;
+    }
+
+    imageStore(translucencyOutput, pixel, vec4(result, transmitWeight));
+}

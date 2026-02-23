@@ -380,6 +380,8 @@ constexpr const char* CameraSetActive        = "Camera_SetActive";
 // Material
 constexpr const char* MaterialSetColor       = "Material_SetColor";
 constexpr const char* MaterialSetEmissive    = "Material_SetEmissive";
+constexpr const char* MaterialSetTransmission = "Material_SetTransmission";
+constexpr const char* MaterialSetSSS         = "Material_SetSSS";
 
 // Visibility
 constexpr const char* EntitySetVisible       = "Entity_SetVisible";

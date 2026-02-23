@@ -82,7 +82,7 @@ enjin/
 
 - **`ECS::World`** - Entity/component manager. Thread-safe structural ops. `DestroyEntity()` is deferred (flushed at `Update()` start). `IsValid()` returns false for pending-destruction entities.
 - **`ECS::Entity`** - u64 ID
-- **Key Components:** `TransformComponent` (position, rotation, scale, visible), `MeshComponent`, `MaterialComponent` (PBR + textures), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent`, colliders (`Box/Sphere/Capsule` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`
+- **Key Components:** `TransformComponent` (position, rotation, scale, visible), `MeshComponent`, `MaterialComponent` (PBR + textures + transmission/IOR/thickness/sssIntensity/sssRadius/sssColor; MaterialGPU = 80 bytes), `LightComponent` (no direction field — extract from TransformComponent rotation), `NameComponent`, `CameraComponent`, `NotesComponent` (field: `.notes` not `.text`), `AnimatorComponent`, colliders (`Box/Sphere/Capsule` with `categoryBits`/`collisionMask` bitmask filtering), `PostProcessVolumeComponent`
 
 ### Collision Filtering
 
@@ -98,7 +98,7 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 - **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale
 - **Flags layout:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
-- **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/path tracing, SVGF+OIDN denoisers). Auto-activates on RT-capable hardware.
+- **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/translucency/caustics/path tracing, SVGF+OIDN+OptiX denoisers). RT descriptor set: 16 bindings (0-13 base, 14=translucency, 15=caustics). RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics). Auto-activates on RT-capable hardware. CMake: `ENJIN_RAYTRACING_OIDN`, `ENJIN_RAYTRACING_OPTIX`.
 
 ### Editor
 

@@ -408,6 +408,41 @@ void EditorLayer::DrawMaterialComponent(ECS::Entity entity) {
             ImGui::TreePop();
         }
 
+        // Transmission / Subsurface Scattering
+        if (ImGui::TreeNode("Transmission / SSS")) {
+            InspectorUndo::DragFloat(m_UndoRedo, "Transmission", &material->transmission, 0.005f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Light transmission through surface (0 = opaque, 1 = fully transmissive)");
+            InspectorUndo::DragFloat(m_UndoRedo, "IOR", &material->ior, 0.01f, 1.0f, 2.5f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Index of refraction (1.0 = vacuum, 1.33 = water, 1.5 = glass, 2.42 = diamond)");
+            InspectorUndo::DragFloat(m_UndoRedo, "Thickness", &material->thickness, 0.01f, 0.0f, 10.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Thin-surface thickness for translucency light falloff (0 = solid volume)");
+
+            ImGui::Separator();
+            InspectorUndo::DragFloat(m_UndoRedo, "SSS Intensity", &material->sssIntensity, 0.005f, 0.0f, 1.0f);
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Subsurface scattering strength (skin, wax, marble, leaves)");
+            if (material->sssIntensity > 0.0f) {
+                InspectorUndo::DragFloat(m_UndoRedo, "SSS Radius", &material->sssRadius, 0.01f, 0.01f, 10.0f);
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scatter distance in world units");
+                f32 sssCol[3] = { material->sssColor.x, material->sssColor.y, material->sssColor.z };
+                if (InspectorUndo::ColorEdit3(m_UndoRedo, "SSS Color", sssCol,
+                        [material](f32 r, f32 g, f32 b) { material->sssColor = Math::Vector3(r, g, b); })) {
+                    material->sssColor = Math::Vector3(sssCol[0], sssCol[1], sssCol[2]);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Scatter tint color (reddish for skin, greenish for leaves)");
+            }
+
+            // Presets
+            if (ImGui::Button("Glass##sss")) { material->transmission = 0.9f; material->ior = 1.5f; material->thickness = 0.0f; material->sssIntensity = 0.0f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Water##sss")) { material->transmission = 0.8f; material->ior = 1.33f; material->thickness = 0.0f; material->sssIntensity = 0.0f; }
+            ImGui::SameLine();
+            if (ImGui::Button("Skin##sss")) { material->transmission = 0.0f; material->ior = 1.4f; material->thickness = 0.0f; material->sssIntensity = 0.6f; material->sssRadius = 1.5f; material->sssColor = Math::Vector3(1.0f, 0.2f, 0.1f); }
+            ImGui::SameLine();
+            if (ImGui::Button("Leaf##sss")) { material->transmission = 0.3f; material->ior = 1.45f; material->thickness = 0.1f; material->sssIntensity = 0.4f; material->sssRadius = 0.5f; material->sssColor = Math::Vector3(0.3f, 0.8f, 0.1f); }
+
+            ImGui::TreePop();
+        }
+
         InspectorUndo::Checkbox(m_UndoRedo, "Exclude From Cel Shading##Mat", &material->excludeFromCelShading);
         ImGui::SetItemTooltip("Exempt this material from the global cel shading effect");
 

@@ -7,7 +7,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 ### Rendering
 - **Vulkan Renderer** - Modern graphics with Blinn-Phong lighting, PBR materials, and deferred rendering framework
 - **Shadow Mapping** - 4-cascade CSM for directional lights, cubemap array shadows for point lights (up to 4), 2D array shadows for spot lights (up to 4), 16-sample Poisson disk PCF soft shadows, configurable softness radius, texel stabilization, distance fade, pipeline depth bias, per-entity shadow dither (by darkness/distance/angle) with 6 built-in patterns (Bayer 4x4/8x8, Blue Noise, Halftone, Crosshatch, Overlook)
-- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), receiveShadows toggle, dithered gradient banding (2-8 bands, 6 dither patterns)
+- **PBR Material System** - Base color, metallic, roughness, emissive, normal mapping, parallax occlusion mapping (4 modes: Basic/Steep/Occlusion/Relief), transmission/IOR/thickness for refractive materials, subsurface scattering (intensity/radius/color), receiveShadows toggle, dithered gradient banding (2-8 bands, 6 dither patterns), material presets (Glass, Water, Skin, Leaf)
 - **Post-Processing** - Bloom, vignette, color grading, FXAA, film grain, tone mapping, full-screen stipple/dither (8 combinable patterns, 3 color modes), post-process volumes with spatial blending (Box/Sphere shapes, priority-based, smoothstep falloff, selective override mask)
 - **Retro Effects** - PSX-style flat shading, affine texturing, vertex snapping, stipple transparency, CRT scanlines, dithering, color quantization
 - **Weather System** - Rain, snow, fog, storms with toggleable lightning
@@ -26,7 +26,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **GPU Frustum Culling** - Automatic culling of off-screen entities before draw submission
 - **Sprite Texture Atlas** - Auto-packing small sprites into a single GPU texture for batched draws
 - **Descriptor Set Caching** - Per-entity texture caching with material sort for minimal GPU descriptor writes
-- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, path tracing with SVGF denoiser + OIDN (Intel Open Image Denoise, fully wired), real depth buffer, RT composition pass
+- **Ray Tracing Pipeline** - RT shadows, reflections, AO, GI, translucency (refraction/SSS), caustics (photon-traced), path tracing with 3 denoiser options (SVGF compute, OIDN Intel neural, OptiX NVIDIA CUDA), real depth buffer, RT composition pass
 - **SH Light Probes** - L2 spherical harmonics irradiance probes with grid generation, baking, and renderer integration (LightingUBO + ambient blending)
 - **SDF Scene** - CPU-side signed distance field evaluation with 6 primitives, 6 boolean ops (incl. smooth), GPU buffer packing
 - **Order-Independent Transparency** - Weighted Blended OIT (McGuire & Bavoil 2013) with accumulation + revealage textures, fullscreen composite pipeline
@@ -62,7 +62,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Audio Event Graph** - Dynamic audio mixing with runtime execution (trigger events, parameter thresholds, delay scheduling), .enjaudiopkg save/load
 - **Particle Graph** - Visual particle system authoring with compiler to ParticleEmitterComponent, .enjparticle save/load
 - **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
-- **Visual Script Editor** - Blueprint-style visual scripting with 136+ nodes, breakpoint debugging, execution profiler
+- **Visual Script Editor** - Blueprint-style visual scripting with 146+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
@@ -195,7 +195,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
-- **AngelScript Integration** - TegeBehavior base class, ~708 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, HUD widgets, text components, particle presets, Flash API shim), hot-reload
+- **AngelScript Integration** - TegeBehavior base class, ~721 API bindings (incl. AI/BT, accessibility, physics 2D, networking, procedural gen, audio graph, plugins, MIDI, input actions, screen-space effects, HUD widgets, text components, particle presets, material transmission/SSS, Flash API shim), hot-reload
 - **Script Coroutines** - YieldSeconds, YieldFrames, StartCoroutine for async game logic
 - **Script Event System** - String-named events with typed EventData payloads
 - **Plugin System** - IPlugin interface with PluginContext (World, RenderSystem, ScriptEngine, Audio, SceneManager), PluginSDK.h single-header, state save/restore for hot-reload, DLL/SO loading, manifest JSON, editor panel
@@ -215,7 +215,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 
 ### Visual Scripting
 - **Blueprint-Style Editor** - Node graph visual programming without code
-- **144+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, HUD widgets, text, particle presets, debug
+- **146+ Built-in Nodes** - Events, flow control, math, logic, transform, physics, AI/BT, accessibility, tweens, dialogue, audio, audio graph, plugins, noise, streaming, networking, procedural generation, HUD widgets, text, particle presets, material transmission/SSS, debug
 - **Latent Nodes** - Delay, WaitForAudioComplete, WaitForAnimationComplete for multi-frame operations
 - **Variable System** - Bool, Int, Float, String, Vector3, Entity variables with exposed option
 - **Breakpoint Debugging** - F9 toggle breakpoint, F5 continue, F10 step-through

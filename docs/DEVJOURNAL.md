@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-02-22 (Session 36)
+
+### RT Translucency, RT Caustics, OptiX Denoiser, Material Transmission/SSS
+
+Extended the ray tracing pipeline with two new effects (translucency and caustics), added an OptiX AI Denoiser option, and expanded MaterialComponent with physically-based transmission and subsurface scattering fields.
+
+**MaterialComponent extended (6 new fields):**
+- `transmission` (f32) — fraction of light transmitted through surface
+- `ior` (f32) — index of refraction (Snell's law)
+- `thickness` (f32) — medium thickness for absorption
+- `sssIntensity` (f32) — subsurface scattering strength
+- `sssRadius` (f32) — SSS diffusion radius
+- `sssColor` (Vector3) — SSS tint color
+- `MaterialGPU` expanded from 48 bytes to 80 bytes to accommodate the new fields
+
+**RT Translucency (new effect):**
+- `RTTranslucency` class — traces refraction rays using Snell's law with Fresnel term, SSS approximation for translucent media
+- Output at RT descriptor binding 14 (STORAGE_IMAGE, RGBA16F)
+- 3 new shaders: `rt_translucency.rgen`, `rt_translucency.rmiss`, `rt_translucency.rchit`
+- `rt_common.glsl` `RTMaterial` struct expanded with `transmission`, `ior`, `thickness`, `sssIntensity`, `sssColor`, `sssRadius`
+
+**RT Caustics (new effect):**
+- `RTCaustics` class — photon-traced caustic patterns from refractive surfaces (glass, water)
+- Output at RT descriptor binding 15 (STORAGE_IMAGE, RGBA16F)
+- 3 new shaders: `rt_caustics.rgen`, `rt_caustics.rmiss`, `rt_caustics.rchit`
+
+**OptiX AI Denoiser:**
+- `OptiXDenoiser` class implementing `IDenoiser` interface — CUDA-based GPU denoising via NVIDIA OptiX
+- 3 modes: LDR, HDR, Temporal
+- Compile-guarded with `ENJIN_RAYTRACING_OPTIX` CMake option
+
+**RTCompositor updated:**
+- Enable flags now include bit 4 (translucency) and bit 5 (caustics)
+- Push constants include `translucencyStrength` and `causticsStrength`
+
+**RT Descriptor Set expanded from 14 to 16 bindings:**
+- Binding 14: RT Translucency output (RGBA16F)
+- Binding 15: RT Caustics output (RGBA16F)
+
+**Inspector UI:**
+- New "Transmission / SSS" tree node in material inspector with DragFloat controls for all 6 fields
+- 4 material presets: Glass, Water, Skin, Leaf
+
+**Scripting:**
+- 13 new AngelScript bindings for material transmission/SSS/IOR (Set/Get pairs for transmission, IOR, thickness, sssIntensity, sssRadius, sssColor, plus SetSSSColor)
+- 2 new Visual Script nodes: Set Material Transmission, Set Material SSS
+
+**Totals:** +13 AS bindings (721 total), +2 VS nodes (146+ total), +6 RT shaders (25 total). Clean build, zero errors.
+
+---
+
 ## 2026-02-22 (Session 35)
 
 ### Add Skeletal Animation Import to Assimp Path (FBX/OBJ/DAE/all formats)

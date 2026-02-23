@@ -59,6 +59,15 @@ struct RTMaterial {
     float metallic;
     vec3 emissive;
     float roughness;
+
+    // Transmission / SSS
+    float transmission;     // 0=opaque, 1=fully transmissive
+    float ior;              // Index of refraction (1.0=vacuum, 1.5=glass)
+    float thickness;        // Thin-surface thickness for translucency falloff
+    float sssIntensity;     // Subsurface scattering strength
+
+    vec3 sssColor;          // SSS scatter tint
+    float sssRadius;        // SSS scatter radius in world units
 };
 
 // Light data for shadow rays

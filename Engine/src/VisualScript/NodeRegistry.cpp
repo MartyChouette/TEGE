@@ -7476,6 +7476,91 @@ void NodeRegistry::RegisterBuiltinNodes() {
         RegisterNode(def);
     }
 
+    // Set Material Transmission
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MaterialSetTransmission;
+        def.displayName = "Set Material Transmission";
+        def.description = "Set transmission, IOR, and thickness for glass/water/translucent materials";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Transmission", PK::Input, 0.0f),
+            Float("IOR", PK::Input, 1.5f),
+            Float("Thickness", PK::Input, 0.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"material", "transmission", "glass", "refraction", "ior", "translucent"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            f32 transmission = 0.0f, ior = 1.5f, thickness = 0.0f;
+            if (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) transmission = std::get<f32>(inputs[1]);
+            if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ior = std::get<f32>(inputs[2]);
+            if (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) thickness = std::get<f32>(inputs[3]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* mat = ctx.world->GetComponent<ECS::MaterialComponent>(target);
+                if (mat) {
+                    mat->transmission = transmission;
+                    mat->ior = ior;
+                    mat->thickness = thickness;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // Set Material SSS
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::MaterialSetSSS;
+        def.displayName = "Set Material SSS";
+        def.description = "Set subsurface scattering intensity, radius, and color";
+        def.category = NodeCategory::Components;
+        def.headerColor = Math::Vector3(0.6f, 0.3f, 0.6f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Intensity", PK::Input, 0.0f),
+            Float("Radius", PK::Input, 1.0f),
+            Vec3("Color", PK::Input)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"material", "sss", "subsurface", "scattering", "skin", "wax"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            f32 intensity = 0.0f, radius = 1.0f;
+            Math::Vector3 color(1.0f, 0.2f, 0.1f);
+            if (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1])) intensity = std::get<f32>(inputs[1]);
+            if (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) radius = std::get<f32>(inputs[2]);
+            if (inputs.size() > 3 && std::holds_alternative<Math::Vector3>(inputs[3])) color = std::get<Math::Vector3>(inputs[3]);
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* mat = ctx.world->GetComponent<ECS::MaterialComponent>(target);
+                if (mat) {
+                    mat->sssIntensity = intensity;
+                    mat->sssRadius = radius;
+                    mat->sssColor = color;
+                }
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
     // ========================================================================
     // VISIBILITY NODES
     // ========================================================================

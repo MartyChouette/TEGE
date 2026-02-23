@@ -99,6 +99,78 @@ static void Material_SetRoughness(u64 id, f32 val) {
     if (mc) mc->roughness = val;
 }
 
+static void Material_SetTransmission(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->transmission = val;
+}
+
+static f32 Material_GetTransmission(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->transmission : 0.0f;
+}
+
+static void Material_SetIOR(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->ior = val;
+}
+
+static f32 Material_GetIOR(u64 id) {
+    if (!s_BindingsWorld) return 1.5f;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->ior : 1.5f;
+}
+
+static void Material_SetThickness(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->thickness = val;
+}
+
+static f32 Material_GetThickness(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->thickness : 0.0f;
+}
+
+static void Material_SetSSSIntensity(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->sssIntensity = val;
+}
+
+static f32 Material_GetSSSIntensity(u64 id) {
+    if (!s_BindingsWorld) return 0.0f;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->sssIntensity : 0.0f;
+}
+
+static void Material_SetSSSRadius(u64 id, f32 val) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->sssRadius = val;
+}
+
+static f32 Material_GetSSSRadius(u64 id) {
+    if (!s_BindingsWorld) return 1.0f;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->sssRadius : 1.0f;
+}
+
+static void Material_SetSSSColor(u64 id, const Vector3& color) {
+    if (!s_BindingsWorld) return;
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    if (mc) mc->sssColor = color;
+}
+
+static Vector3 Material_GetSSSColor(u64 id) {
+    if (!s_BindingsWorld) return Vector3(1.0f, 0.2f, 0.1f);
+    auto* mc = s_BindingsWorld->GetComponent<MaterialComponent>(static_cast<Entity>(id));
+    return mc ? mc->sssColor : Vector3(1.0f, 0.2f, 0.1f);
+}
+
 // ============================================================================
 // Light component access
 // ============================================================================
@@ -1597,6 +1669,18 @@ void RegisterComponentBindings(asIScriptEngine* engine) {
     AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetBaseColor(uint64)", asFUNCTION(Material_GetBaseColor), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetMetallic(uint64, float)", asFUNCTION(Material_SetMetallic), asCALL_CDECL));
     AS_CHECK(engine->RegisterGlobalFunction("void Material_SetRoughness(uint64, float)", asFUNCTION(Material_SetRoughness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetTransmission(uint64, float)", asFUNCTION(Material_SetTransmission), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetTransmission(uint64)", asFUNCTION(Material_GetTransmission), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetIOR(uint64, float)", asFUNCTION(Material_SetIOR), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetIOR(uint64)", asFUNCTION(Material_GetIOR), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetThickness(uint64, float)", asFUNCTION(Material_SetThickness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetThickness(uint64)", asFUNCTION(Material_GetThickness), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSIntensity(uint64, float)", asFUNCTION(Material_SetSSSIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSIntensity(uint64)", asFUNCTION(Material_GetSSSIntensity), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSRadius(uint64, float)", asFUNCTION(Material_SetSSSRadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("float Material_GetSSSRadius(uint64)", asFUNCTION(Material_GetSSSRadius), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("void Material_SetSSSColor(uint64, const Vector3 &in)", asFUNCTION(Material_SetSSSColor), asCALL_CDECL));
+    AS_CHECK(engine->RegisterGlobalFunction("Vector3 Material_GetSSSColor(uint64)", asFUNCTION(Material_GetSSSColor), asCALL_CDECL));
 
     // Light
     AS_CHECK(engine->RegisterGlobalFunction("void Light_SetColor(uint64, const Vector3 &in)", asFUNCTION(Light_SetColor), asCALL_CDECL));

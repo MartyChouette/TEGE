@@ -17,7 +17,7 @@ bool RTCompositor::Initialize(VkDescriptorSetLayout rtDescLayout) {
     VkPushConstantRange pushRange{};
     pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
     pushRange.offset = 0;
-    pushRange.size = 32;  // shadowStr(4), reflStr(4), aoStr(4), giStr(4), enableFlags(4), pad[3](12)
+    pushRange.size = 32;  // shadowStr(4), reflStr(4), aoStr(4), giStr(4), enableFlags(4), transStr(4), causticsStr(4), pad(4)
 
     VkPipelineLayoutCreateInfo pipeLayoutInfo{};
     pipeLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -70,7 +70,9 @@ void RTCompositor::Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet,
         f32 aoStrength;
         f32 giStrength;
         i32 enableFlags;
-        i32 pad[3];
+        f32 translucencyStrength;
+        f32 causticsStrength;
+        i32 pad;
     };
 
     CompositePushConstants pc{};
@@ -79,6 +81,8 @@ void RTCompositor::Dispatch(VkCommandBuffer cmd, VkDescriptorSet rtDescSet,
     pc.aoStrength = m_Config.aoStrength;
     pc.giStrength = m_Config.giStrength;
     pc.enableFlags = static_cast<i32>(enableFlags);
+    pc.translucencyStrength = m_Config.translucencyStrength;
+    pc.causticsStrength = m_Config.causticsStrength;
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_Pipeline);
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_PipelineLayout,

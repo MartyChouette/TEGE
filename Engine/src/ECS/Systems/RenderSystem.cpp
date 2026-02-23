@@ -41,9 +41,12 @@
 #include "Enjin/Renderer/RayTracing/RTReflections.h"
 #include "Enjin/Renderer/RayTracing/RTAmbientOcclusion.h"
 #include "Enjin/Renderer/RayTracing/RTGlobalIllumination.h"
+#include "Enjin/Renderer/RayTracing/RTTranslucency.h"
+#include "Enjin/Renderer/RayTracing/RTCaustics.h"
 #include "Enjin/Renderer/RayTracing/PathTracer.h"
 #include "Enjin/Renderer/RayTracing/SVGFDenoiser.h"
 #include "Enjin/Renderer/RayTracing/OIDNDenoiser.h"
+#include "Enjin/Renderer/RayTracing/OptiXDenoiser.h"
 #include "Enjin/Renderer/RayTracing/RTCompositor.h"
 #include "Enjin/Renderer/RayTracing/RTShaderData.h"
 #include "Enjin/Renderer/SHLightProbe.h"
@@ -5117,7 +5120,7 @@ void RenderSystem::InitializeRayTracing() {
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
     // Create RT descriptor set layout (14 bindings)
-    std::array<VkDescriptorSetLayoutBinding, 14> rtBindings{};
+    std::array<VkDescriptorSetLayoutBinding, 16> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -5187,6 +5190,18 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[13].descriptorCount = 1;
     rtBindings[13].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
+    // Binding 14: RT Translucency output (storage image)
+    rtBindings[14].binding = 14;
+    rtBindings[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[14].descriptorCount = 1;
+    rtBindings[14].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // Binding 15: RT Caustics output (storage image)
+    rtBindings[15].binding = 15;
+    rtBindings[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    rtBindings[15].descriptorCount = 1;
+    rtBindings[15].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -5200,7 +5215,7 @@ void RenderSystem::InitializeRayTracing() {
     // Create RT descriptor pool (includes all descriptor types used by RT bindings)
     std::array<VkDescriptorPoolSize, 5> poolSizes{};
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
-    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 5 };
+    poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
     poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 };
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
@@ -5284,6 +5299,18 @@ void RenderSystem::InitializeRayTracing() {
         m_RTGI.reset();
     }
 
+    m_RTTranslucency = std::make_unique<Renderer::RTTranslucency>(ctx);
+    if (!m_RTTranslucency->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Translucency initialization failed");
+        m_RTTranslucency.reset();
+    }
+
+    m_RTCaustics = std::make_unique<Renderer::RTCaustics>(ctx);
+    if (!m_RTCaustics->Initialize(width, height, m_RTDescriptorSetLayout)) {
+        ENJIN_LOG_WARN(Renderer, "RT Caustics initialization failed");
+        m_RTCaustics.reset();
+    }
+
     m_PathTracer = std::make_unique<Renderer::PathTracer>(ctx);
     if (!m_PathTracer->Initialize(width, height, m_RTDescriptorSetLayout)) {
         ENJIN_LOG_WARN(Renderer, "Path Tracer initialization failed");
@@ -5316,6 +5343,35 @@ void RenderSystem::InitializeRayTracing() {
             m_OIDNDenoiser->RegisterImageMapping(m_RTAO->GetOutputView(), m_RTAO->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
         if (m_RTGI)
             m_OIDNDenoiser->RegisterImageMapping(m_RTGI->GetOutputView(), m_RTGI->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTTranslucency)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTTranslucency->GetOutputView(), m_RTTranslucency->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTCaustics)
+            m_OIDNDenoiser->RegisterImageMapping(m_RTCaustics->GetOutputView(), m_RTCaustics->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+    }
+
+    // Initialize OptiX AI Denoiser (optional, compile-guarded)
+    if (Renderer::OptiXDenoiser::IsAvailable()) {
+        m_OptiXDenoiser = std::make_unique<Renderer::OptiXDenoiser>(ctx);
+        if (!m_OptiXDenoiser->Initialize(width, height)) {
+            ENJIN_LOG_WARN(Renderer, "OptiX AI Denoiser initialization failed — SVGF/OIDN will be used");
+            m_OptiXDenoiser.reset();
+        }
+    }
+
+    // Register RT output images with OptiX denoiser
+    if (m_OptiXDenoiser) {
+        if (m_RTShadows)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTShadows->GetOutputView(), m_RTShadows->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTReflections)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTReflections->GetOutputView(), m_RTReflections->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTAO)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTAO->GetOutputView(), m_RTAO->GetOutputImage(), VK_FORMAT_R16_SFLOAT);
+        if (m_RTGI)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTGI->GetOutputView(), m_RTGI->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTTranslucency)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTTranslucency->GetOutputView(), m_RTTranslucency->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
+        if (m_RTCaustics)
+            m_OptiXDenoiser->RegisterImageMapping(m_RTCaustics->GetOutputView(), m_RTCaustics->GetOutputImage(), VK_FORMAT_R16G16B16A16_SFLOAT);
     }
 
     // Initialize RT compositor (uses RT descriptor set layout for pipeline compatibility)
@@ -5540,14 +5596,24 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
         m_RTGI->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
                          cameraPos, m_RTFrameCount);
     }
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
+        m_RTTranslucency->Dispatch(cmd, m_RTDescriptorSet, invViewProj, cameraPos,
+                                    m_RTFrameCount);
+    }
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
+        m_RTCaustics->Dispatch(cmd, m_RTDescriptorSet, invViewProj, lightDir,
+                                m_RTFrameCount);
+    }
 }
 
 void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
     if (!m_RTEnabled || m_RTMode == 1) return;
 
-    // Select active denoiser based on type setting
+    // Select active denoiser based on type setting (0=SVGF, 1=OIDN, 2=OptiX)
     Renderer::IDenoiser* denoiser = nullptr;
-    if (m_DenoiserType == 1 && m_OIDNDenoiser) {
+    if (m_DenoiserType == 2 && m_OptiXDenoiser) {
+        denoiser = m_OptiXDenoiser.get();
+    } else if (m_DenoiserType == 1 && m_OIDNDenoiser) {
         denoiser = m_OIDNDenoiser.get();
     } else if (m_SVGFDenoiser) {
         denoiser = m_SVGFDenoiser.get();
@@ -5586,6 +5652,18 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
             m_RTGI->GetOutputView(), depthView, normalView, motionView,
             m_RTGI->GetOutputView());
     }
+    // Denoise translucency (RGBA16F)
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) {
+        denoiser->DenoiseColor(cmd,
+            m_RTTranslucency->GetOutputView(), depthView, normalView, motionView,
+            m_RTTranslucency->GetOutputView());
+    }
+    // Denoise caustics (RGBA16F)
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) {
+        denoiser->DenoiseColor(cmd,
+            m_RTCaustics->GetOutputView(), depthView, normalView, motionView,
+            m_RTCaustics->GetOutputView());
+    }
 }
 
 void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
@@ -5593,12 +5671,14 @@ void RenderSystem::CompositeRTResults(VkCommandBuffer cmd) {
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
 
-    // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi
+    // Build enable flags: bit 0=shadow, 1=reflect, 2=ao, 3=gi, 4=translucency, 5=caustics
     u32 enableFlags = 0;
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) enableFlags |= 1;
     if (m_RTReflections && m_RTReflections->GetConfig().enabled) enableFlags |= 2;
     if (m_RTAO && m_RTAO->GetConfig().enabled) enableFlags |= 4;
     if (m_RTGI && m_RTGI->GetConfig().enabled) enableFlags |= 8;
+    if (m_RTTranslucency && m_RTTranslucency->GetConfig().enabled) enableFlags |= 16;
+    if (m_RTCaustics && m_RTCaustics->GetConfig().enabled) enableFlags |= 32;
 
     if (enableFlags == 0) return;
 
@@ -5780,8 +5860,8 @@ void RenderSystem::WriteRTDescriptors() {
         samplerInfos[0].imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
     }
 
-    // Bindings 5-8: RT output images (storage image)
-    VkDescriptorImageInfo rtOutputInfos[4]{};
+    // Bindings 5-8: RT output images (storage image), 14-15: translucency, caustics
+    VkDescriptorImageInfo rtOutputInfos[6]{};
     rtOutputInfos[0].imageView = m_RTShadows ? m_RTShadows->GetOutputView() : m_RTDummyImageView;
     rtOutputInfos[0].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     rtOutputInfos[1].imageView = m_RTReflections ? m_RTReflections->GetOutputView() : m_RTDummyImageView;
@@ -5790,6 +5870,10 @@ void RenderSystem::WriteRTDescriptors() {
     rtOutputInfos[2].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     rtOutputInfos[3].imageView = m_RTGI ? m_RTGI->GetOutputView() : m_RTDummyImageView;
     rtOutputInfos[3].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[4].imageView = m_RTTranslucency ? m_RTTranslucency->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[4].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    rtOutputInfos[5].imageView = m_RTCaustics ? m_RTCaustics->GetOutputView() : m_RTDummyImageView;
+    rtOutputInfos[5].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     // Bindings 9-12: Storage buffers (dummy for now — will be real vertex/index/material data later)
     VkDescriptorBufferInfo dummyBufInfos[4]{};
@@ -5805,8 +5889,8 @@ void RenderSystem::WriteRTDescriptors() {
     uboInfo.offset = 0;
     uboInfo.range = 256;
 
-    // Build write array for all 14 bindings
-    std::array<VkWriteDescriptorSet, 14> writes{};
+    // Build write array for all 16 bindings
+    std::array<VkWriteDescriptorSet, 16> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -5862,9 +5946,25 @@ void RenderSystem::WriteRTDescriptors() {
     writes[13].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[13].pBufferInfo = &uboInfo;
 
+    // Binding 14: RT Translucency output
+    writes[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[14].dstSet = m_RTDescriptorSet;
+    writes[14].dstBinding = 14;
+    writes[14].descriptorCount = 1;
+    writes[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[14].pImageInfo = &rtOutputInfos[4];
+
+    // Binding 15: RT Caustics output
+    writes[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[15].dstSet = m_RTDescriptorSet;
+    writes[15].dstBinding = 15;
+    writes[15].descriptorCount = 1;
+    writes[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[15].pImageInfo = &rtOutputInfos[5];
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 14 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 16 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -5890,6 +5990,8 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
     if (m_RTReflections) addBarrier(m_RTReflections->GetOutputImage());
     if (m_RTAO) addBarrier(m_RTAO->GetOutputImage());
     if (m_RTGI) addBarrier(m_RTGI->GetOutputImage());
+    if (m_RTTranslucency) addBarrier(m_RTTranslucency->GetOutputImage());
+    if (m_RTCaustics) addBarrier(m_RTCaustics->GetOutputImage());
     if (m_PathTracer) addBarrier(m_PathTracer->GetOutputImage());
 
     // Also transition the dummy image

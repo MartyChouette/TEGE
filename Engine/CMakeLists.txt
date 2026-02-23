@@ -169,6 +169,27 @@ if(ENJIN_RAYTRACING_OIDN)
     endif()
 endif()
 
+# NVIDIA OptiX AI Denoiser — optional GPU-based RT denoiser (OFF by default, requires OptiX SDK + CUDA)
+option(ENJIN_RAYTRACING_OPTIX "Enable NVIDIA OptiX AI Denoiser for ray tracing" OFF)
+if(ENJIN_RAYTRACING_OPTIX)
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+        find_path(OptiX_INCLUDE_DIR optix.h
+            HINTS "$ENV{OptiX_INSTALL_DIR}/include" "$ENV{OPTIX_PATH}/include"
+            PATH_SUFFIXES include)
+        if(OptiX_INCLUDE_DIR)
+            target_include_directories(EnjinEngine PUBLIC ${OptiX_INCLUDE_DIR})
+            target_link_libraries(EnjinEngine PUBLIC CUDA::cudart)
+            target_compile_definitions(EnjinEngine PUBLIC ENJIN_RAYTRACING_OPTIX)
+            message(STATUS "NVIDIA OptiX AI Denoiser enabled (OptiX: ${OptiX_INCLUDE_DIR})")
+        else()
+            message(WARNING "OptiX headers not found — set OptiX_INSTALL_DIR or OPTIX_PATH, or disable ENJIN_RAYTRACING_OPTIX")
+        endif()
+    else()
+        message(WARNING "CUDA not found — install CUDA Toolkit, or disable ENJIN_RAYTRACING_OPTIX")
+    endif()
+endif()
+
 # Steam Audio HRTF binaural rendering — optional, OFF by default
 option(ENJIN_AUDIO_STEAM_AUDIO "Enable Steam Audio HRTF binaural rendering" OFF)
 if(ENJIN_AUDIO_STEAM_AUDIO)

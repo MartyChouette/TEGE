@@ -15,6 +15,8 @@ struct RTCompositeConfig {
     f32 reflectionStrength = 0.5f;
     f32 aoStrength = 1.0f;
     f32 giStrength = 0.5f;
+    f32 translucencyStrength = 0.8f;
+    f32 causticsStrength = 0.5f;
 };
 
 // Compute shader that composites RT layers into the scene HDR image

@@ -76,6 +76,16 @@ struct MaterialComponent {
     // Cel shading opt-out (per-material)
     bool excludeFromCelShading = false;
 
+    // Transmission (glass, water, thin surfaces)
+    f32 transmission = 0.0f;        // 0=opaque, 1=fully transmissive
+    f32 ior = 1.5f;                 // Index of refraction (1.0=vacuum, 1.33=water, 1.5=glass, 2.42=diamond)
+    f32 thickness = 0.0f;           // Thin-surface thickness for translucency falloff (0=solid)
+
+    // Subsurface Scattering
+    f32 sssIntensity = 0.0f;        // 0=off, >0=SSS strength
+    f32 sssRadius = 1.0f;           // Scatter radius in world units
+    Math::Vector3 sssColor = Math::Vector3(1.0f, 0.2f, 0.1f); // Scatter tint (skin/wax default)
+
     // Dithered gradient rendering (flat shading + banded lighting with dither transitions)
     bool ditherGradient = false;
     u8 ditherGradientBands = 4;        // 2-8 color quantization bands
@@ -133,7 +143,7 @@ struct MaterialComponent {
     }
 };
 
-// GPU-aligned material data for shader upload
+// GPU-aligned material data for shader upload (80 bytes)
 struct alignas(16) MaterialGPU {
     alignas(16) Math::Vector3 baseColor;
     alignas(4) f32 metallic;
@@ -145,6 +155,15 @@ struct alignas(16) MaterialGPU {
     alignas(4) f32 opacity;
     alignas(4) f32 alphaCutoff;
     alignas(4) i32 flags; // Bit flags for various settings
+
+    // Transmission / SSS (new — row 3-4, offset 48)
+    alignas(4) f32 transmission;
+    alignas(4) f32 ior;
+    alignas(4) f32 thickness;
+    alignas(4) f32 sssIntensity;
+
+    alignas(16) Math::Vector3 sssColor;
+    alignas(4) f32 sssRadius;
 
     static MaterialGPU FromComponent(const MaterialComponent& mat) {
         MaterialGPU gpu;
@@ -190,6 +209,14 @@ struct alignas(16) MaterialGPU {
         if (mat.ditherGradient) {
             gpu.flags |= (1 << 20);  // Force flat shading
         }
+
+        // Transmission / SSS
+        gpu.transmission = mat.transmission;
+        gpu.ior = mat.ior;
+        gpu.thickness = mat.thickness;
+        gpu.sssIntensity = mat.sssIntensity;
+        gpu.sssColor = mat.sssColor;
+        gpu.sssRadius = mat.sssRadius;
 
         return gpu;
     }

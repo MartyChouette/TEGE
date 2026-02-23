@@ -202,6 +202,13 @@ json SerializeMaterialComponent(const ECS::MaterialComponent& material) {
     j["ditherTransPattern"] = material.ditherTransPattern;
     j["ditherTransBlendColor"] = { material.ditherTransBlendColor.x, material.ditherTransBlendColor.y, material.ditherTransBlendColor.z };
     j["ditherTransOpacity"] = material.ditherTransOpacity;
+    // Transmission / SSS
+    j["transmission"] = RF(material.transmission);
+    j["ior"] = RF(material.ior);
+    j["thickness"] = RF(material.thickness);
+    j["sssIntensity"] = RF(material.sssIntensity);
+    j["sssRadius"] = RF(material.sssRadius);
+    j["sssColor"] = SerializeVector3(material.sssColor);
     return j;
 }
 
@@ -376,6 +383,13 @@ ECS::MaterialComponent DeserializeMaterialComponent(const json& j) {
         );
     }
     if (j.contains("ditherTransOpacity")) material.ditherTransOpacity = j["ditherTransOpacity"].get<f32>();
+    // Transmission / SSS
+    if (j.contains("transmission")) material.transmission = j["transmission"].get<f32>();
+    if (j.contains("ior")) material.ior = j["ior"].get<f32>();
+    if (j.contains("thickness")) material.thickness = j["thickness"].get<f32>();
+    if (j.contains("sssIntensity")) material.sssIntensity = j["sssIntensity"].get<f32>();
+    if (j.contains("sssRadius")) material.sssRadius = j["sssRadius"].get<f32>();
+    if (j.contains("sssColor")) material.sssColor = DeserializeVector3(j["sssColor"]);
     return material;
 }
 

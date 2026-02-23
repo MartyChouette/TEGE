@@ -77,9 +77,12 @@ namespace Enjin { namespace Renderer {
     class RTReflections;
     class RTAmbientOcclusion;
     class RTGlobalIllumination;
+    class RTTranslucency;
+    class RTCaustics;
     class PathTracer;
     class SVGFDenoiser;
     class OIDNDenoiser;
+    class OptiXDenoiser;
     class RTCompositor;
     class OITManager;
     class SHLightingSystem;
@@ -366,9 +369,12 @@ public:
     Renderer::RTReflections* GetRTReflections() { return m_RTReflections.get(); }
     Renderer::RTAmbientOcclusion* GetRTAO() { return m_RTAO.get(); }
     Renderer::RTGlobalIllumination* GetRTGI() { return m_RTGI.get(); }
+    Renderer::RTTranslucency* GetRTTranslucency() { return m_RTTranslucency.get(); }
+    Renderer::RTCaustics* GetRTCaustics() { return m_RTCaustics.get(); }
     Renderer::PathTracer* GetPathTracer() { return m_PathTracer.get(); }
     Renderer::SVGFDenoiser* GetSVGFDenoiser() { return m_SVGFDenoiser.get(); }
     Renderer::OIDNDenoiser* GetOIDNDenoiser() { return m_OIDNDenoiser.get(); }
+    Renderer::OptiXDenoiser* GetOptiXDenoiser() { return m_OptiXDenoiser.get(); }
     Renderer::RTCompositor* GetRTCompositor() { return m_RTCompositor.get(); }
 #endif
 
@@ -770,9 +776,12 @@ private:
     std::unique_ptr<Renderer::RTReflections> m_RTReflections;
     std::unique_ptr<Renderer::RTAmbientOcclusion> m_RTAO;
     std::unique_ptr<Renderer::RTGlobalIllumination> m_RTGI;
+    std::unique_ptr<Renderer::RTTranslucency> m_RTTranslucency;
+    std::unique_ptr<Renderer::RTCaustics> m_RTCaustics;
     std::unique_ptr<Renderer::PathTracer> m_PathTracer;
     std::unique_ptr<Renderer::SVGFDenoiser> m_SVGFDenoiser;
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
+    std::unique_ptr<Renderer::OptiXDenoiser> m_OptiXDenoiser;
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
     u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN
 
