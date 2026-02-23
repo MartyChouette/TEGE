@@ -1892,6 +1892,137 @@ static bool EntityHasAnyCollider(ECS::World* world, ECS::Entity entity) {
            world->HasComponent<ECS::TriggerZoneComponent>(entity);
 }
 
+enum class RecommendedCollider { Box, Sphere, Capsule };
+
+struct ColliderRecommendation {
+    RecommendedCollider shape = RecommendedCollider::Box;
+    Math::Vector3 boxSize{1.0f, 1.0f, 1.0f};
+    f32 sphereRadius = 0.5f;
+    f32 capsuleRadius = 0.3f;
+    f32 capsuleHeight = 1.8f;
+    Math::Vector3 center{0.0f, 0.0f, 0.0f};
+    bool isTrigger = false;
+    std::string reason;
+};
+
+static const char* ColliderShapeName(RecommendedCollider shape) {
+    switch (shape) {
+    case RecommendedCollider::Box:     return "Box";
+    case RecommendedCollider::Sphere:  return "Sphere";
+    case RecommendedCollider::Capsule: return "Capsule";
+    }
+    return "Box";
+}
+
+static ColliderRecommendation ChooseColliderForEntity(ECS::World* world, ECS::Entity entity) {
+    ColliderRecommendation rec;
+
+    // 1. Sprite2D → Box (thin)
+    if (world->HasComponent<ECS::Sprite2DComponent>(entity) ||
+        world->HasComponent<ECS::AnimatedSprite2DComponent>(entity)) {
+        rec.shape = RecommendedCollider::Box;
+        rec.boxSize = Math::Vector3(1.0f, 1.0f, 0.1f);
+        rec.reason = "Box collider for 2D sprite";
+        return rec;
+    }
+
+    // 2. Character controller or AI → Capsule
+    bool hasCharCtrl = world->HasComponent<ECS::ThirdPersonController>(entity) ||
+                       world->HasComponent<ECS::FirstPersonController>(entity) ||
+                       world->HasComponent<ECS::TopDown3DController>(entity) ||
+                       world->HasComponent<ECS::TopDown2DController>(entity) ||
+                       world->HasComponent<ECS::Platformer2DController>(entity) ||
+                       world->HasComponent<ECS::AIControllerComponent>(entity);
+    if (hasCharCtrl) {
+        rec.shape = RecommendedCollider::Capsule;
+        auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+        if (mesh && !mesh->aabbDirty) {
+            auto ext = mesh->cachedAABBMax - mesh->cachedAABBMin;
+            rec.capsuleRadius = std::max(ext.x, ext.z) * 0.5f;
+            rec.capsuleHeight = ext.y;
+            rec.center = (mesh->cachedAABBMin + mesh->cachedAABBMax) * 0.5f;
+        } else {
+            rec.capsuleRadius = 0.3f;
+            rec.capsuleHeight = 1.8f;
+        }
+        rec.reason = "Capsule collider for character";
+        return rec;
+    }
+
+    // 3. Damage → Sphere trigger
+    if (world->HasComponent<ECS::DamageComponent>(entity)) {
+        rec.shape = RecommendedCollider::Sphere;
+        rec.isTrigger = true;
+        auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+        if (mesh && !mesh->aabbDirty) {
+            auto ext = mesh->cachedAABBMax - mesh->cachedAABBMin;
+            rec.sphereRadius = std::max({ext.x, ext.y, ext.z}) * 0.5f;
+        } else {
+            rec.sphereRadius = 1.0f;
+        }
+        rec.reason = "Sphere trigger for damage area";
+        return rec;
+    }
+
+    // 4. Mesh with valid AABB → best-fit from aspect ratio
+    auto* mesh = world->GetComponent<ECS::MeshComponent>(entity);
+    if (mesh && !mesh->aabbDirty) {
+        auto ext = mesh->cachedAABBMax - mesh->cachedAABBMin;
+        rec.center = (mesh->cachedAABBMin + mesh->cachedAABBMax) * 0.5f;
+        f32 maxDim = std::max({ext.x, ext.y, ext.z});
+        f32 minDim = std::min({ext.x, ext.y, ext.z});
+
+        if (ext.y > ext.x * 1.5f && ext.y > ext.z * 1.5f) {
+            rec.shape = RecommendedCollider::Capsule;
+            rec.capsuleRadius = std::max(ext.x, ext.z) * 0.5f;
+            rec.capsuleHeight = ext.y;
+            rec.reason = "Capsule collider (tall mesh)";
+        } else if (maxDim > 0.001f && minDim / maxDim > 0.7f) {
+            rec.shape = RecommendedCollider::Sphere;
+            rec.sphereRadius = maxDim * 0.5f;
+            rec.reason = "Sphere collider (uniform mesh)";
+        } else {
+            rec.shape = RecommendedCollider::Box;
+            rec.boxSize = ext;
+            rec.reason = "Box collider (sized to mesh)";
+        }
+        return rec;
+    }
+
+    // 5. Fallback → Box (1,1,1)
+    rec.shape = RecommendedCollider::Box;
+    rec.boxSize = Math::Vector3(1.0f, 1.0f, 1.0f);
+    rec.reason = "Box collider (default)";
+    return rec;
+}
+
+static void ApplyColliderRecommendation(ECS::World* world, ECS::Entity entity, const ColliderRecommendation& rec) {
+    switch (rec.shape) {
+    case RecommendedCollider::Box: {
+        auto& col = world->AddComponent<ECS::BoxColliderComponent>(entity);
+        col.size = rec.boxSize;
+        col.center = rec.center;
+        col.isTrigger = rec.isTrigger;
+        break;
+    }
+    case RecommendedCollider::Sphere: {
+        auto& col = world->AddComponent<ECS::SphereColliderComponent>(entity);
+        col.radius = rec.sphereRadius;
+        col.center = rec.center;
+        col.isTrigger = rec.isTrigger;
+        break;
+    }
+    case RecommendedCollider::Capsule: {
+        auto& col = world->AddComponent<ECS::CapsuleColliderComponent>(entity);
+        col.radius = rec.capsuleRadius;
+        col.height = rec.capsuleHeight;
+        col.center = rec.center;
+        col.isTrigger = rec.isTrigger;
+        break;
+    }
+    }
+}
+
 // ============================================================================
 // Creative Intelligence — Smart Suggestions (Cross-System Integration)
 // ============================================================================
@@ -1902,9 +2033,10 @@ void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
 
     // Collect applicable suggestions
     struct Suggestion {
-        const char* text;
+        std::string text;
         const char* buttonId;
         int ruleId;
+        std::string tooltip;
     };
     std::vector<Suggestion> suggestions;
 
@@ -1920,41 +2052,83 @@ void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
     bool hasSprite = m_World->HasComponent<ECS::Sprite2DComponent>(entity);
     bool hasDamage = m_World->HasComponent<ECS::DamageComponent>(entity);
     bool hasCam2D = m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity);
+    bool hasRigidbody = m_World->HasComponent<ECS::RigidbodyComponent>(entity);
+    bool hasAnimator = m_World->HasComponent<ECS::AnimatorComponent>(entity);
+    bool hasSkeleton = m_World->HasComponent<ECS::SkeletonComponent>(entity);
+    bool hasNetId = m_World->HasComponent<ECS::NetworkIdentityComponent>(entity);
+    bool hasNetTransform = m_World->HasComponent<ECS::NetworkTransformComponent>(entity);
+    bool hasDestructible = m_World->HasComponent<ECS::DestructibleComponent>(entity);
+
+    // Detect 2D context
+    auto projectMode = m_SceneManager.GetProjectMode();
+    bool is2D = (projectMode == Scene::ProjectMode::Mode2D);
+    if (!is2D && (hasSprite ||
+                  m_World->HasComponent<ECS::AnimatedSprite2DComponent>(entity) ||
+                  m_World->HasComponent<ECS::TilemapComponent>(entity) ||
+                  m_World->HasComponent<ECS::Camera2DBoundsComponent>(entity))) {
+        is2D = true;
+    }
 
     // Rule 1: Dialogue but no DialogueBox
     if (hasDialogue && !hasDialogueBox)
-        suggestions.push_back({"Add Dialogue Box for UI display", "##SugDlgBox", 1});
+        suggestions.push_back({"Add Dialogue Box for UI display", "##SugDlgBox", 1, ""});
 
     // Rule 2: AIController but no Health
     if (hasAI && !hasHealth)
-        suggestions.push_back({"Add Health for combat", "##SugHealth", 2});
+        suggestions.push_back({"Add Health for combat", "##SugHealth", 2, ""});
 
-    // Rule 3: Health but no Collider
-    if (hasHealth && !hasCollider)
-        suggestions.push_back({"Add collider for damage detection", "##SugCollider", 3});
+    // Rule 3: Health but no Collider — context-aware shape
+    if (hasHealth && !hasCollider) {
+        auto rec = ChooseColliderForEntity(m_World, entity);
+        std::string txt = std::string("Add ") + ColliderShapeName(rec.shape) + " Collider for damage detection";
+        suggestions.push_back({txt, "##SugCollider", 3, rec.reason});
+    }
 
     // Rule 4: Controller but no Camera in scene
     if (hasController) {
         ECS::Entity cam = ECS::CameraManager::GetActiveCamera(m_World);
         if (cam == ECS::INVALID_ENTITY)
-            suggestions.push_back({"Add camera for this controller", "##SugCamera", 4});
+            suggestions.push_back({"Add camera for this controller", "##SugCamera", 4, ""});
     }
 
     // Rule 5: Mesh but no Material
     if (hasMesh && !hasMaterial)
-        suggestions.push_back({"Add material for rendering", "##SugMat", 5});
+        suggestions.push_back({"Add material for rendering", "##SugMat", 5, ""});
 
     // Rule 6: BehaviorTree but no AIController
     if (hasBT && !hasAI)
-        suggestions.push_back({"Add AI Controller for movement", "##SugAI", 6});
+        suggestions.push_back({"Add AI Controller for movement", "##SugAI", 6, ""});
 
     // Rule 7: Sprite + Controller but no Camera2DBounds
     if (hasSprite && hasController && !hasCam2D)
-        suggestions.push_back({"Add 2D Camera for follow", "##SugCam2D", 7});
+        suggestions.push_back({"Add 2D Camera for follow", "##SugCam2D", 7, ""});
 
-    // Rule 8: Damage but no Collider
+    // Rule 8: Damage but no Collider — always sphere trigger
     if (hasDamage && !hasCollider)
-        suggestions.push_back({"Add collider for damage area", "##SugDmgCol", 8});
+        suggestions.push_back({"Add Sphere Collider (trigger) for damage area", "##SugDmgCol", 8,
+                               "Sphere trigger detects entities in damage radius"});
+
+    // Rule 9: Rigidbody but no Collider
+    if (hasRigidbody && !hasCollider) {
+        auto rec = ChooseColliderForEntity(m_World, entity);
+        std::string txt = std::string("Add ") + ColliderShapeName(rec.shape) + " Collider for physics simulation";
+        suggestions.push_back({txt, "##SugRBCol", 9, "Rigidbody needs a collider to interact with the physics world"});
+    }
+
+    // Rule 10: Animator but no Skeleton
+    if (hasAnimator && !hasSkeleton)
+        suggestions.push_back({"Add Skeleton for bone animation", "##SugSkel", 10,
+                               "Animator requires skeleton with bone data"});
+
+    // Rule 11: NetworkIdentity but no NetworkTransform
+    if (hasNetId && !hasNetTransform)
+        suggestions.push_back({"Add NetworkTransform for sync", "##SugNetTx", 11,
+                               "Networked entity needs transform sync for multiplayer"});
+
+    // Rule 12: Health + no controller/AI + no Destructible
+    if (hasHealth && !hasController && !hasAI && !hasDestructible)
+        suggestions.push_back({"Add Destructible for break behavior", "##SugDestr", 12,
+                               "Non-character health entity needs break/respawn behavior"});
 
     if (suggestions.empty()) return;
 
@@ -1969,7 +2143,9 @@ void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
     for (auto& s : suggestions) {
         ImGui::TextColored(ImVec4(0.5f, 0.7f, 1.0f, 0.9f), "!");
         ImGui::SameLine();
-        ImGui::TextWrapped("%s", s.text);
+        ImGui::TextWrapped("%s", s.text.c_str());
+        if (!s.tooltip.empty() && ImGui::IsItemHovered())
+            ImGui::SetTooltip("%s", s.tooltip.c_str());
         ImGui::SameLine();
 
         std::string btnLabel = std::string("+ Add") + s.buttonId;
@@ -1982,9 +2158,12 @@ void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
                 h.currentHealth = 100.0f;
                 break;
             }
-            case 3: m_World->AddComponent<ECS::BoxColliderComponent>(entity); break;
+            case 3: {
+                auto rec = ChooseColliderForEntity(m_World, entity);
+                ApplyColliderRecommendation(m_World, entity, rec);
+                break;
+            }
             case 4: {
-                // Determine controller type string for camera setup
                 std::string ctrlType = "ThirdPerson";
                 if (m_World->HasComponent<ECS::Platformer2DController>(entity)) ctrlType = "Platformer2D";
                 else if (m_World->HasComponent<ECS::TopDown2DController>(entity)) ctrlType = "TopDown2D";
@@ -2000,7 +2179,27 @@ void EditorLayer::DrawSmartSuggestions(ECS::Entity entity) {
                 cam2d.followTarget = entity;
                 break;
             }
-            case 8: m_World->AddComponent<ECS::BoxColliderComponent>(entity); break;
+            case 8: {
+                auto rec = ChooseColliderForEntity(m_World, entity);
+                rec.shape = RecommendedCollider::Sphere;
+                rec.isTrigger = true;
+                if (rec.sphereRadius < 0.5f) rec.sphereRadius = 1.0f;
+                ApplyColliderRecommendation(m_World, entity, rec);
+                break;
+            }
+            case 9: {
+                auto rec = ChooseColliderForEntity(m_World, entity);
+                ApplyColliderRecommendation(m_World, entity, rec);
+                break;
+            }
+            case 10: m_World->AddComponent<ECS::SkeletonComponent>(entity); break;
+            case 11: m_World->AddComponent<ECS::NetworkTransformComponent>(entity); break;
+            case 12: {
+                auto& d = m_World->AddComponent<ECS::DestructibleComponent>(entity);
+                d.health = 1.0f;
+                d.destroyOnHit = true;
+                break;
+            }
             }
         }
     }
@@ -2036,13 +2235,21 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
         is2D = true;
     }
 
+    bool hasHealth = m_World->HasComponent<ECS::HealthComponent>(entity);
+    bool hasCollider = EntityHasAnyCollider(m_World, entity);
+    bool hasRigidbody = m_World->HasComponent<ECS::RigidbodyComponent>(entity);
+    bool hasDestructible = m_World->HasComponent<ECS::DestructibleComponent>(entity);
+    bool hasMesh = m_World->HasComponent<ECS::MeshComponent>(entity);
+
     // Count how many buttons we'd show
     int buttonCount = 0;
     if (!hasController) buttonCount++;
     if (is2D && !hasPlatformer && !hasController) buttonCount++;
-    if ((hasAI || hasBT) && !m_World->HasComponent<ECS::HealthComponent>(entity)) buttonCount++;
+    if ((hasAI || hasBT) && !hasHealth) buttonCount++;
     if (!hasDialogue && !hasController) buttonCount++;
     if (!hasPickup && !hasController) buttonCount++;
+    if (!hasDestructible && (hasMesh || hasHealth)) buttonCount++;
+    if (!hasRigidbody && hasMesh && !hasController) buttonCount++;
 
     if (buttonCount == 0) return;
 
@@ -2091,7 +2298,7 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
         }
 
         // Pattern 3: Make Patroller (has AI/BT but no Health)
-        if ((hasAI || hasBT) && !m_World->HasComponent<ECS::HealthComponent>(entity)) {
+        if ((hasAI || hasBT) && !hasHealth) {
             if (ImGui::Button("Make Patroller", ImVec2(buttonWidth, 0))) {
                 if (!hasAI) {
                     auto& ai = m_World->AddComponent<ECS::AIControllerComponent>(entity);
@@ -2105,9 +2312,21 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
                 hp.currentHealth = 50.0f;
                 if (!hasBT)
                     m_World->AddComponent<ECS::BehaviorTreeComponent>(entity);
+                if (!hasCollider) {
+                    if (is2D) {
+                        m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                    } else {
+                        auto rec = ChooseColliderForEntity(m_World, entity);
+                        rec.shape = RecommendedCollider::Capsule;
+                        if (rec.capsuleRadius < 0.1f) rec.capsuleRadius = 0.3f;
+                        if (rec.capsuleHeight < 0.1f) rec.capsuleHeight = 1.8f;
+                        ApplyColliderRecommendation(m_World, entity, rec);
+                    }
+                }
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Adds AI Controller (Patrol) + Health (50) + Behavior Tree, auto-targets Player");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(is2D ?
+                "Adds AI Controller (Patrol) + Health (50) + BT + BoxCollider, auto-targets Player" :
+                "Adds AI Controller (Patrol) + Health (50) + BT + CapsuleCollider, auto-targets Player");
         }
 
         // Pattern 4: Setup NPC
@@ -2120,9 +2339,21 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
                 m_World->AddComponent<ECS::DialogueBoxComponent>(entity);
                 auto& interact = m_World->AddComponent<ECS::InteractableComponent>(entity);
                 interact.promptText = "Talk";
+                if (!hasCollider) {
+                    if (is2D) {
+                        auto& box = m_World->AddComponent<ECS::BoxColliderComponent>(entity);
+                        box.size = Math::Vector3(2.0f, 2.0f, 0.1f);
+                        box.isTrigger = true;
+                    } else {
+                        auto& sph = m_World->AddComponent<ECS::SphereColliderComponent>(entity);
+                        sph.radius = 1.5f;
+                        sph.isTrigger = true;
+                    }
+                }
             }
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
-                "Adds Dialogue (speaker=entity name) + DialogueBox + Interactable (\"Talk\")");
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(is2D ?
+                "Adds Dialogue + DialogueBox + Interactable + BoxTrigger for interaction" :
+                "Adds Dialogue + DialogueBox + Interactable + SphereTrigger (r=1.5) for interaction");
         }
 
         // Pattern 5: Make Collectible
@@ -2153,6 +2384,41 @@ void EditorLayer::DrawQuickSetup(ECS::Entity entity) {
             }
             if (ImGui::IsItemHovered()) ImGui::SetTooltip(
                 "Adds Pickup (Coin) + TriggerZone (sphere) + Tween (bob up/down)");
+        }
+
+        // Pattern 6: Setup Destructible
+        if (!hasDestructible && (hasMesh || hasHealth)) {
+            if (ImGui::Button("Setup Destructible", ImVec2(buttonWidth, 0))) {
+                if (!hasHealth) {
+                    auto& hp = m_World->AddComponent<ECS::HealthComponent>(entity);
+                    hp.maxHealth = 25.0f;
+                    hp.currentHealth = 25.0f;
+                }
+                auto& d = m_World->AddComponent<ECS::DestructibleComponent>(entity);
+                d.health = 25.0f;
+                d.destroyOnHit = true;
+                if (!hasCollider) {
+                    auto rec = ChooseColliderForEntity(m_World, entity);
+                    ApplyColliderRecommendation(m_World, entity, rec);
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds Health (25) + Destructible + best-fit collider from mesh");
+        }
+
+        // Pattern 7: Add Physics Object
+        if (!hasRigidbody && hasMesh && !hasController) {
+            if (ImGui::Button("Add Physics Object", ImVec2(buttonWidth, 0))) {
+                auto& rb = m_World->AddComponent<ECS::RigidbodyComponent>(entity);
+                rb.bodyType = ECS::RigidbodyComponent::BodyType::Dynamic;
+                rb.useGravity = true;
+                if (!hasCollider) {
+                    auto rec = ChooseColliderForEntity(m_World, entity);
+                    ApplyColliderRecommendation(m_World, entity, rec);
+                }
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip(
+                "Adds Rigidbody (dynamic, gravity) + best-fit collider from mesh bounds");
         }
     }
 }
