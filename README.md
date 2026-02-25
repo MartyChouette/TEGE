@@ -54,20 +54,22 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Build Dialog** - Configure and export standalone game builds from the editor
 - **Particle Editor** - 12 presets (inspector dropdown + dedicated panel), color gradient bar, size/speed curves, shape preview, playback controls
 - **UI Editor** - Viewport WYSIWYG editing with click-select, drag-move, resize handles, and element tree
-- **Project Settings** - Dedicated panel for rendering/physics/networking defaults separated from editor preferences
+- **Unified Settings Window** - Single 3-tab window (System/Project/Scene) consolidating editor preferences, project defaults, and per-scene rendering overrides with programmatic tab selection
+- **Networking Config Editor** - Visual editor in Project Settings for connection, sync/interpolation, rate limiting, and security parameters with auto-save to JSON
 - **Profiler Panel** - Per-frame breakdown, FPS graph, scope-based profiling with ENJIN_PROFILE_SCOPE macro
 - **Multi-Select** - Ctrl+click toggle, Shift+click range, viewport marquee/rubber-band selection with batch transform
 - **Animation Graph** - Dual-mode visual state machine editor: AnimatorComponent mode (clip dropdown from loaded animations, speed, blend/exit time, ASM parameters) and StateMachineComponent mode (game logic SM with script callbacks), Entry pseudo-node, transitions, play-mode state highlighting
 - **Shader Graph** - Visual shader authoring with 54 node types, topological sort GLSL code generation, .enjshader save/load
 - **Audio Event Graph** - Dynamic audio mixing with runtime execution (trigger events, parameter thresholds, delay scheduling), .enjaudiopkg save/load
 - **Particle Graph** - Visual particle system authoring with compiler to ParticleEmitterComponent, .enjparticle save/load
-- **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support
+- **Dialogue Editor** - Visual dialogue tree editor with 7 node types, EntityEventBus integration, SubtitleSystem support, Yarn Spinner (.yarn) and Twine (.twee/.html) import/export
 - **Smart Suggestions** - 12 context-aware rules detect missing components (collider, skeleton, network transform, destructible) and recommend the right collider shape (Box/Sphere/Capsule) based on entity context and mesh bounds, with tooltip explanations
 - **Quick Setup Patterns** - 7 one-click patterns (Basic Movement, 2D Platformer, Patroller, NPC, Collectible, Destructible, Physics Object) with context-aware collider selection and 2D/3D adaptation
 - **Visual Script Editor** - Blueprint-style visual scripting with 146+ nodes, breakpoint debugging, execution profiler
 - **Bug Reporting & Feedback** - Built-in bug reports with auto-captured diagnostics, feedback with satisfaction ratings, JSON persistence, remote submission (Help > Report Bug)
 - **Vector Drawing Editor** - 7 shape types, layers, undo/redo, SVG export, snap-to-grid, zoom/pan
 - **HTML5 Export** - Generate web-ready HTML5 builds with preloader and responsive scaling
+- **WebAssembly/WebGPU Export** - Browser-based game distribution via Emscripten compilation to WASM with WebGPU renderer, canvas input, and WGSL shader pipeline
 - **Newgrounds Game Page** - Themed HTML5 export template with medal sidebar, scoreboard, embed codes, and NG.io API integration
 - **Command Palette** - Ctrl+P fuzzy-search popup with 25+ commands for quick access
 - **Project Hub** - Startup wizard with template browser, recent projects, and project creation flow
@@ -194,6 +196,7 @@ A proprietary, licensable game engine built from scratch using C++20 and the Vul
 - **Asset Thumbnails** - Auto-generated preview thumbnails for images, 3D models (software rasterizer), and scenes with caching
 - **Binary Distribution** - CMake install rules + CPack config for Windows ZIP + NSIS installer (Start Menu shortcuts, file associations, uninstaller), one-command build scripts (package.bat/package.sh)
 - **Linux AppImage** - AppImageBuilder for Linux packaging with .desktop file generation
+- **WebAssembly/WebGPU** - Emscripten-based web export with WebGPU renderer backend, WASM compilation, and browser input handling
 - **Adaptive Quality** - FPS-based auto-adjustment of render scale, shadow quality, and particle count (5 quality levels)
 
 ### Scripting & Extensibility
@@ -364,6 +367,10 @@ enjin/
 - [x] 2D Physics System
 - [x] Localization System
 - [x] LAN Multiplayer (host-authoritative UDP, HMAC-SHA256 auth, 20Hz entity sync, RPC, lobby, reliable delivery)
+- [x] WebAssembly/WebGPU Export (Emscripten, WASM, browser-based distribution)
+- [x] Yarn Spinner / Twine Dialogue Import/Export
+- [x] Unified Settings Window (System/Project/Scene tabs)
+- [x] Networking Config Editor UI
 
 ### Phase 12: Advanced Gameplay
 - [x] Save/Load System (10-slot persistence)
