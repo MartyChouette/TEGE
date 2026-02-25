@@ -2,7 +2,7 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-23)
+## Status Summary (2026-02-24)
 
 **150+ features complete.** Beta 0.8 QA hardening complete — all 8 subsystem audits done. See `docs/DEV_JOURNAL.md` for session log.
 
@@ -11,23 +11,28 @@ This document captures detailed technical plans, performance findings, and strat
 | Category | Item | Priority |
 |----------|------|----------|
 | **Platforms** | macOS (MoltenVK) | P2 |
-| **Platforms** | ~~WebAssembly/WebGPU export~~ | ✅ Complete |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
 | **Platforms** | Nintendo Switch 2 (Vulkan 1.3) | P3 |
 | **Platforms** | Mobile (Android/iOS) | P4 |
 | **Platforms** | VR/XR (OpenXR) | P4 |
-| **Editor** | ~~Settings UX restructure (System/Project/Scene tiers)~~ | ✅ Complete |
-| **Editor** | ~~Networking config editor UI~~ | ✅ Complete |
-| **RT** | ~~OptiX AI Denoiser integration (NVIDIA)~~ | ✅ Complete |
-| **RT** | ~~RT Caustics (photon mapping / path traced)~~ | ✅ Complete |
-| **RT** | ~~RT Translucency (subsurface scattering)~~ | ✅ Complete |
-| **Flash** | ~~Yarn Spinner / Twine dialogue import/export~~ | ✅ Complete |
-| **QA** | ~~Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking~~ | ✅ Complete |
-| **Scripting** | ~~Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector~~ | ✅ Complete |
-| **Known Bug** | ~~RT pipeline crash on pool-allocated entity BLAS builds~~ | ✅ Fixed |
-| **Assets** | ~~Assimp skeletal animation import (FBX/DAE/all formats)~~ | ✅ Complete |
-| **Editor** | ~~Context-aware collider selection & expanded smart suggestions~~ | ✅ Complete |
+
+### Recently Completed
+
+| Category | Item |
+|----------|------|
+| **Platforms** | WebAssembly/WebGPU export |
+| **Editor** | Settings UX restructure (System/Project/Scene tiers) |
+| **Editor** | Networking config editor UI |
+| **Editor** | Context-aware collider selection & expanded smart suggestions |
+| **RT** | OptiX AI Denoiser integration (NVIDIA) |
+| **RT** | RT Caustics (photon mapping / path traced) |
+| **RT** | RT Translucency (subsurface scattering) |
+| **Flash** | Yarn Spinner / Twine dialogue import/export |
+| **Scripting** | Expose template-only features (particle presets, HUD widget, text component) to AS/VS/inspector |
+| **Assets** | Assimp skeletal animation import (FBX/DAE/all formats) |
+| **QA** | Beta 0.8 hardening: ECS, Renderer, Serialization, Asset Pack, Physics, Audio, Build Pipeline, Scripting & Networking |
+| **Bug Fix** | RT pipeline crash on pool-allocated entity BLAS builds |
 
 ---
 
