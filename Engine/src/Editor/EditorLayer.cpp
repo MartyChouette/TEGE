@@ -1502,13 +1502,11 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
-        m_RenderSystem->RenderParticles(rtWidth, rtHeight);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
-        m_RenderSystem->RenderParticles(rtWidth, rtHeight);
     }
     sceneTarget->End(commandBuffer);
 
@@ -1682,8 +1680,9 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     // Calculate layout dimensions from config
     f32 screenW = io.DisplaySize.x;
     f32 screenH = io.DisplaySize.y;
-    f32 menuBarH = 28.0f;
-    f32 panelGap = 4.0f;
+    f32 s = m_EditorSettings.uiScale;
+    f32 menuBarH = 28.0f * s;
+    f32 panelGap = 4.0f * s;
     f32 leftW = screenW * m_Layout.leftWidth;
     f32 rightW = screenW * m_Layout.rightWidth;
     f32 bottomH = screenH * m_Layout.bottomHeight;
@@ -1694,8 +1693,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     ImGuiCond layoutCond = m_ForceLayout ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
 
     // Game View position/size (auto-compute if -1)
-    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + panelGap + 20.0f);
-    f32 gvY = m_Layout.gameViewY >= 0 ? m_Layout.gameViewY : (menuBarH + 20.0f);
+    f32 gvX = m_Layout.gameViewX >= 0 ? m_Layout.gameViewX : (leftW + panelGap + 20.0f * s);
+    f32 gvY = m_Layout.gameViewY >= 0 ? m_Layout.gameViewY : (menuBarH + 20.0f * s);
     f32 gvW = m_Layout.gameViewW;
     f32 gvH = m_Layout.gameViewH;
 
@@ -1744,8 +1743,8 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
             SetPanelVisibility(EditorPanel::RetroEffects, false);
             SetPanelVisibility(EditorPanel::Rendering, false);
 
-            ImGui::SetNextWindowPos(ImVec2(rightX - 310, menuBarH + 50), layoutCond);
-            ImGui::SetNextWindowSize(ImVec2(450, 700), layoutCond);
+            ImGui::SetNextWindowPos(ImVec2(rightX - 310 * s, menuBarH + 50 * s), layoutCond);
+            ImGui::SetNextWindowSize(ImVec2(450 * s, 700 * s), layoutCond);
             DrawSettingsWindow();
         }
     }
@@ -1772,103 +1771,103 @@ void EditorLayer::Render(VkCommandBuffer commandBuffer) {
     }
     // Rendering panel is now in the unified Settings window
     if (HasPanel(m_VisiblePanels, EditorPanel::Profiler)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(520, 450), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 20 * s, menuBarH + 20 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(520 * s, 450 * s), layoutCond);
         Debug::Profiler::Instance().DrawProfilerPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ParticleEditor)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 340, menuBarH + 20), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(380, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 340 * s, menuBarH + 20 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(380 * s, 600 * s), layoutCond);
         DrawParticleEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::AnimGraph)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 20, menuBarH + 20), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700, 500), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 20 * s, menuBarH + 20 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), layoutCond);
         DrawAnimGraphPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Dialogue)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 40, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(750, 550), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 40 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(750 * s, 550 * s), layoutCond);
         DrawDialoguePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VisualScript)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 60, menuBarH + 60), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 60 * s, menuBarH + 60 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
         DrawVisualScriptPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SpriteSheetImport)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 80, menuBarH + 80), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700, 500), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 80 * s, menuBarH + 80 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 500 * s), layoutCond);
         DrawSpriteSheetImporterPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PixelEditorPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 100, menuBarH + 100), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 100 * s, menuBarH + 100 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
         DrawPixelEditorPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::BehaviorTree)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 120, menuBarH + 120), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 120 * s, menuBarH + 120 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
         DrawBehaviorTreePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::QuestFlow)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX + 140, menuBarH + 140), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX + 140 * s, menuBarH + 140 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 600 * s), layoutCond);
         DrawQuestFlowPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::UserManual)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 600 * s), layoutCond);
         DrawUserManualPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::DataAssets)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 550), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 550 * s), layoutCond);
         DrawDataAssetPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::PluginBrowser)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 500), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 500 * s), layoutCond);
         DrawPluginBrowserPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::ProceduralGen)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300, menuBarH + 30), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(650, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 30 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(650 * s, 600 * s), layoutCond);
         DrawProceduralGenPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::GitIntegration)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 250, menuBarH + 30), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(550, 600), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 250 * s, menuBarH + 30 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(550 * s, 600 * s), layoutCond);
         DrawGitIntegrationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::NetworkPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 200, menuBarH + 30), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(450, 500), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 200 * s, menuBarH + 30 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450 * s, 500 * s), layoutCond);
         DrawNetworkPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::Collaboration)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 200, menuBarH + 30), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(450, 550), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 200 * s, menuBarH + 30 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(450 * s, 550 * s), layoutCond);
         DrawCollaborationPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FlashTimeline)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 400, io.DisplaySize.y * 0.55f), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(800, 350), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 400 * s, io.DisplaySize.y * 0.55f), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(800 * s, 350 * s), layoutCond);
         DrawFlashTimelinePanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::VectorDrawing)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 30), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(700, 550), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 30 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(700 * s, 550 * s), layoutCond);
         DrawVectorDrawingPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::FeedbackPanel)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 350, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(720, 580), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 350 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(720 * s, 580 * s), layoutCond);
         DrawFeedbackPanel();
     }
     if (HasPanel(m_VisiblePanels, EditorPanel::SaveDebug)) {
-        ImGui::SetNextWindowPos(ImVec2(centerX - 300, menuBarH + 40), layoutCond);
-        ImGui::SetNextWindowSize(ImVec2(620, 500), layoutCond);
+        ImGui::SetNextWindowPos(ImVec2(centerX - 300 * s, menuBarH + 40 * s), layoutCond);
+        ImGui::SetNextWindowSize(ImVec2(620 * s, 500 * s), layoutCond);
         DrawSaveDebugPanel();
     }
     if (m_ShowHTML5ExportDialog) {
