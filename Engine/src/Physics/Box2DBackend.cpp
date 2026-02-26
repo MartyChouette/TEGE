@@ -164,14 +164,17 @@ void Box2DBackend::SyncECSToBox2D() {
         DestroyBodyForEntity(entity);
     }
 
-    // Update kinematic/static bodies and property changes
+    // Update kinematic/static bodies and property changes.
+    // Also sync sensor bodies from ECS → Box2D so that entities driven by
+    // controllers, AI, or tweens (player, pickups, enemies) keep their
+    // Box2D body in sync without Box2D overwriting their position.
     for (auto& [entity, bodyId] : m_EntityToBody) {
         auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        if (body2d->isStatic) {
-            // Static bodies: update position if changed externally
+        if (body2d->isStatic || body2d->isSensor) {
+            // Static/sensor bodies: update position if changed externally
             b2Vec2 currentPos = b2Body_GetPosition(bodyId);
             Math::Vector2 ecsPos = GetPosition2D(*transform);
             f32 ecsAngle = GetRotationZ(*transform);
@@ -338,8 +341,9 @@ void Box2DBackend::SyncBox2DToECS() {
         auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
         if (!transform || !body2d) continue;
 
-        // Only sync dynamic bodies back to ECS
-        if (body2d->isStatic) continue;
+        // Only sync dynamic non-sensor bodies back to ECS.
+        // Sensor bodies are driven by ECS (controllers, AI, tweens) — don't overwrite.
+        if (body2d->isStatic || body2d->isSensor) continue;
 
         // Position
         b2Vec2 pos = b2Body_GetPosition(bodyId);

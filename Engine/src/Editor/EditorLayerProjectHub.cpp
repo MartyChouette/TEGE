@@ -1866,13 +1866,14 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         return player;
     };
 
-    // --- 2D player with capsule2D mesh (NO physics body) ---
+    // --- 2D player with capsule2D mesh + sensor body for collision callbacks ---
     // NOTE: No Sprite2DComponent — entities without textures must render via the
     // 3D mesh pipeline. SpriteBatchRenderer ignores MeshComponent geometry and
     // requires a texture to be visible. Only add Sprite2DComponent when a texture is set.
-    // NOTE: No Body2DComponent on the player — the character controller handles movement directly.
-    // Adding Body2DComponent would cause Box2D to also simulate the body, conflicting
-    // with the controller. Ground/wall entities use Body2DComponent for 2D raycast detection.
+    // The player has a sensor Body2DComponent so Box2D can detect overlaps with
+    // pickups, hazards, and enemies. The sensor body doesn't interfere with the
+    // controller: SyncECSToBox2D pushes the controller position to Box2D, and
+    // SyncBox2DToECS skips sensor bodies (doesn't overwrite the transform).
     auto createPlayer2D = [&](const std::string& name) -> ECS::Entity {
         ECS::Entity player = m_World->CreateEntity();
         m_World->AddComponent<ECS::NameComponent>(player, name);
@@ -1881,6 +1882,13 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
         pmat.baseColor = Math::Vector3(0.2f, 0.4f, 0.9f);
         m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule2D(0.8f, 1.6f));
+        // Sensor body — enables pickup/damage/enemy collision callbacks
+        auto& body = m_World->AddComponent<Physics::Body2DComponent>(player);
+        body.shapeType = Physics::Shape2DType::Box;
+        body.box.halfExtents = Math::Vector2(0.4f, 0.8f);  // Match capsule dimensions
+        body.isSensor = true;
+        body.gravityScale = 0.0f;
+        body.fixedRotation = true;
         return player;
     };
 
@@ -1901,6 +1909,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ctrl.enableWallJump = true;
             ctrl.coyoteTime = 0.15f;
             ctrl.maxJumps = 2;
+            ctrl.collisionRadius = 0.4f;   // Match visual capsule (0.8 radius mesh)
+            ctrl.collisionHeight = 1.6f;   // Match visual capsule height
             auto& hp = m_World->AddComponent<ECS::HealthComponent>(player);
             hp.maxHealth = 100.0f;
             hp.currentHealth = 100.0f;
@@ -2023,7 +2033,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.moveSpeed = 2.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-                addCapsuleCollider2D(e, 0.5f, 0.6f, false);
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.5f, 0.3f);
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
         }
 
@@ -2044,6 +2059,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -2180,7 +2201,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 ai.detectionRange = 8.0f;
                 ai.is2D = true;
                 m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-                addCapsuleCollider2D(e, 0.4f, 0.5f, false);
+                // Sensor body — AI controls movement, sensor enables damage callbacks
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.4f, 0.25f);
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
             }
         }
 
@@ -2223,6 +2249,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pick.value = 25.0f;
             pick.magnetToPlayer = true;
             pick.magnetRange = 3.0f;
+            // Sensor body for pickup detection
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.4f, 0.4f);
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
             tw.autoPlay = true;
             ECS::TweenEntry bob;
@@ -2251,6 +2283,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
             pick.type = ECS::PickupComponent::PickupType::Key;
             pick.value = 1.0f;
+            // Sensor body for pickup detection
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
             auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
             tw.autoPlay = true;
             ECS::TweenEntry bob;
@@ -2424,7 +2462,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 10.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-            addCapsuleCollider2D(e, 0.45f, 0.6f, false);
+            // Sensor body — AI controls movement, sensor enables damage callbacks
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.45f, 0.3f);
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
         }
 
         // Torches ×2 (tower walls, Fire)
@@ -2443,6 +2486,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
                 ECS::ApplyParticlePreset(pe, "Fire");
+                pe.emissionRate = 20.0f;
+                pe.maxParticles = 128;
             }
         }
 
@@ -2463,6 +2508,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -2523,7 +2574,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             ai.detectionRange = 12.0f;
             ai.is2D = true;
             m_World->AddComponent<ECS::TagComponent>(e).tags.push_back("enemy");
-            addCapsuleCollider2D(e, 0.8f, 1.8f, false);
+            // Sensor body — AI controls movement, sensor enables damage callbacks
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.8f, 0.9f);
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
             auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
             ECS::ApplyParticlePreset(pe, "Sparks");
         }
@@ -2543,6 +2599,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             pick.type = ECS::PickupComponent::PickupType::Powerup;
             pick.customId = "speed_boost";
             pick.value = 1.0f;
+            // Sensor body for pickup detection
+            auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+            col.shapeType = Physics::Shape2DType::Box;
+            col.box.halfExtents = Math::Vector2(0.3f, 0.3f);
+            col.isSensor = true;
+            col.gravityScale = 0.0f;
         }
 
         // Teleporter (sky ↔ meadow)
@@ -2562,6 +2624,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telA.cooldown = 1.0f;
             auto& peA = m_World->AddComponent<ECS::ParticleEmitterComponent>(padA);
             ECS::ApplyParticlePreset(peA, "Magic");
+            peA.emissionRate = 15.0f;
+            peA.maxParticles = 128;
 
             ECS::Entity padB = m_World->CreateEntity();
             m_World->AddComponent<ECS::NameComponent>(padB, "Teleporter Meadow");
@@ -2578,6 +2642,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telB.cooldown = 1.0f;
             auto& peB = m_World->AddComponent<ECS::ParticleEmitterComponent>(padB);
             ECS::ApplyParticlePreset(peB, "Magic");
+            peB.emissionRate = 15.0f;
+            peB.maxParticles = 128;
 
             telA.linkedTeleporter = padB;
             telB.linkedTeleporter = padA;
@@ -2600,6 +2666,12 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 auto& pick = m_World->AddComponent<ECS::PickupComponent>(e);
                 pick.type = ECS::PickupComponent::PickupType::Coin;
                 pick.value = 1.0f;
+                // Sensor body for pickup detection
+                auto& col = m_World->AddComponent<Physics::Body2DComponent>(e);
+                col.shapeType = Physics::Shape2DType::Box;
+                col.box.halfExtents = Math::Vector2(0.25f, 0.25f);
+                col.isSensor = true;
+                col.gravityScale = 0.0f;
                 auto& tw = m_World->AddComponent<ECS::TweenComponent>(e);
                 tw.autoPlay = true;
                 ECS::TweenEntry bob;
@@ -3043,6 +3115,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
                 m_World->AddComponent<ECS::MeshComponent>(e, Renderer::MeshFactory::CreateQuad(1.0f, 1.0f));
                 auto& pe = m_World->AddComponent<ECS::ParticleEmitterComponent>(e);
                 ECS::ApplyParticlePreset(pe, "Fire");
+                pe.emissionRate = 20.0f;
+                pe.maxParticles = 128;
             }
         }
 
@@ -3080,6 +3154,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telA.cooldown = 1.0f;
             auto& peA = m_World->AddComponent<ECS::ParticleEmitterComponent>(padA);
             ECS::ApplyParticlePreset(peA, "Magic");
+            peA.emissionRate = 15.0f;
+            peA.maxParticles = 128;
 
             // East wing pad
             ECS::Entity padB = m_World->CreateEntity();
@@ -3097,6 +3173,8 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
             telB.cooldown = 1.0f;
             auto& peB = m_World->AddComponent<ECS::ParticleEmitterComponent>(padB);
             ECS::ApplyParticlePreset(peB, "Magic");
+            peB.emissionRate = 15.0f;
+            peB.maxParticles = 128;
 
             // Link bidirectionally
             telA.linkedTeleporter = padB;
@@ -11560,7 +11638,7 @@ void EditorLayer::LoadCustomTemplates() {
 }
 
 void EditorLayer::DrawTemplateCreatorWindow() {
-    ImGui::SetNextWindowSize(ImVec2(520, 600), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520 * m_EditorSettings.uiScale, 600 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Template Creator", &m_ShowTemplateCreator)) {
         ImGui::End();
         return;
@@ -11753,7 +11831,7 @@ void EditorLayer::DrawTemplateCreatorWindow() {
 // Template Marketplace Window
 // ============================================================================
 void EditorLayer::DrawTemplateMarketplaceWindow() {
-    ImGui::SetNextWindowSize(ImVec2(680, 550), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(680 * m_EditorSettings.uiScale, 550 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     bool open = m_TemplateMarketplace.IsOpen();
     if (!ImGui::Begin("Template Marketplace", &open)) {
         ImGui::End();

@@ -2,9 +2,9 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-24)
+## Status Summary (2026-02-26)
 
-**150+ features complete.** Beta 0.8 QA hardening complete — all 8 subsystem audits done. See `docs/DEV_JOURNAL.md` for session log.
+**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary.
 
 ### Still Remaining
 
@@ -21,6 +21,10 @@ This document captures detailed technical plans, performance findings, and strat
 
 | Category | Item |
 |----------|------|
+| **Physics** | Box2D sensor body sync: ECS→Box2D push for sensor bodies, skip Box2D→ECS writeback — enables collision callbacks for controller/AI/tween-driven entities |
+| **Templates** | 2D platformer: fixed 12 entities (player, 8 coins, 3 pickups, 4 enemies) missing sensor bodies for collision detection |
+| **Renderer** | Fixed particle double-rendering in editor game view (wrong camera descriptor set after RenderToTarget restore) |
+| **QA** | 4-week hardening sprint: command injection fix, collab auth, VkResult checks, 255+ new tests, all audit items resolved |
 | **Platforms** | WebAssembly/WebGPU export |
 | **Editor** | Settings UX restructure (System/Project/Scene tiers) |
 | **Editor** | Networking config editor UI |

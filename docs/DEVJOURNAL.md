@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-02-26 (Session 38)
+
+### Particle Rendering Fix & 2D Gameplay Collision Overhaul
+
+**Particle double-rendering bug (EditorLayer):**
+`EditorLayer::RenderOffscreen` called `RenderParticles()` after `RenderToTarget()`/`RenderSplitscreen()` returned, but those methods already render particles internally using offscreen descriptor sets with the game camera's view/proj. After returning, the descriptor sets are restored to the main/editor pass. The extra calls rendered particles a second time with the wrong camera, causing them to appear screen-locked in 2D scenes. Removed the redundant calls.
+
+**Box2D sensor body sync (Box2DBackend):**
+`SyncECSToBox2D` now pushes ECS positions to Box2D for sensor bodies (not just static), so entities driven by controllers, AI, or tweens keep their Box2D body in sync. `SyncBox2DToECS` now skips sensor bodies, preventing Box2D from overwriting positions set by gameplay systems.
+
+**2D platformer template — collision wiring:**
+The player had no `Body2DComponent`, so Box2D never generated collision/sensor callbacks for it. Coins, keys, health potions, and speed boosts also lacked physics bodies. Enemies (slimes, bats, flyer, sky boss) used dynamic bodies that fought AI-driven movement.
+
+Fixed 12 entities across all 4 zones:
+- Player: added sensor `Body2DComponent` matching capsule dimensions
+- 8 coins (Meadow ×3, Tower ×3, Sky ×2): added sensor bodies for pickup detection
+- Health Potion, Cave Key, Speed Boost: added sensor bodies
+- 4 enemies (Slime ×2, Bat ×2, Flyer, Sky Boss): changed to sensor bodies — AI controls movement, sensors enable damage callbacks
+
+**TestTemplateCreator build fix:**
+Removed broken `SaveTemplate(root, nullptr, ...)` call that passed `nullptr` as `TemplateMetadata`.
+
+---
+
 ## 2026-02-23 (Session 37)
 
 ### Context-Aware Collider Selection & Expanded Smart Suggestions
