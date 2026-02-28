@@ -39,6 +39,8 @@
 #include "Enjin/ECS/Components/Material.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/Renderer/PostProcessing.h"
+#include "Enjin/Effects/ElementalSystem.h"
+#include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/Logging/Log.h"
 #include <algorithm>
 #include <cmath>
@@ -78,6 +80,9 @@ Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing = nullptr;
 
 // Global pointer for visual script object pool access (set by PlayMode)
 Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool = nullptr;
+
+// Global pointer for visual script elemental system access (set by PlayMode)
+Enjin::Effects::ElementalSystem* s_VisualScriptElemental = nullptr;
 
 namespace Enjin {
 namespace VisualScript {
@@ -7890,6 +7895,377 @@ void NodeRegistry::RegisterBuiltinNodes() {
                 if (rb) return rb->angularVelocity;
             }
             return Math::Vector3(0.0f, 0.0f, 0.0f);
+        };
+        RegisterNode(def);
+    }
+
+    // =========================================================================
+    // ELEMENTAL SYSTEM NODES
+    // =========================================================================
+
+    // --- Elemental_SpawnFire ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSpawnFire;
+        def.displayName = "Spawn Fire";
+        def.description = "Spawn fire particles at a world position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.3f, 0.1f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Position", PK::Input),
+            Float("Intensity", PK::Input, 1.0f),
+            Float("Lifetime", PK::Input, 3.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "fire", "spawn", "flame", "burn"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
+            f32 intensity = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 1.0f;
+            f32 lifetime = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                ? std::get<f32>(inputs[3]) : 3.0f;
+            if (s_VisualScriptElemental)
+                s_VisualScriptElemental->SpawnFire(pos, intensity, lifetime);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SpawnWater ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSpawnWater;
+        def.displayName = "Spawn Water";
+        def.description = "Spawn water particles at a world position with velocity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.4f, 0.9f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Position", PK::Input),
+            Vec3("Velocity", PK::Input),
+            Float("Intensity", PK::Input, 1.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "water", "spawn", "rain", "splash"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
+            Math::Vector3 vel = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                ? std::get<Math::Vector3>(inputs[2]) : Math::Vector3(0, -2, 0);
+            f32 intensity = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3]))
+                ? std::get<f32>(inputs[3]) : 1.0f;
+            if (s_VisualScriptElemental)
+                s_VisualScriptElemental->SpawnWater(pos, vel, intensity);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SpawnSnow ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSpawnSnow;
+        def.displayName = "Spawn Snow";
+        def.description = "Spawn snow particles at a world position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.8f, 0.9f, 1.0f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Position", PK::Input),
+            Float("Size", PK::Input, 0.15f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "snow", "spawn", "ice", "cold"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
+            f32 size = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 0.15f;
+            if (s_VisualScriptElemental)
+                s_VisualScriptElemental->SpawnSnow(pos, size);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SpawnSteam ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSpawnSteam;
+        def.displayName = "Spawn Steam";
+        def.description = "Spawn steam particles at a world position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.7f, 0.7f, 0.8f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Position", PK::Input),
+            Float("Intensity", PK::Input, 0.8f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "steam", "spawn", "vapor"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
+            f32 intensity = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                ? std::get<f32>(inputs[2]) : 0.8f;
+            if (s_VisualScriptElemental)
+                s_VisualScriptElemental->SpawnSteam(pos, intensity);
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SpawnDebris ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSpawnDebris;
+        def.displayName = "Spawn Debris";
+        def.description = "Spawn a burst of earth/debris particles";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.5f, 0.35f, 0.15f);
+        def.inputs = {
+            FlowIn(),
+            Vec3("Center", PK::Input),
+            Vec3("Force", PK::Input),
+            Int("Count", PK::Input, 8)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "earth", "debris", "spawn", "burst", "destruction"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 center = (inputs.size() > 1 && std::holds_alternative<Math::Vector3>(inputs[1]))
+                ? std::get<Math::Vector3>(inputs[1]) : Math::Vector3(0, 0, 0);
+            Math::Vector3 force = (inputs.size() > 2 && std::holds_alternative<Math::Vector3>(inputs[2]))
+                ? std::get<Math::Vector3>(inputs[2]) : Math::Vector3(0, 5, 0);
+            i32 count = (inputs.size() > 3 && std::holds_alternative<i32>(inputs[3]))
+                ? std::get<i32>(inputs[3]) : 8;
+            if (s_VisualScriptElemental && count > 0)
+                s_VisualScriptElemental->SpawnDebrisBurst(center, force, static_cast<u32>(count));
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_GetFireIntensity (pure) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalGetFireIntensity;
+        def.displayName = "Get Fire Intensity";
+        def.description = "Sample fire intensity at a world position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.3f, 0.1f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {
+            Vec3("Position", PK::Input),
+            Float("Radius", PK::Input, 3.0f)
+        };
+        def.outputs = {Float("Intensity", PK::Output)};
+        def.keywords = {"elemental", "fire", "query", "intensity", "heat"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
+                ? std::get<f32>(inputs[1]) : 3.0f;
+            if (s_VisualScriptElemental)
+                return s_VisualScriptElemental->GetFireIntensityAt(pos, radius);
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_GetMoisture (pure) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalGetMoisture;
+        def.displayName = "Get Moisture";
+        def.description = "Sample moisture/water level at a world position";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.2f, 0.4f, 0.9f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {
+            Vec3("Position", PK::Input),
+            Float("Radius", PK::Input, 3.0f)
+        };
+        def.outputs = {Float("Moisture", PK::Output)};
+        def.keywords = {"elemental", "water", "moisture", "query", "wet"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            Math::Vector3 pos = (!inputs.empty() && std::holds_alternative<Math::Vector3>(inputs[0]))
+                ? std::get<Math::Vector3>(inputs[0]) : Math::Vector3(0, 0, 0);
+            f32 radius = (inputs.size() > 1 && std::holds_alternative<f32>(inputs[1]))
+                ? std::get<f32>(inputs[1]) : 3.0f;
+            if (s_VisualScriptElemental)
+                return s_VisualScriptElemental->GetMoistureAt(pos, radius);
+            return 0.0f;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_GetActiveCount (pure) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalGetActiveCount;
+        def.displayName = "Get Elemental Count";
+        def.description = "Get the number of active elemental particles";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.2f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {};
+        def.outputs = {Int("Count", PK::Output)};
+        def.keywords = {"elemental", "count", "particles", "active"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            extern Effects::ElementalSystem* s_VisualScriptElemental;
+            if (s_VisualScriptElemental)
+                return static_cast<i32>(s_VisualScriptElemental->GetActiveCount());
+            return 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SetEmitterActive ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSetEmitterActive;
+        def.displayName = "Set Emitter Active";
+        def.description = "Enable or disable an elemental emitter on an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Bool("Active", PK::Input, true)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "emitter", "active", "toggle"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                bool active = (inputs.size() > 2 && std::holds_alternative<bool>(inputs[2]))
+                    ? std::get<bool>(inputs[2]) : true;
+                auto* emitter = ctx.world->GetComponent<ECS::ElementalEmitterComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (emitter) emitter->active = active;
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SetEmitterElement ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSetEmitterElement;
+        def.displayName = "Set Emitter Element";
+        def.description = "Change the element signature of an emitter (fire, water, earth, air weights)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.5f, 0.2f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Fire", PK::Input, 1.0f),
+            Float("Water", PK::Input, 0.0f),
+            Float("Earth", PK::Input, 0.0f),
+            Float("Air", PK::Input, 0.0f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "emitter", "element", "type", "fire", "water", "earth", "air"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                f32 fire  = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2])) ? std::get<f32>(inputs[2]) : 1.0f;
+                f32 water = (inputs.size() > 3 && std::holds_alternative<f32>(inputs[3])) ? std::get<f32>(inputs[3]) : 0.0f;
+                f32 earth = (inputs.size() > 4 && std::holds_alternative<f32>(inputs[4])) ? std::get<f32>(inputs[4]) : 0.0f;
+                f32 air   = (inputs.size() > 5 && std::holds_alternative<f32>(inputs[5])) ? std::get<f32>(inputs[5]) : 0.0f;
+                auto* emitter = ctx.world->GetComponent<ECS::ElementalEmitterComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (emitter) emitter->element = Math::Vector4(fire, water, earth, air);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_SetFlammability ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalSetFlammability;
+        def.displayName = "Set Flammability";
+        def.description = "Set how flammable an entity's elemental surface is (0=fireproof, 1=kindling)";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.9f, 0.3f, 0.1f);
+        def.inputs = {
+            FlowIn(),
+            EntityPin("Entity", PK::Input),
+            Float("Flammability", PK::Input, 0.5f)
+        };
+        def.outputs = {FlowOut()};
+        def.keywords = {"elemental", "surface", "flammability", "burn", "fire"};
+        def.execute = [](ExecutionContext& ctx,
+                         const std::vector<ECS::VariableValue>& inputs,
+                         std::vector<ECS::VariableValue>& outputs) {
+            if (inputs.size() > 1 && std::holds_alternative<ECS::Entity>(inputs[1]) && ctx.world) {
+                f32 flam = (inputs.size() > 2 && std::holds_alternative<f32>(inputs[2]))
+                    ? std::get<f32>(inputs[2]) : 0.5f;
+                auto* surface = ctx.world->GetComponent<ECS::ElementalSurfaceComponent>(
+                    std::get<ECS::Entity>(inputs[1]));
+                if (surface) surface->flammability = Math::Clamp(flam, 0.0f, 1.0f);
+            }
+            ctx.nextFlowIndex = 0;
+        };
+        RegisterNode(def);
+    }
+
+    // --- Elemental_GetSurfaceState (pure, multi-output) ---
+    {
+        NodeDefinition def;
+        def.typeId = NodeTypes::ElementalGetSurfaceState;
+        def.displayName = "Get Surface State";
+        def.description = "Get the elemental surface state (charring, wetness, snow, frost) of an entity";
+        def.category = NodeCategory::Gameplay;
+        def.headerColor = Math::Vector3(0.6f, 0.4f, 0.2f);
+        def.flags = NodeDefFlags::Pure;
+        def.inputs = {EntityPin("Entity", PK::Input)};
+        def.outputs = {
+            Float("Char", PK::Output),
+            Float("Wetness", PK::Output),
+            Float("Snow", PK::Output),
+            Float("Frost", PK::Output)
+        };
+        def.keywords = {"elemental", "surface", "char", "wet", "snow", "frost", "query"};
+        def.evaluate = [](const ExecutionContext& ctx,
+                          const std::vector<ECS::VariableValue>& inputs) -> ECS::VariableValue {
+            ECS::Entity target = ctx.entity;
+            if (!inputs.empty() && std::holds_alternative<ECS::Entity>(inputs[0])) {
+                ECS::Entity e = std::get<ECS::Entity>(inputs[0]);
+                if (e != ECS::INVALID_ENTITY) target = e;
+            }
+            if (ctx.world && target != ECS::INVALID_ENTITY) {
+                auto* surface = ctx.world->GetComponent<ECS::ElementalSurfaceComponent>(target);
+                if (surface) return surface->charAmount;
+            }
+            return 0.0f;
         };
         RegisterNode(def);
     }

@@ -413,6 +413,20 @@ constexpr const char* SSEffectSetGodRays          = "SSEffect_SetGodRays";
 constexpr const char* SSEffectSetCaustics         = "SSEffect_SetCaustics";
 constexpr const char* SSEffectSetFogShafts        = "SSEffect_SetFogShafts";
 
+// Elemental System
+constexpr const char* ElementalSpawnFire          = "Elemental_SpawnFire";
+constexpr const char* ElementalSpawnWater         = "Elemental_SpawnWater";
+constexpr const char* ElementalSpawnSnow          = "Elemental_SpawnSnow";
+constexpr const char* ElementalSpawnSteam         = "Elemental_SpawnSteam";
+constexpr const char* ElementalSpawnDebris        = "Elemental_SpawnDebris";
+constexpr const char* ElementalGetFireIntensity   = "Elemental_GetFireIntensity";
+constexpr const char* ElementalGetMoisture        = "Elemental_GetMoisture";
+constexpr const char* ElementalGetActiveCount     = "Elemental_GetActiveCount";
+constexpr const char* ElementalSetEmitterActive   = "Elemental_SetEmitterActive";
+constexpr const char* ElementalSetEmitterElement  = "Elemental_SetEmitterElement";
+constexpr const char* ElementalSetFlammability    = "Elemental_SetFlammability";
+constexpr const char* ElementalGetSurfaceState    = "Elemental_GetSurfaceState";
+
 } // namespace NodeTypes
 
 } // namespace VisualScript

@@ -43,7 +43,7 @@ namespace Enjin {
 namespace Scene { class SceneManager; }
 namespace ECS { class RenderSystem; }
 namespace Renderer { class PostProcessing; }
-namespace Effects { class WeatherSystem; class ParticleSystem; class Water3D; class FluidSimulation; class FluidTerrainCoupling; class CurlNoiseSystem; }
+namespace Effects { class WeatherSystem; class ParticleSystem; class Water3D; class FluidSimulation; class FluidTerrainCoupling; class CurlNoiseSystem; class ElementalSystem; }
 namespace Accessibility { class SubtitleSystem; class AccessibilityAnnouncer; struct RuntimeAccessibilitySettings; class AlternativeInputManager; class AudioVisualIndicatorSystem; class ContentWarningSystem; }
 namespace GUI { class UISystem; }
 namespace Editor {
@@ -131,6 +131,7 @@ public:
     void SetUISystem(GUI::UISystem* uiSystem) { m_UISystem = uiSystem; }
     GUI::UISystem* GetUISystem() const { return m_UISystem; }
     void SetWeatherSystem(Effects::WeatherSystem* ws) { m_WeatherSystem = ws; }
+    void SetElementalSystem(Effects::ElementalSystem* es) { m_ElementalSystem = es; }
     void SetParticleSystem(Effects::ParticleSystem* ps) { m_ParticleSystem = ps; }
     void SetSceneManager(Scene::SceneManager* sm) { m_SceneManager = sm; }
     void SetWater3D(Effects::Water3D* w) { m_Water3D = w; }
@@ -219,6 +220,7 @@ private:
     Effects::FluidSimulation* m_FluidSimulation = nullptr;
     Effects::FluidTerrainCoupling* m_FluidTerrainCoupling = nullptr;
     Effects::CurlNoiseSystem* m_CurlNoiseSystem = nullptr;
+    Effects::ElementalSystem* m_ElementalSystem = nullptr;
     EditorSettings* m_EditorSettings = nullptr;
 
     // Audio system (owned by PlayMode for script bindings)

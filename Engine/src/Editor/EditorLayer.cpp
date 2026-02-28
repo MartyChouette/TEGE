@@ -385,6 +385,7 @@ void EditorLayer::InitializePlayMode() {
         m_PlayMode.SetRenderSystem(m_RenderSystem);
         m_PlayMode.SetPostProcessing(m_PostProcessing.get());
         m_PlayMode.SetWeatherSystem(&m_WeatherSystem);
+        m_PlayMode.SetElementalSystem(&m_ElementalSystem);
         m_PlayMode.SetParticleSystem(&m_ParticleSystem);
         m_PlayMode.SetSceneManager(&m_SceneManager);
         m_PlayMode.SetWater3D(&m_Water3D);

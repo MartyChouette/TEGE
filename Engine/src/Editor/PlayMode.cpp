@@ -24,6 +24,7 @@
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
 
 // Extern for visual script node access to systems
 extern Enjin::Gameplay::TieredSaveSystem* s_VisualScriptSaveSystem;
@@ -36,6 +37,7 @@ extern Enjin::Audio::SimpleAudio* s_VisualScriptAudio;
 extern Enjin::Renderer::PostProcessing* s_VisualScriptPostProcessing;
 extern Enjin::Editor::AudioEventGraphRuntime* s_VisualScriptAudioGraphRuntime;
 extern Enjin::Gameplay::ObjectPool* s_VisualScriptObjectPool;
+extern Enjin::Effects::ElementalSystem* s_VisualScriptElemental;
 
 namespace Enjin {
 namespace Editor {
@@ -203,6 +205,8 @@ void PlayMode::Play() {
     Scripting::SetBindingsInputActionMap(&m_InputMap);
     s_VisualScriptSaveSystem = &m_TieredSaveSystem;
     s_VisualScriptWeather = m_WeatherSystem;
+    s_VisualScriptElemental = m_ElementalSystem;
+    Scripting::SetBindingsElemental(m_ElementalSystem);
     s_VisualScriptHUD = &m_HUDSystem;
     s_VisualScriptSubtitleSystem = m_SubtitleSystem;
     s_VisualScriptAnnouncer = m_Announcer;
@@ -413,6 +417,7 @@ void PlayMode::Stop() {
     // Clear save/gameplay system bindings
     s_VisualScriptSaveSystem = nullptr;
     s_VisualScriptWeather = nullptr;
+    s_VisualScriptElemental = nullptr;
     s_VisualScriptWater = nullptr;
     s_VisualScriptHUD = nullptr;
     s_VisualScriptSubtitleSystem = nullptr;
