@@ -474,6 +474,247 @@ ENJIN_TEST(IterationBounds, EventMappingRoundTrip) {
 }
 
 // ===========================================================================
+// 10. Latent Node Execution (delayed/async)
+// ===========================================================================
+
+ENJIN_TEST(Latent, DelayNodeIsLatentFlagged) {
+    auto& reg = NodeRegistry::Instance();
+    const NodeDefinition* delay = reg.FindNode(NodeTypes::Delay);
+    ENJIN_ASSERT_NOT_NULL(delay);
+    ENJIN_EXPECT_TRUE(delay->IsLatent());
+}
+
+ENJIN_TEST(Latent, InitialStateHasNoLatentNodes) {
+    VisualScriptComponent script;
+    ENJIN_EXPECT_TRUE(script.latentStates.empty());
+}
+
+ENJIN_TEST(Latent, LatentNodeStateStoredAndCleared) {
+    VisualScriptComponent script;
+
+    // Manually inject a latent state (simulates what executor does for Delay)
+    LatentNodeState state;
+    state.timeRemaining = 2.5f;
+    state.isActive      = true;
+    state.resumeFlowPin = 7;
+    script.latentStates[42] = state;
+
+    ENJIN_EXPECT_EQ(script.latentStates.size(), (size_t)1);
+
+    auto it = script.latentStates.find(42);
+    ENJIN_ASSERT_TRUE(it != script.latentStates.end());
+    ENJIN_EXPECT_FLOAT_EQ(it->second.timeRemaining, 2.5f);
+    ENJIN_EXPECT_TRUE(it->second.isActive);
+    ENJIN_EXPECT_EQ(it->second.resumeFlowPin, (Editor::PinId)7);
+
+    // ResetRuntimeState clears latent states
+    script.ResetRuntimeState();
+    ENJIN_EXPECT_TRUE(script.latentStates.empty());
+}
+
+ENJIN_TEST(Latent, MultipleLatentNodesTrackedIndependently) {
+    VisualScriptComponent script;
+
+    LatentNodeState s1;
+    s1.timeRemaining = 1.0f;
+    s1.isActive      = true;
+
+    LatentNodeState s2;
+    s2.timeRemaining = 3.0f;
+    s2.isActive      = true;
+
+    script.latentStates[10] = s1;
+    script.latentStates[20] = s2;
+
+    ENJIN_EXPECT_EQ(script.latentStates.size(), (size_t)2);
+    ENJIN_EXPECT_FLOAT_EQ(script.latentStates[10].timeRemaining, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(script.latentStates[20].timeRemaining, 3.0f);
+}
+
+// ===========================================================================
+// 11. Entity Destruction During Script Execution
+// ===========================================================================
+
+ENJIN_TEST(EntityLifetime, DisabledScriptSurvivesEntityInvalidity) {
+    // When an entity is invalid/destroyed, a disabled script should not crash
+    // the executor — the executor should check enabled before any node execution.
+    World world;
+    Entity e = world.CreateEntity();
+
+    VisualScriptComponent script;
+    script.enabled = false;
+
+    NodeId startNode = script.graph.AddNode("On Start", Math::Vector2(0, 0));
+    script.graph.AddPin(startNode, "", PinType::Flow, PinKind::Output);
+    VisualScriptNodeMeta meta;
+    meta.nodeType = NodeTypes::OnStart;
+    script.nodeMeta[startNode] = meta;
+    script.SetEventNode(VisualScriptEvent::OnStart, startNode);
+
+    // Destroy entity before ticking
+    world.DestroyEntity(e);
+    world.Update(0.016f);  // flush deferred destruction
+
+    VisualScriptExecutor executor;
+    // Executing a script on a destroyed entity with enabled=false should not execute any nodes
+    executor.ExecuteEvent(&world, e, &script, VisualScriptEvent::OnStart, 0.016f);
+    ENJIN_EXPECT_EQ(executor.GetLastStats().nodesExecuted, (u32)0);
+}
+
+ENJIN_TEST(EntityLifetime, ScriptVariablesStayAfterEntityDestruction) {
+    // Variables belong to the component, not the world. They should remain
+    // accessible even after the entity is invalidated (before the component
+    // itself is cleaned up).
+    VisualScriptComponent script;
+    script.variables.push_back(VisualScriptVariable::Float("speed", 12.5f));
+
+    // Simulate entity no longer valid — script component still holds data
+    auto* v = script.FindVariable("speed");
+    ENJIN_ASSERT_NOT_NULL(v);
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(v->value), 12.5f);
+}
+
+// ===========================================================================
+// 12. Flow Control: Branch, Loop (Sequence), Sequence node
+// ===========================================================================
+
+ENJIN_TEST(FlowControl_Extended, BranchOutputIndexForTrue) {
+    auto& reg = NodeRegistry::Instance();
+    const NodeDefinition* branch = reg.FindNode(NodeTypes::Branch);
+    ENJIN_ASSERT_NOT_NULL(branch);
+
+    ExecutionContext ctx;
+    std::vector<VariableValue> inputs = {true};
+    std::vector<VariableValue> outputs;
+    branch->execute(ctx, inputs, outputs);
+    ENJIN_EXPECT_EQ(ctx.nextFlowIndex, (i32)0);
+}
+
+ENJIN_TEST(FlowControl_Extended, BranchOutputIndexForFalse) {
+    auto& reg = NodeRegistry::Instance();
+    const NodeDefinition* branch = reg.FindNode(NodeTypes::Branch);
+    ENJIN_ASSERT_NOT_NULL(branch);
+
+    ExecutionContext ctx;
+    std::vector<VariableValue> inputs = {false};
+    std::vector<VariableValue> outputs;
+    branch->execute(ctx, inputs, outputs);
+    ENJIN_EXPECT_EQ(ctx.nextFlowIndex, (i32)1);
+}
+
+ENJIN_TEST(FlowControl_Extended, SequenceNodeFlowOutputCount) {
+    auto& reg = NodeRegistry::Instance();
+    const NodeDefinition* seq = reg.FindNode(NodeTypes::Sequence);
+    ENJIN_ASSERT_NOT_NULL(seq);
+    // Sequence exposes multiple Then outputs — must have at least 2
+    ENJIN_EXPECT_TRUE(seq->CountFlowOutputs() >= (usize)2);
+}
+
+// ===========================================================================
+// 13. Pin Connections and Disconnections
+// ===========================================================================
+
+ENJIN_TEST(PinConnections, AddAndRemoveMultipleLinks) {
+    NodeGraphData graph;
+    NodeId n1 = graph.AddNode("Source", Math::Vector2(0, 0));
+    NodeId n2 = graph.AddNode("SinkA",  Math::Vector2(200, 0));
+    NodeId n3 = graph.AddNode("SinkB",  Math::Vector2(200, 100));
+
+    PinId out  = graph.AddPin(n1, "Out",  PinType::Float, PinKind::Output);
+    PinId inA  = graph.AddPin(n2, "In",   PinType::Float, PinKind::Input);
+    PinId inB  = graph.AddPin(n3, "In",   PinType::Float, PinKind::Input);
+
+    LinkId l1 = graph.AddLink(out, inA);
+    LinkId l2 = graph.AddLink(out, inB);
+
+    ENJIN_EXPECT_TRUE(graph.HasLinkBetween(out, inA));
+    ENJIN_EXPECT_TRUE(graph.HasLinkBetween(out, inB));
+    ENJIN_EXPECT_EQ(graph.GetLinksForPin(out).size(), (size_t)2);
+
+    graph.RemoveLink(l1);
+    ENJIN_EXPECT_FALSE(graph.HasLinkBetween(out, inA));
+    ENJIN_EXPECT_TRUE(graph.HasLinkBetween(out, inB));
+    ENJIN_EXPECT_EQ(graph.GetLinksForPin(out).size(), (size_t)1);
+
+    graph.RemoveLink(l2);
+    ENJIN_EXPECT_FALSE(graph.HasLinkBetween(out, inB));
+    ENJIN_EXPECT_EQ(graph.GetLinksForPin(out).size(), (size_t)0);
+}
+
+ENJIN_TEST(PinConnections, RemovingNodeAlsoRemovesLinks) {
+    NodeGraphData graph;
+    NodeId n1 = graph.AddNode("A", Math::Vector2(0, 0));
+    NodeId n2 = graph.AddNode("B", Math::Vector2(200, 0));
+
+    PinId out = graph.AddPin(n1, "Out", PinType::Float, PinKind::Output);
+    PinId in  = graph.AddPin(n2, "In",  PinType::Float, PinKind::Input);
+    graph.AddLink(out, in);
+
+    ENJIN_EXPECT_TRUE(graph.HasLinkBetween(out, in));
+
+    // Removing n1 should cascade and remove any links on its pins
+    graph.RemoveNode(n1);
+    ENJIN_EXPECT_NULL(graph.FindNode(n1));
+    ENJIN_EXPECT_EQ(graph.GetLinks().size(), (size_t)0);
+}
+
+// ===========================================================================
+// 14. Variable Read/Write
+// ===========================================================================
+
+ENJIN_TEST(Variables_Extended, WriteNewVariableAtRuntime) {
+    VisualScriptComponent script;
+    // Start with no variables
+    ENJIN_EXPECT_EQ(script.variables.size(), (size_t)0);
+
+    script.variables.push_back(VisualScriptVariable::Int("counter", 0));
+    auto* v = script.FindVariable("counter");
+    ENJIN_ASSERT_NOT_NULL(v);
+    ENJIN_EXPECT_EQ(std::get<i32>(v->value), 0);
+
+    // Simulate a SetVariable node writing 42
+    v->value = (i32)42;
+    auto* v2 = script.FindVariable("counter");
+    ENJIN_ASSERT_NOT_NULL(v2);
+    ENJIN_EXPECT_EQ(std::get<i32>(v2->value), 42);
+}
+
+ENJIN_TEST(Variables_Extended, MultipleTypesCoexist) {
+    VisualScriptComponent script;
+    script.variables.push_back(VisualScriptVariable::Float("speed",     5.5f));
+    script.variables.push_back(VisualScriptVariable::Int("lives",       3));
+    script.variables.push_back(VisualScriptVariable::Bool("grounded",   true));
+    script.variables.push_back(VisualScriptVariable::String("tag",      "Player"));
+
+    ENJIN_EXPECT_EQ(script.variables.size(), (size_t)4);
+
+    auto* speed    = script.FindVariable("speed");
+    auto* lives    = script.FindVariable("lives");
+    auto* grounded = script.FindVariable("grounded");
+    auto* tag      = script.FindVariable("tag");
+
+    ENJIN_ASSERT_NOT_NULL(speed);
+    ENJIN_ASSERT_NOT_NULL(lives);
+    ENJIN_ASSERT_NOT_NULL(grounded);
+    ENJIN_ASSERT_NOT_NULL(tag);
+
+    ENJIN_EXPECT_FLOAT_EQ(std::get<f32>(speed->value),           5.5f);
+    ENJIN_EXPECT_EQ(std::get<i32>(lives->value),                 3);
+    ENJIN_EXPECT_EQ(std::get<bool>(grounded->value),             true);
+    ENJIN_EXPECT_STR_EQ(std::get<std::string>(tag->value),       "Player");
+}
+
+ENJIN_TEST(Variables_Extended, PureNodeCacheClearedByReset) {
+    VisualScriptComponent script;
+    script.pureNodeCache[55] = 3.14f;
+    script.pureNodeCache[66] = std::string("cached");
+    ENJIN_EXPECT_EQ(script.pureNodeCache.size(), (size_t)2);
+
+    script.ResetRuntimeState();
+    ENJIN_EXPECT_TRUE(script.pureNodeCache.empty());
+}
+
+// ===========================================================================
 // Entry point
 // ===========================================================================
 

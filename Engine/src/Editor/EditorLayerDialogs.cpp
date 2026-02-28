@@ -962,7 +962,7 @@ void EditorLayer::ImportModel(const std::string& path) {
 void EditorLayer::DrawImportDialog() {
     ImGui::OpenPopup("Import Settings");
 
-    ImGui::SetNextWindowSize(ImVec2(480, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(480 * m_EditorSettings.uiScale, 0), ImGuiCond_Always);
     if (ImGui::BeginPopupModal("Import Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         // File info (cached values — no filesystem calls per frame)
         ImGui::Text("File: %s", m_ImportDialogFilename.c_str());
@@ -1292,7 +1292,8 @@ void EditorLayer::ExecuteImport(const std::string& path, const Assets::ImportOpt
 
 
 void EditorLayer::DrawBuildDialog() {
-    ImGui::SetNextWindowSize(ImVec2(550, 500), ImGuiCond_FirstUseEver);
+    f32 s = m_EditorSettings.uiScale;
+    ImGui::SetNextWindowSize(ImVec2(550 * s, 500 * s), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Build Game", &m_ShowBuildDialog)) {
         ImGui::End();
         return;
@@ -1683,7 +1684,7 @@ bool EditorLayer::RaycastTerrain(const Ray& ray, ECS::TerrainComponent* terrain,
 void EditorLayer::DrawTextureCompressionWindow() {
     if (!m_ShowCompressionSettings) return;
 
-    ImGui::SetNextWindowSize(ImVec2(380, 340), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(380 * m_EditorSettings.uiScale, 340 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Compress Texture", &m_ShowCompressionSettings)) {
         // Show target file
         namespace fs = std::filesystem;
@@ -1769,7 +1770,7 @@ void EditorLayer::DrawTextureCompressionWindow() {
 
 
 void EditorLayer::DrawHTML5ExportDialog() {
-    ImGui::SetNextWindowSize(ImVec2(500, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(500 * m_EditorSettings.uiScale, 480 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Export HTML5", &m_ShowHTML5ExportDialog)) {
         ImGui::End();
         return;
@@ -1945,7 +1946,8 @@ void EditorLayer::DrawPlayModeDiffDialog() {
         return;
     }
 
-    ImGui::SetNextWindowSize(ImVec2(650, 500), ImGuiCond_FirstUseEver);
+    f32 s = m_EditorSettings.uiScale;
+    ImGui::SetNextWindowSize(ImVec2(650 * s, 500 * s), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing,
                             ImVec2(0.5f, 0.5f));
 
@@ -2116,7 +2118,7 @@ void EditorLayer::CheckForCrashReport() {
 }
 
 void EditorLayer::DrawCrashReportDialog() {
-    ImGui::SetNextWindowSize(ImVec2(620, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(620 * m_EditorSettings.uiScale, 480 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Crash Report — Previous Session", &m_ShowCrashDialog)) {
         ImGui::End();
         return;

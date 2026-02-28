@@ -184,6 +184,9 @@ bool EditorLayer::Initialize(Window* window, Renderer::VulkanRenderer* renderer)
     // Initialize weather system with more particles for better visibility
     m_WeatherSystem.Initialize(8000);  // Large pool for dense rain/snow
 
+    // Initialize elemental system (connects to wind + weather for particle interactions)
+    m_ElementalSystem.Initialize(&m_WindSystem, &m_WeatherSystem, &m_SeasonalWeather);
+
     // Wind system is always running (affects weather, vegetation, grass)
     // Will be connected to RenderSystem when SetRenderSystem is called
 
@@ -1435,6 +1438,19 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
     // Update particle emitter simulation
     m_ParticleSystem.Update(m_LastDeltaTime, m_World);
 
+    // Update elemental system (fire/water/earth/air particle simulation)
+    if (cameraTransform) {
+        // Register fire thermal feedback to wind system
+        m_WindSystem.ClearHeatSources();
+        const auto& elemPool = m_ElementalSystem.GetPool();
+        for (u32 i = 0; i < elemPool.activeCount && i < 8192; ++i) {
+            if (elemPool.elements[i].x > 0.5f && elemPool.intensities[i] > 0.3f) {
+                m_WindSystem.RegisterHeatSource(elemPool.positions[i], elemPool.intensities[i]);
+            }
+        }
+        m_ElementalSystem.Update(m_World, m_LastDeltaTime, cameraTransform->position);
+    }
+
     // Update fluid simulation
     m_FluidSimulation.Update(m_LastDeltaTime, m_World);
 
@@ -1502,11 +1518,13 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
+        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight);
     } else {
         m_RenderSystem->RenderToTarget(sceneTarget, &gameCamera);
         if (hasWeatherParticles) {
             m_RenderSystem->RenderWeatherParticles(m_WeatherSystem, isRain, rtWidth, rtHeight);
         }
+        m_RenderSystem->RenderElementalParticles(m_ElementalSystem, rtWidth, rtHeight);
     }
     sceneTarget->End(commandBuffer);
 

@@ -36,6 +36,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
@@ -761,7 +762,9 @@ void EditorLayer::DrawCameraComponent(ECS::Entity entity) {
         const char* projTypes[] = { "Perspective", "Orthographic" };
         int currentType = static_cast<int>(camera->projectionType);
         if (InspectorUndo::Combo(m_UndoRedo, "Projection", &currentType, projTypes, 2)) {
-            camera->projectionType = static_cast<ECS::ProjectionType>(currentType);
+            if (currentType >= 0 && currentType <= 1) {
+                camera->projectionType = static_cast<ECS::ProjectionType>(currentType);
+            }
         }
         ImGui::SetItemTooltip("Perspective: 3D depth | Orthographic: flat/2D");
 
@@ -8221,6 +8224,141 @@ void EditorLayer::DrawNetworkTransformComponent(ECS::Entity entity) {
     ImGui::Text("Network Velocity: %.2f, %.2f, %.2f",
                 nt->networkVelocity.x, nt->networkVelocity.y, nt->networkVelocity.z);
     ImGui::DragFloat("Interp Duration", &nt->interpDuration, 0.01f, 0.01f, 1.0f, "%.3f s");
+}
+
+// ============================================================================
+// ELEMENTAL COMPONENTS
+// ============================================================================
+
+void EditorLayer::DrawElementalSurfaceComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Elemental Surface", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ElementalSurfaceCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ElementalSurfaceComponent>(entity, "elementalSurface", "Elemental Surface");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* surface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+        if (!surface) return;
+
+        InspectorUndo::SliderFloat(m_UndoRedo, "Flammability", &surface->flammability, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Accumulation Rate", &surface->accumulationRate, 0.05f, 0.0f, 5.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Decay Rate", &surface->decayRate, 0.01f, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Max Accumulation", &surface->maxAccumulation, 0.1f, 0.1f, 5.0f);
+
+        ImGui::Separator();
+        ImGui::Text("Current State (read-only):");
+        ImGui::Text("  Char: %.2f  Wet: %.2f", surface->charAmount, surface->wetness);
+        ImGui::Text("  Snow: %.2f  Frost: %.2f", surface->snowCoverage, surface->frostAmount);
+
+        // Accumulation preview bar
+        f32 accum[4] = { surface->accumulation.x, surface->accumulation.y,
+                         surface->accumulation.z, surface->accumulation.w };
+        ImGui::Text("Accumulation [F/W/E/A]:");
+        ImGui::ProgressBar(accum[0] / surface->maxAccumulation, ImVec2(-1, 0), "Fire");
+        ImGui::ProgressBar(accum[1] / surface->maxAccumulation, ImVec2(-1, 0), "Water");
+        ImGui::ProgressBar(accum[2] / surface->maxAccumulation, ImVec2(-1, 0), "Earth");
+        ImGui::ProgressBar(accum[3] / surface->maxAccumulation, ImVec2(-1, 0), "Air");
+
+        if (ImGui::Button("Reset Accumulation##ElemSurf")) {
+            surface->accumulation = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+            surface->charAmount = 0.0f;
+            surface->wetness = 0.0f;
+            surface->snowCoverage = 0.0f;
+            surface->frostAmount = 0.0f;
+        }
+    }
+}
+
+void EditorLayer::DrawElementalEmitterComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Elemental Emitter", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ElementalEmitterCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ElementalEmitterComponent>(entity, "elementalEmitter", "Elemental Emitter");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* emitter = m_World->GetComponent<ECS::ElementalEmitterComponent>(entity);
+        if (!emitter) return;
+
+        InspectorUndo::Checkbox(m_UndoRedo, "Active##ElemEmit", &emitter->active);
+
+        // Element type preset dropdown
+        const char* presets[] = { "Fire", "Water", "Earth", "Air", "Steam", "Snow", "Custom" };
+        static int currentPreset = 6; // default to Custom
+        if (ImGui::Combo("Element Preset##ElemEmit", &currentPreset, presets, IM_ARRAYSIZE(presets))) {
+            switch (currentPreset) {
+                case 0: emitter->element = Math::Vector4(1.0f, 0.0f, 0.0f, 0.0f); break; // Fire
+                case 1: emitter->element = Math::Vector4(0.0f, 1.0f, 0.0f, 0.0f); break; // Water
+                case 2: emitter->element = Math::Vector4(0.0f, 0.0f, 1.0f, 0.0f); break; // Earth
+                case 3: emitter->element = Math::Vector4(0.0f, 0.0f, 0.0f, 1.0f); break; // Air
+                case 4: emitter->element = Math::Vector4(0.5f, 0.5f, 0.0f, 0.0f); break; // Steam
+                case 5: emitter->element = Math::Vector4(0.0f, 0.4f, 0.0f, 0.6f); break; // Snow
+                default: break; // Custom: don't change
+            }
+        }
+
+        // Element signature (advanced)
+        if (ImGui::TreeNode("Element Signature##ElemEmit")) {
+            f32 elem[4] = { emitter->element.x, emitter->element.y, emitter->element.z, emitter->element.w };
+            ImGui::DragFloat4("FWEA##ElemSig", elem, 0.05f, -1.0f, 1.0f);
+            emitter->element = Math::Vector4(elem[0], elem[1], elem[2], elem[3]);
+            ImGui::TreePop();
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Emission Rate##ElemEmit", &emitter->emissionRate, 0.5f, 0.0f, 100.0f);
+        InspectorUndo::SliderFloat(m_UndoRedo, "Intensity##ElemEmit", &emitter->intensity, 0.0f, 1.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Lifetime##ElemEmit", &emitter->lifetime, 0.1f, 0.1f, 30.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Spread##ElemEmit", &emitter->spread, 0.05f, 0.0f, 3.14f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Speed##ElemEmit", &emitter->speed, 0.1f, 0.0f, 50.0f);
+
+        f32 dir[3] = { emitter->direction.x, emitter->direction.y, emitter->direction.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Direction##ElemEmit", dir,
+                [emitter](f32 x, f32 y, f32 z) { emitter->direction = Math::Vector3(x, y, z); },
+                0.05f, -1.0f, 1.0f)) {
+            emitter->direction = Math::Vector3(dir[0], dir[1], dir[2]);
+        }
+    }
+}
+
+void EditorLayer::DrawElementalVolumeComponent(ECS::Entity entity) {
+    bool open = ImGui::CollapsingHeader("Elemental Volume", ImGuiTreeNodeFlags_DefaultOpen);
+    if (ImGui::BeginPopupContextItem("ElementalVolumeCtx")) {
+        if (ImGui::MenuItem("Remove Component")) {
+            RemoveComponentWithUndo<ECS::ElementalVolumeComponent>(entity, "elementalVolume", "Elemental Volume");
+            ImGui::EndPopup();
+            return;
+        }
+        ImGui::EndPopup();
+    }
+    if (open) {
+        auto* vol = m_World->GetComponent<ECS::ElementalVolumeComponent>(entity);
+        if (!vol) return;
+
+        f32 extents[3] = { vol->halfExtents.x, vol->halfExtents.y, vol->halfExtents.z };
+        if (InspectorUndo::DragFloat3(m_UndoRedo, "Half Extents##ElemVol", extents,
+                [vol](f32 x, f32 y, f32 z) { vol->halfExtents = Math::Vector3(x, y, z); },
+                0.5f, 0.1f, 500.0f)) {
+            vol->halfExtents = Math::Vector3(extents[0], extents[1], extents[2]);
+        }
+
+        if (ImGui::TreeNode("Element Bias##ElemVol")) {
+            f32 bias[4] = { vol->elementBias.x, vol->elementBias.y, vol->elementBias.z, vol->elementBias.w };
+            ImGui::DragFloat4("FWEA##ElemBias", bias, 0.05f, -1.0f, 1.0f);
+            vol->elementBias = Math::Vector4(bias[0], bias[1], bias[2], bias[3]);
+            ImGui::TreePop();
+        }
+
+        InspectorUndo::DragFloat(m_UndoRedo, "Temperature Bias##ElemVol", &vol->temperatureBias, 0.5f, -50.0f, 50.0f);
+        InspectorUndo::DragFloat(m_UndoRedo, "Wind Multiplier##ElemVol", &vol->windMultiplier, 0.1f, 0.0f, 5.0f);
+        InspectorUndo::Checkbox(m_UndoRedo, "Kill On Contact##ElemVol", &vol->killOnContact);
+    }
 }
 
 // ============================================================================

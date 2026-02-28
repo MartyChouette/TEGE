@@ -2230,7 +2230,7 @@ void EditorLayer::DrawThemePreview() {
 // Keyboard Shortcuts Help Modal
 // ============================================================================
 void EditorLayer::DrawShortcutsHelpModal() {
-    ImGui::SetNextWindowSize(ImVec2(520, 480), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(520 * m_EditorSettings.uiScale, 480 * m_EditorSettings.uiScale), ImGuiCond_FirstUseEver);
     if (!ImGui::Begin("Keyboard Shortcuts", &m_ShowShortcutsHelp)) {
         ImGui::End();
         return;

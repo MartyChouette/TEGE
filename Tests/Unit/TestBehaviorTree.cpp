@@ -605,4 +605,471 @@ ENJIN_TEST(BehaviorTree, ForceFailureDecorator) {
     ENJIN_EXPECT_EQ(result, BTStatus::Failure);
 }
 
+// ===========================================================================
+// 16. Executor with Mock Conditions — Return Success / Failure / Running
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Executor_MockConditionSuccess) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId leaf = AddAlwaysSucceedLeaf(b, "mockOk", {0, 10});
+    b.Link(root, leaf);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(result, BTStatus::Success);
+}
+
+ENJIN_TEST(BehaviorTree, Executor_MockConditionFailure) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId leaf = AddAlwaysFailLeaf(b, "mockFail", {0, 10});
+    b.Link(root, leaf);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(result, BTStatus::Failure);
+}
+
+// A Running leaf: use a Wait action node with duration > deltaTime.
+ENJIN_TEST(BehaviorTree, Executor_MockConditionRunning) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    // Wait node with 5-second duration returns Running on first tick
+    NodeId wait = b.AddBTNodeWithProp(BTNodeType::Wait, "duration", "5.0", {0, 10});
+    b.Link(root, wait);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(result, BTStatus::Running);
+}
+
+// ===========================================================================
+// 17. Composite: Sequence all succeed (extended explicit assertion)
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Sequence_AllSucceed_Extended) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId seq  = b.AddBTNode(BTNodeType::Sequence);
+    NodeId c1   = AddAlwaysSucceedLeaf(b, "e1");
+    NodeId c2   = AddAlwaysSucceedLeaf(b, "e2");
+    NodeId c3   = AddAlwaysSucceedLeaf(b, "e3");
+    NodeId c4   = AddAlwaysSucceedLeaf(b, "e4");
+
+    b.Link(root, seq);
+    b.Link(seq, c1); b.Link(seq, c2); b.Link(seq, c3); b.Link(seq, c4);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+// ===========================================================================
+// 18. Composite: Sequence first-fail stops at failing child
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Sequence_FirstFail_StopsEarly) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId seq  = b.AddBTNode(BTNodeType::Sequence);
+    // First child fails: entire sequence must fail immediately
+    NodeId c1   = AddAlwaysFailLeaf(b, "xFail");
+    NodeId c2   = AddAlwaysSucceedLeaf(b, "xSucc");
+
+    b.Link(root, seq);
+    b.Link(seq, c1); b.Link(seq, c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Failure);
+}
+
+// ===========================================================================
+// 19. Composite: Selector first-succeed
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Selector_FirstSucceed_SkipsRest) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId sel  = b.AddBTNode(BTNodeType::Selector);
+    // Very first child succeeds: selector returns Success immediately
+    NodeId c1   = AddAlwaysSucceedLeaf(b, "firstOk");
+    NodeId c2   = AddAlwaysFailLeaf(b, "laterFail");
+
+    b.Link(root, sel);
+    b.Link(sel, c1); b.Link(sel, c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+// ===========================================================================
+// 20. Composite: Selector all-fail
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Selector_AllFail_Extended) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId sel  = b.AddBTNode(BTNodeType::Selector);
+    NodeId c1   = AddAlwaysFailLeaf(b, "af1");
+    NodeId c2   = AddAlwaysFailLeaf(b, "af2");
+    NodeId c3   = AddAlwaysFailLeaf(b, "af3");
+
+    b.Link(root, sel);
+    b.Link(sel, c1); b.Link(sel, c2); b.Link(sel, c3);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Failure);
+}
+
+// ===========================================================================
+// 21. Condition Evaluation: CheckVariable with == / != operators
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, CheckVariable_EqualOperator) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    {
+        // "health == 100" — blackboard has 100 -> Success
+        BTBuilder b;
+        NodeId root = b.AddBTNode(BTNodeType::Root);
+        NodeId cond = b.AddBTNode(BTNodeType::CheckVariable);
+        b.comp.nodeMeta[cond].properties["key"]      = "health";
+        b.comp.nodeMeta[cond].properties["operator"] = "==";
+        b.comp.nodeMeta[cond].properties["value"]    = "100";
+        b.comp.blackboard.Set("health", (i32)100);
+        b.Link(root, cond);
+        b.SetRoot(root);
+        b.comp.initialized = true;
+
+        BehaviorTreeExecutor executor;
+        ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+    }
+    {
+        // "health == 100" — blackboard has 50 -> Failure
+        BTBuilder b;
+        NodeId root = b.AddBTNode(BTNodeType::Root);
+        NodeId cond = b.AddBTNode(BTNodeType::CheckVariable);
+        b.comp.nodeMeta[cond].properties["key"]      = "health";
+        b.comp.nodeMeta[cond].properties["operator"] = "==";
+        b.comp.nodeMeta[cond].properties["value"]    = "100";
+        b.comp.blackboard.Set("health", (i32)50);
+        b.Link(root, cond);
+        b.SetRoot(root);
+        b.comp.initialized = true;
+
+        BehaviorTreeExecutor executor;
+        ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Failure);
+    }
+}
+
+ENJIN_TEST(BehaviorTree, CheckVariable_NotEqualOperator) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // "alive != false" — blackboard alive = true -> Success
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId cond = b.AddBTNode(BTNodeType::CheckVariable);
+    b.comp.nodeMeta[cond].properties["key"]      = "alive";
+    b.comp.nodeMeta[cond].properties["operator"] = "!=";
+    b.comp.nodeMeta[cond].properties["value"]    = "false";
+    b.comp.blackboard.Set("alive", true);
+    b.Link(root, cond);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+// ===========================================================================
+// 22. Tree Reset / Restart
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, TreeReset_ClearsRuntime) {
+    ECS::BehaviorTreeComponent comp;
+    comp.nodeStatuses[10]  = BTStatus::Running;
+    comp.nodeStatuses[20]  = BTStatus::Success;
+    comp.nodeCounters[10]  = 5;
+    comp.nodeTimers[20]    = 3.0f;
+    comp.activeNode        = 10;
+    comp.tickTimer         = 0.5f;
+    comp.initialized       = true;
+    comp.blackboard.Set("x", (i32)99);
+
+    comp.ResetRuntimeState();
+
+    ENJIN_EXPECT_EQ(comp.nodeStatuses.size(), (usize)0);
+    ENJIN_EXPECT_EQ(comp.nodeCounters.size(), (usize)0);
+    ENJIN_EXPECT_EQ(comp.nodeTimers.size(), (usize)0);
+    ENJIN_EXPECT_EQ(comp.activeNode, (NodeId)0);
+    ENJIN_EXPECT_FLOAT_EQ(comp.tickTimer, 0.0f);
+    ENJIN_EXPECT_FALSE(comp.initialized);
+    ENJIN_EXPECT_FALSE(comp.blackboard.Has("x"));
+}
+
+ENJIN_TEST(BehaviorTree, TreeReset_ThenRetick_WorksCorrectly) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId leaf = AddAlwaysSucceedLeaf(b, "rval");
+    b.Link(root, leaf);
+    b.SetRoot(root);
+
+    BehaviorTreeExecutor executor;
+
+    // First execution
+    b.comp.initialized = true;
+    BTStatus r1 = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(r1, BTStatus::Success);
+
+    // Reset runtime state
+    b.comp.ResetRuntimeState();
+    // Re-preload blackboard (cleared by reset)
+    b.comp.blackboard.Set("rval", true);
+    b.comp.initialized = true;
+
+    // Second execution after reset should also succeed
+    BTStatus r2 = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(r2, BTStatus::Success);
+}
+
+// ===========================================================================
+// 23. Parallel Node Execution
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Parallel_AllChildrenSucceed) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId par  = b.AddBTNode(BTNodeType::Parallel);
+    NodeId c1   = AddAlwaysSucceedLeaf(b, "ps1");
+    NodeId c2   = AddAlwaysSucceedLeaf(b, "ps2");
+
+    b.Link(root, par);
+    b.Link(par, c1); b.Link(par, c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    // Parallel succeeds if all children succeed
+    ENJIN_EXPECT_EQ(result, BTStatus::Success);
+}
+
+ENJIN_TEST(BehaviorTree, Parallel_OneChildFails) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId par  = b.AddBTNode(BTNodeType::Parallel);
+    NodeId c1   = AddAlwaysSucceedLeaf(b, "pok");
+    NodeId c2   = AddAlwaysFailLeaf(b, "pfail");
+
+    b.Link(root, par);
+    b.Link(par, c1); b.Link(par, c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    // Parallel fails if any child fails
+    ENJIN_EXPECT_EQ(result, BTStatus::Failure);
+}
+
+// ===========================================================================
+// 24. Decorator Nodes: Inverter, Repeater, Succeeder (ForceSuccess)
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Decorator_Inverter_TwiceIsIdentity) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // Inverter(Inverter(Succeed)) == Succeed
+    BTBuilder b;
+    NodeId root  = b.AddBTNode(BTNodeType::Root);
+    NodeId inv1  = b.AddBTNode(BTNodeType::Inverter, {0, 0});
+    NodeId inv2  = b.AddBTNode(BTNodeType::Inverter, {0, 10});
+    NodeId leaf  = AddAlwaysSucceedLeaf(b, "dbl");
+
+    b.Link(root, inv1);
+    b.Link(inv1, inv2);
+    b.Link(inv2, leaf);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+ENJIN_TEST(BehaviorTree, Decorator_Repeater_Count1_ReturnsChildStatus) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // Repeater with count=1 should complete on first tick with child's status
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId rep  = b.AddBTNodeWithProp(BTNodeType::Repeater, "count", "1");
+    NodeId leaf = AddAlwaysSucceedLeaf(b, "r1leaf");
+
+    b.Link(root, rep);
+    b.Link(rep, leaf);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    BTStatus result = executor.Tick(&world, entity, b.comp, 0.016f);
+    ENJIN_EXPECT_EQ(result, BTStatus::Success);
+}
+
+ENJIN_TEST(BehaviorTree, Decorator_Succeeder_WrapsFailure) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // ForceSuccess around a failing leaf always returns Success
+    BTBuilder b;
+    NodeId root = b.AddBTNode(BTNodeType::Root);
+    NodeId fs   = b.AddBTNode(BTNodeType::ForceSuccess);
+    NodeId leaf = AddAlwaysFailLeaf(b, "wfail");
+
+    b.Link(root, fs);
+    b.Link(fs, leaf);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+// ===========================================================================
+// 25. Nested Composites
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Nested_SequenceInsideSelector) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // Selector [ Sequence[fail, succeed], succeed ]
+    // The inner sequence fails (first child fails), so selector tries second child (succeed)
+    BTBuilder b;
+    NodeId root  = b.AddBTNode(BTNodeType::Root);
+    NodeId sel   = b.AddBTNode(BTNodeType::Selector);
+    NodeId seq   = b.AddBTNode(BTNodeType::Sequence);
+    NodeId s_c1  = AddAlwaysFailLeaf(b, "nf1");
+    NodeId s_c2  = AddAlwaysSucceedLeaf(b, "ns1");
+    NodeId sel_c = AddAlwaysSucceedLeaf(b, "ns2");
+
+    b.Link(root, sel);
+    b.Link(sel, seq);
+    b.Link(sel, sel_c);
+    b.Link(seq, s_c1);
+    b.Link(seq, s_c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+ENJIN_TEST(BehaviorTree, Nested_SelectorInsideSequence) {
+    ECS::World world;
+    ECS::Entity entity = world.CreateEntity();
+    world.AddComponent<ECS::TransformComponent>(entity);
+
+    // Sequence [ Selector[fail, succeed], succeed ]
+    // Inner selector finds a success, sequence continues and also succeeds
+    BTBuilder b;
+    NodeId root  = b.AddBTNode(BTNodeType::Root);
+    NodeId seq   = b.AddBTNode(BTNodeType::Sequence);
+    NodeId sel   = b.AddBTNode(BTNodeType::Selector);
+    NodeId sel_c1 = AddAlwaysFailLeaf(b, "nif1");
+    NodeId sel_c2 = AddAlwaysSucceedLeaf(b, "nis1");
+    NodeId seq_c2 = AddAlwaysSucceedLeaf(b, "nis2");
+
+    b.Link(root, seq);
+    b.Link(seq, sel);
+    b.Link(seq, seq_c2);
+    b.Link(sel, sel_c1);
+    b.Link(sel, sel_c2);
+    b.SetRoot(root);
+    b.comp.initialized = true;
+
+    BehaviorTreeExecutor executor;
+    ENJIN_EXPECT_EQ(executor.Tick(&world, entity, b.comp, 0.016f), BTStatus::Success);
+}
+
+// ===========================================================================
+// 26. Blackboard: GetAll returns all set keys
+// ===========================================================================
+
+ENJIN_TEST(BehaviorTree, Blackboard_GetAllReturnsCorrectCount) {
+    Blackboard bb;
+    bb.Set("a", (i32)1);
+    bb.Set("b", (i32)2);
+    bb.Set("c", (i32)3);
+    bb.Set("d", (i32)4);
+    ENJIN_EXPECT_EQ(bb.GetAll().size(), (usize)4);
+    bb.Remove("b");
+    ENJIN_EXPECT_EQ(bb.GetAll().size(), (usize)3);
+    bb.Clear();
+    ENJIN_EXPECT_EQ(bb.GetAll().size(), (usize)0);
+}
+
 ENJIN_TEST_MAIN()

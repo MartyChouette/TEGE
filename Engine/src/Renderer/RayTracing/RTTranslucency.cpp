@@ -30,7 +30,10 @@ bool RTTranslucency::Initialize(u32 width, u32 height, VkDescriptorSetLayout rtD
     layoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
     layoutInfo.setLayoutCount = 1;
     layoutInfo.pSetLayouts = &rtDescLayout;
-    vkCreatePipelineLayout(m_Context->GetDevice(), &layoutInfo, nullptr, &m_PipelineLayout);
+    if (vkCreatePipelineLayout(m_Context->GetDevice(), &layoutInfo, nullptr, &m_PipelineLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "RTTranslucency: Failed to create pipeline layout");
+        return false;
+    }
 
     m_Pipeline = std::make_unique<RTPipeline>(m_Context);
 
@@ -92,7 +95,10 @@ void RTTranslucency::CreateOutputImage() {
     imgInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imgInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
-    vkCreateImage(m_Context->GetDevice(), &imgInfo, nullptr, &m_OutputImage);
+    if (vkCreateImage(m_Context->GetDevice(), &imgInfo, nullptr, &m_OutputImage) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "RTTranslucency: Failed to create output image");
+        return;
+    }
 
     VkMemoryRequirements memReqs;
     vkGetImageMemoryRequirements(m_Context->GetDevice(), m_OutputImage, &memReqs);
@@ -100,7 +106,10 @@ void RTTranslucency::CreateOutputImage() {
     allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfo.allocationSize = memReqs.size;
     allocInfo.memoryTypeIndex = m_Context->FindMemoryType(memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkAllocateMemory(m_Context->GetDevice(), &allocInfo, nullptr, &m_OutputMemory);
+    if (vkAllocateMemory(m_Context->GetDevice(), &allocInfo, nullptr, &m_OutputMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "RTTranslucency: Failed to allocate image memory");
+        return;
+    }
     vkBindImageMemory(m_Context->GetDevice(), m_OutputImage, m_OutputMemory, 0);
     m_Context->TrackAllocation(static_cast<usize>(memReqs.size));
 
@@ -110,7 +119,10 @@ void RTTranslucency::CreateOutputImage() {
     viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
     viewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
     viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-    vkCreateImageView(m_Context->GetDevice(), &viewInfo, nullptr, &m_OutputView);
+    if (vkCreateImageView(m_Context->GetDevice(), &viewInfo, nullptr, &m_OutputView) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "RTTranslucency: Failed to create image view");
+        return;
+    }
 }
 
 void RTTranslucency::DestroyOutputImage() {

@@ -40,6 +40,7 @@ namespace Enjin { namespace Effects {
     class ParticleRenderer;
     class FluidRenderer;
     class FluidSimulation;
+    class ElementalSystem;
     class SpriteBatchRenderer;
     class SpriteTextureAtlas;
     class GrassRenderer;
@@ -286,6 +287,8 @@ public:
     void RenderWeatherParticles(const Effects::WeatherSystem& weather, bool isRain,
                                 u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderParticles(u32 viewportWidth = 0, u32 viewportHeight = 0);
+    void RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
+                                  u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderFluid(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderGrass(u32 viewportWidth = 0, u32 viewportHeight = 0);
     void RenderShrubs(u32 viewportWidth = 0, u32 viewportHeight = 0);

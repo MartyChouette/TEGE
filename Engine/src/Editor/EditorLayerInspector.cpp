@@ -36,6 +36,7 @@
 #include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/ECS/Components/PostProcessVolume.h"
 #include "Enjin/ECS/Components/FluidVolume.h"
+#include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/Text.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/ECS/Components/Flower.h"
@@ -535,6 +536,21 @@ static const std::vector<ComponentEntry>& GetComponentEntries() {
             [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::PostProcessVolumeComponent>(e); },
             [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::PostProcessVolumeComponent>(e); },
             "postProcessVolume"},
+        {"Elemental Surface", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ElementalSurfaceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ElementalSurfaceComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ElementalSurfaceComponent>(e); },
+            "elementalSurface"},
+        {"Elemental Emitter", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ElementalEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ElementalEmitterComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ElementalEmitterComponent>(e); },
+            "elementalEmitter"},
+        {"Elemental Volume", "Effects", nullptr,
+            [](ECS::World* w, ECS::Entity e) { return w->HasComponent<ECS::ElementalVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->AddComponent<ECS::ElementalVolumeComponent>(e); },
+            [](ECS::World* w, ECS::Entity e) { w->RemoveComponent<ECS::ElementalVolumeComponent>(e); },
+            "elementalVolume"},
 
         // -- 2D Graphics --
         {"Sprite", "2D Graphics", nullptr,
@@ -1004,6 +1020,21 @@ void EditorLayer::DrawInspectorPanel() {
             if (m_World->HasComponent<ECS::TerrainComponent>(m_PrimarySelected)) {
                 DrawFluidTerrainCoupling(m_PrimarySelected);
             }
+        }
+
+        // Elemental Surface component
+        if (m_World->HasComponent<ECS::ElementalSurfaceComponent>(m_PrimarySelected)) {
+            DrawElementalSurfaceComponent(m_PrimarySelected);
+        }
+
+        // Elemental Emitter component
+        if (m_World->HasComponent<ECS::ElementalEmitterComponent>(m_PrimarySelected)) {
+            DrawElementalEmitterComponent(m_PrimarySelected);
+        }
+
+        // Elemental Volume component
+        if (m_World->HasComponent<ECS::ElementalVolumeComponent>(m_PrimarySelected)) {
+            DrawElementalVolumeComponent(m_PrimarySelected);
         }
 
         // Notes component

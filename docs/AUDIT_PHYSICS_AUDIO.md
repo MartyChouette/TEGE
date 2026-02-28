@@ -1,3 +1,5 @@
+> **Status:** All items from this audit have been resolved as of the February 2026 hardening sprint. See [AUDIT_HARDENING_SPRINT.md](AUDIT_HARDENING_SPRINT.md) for details.
+
 # Physics & Audio Audit — Beta 0.8 (2026-02-18)
 
 **Status:** All 8 findings fixed.

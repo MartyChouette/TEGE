@@ -628,10 +628,17 @@ std::shared_ptr<Prefab> PrefabManager::LoadPrefab(const std::string& filepath) {
     auto prefab = std::make_shared<Prefab>(j.value("name", "Prefab"));
     prefab->SetPath(filepath);
 
+    if (!j.contains("entities") || !j["entities"].is_array()) {
+        ENJIN_LOG_WARN(Assets, "Prefab missing 'entities' array: %s", filepath.c_str());
+        return prefab;
+    }
+
     for (const auto& entityJson : j["entities"]) {
         PrefabEntityData entityData;
         entityData.name = entityJson.value("name", "Entity");
         entityData.parentIndex = entityJson.value("parentIndex", -1);
+
+        if (!entityJson.contains("components") || !entityJson["components"].is_array()) continue;
 
         for (const auto& compJson : entityJson["components"]) {
             PrefabComponentData compData;

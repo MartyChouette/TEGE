@@ -126,6 +126,28 @@ void PlayMode::Play() {
     SaveEditorState();
     ENJIN_LOG_INFO(Editor, "PlayMode: SaveEditorState done");
 
+    // Re-create physics backends if project mode changed since Initialize()
+    // (e.g., user created a 2D template after editor startup initialized with Mode3D)
+    if (m_SceneManager) {
+        auto backendType = m_SceneManager->GetPhysicsBackendType();
+        auto projectMode = m_SceneManager->GetProjectMode();
+        bool need2D = (projectMode == Scene::ProjectMode::Mode2D || projectMode == Scene::ProjectMode::Mixed);
+        bool need3D = (projectMode == Scene::ProjectMode::Mode3D || projectMode == Scene::ProjectMode::Mixed);
+
+        if (need2D && !m_Physics2D) {
+            m_Physics2D = Physics::CreatePhysicsBackend2D(backendType, projectMode);
+            if (m_Physics2D) m_Physics2D->Initialize(m_World);
+            m_ControllerSystem.SetPhysics2D(m_Physics2D.get());
+            ENJIN_LOG_INFO(Editor, "PlayMode: Created 2D physics backend on Play()");
+        }
+        if (need3D && !m_Physics) {
+            m_Physics = Physics::CreatePhysicsBackend(backendType, projectMode);
+            if (m_Physics) m_Physics->SetWorld(m_World);
+            m_ControllerSystem.SetPhysics(m_Physics.get());
+            ENJIN_LOG_INFO(Editor, "PlayMode: Created 3D physics backend on Play()");
+        }
+    }
+
     // Find the active game camera entity so controllers drive it instead of the editor camera
     ECS::Entity gameCam = ECS::CameraManager::GetActiveCamera(m_World);
     m_ControllerSystem.SetGameCameraEntity(gameCam);

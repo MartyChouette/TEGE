@@ -4,6 +4,7 @@
 #include "Enjin/Effects/WeatherRenderer.h"
 #include "Enjin/Effects/ParticleRenderer.h"
 #include "Enjin/Effects/FluidRenderer.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/SpriteBatchRenderer.h"
 #include "Enjin/Effects/SpriteTextureAtlas.h"
 #include "Enjin/Effects/GrassRenderer.h"
@@ -26,6 +27,7 @@
 #include "Enjin/ECS/Components/LOD.h"
 #include "Enjin/ECS/Components/Controllers/CharacterController.h"
 #include "Enjin/ECS/Components/Gameplay.h"
+#include "Enjin/ECS/Components/Elemental.h"
 #include "Enjin/ECS/Components/IKComponents.h"
 #include "Enjin/Animation/IKSolver.h"
 #include "Enjin/Logging/Log.h"
@@ -1322,6 +1324,16 @@ void RenderSystem::RenderToTarget(Renderer::RenderTarget* target, Renderer::Came
                     u32 packed = (r << 20) | (g << 10) | b;
                     pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
                 }
+                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+                if (!material->ditherGradient && !material->ditherTransparency) {
+                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
+                    }
+                }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
                 pushConstants.metallic = 0.0f;
@@ -1693,6 +1705,16 @@ void RenderSystem::RenderSplitscreen(Renderer::RenderTarget* target, const std::
                     u32 b = static_cast<u32>(material->ditherTransBlendColor.z * 1023.0f) & 0x3FF;
                     u32 packed = (r << 20) | (g << 10) | b;
                     pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
+                }
+                // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+                if (!material->ditherGradient && !material->ditherTransparency) {
+                    auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+                    if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                        elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                        pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                        pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                        pushConstants.surfaceParam3 = elemSurface->frostAmount;
+                    }
                 }
             } else {
                 pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -3644,6 +3666,16 @@ void RenderSystem::RenderEntity(Entity entity) {
             u32 packed = (r << 20) | (g << 10) | b;
             pushConstants.surfaceParam3 = *reinterpret_cast<f32*>(&packed);
         }
+        // Elemental surface effects: encode char/wet/snow/frost into surfaceParams
+        if (!material->ditherGradient && !material->ditherTransparency) {
+            auto* elemSurface = m_World->GetComponent<ECS::ElementalSurfaceComponent>(entity);
+            if (elemSurface && (elemSurface->charAmount > 0.01f || elemSurface->wetness > 0.01f ||
+                                elemSurface->snowCoverage > 0.01f || elemSurface->frostAmount > 0.01f)) {
+                pushConstants.surfaceParam1 = 300.0f + elemSurface->charAmount;
+                pushConstants.surfaceParam2 = elemSurface->wetness + std::floor(elemSurface->snowCoverage * 256.0f);
+                pushConstants.surfaceParam3 = elemSurface->frostAmount;
+            }
+        }
     } else {
         // Default material (light gray, non-metallic)
         pushConstants.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
@@ -4701,6 +4733,20 @@ void RenderSystem::RenderParticles(u32 viewportWidth, u32 viewportHeight) {
     m_ParticleRenderer->Render(commandBuffer, *m_ActiveDescriptorSets,
                                GetActiveBufferIndex(currentFrame), m_World,
                                viewportWidth, viewportHeight);
+}
+
+void RenderSystem::RenderElementalParticles(const Effects::ElementalSystem& elementalSystem,
+                                             u32 viewportWidth, u32 viewportHeight) {
+    if (!m_ParticleRenderer || !m_Renderer || !m_Initialized || !m_ActiveDescriptorSets) return;
+    if (elementalSystem.GetActiveCount() == 0) return;
+
+    VkCommandBuffer commandBuffer = m_Renderer->GetCurrentCommandBuffer();
+    if (commandBuffer == VK_NULL_HANDLE) return;
+
+    u32 currentFrame = m_Renderer->GetCurrentFrameIndex();
+    m_ParticleRenderer->RenderElementalParticles(commandBuffer, *m_ActiveDescriptorSets,
+                                                  GetActiveBufferIndex(currentFrame), elementalSystem,
+                                                  viewportWidth, viewportHeight);
 }
 
 void RenderSystem::RenderFluid(u32 viewportWidth, u32 viewportHeight) {

@@ -1,3 +1,5 @@
+> **Status:** All items from this audit have been resolved as of the February 2026 hardening sprint. See [AUDIT_HARDENING_SPRINT.md](AUDIT_HARDENING_SPRINT.md) for details.
+
 # Asset Pack Audit — Beta 0.8 (2026-02-18)
 
 **Status:** 11 of 14 findings fixed. 3 accepted by design.

@@ -29,6 +29,7 @@
 #include "Enjin/Effects/WorldTime.h"
 #include "Enjin/Effects/SeasonalWeather.h"
 #include "Enjin/Effects/ParticleSystem.h"
+#include "Enjin/Effects/ElementalSystem.h"
 #include "Enjin/Effects/FluidSimulation.h"
 #include "Enjin/Effects/FluidTerrainCoupling.h"
 #include "Enjin/Effects/CurlNoiseSystem.h"
@@ -357,6 +358,9 @@ private:
     void DrawGravityZoneComponent(ECS::Entity entity);
     void DrawFluidVolumeComponent(ECS::Entity entity);
     void DrawFluidTerrainCoupling(ECS::Entity entity);
+    void DrawElementalSurfaceComponent(ECS::Entity entity);
+    void DrawElementalEmitterComponent(ECS::Entity entity);
+    void DrawElementalVolumeComponent(ECS::Entity entity);
 
     // Controller components
     void DrawPlatformer2DController(ECS::Entity entity);
@@ -785,6 +789,9 @@ private:
 
     // Particle system (CPU simulation for ParticleEmitterComponent)
     Effects::ParticleSystem m_ParticleSystem;
+
+    // Elemental system (unified fire/water/earth/air particle simulation)
+    Effects::ElementalSystem m_ElementalSystem;
 
     // Fluid simulation (Stable Fluids solver for FluidVolumeComponent)
     Effects::FluidSimulation m_FluidSimulation;

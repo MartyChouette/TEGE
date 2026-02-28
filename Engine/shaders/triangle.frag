@@ -964,6 +964,45 @@ void main() {
         }
     }
 
+    // === ELEMENTAL SURFACE EFFECTS (PS1/PS2 style) ===
+    if (material.surfaceParam1 >= 299.5 && material.surfaceParam1 < 400.0) {
+        float charAmount = material.surfaceParam1 - 300.0;
+        float wetness = fract(material.surfaceParam2);
+        float snowCov = floor(material.surfaceParam2) / 256.0;
+        float frost = material.surfaceParam3;
+
+        // Fire charring: darken toward black/brown, ember glow pulses
+        if (charAmount > 0.01) {
+            vec3 charColor = vec3(0.08, 0.04, 0.02);
+            result = mix(result, charColor, charAmount * 0.8);
+            // Ember glow: pulsing orange in charred areas (PS2 lava-flow style)
+            float ember = sin(lighting.windData.w * 4.0 + fragWorldPos.x * 3.0) * 0.5 + 0.5;
+            result += vec3(1.0, 0.3, 0.0) * charAmount * ember * 0.15;
+        }
+
+        // Wetness: darken + subtle color shift (PS1 dark-when-wet trick)
+        if (wetness > 0.01) {
+            result *= mix(1.0, 0.6, wetness);
+            result = mix(result, result * vec3(0.9, 0.9, 1.0), wetness * 0.3);
+        }
+
+        // Snow coverage: blend to white on upward-facing surfaces
+        if (snowCov > 0.01) {
+            float snowMask = smoothstep(0.3, 0.8, normal.y) * snowCov;
+            // Dithered snow edge (very PS1)
+            float dither = fract(sin(dot(floor(gl_FragCoord.xy / 2.0), vec2(12.9898, 78.233))) * 43758.5453);
+            snowMask = step(dither, snowMask + 0.1) * snowCov;
+            result = mix(result, vec3(0.93, 0.96, 1.0), snowMask);
+        }
+
+        // Frost: blue-white tint with dithered crystal pattern
+        if (frost > 0.01) {
+            float crystal = fract(sin(dot(fragUV * 16.0, vec2(12.9898, 78.233))) * 43758.5453);
+            float frostPattern = step(crystal, frost);
+            result = mix(result, vec3(0.75, 0.88, 1.0), frostPattern * 0.5);
+        }
+    }
+
     // Add emission (modulated by emissive texture if present)
     result += material.emissiveColor * material.emissiveStrength * emissiveTexColor;
 

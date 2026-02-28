@@ -62,6 +62,10 @@ ECS::MeshComponent MeshFactory::CreateCube(f32 size) {
 ECS::MeshComponent MeshFactory::CreatePlane(f32 width, f32 height, u32 subdivisionsX, u32 subdivisionsZ) {
     ECS::MeshComponent mesh;
 
+    // Clamp subdivisions to prevent division-by-zero
+    if (subdivisionsX < 1) subdivisionsX = 1;
+    if (subdivisionsZ < 1) subdivisionsZ = 1;
+
     f32 halfW = width * 0.5f;
     f32 halfH = height * 0.5f;
 
@@ -621,6 +625,8 @@ ECS::MeshComponent MeshFactory::CreateAxes(f32 length) {
 
 ECS::MeshComponent MeshFactory::CreateGrid(f32 size, u32 divisions) {
     ECS::MeshComponent mesh;
+    // Clamp divisions to prevent division-by-zero
+    if (divisions < 1) divisions = 1;
     f32 halfSize = size * 0.5f;
     f32 step = size / static_cast<f32>(divisions);
 

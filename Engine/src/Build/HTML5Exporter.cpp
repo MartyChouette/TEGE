@@ -5,6 +5,16 @@
 #include <filesystem>
 #include <algorithm>
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <spawn.h>
+#include <sys/wait.h>
+#include <unistd.h>
+extern char** environ;
+#endif
+
 namespace Enjin {
 namespace Build {
 
@@ -95,6 +105,39 @@ HTML5ExportResult HTML5Exporter::Export(const HTML5ExportConfig& config,
 // Emscripten Build Invocation
 // ============================================================================
 
+// S-C1: Safe process execution — avoids std::system() to prevent command injection
+static int RunProcess(const std::string& cmdLine) {
+#ifdef _WIN32
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION pi{};
+    std::string cmd = cmdLine; // CreateProcessA needs mutable buffer
+    if (!CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi)) {
+        return -1;
+    }
+    DWORD waitResult = WaitForSingleObject(pi.hProcess, 300000); // 5 min timeout
+    DWORD exitCode = 1;
+    if (waitResult == WAIT_OBJECT_0) {
+        GetExitCodeProcess(pi.hProcess, &exitCode);
+    }
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return static_cast<int>(exitCode);
+#else
+    const char* argv[] = { "/bin/sh", "-c", cmdLine.c_str(), nullptr };
+    pid_t pid = 0;
+    if (posix_spawnp(&pid, "/bin/sh", nullptr, nullptr, const_cast<char**>(argv), environ) != 0) {
+        return -1;
+    }
+    int status = 0;
+    waitpid(pid, &status, 0);
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+#endif
+}
+
 bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
                                             const std::string& enjpakPath) {
     // Build command: invoke emcc via cmake to compile the web player target
@@ -109,10 +152,10 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
     std::string buildDir = outputDir + "/build-web";
     std::filesystem::create_directories(buildDir);
 
-    // Step 1: Configure
+    // Step 1: Configure — S-C1: Use CreateProcess/posix_spawn instead of std::system
     std::string configCmd = "emcmake cmake -B \"" + buildDir + "\" -DENJIN_PLATFORM_WEB=ON";
     ENJIN_LOG_INFO(Build, "Web build: configuring... (%s)", configCmd.c_str());
-    int configResult = std::system(configCmd.c_str());
+    int configResult = RunProcess(configCmd);
     if (configResult != 0) {
         ENJIN_LOG_ERROR(Build, "Web build: CMake configure failed (exit code %d). Is emsdk activated?", configResult);
         return false;
@@ -121,7 +164,7 @@ bool HTML5Exporter::InvokeEmscriptenBuild(const std::string& outputDir,
     // Step 2: Build
     std::string buildCmd = "emmake cmake --build \"" + buildDir + "\" --target EnjinPlayer";
     ENJIN_LOG_INFO(Build, "Web build: compiling... (%s)", buildCmd.c_str());
-    int buildResult = std::system(buildCmd.c_str());
+    int buildResult = RunProcess(buildCmd);
     if (buildResult != 0) {
         ENJIN_LOG_ERROR(Build, "Web build: compilation failed (exit code %d)", buildResult);
         return false;

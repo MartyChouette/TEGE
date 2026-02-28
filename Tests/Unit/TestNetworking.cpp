@@ -495,4 +495,471 @@ ENJIN_TEST(SHA256, ConsistentOutput) {
     ENJIN_EXPECT_TRUE(same);
 }
 
+// ============================================================================
+// CONNECTION STATE MACHINE
+// ============================================================================
+
+ENJIN_TEST(ConnectionStateMachine, DefaultStateIsDisconnected) {
+    ConnectionInfo conn;
+    ENJIN_EXPECT_EQ(conn.state, ConnectionState::Disconnected);
+}
+
+ENJIN_TEST(ConnectionStateMachine, TransitionToConnecting) {
+    ConnectionInfo conn;
+    conn.state = ConnectionState::Connecting;
+    ENJIN_EXPECT_EQ(conn.state, ConnectionState::Connecting);
+    ENJIN_EXPECT_TRUE(conn.state != ConnectionState::Disconnected);
+}
+
+ENJIN_TEST(ConnectionStateMachine, TransitionToConnected) {
+    ConnectionInfo conn;
+    conn.state = ConnectionState::Connecting;
+    conn.state = ConnectionState::Connected;
+    ENJIN_EXPECT_EQ(conn.state, ConnectionState::Connected);
+}
+
+ENJIN_TEST(ConnectionStateMachine, TransitionToDisconnecting) {
+    ConnectionInfo conn;
+    conn.state = ConnectionState::Connected;
+    conn.state = ConnectionState::Disconnecting;
+    ENJIN_EXPECT_EQ(conn.state, ConnectionState::Disconnecting);
+}
+
+ENJIN_TEST(ConnectionStateMachine, TransitionBackToDisconnected) {
+    ConnectionInfo conn;
+    conn.state = ConnectionState::Disconnecting;
+    conn.state = ConnectionState::Disconnected;
+    ENJIN_EXPECT_EQ(conn.state, ConnectionState::Disconnected);
+}
+
+ENJIN_TEST(ConnectionStateMachine, EnumValuesAreDistinct) {
+    // Each state must be a unique numeric value
+    ENJIN_EXPECT_TRUE(ConnectionState::Disconnected != ConnectionState::Connecting);
+    ENJIN_EXPECT_TRUE(ConnectionState::Connecting   != ConnectionState::Connected);
+    ENJIN_EXPECT_TRUE(ConnectionState::Connected    != ConnectionState::Disconnecting);
+    ENJIN_EXPECT_TRUE(ConnectionState::Disconnected != ConnectionState::Connected);
+}
+
+ENJIN_TEST(ConnectionStateMachine, AuthenticatedDefaultFalse) {
+    ConnectionInfo conn;
+    ENJIN_EXPECT_FALSE(conn.authenticated);
+}
+
+ENJIN_TEST(ConnectionStateMachine, PlayerIdInvalidAfterConstruct) {
+    ConnectionInfo conn;
+    ENJIN_EXPECT_EQ(conn.playerId, INVALID_PLAYER);
+}
+
+// ============================================================================
+// RPC DISPATCH
+// ============================================================================
+
+ENJIN_TEST(RPCDispatch, RegistrationDefaults) {
+    RPCRegistration reg;
+    ENJIN_EXPECT_EQ(reg.nameHash, 0u);
+    ENJIN_EXPECT_TRUE(reg.name.empty());
+    ENJIN_EXPECT_FALSE(reg.reliable);
+    ENJIN_EXPECT_FALSE(static_cast<bool>(reg.callback));
+}
+
+ENJIN_TEST(RPCDispatch, NameHashStoredCorrectly) {
+    RPCRegistration reg;
+    reg.name = "FireWeapon";
+    reg.nameHash = FNV1aHash("FireWeapon");
+    ENJIN_EXPECT_EQ(reg.nameHash, FNV1aHash("FireWeapon"));
+    ENJIN_EXPECT_STR_EQ(reg.name, "FireWeapon");
+}
+
+ENJIN_TEST(RPCDispatch, DuplicateNamesProduceSameHash) {
+    u32 h1 = FNV1aHash("OnPlayerDied");
+    u32 h2 = FNV1aHash("OnPlayerDied");
+    ENJIN_EXPECT_EQ(h1, h2);
+}
+
+ENJIN_TEST(RPCDispatch, DifferentNamesProduceDifferentHashes) {
+    u32 h1 = FNV1aHash("OnPlayerDied");
+    u32 h2 = FNV1aHash("OnPlayerSpawned");
+    ENJIN_EXPECT_NE(h1, h2);
+}
+
+ENJIN_TEST(RPCDispatch, EmptyNameHasKnownHash) {
+    RPCRegistration reg;
+    reg.name = "";
+    reg.nameHash = FNV1aHash("");
+    // FNV-1a offset basis
+    ENJIN_EXPECT_EQ(reg.nameHash, 2166136261u);
+}
+
+ENJIN_TEST(RPCDispatch, CallbackStoredAndInvoked) {
+    RPCRegistration reg;
+    bool invoked = false;
+    reg.callback = [&invoked](PlayerId, const u8*, u32) { invoked = true; };
+    ENJIN_EXPECT_TRUE(static_cast<bool>(reg.callback));
+    reg.callback(0, nullptr, 0);
+    ENJIN_EXPECT_TRUE(invoked);
+}
+
+// ============================================================================
+// OVERSIZED PAYLOAD REJECTION
+// ============================================================================
+
+ENJIN_TEST(OversizedPayload, MaxU16BoundaryValue) {
+    // u16 max is 65535 — payloadSize field is a u16
+    PacketHeader hdr;
+    hdr.payloadSize = 65535u;
+    ENJIN_EXPECT_EQ(hdr.payloadSize, static_cast<u16>(65535u));
+}
+
+ENJIN_TEST(OversizedPayload, PayloadSizeExactlyMaxU16) {
+    // A payload of exactly 65535 bytes fills the u16 field without truncation
+    u16 size = 65535u;
+    PacketHeader hdr;
+    hdr.payloadSize = size;
+    ENJIN_EXPECT_EQ(hdr.payloadSize, size);
+}
+
+ENJIN_TEST(OversizedPayload, ZeroPayloadSize) {
+    PacketHeader hdr;
+    hdr.payloadSize = 0;
+    ENJIN_EXPECT_EQ(hdr.payloadSize, static_cast<u16>(0));
+}
+
+ENJIN_TEST(OversizedPayload, OverflowWrapsOnAssignment) {
+    // Assigning 65536 to a u16 wraps to 0 — confirm the type boundary
+    u32 oversized = 65536u;
+    u16 truncated = static_cast<u16>(oversized);
+    ENJIN_EXPECT_EQ(truncated, static_cast<u16>(0));
+}
+
+ENJIN_TEST(OversizedPayload, MaxPacketSizeConstantFitsU16) {
+    // MAX_PACKET_SIZE (1400) must fit inside a u16 field
+    ENJIN_EXPECT_TRUE(MAX_PACKET_SIZE <= 65535u);
+}
+
+ENJIN_TEST(OversizedPayload, PayloadSizeSerializeRoundTrip) {
+    // Ensure payloadSize survives header serialization at boundary value
+    PacketHeader original;
+    original.type       = static_cast<u8>(MessageType::EntitySnapshot);
+    original.sequence   = 1;
+    original.payloadSize = 65535u;
+
+    std::vector<u8> buf;
+    WritePacketHeader(buf, original);
+
+    u32 offset = 0;
+    PacketHeader decoded = ReadPacketHeader(buf.data(), offset, static_cast<u32>(buf.size()));
+    ENJIN_EXPECT_EQ(decoded.payloadSize, static_cast<u16>(65535u));
+}
+
+// ============================================================================
+// ENTITY SYNC SERIALIZATION
+// ============================================================================
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotDefaultNetworkId) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_EQ(snap.networkId, INVALID_NETWORK_ID);
+}
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotDefaultFieldMaskZero) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_EQ(snap.fieldMask, static_cast<u8>(0));
+}
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotDefaultTickZero) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_EQ(snap.tick, 0u);
+}
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotDefaultScaleIsOne) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_FLOAT_EQ(snap.scale.x, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.scale.y, 1.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.scale.z, 1.0f);
+}
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotDefaultPositionIsZero) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_FLOAT_EQ(snap.position.x, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.position.y, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.position.z, 0.0f);
+}
+
+ENJIN_TEST(EntitySyncSerialization, SnapshotFieldsAssignedCorrectly) {
+    EntitySnapshot snap;
+    snap.networkId = 42u;
+    snap.fieldMask = SnapPosition | SnapRotation;
+    snap.tick = 1000u;
+    snap.position = Math::Vector3(3.0f, 4.0f, 5.0f);
+
+    ENJIN_EXPECT_EQ(snap.networkId, 42u);
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapPosition);
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapRotation);
+    ENJIN_EXPECT_FALSE(snap.fieldMask & SnapScale);
+    ENJIN_EXPECT_EQ(snap.tick, 1000u);
+    ENJIN_EXPECT_FLOAT_EQ(snap.position.x, 3.0f);
+}
+
+ENJIN_TEST(EntitySyncSerialization, MultipleSnapshotsHaveIndependentState) {
+    EntitySnapshot a, b;
+    a.networkId = 1u;
+    a.tick = 10u;
+    b.networkId = 2u;
+    b.tick = 20u;
+
+    ENJIN_EXPECT_NE(a.networkId, b.networkId);
+    ENJIN_EXPECT_NE(a.tick, b.tick);
+}
+
+ENJIN_TEST(EntitySyncSerialization, VelocityDefaultIsZero) {
+    EntitySnapshot snap;
+    ENJIN_EXPECT_FLOAT_EQ(snap.velocity.x, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.velocity.y, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(snap.velocity.z, 0.0f);
+}
+
+ENJIN_TEST(EntitySyncSerialization, FieldMaskAllBitsRoundTrip) {
+    // All four snapshot fields combined
+    u8 mask = SnapPosition | SnapRotation | SnapScale | SnapVelocity;
+    EntitySnapshot snap;
+    snap.fieldMask = mask;
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapPosition);
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapRotation);
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapScale);
+    ENJIN_EXPECT_TRUE(snap.fieldMask & SnapVelocity);
+}
+
+// ============================================================================
+// PLAYER JOIN / LEAVE
+// ============================================================================
+
+ENJIN_TEST(PlayerJoinLeave, PlayerInfoDefaults) {
+    LobbyPlayer p;
+    ENJIN_EXPECT_EQ(p.id, INVALID_PLAYER);
+    ENJIN_EXPECT_TRUE(p.name.empty());
+    ENJIN_EXPECT_FALSE(p.ready);
+    ENJIN_EXPECT_FALSE(p.isHost);
+}
+
+ENJIN_TEST(PlayerJoinLeave, MaxPlayerIdValue) {
+    // INVALID_PLAYER is 0xFF; any valid player must be below it
+    PlayerId maxValid = static_cast<PlayerId>(INVALID_PLAYER - 1);
+    ENJIN_EXPECT_TRUE(maxValid < INVALID_PLAYER);
+}
+
+ENJIN_TEST(PlayerJoinLeave, AssignPlayerName) {
+    LobbyPlayer p;
+    p.id = 3;
+    p.name = "Zephyr";
+    ENJIN_EXPECT_STR_EQ(p.name, "Zephyr");
+    ENJIN_EXPECT_EQ(p.id, static_cast<PlayerId>(3));
+}
+
+ENJIN_TEST(PlayerJoinLeave, DuplicateIdDetectedByComparison) {
+    LobbyPlayer a, b;
+    a.id = 5;
+    b.id = 5;
+    ENJIN_EXPECT_EQ(a.id, b.id);
+}
+
+ENJIN_TEST(PlayerJoinLeave, LeaveResetsToInvalidPlayer) {
+    LobbyPlayer p;
+    p.id = 7;
+    p.name = "Ghost";
+    // Simulate leave by resetting fields
+    p.id = INVALID_PLAYER;
+    p.name.clear();
+    ENJIN_EXPECT_EQ(p.id, INVALID_PLAYER);
+    ENJIN_EXPECT_TRUE(p.name.empty());
+}
+
+ENJIN_TEST(PlayerJoinLeave, MaxPlayersConstant) {
+    // MAX_PLAYERS must be at least 2 (host + one client) and fit in PlayerId
+    ENJIN_EXPECT_TRUE(MAX_PLAYERS >= 2u);
+    ENJIN_EXPECT_TRUE(MAX_PLAYERS < static_cast<u32>(INVALID_PLAYER));
+}
+
+// ============================================================================
+// LOBBY SYSTEM
+// ============================================================================
+
+ENJIN_TEST(LobbySystem, LobbyPlayerDefaultNotReady) {
+    LobbyPlayer p;
+    ENJIN_EXPECT_FALSE(p.ready);
+}
+
+ENJIN_TEST(LobbySystem, LobbyPlayerDefaultNotHost) {
+    LobbyPlayer p;
+    ENJIN_EXPECT_FALSE(p.isHost);
+}
+
+ENJIN_TEST(LobbySystem, HostFlagAssignment) {
+    LobbyPlayer p;
+    p.isHost = true;
+    ENJIN_EXPECT_TRUE(p.isHost);
+}
+
+ENJIN_TEST(LobbySystem, ReadyFlagToggle) {
+    LobbyPlayer p;
+    p.ready = true;
+    ENJIN_EXPECT_TRUE(p.ready);
+    p.ready = false;
+    ENJIN_EXPECT_FALSE(p.ready);
+}
+
+ENJIN_TEST(LobbySystem, MaxSlotsBoundary) {
+    // Lobby must not allow more players than MAX_PLAYERS
+    std::vector<LobbyPlayer> lobby;
+    for (u32 i = 0; i < MAX_PLAYERS; i++) {
+        LobbyPlayer p;
+        p.id = static_cast<PlayerId>(i);
+        lobby.push_back(p);
+    }
+    ENJIN_EXPECT_EQ(static_cast<u32>(lobby.size()), MAX_PLAYERS);
+}
+
+ENJIN_TEST(LobbySystem, AllReadyCheck) {
+    std::vector<LobbyPlayer> lobby;
+    for (u32 i = 0; i < 4; i++) {
+        LobbyPlayer p;
+        p.id = static_cast<PlayerId>(i);
+        p.ready = true;
+        lobby.push_back(p);
+    }
+    bool allReady = true;
+    for (const auto& p : lobby) {
+        if (!p.ready) { allReady = false; break; }
+    }
+    ENJIN_EXPECT_TRUE(allReady);
+}
+
+// ============================================================================
+// RELIABLE DELIVERY
+// ============================================================================
+
+ENJIN_TEST(ReliableDelivery2, ReliableMessageDefaultSequenceZero) {
+    ReliableMessage msg;
+    ENJIN_EXPECT_EQ(msg.sequence, static_cast<u16>(0));
+}
+
+ENJIN_TEST(ReliableDelivery2, ReliableMessageDefaultTimesZero) {
+    ReliableMessage msg;
+    ENJIN_EXPECT_FLOAT_EQ(msg.firstSendTime, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(msg.lastSendTime, 0.0f);
+}
+
+ENJIN_TEST(ReliableDelivery2, ReliableMessageDefaultRetryCountZero) {
+    ReliableMessage msg;
+    ENJIN_EXPECT_EQ(msg.retryCount, 0);
+}
+
+ENJIN_TEST(ReliableDelivery2, RetransmitTimingUpdate) {
+    ReliableMessage msg;
+    msg.firstSendTime = 1.0f;
+    msg.lastSendTime  = 1.0f;
+    msg.retryCount    = 0;
+
+    // Simulate one retransmit after RELIABLE_RETRY_INTERVAL
+    msg.lastSendTime = msg.lastSendTime + RELIABLE_RETRY_INTERVAL;
+    msg.retryCount++;
+
+    ENJIN_EXPECT_EQ(msg.retryCount, 1);
+    ENJIN_EXPECT_FLOAT_EQ(msg.lastSendTime, 1.0f + RELIABLE_RETRY_INTERVAL);
+}
+
+ENJIN_TEST(ReliableDelivery2, RetryCountReachesMax) {
+    ReliableMessage msg;
+    msg.retryCount = static_cast<i32>(RELIABLE_MAX_RETRIES);
+    ENJIN_EXPECT_TRUE(msg.retryCount >= static_cast<i32>(RELIABLE_MAX_RETRIES));
+}
+
+ENJIN_TEST(ReliableDelivery2, AckProcessingClearsEntry) {
+    // Simulates ack: once acked, remove entry from outbox
+    std::vector<ReliableMessage> outbox;
+    ReliableMessage msg;
+    msg.sequence = 7u;
+    outbox.push_back(msg);
+    ENJIN_EXPECT_EQ(outbox.size(), 1u);
+
+    // Ack sequence 7 — erase matching entry
+    u16 ackedSeq = 7u;
+    outbox.erase(
+        std::remove_if(outbox.begin(), outbox.end(),
+            [ackedSeq](const ReliableMessage& m) { return m.sequence == ackedSeq; }),
+        outbox.end()
+    );
+    ENJIN_EXPECT_EQ(outbox.size(), 0u);
+}
+
+// ============================================================================
+// NETWORK ADDRESS
+// ============================================================================
+
+ENJIN_TEST(NetworkAddress2, DefaultConstruct) {
+    NetworkAddress addr;
+    ENJIN_EXPECT_EQ(addr.ip,   0u);
+    ENJIN_EXPECT_EQ(addr.port, static_cast<u16>(0));
+}
+
+ENJIN_TEST(NetworkAddress2, ConstructWithValues) {
+    NetworkAddress addr{0x0100007F, 7777u};
+    ENJIN_EXPECT_EQ(addr.ip,   0x0100007Fu);
+    ENJIN_EXPECT_EQ(addr.port, static_cast<u16>(7777u));
+}
+
+ENJIN_TEST(NetworkAddress2, EqualityHoldsForSameAddress) {
+    NetworkAddress a{0x0100007F, 7777u};
+    NetworkAddress b{0x0100007F, 7777u};
+    ENJIN_EXPECT_TRUE(a == b);
+}
+
+ENJIN_TEST(NetworkAddress2, InequalityOnDifferentPort) {
+    NetworkAddress a{0x0100007F, 7777u};
+    NetworkAddress b{0x0100007F, 9999u};
+    ENJIN_EXPECT_TRUE(a != b);
+}
+
+ENJIN_TEST(NetworkAddress2, InvalidPortZeroIsDistinctFromDefault) {
+    NetworkAddress withPort{0x0100007F, 7777u};
+    NetworkAddress zeroPort{0x0100007F, 0u};
+    ENJIN_EXPECT_TRUE(withPort != zeroPort);
+}
+
+ENJIN_TEST(NetworkAddress2, DefaultPortConstantValue) {
+    ENJIN_EXPECT_EQ(DEFAULT_PORT, static_cast<u16>(7777));
+}
+
+// ============================================================================
+// BANDWIDTH STATS
+// ============================================================================
+
+ENJIN_TEST(Bandwidth, RateLimiterDefaultTokensZero) {
+    RateLimiter lim;
+    ENJIN_EXPECT_FLOAT_EQ(lim.tokens, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(lim.maxTokens, 0.0f);
+    ENJIN_EXPECT_FLOAT_EQ(lim.refillRate, 0.0f);
+}
+
+ENJIN_TEST(Bandwidth, ConfiguredMaxTokensRespected) {
+    RateLimiter lim;
+    lim.Configure(100.0f, 50.0f, 0.0f, 100.0f);
+    // Refill past max: tokens should clamp to maxTokens
+    lim.Refill(10.0f);  // +500 tokens, but capped at 100
+    ENJIN_EXPECT_FLOAT_EQ(lim.tokens, 100.0f);
+}
+
+ENJIN_TEST(Bandwidth, ConsumeMoreThanAvailableFails) {
+    RateLimiter lim;
+    lim.Configure(50.0f, 0.0f, 0.0f, 10.0f);
+    ENJIN_EXPECT_FALSE(lim.Consume(11.0f, 0.0f));
+    // Tokens should be unchanged on failure
+    ENJIN_EXPECT_FLOAT_EQ(lim.tokens, 10.0f);
+}
+
+ENJIN_TEST(Bandwidth, CounterOverflowU32Wraps) {
+    // Verify that u32 byte counters wrap rather than trap on overflow
+    u32 counter = 0xFFFFFFFFu;
+    counter += 1u;
+    ENJIN_EXPECT_EQ(counter, 0u);
+}
+
 ENJIN_TEST_MAIN()

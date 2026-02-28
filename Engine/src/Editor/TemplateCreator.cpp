@@ -46,6 +46,17 @@ bool TemplateCreator::SaveTemplate(const std::string& outputDir, const TemplateM
         return false;
     }
 
+    // Validate entity count
+    usize entityCount = world->GetEntityCount();
+    if (entityCount == 0) {
+        ENJIN_LOG_WARN(Editor, "TemplateCreator: saving template with 0 entities");
+    }
+    static constexpr usize MAX_TEMPLATE_ENTITIES = 10000;
+    if (entityCount > MAX_TEMPLATE_ENTITIES) {
+        ENJIN_LOG_ERROR(Editor, "TemplateCreator: entity count %zu exceeds max %zu", entityCount, MAX_TEMPLATE_ENTITIES);
+        return false;
+    }
+
     // Determine template id
     std::string id = meta.id.empty() ? SanitizeId(meta.name) : meta.id;
 
@@ -69,6 +80,15 @@ bool TemplateCreator::SaveTemplate(const std::string& outputDir, const TemplateM
         ENJIN_LOG_ERROR(Editor, "TemplateCreator: failed to save scene — %s", result.error.c_str());
         return false;
     }
+
+    // Warn if file is very large
+    try {
+        auto fileSize = std::filesystem::file_size(scenePath);
+        if (fileSize > 10 * 1024 * 1024) { // >10MB
+            ENJIN_LOG_WARN(Editor, "TemplateCreator: scene file is %.1f MB — consider reducing entity/mesh data",
+                           static_cast<f32>(fileSize) / (1024.0f * 1024.0f));
+        }
+    } catch (...) {}
 
     // Write meta.json
     json j;

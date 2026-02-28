@@ -14,6 +14,9 @@
 #include <vector>
 #include <memory>
 
+// Forward declaration
+namespace Enjin { namespace Effects { class ElementalSystem; } }
+
 namespace Enjin {
 namespace Effects {
 
@@ -42,6 +45,15 @@ public:
                 ECS::World* world,
                 u32 viewportWidth = 0,
                 u32 viewportHeight = 0);
+
+    // Render elemental particles from the ElementalSystem using the same pipeline.
+    // Called after Render() to batch elemental particles alongside regular ones.
+    void RenderElementalParticles(VkCommandBuffer commandBuffer,
+                                  const std::vector<VkDescriptorSet>& descriptorSets,
+                                  u32 currentFrame,
+                                  const ElementalSystem& elementalSystem,
+                                  u32 viewportWidth = 0,
+                                  u32 viewportHeight = 0);
 
 private:
     void CreateQuadBuffers();

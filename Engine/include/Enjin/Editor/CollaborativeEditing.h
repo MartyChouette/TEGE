@@ -73,6 +73,13 @@ enum class CollabSessionState : u8 {
     Syncing          // Full state sync in progress
 };
 
+// S-C2: Permission levels for collaborative editing peers
+enum class CollabPermission : u8 {
+    Viewer = 0,     // Can observe but not modify
+    Editor = 1,     // Can modify entities/components
+    Owner = 2       // Full control (can delete entities, kick peers)
+};
+
 struct CollabPeer {
     u8 peerId = 0;
     std::string name;
@@ -82,6 +89,7 @@ struct CollabPeer {
     f32 lastHeartbeat = 0.0f;
     u64 lastAckedSeq = 0;           // Last operation sequence they've acknowledged
     bool connected = false;
+    CollabPermission permission = CollabPermission::Editor; // Default for joining peers
 };
 
 // ============================================================================

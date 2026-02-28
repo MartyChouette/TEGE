@@ -194,16 +194,16 @@ struct FeedbackEntry {
 
 class ENJIN_API FeedbackManager {
 public:
-    // Bug report CRUD
-    BugReport& CreateBugReport();
+    // Bug report CRUD — returns the new report's ID (safe against vector reallocation)
+    u64 CreateBugReport();
     void SaveBugReport(const BugReport& report);
     void DeleteBugReport(u64 id);
     std::vector<BugReport>& GetBugReports() { return m_BugReports; }
     const std::vector<BugReport>& GetBugReports() const { return m_BugReports; }
     BugReport* GetBugReport(u64 id);
 
-    // Feedback CRUD
-    FeedbackEntry& CreateFeedback();
+    // Feedback CRUD — returns the new entry's ID (safe against vector reallocation)
+    u64 CreateFeedback();
     void SaveFeedback(const FeedbackEntry& entry);
     void DeleteFeedback(u64 id);
     std::vector<FeedbackEntry>& GetFeedbackEntries() { return m_FeedbackEntries; }

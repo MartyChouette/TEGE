@@ -4877,37 +4877,41 @@ void EditorLayer::DrawNewBugReportForm() {
         ImGui::TextDisabled("(title required)");
     } else {
         if (ImGui::Button("Submit Report")) {
-            auto& report = m_FeedbackManager.CreateBugReport();
-            report.title = m_BugTitleBuf;
-            report.type = static_cast<ReportType>(m_BugTypeSel);
-            report.severity = static_cast<ReportSeverity>(m_BugSeveritySel);
-            report.description = m_BugDescriptionBuf;
-            report.stepsToReproduce = m_BugStepsBuf;
-            report.expectedBehavior = m_BugExpectedBuf;
-            report.actualBehavior = m_BugActualBuf;
-            report.diagnostics = CaptureDiagnostics(m_BugIncludeScene);
-            if (!m_BugIncludeLogs) report.diagnostics.consoleLogTail.clear();
-            report.status = ReportStatus::Draft;
-            m_FeedbackManager.SaveAll();
-            m_ConsoleLog.push_back("[Feedback] Created bug report #" + std::to_string(report.id) + ": " + report.title);
+            u64 reportId = m_FeedbackManager.CreateBugReport();
+            if (auto* report = m_FeedbackManager.GetBugReport(reportId)) {
+                report->title = m_BugTitleBuf;
+                report->type = static_cast<ReportType>(m_BugTypeSel);
+                report->severity = static_cast<ReportSeverity>(m_BugSeveritySel);
+                report->description = m_BugDescriptionBuf;
+                report->stepsToReproduce = m_BugStepsBuf;
+                report->expectedBehavior = m_BugExpectedBuf;
+                report->actualBehavior = m_BugActualBuf;
+                report->diagnostics = CaptureDiagnostics(m_BugIncludeScene);
+                if (!m_BugIncludeLogs) report->diagnostics.consoleLogTail.clear();
+                report->status = ReportStatus::Draft;
+                m_FeedbackManager.SaveAll();
+                m_ConsoleLog.push_back("[Feedback] Created bug report #" + std::to_string(reportId) + ": " + report->title);
+            }
             ResetBugReportForm();
         }
     }
     ImGui::SameLine();
     if (!titleEmpty && ImGui::Button("Save Draft")) {
-        auto& report = m_FeedbackManager.CreateBugReport();
-        report.title = m_BugTitleBuf;
-        report.type = static_cast<ReportType>(m_BugTypeSel);
-        report.severity = static_cast<ReportSeverity>(m_BugSeveritySel);
-        report.description = m_BugDescriptionBuf;
-        report.stepsToReproduce = m_BugStepsBuf;
-        report.expectedBehavior = m_BugExpectedBuf;
-        report.actualBehavior = m_BugActualBuf;
-        report.diagnostics = CaptureDiagnostics(m_BugIncludeScene);
-        if (!m_BugIncludeLogs) report.diagnostics.consoleLogTail.clear();
-        report.status = ReportStatus::Draft;
-        m_FeedbackManager.SaveAll();
-        m_ConsoleLog.push_back("[Feedback] Saved draft bug report #" + std::to_string(report.id));
+        u64 reportId = m_FeedbackManager.CreateBugReport();
+        if (auto* report = m_FeedbackManager.GetBugReport(reportId)) {
+            report->title = m_BugTitleBuf;
+            report->type = static_cast<ReportType>(m_BugTypeSel);
+            report->severity = static_cast<ReportSeverity>(m_BugSeveritySel);
+            report->description = m_BugDescriptionBuf;
+            report->stepsToReproduce = m_BugStepsBuf;
+            report->expectedBehavior = m_BugExpectedBuf;
+            report->actualBehavior = m_BugActualBuf;
+            report->diagnostics = CaptureDiagnostics(m_BugIncludeScene);
+            if (!m_BugIncludeLogs) report->diagnostics.consoleLogTail.clear();
+            report->status = ReportStatus::Draft;
+            m_FeedbackManager.SaveAll();
+            m_ConsoleLog.push_back("[Feedback] Saved draft bug report #" + std::to_string(reportId));
+        }
         ResetBugReportForm();
     }
 }
@@ -5094,19 +5098,21 @@ void EditorLayer::DrawNewFeedbackForm() {
         ImGui::TextDisabled("(title required)");
     } else {
         if (ImGui::Button("Submit Feedback")) {
-            auto& entry = m_FeedbackManager.CreateFeedback();
-            entry.title = m_FeedbackTitleBuf;
-            entry.type = static_cast<FeedbackType>(m_FeedbackTypeSel);
-            entry.priority = static_cast<FeedbackPriority>(m_FeedbackPrioritySel);
-            entry.satisfaction = static_cast<SatisfactionRating>(m_FeedbackSatisfaction);
-            entry.description = m_FeedbackDescBuf;
-            entry.category = m_FeedbackCategoryBuf;
-            entry.includeDiagnostics = m_FeedbackIncludeDiag;
-            if (m_FeedbackIncludeDiag) {
-                entry.diagnostics = CaptureDiagnostics(false);
+            u64 entryId = m_FeedbackManager.CreateFeedback();
+            if (auto* entry = m_FeedbackManager.GetFeedback(entryId)) {
+                entry->title = m_FeedbackTitleBuf;
+                entry->type = static_cast<FeedbackType>(m_FeedbackTypeSel);
+                entry->priority = static_cast<FeedbackPriority>(m_FeedbackPrioritySel);
+                entry->satisfaction = static_cast<SatisfactionRating>(m_FeedbackSatisfaction);
+                entry->description = m_FeedbackDescBuf;
+                entry->category = m_FeedbackCategoryBuf;
+                entry->includeDiagnostics = m_FeedbackIncludeDiag;
+                if (m_FeedbackIncludeDiag) {
+                    entry->diagnostics = CaptureDiagnostics(false);
+                }
+                m_FeedbackManager.SaveAll();
+                m_ConsoleLog.push_back("[Feedback] Created feedback #" + std::to_string(entryId) + ": " + entry->title);
             }
-            m_FeedbackManager.SaveAll();
-            m_ConsoleLog.push_back("[Feedback] Created feedback #" + std::to_string(entry.id) + ": " + entry.title);
             ResetFeedbackForm();
         }
     }
