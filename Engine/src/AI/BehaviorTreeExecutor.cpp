@@ -172,11 +172,11 @@ BTStatus BehaviorTreeExecutor::TickComposite(BTExecutionContext& ctx, Editor::No
             }
 
             if (requireAll) {
-                if (successCount == static_cast<i32>(children.size())) return BTStatus::Success;
-                if (failCount > 0) return BTStatus::Failure;
-            } else {
                 if (successCount > 0) return BTStatus::Success;
                 if (failCount == static_cast<i32>(children.size())) return BTStatus::Failure;
+            } else {
+                if (successCount == static_cast<i32>(children.size())) return BTStatus::Success;
+                if (failCount > 0) return BTStatus::Failure;
             }
 
             return anyRunning ? BTStatus::Running : BTStatus::Failure;

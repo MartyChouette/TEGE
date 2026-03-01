@@ -53,7 +53,7 @@ bool TemplateCreator::SaveTemplate(const std::string& outputDir, const TemplateM
     }
     static constexpr usize MAX_TEMPLATE_ENTITIES = 10000;
     if (entityCount > MAX_TEMPLATE_ENTITIES) {
-        ENJIN_LOG_ERROR(Editor, "TemplateCreator: entity count %zu exceeds max %zu", entityCount, MAX_TEMPLATE_ENTITIES);
+        ENJIN_LOG_ERROR(Editor, "TemplateCreator: entity count %llu exceeds max %llu", (unsigned long long)entityCount, (unsigned long long)MAX_TEMPLATE_ENTITIES);
         return false;
     }
 
@@ -188,7 +188,7 @@ bool TemplateCreator::LoadTemplate(const std::string& templatePath,
         return false;
     }
 
-    ENJIN_LOG_INFO(Editor, "Template loaded: %s (%zu entities)", outMeta.name.c_str(), result.entities.size());
+    ENJIN_LOG_INFO(Editor, "Template loaded: %s (%llu entities)", outMeta.name.c_str(), (unsigned long long)result.entities.size());
     return true;
 }
 

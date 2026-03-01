@@ -65,7 +65,14 @@ static TemplateMetadata MakeMeta(const std::string& id,
 
 // Helper: call SaveTemplate with an empty id and return the created dir name.
 static std::string DerivedDirName(const std::string& inputName) {
-    std::string root = MakeTempDir("sanitize_" + inputName.substr(0, 8));
+    // Sanitize the tag so path-unsafe chars (/ \ : etc.) don't corrupt the temp dir path
+    std::string tag = inputName.substr(0, 8);
+    for (char& c : tag) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' ||
+            c == '?' || c == '"' || c == '<' || c == '>' || c == '|' || c == ' ')
+            c = '_';
+    }
+    std::string root = MakeTempDir("sanitize_" + tag);
     ECS::World world;
     Scene::SceneSerializer ser(&world);
 

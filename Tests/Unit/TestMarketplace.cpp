@@ -18,10 +18,10 @@ ENJIN_TEST(CatalogIntegrity, CatalogIsNotEmpty) {
     ENJIN_EXPECT_GT(mp.GetCatalog().size(), (size_t)0);
 }
 
-ENJIN_TEST(CatalogIntegrity, Exactly15Entries) {
+ENJIN_TEST(CatalogIntegrity, Exactly17Entries) {
     TemplateMarketplace mp;
     mp.Initialize("");
-    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)15);
+    ENJIN_EXPECT_EQ(mp.GetCatalog().size(), (size_t)17);
 }
 
 ENJIN_TEST(CatalogIntegrity, AllIDsAreUnique) {
