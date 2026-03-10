@@ -143,6 +143,191 @@ void TemplateMarketplace::BuildCatalog() {
         "Advanced", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Preview,
         0.3f, 0.8f, 0.5f, 350, 4.6f, 15, 48700,
         {"procedural", "terrain", "lsystem", "wfc", "generation"});
+
+    // ==========================================================================
+    // Wizard-only templates (mirrored from project hub for unified master list)
+    // ==========================================================================
+
+    // --- Starter ---
+    add("thirdperson", "3D Third Person", "Over-the-shoulder camera with shadows, obstacles, and point lights. Classic third-person starter.",
+        "Starter", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.8f, 0.3f, 0.3f, 1100, 4.5f, 38, 24500,
+        {"3d", "third-person", "beginner", "camera"});
+
+    add("firstperson", "3D First Person", "Eye-level FPS camera with corridor walls and warm lighting. Great starting point for first-person games.",
+        "Starter", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.7f, 0.3f, 0.8f, 1050, 4.4f, 35, 22800,
+        {"3d", "first-person", "fps", "beginner"});
+
+    // --- Genre Showcases ---
+    add("puzzle", "Sokoban Puzzle", "Pushable blocks with goal plates, switches, and grid-snapped movement. Classic puzzle mechanics.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.4f, 0.8f, 0.9f, 680, 4.5f, 26, 28400,
+        {"puzzle", "sokoban", "grid", "logic"});
+
+    add("survival", "Survival", "Survive the cold with temperature, weather, and stamina systems. Day-night cycle and resource gathering.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.7f, 0.5f, 0.2f, 520, 4.3f, 21, 42100,
+        {"survival", "crafting", "weather", "stamina"});
+
+    add("rpg_village", "RPG Village", "Talk to NPCs with dialogue trees, pickups, and a lantern. Classic RPG village hub.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.3f, 0.6f, 0.3f, 610, 4.4f, 24, 38500,
+        {"rpg", "npc", "dialogue", "village"});
+
+    add("horror", "Horror", "Dark atmosphere with flashlight, volumetric fog, and proximity-triggered doors. Unsettling ambiance.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.3f, 0.1f, 0.3f, 780, 4.6f, 30, 48200,
+        {"horror", "atmosphere", "flashlight", "fog"});
+
+    add("racing", "Vehicle Racing", "Split-screen racing with vehicle physics, checkpoints, and cinematic replay. Supports 2 players.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "Multi", TemplateQuality::Official, MaturityTier::Beta,
+        0.9f, 0.25f, 0.1f, 440, 4.2f, 18, 52600,
+        {"racing", "vehicle", "splitscreen", "multiplayer"});
+
+    add("ps1rpg", "PS1 RPG", "Retro 3D RPG with PS1-era pixelation, dithering, and save points. Nostalgic low-poly aesthetic.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.2f, 0.2f, 0.8f, 560, 4.5f, 23, 44800,
+        {"ps1", "rpg", "retro", "dither", "lo-fi"});
+
+    add("arena", "Arena Fighter", "2-player brawl with splitscreen, health bars, and stamina. Local competitive combat.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "Multi", TemplateQuality::Official, MaturityTier::Beta,
+        1.0f, 0.5f, 0.0f, 390, 4.3f, 17, 36200,
+        {"arena", "fighter", "splitscreen", "combat"});
+
+    add("isometric", "3D Isometric", "45-degree isometric camera for CRPGs. Perspective setup with player and click-to-move.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.9f, 0.6f, 0.2f, 480, 4.3f, 19, 26800,
+        {"isometric", "crpg", "topdown", "strategy"});
+
+    add("visualnovel", "Visual Novel", "Story-driven visual novel with dialogue sprites, choices, and branching narrative.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "All", TemplateQuality::Official, MaturityTier::Beta,
+        0.9f, 0.7f, 0.9f, 550, 4.4f, 22, 32400,
+        {"visual-novel", "story", "dialogue", "narrative"});
+
+    add("citybuilder", "City Builder", "Isometric city simulation with placement grid, resources, and building types.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.2f, 0.7f, 0.7f, 420, 4.3f, 16, 38900,
+        {"city", "builder", "simulation", "isometric"});
+
+    add("fpsarena", "FPS Arena", "First-person shooter arena with weapons, respawn points, and ammo pickups.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.9f, 0.2f, 0.2f, 650, 4.4f, 27, 46500,
+        {"fps", "shooter", "arena", "weapons"});
+
+    add("teamsports", "Team Sports", "3D soccer/basketball with two teams, ball physics, and goal scoring.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.2f, 0.8f, 0.3f, 310, 4.1f, 13, 34200,
+        {"sports", "soccer", "basketball", "teams"});
+
+    add("towerdefense", "Tower Defense", "Isometric tower defense with paths, turret placement, and enemy waves.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.8f, 0.6f, 0.2f, 580, 4.5f, 24, 41200,
+        {"tower-defense", "strategy", "waves", "turrets"});
+
+    add("runner", "Endless Runner", "Auto-scrolling runner with lane switching, obstacles, and score tracking.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        0.9f, 0.6f, 0.1f, 720, 4.4f, 29, 28600,
+        {"runner", "endless", "2d", "obstacles"});
+
+    add("flower", "Flower Garden", "Procedural flower generation with pluckable petals and scoring. Relaxing nature sim.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.9f, 0.4f, 0.6f, 380, 4.6f, 15, 25400,
+        {"flower", "garden", "procedural", "relaxing"});
+
+    add("fixedcam", "Fixed Camera", "Fixed-angle third-person with classic RE / God of War camera style and transitions.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.6f, 0.25f, 0.5f, 410, 4.3f, 17, 32800,
+        {"fixed-camera", "third-person", "cinematic", "classic"});
+
+    add("metroidvania", "2D Metroidvania", "Interconnected map with abilities, locked doors, and exploration-gated progression.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        0.4f, 0.2f, 0.7f, 640, 4.5f, 25, 44200,
+        {"metroidvania", "2d", "platformer", "exploration"});
+
+    add("soulslike", "3D Souls-like", "Challenging melee combat with bonfires, stamina, and fog gates. Dark fantasy action.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.5f, 0.15f, 0.1f, 490, 4.5f, 20, 52400,
+        {"soulslike", "combat", "stamina", "challenge"});
+
+    add("vampsurvivor", "Survivor-like", "Top-down auto-attack with enemy waves, XP orbs, and level-up choices.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        0.1f, 0.7f, 0.5f, 710, 4.6f, 28, 36800,
+        {"survivor", "auto-attack", "waves", "2d"});
+
+    add("roguelike", "2D Rogue-like", "Grid-based dungeon crawl with random rooms, permadeath, and turn-based movement.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Preview,
+        0.6f, 0.5f, 0.1f, 350, 4.2f, 14, 34600,
+        {"roguelike", "dungeon", "grid", "permadeath"});
+
+    add("couchcoop", "2P Couch Co-op", "Splitscreen cooperative play with 2 players and shared world. Local multiplayer.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "Multi", TemplateQuality::Official, MaturityTier::Beta,
+        0.8f, 0.4f, 0.2f, 320, 4.2f, 13, 38400,
+        {"co-op", "splitscreen", "multiplayer", "local"});
+
+    add("justtwo", "Just the Two of Us", "Co-op puzzles and physics in an It Takes Two inspired setup. Two-player adventure.",
+        "Genre", "Enjin Team", "1.0.0", "CC0", "Multi", TemplateQuality::Official, MaturityTier::Beta,
+        0.85f, 0.45f, 0.65f, 290, 4.4f, 12, 42600,
+        {"co-op", "puzzle", "physics", "adventure"});
+
+    // --- Systems Deep-Dives (wizard-only) ---
+    add("gamemanager", "Game Manager", "Singleton game manager pattern with score tracking and state machine. Essential systems scaffold.",
+        "Systems", "Enjin Team", "1.0.0", "CC0", "All", TemplateQuality::Official, MaturityTier::Beta,
+        0.6f, 0.6f, 0.8f, 460, 4.2f, 18, 18600,
+        {"game-manager", "state-machine", "singleton", "systems"});
+
+    add("visualscript", "Visual Scripting", "Node-based logic with switch triggers and particle events. Blueprint-style scripting demo.",
+        "Systems", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Preview,
+        0.85f, 0.7f, 0.2f, 380, 4.3f, 15, 22400,
+        {"visual-script", "nodes", "blueprint", "logic"});
+
+    add("accessibility", "Accessibility Menu", "Settings menu with subtitles, colorblind modes, and focus navigation. Inclusive design showcase.",
+        "Systems", "Enjin Team", "1.0.0", "CC0", "All", TemplateQuality::Official, MaturityTier::Beta,
+        0.3f, 0.75f, 0.9f, 340, 4.5f, 14, 20200,
+        {"accessibility", "a11y", "settings", "colorblind"});
+
+    // --- Retro & Flash (wizard-only) ---
+    add("pointclick", "Point & Click", "Classic adventure game with click hotspots, inventory, and dialogue. Retro point-and-click style.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        1.0f, 0.55f, 0.2f, 420, 4.3f, 17, 32200,
+        {"point-and-click", "adventure", "inventory", "retro"});
+
+    add("bullethell", "Bullet Hell", "Danmaku shmup with object-pooled bullets, particle effects, and health system.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        0.95f, 0.2f, 0.5f, 580, 4.5f, 23, 28800,
+        {"bullet-hell", "shmup", "danmaku", "arcade"});
+
+    add("idleclicker", "Idle/Clicker", "Incremental game with UI canvas, meta saves, and tween animations. Addictive clicker mechanics.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Beta,
+        0.4f, 0.8f, 0.4f, 490, 4.3f, 19, 22600,
+        {"idle", "clicker", "incremental", "casual"});
+
+    // --- Advanced (wizard-only) ---
+    add("planetgravity", "Planet Gravity", "Spherical gravity with walk-on-planet-surface mechanics. Advanced physics demo.",
+        "Advanced", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Beta,
+        0.3f, 0.6f, 0.95f, 260, 4.4f, 11, 34800,
+        {"gravity", "planet", "physics", "spherical"});
+
+    add("shadowtest", "Shadow Test", "Shadow debugging scene with ground plane, objects, and configurable light. Rendering test utility.",
+        "Advanced", "Enjin Team", "1.0.0", "CC0", "3D", TemplateQuality::Official, MaturityTier::Stable,
+        0.9f, 0.9f, 0.3f, 180, 4.0f, 8, 12400,
+        {"shadow", "debug", "rendering", "test"});
+
+    // --- Retro & Flash Experimental (wizard-only) ---
+    add("flash_dress", "Dress Up", "Character dress-up game with drag-and-drop items, layers, and save outfits. Flash-era nostalgia.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
+        0.9f, 0.6f, 0.9f, 150, 3.9f, 7, 26400,
+        {"flash", "dress-up", "drag-drop", "casual"});
+
+    add("flash_escape", "Escape Room", "Room escape puzzle with inventory, clues, and combinations. Classic Flash escape game.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
+        0.5f, 0.3f, 0.2f, 170, 4.1f, 8, 28200,
+        {"flash", "escape-room", "puzzle", "inventory"});
+
+    add("flash_rhythm", "Rhythm Game", "Music game with falling notes, timing windows, and combo system. Flash-era rhythm action.",
+        "Retro", "Enjin Team", "1.0.0", "CC0", "2D", TemplateQuality::Official, MaturityTier::Experimental,
+        0.3f, 0.4f, 0.9f, 200, 4.2f, 9, 30600,
+        {"flash", "rhythm", "music", "timing"});
 }
 
 void TemplateMarketplace::ScanInstalled() {

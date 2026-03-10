@@ -1,0 +1,108 @@
+#version 450
+
+// Assign lights to clusters using sphere-AABB intersection test.
+// Each thread processes one cluster, testing all lights against its AABB.
+// Light indices are atomically appended to a global list.
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct ClusterAABB {
+    vec4 minPoint;
+    vec4 maxPoint;
+};
+
+struct ClusterLight {
+    vec3 position;
+    float range;
+    vec3 color;
+    float intensity;
+    vec3 direction;
+    float outerConeAngle;
+};
+
+struct LightGrid {
+    uint offset;
+    uint count;
+};
+
+layout(set = 0, binding = 0) readonly buffer ClusterAABBBuffer {
+    ClusterAABB clusters[];
+};
+
+layout(set = 0, binding = 1) readonly buffer LightBuffer {
+    ClusterLight lights[];
+};
+
+layout(set = 0, binding = 2) writeonly buffer LightGridBuffer {
+    LightGrid lightGrid[];
+};
+
+layout(set = 0, binding = 3) writeonly buffer LightIndexBuffer {
+    uint lightIndices[];
+};
+
+layout(set = 0, binding = 4) buffer GlobalIndexCount {
+    uint globalIndexCount;
+};
+
+layout(set = 0, binding = 5) uniform ClusterParams {
+    mat4 inverseProjection;
+    float nearPlane;
+    float farPlane;
+    float screenWidth;
+    float screenHeight;
+    uint tilesX;
+    uint tilesY;
+    uint tilesZ;
+    uint lightCount;
+};
+
+// Sphere-AABB intersection test
+bool sphereIntersectsAABB(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax) {
+    // Find closest point on AABB to sphere center
+    vec3 closest = clamp(center, aabbMin, aabbMax);
+    vec3 diff = center - closest;
+    float distSq = dot(diff, diff);
+    return distSq <= (radius * radius);
+}
+
+// Max lights per cluster (safety cap)
+const uint MAX_LIGHTS_PER_CLUSTER = 128;
+
+void main() {
+    uint clusterIndex = gl_GlobalInvocationID.x;
+    uint totalClusters = tilesX * tilesY * tilesZ;
+    if (clusterIndex >= totalClusters) return;
+
+    vec3 clusterMin = clusters[clusterIndex].minPoint.xyz;
+    vec3 clusterMax = clusters[clusterIndex].maxPoint.xyz;
+
+    // Count lights affecting this cluster
+    uint visibleLightCount = 0;
+    uint visibleLightIndices[128]; // Local scratch — max per cluster
+
+    for (uint i = 0; i < lightCount && visibleLightCount < MAX_LIGHTS_PER_CLUSTER; ++i) {
+        ClusterLight light = lights[i];
+
+        // Skip zero-range lights
+        if (light.range <= 0.0) continue;
+
+        // Sphere-AABB test (light position is already in view space)
+        if (sphereIntersectsAABB(light.position, light.range, clusterMin, clusterMax)) {
+            visibleLightIndices[visibleLightCount] = i;
+            visibleLightCount++;
+        }
+    }
+
+    // Atomically allocate space in the global light index list
+    uint offset = atomicAdd(globalIndexCount, visibleLightCount);
+
+    // Write light indices
+    for (uint i = 0; i < visibleLightCount; ++i) {
+        lightIndices[offset + i] = visibleLightIndices[i];
+    }
+
+    // Write grid entry
+    lightGrid[clusterIndex].offset = offset;
+    lightGrid[clusterIndex].count = visibleLightCount;
+}

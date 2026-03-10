@@ -1,0 +1,47 @@
+#version 450
+
+// Virtual Texturing feedback resolve compute shader.
+// Processes the feedback buffer (at 1/8 resolution) and generates
+// a compact list of unique page requests for the streaming system.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// Feedback image (R32G32_UINT)
+layout(set = 0, binding = 0, rg32ui) uniform readonly uimage2D feedbackImage;
+
+// Output: unique page request list
+struct PageRequest {
+    uint textureID;
+    uint packed;  // (mip << 24) | (pageY << 12) | pageX
+};
+
+layout(set = 0, binding = 1) writeonly buffer PageRequestBuffer {
+    PageRequest requests[];
+};
+
+layout(set = 0, binding = 2) buffer RequestCount {
+    uint requestCount;
+};
+
+// Max requests per frame
+const uint MAX_REQUESTS = 4096;
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    ivec2 size = imageSize(feedbackImage);
+    if (pos.x >= size.x || pos.y >= size.y) return;
+
+    uvec2 feedback = imageLoad(feedbackImage, pos).rg;
+    uint textureID = feedback.r;
+    uint packed = feedback.g;
+
+    // Skip empty pixels
+    if (textureID == 0 && packed == 0) return;
+
+    // Atomically add to request list (duplicates filtered on CPU)
+    uint slot = atomicAdd(requestCount, 1);
+    if (slot < MAX_REQUESTS) {
+        requests[slot].textureID = textureID;
+        requests[slot].packed = packed;
+    }
+}

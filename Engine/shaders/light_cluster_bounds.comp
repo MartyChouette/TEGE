@@ -1,0 +1,91 @@
+#version 450
+
+// Compute cluster AABBs from inverse projection matrix.
+// Each cluster is a frustum sub-volume in view space.
+// Depth slices are exponentially distributed for better near-field resolution.
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+struct ClusterAABB {
+    vec4 minPoint;
+    vec4 maxPoint;
+};
+
+layout(set = 0, binding = 0) writeonly buffer ClusterAABBBuffer {
+    ClusterAABB clusters[];
+};
+
+layout(set = 0, binding = 1) uniform ClusterParams {
+    mat4 inverseProjection;
+    float nearPlane;
+    float farPlane;
+    float screenWidth;
+    float screenHeight;
+    uint tilesX;
+    uint tilesY;
+    uint tilesZ;
+    uint lightCount;
+};
+
+// Convert screen-space coordinate to view-space using inverse projection
+vec3 screenToView(vec2 screenCoord, float depth) {
+    vec2 ndc = screenCoord / vec2(screenWidth, screenHeight) * 2.0 - 1.0;
+    vec4 clip = vec4(ndc, depth, 1.0);
+    vec4 view = inverseProjection * clip;
+    return view.xyz / view.w;
+}
+
+// Exponential depth slice distribution
+float depthSlice(uint slice) {
+    // Exponential: near * (far/near)^(slice/numSlices)
+    return nearPlane * pow(farPlane / nearPlane, float(slice) / float(tilesZ));
+}
+
+void main() {
+    uint index = gl_GlobalInvocationID.x;
+    uint totalClusters = tilesX * tilesY * tilesZ;
+    if (index >= totalClusters) return;
+
+    // Decompose linear index to 3D cluster coordinates
+    uint z = index / (tilesX * tilesY);
+    uint remaining = index % (tilesX * tilesY);
+    uint y = remaining / tilesX;
+    uint x = remaining % tilesX;
+
+    // Screen-space tile bounds
+    float tileWidth = screenWidth / float(tilesX);
+    float tileHeight = screenHeight / float(tilesY);
+
+    vec2 screenMin = vec2(float(x) * tileWidth, float(y) * tileHeight);
+    vec2 screenMax = vec2(float(x + 1) * tileWidth, float(y + 1) * tileHeight);
+
+    // Depth bounds (exponential slices, linear in Vulkan depth [0,1])
+    float zNear = depthSlice(z);
+    float zFar = depthSlice(z + 1);
+
+    // Convert depth to Vulkan NDC [0,1]
+    // For perspective: depth = (far * near) / (far - z * (far - near))
+    // NDC_z = (far * (z - near)) / (z * (far - near))
+    float ndcNear = (farPlane * (zNear - nearPlane)) / (zNear * (farPlane - nearPlane));
+    float ndcFar = (farPlane * (zFar - nearPlane)) / (zFar * (farPlane - nearPlane));
+
+    // Compute view-space AABB from 4 screen corners at near and far depth
+    vec3 minP = vec3(1e30);
+    vec3 maxP = vec3(-1e30);
+
+    // 4 corners × 2 depths = 8 points
+    for (int i = 0; i < 4; ++i) {
+        vec2 corner;
+        corner.x = ((i & 1) != 0) ? screenMax.x : screenMin.x;
+        corner.y = ((i & 2) != 0) ? screenMax.y : screenMin.y;
+
+        vec3 vNear = screenToView(corner, ndcNear);
+        vec3 vFar = screenToView(corner, ndcFar);
+
+        minP = min(minP, min(vNear, vFar));
+        maxP = max(maxP, max(vNear, vFar));
+    }
+
+    clusters[index].minPoint = vec4(minP, 0.0);
+    clusters[index].maxPoint = vec4(maxP, 0.0);
+}

@@ -1,0 +1,68 @@
+#version 450
+
+// Generate shading rate image based on VRS mode.
+// Output: R8_UINT image where each texel encodes a VkFragmentShadingRateKHR enum value.
+// Shading rate encoding (VK_KHR_fragment_shading_rate):
+//   0 = 1x1 (full rate)
+//   1 = 1x2
+//   4 = 2x1
+//   5 = 2x2 (quarter rate)
+//   6 = 2x4
+//   9 = 4x2
+//   10 = 4x4 (sixteenth rate)
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, r8ui) uniform writeonly uimage2D shadingRateImage;
+
+layout(push_constant) uniform PushConstants {
+    uint mode;    // 0=Off, 1=Peripheral, 2=ContentAdaptive, 3=MotionBased, 4=Full
+    uint width;   // Rate image width
+    uint height;  // Rate image height
+    uint pad;
+};
+
+// Encode fragment size to shading rate value
+uint encodeShadingRate(uint w, uint h) {
+    // VK encoding: ((w >> 1) << 2) | (h >> 1)
+    return ((w >> 1) << 2) | (h >> 1);
+}
+
+void main() {
+    ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+    if (pos.x >= int(width) || pos.y >= int(height)) return;
+
+    uint rate = 0; // Default: 1x1 full rate
+
+    if (mode == 0) {
+        // Off: full rate everywhere
+        rate = encodeShadingRate(1, 1);
+    }
+    else if (mode == 1 || mode == 4) {
+        // Peripheral: reduce rate at screen edges
+        vec2 center = vec2(float(width) * 0.5, float(height) * 0.5);
+        vec2 uv = (vec2(pos) + 0.5) / vec2(width, height);
+        float dist = distance(uv, vec2(0.5));
+
+        if (dist < 0.2) {
+            rate = encodeShadingRate(1, 1);  // Center: full rate
+        } else if (dist < 0.45) {
+            rate = encodeShadingRate(2, 2);  // Mid: quarter rate
+        } else {
+            rate = encodeShadingRate(4, 4);  // Edge: sixteenth rate
+        }
+    }
+    else if (mode == 2) {
+        // Content adaptive (placeholder — would need previous frame luminance)
+        // Default to 2x2 everywhere, with full rate at center
+        vec2 uv = (vec2(pos) + 0.5) / vec2(width, height);
+        float dist = distance(uv, vec2(0.5));
+        rate = (dist < 0.3) ? encodeShadingRate(1, 1) : encodeShadingRate(2, 2);
+    }
+    else if (mode == 3) {
+        // Motion based (placeholder — would need velocity buffer)
+        rate = encodeShadingRate(1, 1);
+    }
+
+    imageStore(shadingRateImage, pos, uvec4(rate, 0, 0, 0));
+}

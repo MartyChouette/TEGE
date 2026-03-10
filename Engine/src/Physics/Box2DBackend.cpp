@@ -3,6 +3,7 @@
 #include "Enjin/Physics/Box2DBackend.h"
 #include "Enjin/ECS/World.h"
 #include "Enjin/ECS/Components/Transform.h"
+#include "Enjin/ECS/Components/GravityZone.h"
 #include "Enjin/Logging/Log.h"
 #include "Enjin/Math/Math.h"
 
@@ -124,13 +125,16 @@ void Box2DBackend::Update(f32 deltaTime) {
     // 2. Sync joint components to Box2D joints
     SyncJointsToBox2D();
 
-    // 3. Step the Box2D world
+    // 3. Apply gravity zone overrides
+    ApplyGravityZones();
+
+    // 4. Step the Box2D world
     b2World_Step(m_WorldId, deltaTime, static_cast<int>(m_SubStepCount));
 
-    // 4. Write Box2D state back to ECS
+    // 5. Write Box2D state back to ECS
     SyncBox2DToECS();
 
-    // 5. Process contact and sensor events
+    // 6. Process contact and sensor events
     ProcessEvents();
 }
 
@@ -660,6 +664,60 @@ bool Box2DBackend::OverlapBox(const Math::Vector2& center, const Math::Vector2& 
     b2World_OverlapAABB(m_WorldId, aabb, filter, OverlapCallback, &ctx);
 
     return !outEntities.empty();
+}
+
+// ============================================================================
+// Gravity Zones
+// ============================================================================
+
+void Box2DBackend::ApplyGravityZones() {
+    auto gravityZoneEntities = m_World->GetEntitiesWithComponent<ECS::GravityZoneComponent>();
+    if (gravityZoneEntities.empty()) return;
+
+    for (auto& [entity, bodyId] : m_EntityToBody) {
+        auto* body2d = m_World->GetComponent<Body2DComponent>(entity);
+        if (!body2d || body2d->isStatic || body2d->isSensor) continue;
+
+        auto* transform = m_World->GetComponent<ECS::TransformComponent>(entity);
+        if (!transform) continue;
+
+        // Build a Vector3 with z=0 for ContainsPoint compatibility
+        Math::Vector3 bodyPos(transform->position.x, transform->position.y, 0.0f);
+
+        // Find highest-priority active gravity zone containing this body
+        i32 bestPriority = INT_MIN;
+        Math::Vector3 customGravity;
+        bool inZone = false;
+
+        for (ECS::Entity zoneEntity : gravityZoneEntities) {
+            auto* zone = m_World->GetComponent<ECS::GravityZoneComponent>(zoneEntity);
+            auto* zoneTransform = m_World->GetComponent<ECS::TransformComponent>(zoneEntity);
+            if (!zone || !zoneTransform || !zone->isActive) continue;
+            if (zone->priority <= bestPriority) continue;
+
+            Math::Vector3 zoneCenter(zoneTransform->position.x, zoneTransform->position.y, 0.0f);
+            if (zone->ContainsPoint(zoneCenter, bodyPos)) {
+                customGravity = zone->GetGravityAt(zoneCenter, bodyPos);
+                bestPriority = zone->priority;
+                inZone = true;
+            }
+        }
+
+        if (inZone) {
+            // Disable world gravity for this body
+            b2Body_SetGravityScale(bodyId, 0.0f);
+            // Apply custom gravity as a force: F = gravity * gravityScale * mass
+            f32 mass = b2Body_GetMass(bodyId);
+            if (mass > 0.0001f) {
+                b2Vec2 force = { customGravity.x * body2d->gravityScale * mass,
+                                 customGravity.y * body2d->gravityScale * mass };
+                b2Body_ApplyForceToCenter(bodyId, force, true);
+            }
+        } else {
+            // Restore the component's gravity scale
+            b2Body_SetGravityScale(bodyId, body2d->gravityScale);
+        }
+    }
 }
 
 // ============================================================================

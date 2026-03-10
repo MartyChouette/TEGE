@@ -58,6 +58,9 @@ public:
     const RTCapabilities& GetRTCapabilities() const { return m_RTCapabilities; }
     bool IsRayTracingSupported() const { return m_RTCapabilities.supported; }
 
+    // Variable Rate Shading support (VK_KHR_fragment_shading_rate)
+    bool IsVRSSupported() const { return m_VRSSupported; }
+
 protected:
     friend class VulkanRenderer;
     bool CreateInstance();
@@ -89,6 +92,9 @@ protected:
 
     // Ray tracing capabilities (populated during SelectPhysicalDevice)
     RTCapabilities m_RTCapabilities;
+
+    // Variable Rate Shading support (populated during SelectPhysicalDevice)
+    bool m_VRSSupported = false;
 
 #ifdef ENJIN_BUILD_DEBUG
     VkDebugUtilsMessengerEXT m_DebugMessenger = VK_NULL_HANDLE;

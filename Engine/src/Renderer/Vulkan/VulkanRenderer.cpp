@@ -452,6 +452,18 @@ void VulkanRenderer::BeginMainRenderPass() {
     renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();
 
+    // Attach VRS shading rate image when available (VK_KHR_fragment_shading_rate)
+#ifdef ENJIN_VRS
+    VkRenderingFragmentShadingRateAttachmentInfoKHR vrsAttachment{};
+    if (m_ShadingRateImageView != VK_NULL_HANDLE) {
+        vrsAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR;
+        vrsAttachment.imageView = m_ShadingRateImageView;
+        vrsAttachment.imageLayout = VK_IMAGE_LAYOUT_FRAGMENT_SHADING_RATE_ATTACHMENT_OPTIMAL_KHR;
+        vrsAttachment.shadingRateAttachmentTexelSize = m_ShadingRateTileSize;
+        renderPassInfo.pNext = &vrsAttachment;
+    }
+#endif
+
     vkCmdBeginRenderPass(m_CommandBuffers[m_CurrentFrame], &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
     m_IsMainRenderPassActive = true;
 }
@@ -570,6 +582,16 @@ bool VulkanRenderer::CreateComputeResources() {
         }
     }
 
+    // Graphics→Compute semaphores (allows compute to wait on graphics)
+    m_GraphicsToComputeSemaphores.resize(MAX_FRAMES_IN_FLIGHT);
+    for (u32 i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        if (vkCreateSemaphore(m_Context->GetDevice(), &semInfo, nullptr, &m_GraphicsToComputeSemaphores[i]) != VK_SUCCESS) {
+            ENJIN_LOG_WARN(Renderer, "Failed to create graphics→compute semaphore %u", i);
+            DestroyComputeResources();
+            return false;
+        }
+    }
+
     ENJIN_LOG_INFO(Renderer, "Async compute resources initialized (queue family %u)",
                    m_Context->GetComputeQueueFamily());
     return true;
@@ -582,6 +604,10 @@ void VulkanRenderer::DestroyComputeResources() {
         if (sem != VK_NULL_HANDLE) vkDestroySemaphore(device, sem, nullptr);
     }
     m_ComputeFinishedSemaphores.clear();
+    for (auto sem : m_GraphicsToComputeSemaphores) {
+        if (sem != VK_NULL_HANDLE) vkDestroySemaphore(device, sem, nullptr);
+    }
+    m_GraphicsToComputeSemaphores.clear();
     m_ComputeCommandBuffers.clear();
     if (m_ComputeCommandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(device, m_ComputeCommandPool, nullptr);
@@ -624,6 +650,17 @@ void VulkanRenderer::SubmitCompute() {
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pSignalSemaphores = &m_ComputeFinishedSemaphores[m_CurrentFrame];
 
+    // If graphics signaled us, wait on that semaphore before compute begins
+    VkSemaphore waitSem = VK_NULL_HANDLE;
+    VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+    if (m_GraphicsToComputeSignaled) {
+        waitSem = m_GraphicsToComputeSemaphores[m_CurrentFrame];
+        submitInfo.waitSemaphoreCount = 1;
+        submitInfo.pWaitSemaphores = &waitSem;
+        submitInfo.pWaitDstStageMask = &waitStage;
+        m_GraphicsToComputeSignaled = false;
+    }
+
     VkQueue computeQueue = m_Context->GetComputeQueue();
     VkResult submitResult = vkQueueSubmit(computeQueue, 1, &submitInfo, VK_NULL_HANDLE);
     if (submitResult == VK_ERROR_DEVICE_LOST) {
@@ -635,6 +672,29 @@ void VulkanRenderer::SubmitCompute() {
         return;
     }
     m_ComputeSubmittedThisFrame = true;
+}
+
+void VulkanRenderer::InsertComputeToGraphicsBarrier(VkCommandBuffer graphicsCmd, VkPipelineStageFlags dstStage) {
+    // This is a memory barrier on the graphics command buffer.
+    // The actual semaphore wait happens at SubmitCommandBuffer() time.
+    // This barrier ensures proper memory visibility for compute→graphics data.
+    if (!m_ComputeSubmittedThisFrame) return;
+
+    VkMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_INDIRECT_COMMAND_READ_BIT;
+    vkCmdPipelineBarrier(graphicsCmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, dstStage,
+        0, 1, &barrier, 0, nullptr, 0, nullptr);
+}
+
+void VulkanRenderer::SignalGraphicsToCompute(VkCommandBuffer graphicsCmd) {
+    // This method is called to signal the graphics→compute semaphore.
+    // The semaphore is signaled during graphics queue submit (added to signal list).
+    // For now, we set a flag that SubmitCompute will check.
+    (void)graphicsCmd;
+    m_GraphicsToComputeSignaled = true;
 }
 
 void VulkanRenderer::RequestVSyncChange(bool enabled) {

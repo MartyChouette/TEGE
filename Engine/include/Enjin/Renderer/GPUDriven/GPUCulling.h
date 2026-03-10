@@ -109,11 +109,29 @@ public:
     void SetHiZPyramid(HiZPyramid* hiz) { m_HiZPyramid = hiz; }
     bool HasHiZ() const { return m_HiZPyramid != nullptr; }
 
+    // Two-phase Hi-Z occlusion culling:
+    // Phase 0: Frustum + HiZ cull using previous frame's depth pyramid.
+    //          Definitely-visible objects are drawn immediately; potentially-occluded flagged.
+    // Between phases: Partial HiZ pyramid regenerated from phase 0 visible objects.
+    // Phase 1: Re-test flagged objects against updated HiZ. Newly-visible appended.
+    // Returns true if two-phase was executed (HiZ available + pipeline valid).
+    bool ExecuteTwoPhase(
+        const Math::Matrix4& viewMatrix,
+        const Math::Matrix4& projectionMatrix,
+        VkCommandBuffer commandBuffer,
+        VkBuffer& outIndirectDrawBuffer,
+        u32& outDrawCount
+    );
+
+    // Get the occlusion flag buffer (used between phases for HiZ partial regeneration)
+    VkBuffer GetOcclusionFlagBuffer() const;
+
 private:
     bool CreateComputePipeline();
     bool CreateBuffers();
     void UpdateFrustumPlanes(const Math::Matrix4& viewProj);
     void UpdateDescriptorSet(VkCommandBuffer commandBuffer);
+    void UpdateDescriptorSetTwoPhase(VkCommandBuffer commandBuffer);
 
     VkDescriptorSet m_DescriptorSet = VK_NULL_HANDLE;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
@@ -121,10 +139,16 @@ private:
 
     VulkanContext* m_Context = nullptr;
 
-    // Compute pipeline for culling
+    // Compute pipeline for culling (single-phase / phase 0+1 with push constant)
     VkPipeline m_CullPipeline = VK_NULL_HANDLE;
     VkPipelineLayout m_PipelineLayout = VK_NULL_HANDLE;
     VkDescriptorSetLayout m_DescriptorSetLayout = VK_NULL_HANDLE;
+
+    // Two-phase Hi-Z pipeline (uses same shader with push constant phase selector)
+    VkPipeline m_CullHiZPipeline = VK_NULL_HANDLE;
+    VkPipelineLayout m_HiZPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout m_HiZDescriptorSetLayout = VK_NULL_HANDLE;
+    VkDescriptorSet m_HiZDescriptorSet = VK_NULL_HANDLE;
 
     // Buffers
     std::unique_ptr<VulkanBuffer> m_ObjectBuffer;      // Input: Objects to cull
@@ -138,6 +162,11 @@ private:
     u32 m_MaxObjects = 100000; // Support up to 100k objects
     std::vector<u32> m_CachedVisibility; // Per-object visibility from last ExecuteCulling
     HiZPyramid* m_HiZPyramid = nullptr; // Optional Hi-Z pyramid for occlusion culling
+
+    // Two-phase buffers
+    std::unique_ptr<VulkanBuffer> m_OcclusionFlagBuffer;  // Per-object occlusion flags (phase 0 → phase 1)
+    bool m_HiZPipelineCreated = false;
+    bool CreateHiZComputePipeline();
 };
 
 } // namespace Renderer

@@ -131,6 +131,51 @@ struct MaterialComponent {
     mutable TextureKey cachedTextureKey;  // Updated when textureCacheDirty clears
     mutable bool textureCacheDirty = true;
 
+    // 64-bit material sort key for fast radix-friendly sorting.
+    // Layout: [8:pipeline][16:material hash][24:texture hash][16:depth]
+    // Pipeline: opaque=0, alpha-mask=1, alpha-blend=2 (ensures correct render order)
+    mutable u64 cachedSortKey = 0;
+
+    // Compute the sort key for a given camera distance.
+    // Call after texture cache is populated. Depth is quantized to 16 bits.
+    void ComputeSortKey(f32 depth) const {
+        // Pipeline bucket (8 bits)
+        u64 pipeline = 0;
+        if (alphaMode == AlphaMode::Mask) pipeline = 1;
+        else if (alphaMode == AlphaMode::Blend) pipeline = 2;
+
+        // Hash 5 texture pointers into 40 bits (16 material + 24 texture)
+        auto ptrHash = [](const void* p) -> u64 {
+            u64 v = reinterpret_cast<u64>(p);
+            v ^= v >> 16;
+            v *= 0x45d9f3b;
+            v ^= v >> 16;
+            return v;
+        };
+        u64 texHash = ptrHash(cachedBaseColorTexture)
+                    ^ (ptrHash(cachedHeightTexture) * 0x9E3779B97F4A7C15ULL)
+                    ^ (ptrHash(cachedNormalTexture) * 0x517CC1B727220A95ULL)
+                    ^ (ptrHash(cachedMetallicRoughnessTexture) * 0x6C62272E07BB0142ULL)
+                    ^ (ptrHash(cachedEmissiveTexture) * 0x62B821756295C58DULL);
+        u64 materialBits = (texHash >> 24) & 0xFFFF;   // 16 bits
+        u64 textureBits  = texHash & 0xFFFFFF;          // 24 bits
+
+        // Depth: front-to-back for opaque (minimize overdraw), back-to-front for blend
+        u32 depthU16;
+        if (pipeline <= 1) {
+            // Opaque/mask: front-to-back — smaller depth = lower key = drawn first
+            depthU16 = static_cast<u32>(Math::Clamp(depth / 10000.0f, 0.0f, 1.0f) * 65535.0f);
+        } else {
+            // Blend: back-to-front — larger depth = lower key = drawn first
+            depthU16 = 65535u - static_cast<u32>(Math::Clamp(depth / 10000.0f, 0.0f, 1.0f) * 65535.0f);
+        }
+
+        cachedSortKey = (pipeline << 56)
+                      | (materialBits << 40)
+                      | (textureBits << 16)
+                      | static_cast<u64>(depthU16);
+    }
+
     // Call when texture paths change to force re-lookup
     void InvalidateTextureCache() const {
         textureCacheDirty = true;

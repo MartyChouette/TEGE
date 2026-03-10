@@ -20,7 +20,7 @@ target_link_libraries(EnjinEditor PRIVATE
 
 target_compile_features(EnjinEditor PUBLIC cxx_std_20)
 
-# Find Dear ImGui (MIT licensed - safe for proprietary use)
+# Find Dear ImGui (MIT licensed)
 # Note: You'll need to add ImGui as a submodule or download it
 # find_package(imgui REQUIRED)
 # target_link_libraries(EnjinEditor PRIVATE imgui::imgui)

@@ -190,6 +190,37 @@ layout(std430, binding = 12) readonly buffer ShadowDataSSBO {
     int _ssbo_pad[2];
 } shadowData;
 
+// --- Clustered forward lighting SSBOs (bindings 14-15) ---
+#ifdef CLUSTERED_LIGHTING
+#define CL_GRID_X 16u
+#define CL_GRID_Y 9u
+#define CL_GRID_Z 24u
+
+struct ClusterCell {
+    uint offset;
+    uint count;
+};
+
+layout(std430, binding = 14) readonly buffer ClusterGridSSBO {
+    float clScreenWidth;
+    float clScreenHeight;
+    float clNearPlane;
+    float clFarPlane;
+    ClusterCell clCells[];
+};
+
+// Packed light indices: bits 0-15 = UBO array index, bit 16 = type (0=point, 1=spot)
+layout(std430, binding = 15) readonly buffer ClusterLightIndexSSBO {
+    uint clLightIndices[];
+};
+#endif
+
+// --- Virtual texturing samplers (bindings 16-17) ---
+#ifdef VIRTUAL_TEXTURING
+layout(binding = 16) uniform sampler2D vtIndirectionTex;
+layout(binding = 17) uniform sampler2D vtPhysicalAtlas;
+#endif
+
 // 16-sample Poisson disk for soft shadow PCF
 const vec2 poissonDisk[16] = vec2[16](
     vec2(-0.94201624, -0.39906216), vec2( 0.94558609, -0.76890725),
@@ -522,6 +553,31 @@ float getDitherThreshold(ivec2 pos, int pattern) {
     return bayerDither4x4(pos); // default (pattern 0)
 }
 
+#ifdef CLUSTERED_LIGHTING
+// Compute cluster index from screen position and view-space depth
+uint getClusterIndex() {
+    uint cx = min(uint(gl_FragCoord.x * float(CL_GRID_X) / clScreenWidth), CL_GRID_X - 1u);
+    uint cy = min(uint(gl_FragCoord.y * float(CL_GRID_Y) / clScreenHeight), CL_GRID_Y - 1u);
+    float depth = max(abs(fragViewDepth), clNearPlane);
+    float logRatio = log2(clFarPlane / clNearPlane);
+    uint cz = uint(log2(depth / clNearPlane) / logRatio * float(CL_GRID_Z));
+    cz = min(cz, CL_GRID_Z - 1u);
+    return cx + cy * CL_GRID_X + cz * CL_GRID_X * CL_GRID_Y;
+}
+#endif
+
+#ifdef VIRTUAL_TEXTURING
+// Sample through virtual texture indirection
+vec4 sampleVirtualTexture(vec2 uv) {
+    vec4 ind = texture(vtIndirectionTex, uv);
+    if (ind.w < 0.5) return vec4(1.0); // Page not loaded — fallback white
+    // ind.xy = physical page origin in atlas UV, ind.z = page size in atlas UV
+    vec2 withinPage = fract(uv * vec2(textureSize(vtIndirectionTex, 0)));
+    vec2 physicalUV = ind.xy + withinPage * ind.z;
+    return texture(vtPhysicalAtlas, physicalUV);
+}
+#endif
+
 void main() {
     // Resolve UV for affine texturing (undo the w-multiply from vertex shader)
     vec2 uv = fragUV / fragClipW;
@@ -641,7 +697,11 @@ void main() {
 
     // Sample base color texture if available
     if ((material.flags & FLAG_HAS_BASE_COLOR_TEX) != 0) {
+#ifdef VIRTUAL_TEXTURING
+        vec4 texColor = sampleVirtualTexture(uv);
+#else
         vec4 texColor = texture(baseColorTexture, uv);
+#endif
         albedo *= texColor.rgb;
     }
 
@@ -739,7 +799,72 @@ void main() {
             : calcBlinnPhong(lightDir, lightColor, intensity, normal, viewDir, albedo, metallic, shininess));
     }
 
-    // Process point lights
+    // Process point and spot lights
+#ifdef CLUSTERED_LIGHTING
+    // Clustered forward lighting: only evaluate lights assigned to this fragment's cluster
+    {
+        uint clIdx = getClusterIndex();
+        uint clOffset = clCells[clIdx].offset;
+        uint clCount = clCells[clIdx].count;
+
+        for (uint ci = 0u; ci < clCount; ++ci) {
+            uint packed = clLightIndices[clOffset + ci];
+            uint lightType = (packed >> 16u) & 1u;
+            uint i = packed & 0xFFFFu;
+
+            if (lightType == 0u) {
+                // Point light
+                vec3 lightPos = lighting.pointLights[i].position;
+                vec3 lightVec = lightPos - fragWorldPos;
+                float distance = length(lightVec);
+                vec3 lightDir = normalize(lightVec);
+                vec3 lightColor = lighting.pointLights[i].color;
+                float intensity = lighting.pointLights[i].intensity;
+                float atten = calcAttenuation(distance,
+                    lighting.pointLights[i].constantAtten,
+                    lighting.pointLights[i].linearAtten,
+                    lighting.pointLights[i].quadraticAtten);
+                float shadow = 1.0;
+                if (int(i) < lighting.pointShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                    shadow = calcPointShadow(fragWorldPos, int(i));
+                }
+                bool useCelPt = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                result += shadow * (useCelPt
+                    ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess)
+                    : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
+            } else {
+                // Spot light
+                vec3 lightPos = lighting.spotLights[i].position;
+                vec3 lightVec = lightPos - fragWorldPos;
+                float distance = length(lightVec);
+                vec3 lightDir = normalize(lightVec);
+                vec3 spotDir = normalize(lighting.spotLights[i].direction);
+                float theta = dot(lightDir, -spotDir);
+                float innerCutoff = lighting.spotLights[i].innerCutoff;
+                float outerCutoff = lighting.spotLights[i].outerCutoff;
+                float epsilon = innerCutoff - outerCutoff;
+                float spotIntensity = clamp((theta - outerCutoff) / epsilon, 0.0, 1.0);
+                if (spotIntensity > 0.0) {
+                    vec3 lightColor = lighting.spotLights[i].color;
+                    float intensity = lighting.spotLights[i].intensity;
+                    float atten = calcAttenuation(distance,
+                        lighting.spotLights[i].constantAtten,
+                        lighting.spotLights[i].linearAtten,
+                        lighting.spotLights[i].quadraticAtten);
+                    float shadow = 1.0;
+                    if (int(i) < lighting.spotShadowCount && (material.flags & FLAG_RECEIVE_SHADOWS) != 0) {
+                        shadow = calcSpotShadow(fragWorldPos, int(i));
+                    }
+                    bool useCelSp = (lighting.celDiffuseBands >= 2.0) && ((material.flags & FLAG_EXCLUDE_CEL) == 0);
+                    result += shadow * (useCelSp
+                        ? calcBlinnPhongCel(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess)
+                        : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
+                }
+            }
+        }
+    }
+#else
+    // Brute-force point lights
     for (uint i = 0u; i < lighting.pointLightCount && i < MAX_POINT_LIGHTS; ++i) {
         vec3 lightPos = lighting.pointLights[i].position;
         vec3 lightVec = lightPos - fragWorldPos;
@@ -770,7 +895,7 @@ void main() {
             : calcBlinnPhong(lightDir, lightColor, intensity * atten, normal, viewDir, albedo, metallic, shininess));
     }
 
-    // Process spot lights
+    // Brute-force spot lights
     for (uint i = 0u; i < lighting.spotLightCount && i < MAX_SPOT_LIGHTS; ++i) {
         vec3 lightPos = lighting.spotLights[i].position;
         vec3 lightVec = lightPos - fragWorldPos;
@@ -811,6 +936,7 @@ void main() {
                 : calcBlinnPhong(lightDir, lightColor, intensity * atten * spotIntensity, normal, viewDir, albedo, metallic, shininess));
         }
     }
+#endif
 
     // Dithered transparency: alternating pixels between fragment color and blend color
     // Encoded in surfaceParam1 >= 200: pattern in fractional part, opacity in surfaceParam2,

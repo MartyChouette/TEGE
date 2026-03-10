@@ -65,6 +65,8 @@ namespace Enjin { namespace Effects {
 #include <vulkan/vulkan.h>
 #endif
 
+#include "Enjin/Memory/FrameAllocator.h"
+
 #include <unordered_map>
 #include <unordered_set>
 #include <memory>
@@ -88,6 +90,9 @@ namespace Enjin { namespace Renderer {
     class OITManager;
     class SHLightingSystem;
     class SDFScene;
+    class ClusteredLightingSystem;
+    class VisibilityBufferRenderer;
+    class VariableRateShading;
 }}
 #endif
 
@@ -756,6 +761,22 @@ private:
     std::unique_ptr<Renderer::VulkanShader> m_PendingVertexShader;
     std::unique_ptr<Renderer::VulkanShader> m_PendingFragmentShader;
     void ProcessPendingRecreation();
+#endif
+
+    // Per-frame linear allocator (8 MB) for hot-path arrays rebuilt every frame.
+    // Reset at frame start, replaces std::vector clear/push for render lists.
+    std::unique_ptr<FrameAllocator> m_FrameAllocator;
+
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    std::unique_ptr<Renderer::ClusteredLightingSystem> m_ClusteredLighting;
+#endif
+
+#ifdef ENJIN_VISIBILITY_BUFFER
+    std::unique_ptr<Renderer::VisibilityBufferRenderer> m_VisibilityBuffer;
+#endif
+
+#ifdef ENJIN_VRS
+    std::unique_ptr<Renderer::VariableRateShading> m_VRS;
 #endif
 
     bool m_Initialized = false;

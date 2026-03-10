@@ -54,6 +54,15 @@
 #include "Enjin/Renderer/SHLightProbe.h"
 #include "Enjin/Renderer/SDFScene.h"
 #include "Enjin/Renderer/OITManager.h"
+#ifdef ENJIN_CLUSTERED_LIGHTING
+#include "Enjin/Renderer/ClusteredLighting.h"
+#endif
+#ifdef ENJIN_VISIBILITY_BUFFER
+#include "Enjin/Renderer/VisibilityBuffer/VisibilityBuffer.h"
+#endif
+#ifdef ENJIN_VRS
+#include "Enjin/Renderer/VRS/VariableRateShading.h"
+#endif
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -306,6 +315,45 @@ void RenderSystem::Initialize() {
     m_SHLighting = std::make_unique<Renderer::SHLightingSystem>();
     m_SDFScene = std::make_unique<Renderer::SDFScene>();
 
+    // Per-frame linear allocator: 8 MB supports ~100K entities x 128B each
+    m_FrameAllocator = std::make_unique<FrameAllocator>(8 * 1024 * 1024);
+
+    // Initialize clustered forward lighting system
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_ClusteredLighting = std::make_unique<Renderer::ClusteredLightingSystem>(m_Renderer->GetContext());
+        if (!m_ClusteredLighting->Initialize(extent.width, extent.height)) {
+            ENJIN_LOG_WARN(Renderer, "Clustered lighting init failed — falling back to brute-force");
+            m_ClusteredLighting.reset();
+        }
+    }
+#endif
+
+    // Initialize visibility buffer renderer
+#ifdef ENJIN_VISIBILITY_BUFFER
+    {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_VisibilityBuffer = std::make_unique<Renderer::VisibilityBufferRenderer>(m_Renderer->GetContext());
+        if (!m_VisibilityBuffer->Initialize(extent.width, extent.height, m_Renderer->GetRenderPass())) {
+            ENJIN_LOG_WARN(Renderer, "Visibility buffer init failed — using standard forward path");
+            m_VisibilityBuffer.reset();
+        }
+    }
+#endif
+
+    // Initialize variable rate shading
+#ifdef ENJIN_VRS
+    if (m_Renderer->GetContext()->IsVRSSupported()) {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        m_VRS = std::make_unique<Renderer::VariableRateShading>(m_Renderer->GetContext());
+        if (!m_VRS->Initialize(extent.width, extent.height)) {
+            ENJIN_LOG_WARN(Renderer, "VRS init failed — shading rate control disabled");
+            m_VRS.reset();
+        }
+    }
+#endif
+
     m_Initialized = true;
     ENJIN_LOG_INFO(Renderer, "RenderSystem initialized");
 }
@@ -340,6 +388,17 @@ void RenderSystem::Shutdown() {
     m_ActiveDescriptorSets = nullptr;
     m_ActiveUniformBuffers = nullptr;
     m_ActiveLightingBuffers = nullptr;
+
+    // Clean up performance optimization subsystems
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    if (m_ClusteredLighting) { m_ClusteredLighting->Shutdown(); m_ClusteredLighting.reset(); }
+#endif
+#ifdef ENJIN_VISIBILITY_BUFFER
+    if (m_VisibilityBuffer) { m_VisibilityBuffer->Shutdown(); m_VisibilityBuffer.reset(); }
+#endif
+#ifdef ENJIN_VRS
+    if (m_VRS) { m_VRS->Shutdown(); m_VRS.reset(); }
+#endif
 
     // Clean up weather, particle, grass, shrub, tree, and sprite batch renderers
     m_WeatherRenderer.reset();
@@ -511,6 +570,9 @@ void RenderSystem::Update(f32 deltaTime) {
 
     // Reset per-frame stats
     ResetFrameCounters();
+
+    // Reset per-frame linear allocator (all FrameArray allocations from previous frame are freed)
+    if (m_FrameAllocator) m_FrameAllocator->Reset();
 
     // Cache light entities once per frame (reused by UpdateFrameUniforms, SelectShadowLights, etc.)
     m_CachedLightEntities.clear();
@@ -828,6 +890,43 @@ void RenderSystem::Update(f32 deltaTime) {
         }
     }
 
+    // Clustered forward lighting: build light list and assign to spatial clusters before main render pass
+#ifdef ENJIN_CLUSTERED_LIGHTING
+    if (m_ClusteredLighting && m_SceneComposition.mode != SceneRenderMode::Scene2D && m_Camera) {
+        VkCommandBuffer cmdBuf = m_Renderer->GetCurrentCommandBuffer();
+        if (cmdBuf != VK_NULL_HANDLE) {
+            // Build ClusterLight array from cached light entities
+            std::vector<Renderer::ClusterLight> clusterLights;
+            clusterLights.reserve(m_CachedLightEntities.size());
+            for (Entity e : m_CachedLightEntities) {
+                auto* light = m_World->GetComponent<LightComponent>(e);
+                auto* xform = m_World->GetComponent<TransformComponent>(e);
+                if (!light || light->type == LightType::Directional) continue;
+
+                Renderer::ClusterLight cl{};
+                cl.position = xform ? xform->position : Math::Vector3(0.0f);
+                cl.range = light->range;
+                cl.color = light->color;
+                cl.intensity = light->intensity;
+                if (light->type == LightType::Spot) {
+                    Math::Vector3 fwd(0.0f, 0.0f, -1.0f);
+                    cl.direction = xform ? xform->rotation.Rotate(fwd).Normalized() : Math::Vector3(0, -1, 0);
+                    cl.outerConeAngle = light->outerConeAngle;
+                } else {
+                    cl.direction = Math::Vector3(0.0f);
+                    cl.outerConeAngle = 0.0f;
+                }
+                clusterLights.push_back(cl);
+            }
+            if (!clusterLights.empty()) {
+                Math::Matrix4 viewMatrix = m_Camera->GetViewMatrix();
+                m_ClusteredLighting->AssignLights(cmdBuf, clusterLights.data(),
+                    static_cast<u32>(clusterLights.size()), viewMatrix);
+            }
+        }
+    }
+#endif
+
     // Periodic diagnostic warnings (every 300 frames)
     if (++m_DiagnosticFrameCounter >= 300) {
         m_DiagnosticFrameCounter = 0;
@@ -979,6 +1078,12 @@ void RenderSystem::Update(f32 deltaTime) {
     // Build the sorted render list every frame (needed by RenderToTarget() offscreen path too)
     {
         m_SortedRenderList.clear();
+
+        // Compute camera position for depth-aware sort key
+        Math::Vector3 camPos;
+        bool haveCam = (m_Camera != nullptr);
+        if (haveCam) camPos = m_Camera->GetPosition();
+
         for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
             auto* xform = m_World->GetComponent<TransformComponent>(entity);
             if (!xform || !xform->visible) continue;
@@ -997,17 +1102,25 @@ void RenderSystem::Update(f32 deltaTime) {
             // Skip 2D sprites — rendered in sorted pass after 3D geometry
             if (m_World->HasComponent<Sprite2DComponent>(entity)) continue;
 
+            // Compute 64-bit sort key (pipeline | material/texture hash | depth)
+            auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+            if (mat) {
+                f32 depth = haveCam ? (xform->position - camPos).Length() : 0.0f;
+                mat->ComputeSortKey(depth);
+            }
+
             m_SortedRenderList.push_back(entity);
         }
 
-        // Sort by cachedTextureKey so entities sharing textures are drawn consecutively,
-        // maximizing descriptor set cache hits (skipping redundant vkUpdateDescriptorSets)
+        // Sort by 64-bit material sort key: groups by pipeline (opaque→mask→blend),
+        // then by material/texture hash (minimizes descriptor set updates),
+        // then by depth (front-to-back for opaque, back-to-front for blend).
         std::sort(m_SortedRenderList.begin(), m_SortedRenderList.end(),
             [this](Entity a, Entity b) {
                 auto* matA = m_World->GetComponent<MaterialComponent>(a);
                 auto* matB = m_World->GetComponent<MaterialComponent>(b);
-                const auto& keyA = matA ? matA->cachedTextureKey : MaterialComponent::TextureKey{};
-                const auto& keyB = matB ? matB->cachedTextureKey : MaterialComponent::TextureKey{};
+                u64 keyA = matA ? matA->cachedSortKey : 0;
+                u64 keyB = matB ? matB->cachedSortKey : 0;
                 return keyA < keyB;
             });
     }
@@ -1053,19 +1166,60 @@ void RenderSystem::Update(f32 deltaTime) {
         if (doLOD) camPos = m_Camera->GetPosition();
 
         for (Entity entity : m_SortedRenderList) {
-            // LOD selection (if camera is available)
+            // LOD selection with hysteresis (if camera is available)
             if (doLOD) {
                 auto* lod = m_World->GetComponent<LODComponent>(entity);
                 if (lod && lod->enabled && lod->levelCount > 1) {
                     auto* transform = m_World->GetComponent<TransformComponent>(entity);
                     if (transform) {
-                        f32 dist = (transform->position - camPos).Length();
-                        i32 newLOD = 0;
+                        f32 metric;
+                        if (lod->useScreenSize) {
+                            // Screen-space projected size: accounts for object scale.
+                            // Approximation: bounding sphere diameter / distance.
+                            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+                            f32 dist = Math::Max((transform->position - camPos).Length(), 0.001f);
+                            f32 scale = Math::Max(Math::Max(
+                                Math::Abs(transform->scale.x),
+                                Math::Abs(transform->scale.y)),
+                                Math::Abs(transform->scale.z));
+                            // Use cached AABB extent as size estimate (if available)
+                            f32 objectSize = scale;
+                            if (mesh) {
+                                Math::Vector3 extent = mesh->cachedAABBMax - mesh->cachedAABBMin;
+                                objectSize = scale * Math::Max(Math::Max(extent.x, extent.y), extent.z);
+                            }
+                            // Screen metric: larger = closer/bigger = more detail needed
+                            // Invert so that larger metric means further away (matches distance thresholds)
+                            metric = dist / Math::Max(objectSize, 0.01f);
+                        } else {
+                            metric = (transform->position - camPos).Length();
+                        }
+
+                        // LOD selection with directional hysteresis bands.
+                        // When at LOD N, upgrading to N-1 (more detail) requires metric < threshold - hysteresis.
+                        // Downgrading to N+1 (less detail) requires metric > threshold + hysteresis.
+                        i32 newLOD = lod->activeLOD;
+                        f32 hyst = lod->hysteresisRatio;
                         for (i32 l = 0; l < lod->levelCount - 1; ++l) {
-                            if (dist > lod->levels[l].maxDistance) {
-                                newLOD = l + 1;
+                            f32 threshold = lod->levels[l].maxDistance;
+                            f32 band = threshold * hyst;
+                            if (l < lod->activeLOD) {
+                                // Considering upgrading to higher detail (lower LOD index)
+                                // Must be well within this level's range
+                                if (metric < threshold - band) {
+                                    newLOD = l;
+                                    break;
+                                }
+                            } else if (l >= lod->activeLOD) {
+                                // Considering downgrading to lower detail (higher LOD index)
+                                if (metric > threshold + band) {
+                                    newLOD = l + 1;
+                                } else {
+                                    break;
+                                }
                             }
                         }
+
                         if (newLOD != lod->activeLOD && newLOD < lod->levelCount) {
                             auto* mesh = m_World->GetComponent<MeshComponent>(entity);
                             if (mesh && lod->levels[newLOD].mesh.IsValid()) {
@@ -2107,18 +2261,32 @@ void RenderSystem::PerformGPUCulling() {
     // Submit objects for culling
     m_GPUCulling->SubmitObjects(m_CullableObjects);
 
-    // Execute GPU culling
     VkBuffer indirectBuffer;
     u32 drawCount;
+
+    // Use two-phase HiZ occlusion culling when Hi-Z pyramid is available
+    if (m_HiZPyramid && m_GPUCulling->HasHiZ()) {
+        if (m_GPUCulling->ExecuteTwoPhase(
+                m_Camera->GetViewMatrix(),
+                m_Camera->GetProjectionMatrix(),
+                commandBuffer,
+                indirectBuffer,
+                drawCount)) {
+            auto stats = m_GPUCulling->GetStats();
+            (void)stats;
+            return;
+        }
+    }
+
+    // Fallback to single-phase culling
     if (m_GPUCulling->ExecuteCulling(
             m_Camera->GetViewMatrix(),
             m_Camera->GetProjectionMatrix(),
             commandBuffer,
             indirectBuffer,
             drawCount)) {
-        // Culling stats are available via m_GPUCulling->GetStats()
         auto stats = m_GPUCulling->GetStats();
-        (void)stats; // Stats available for profiler display
+        (void)stats;
     }
 }
 
@@ -2412,14 +2580,14 @@ void RenderSystem::CreateDescriptorSets() {
     const u32 offscreenSets = framesInFlight * MAX_SPLITSCREEN_VIEWPORTS;
     const u32 totalSets = framesInFlight + offscreenSets; // main + splitscreen offscreen
 
-    // Create descriptor pool (3 UBOs + 8 combined image samplers + 3 SSBOs per set)
+    // Create descriptor pool (3 UBOs + 10 combined image samplers + 5 SSBOs per set)
     std::array<VkDescriptorPoolSize, 3> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = totalSets * 3;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = totalSets * 8;  // base color + shadow + height + normal + metallic-roughness + emissive + point shadow + spot shadow
+    poolSizes[1].descriptorCount = totalSets * 10;  // bindings 3-6, 8-11, 16-17
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    poolSizes[2].descriptorCount = totalSets * 3;  // bone matrices SSBO + shadow data SSBO + object data SSBO
+    poolSizes[2].descriptorCount = totalSets * 5;  // bindings 7, 12-15
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -2553,7 +2721,42 @@ void RenderSystem::CreateDescriptorSets() {
             objectDataBufferInfo.range = m_DefaultBoneBuffer->GetSize();
         }
 
-        std::array<VkWriteDescriptorSet, 14> descriptorWrites{};
+        // Clustered lighting grid SSBO (binding 14) - fallback to default bone buffer
+        VkDescriptorBufferInfo clusterGridBufferInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+        if (m_ClusteredLighting && m_ClusteredLighting->GetLightGridBuffer() != VK_NULL_HANDLE) {
+            clusterGridBufferInfo.buffer = m_ClusteredLighting->GetLightGridBuffer();
+            clusterGridBufferInfo.offset = 0;
+            clusterGridBufferInfo.range = VK_WHOLE_SIZE;
+        } else
+#endif
+        if (m_DefaultBoneBuffer) {
+            clusterGridBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            clusterGridBufferInfo.offset = 0;
+            clusterGridBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        // Clustered lighting index SSBO (binding 15) - fallback to default bone buffer
+        VkDescriptorBufferInfo clusterIndexBufferInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+        if (m_ClusteredLighting && m_ClusteredLighting->GetLightIndexBuffer() != VK_NULL_HANDLE) {
+            clusterIndexBufferInfo.buffer = m_ClusteredLighting->GetLightIndexBuffer();
+            clusterIndexBufferInfo.offset = 0;
+            clusterIndexBufferInfo.range = VK_WHOLE_SIZE;
+        } else
+#endif
+        if (m_DefaultBoneBuffer) {
+            clusterIndexBufferInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+            clusterIndexBufferInfo.offset = 0;
+            clusterIndexBufferInfo.range = m_DefaultBoneBuffer->GetSize();
+        }
+
+        // Virtual texturing indirection texture (binding 16) - fallback to white
+        VkDescriptorImageInfo vtIndirectionImageInfo = imageInfo;
+        // Virtual texturing physical atlas (binding 17) - fallback to white
+        VkDescriptorImageInfo vtAtlasImageInfo = imageInfo;
+
+        std::array<VkWriteDescriptorSet, 18> descriptorWrites{};
 
         // MVP descriptor
         descriptorWrites[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -2681,6 +2884,42 @@ void RenderSystem::CreateDescriptorSets() {
         descriptorWrites[13].descriptorCount = 1;
         descriptorWrites[13].pBufferInfo = &objectDataBufferInfo;
 
+        // Cluster grid SSBO descriptor (binding 14)
+        descriptorWrites[14].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[14].dstSet = m_DescriptorSets[i];
+        descriptorWrites[14].dstBinding = 14;
+        descriptorWrites[14].dstArrayElement = 0;
+        descriptorWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[14].descriptorCount = 1;
+        descriptorWrites[14].pBufferInfo = &clusterGridBufferInfo;
+
+        // Cluster light index SSBO descriptor (binding 15)
+        descriptorWrites[15].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[15].dstSet = m_DescriptorSets[i];
+        descriptorWrites[15].dstBinding = 15;
+        descriptorWrites[15].dstArrayElement = 0;
+        descriptorWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        descriptorWrites[15].descriptorCount = 1;
+        descriptorWrites[15].pBufferInfo = &clusterIndexBufferInfo;
+
+        // VT indirection texture descriptor (binding 16)
+        descriptorWrites[16].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[16].dstSet = m_DescriptorSets[i];
+        descriptorWrites[16].dstBinding = 16;
+        descriptorWrites[16].dstArrayElement = 0;
+        descriptorWrites[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[16].descriptorCount = 1;
+        descriptorWrites[16].pImageInfo = &vtIndirectionImageInfo;
+
+        // VT physical atlas descriptor (binding 17)
+        descriptorWrites[17].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        descriptorWrites[17].dstSet = m_DescriptorSets[i];
+        descriptorWrites[17].dstBinding = 17;
+        descriptorWrites[17].dstArrayElement = 0;
+        descriptorWrites[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        descriptorWrites[17].descriptorCount = 1;
+        descriptorWrites[17].pImageInfo = &vtAtlasImageInfo;
+
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
             static_cast<u32>(descriptorWrites.size()), descriptorWrites.data(), 0, nullptr);
     }
@@ -2781,8 +3020,28 @@ void RenderSystem::CreateDescriptorSets() {
                     offObjectDataInfo.range = m_DefaultBoneBuffer->GetSize();
                 }
 
-                std::array<VkWriteDescriptorSet, 14> offWrites{};
-                for (u32 w = 0; w < 14; ++w) {
+                // Offscreen cluster/VT fallback data
+                VkDescriptorBufferInfo offClusterGridInfo{};
+                VkDescriptorBufferInfo offClusterIdxInfo{};
+#ifdef ENJIN_CLUSTERED_LIGHTING
+                if (m_ClusteredLighting && m_ClusteredLighting->GetLightGridBuffer() != VK_NULL_HANDLE) {
+                    offClusterGridInfo.buffer = m_ClusteredLighting->GetLightGridBuffer();
+                    offClusterGridInfo.range = VK_WHOLE_SIZE;
+                    offClusterIdxInfo.buffer = m_ClusteredLighting->GetLightIndexBuffer();
+                    offClusterIdxInfo.range = VK_WHOLE_SIZE;
+                } else
+#endif
+                if (m_DefaultBoneBuffer) {
+                    offClusterGridInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offClusterGridInfo.range = m_DefaultBoneBuffer->GetSize();
+                    offClusterIdxInfo.buffer = m_DefaultBoneBuffer->GetBuffer();
+                    offClusterIdxInfo.range = m_DefaultBoneBuffer->GetSize();
+                }
+                VkDescriptorImageInfo offVtIndInfo = offImageInfo;
+                VkDescriptorImageInfo offVtAtlasInfo = offImageInfo;
+
+                std::array<VkWriteDescriptorSet, 18> offWrites{};
+                for (u32 w = 0; w < 18; ++w) {
                     offWrites[w].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
                     offWrites[w].dstSet = m_OffscreenDescriptorSets[idx];
                     offWrites[w].dstBinding = w;
@@ -2817,6 +3076,14 @@ void RenderSystem::CreateDescriptorSets() {
                 offWrites[12].pBufferInfo = &offShadowDataInfo;
                 offWrites[13].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
                 offWrites[13].pBufferInfo = &offObjectDataInfo;
+                offWrites[14].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[14].pBufferInfo = &offClusterGridInfo;
+                offWrites[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+                offWrites[15].pBufferInfo = &offClusterIdxInfo;
+                offWrites[16].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[16].pImageInfo = &offVtIndInfo;
+                offWrites[17].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+                offWrites[17].pImageInfo = &offVtAtlasInfo;
 
                 vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(),
                     static_cast<u32>(offWrites.size()), offWrites.data(), 0, nullptr);

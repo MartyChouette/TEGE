@@ -155,6 +155,12 @@ if(ENJIN_PHYSICS_BOX2D)
     message(STATUS "Box2D v3 enabled")
 endif()
 
+# SimplePhysics legacy backend (built-in, no external deps) — ON by default
+option(ENJIN_PHYSICS_SIMPLE "Enable SimplePhysics legacy backend" ON)
+if(ENJIN_PHYSICS_SIMPLE)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_SIMPLE)
+    message(STATUS "SimplePhysics legacy backend enabled")
+endif()
 
 # Intel Open Image Denoise — optional alternative RT denoiser (OFF by default, requires OIDN install)
 option(ENJIN_RAYTRACING_OIDN "Enable Intel OIDN denoiser backend for ray tracing" OFF)
@@ -208,6 +214,36 @@ if(ENJIN_AUDIO_STEAM_AUDIO)
     else()
         message(WARNING "ENJIN_AUDIO_STEAM_AUDIO enabled but SDK not found at third_party/steamaudio/")
     endif()
+endif()
+
+# --- Performance Optimization Features ---
+
+# Clustered forward lighting — replaces brute-force light loop with spatial cluster lookup (ON by default)
+option(ENJIN_CLUSTERED_LIGHTING "Enable clustered forward lighting" ON)
+if(ENJIN_CLUSTERED_LIGHTING)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_CLUSTERED_LIGHTING)
+    message(STATUS "Clustered forward lighting enabled")
+endif()
+
+# Variable Rate Shading — per-tile shading rate control via VK_KHR_fragment_shading_rate (OFF by default)
+option(ENJIN_VRS "Enable Variable Rate Shading" OFF)
+if(ENJIN_VRS)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VRS)
+    message(STATUS "Variable Rate Shading enabled")
+endif()
+
+# Virtual texturing — page-based streaming with feedback buffer (OFF by default)
+option(ENJIN_VIRTUAL_TEXTURING "Enable virtual texturing (page-based streaming)" OFF)
+if(ENJIN_VIRTUAL_TEXTURING)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VIRTUAL_TEXTURING)
+    message(STATUS "Virtual texturing enabled")
+endif()
+
+# Visibility buffer — alternative render path with deferred material evaluation (OFF by default)
+option(ENJIN_VISIBILITY_BUFFER "Enable visibility buffer render path" OFF)
+if(ENJIN_VISIBILITY_BUFFER)
+    target_compile_definitions(EnjinEngine PUBLIC ENJIN_VISIBILITY_BUFFER)
+    message(STATUS "Visibility buffer render path enabled")
 endif()
 
 # Optional: Steam integration (cloud saves, achievements)

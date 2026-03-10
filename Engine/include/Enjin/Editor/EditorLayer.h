@@ -695,6 +695,8 @@ private:
     char m_NewSceneName[128] = "Main";
     i32 m_SelectedTemplate = -1;
     u32 m_TemplateFilter = 0;             // 0 = All, bitmask for category filtering
+    i32 m_TemplateStatusFilter = -1;      // -1 = All, 0=Stable, 1=Beta, 2=Preview, 3=Experimental
+    i32 m_HubProjectFilter = 0;            // 0=All, 1=Ready, 2=Missing
 
     // Template category flags
     static constexpr u32 TMPL_ALL   = 0;
@@ -1209,6 +1211,7 @@ private:
     Editor::TemplateMarketplace m_TemplateMarketplace;
     char m_MarketSearchBuf[128] = "";
     i32 m_MarketCategoryFilter = 0;   // 0=All, 1=Starter, 2=Genre, 3=Systems, 4=Retro, 5=Advanced
+    i32 m_MarketMaturityFilter = 0;   // 0=All, 1=Stable, 2=Beta, 3=Preview, 4=Experimental
     i32 m_MarketSortBy = 0;           // 0=Name, 1=Rating, 2=Downloads
     std::string m_MarketDetailId;     // ID of entry with detail popup open
 

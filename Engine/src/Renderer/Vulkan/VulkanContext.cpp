@@ -195,6 +195,26 @@ bool VulkanContext::SelectPhysicalDevice() {
     // Query ray tracing capabilities
     m_RTCapabilities = RTCapabilities::Query(bestDevice);
 
+    // Probe VK_KHR_fragment_shading_rate support for Variable Rate Shading
+#ifdef ENJIN_VRS
+    {
+        u32 extCount = 0;
+        vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extCount, nullptr);
+        std::vector<VkExtensionProperties> exts(extCount);
+        vkEnumerateDeviceExtensionProperties(bestDevice, nullptr, &extCount, exts.data());
+        for (const auto& ext : exts) {
+            if (strcmp(ext.extensionName, VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME) == 0) {
+                m_VRSSupported = true;
+                ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate supported");
+                break;
+            }
+        }
+        if (!m_VRSSupported) {
+            ENJIN_LOG_INFO(Renderer, "VK_KHR_fragment_shading_rate not supported — VRS disabled");
+        }
+    }
+#endif
+
     return true;
 }
 
@@ -286,6 +306,14 @@ bool VulkanContext::CreateLogicalDevice() {
         deviceExtensions.insert(deviceExtensions.end(), rtExts.begin(), rtExts.end());
         ENJIN_LOG_INFO(Renderer, "Enabling %zu ray tracing device extensions", rtExts.size());
     }
+
+    // Add VRS extension if supported
+#ifdef ENJIN_VRS
+    if (m_VRSSupported) {
+        deviceExtensions.push_back(VK_KHR_FRAGMENT_SHADING_RATE_EXTENSION_NAME);
+        ENJIN_LOG_INFO(Renderer, "Enabling VK_KHR_fragment_shading_rate extension");
+    }
+#endif
 
     VkDeviceCreateInfo createInfo{};
     createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;

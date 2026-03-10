@@ -1,9 +1,17 @@
 #version 450
 
-// GPU Frustum + Hi-Z Occlusion Culling Compute Shader
-// Extends cull.comp with screen-space AABB projection and depth pyramid sampling.
+// GPU Frustum + Two-Phase Hi-Z Occlusion Culling Compute Shader
+// Phase 0: Frustum cull all objects. Visible objects that pass frustum but fail HiZ are flagged
+//          as "potentially occluded" for re-testing after partial HiZ update.
+// Phase 1: Re-test only the potentially-occluded set against updated HiZ pyramid.
+//          Objects that pass phase 1 are appended to the indirect draw buffer.
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Push constant to select phase (0 or 1)
+layout(push_constant) uniform PushConstants {
+    uint phase;  // 0 = initial cull, 1 = re-test occluded
+} pc;
 
 struct CullableObject {
     vec4 boundsMin;
@@ -43,7 +51,7 @@ layout(set = 0, binding = 2) uniform FrustumBuffer {
     float _fpad;
 };
 
-layout(set = 0, binding = 3) writeonly buffer VisibilityBuffer {
+layout(set = 0, binding = 3) buffer VisibilityBuffer {
     uint visibility[];
 };
 
@@ -51,8 +59,13 @@ layout(set = 0, binding = 4) buffer DrawCountBuffer {
     uint drawCount;
 };
 
-// Hi-Z depth pyramid (previous frame)
+// Hi-Z depth pyramid (previous frame for phase 0, partial update for phase 1)
 layout(set = 0, binding = 5) uniform sampler2D hizPyramid;
+
+// Occlusion flags buffer: 0 = definitely visible, 1 = potentially occluded (needs phase 1 re-test)
+layout(set = 0, binding = 6) buffer OcclusionFlagBuffer {
+    uint occlusionFlags[];
+};
 
 bool IsAABBVisible(vec3 aabbMin, vec3 aabbMax, mat4 transform) {
     vec3 corners[8];
@@ -138,7 +151,7 @@ bool IsOccluded(vec3 aabbMin, vec3 aabbMax, mat4 transform) {
     vec2 uvCenter = (uvMin + uvMax) * 0.5;
     float occluderDepth = textureLod(hizPyramid, uvCenter, mipLevel).r;
 
-    // If the closest point of the AABB is behind the occluder depth → occluded
+    // If the closest point of the AABB is behind the occluder depth -> occluded
     return minZ > occluderDepth;
 }
 
@@ -146,29 +159,60 @@ void main() {
     uint index = gl_GlobalInvocationID.x;
     if (index >= objects.length()) return;
 
-    CullableObject obj = objects[index];
-    vec3 boundsMin = obj.boundsMin.xyz;
-    vec3 boundsMax = obj.boundsMax.xyz;
+    if (pc.phase == 0) {
+        // Phase 0: Full frustum + Hi-Z occlusion cull
+        CullableObject obj = objects[index];
+        vec3 boundsMin = obj.boundsMin.xyz;
+        vec3 boundsMax = obj.boundsMax.xyz;
 
-    bool visible = IsAABBVisible(boundsMin, boundsMax, obj.transform);
+        bool visible = IsAABBVisible(boundsMin, boundsMax, obj.transform);
+        bool occluded = false;
 
-    // Hi-Z occlusion test (only for objects that passed frustum culling)
-    if (visible) {
-        if (IsOccluded(boundsMin, boundsMax, obj.transform)) {
-            visible = false;
+        if (visible) {
+            occluded = IsOccluded(boundsMin, boundsMax, obj.transform);
+            if (occluded) {
+                visible = false;
+            }
         }
-    }
 
-    visibility[index] = visible ? 1u : 0u;
+        // Write visibility and occlusion flags
+        visibility[index] = visible ? 1u : 0u;
+        occlusionFlags[index] = (occluded) ? 1u : 0u;
 
-    if (visible) {
-        uint slot = atomicAdd(drawCount, 1);
-        DrawCommand cmd;
-        cmd.indexCount = obj.indexCount;
-        cmd.instanceCount = 1;
-        cmd.firstIndex = obj.indexOffset;
-        cmd.vertexOffset = int(obj.vertexOffset);
-        cmd.firstInstance = index;
-        drawCommands[slot] = cmd;
+        if (visible) {
+            uint slot = atomicAdd(drawCount, 1);
+            DrawCommand cmd;
+            cmd.indexCount = obj.indexCount;
+            cmd.instanceCount = 1;
+            cmd.firstIndex = obj.indexOffset;
+            cmd.vertexOffset = int(obj.vertexOffset);
+            cmd.firstInstance = index;
+            drawCommands[slot] = cmd;
+        }
+    } else {
+        // Phase 1: Re-test only objects that were flagged as potentially occluded
+        if (occlusionFlags[index] == 0u) return;
+
+        CullableObject obj = objects[index];
+        vec3 boundsMin = obj.boundsMin.xyz;
+        vec3 boundsMax = obj.boundsMax.xyz;
+
+        // Re-test against updated Hi-Z pyramid (built from phase 0 visible objects)
+        bool stillOccluded = IsOccluded(boundsMin, boundsMax, obj.transform);
+
+        if (!stillOccluded) {
+            // Object is now visible — append to draw buffer
+            visibility[index] = 1u;
+            occlusionFlags[index] = 0u;
+
+            uint slot = atomicAdd(drawCount, 1);
+            DrawCommand cmd;
+            cmd.indexCount = obj.indexCount;
+            cmd.instanceCount = 1;
+            cmd.firstIndex = obj.indexOffset;
+            cmd.vertexOffset = int(obj.vertexOffset);
+            cmd.firstInstance = index;
+            drawCommands[slot] = cmd;
+        }
     }
 }

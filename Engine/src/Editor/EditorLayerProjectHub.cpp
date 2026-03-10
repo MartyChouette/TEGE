@@ -212,39 +212,40 @@ void EditorLayer::DrawProjectHub() {
 
     if (ImGui::Begin("##ProjectHubBackground", nullptr, bgFlags)) {
         ImDrawList* drawList = ImGui::GetWindowDrawList();
-
-        // --- Title ---
-        ImFont* font = ImGui::GetFont();
-        f32 cx = io.DisplaySize.x * 0.5f;
-        const char* title = "TEGE";
-        f32 titleFontSize = 48.0f;
-        ImVec2 titleSz = font->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
-        ImVec2 titlePos(cx - titleSz.x * 0.5f, 32.0f);
-        drawList->AddText(nullptr, titleFontSize, titlePos,
-            IM_COL32(199, 218, 196, 255), title); // #c7dac4 sage green
-
-        // Subtitle
-        const char* subtitle = "Game Engine";
-        f32 subFontSize = 18.0f;
-        ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subtitle);
-        drawList->AddText(nullptr, subFontSize,
-            ImVec2(cx - subSz.x * 0.5f, titlePos.y + titleSz.y + 2.0f),
-            IM_COL32(140, 160, 140, 160), subtitle);
-
-        // --- Layout constants ---
-        f32 contentY = titlePos.y + titleSz.y + subSz.y + 24.0f;
-        f32 sidebarW = 300.0f;
         ImVec2 area = io.DisplaySize;
 
-        // Always draw recent sidebar on the left
-        DrawHubRecentSidebar(drawList, area, contentY, sidebarW);
+        if (m_HubPage == HubPage::Landing) {
+            // Dashboard mode: full-width, no sidebar, no centered title
+            DrawHubLandingPage(drawList, area, 0.0f, 0.0f);
+        } else {
+            // Wizard/Demos pages: draw centered title + sidebar
+            ImFont* font = ImGui::GetFont();
+            f32 cx = io.DisplaySize.x * 0.5f;
+            const char* title = "TEGE";
+            f32 titleFontSize = 48.0f;
+            ImVec2 titleSz = font->CalcTextSizeA(titleFontSize, FLT_MAX, 0.0f, title);
+            ImVec2 titlePos(cx - titleSz.x * 0.5f, 32.0f);
+            drawList->AddText(nullptr, titleFontSize, titlePos,
+                IM_COL32(199, 218, 196, 255), title);
 
-        // Dispatch to active page (content area is right of sidebar)
-        switch (m_HubPage) {
-            case HubPage::Landing:        DrawHubLandingPage(drawList, area, contentY, sidebarW);    break;
-            case HubPage::WizardSetup:    DrawHubWizardSetup(drawList, area, contentY, sidebarW);    break;
-            case HubPage::WizardTemplate: DrawHubWizardTemplate(drawList, area, contentY, sidebarW); break;
-            case HubPage::Demos:          DrawHubDemosTab(drawList, area, contentY, sidebarW);       break;
+            const char* subtitle = "Game Engine";
+            f32 subFontSize = 18.0f;
+            ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subtitle);
+            drawList->AddText(nullptr, subFontSize,
+                ImVec2(cx - subSz.x * 0.5f, titlePos.y + titleSz.y + 2.0f),
+                IM_COL32(140, 160, 140, 160), subtitle);
+
+            f32 contentY = titlePos.y + titleSz.y + subSz.y + 24.0f;
+            f32 sidebarW = 300.0f;
+
+            DrawHubRecentSidebar(drawList, area, contentY, sidebarW);
+
+            switch (m_HubPage) {
+                case HubPage::Landing:        break; // handled above
+                case HubPage::WizardSetup:    DrawHubWizardSetup(drawList, area, contentY, sidebarW);    break;
+                case HubPage::WizardTemplate: DrawHubWizardTemplate(drawList, area, contentY, sidebarW); break;
+                case HubPage::Demos:          DrawHubDemosTab(drawList, area, contentY, sidebarW);       break;
+            }
         }
     }
     ImGui::End();
@@ -277,18 +278,22 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
         ImVec2(16.0f, contentY + 10.0f),
         IM_COL32(160, 165, 185, 220), header);
 
-    // Filter to only show .enjinproject files
-    std::vector<int> projectIndices;
+    // Filter to only show .enjinproject files, grouped by status
+    std::vector<int> readyIndices;
+    std::vector<int> missingIndices;
     for (int i = 0; i < static_cast<int>(m_EditorSettings.recentProjects.size()); ++i) {
         std::filesystem::path p(m_EditorSettings.recentProjects[i]);
         if (p.extension() == ".enjinproject") {
-            projectIndices.push_back(i);
+            if (std::filesystem::exists(m_EditorSettings.recentProjects[i]))
+                readyIndices.push_back(i);
+            else
+                missingIndices.push_back(i);
         }
     }
 
     f32 listStartY = contentY + 10.0f + headerSz.y + 16.0f;
 
-    if (projectIndices.empty()) {
+    if (readyIndices.empty() && missingIndices.empty()) {
         const char* emptyMsg = "No recent projects";
         f32 emptyFontSize = 15.0f;
         ImVec2 emptySz = font->CalcTextSizeA(emptyFontSize, FLT_MAX, 0.0f, emptyMsg);
@@ -304,157 +309,181 @@ void EditorLayer::DrawHubRecentSidebar(ImDrawList* dl, const ImVec2& area, f32 c
     f32 rowW = sidebarW - 24.0f;
     f32 rowX = 8.0f;
     f32 listBottomY = area.y - 10.0f;
+    f32 groupHeaderH = 24.0f;
+    f32 groupGap = 8.0f;
 
     // Clip to sidebar area
     dl->PushClipRect(ImVec2(0, listStartY), ImVec2(sidebarW, listBottomY), true);
 
-    int maxShow = (std::min)(static_cast<int>(projectIndices.size()), 12);
-    for (int pi = 0; pi < maxShow; ++pi) {
-        int i = projectIndices[pi];
-        f32 rY = listStartY + pi * (rowH + rowPad);
-        if (rY + rowH > listBottomY) break; // Don't draw past sidebar bottom
+    // Lambda to draw a group of project rows with a section header
+    f32 curY = listStartY;
+    auto drawProjectGroup = [&](const char* groupLabel, ImU32 labelCol,
+                                const std::vector<int>& indices, bool canOpen) {
+        if (indices.empty()) return;
+        if (curY >= listBottomY) return;
 
-        ImVec2 rPos(rowX, rY);
-        ImVec2 rEnd(rPos.x + rowW, rPos.y + rowH);
+        // Section header
+        f32 groupFontSize = 13.0f;
+        dl->AddText(nullptr, groupFontSize,
+            ImVec2(rowX + 4.0f, curY + 4.0f), labelCol, groupLabel);
+        curY += groupHeaderH;
 
-        bool hovered = (io.MousePos.x >= rPos.x && io.MousePos.x <= rEnd.x &&
-                       io.MousePos.y >= rPos.y && io.MousePos.y <= rEnd.y);
+        int maxShow = (std::min)(static_cast<int>(indices.size()), 12);
+        for (int pi = 0; pi < maxShow; ++pi) {
+            if (curY + rowH > listBottomY) break;
 
-        dl->AddRectFilled(rPos, rEnd,
-            hovered ? IM_COL32(35, 40, 55, 255) : IM_COL32(22, 24, 32, 255), 6.0f);
+            int i = indices[pi];
+            ImVec2 rPos(rowX, curY);
+            ImVec2 rEnd(rPos.x + rowW, rPos.y + rowH);
 
-        // Accent bar (left edge)
-        ImU32 accentCol = hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 150);
-        dl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
+            bool hovered = (io.MousePos.x >= rPos.x && io.MousePos.x <= rEnd.x &&
+                           io.MousePos.y >= rPos.y && io.MousePos.y <= rEnd.y);
 
-        if (hovered)
-            dl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
+            dl->AddRectFilled(rPos, rEnd,
+                hovered ? IM_COL32(35, 40, 55, 255) : IM_COL32(22, 24, 32, 255), 6.0f);
 
-        // Display name (truncated for sidebar width)
-        std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
-        std::string displayName = fsPath.stem().string();
-        if (displayName.length() > 28) {
-            displayName = displayName.substr(0, 25) + "...";
-        }
-        dl->AddText(ImVec2(rPos.x + 12.0f, rPos.y + 8.0f),
-            IM_COL32(210, 215, 235, 255), displayName.c_str());
+            // Accent bar (left edge)
+            ImU32 accentCol = canOpen
+                ? (hovered ? IM_COL32(80, 140, 220, 255) : IM_COL32(60, 110, 180, 150))
+                : IM_COL32(100, 60, 60, 150);
+            dl->AddRectFilled(rPos, ImVec2(rPos.x + 3.0f, rEnd.y), accentCol, 6.0f, ImDrawFlags_RoundCornersLeft);
 
-        // Path (truncated)
-        std::string pathStr = fsPath.parent_path().string();
-        if (pathStr.length() > 32) {
-            pathStr = "..." + pathStr.substr(pathStr.length() - 29);
-        }
-        f32 pathFontSize = 12.0f;
-        dl->AddText(nullptr, pathFontSize,
-            ImVec2(rPos.x + 12.0f, rPos.y + 28.0f),
-            IM_COL32(100, 105, 125, 160), pathStr.c_str());
+            if (hovered)
+                dl->AddRect(rPos, rEnd, accentCol, 6.0f, 0, 1.5f);
 
-        // Status badge
-        bool exists = std::filesystem::exists(m_EditorSettings.recentProjects[i]);
-        const char* statusText = exists ? "Ready" : "Missing";
-        ImU32 statusCol = exists ? IM_COL32(80, 200, 120, 180) : IM_COL32(200, 80, 80, 180);
-        f32 statusFontSize = 11.0f;
-        ImVec2 statusSize = font->CalcTextSizeA(statusFontSize, FLT_MAX, 0.0f, statusText);
-        dl->AddText(nullptr, statusFontSize,
-            ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
-            statusCol, statusText);
-
-        // Click to open (OpenScene defers to Update to avoid World::Clear during Render)
-        if (hovered && exists && ImGui::IsMouseClicked(0)) {
-            if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
-                MigrateEditorSettingsToProject();
-                m_EditorSettings.lastProjectDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path().parent_path().string();
-                m_EditorSettings.Save();
-                auto& scenes = m_SceneManager.GetScenes();
-                if (!scenes.empty()) {
-                    auto projDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path();
-                    OpenScene((projDir / scenes[0].path).string());
-                }
+            // Display name (truncated for sidebar width)
+            std::filesystem::path fsPath(m_EditorSettings.recentProjects[i]);
+            std::string displayName = fsPath.stem().string();
+            if (displayName.length() > 28) {
+                displayName = displayName.substr(0, 25) + "...";
             }
-            m_ShowProjectHub = false;
+            ImU32 nameCol = canOpen ? IM_COL32(210, 215, 235, 255) : IM_COL32(140, 140, 150, 180);
+            dl->AddText(ImVec2(rPos.x + 12.0f, rPos.y + 8.0f), nameCol, displayName.c_str());
+
+            // Path (truncated)
+            std::string pathStr = fsPath.parent_path().string();
+            if (pathStr.length() > 32) {
+                pathStr = "..." + pathStr.substr(pathStr.length() - 29);
+            }
+            f32 pathFontSize = 12.0f;
+            dl->AddText(nullptr, pathFontSize,
+                ImVec2(rPos.x + 12.0f, rPos.y + 28.0f),
+                IM_COL32(100, 105, 125, 160), pathStr.c_str());
+
+            // Status badge
+            const char* statusText = canOpen ? "Ready" : "Missing";
+            ImU32 statusCol = canOpen ? IM_COL32(80, 200, 120, 180) : IM_COL32(200, 80, 80, 180);
+            f32 statusFontSize = 11.0f;
+            ImVec2 statusSize = font->CalcTextSizeA(statusFontSize, FLT_MAX, 0.0f, statusText);
+            dl->AddText(nullptr, statusFontSize,
+                ImVec2(rEnd.x - statusSize.x - 10.0f, rPos.y + 24.0f),
+                statusCol, statusText);
+
+            // Click to open
+            if (hovered && canOpen && ImGui::IsMouseClicked(0)) {
+                if (m_SceneManager.LoadProject(m_EditorSettings.recentProjects[i])) {
+                    MigrateEditorSettingsToProject();
+                    m_EditorSettings.lastProjectDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path().parent_path().string();
+                    m_EditorSettings.Save();
+                    auto& scenes = m_SceneManager.GetScenes();
+                    if (!scenes.empty()) {
+                        auto projDir = std::filesystem::path(m_EditorSettings.recentProjects[i]).parent_path();
+                        OpenScene((projDir / scenes[0].path).string());
+                    }
+                }
+                m_ShowProjectHub = false;
+            }
+
+            curY += rowH + rowPad;
         }
-    }
+
+        curY += groupGap;
+    };
+
+    // Draw Ready projects first, then Missing
+    drawProjectGroup("Ready", IM_COL32(80, 200, 120, 200), readyIndices, true);
+    drawProjectGroup("Missing", IM_COL32(200, 80, 80, 200), missingIndices, false);
 
     dl->PopClipRect();
 }
 
 // --------------------------------------------------
-// Landing page: 3 action buttons centered
+// Landing page: full-width dashboard with project cards
 // --------------------------------------------------
-void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 contentY, f32 sidebarW) {
+void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 /*contentY*/, f32 /*sidebarW*/) {
     ImGuiIO& io = ImGui::GetIO();
     ImFont* font = ImGui::GetFont();
 
-    // Center area is right of sidebar
-    f32 contentW = area.x - sidebarW;
-    f32 centerX = sidebarW + contentW * 0.5f;
-    f32 centerY = (contentY + area.y) * 0.5f;
+    // Thumbnail color palette for project cards
+    static const ImU32 kProjectPalette[] = {
+        IM_COL32(45, 65, 120, 255),   // deep blue
+        IM_COL32(35, 95, 90, 255),    // teal
+        IM_COL32(75, 45, 115, 255),   // purple
+        IM_COL32(130, 60, 55, 255),   // coral
+        IM_COL32(120, 95, 35, 255),   // amber
+        IM_COL32(40, 85, 55, 255),    // forest
+        IM_COL32(115, 50, 75, 255),   // rose
+        IM_COL32(55, 60, 75, 255),    // slate
+    };
 
-    // --- Primary row: New Project + Open Project side-by-side ---
-    f32 primaryW = 280.0f, primaryH = 80.0f;
-    f32 colGap = 20.0f;
-    f32 rowGap = 16.0f;
-
-    // --- Secondary row: Open Scene + Demos side-by-side ---
-    f32 secondaryW = 280.0f, secondaryH = 60.0f;
-
-    f32 totalH = primaryH + rowGap + secondaryH;
-    f32 startY = centerY - totalH * 0.5f - 10.0f;
-
-    // Helper lambda to draw a button card
-    auto drawButton = [&](f32 x, f32 y, f32 w, f32 h,
-                          const char* label, const char* subtitle,
-                          f32 labelSize, f32 subSize,
-                          ImU32 bgNormal, ImU32 bgHover, ImU32 border) -> bool {
-        ImVec2 bPos(x, y);
-        ImVec2 bEnd(x + w, y + h);
-        bool hovered = (io.MousePos.x >= bPos.x && io.MousePos.x <= bEnd.x &&
-                       io.MousePos.y >= bPos.y && io.MousePos.y <= bEnd.y);
-
-        dl->AddRectFilled(bPos, bEnd, hovered ? bgHover : bgNormal, 8.0f);
-        dl->AddRect(bPos, bEnd, border, 8.0f);
-
-        ImU32 textCol = hovered ? IM_COL32(230, 235, 250, 255) : IM_COL32(190, 195, 210, 230);
-        ImU32 subCol  = hovered ? IM_COL32(170, 175, 195, 200) : IM_COL32(110, 115, 135, 160);
-
-        if (subtitle) {
-            f32 combinedH = labelSize + subSize + 4.0f;
-            f32 ofsY = (h - combinedH) * 0.5f;
-            ImVec2 labelSz = font->CalcTextSizeA(labelSize, FLT_MAX, 0.0f, label);
-            dl->AddText(nullptr, labelSize,
-                ImVec2(x + (w - labelSz.x) * 0.5f, y + ofsY), textCol, label);
-            ImVec2 subSz = font->CalcTextSizeA(subSize, FLT_MAX, 0.0f, subtitle);
-            dl->AddText(nullptr, subSize,
-                ImVec2(x + (w - subSz.x) * 0.5f, y + ofsY + labelSize + 4.0f), subCol, subtitle);
-        } else {
-            ImVec2 labelSz = font->CalcTextSizeA(labelSize, FLT_MAX, 0.0f, label);
-            dl->AddText(nullptr, labelSize,
-                ImVec2(x + (w - labelSz.x) * 0.5f, y + (h - labelSz.y) * 0.5f), textCol, label);
-        }
-
+    // Helper: simple header button
+    auto drawHeaderBtn = [&](f32 x, f32 y, f32 w, f32 h,
+                             const char* label, ImU32 bgNormal, ImU32 bgHover) -> bool {
+        ImVec2 bMin(x, y), bMax(x + w, y + h);
+        bool hovered = (io.MousePos.x >= bMin.x && io.MousePos.x <= bMax.x &&
+                       io.MousePos.y >= bMin.y && io.MousePos.y <= bMax.y);
+        dl->AddRectFilled(bMin, bMax, hovered ? bgHover : bgNormal, 6.0f);
+        f32 fontSize = 14.0f;
+        ImVec2 textSz = font->CalcTextSizeA(fontSize, FLT_MAX, 0.0f, label);
+        dl->AddText(nullptr, fontSize,
+            ImVec2(x + (w - textSz.x) * 0.5f, y + (h - textSz.y) * 0.5f),
+            hovered ? IM_COL32(240, 242, 255, 255) : IM_COL32(200, 205, 220, 230), label);
         return hovered && ImGui::IsMouseClicked(0);
     };
 
-    // --- Primary row ---
-    f32 rowW = primaryW * 2.0f + colGap;
-    f32 rowX = centerX - rowW * 0.5f;
+    // ========== 3a. Header Bar (0-72px) ==========
+    f32 headerH = 72.0f;
+    dl->AddRectFilled(ImVec2(0, 0), ImVec2(area.x, headerH), IM_COL32(15, 16, 22, 255));
+    dl->AddLine(ImVec2(0, headerH), ImVec2(area.x, headerH), IM_COL32(50, 55, 70, 180), 1.0f);
 
-    // New Project (primary accent)
-    if (drawButton(rowX, startY, primaryW, primaryH,
-                   "New Project", "Create from template",
-                   24.0f, 14.0f,
-                   IM_COL32(45, 65, 125, 255), IM_COL32(55, 80, 155, 255), IM_COL32(75, 105, 175, 200))) {
-        m_SelectedTemplate = -1;
-        m_TemplateFilter = TMPL_ALL;
-        m_TemplateSearchBuffer[0] = '\0';
-        m_HubPage = HubPage::WizardSetup;
+    // Left: TEGE branding
+    f32 brandFontSize = 32.0f;
+    const char* brandText = "TEGE";
+    ImVec2 brandSz = font->CalcTextSizeA(brandFontSize, FLT_MAX, 0.0f, brandText);
+    f32 brandY = (headerH - brandSz.y) * 0.5f;
+    dl->AddText(nullptr, brandFontSize, ImVec2(24.0f, brandY), IM_COL32(199, 218, 196, 255), brandText);
+
+    f32 subFontSize = 13.0f;
+    const char* subText = "Game Engine";
+    ImVec2 subSz = font->CalcTextSizeA(subFontSize, FLT_MAX, 0.0f, subText);
+    dl->AddText(nullptr, subFontSize,
+        ImVec2(24.0f + brandSz.x + 10.0f, brandY + brandSz.y - subSz.y - 2.0f),
+        IM_COL32(140, 160, 140, 160), subText);
+
+    // Right: action buttons
+    f32 btnH = 36.0f, btnGap = 10.0f;
+    f32 btnY = (headerH - btnH) * 0.5f;
+    f32 btn3W = 120.0f; // Open Scene
+    f32 btn2W = 130.0f; // Open Project
+    f32 btn1W = 130.0f; // + New Project
+    f32 btnRightEdge = area.x - 24.0f;
+
+    // Open Scene (rightmost)
+    f32 btn3X = btnRightEdge - btn3W;
+    if (drawHeaderBtn(btn3X, btnY, btn3W, btnH, "Open Scene",
+                      IM_COL32(30, 34, 48, 255), IM_COL32(45, 52, 72, 255))) {
+        std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
+        std::string path = FileDialog::OpenFile("Open Scene", filters);
+        if (!path.empty()) {
+            m_ShowProjectHub = false;
+            OpenScene(path);
+        }
     }
 
     // Open Project
-    if (drawButton(rowX + primaryW + colGap, startY, primaryW, primaryH,
-                   "Open Project", "Load .enjinproject",
-                   24.0f, 14.0f,
-                   IM_COL32(30, 38, 55, 255), IM_COL32(42, 52, 78, 255), IM_COL32(55, 68, 95, 200))) {
+    f32 btn2X = btn3X - btnGap - btn2W;
+    if (drawHeaderBtn(btn2X, btnY, btn2W, btnH, "Open Project",
+                      IM_COL32(30, 34, 48, 255), IM_COL32(45, 52, 72, 255))) {
         std::vector<FileFilter> filters = {{ "Enjin Project", "*.enjinproject" }, { "All Files", "*.*" }};
         std::string path = FileDialog::OpenFile("Open Project", filters);
         if (!path.empty()) {
@@ -473,47 +502,370 @@ void EditorLayer::DrawHubLandingPage(ImDrawList* dl, const ImVec2& area, f32 con
         }
     }
 
-    // --- Secondary row ---
-    f32 row2Y = startY + primaryH + rowGap;
-    f32 row2W = secondaryW * 2.0f + colGap;
-    f32 row2X = centerX - row2W * 0.5f;
+    // + New Project (primary accent)
+    f32 btn1X = btn2X - btnGap - btn1W;
+    if (drawHeaderBtn(btn1X, btnY, btn1W, btnH, "+ New Project",
+                      IM_COL32(50, 75, 140, 255), IM_COL32(65, 92, 170, 255))) {
+        m_SelectedTemplate = -1;
+        m_TemplateFilter = TMPL_ALL;
+        m_TemplateStatusFilter = -1;
+        m_TemplateSearchBuffer[0] = '\0';
+        m_HubPage = HubPage::WizardSetup;
+    }
 
-    // Open Scene (its own button now)
-    if (drawButton(row2X, row2Y, secondaryW, secondaryH,
-                   "Open Scene", "Load .enjin file",
-                   20.0f, 13.0f,
-                   IM_COL32(30, 38, 55, 255), IM_COL32(42, 52, 78, 255), IM_COL32(55, 68, 95, 200))) {
-        std::vector<FileFilter> filters = {{ "Enjin Scene", "*.enjin" }, { "All Files", "*.*" }};
-        std::string path = FileDialog::OpenFile("Open Scene", filters);
-        if (!path.empty()) {
-            m_ShowProjectHub = false;
-            OpenScene(path);
+    // ========== 3b. Project Cards Section (72px to area.y-52px) ==========
+    f32 bottomBarH = 52.0f;
+    f32 cardsTop = headerH;
+    f32 cardsBottom = area.y - bottomBarH;
+
+    // Gather projects from recent list
+    struct ProjectEntry {
+        std::string name;
+        std::string parentPath;
+        std::string fullPath;
+        bool exists;
+    };
+    std::vector<ProjectEntry> projects;
+    for (auto& rp : m_EditorSettings.recentProjects) {
+        std::filesystem::path p(rp);
+        if (p.extension() == ".enjinproject") {
+            ProjectEntry entry;
+            entry.name = p.stem().string();
+            entry.parentPath = p.parent_path().string();
+            entry.fullPath = rp;
+            entry.exists = std::filesystem::exists(rp);
+            projects.push_back(entry);
         }
     }
 
-    // Demos
-    if (drawButton(row2X + secondaryW + colGap, row2Y, secondaryW, secondaryH,
-                   "Demos", "Example projects",
-                   20.0f, 13.0f,
-                   IM_COL32(30, 38, 55, 255), IM_COL32(42, 52, 78, 255), IM_COL32(55, 68, 95, 200))) {
+    // Apply filter
+    std::vector<ProjectEntry*> filtered;
+    for (auto& proj : projects) {
+        if (m_HubProjectFilter == 1 && !proj.exists) continue;
+        if (m_HubProjectFilter == 2 && proj.exists) continue;
+        filtered.push_back(&proj);
+    }
+
+    // Section header row
+    f32 sectionPad = 32.0f;
+    f32 sectionHeaderY = cardsTop + 20.0f;
+
+    // "Your Projects" title
+    f32 sectionTitleSize = 20.0f;
+    dl->AddText(nullptr, sectionTitleSize,
+        ImVec2(sectionPad, sectionHeaderY),
+        IM_COL32(200, 205, 225, 240), "Your Projects");
+
+    // Filter pills (right-aligned)
+    {
+        const char* pillLabels[] = { "All", "Ready", "Missing" };
+        f32 pillFontSize = 12.0f;
+        f32 pillH = 24.0f, pillPad = 12.0f, pillGap = 6.0f;
+        f32 pillX = area.x - sectionPad;
+
+        // Measure and draw right-to-left
+        for (int pi = 2; pi >= 0; --pi) {
+            ImVec2 textSz = font->CalcTextSizeA(pillFontSize, FLT_MAX, 0.0f, pillLabels[pi]);
+            f32 pillW = textSz.x + pillPad * 2.0f;
+            pillX -= pillW;
+
+            ImVec2 pMin(pillX, sectionHeaderY + 2.0f);
+            ImVec2 pMax(pillX + pillW, sectionHeaderY + 2.0f + pillH);
+            bool pillHovered = (io.MousePos.x >= pMin.x && io.MousePos.x <= pMax.x &&
+                               io.MousePos.y >= pMin.y && io.MousePos.y <= pMax.y);
+            bool active = (m_HubProjectFilter == pi);
+
+            ImU32 pillBg = active ? IM_COL32(50, 75, 140, 255)
+                         : (pillHovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(28, 32, 44, 255));
+            ImU32 pillText = active ? IM_COL32(230, 235, 250, 255) : IM_COL32(150, 155, 175, 200);
+
+            dl->AddRectFilled(pMin, pMax, pillBg, 12.0f);
+            if (!active)
+                dl->AddRect(pMin, pMax, IM_COL32(55, 60, 78, 150), 12.0f);
+            dl->AddText(nullptr, pillFontSize,
+                ImVec2(pillX + pillPad, sectionHeaderY + 2.0f + (pillH - textSz.y) * 0.5f),
+                pillText, pillLabels[pi]);
+
+            if (pillHovered && ImGui::IsMouseClicked(0))
+                m_HubProjectFilter = pi;
+
+            pillX -= pillGap;
+        }
+    }
+
+    // Card grid area (scrollable child)
+    f32 gridTop = sectionHeaderY + 48.0f;
+    f32 gridBottom = cardsBottom;
+
+    ImGui::SetCursorScreenPos(ImVec2(0, gridTop));
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0, 0, 0, 0));
+    if (ImGui::BeginChild("##HubProjectCards", ImVec2(area.x, gridBottom - gridTop), false,
+                           ImGuiWindowFlags_NoBackground)) {
+        ImDrawList* cdl = ImGui::GetWindowDrawList();
+        ImVec2 scrollOrigin = ImGui::GetCursorScreenPos();
+
+        f32 cardW = 240.0f, cardH = 180.0f, cardGap = 16.0f;
+        i32 cardsPerRow = (std::max)(1, static_cast<i32>(std::floor((area.x - sectionPad * 2.0f) / (cardW + cardGap))));
+        f32 gridW = cardsPerRow * cardW + (cardsPerRow - 1) * cardGap;
+        f32 gridStartX = (area.x - gridW) * 0.5f;
+
+        if (filtered.empty()) {
+            // Empty state
+            f32 emptyY = scrollOrigin.y + 40.0f;
+            f32 emptyFontSize = 16.0f;
+            const char* emptyMsg = "No projects yet. Create one to get started!";
+            ImVec2 emptySz = font->CalcTextSizeA(emptyFontSize, FLT_MAX, 0.0f, emptyMsg);
+            cdl->AddText(nullptr, emptyFontSize,
+                ImVec2((area.x - emptySz.x) * 0.5f, emptyY),
+                IM_COL32(130, 135, 155, 200), emptyMsg);
+
+            // Dashed "+" placeholder card
+            f32 placeholderX = (area.x - cardW) * 0.5f;
+            f32 placeholderY = emptyY + 40.0f;
+            ImVec2 pMin(placeholderX, placeholderY);
+            ImVec2 pMax(placeholderX + cardW, placeholderY + cardH);
+            bool phHovered = (io.MousePos.x >= pMin.x && io.MousePos.x <= pMax.x &&
+                             io.MousePos.y >= pMin.y && io.MousePos.y <= pMax.y);
+
+            // Dashed border (simulated with dotted rect segments)
+            ImU32 dashCol = phHovered ? IM_COL32(80, 110, 180, 200) : IM_COL32(60, 65, 85, 150);
+            f32 dashLen = 8.0f, gapLen = 6.0f;
+            // Top and bottom edges
+            for (f32 dx = 0; dx < cardW; dx += dashLen + gapLen) {
+                f32 endX = (std::min)(dx + dashLen, cardW);
+                cdl->AddLine(ImVec2(pMin.x + dx, pMin.y), ImVec2(pMin.x + endX, pMin.y), dashCol, 1.5f);
+                cdl->AddLine(ImVec2(pMin.x + dx, pMax.y), ImVec2(pMin.x + endX, pMax.y), dashCol, 1.5f);
+            }
+            // Left and right edges
+            for (f32 dy = 0; dy < cardH; dy += dashLen + gapLen) {
+                f32 endY = (std::min)(dy + dashLen, cardH);
+                cdl->AddLine(ImVec2(pMin.x, pMin.y + dy), ImVec2(pMin.x, pMin.y + endY), dashCol, 1.5f);
+                cdl->AddLine(ImVec2(pMax.x, pMin.y + dy), ImVec2(pMax.x, pMin.y + endY), dashCol, 1.5f);
+            }
+
+            // "+" text
+            f32 plusSize = 48.0f;
+            const char* plusText = "+";
+            ImVec2 plusSz = font->CalcTextSizeA(plusSize, FLT_MAX, 0.0f, plusText);
+            cdl->AddText(nullptr, plusSize,
+                ImVec2(placeholderX + (cardW - plusSz.x) * 0.5f,
+                       placeholderY + (cardH - plusSz.y) * 0.5f),
+                phHovered ? IM_COL32(120, 150, 220, 255) : IM_COL32(80, 90, 115, 180), plusText);
+
+            if (phHovered && ImGui::IsMouseClicked(0)) {
+                m_SelectedTemplate = -1;
+                m_TemplateFilter = TMPL_ALL;
+                m_TemplateStatusFilter = -1;
+                m_TemplateSearchBuffer[0] = '\0';
+                m_HubPage = HubPage::WizardSetup;
+            }
+
+            // Reserve layout space
+            ImGui::Dummy(ImVec2(area.x, placeholderY + cardH - scrollOrigin.y + 20.0f));
+        } else {
+            // Draw project cards in a grid
+            i32 totalCards = static_cast<i32>(filtered.size());
+            i32 rows = (totalCards + cardsPerRow - 1) / cardsPerRow;
+
+            for (i32 ci = 0; ci < totalCards; ++ci) {
+                i32 row = ci / cardsPerRow;
+                i32 col = ci % cardsPerRow;
+                f32 cx = gridStartX + col * (cardW + cardGap);
+                f32 cy = scrollOrigin.y + row * (cardH + cardGap);
+
+                auto* proj = filtered[ci];
+                bool missing = !proj->exists;
+
+                // Hit test
+                ImVec2 cMin(cx, cy), cMax(cx + cardW, cy + cardH);
+                bool hovered = !missing &&
+                    (io.MousePos.x >= cMin.x && io.MousePos.x <= cMax.x &&
+                     io.MousePos.y >= cMin.y && io.MousePos.y <= cMax.y);
+
+                // Card background
+                ImU32 cardBg = hovered ? IM_COL32(32, 38, 55, 255) : IM_COL32(22, 25, 35, 255);
+                if (missing) cardBg = IM_COL32(20, 20, 26, 200);
+                cdl->AddRectFilled(cMin, cMax, cardBg, 8.0f);
+
+                // Border
+                if (hovered)
+                    cdl->AddRect(cMin, cMax, IM_COL32(70, 100, 180, 200), 8.0f, 0, 1.5f);
+                else
+                    cdl->AddRect(cMin, cMax, IM_COL32(40, 45, 60, missing ? 80u : 150u), 8.0f);
+
+                // Thumbnail area (top 100px)
+                f32 thumbH = 100.0f;
+                ImVec2 tMin(cx + 1, cy + 1);
+                ImVec2 tMax(cx + cardW - 1, cy + thumbH);
+
+                // Deterministic color from project name
+                u32 hash = 0;
+                for (char c : proj->name) hash = hash * 31 + static_cast<u32>(c);
+                ImU32 thumbCol = kProjectPalette[hash % 8];
+                if (missing) {
+                    // Dim the thumbnail color for missing projects
+                    u32 r = (thumbCol >> 0) & 0xFF;
+                    u32 g = (thumbCol >> 8) & 0xFF;
+                    u32 b = (thumbCol >> 16) & 0xFF;
+                    thumbCol = IM_COL32(r / 2, g / 2, b / 2, 180);
+                } else if (hovered) {
+                    // Brighten slightly on hover
+                    u32 r = (std::min)(255u, ((thumbCol >> 0) & 0xFF) + 15u);
+                    u32 g = (std::min)(255u, ((thumbCol >> 8) & 0xFF) + 15u);
+                    u32 b = (std::min)(255u, ((thumbCol >> 16) & 0xFF) + 15u);
+                    thumbCol = IM_COL32(r, g, b, 255);
+                }
+                cdl->AddRectFilled(tMin, tMax, thumbCol, 8.0f, ImDrawFlags_RoundCornersTop);
+
+                // Project initials (2 uppercase chars)
+                std::string initials;
+                if (!proj->name.empty()) {
+                    initials += static_cast<char>(std::toupper(proj->name[0]));
+                    // Find second word or second capital
+                    for (usize si = 1; si < proj->name.size(); ++si) {
+                        if (proj->name[si - 1] == ' ' || proj->name[si - 1] == '_' || proj->name[si - 1] == '-') {
+                            if (si < proj->name.size()) {
+                                initials += static_cast<char>(std::toupper(proj->name[si]));
+                                break;
+                            }
+                        } else if (std::isupper(proj->name[si]) && initials.size() == 1) {
+                            initials += proj->name[si];
+                            break;
+                        }
+                    }
+                    if (initials.size() == 1 && proj->name.size() > 1)
+                        initials += static_cast<char>(std::toupper(proj->name[1]));
+                }
+                f32 initialsFontSize = 36.0f;
+                ImVec2 initSz = font->CalcTextSizeA(initialsFontSize, FLT_MAX, 0.0f, initials.c_str());
+                ImU32 initCol = missing ? IM_COL32(200, 200, 210, 100) : IM_COL32(255, 255, 255, 220);
+                cdl->AddText(nullptr, initialsFontSize,
+                    ImVec2(cx + (cardW - initSz.x) * 0.5f, cy + (thumbH - initSz.y) * 0.5f),
+                    initCol, initials.c_str());
+
+                // "Missing" badge overlay
+                if (missing) {
+                    f32 badgeFontSize = 11.0f;
+                    const char* badgeText = "Missing";
+                    ImVec2 badgeSz = font->CalcTextSizeA(badgeFontSize, FLT_MAX, 0.0f, badgeText);
+                    f32 badgePad = 6.0f;
+                    f32 badgeX = cx + cardW - badgeSz.x - badgePad * 2.0f - 6.0f;
+                    f32 badgeY = cy + 6.0f;
+                    cdl->AddRectFilled(ImVec2(badgeX, badgeY),
+                        ImVec2(badgeX + badgeSz.x + badgePad * 2.0f, badgeY + badgeSz.y + badgePad),
+                        IM_COL32(160, 50, 50, 220), 4.0f);
+                    cdl->AddText(nullptr, badgeFontSize,
+                        ImVec2(badgeX + badgePad, badgeY + badgePad * 0.5f),
+                        IM_COL32(240, 200, 200, 255), badgeText);
+                }
+
+                // Info area (bottom 80px)
+                f32 infoY = cy + thumbH + 10.0f;
+                f32 infoTextPad = 12.0f;
+
+                // Project name
+                f32 nameFontSize = 15.0f;
+                std::string nameClipped = EllipsizeText(proj->name.c_str(), cardW - infoTextPad * 2.0f, font, nameFontSize);
+                ImU32 nameCol = missing ? IM_COL32(140, 140, 150, 160) : IM_COL32(210, 215, 235, 255);
+                cdl->AddText(nullptr, nameFontSize,
+                    ImVec2(cx + infoTextPad, infoY), nameCol, nameClipped.c_str());
+
+                // Parent path + status dot
+                f32 pathFontSize = 11.0f;
+                f32 pathY = infoY + nameFontSize + 6.0f;
+                f32 dotR = 4.0f;
+                f32 dotX = cx + cardW - infoTextPad - dotR;
+                f32 dotY = pathY + pathFontSize * 0.5f;
+
+                // Status dot
+                ImU32 dotCol = missing ? IM_COL32(200, 70, 70, 220) : IM_COL32(70, 200, 110, 220);
+                cdl->AddCircleFilled(ImVec2(dotX, dotY), dotR, dotCol);
+
+                // Path text (clipped to leave room for dot)
+                f32 pathMaxW = cardW - infoTextPad * 2.0f - dotR * 2.0f - 8.0f;
+                std::string parentDir = std::filesystem::path(proj->parentPath).parent_path().string();
+                std::string pathClipped = EllipsizeText(parentDir.c_str(), pathMaxW, font, pathFontSize);
+                cdl->AddText(nullptr, pathFontSize,
+                    ImVec2(cx + infoTextPad, pathY),
+                    IM_COL32(100, 105, 125, missing ? 120u : 180u), pathClipped.c_str());
+
+                // Click to open
+                if (hovered && ImGui::IsMouseClicked(0)) {
+                    if (m_SceneManager.LoadProject(proj->fullPath)) {
+                        MigrateEditorSettingsToProject();
+                        m_EditorSettings.AddRecentProject(proj->fullPath);
+                        m_EditorSettings.lastProjectDir = std::filesystem::path(proj->fullPath).parent_path().parent_path().string();
+                        m_EditorSettings.Save();
+                        auto& scenes = m_SceneManager.GetScenes();
+                        if (!scenes.empty()) {
+                            auto projDir = std::filesystem::path(proj->fullPath).parent_path();
+                            OpenScene((projDir / scenes[0].path).string());
+                        }
+                        m_ShowProjectHub = false;
+                    }
+                }
+            }
+
+            // Reserve layout space for scrolling
+            ImGui::Dummy(ImVec2(area.x, rows * (cardH + cardGap) + 20.0f));
+        }
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleColor();
+
+    // ========== 3c. Bottom Bar (last 52px) ==========
+    f32 barY = area.y - bottomBarH;
+    dl->AddLine(ImVec2(0, barY), ImVec2(area.x, barY), IM_COL32(50, 55, 70, 150), 1.0f);
+
+    f32 linkFontSize = 14.0f;
+    f32 linkY = barY + (bottomBarH - linkFontSize) * 0.5f;
+
+    // Left: Demos link
+    const char* demosText = "Demos";
+    ImVec2 demosSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, demosText);
+    ImVec2 demosPos(sectionPad, linkY);
+    bool demosHovered = (io.MousePos.x >= demosPos.x && io.MousePos.x <= demosPos.x + demosSz.x &&
+                        io.MousePos.y >= demosPos.y && io.MousePos.y <= demosPos.y + demosSz.y);
+    dl->AddText(nullptr, linkFontSize, demosPos,
+        demosHovered ? IM_COL32(180, 185, 210, 255) : IM_COL32(120, 125, 150, 200), demosText);
+    if (demosHovered)
+        dl->AddLine(ImVec2(demosPos.x, demosPos.y + demosSz.y + 1.0f),
+                    ImVec2(demosPos.x + demosSz.x, demosPos.y + demosSz.y + 1.0f),
+                    IM_COL32(180, 185, 210, 200));
+    if (demosHovered && ImGui::IsMouseClicked(0)) {
         m_DemosCacheValid = false;
         m_HubPage = HubPage::Demos;
     }
 
-    // "Skip (Empty Scene)" link at bottom-right
-    f32 skipFontSize = 15.0f;
+    // Template Marketplace link
+    f32 marketX = demosPos.x + demosSz.x + 24.0f;
+    const char* marketText = "Template Marketplace";
+    ImVec2 marketSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, marketText);
+    ImVec2 marketPos(marketX, linkY);
+    bool marketHovered = (io.MousePos.x >= marketPos.x && io.MousePos.x <= marketPos.x + marketSz.x &&
+                         io.MousePos.y >= marketPos.y && io.MousePos.y <= marketPos.y + marketSz.y);
+    dl->AddText(nullptr, linkFontSize, marketPos,
+        marketHovered ? IM_COL32(180, 185, 210, 255) : IM_COL32(120, 125, 150, 200), marketText);
+    if (marketHovered)
+        dl->AddLine(ImVec2(marketPos.x, marketPos.y + marketSz.y + 1.0f),
+                    ImVec2(marketPos.x + marketSz.x, marketPos.y + marketSz.y + 1.0f),
+                    IM_COL32(180, 185, 210, 200));
+    if (marketHovered && ImGui::IsMouseClicked(0)) {
+        m_TemplateMarketplace.SetOpen(true);
+    }
+
+    // Right: Skip to Empty Scene
     const char* skipText = "Skip to Empty Scene";
-    ImVec2 skipSz = font->CalcTextSizeA(skipFontSize, FLT_MAX, 0.0f, skipText);
-    ImVec2 skipPos(area.x - skipSz.x - 30.0f, area.y - skipSz.y - 20.0f);
+    ImVec2 skipSz = font->CalcTextSizeA(linkFontSize, FLT_MAX, 0.0f, skipText);
+    ImVec2 skipPos(area.x - skipSz.x - sectionPad, linkY);
     bool skipHovered = (io.MousePos.x >= skipPos.x && io.MousePos.x <= skipPos.x + skipSz.x &&
                        io.MousePos.y >= skipPos.y && io.MousePos.y <= skipPos.y + skipSz.y);
-    dl->AddText(nullptr, skipFontSize, skipPos,
-        skipHovered ? IM_COL32(180, 185, 205, 255) : IM_COL32(100, 105, 125, 180), skipText);
-    if (skipHovered) {
+    dl->AddText(nullptr, linkFontSize, skipPos,
+        skipHovered ? IM_COL32(180, 185, 210, 255) : IM_COL32(120, 125, 150, 200), skipText);
+    if (skipHovered)
         dl->AddLine(ImVec2(skipPos.x, skipPos.y + skipSz.y + 1.0f),
                     ImVec2(skipPos.x + skipSz.x, skipPos.y + skipSz.y + 1.0f),
-                    IM_COL32(180, 185, 205, 200));
-    }
+                    IM_COL32(180, 185, 210, 200));
     if (skipHovered && ImGui::IsMouseClicked(0)) {
         m_ShowProjectHub = false;
     }
@@ -721,8 +1073,16 @@ namespace {
         { "flash_dress", "Dress Up",      "Character dress-up\nDrag items + layers + save",          ImVec4(0.9f, 0.6f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
         { "flash_escape","Escape Room",   "Room escape puzzle\nInventory + clues + combinations",    ImVec4(0.5f, 0.3f, 0.2f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
         { "flash_rhythm","Rhythm Game",   "Music game\nNotes + timing + combo",                      ImVec4(0.3f, 0.4f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Experimental },
+        // -- Marketplace-only (mirrored for unified master list) --
+        { "hello_sprite",        "Hello Sprite",         "Animated sprite\nBasic movement + atlas",                  ImVec4(0.4f, 0.8f, 0.4f, 1.0f), kTMPL_2D, Editor::MaturityTier::Stable },
+        { "neon_runner",         "Neon Runner",          "Synthwave runner\nProcedural obstacles + score",           ImVec4(0.9f, 0.2f, 0.9f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "cozy_farm",           "Cozy Farm",            "Farming sim\nCrops + day-night + dialogue",               ImVec4(0.4f, 0.7f, 0.3f, 1.0f), kTMPL_2D, Editor::MaturityTier::Beta },
+        { "networking_lobby",    "Multiplayer Lobby",    "LAN multiplayer\nLobby + entity sync + RPC",              ImVec4(0.1f, 0.6f, 0.7f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
+        { "ps1_horror",          "PS1 Horror",           "PS1-era horror\nVertex jitter + CRT + fixed cam",         ImVec4(0.1f, 0.15f, 0.1f, 1.0f), kTMPL_3D, Editor::MaturityTier::Beta },
+        { "ray_tracing_showcase","Ray Tracing Showcase", "RT reflections\nSoft shadows + AO + SVGF",               ImVec4(1.0f, 0.85f, 0.4f, 1.0f), kTMPL_3D, Editor::MaturityTier::Experimental },
+        { "procedural_world",   "Procedural World",     "Fractal terrain\nErosion + L-system + WFC",               ImVec4(0.3f, 0.8f, 0.5f, 1.0f), kTMPL_3D, Editor::MaturityTier::Preview },
     };
-    constexpr int s_BuiltinCount = 44;
+    constexpr int s_BuiltinCount = 51;
 } // anonymous namespace
 
 // --------------------------------------------------
@@ -821,8 +1181,78 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         chipX += chipW + chipPad;
     }
 
+    // === Status (maturity) filter chips ===
+    f32 statusFilterY = filterY + chipH + 10.0f;
+    const char* statusLabels[] = { "All Status", "Stable", "Beta", "Preview", "Experimental" };
+    i32 statusValues[] = { -1, 0, 1, 2, 3 };
+    ImU32 statusColors[] = {
+        IM_COL32(160, 165, 185, 200),  // All — neutral
+        IM_COL32(80, 140, 220, 255),   // Stable — blue
+        IM_COL32(80, 180, 80, 255),    // Beta — green
+        IM_COL32(210, 170, 50, 255),   // Preview — amber
+        IM_COL32(210, 70, 70, 255),    // Experimental — red
+    };
+
+    f32 sChipFontSize = 18.0f;
+    f32 sChipPad = 10.0f;
+    f32 sChipH = 36.0f;
+    f32 sChipPadX = 20.0f;
+    ImVec2 sChipTextSizes[5];
+    f32 sTotalChipW = 0.0f;
+    for (int f = 0; f < 5; ++f) {
+        sChipTextSizes[f] = font->CalcTextSizeA(sChipFontSize, FLT_MAX, 0.0f, statusLabels[f]);
+        sTotalChipW += sChipTextSizes[f].x + sChipPadX * 2.0f + sChipPad;
+    }
+    sTotalChipW -= sChipPad;
+
+    // Shrink if wider than content area
+    f32 sChipAvailW = contentW - 40.0f;
+    if (sTotalChipW > sChipAvailW) {
+        f32 scale = sChipAvailW / sTotalChipW;
+        sChipFontSize *= scale;
+        sChipPadX *= scale;
+        sChipPad *= scale;
+        sChipH *= scale;
+        sTotalChipW = 0.0f;
+        for (int f = 0; f < 5; ++f) {
+            sChipTextSizes[f] = font->CalcTextSizeA(sChipFontSize, FLT_MAX, 0.0f, statusLabels[f]);
+            sTotalChipW += sChipTextSizes[f].x + sChipPadX * 2.0f + sChipPad;
+        }
+        sTotalChipW -= sChipPad;
+    }
+
+    f32 sChipX = sidebarW + (contentW - sTotalChipW) * 0.5f;
+    for (int f = 0; f < 5; ++f) {
+        f32 sChipW = sChipTextSizes[f].x + sChipPadX * 2.0f;
+        ImVec2 scPos(sChipX, statusFilterY);
+        ImVec2 scEnd(sChipX + sChipW, statusFilterY + sChipH);
+
+        bool isActive = (m_TemplateStatusFilter == statusValues[f]);
+        bool hovered = (io.MousePos.x >= scPos.x && io.MousePos.x <= scEnd.x &&
+                       io.MousePos.y >= scPos.y && io.MousePos.y <= scEnd.y);
+
+        ImU32 sBg = isActive ? IM_COL32(60, 80, 140, 255) :
+                   (hovered ? IM_COL32(45, 50, 70, 255) : IM_COL32(30, 33, 42, 255));
+        dl->AddRectFilled(scPos, scEnd, sBg, sChipH * 0.5f);
+        if (isActive) {
+            dl->AddRect(scPos, scEnd, statusColors[f], sChipH * 0.5f);
+        }
+
+        dl->AddText(nullptr, sChipFontSize,
+            ImVec2(scPos.x + (sChipW - sChipTextSizes[f].x) * 0.5f,
+                   scPos.y + (sChipH - sChipTextSizes[f].y) * 0.5f),
+            isActive ? statusColors[f] : IM_COL32(150, 155, 175, 200),
+            statusLabels[f]);
+
+        if (hovered && ImGui::IsMouseClicked(0)) {
+            m_TemplateStatusFilter = statusValues[f];
+        }
+
+        sChipX += sChipW + sChipPad;
+    }
+
     // === Template grid (scrollable) ===
-    f32 gridStartY = filterY + chipH + 15.0f;
+    f32 gridStartY = statusFilterY + sChipH + 15.0f;
     f32 cardW = 280.0f;
     f32 cardH = 180.0f;
     f32 cardPad = 16.0f;
@@ -843,9 +1273,12 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     // Build filtered index list
     std::vector<int> filteredIndices;
     for (int i = 0; i < s_BuiltinCount; ++i) {
-        if (m_TemplateFilter == TMPL_ALL || (s_BuiltinTemplates[i].categoryFlags & m_TemplateFilter)) {
-            filteredIndices.push_back(i);
-        }
+        if (m_TemplateFilter != TMPL_ALL && !(s_BuiltinTemplates[i].categoryFlags & m_TemplateFilter))
+            continue;
+        if (m_TemplateStatusFilter >= 0 &&
+            s_BuiltinTemplates[i].maturity != static_cast<Editor::MaturityTier>(m_TemplateStatusFilter))
+            continue;
+        filteredIndices.push_back(i);
     }
 
     // Apply search filter
@@ -917,33 +1350,50 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                        gridScreenOrigin.y + row * (cardH + cardPad));
         ImVec2 cardEnd(cardPos.x + cardW, cardPos.y + cardH);
 
+        bool isStable = true; // All templates unlocked
         bool hovered = (io.MousePos.x >= cardPos.x && io.MousePos.x <= cardEnd.x &&
                        io.MousePos.y >= cardPos.y && io.MousePos.y <= cardEnd.y);
         bool selected = (m_SelectedTemplate == i);
 
-        ImU32 bgCol = selected ? IM_COL32(35, 45, 70, 255) :
-                      (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
-        gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        // Locked (non-Stable) cards get muted styling
+        if (isStable) {
+            ImU32 bgCol = selected ? IM_COL32(35, 45, 70, 255) :
+                          (hovered ? IM_COL32(40, 45, 60, 255) : IM_COL32(25, 28, 35, 255));
+            gridDl->AddRectFilled(cardPos, cardEnd, bgCol, 8.0f);
+        } else {
+            gridDl->AddRectFilled(cardPos, cardEnd, IM_COL32(20, 22, 28, 255), 8.0f);
+        }
 
         ImVec4 accent = s_BuiltinTemplates[i].accentColor;
-        ImU32 accentCol = IM_COL32(
-            (int)(accent.x * 255), (int)(accent.y * 255),
-            (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
-        gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
+        if (isStable) {
+            ImU32 accentCol = IM_COL32(
+                (int)(accent.x * 255), (int)(accent.y * 255),
+                (int)(accent.z * 255), (hovered || selected) ? 255 : 180);
+            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), accentCol, 8.0f, ImDrawFlags_RoundCornersTop);
 
-        ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
-                         (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
-        gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+            ImU32 borderCol = selected ? IM_COL32(140, 160, 220, 255) :
+                             (hovered  ? accentCol : IM_COL32(60, 65, 80, 150));
+            gridDl->AddRect(cardPos, cardEnd, borderCol, 8.0f, 0, selected ? 2.5f : (hovered ? 2.0f : 1.0f));
+        } else {
+            // Desaturated accent stripe for locked cards
+            ImU32 mutedAccent = IM_COL32(
+                (int)(accent.x * 80), (int)(accent.y * 80),
+                (int)(accent.z * 80), 100);
+            gridDl->AddRectFilled(cardPos, ImVec2(cardEnd.x, cardPos.y + 4.0f), mutedAccent, 8.0f, ImDrawFlags_RoundCornersTop);
+            gridDl->AddRect(cardPos, cardEnd, IM_COL32(45, 48, 58, 120), 8.0f, 0, 1.0f);
+        }
 
-        if (selected) {
-            const char* check = "✓";
+        if (selected && isStable) {
+            const char* check = "\xe2\x9c\x93";
             ImVec2 checkSize = ImGui::CalcTextSize(check);
             gridDl->AddText(ImVec2(cardEnd.x - checkSize.x - 8.0f, cardPos.y + 10.0f),
                 IM_COL32(140, 200, 140, 255), check);
         }
 
+        // Template name — dimmed for locked
+        ImU32 nameCol = isStable ? IM_COL32(220, 225, 245, 255) : IM_COL32(100, 105, 120, 160);
         DrawCenteredClippedText(gridDl, s_BuiltinTemplates[i].name, cardPos.x, cardW,
-            cardPos.y + 16.0f, IM_COL32(220, 225, 245, 255));
+            cardPos.y + 16.0f, nameCol);
 
         // Maturity tier badge (top-left corner)
         {
@@ -956,11 +1406,15 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
                 case Editor::MaturityTier::Experimental: tierCol = IM_COL32(210, 70, 70, 200); break;
                 default: tierCol = IM_COL32(120, 120, 120, 200); break;
             }
+            // Dim badge alpha for locked cards
+            if (!isStable) {
+                tierCol = (tierCol & 0x00FFFFFF) | (100 << 24);
+            }
             ImVec2 tierSize = ImGui::CalcTextSize(tierLabel);
             ImVec2 tierPos(cardPos.x + 6.0f, cardPos.y + 8.0f);
             gridDl->AddRectFilled(ImVec2(tierPos.x - 3.0f, tierPos.y - 1.0f),
                 ImVec2(tierPos.x + tierSize.x + 3.0f, tierPos.y + tierSize.y + 1.0f), tierCol, 3.0f);
-            gridDl->AddText(tierPos, IM_COL32(255, 255, 255, 240), tierLabel);
+            gridDl->AddText(tierPos, isStable ? IM_COL32(255, 255, 255, 240) : IM_COL32(180, 180, 180, 140), tierLabel);
         }
 
         const char* desc = s_BuiltinTemplates[i].description;
@@ -968,9 +1422,10 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         f32 lineY = cardPos.y + 42.0f;
         std::istringstream iss(descStr);
         std::string line;
+        ImU32 descCol = isStable ? IM_COL32(140, 145, 165, 200) : IM_COL32(80, 84, 95, 140);
         while (std::getline(iss, line, '\n')) {
             DrawCenteredClippedText(gridDl, line.c_str(), cardPos.x, cardW,
-                lineY, IM_COL32(140, 145, 165, 200));
+                lineY, descCol);
             lineY += 18.0f;
         }
 
@@ -980,8 +1435,11 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
             hoveredCardEnd = cardEnd;
         }
 
+        // Only Stable templates are selectable
         if (hovered && !mouseInBottomBar && ImGui::IsMouseClicked(0)) {
-            m_SelectedTemplate = (m_SelectedTemplate == i) ? -1 : i;
+            if (isStable) {
+                m_SelectedTemplate = (m_SelectedTemplate == i) ? -1 : i;
+            }
         }
     }
 
@@ -1055,8 +1513,13 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
     dl->AddLine(ImVec2(sidebarW + 30.0f, bottomY - 12.0f), ImVec2(area.x - 30.0f, bottomY - 12.0f),
         IM_COL32(60, 65, 80, 150), 1.0f);
 
+    // Block creation if a non-Stable template is selected
+    bool templateLocked = false;
+    if (m_SelectedTemplate >= 0 && m_SelectedTemplate < s_BuiltinCount) {
+        templateLocked = false; // All templates unlocked
+    }
     bool canCreate = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
-                     std::strlen(m_NewSceneName) > 0);
+                     std::strlen(m_NewSceneName) > 0 && !templateLocked);
 
     // "< Back" link
     f32 backFontSize = 20.0f;
@@ -1116,16 +1579,18 @@ void EditorLayer::DrawHubWizardTemplate(ImDrawList* dl, const ImVec2& area, f32 
         }
     }
 
-    // "Start Blank" link
+    // "Start Blank" link — always available if form fields are filled (ignores template selection)
+    bool canStartBlank = (std::strlen(m_NewProjectName) > 0 && std::strlen(m_NewProjectPath) > 0 &&
+                          std::strlen(m_NewSceneName) > 0);
     f32 blankFontSize = 18.0f;
     const char* blankText = "Start Blank";
     ImVec2 blankSz = font->CalcTextSizeA(blankFontSize, FLT_MAX, 0.0f, blankText);
     ImVec2 blankPos(area.x - blankSz.x - 40.0f, bottomY + (createBtnH - blankSz.y) * 0.5f);
-    bool blankHovered = canCreate && (io.MousePos.x >= blankPos.x && io.MousePos.x <= blankPos.x + blankSz.x &&
+    bool blankHovered = canStartBlank && (io.MousePos.x >= blankPos.x && io.MousePos.x <= blankPos.x + blankSz.x &&
                        io.MousePos.y >= blankPos.y && io.MousePos.y <= blankPos.y + blankSz.y);
     dl->AddText(nullptr, blankFontSize, blankPos,
         blankHovered ? IM_COL32(180, 185, 205, 255) :
-        (canCreate ? IM_COL32(120, 125, 145, 200) : IM_COL32(70, 75, 85, 120)), blankText);
+        (canStartBlank ? IM_COL32(120, 125, 145, 200) : IM_COL32(70, 75, 85, 120)), blankText);
 
     if (blankHovered && ImGui::IsMouseClicked(0)) {
         if (CreateProjectOnDisk(m_NewProjectPath, m_NewProjectName, m_NewSceneName, "blank")) {
@@ -1495,7 +1960,8 @@ bool EditorLayer::CreateProjectOnDisk(const std::string& projectDir, const std::
 
     // Auto-set project mode from template category
     if (templateId == "platformer" || templateId == "topdown2d" || templateId == "runner" ||
-        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike") {
+        templateId == "metroidvania" || templateId == "vampsurvivor" || templateId == "roguelike" ||
+        templateId == "hello_sprite" || templateId == "neon_runner" || templateId == "cozy_farm") {
         m_SceneManager.SetProjectMode(Scene::ProjectMode::Mode2D);
     } else if (templateId == "blank" || templateId == "visualnovel" || templateId == "gamemanager") {
         m_SceneManager.SetProjectMode(Scene::ProjectMode::Mixed);
@@ -11572,6 +12038,364 @@ void EditorLayer::ApplyTemplate(const std::string& templateId) {
         m_FlashTimelineEditor.SetTimeline(&m_FlashTimelineData);
     }
 
+    // --- Marketplace-only templates (basic starter scenes) ---
+    else if (templateId == "hello_sprite") {
+        // Simple 2D sprite scene
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 5.0f; cc.isActive = true;
+        }
+        {
+            ECS::Entity player = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(player, "Player Sprite");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(0, 0, 0);
+            auto& ps = m_World->AddComponent<ECS::Sprite2DComponent>(player);
+            ps.srcWidth = 32; ps.srcHeight = 32;
+            ps.tint = Math::Vector3(0.4f, 0.8f, 0.4f);
+            ps.sortingLayer = 1;
+            auto& ptag = m_World->AddComponent<ECS::TagComponent>(player);
+            ptag.tags.push_back("player");
+        }
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Background");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0, 0, -0.1f);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 400; bgs.srcHeight = 300;
+            bgs.tint = Math::Vector3(0.15f, 0.15f, 0.25f);
+            bgs.sortingLayer = -1;
+        }
+    }
+    else if (templateId == "neon_runner") {
+        // Synthwave runner scene
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 6.0f; cc.isActive = true;
+        }
+        {
+            ECS::Entity player = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(player, "Runner");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(-3.0f, -2.0f, 0);
+            auto& ps = m_World->AddComponent<ECS::Sprite2DComponent>(player);
+            ps.srcWidth = 24; ps.srcHeight = 32;
+            ps.tint = Math::Vector3(0.9f, 0.2f, 0.9f);
+            ps.sortingLayer = 2;
+            auto& ptag = m_World->AddComponent<ECS::TagComponent>(player);
+            ptag.tags.push_back("player");
+        }
+        // Ground
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0, -3.5f, 0);
+            auto& gs = m_World->AddComponent<ECS::Sprite2DComponent>(ground);
+            gs.srcWidth = 500; gs.srcHeight = 20;
+            gs.tint = Math::Vector3(0.2f, 0.05f, 0.3f);
+            gs.sortingLayer = 0;
+        }
+        // Obstacles
+        for (i32 i = 0; i < 3; ++i) {
+            ECS::Entity obs = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(obs, "Obstacle " + std::to_string(i + 1));
+            auto& ot = m_World->AddComponent<ECS::TransformComponent>(obs);
+            ot.position = Math::Vector3(3.0f + i * 4.0f, -2.0f, 0);
+            auto& os = m_World->AddComponent<ECS::Sprite2DComponent>(obs);
+            os.srcWidth = 20; os.srcHeight = 40;
+            os.tint = Math::Vector3(1.0f, 0.3f, 0.5f);
+            os.sortingLayer = 1;
+            auto& otag = m_World->AddComponent<ECS::TagComponent>(obs);
+            otag.tags.push_back("obstacle");
+        }
+        // Score
+        {
+            ECS::Entity score = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(score, "Score");
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(score);
+            st.position = Math::Vector3(3.0f, 4.5f, 0);
+            auto& stext = m_World->AddComponent<ECS::TextComponent>(score);
+            stext.text = "Score: 0";
+            stext.fontSize = 24.0f;
+            stext.textColor = Math::Vector3(0.9f, 0.2f, 0.9f);
+        }
+    }
+    else if (templateId == "cozy_farm") {
+        // Cozy farming scene
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 0, 5);
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.projectionType = ECS::ProjectionType::Orthographic; cc.orthoSize = 7.0f; cc.isActive = true;
+        }
+        {
+            ECS::Entity farmer = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(farmer, "Farmer");
+            auto& ft = m_World->AddComponent<ECS::TransformComponent>(farmer);
+            ft.position = Math::Vector3(0, 0, 0);
+            auto& fs = m_World->AddComponent<ECS::Sprite2DComponent>(farmer);
+            fs.srcWidth = 28; fs.srcHeight = 32;
+            fs.tint = Math::Vector3(0.4f, 0.7f, 0.3f);
+            fs.sortingLayer = 2;
+            auto& ftag = m_World->AddComponent<ECS::TagComponent>(farmer);
+            ftag.tags.push_back("player");
+        }
+        // Farm plots
+        for (i32 r = 0; r < 2; ++r) {
+            for (i32 c = 0; c < 3; ++c) {
+                ECS::Entity plot = m_World->CreateEntity();
+                m_World->AddComponent<ECS::NameComponent>(plot,
+                    "Plot " + std::to_string(r * 3 + c + 1));
+                auto& pt = m_World->AddComponent<ECS::TransformComponent>(plot);
+                pt.position = Math::Vector3(-2.0f + c * 2.0f, -2.0f - r * 1.5f, 0);
+                auto& ps = m_World->AddComponent<ECS::Sprite2DComponent>(plot);
+                ps.srcWidth = 48; ps.srcHeight = 48;
+                ps.tint = Math::Vector3(0.35f, 0.25f, 0.12f);
+                ps.sortingLayer = 0;
+                auto& ptag = m_World->AddComponent<ECS::TagComponent>(plot);
+                ptag.tags.push_back("farm-plot");
+            }
+        }
+        // Ground
+        {
+            ECS::Entity bg = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(bg, "Ground");
+            auto& bgt = m_World->AddComponent<ECS::TransformComponent>(bg);
+            bgt.position = Math::Vector3(0, 0, -0.1f);
+            auto& bgs = m_World->AddComponent<ECS::Sprite2DComponent>(bg);
+            bgs.srcWidth = 500; bgs.srcHeight = 400;
+            bgs.tint = Math::Vector3(0.3f, 0.55f, 0.2f);
+            bgs.sortingLayer = -1;
+        }
+    }
+    else if (templateId == "networking_lobby") {
+        // Multiplayer lobby starter — camera + ground + spawn points
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 5, -8);
+            ct.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.35f, 0, 0));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.isActive = true;
+        }
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0, 8, 0);
+            lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.8f, 0.3f, 0));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(1, 1, 0.95f); lc.intensity = 1.2f;
+        }
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0, 0, 0);
+            gt.scale = Math::Vector3(20, 0.1f, 20);
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.3f, 0.4f, 0.5f);
+        }
+        // Spawn points
+        for (i32 i = 0; i < 4; ++i) {
+            ECS::Entity spawn = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(spawn, "Spawn " + std::to_string(i + 1));
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(spawn);
+            f32 angle = static_cast<f32>(i) * 1.5708f;
+            st.position = Math::Vector3(std::cos(angle) * 4.0f, 0.5f, std::sin(angle) * 4.0f);
+            st.scale = Math::Vector3(0.3f, 1.0f, 0.3f);
+            m_World->AddComponent<ECS::MeshComponent>(spawn, Renderer::MeshFactory::CreateCylinder(0.5f, 1.0f));
+            auto& smat = m_World->AddComponent<ECS::MaterialComponent>(spawn);
+            smat.baseColor = Math::Vector3(0.1f, 0.6f, 0.7f);
+            smat.emissiveColor = Math::Vector3(0.1f, 0.6f, 0.7f);
+            smat.emissiveStrength = 2.0f;
+            auto& stag = m_World->AddComponent<ECS::TagComponent>(spawn);
+            stag.tags.push_back("spawn-point");
+        }
+    }
+    else if (templateId == "ps1_horror") {
+        // PS1-era horror scene — dark corridor + camera + flickering light
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Fixed Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 2.5f, -6);
+            ct.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.15f, 0, 0));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.isActive = true;
+        }
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Ceiling Light");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0, 3.5f, 0);
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Point;
+            lc.color = Math::Vector3(0.9f, 0.7f, 0.4f); lc.intensity = 1.5f; lc.range = 10.0f;
+        }
+        // Corridor floor
+        {
+            ECS::Entity floor = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(floor, "Floor");
+            auto& ft = m_World->AddComponent<ECS::TransformComponent>(floor);
+            ft.position = Math::Vector3(0, 0, 0);
+            ft.scale = Math::Vector3(4, 0.1f, 12);
+            m_World->AddComponent<ECS::MeshComponent>(floor, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& fmat = m_World->AddComponent<ECS::MaterialComponent>(floor);
+            fmat.baseColor = Math::Vector3(0.15f, 0.12f, 0.1f);
+        }
+        // Walls
+        for (i32 side = -1; side <= 1; side += 2) {
+            ECS::Entity wall = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(wall, side < 0 ? "Left Wall" : "Right Wall");
+            auto& wt = m_World->AddComponent<ECS::TransformComponent>(wall);
+            wt.position = Math::Vector3(side * 2.0f, 1.5f, 0);
+            wt.scale = Math::Vector3(0.1f, 3.0f, 12.0f);
+            m_World->AddComponent<ECS::MeshComponent>(wall, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& wmat = m_World->AddComponent<ECS::MaterialComponent>(wall);
+            wmat.baseColor = Math::Vector3(0.12f, 0.1f, 0.08f);
+        }
+        // Player
+        {
+            ECS::Entity player = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(player, "Player");
+            auto& pt = m_World->AddComponent<ECS::TransformComponent>(player);
+            pt.position = Math::Vector3(0, 0.5f, -4);
+            m_World->AddComponent<ECS::MeshComponent>(player, Renderer::MeshFactory::CreateCapsule(0.3f, 1.0f));
+            auto& pmat = m_World->AddComponent<ECS::MaterialComponent>(player);
+            pmat.baseColor = Math::Vector3(0.3f, 0.3f, 0.35f);
+            auto& ptag = m_World->AddComponent<ECS::TagComponent>(player);
+            ptag.tags.push_back("player");
+        }
+    }
+    else if (templateId == "ray_tracing_showcase") {
+        // RT showcase — reflective spheres + ground + directional light
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 3, -7);
+            ct.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.3f, 0, 0));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.isActive = true;
+        }
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0, 10, 0);
+            lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.9f, 0.5f, 0));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(1, 0.98f, 0.9f); lc.intensity = 1.5f;
+        }
+        // Ground plane
+        {
+            ECS::Entity ground = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(ground, "Ground");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(ground);
+            gt.position = Math::Vector3(0, 0, 0);
+            gt.scale = Math::Vector3(30, 0.1f, 30);
+            m_World->AddComponent<ECS::MeshComponent>(ground, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(ground);
+            gmat.baseColor = Math::Vector3(0.8f, 0.8f, 0.8f);
+            gmat.metallic = 0.0f; gmat.roughness = 0.3f;
+        }
+        // Reflective spheres
+        Math::Vector3 colors[] = {
+            Math::Vector3(1.0f, 0.2f, 0.2f),
+            Math::Vector3(0.2f, 0.8f, 0.2f),
+            Math::Vector3(0.2f, 0.2f, 1.0f),
+            Math::Vector3(1.0f, 0.85f, 0.4f),
+        };
+        for (i32 i = 0; i < 4; ++i) {
+            ECS::Entity sphere = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(sphere, "Sphere " + std::to_string(i + 1));
+            auto& st = m_World->AddComponent<ECS::TransformComponent>(sphere);
+            f32 x = -3.0f + i * 2.0f;
+            st.position = Math::Vector3(x, 1.0f, 0);
+            m_World->AddComponent<ECS::MeshComponent>(sphere, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& smat = m_World->AddComponent<ECS::MaterialComponent>(sphere);
+            smat.baseColor = colors[i];
+            smat.metallic = 0.9f; smat.roughness = 0.1f;
+        }
+        // Glass sphere (translucent)
+        {
+            ECS::Entity glass = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(glass, "Glass Sphere");
+            auto& gt = m_World->AddComponent<ECS::TransformComponent>(glass);
+            gt.position = Math::Vector3(0, 1.0f, -2.5f);
+            gt.scale = Math::Vector3(1.5f, 1.5f, 1.5f);
+            m_World->AddComponent<ECS::MeshComponent>(glass, Renderer::MeshFactory::CreateSphere(0.5f));
+            auto& gmat = m_World->AddComponent<ECS::MaterialComponent>(glass);
+            gmat.baseColor = Math::Vector3(0.95f, 0.95f, 1.0f);
+            gmat.metallic = 0.0f; gmat.roughness = 0.0f;
+            gmat.transmission = 0.95f; gmat.ior = 1.5f;
+        }
+    }
+    else if (templateId == "procedural_world") {
+        // Procedural world — camera + directional light + terrain placeholder + trees
+        {
+            ECS::Entity cam = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(cam, "Camera");
+            auto& ct = m_World->AddComponent<ECS::TransformComponent>(cam);
+            ct.position = Math::Vector3(0, 8, -12);
+            ct.rotation = Math::Quaternion::FromEuler(Math::Vector3(0.4f, 0, 0));
+            auto& cc = m_World->AddComponent<ECS::CameraComponent>(cam);
+            cc.isActive = true;
+        }
+        {
+            ECS::Entity light = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(light, "Sun");
+            auto& lt = m_World->AddComponent<ECS::TransformComponent>(light);
+            lt.position = Math::Vector3(0, 15, 0);
+            lt.rotation = Math::Quaternion::FromEuler(Math::Vector3(1.0f, 0.4f, 0));
+            auto& lc = m_World->AddComponent<ECS::LightComponent>(light);
+            lc.type = ECS::LightType::Directional;
+            lc.color = Math::Vector3(1, 0.95f, 0.85f); lc.intensity = 1.3f;
+        }
+        // Terrain base
+        {
+            ECS::Entity terrain = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(terrain, "Terrain");
+            auto& tt = m_World->AddComponent<ECS::TransformComponent>(terrain);
+            tt.position = Math::Vector3(0, 0, 0);
+            tt.scale = Math::Vector3(40, 0.5f, 40);
+            m_World->AddComponent<ECS::MeshComponent>(terrain, Renderer::MeshFactory::CreateCube(1.0f));
+            auto& tmat = m_World->AddComponent<ECS::MaterialComponent>(terrain);
+            tmat.baseColor = Math::Vector3(0.35f, 0.55f, 0.25f);
+            tmat.roughness = 0.9f;
+        }
+        // Sample trees
+        for (i32 i = 0; i < 5; ++i) {
+            ECS::Entity tree = m_World->CreateEntity();
+            m_World->AddComponent<ECS::NameComponent>(tree, "Tree " + std::to_string(i + 1));
+            auto& trt = m_World->AddComponent<ECS::TransformComponent>(tree);
+            f32 x = -8.0f + i * 4.0f;
+            f32 z = (i % 2 == 0) ? 2.0f : -2.0f;
+            trt.position = Math::Vector3(x, 1.5f, z);
+            trt.scale = Math::Vector3(0.5f, 3.0f, 0.5f);
+            m_World->AddComponent<ECS::MeshComponent>(tree, Renderer::MeshFactory::CreateCylinder(0.5f, 1.0f));
+            auto& trmat = m_World->AddComponent<ECS::MaterialComponent>(tree);
+            trmat.baseColor = Math::Vector3(0.4f, 0.25f, 0.1f);
+        }
+    }
+
     m_CurrentScenePath.clear();
     ENJIN_LOG_INFO(Editor, "Applied template: %s", templateId.c_str());
 }
@@ -11841,7 +12665,7 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
     m_TemplateMarketplace.SetOpen(open);
 
     // Search bar
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.6f);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x * 0.4f);
     ImGui::InputTextWithHint("##mktsearch", "Search templates...", m_MarketSearchBuf, sizeof(m_MarketSearchBuf));
     ImGui::SameLine();
 
@@ -11849,6 +12673,12 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
     const char* categories[] = { "All", "Starter", "Genre", "Systems", "Retro", "Advanced" };
     ImGui::SetNextItemWidth(100.0f);
     ImGui::Combo("##mktcat", &m_MarketCategoryFilter, categories, 6);
+    ImGui::SameLine();
+
+    // Status (maturity) filter
+    const char* maturityOpts[] = { "All Status", "Stable", "Beta", "Preview", "Experimental" };
+    ImGui::SetNextItemWidth(110.0f);
+    ImGui::Combo("##mktstatus", &m_MarketMaturityFilter, maturityOpts, 5);
     ImGui::SameLine();
 
     // Sort
@@ -11861,6 +12691,14 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
     // Get filtered results
     std::string catFilter = m_MarketCategoryFilter > 0 ? categories[m_MarketCategoryFilter] : "";
     auto results = m_TemplateMarketplace.FilterAndSearch(m_MarketSearchBuf, catFilter);
+
+    // Apply maturity filter
+    if (m_MarketMaturityFilter > 0) {
+        Editor::MaturityTier filterTier = static_cast<Editor::MaturityTier>(m_MarketMaturityFilter - 1);
+        results.erase(std::remove_if(results.begin(), results.end(),
+            [filterTier](const Editor::MarketplaceEntry* e) { return e->maturity != filterTier; }),
+            results.end());
+    }
 
     // Sort results
     if (m_MarketSortBy == 1) { // Rating
@@ -11882,107 +12720,131 @@ void EditorLayer::DrawTemplateMarketplaceWindow() {
         ImGui::TextDisabled("%zu template%s", results.size(), results.size() == 1 ? "" : "s");
         ImGui::Spacing();
 
-        // Grid/list of templates
+        // Group results by maturity tier
+        struct TierGroup {
+            Editor::MaturityTier tier;
+            const char* label;
+            ImVec4 color;
+            std::vector<const Editor::MarketplaceEntry*> entries;
+        };
+        TierGroup groups[] = {
+            { Editor::MaturityTier::Stable,       "Stable",       ImVec4(0.3f, 0.55f, 0.86f, 1.0f), {} },
+            { Editor::MaturityTier::Beta,         "Beta",         ImVec4(0.3f, 0.7f, 0.3f, 1.0f),   {} },
+            { Editor::MaturityTier::Preview,      "Preview",      ImVec4(0.82f, 0.67f, 0.2f, 1.0f), {} },
+            { Editor::MaturityTier::Experimental, "Experimental", ImVec4(0.82f, 0.27f, 0.27f, 1.0f), {} },
+        };
         for (auto* entry : results) {
-            ImGui::PushID(entry->id.c_str());
-
-            // Accent color bar
-            ImVec4 accent(entry->accentColor[0], entry->accentColor[1],
-                          entry->accentColor[2], entry->accentColor[3]);
-            ImGui::PushStyleColor(ImGuiCol_Header, accent);
-            ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
-                ImVec4(accent.x * 1.2f, accent.y * 1.2f, accent.z * 1.2f, accent.w));
-
-            bool nodeOpen = ImGui::TreeNode("##mktentry", "%s", entry->name.c_str());
-            ImGui::PopStyleColor(2);
-
-            // Badges on same line
-            ImGui::SameLine();
-            ImGui::TextDisabled("[%s]", entry->category.c_str());
-            ImGui::SameLine();
-            ImGui::TextDisabled("[%s]", entry->projectMode.c_str());
-            ImGui::SameLine();
-            {
-                ImVec4 tierColor;
-                switch (entry->maturity) {
-                    case Editor::MaturityTier::Stable:       tierColor = ImVec4(0.3f, 0.55f, 0.86f, 1.0f); break;
-                    case Editor::MaturityTier::Beta:         tierColor = ImVec4(0.3f, 0.7f, 0.3f, 1.0f); break;
-                    case Editor::MaturityTier::Preview:      tierColor = ImVec4(0.82f, 0.67f, 0.2f, 1.0f); break;
-                    case Editor::MaturityTier::Experimental: tierColor = ImVec4(0.82f, 0.27f, 0.27f, 1.0f); break;
-                    default: tierColor = ImVec4(0.5f, 0.5f, 0.5f, 1.0f); break;
-                }
-                ImGui::TextColored(tierColor, "[%s]", Editor::TemplateMarketplace::GetMaturityName(entry->maturity));
+            for (auto& g : groups) {
+                if (entry->maturity == g.tier) { g.entries.push_back(entry); break; }
             }
+        }
 
-            // Rating stars + download count
-            ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f + ImGui::GetCursorPosX());
-            ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%.1f", entry->rating);
-            ImGui::SameLine();
-            ImGui::TextDisabled("(%u)", entry->downloadCount);
+        // Draw each non-empty group
+        for (auto& group : groups) {
+            if (group.entries.empty()) continue;
 
-            // Install status indicator
-            bool installed = m_TemplateMarketplace.IsInstalled(entry->id);
-            if (installed) {
+            // Group header with colored label and count
+            ImGui::PushStyleColor(ImGuiCol_Text, group.color);
+            bool groupOpen = ImGui::TreeNodeEx(group.label, ImGuiTreeNodeFlags_DefaultOpen,
+                "%s (%zu)", group.label, group.entries.size());
+            ImGui::PopStyleColor();
+            if (!groupOpen) continue;
+
+            // Subtle separator under group header
+            ImGui::Separator();
+
+            for (auto* entry : group.entries) {
+                ImGui::PushID(entry->id.c_str());
+
+                // Accent color bar
+                ImVec4 accent(entry->accentColor[0], entry->accentColor[1],
+                              entry->accentColor[2], entry->accentColor[3]);
+                ImGui::PushStyleColor(ImGuiCol_Header, accent);
+                ImGui::PushStyleColor(ImGuiCol_HeaderHovered,
+                    ImVec4(accent.x * 1.2f, accent.y * 1.2f, accent.z * 1.2f, accent.w));
+
+                bool nodeOpen = ImGui::TreeNode("##mktentry", "%s", entry->name.c_str());
+                ImGui::PopStyleColor(2);
+
+                // Badges on same line
                 ImGui::SameLine();
-                ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "[OK]");
-            }
+                ImGui::TextDisabled("[%s]", entry->category.c_str());
+                ImGui::SameLine();
+                ImGui::TextDisabled("[%s]", entry->projectMode.c_str());
 
-            if (nodeOpen) {
-                // Description
-                ImGui::TextWrapped("%s", entry->description.c_str());
-                ImGui::Spacing();
+                // Rating stars + download count
+                ImGui::SameLine(ImGui::GetContentRegionAvail().x - 120.0f + ImGui::GetCursorPosX());
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.2f, 1.0f), "%.1f", entry->rating);
+                ImGui::SameLine();
+                ImGui::TextDisabled("(%u)", entry->downloadCount);
 
-                // Metadata
-                ImGui::TextDisabled("Author: %s  |  Version: %s  |  License: %s",
-                    entry->author.c_str(), entry->version.c_str(), entry->license.c_str());
-                ImGui::TextDisabled("Quality: %s  |  Maturity: %s  |  Size: %s",
-                    Editor::TemplateMarketplace::GetQualityName(entry->quality),
-                    Editor::TemplateMarketplace::GetMaturityName(entry->maturity),
-                    entry->fileSizeBytes < 1024 ? (std::to_string(entry->fileSizeBytes) + " B").c_str() :
-                    (std::to_string(entry->fileSizeBytes / 1024) + " KB").c_str());
-
-                // Tags
-                if (!entry->tags.empty()) {
-                    ImGui::TextDisabled("Tags:");
+                // Install status indicator
+                bool installed = m_TemplateMarketplace.IsInstalled(entry->id);
+                if (installed) {
                     ImGui::SameLine();
-                    for (usize t = 0; t < entry->tags.size(); ++t) {
-                        if (t > 0) ImGui::SameLine();
-                        ImGui::SmallButton(entry->tags[t].c_str());
-                    }
+                    ImGui::TextColored(ImVec4(0.3f, 0.9f, 0.3f, 1.0f), "[OK]");
                 }
 
-                ImGui::Spacing();
+                if (nodeOpen) {
+                    // Description
+                    ImGui::TextWrapped("%s", entry->description.c_str());
+                    ImGui::Spacing();
 
-                // Install / Uninstall buttons
-                if (installed) {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
-                    ImGui::Button("Installed", ImVec2(90, 0));
-                    ImGui::PopStyleColor();
-                    ImGui::SameLine();
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
-                    if (ImGui::Button("Remove", ImVec2(70, 0))) {
-                        m_TemplateMarketplace.Uninstall(entry->id);
-                        ShowNotification("Removed: " + entry->name, NotificationType::Info);
-                        m_TmplNeedsRescan = true;
-                    }
-                    ImGui::PopStyleColor();
-                } else {
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.8f, 1.0f));
-                    if (ImGui::Button("Install", ImVec2(90, 0))) {
-                        if (m_TemplateMarketplace.Install(entry->id)) {
-                            ShowNotification("Installed: " + entry->name, NotificationType::Success);
-                            m_TmplNeedsRescan = true;
-                        } else {
-                            ShowNotification("Failed to install: " + entry->name, NotificationType::Error);
+                    // Metadata
+                    ImGui::TextDisabled("Author: %s  |  Version: %s  |  License: %s",
+                        entry->author.c_str(), entry->version.c_str(), entry->license.c_str());
+                    ImGui::TextDisabled("Quality: %s  |  Maturity: %s  |  Size: %s",
+                        Editor::TemplateMarketplace::GetQualityName(entry->quality),
+                        Editor::TemplateMarketplace::GetMaturityName(entry->maturity),
+                        entry->fileSizeBytes < 1024 ? (std::to_string(entry->fileSizeBytes) + " B").c_str() :
+                        (std::to_string(entry->fileSizeBytes / 1024) + " KB").c_str());
+
+                    // Tags
+                    if (!entry->tags.empty()) {
+                        ImGui::TextDisabled("Tags:");
+                        ImGui::SameLine();
+                        for (usize t = 0; t < entry->tags.size(); ++t) {
+                            if (t > 0) ImGui::SameLine();
+                            ImGui::SmallButton(entry->tags[t].c_str());
                         }
                     }
-                    ImGui::PopStyleColor();
+
+                    ImGui::Spacing();
+
+                    // Install / Uninstall buttons — all templates unlocked
+                    if (installed) {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.2f, 1.0f));
+                        ImGui::Button("Installed", ImVec2(90, 0));
+                        ImGui::PopStyleColor();
+                        ImGui::SameLine();
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.15f, 0.15f, 1.0f));
+                        if (ImGui::Button("Remove", ImVec2(70, 0))) {
+                            m_TemplateMarketplace.Uninstall(entry->id);
+                            ShowNotification("Removed: " + entry->name, NotificationType::Info);
+                            m_TmplNeedsRescan = true;
+                        }
+                        ImGui::PopStyleColor();
+                    } else {
+                        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.4f, 0.8f, 1.0f));
+                        if (ImGui::Button("Install", ImVec2(90, 0))) {
+                            if (m_TemplateMarketplace.Install(entry->id)) {
+                                ShowNotification("Installed: " + entry->name, NotificationType::Success);
+                                m_TmplNeedsRescan = true;
+                            } else {
+                                ShowNotification("Failed to install: " + entry->name, NotificationType::Error);
+                            }
+                        }
+                        ImGui::PopStyleColor();
+                    }
+
+                    ImGui::TreePop();
                 }
 
-                ImGui::TreePop();
+                ImGui::PopID();
             }
 
-            ImGui::PopID();
+            ImGui::TreePop();
+            ImGui::Spacing();
         }
     }
 
