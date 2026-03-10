@@ -1,6 +1,6 @@
 # Enjin Engine User Manual
 
-Enjin is a proprietary, licensable game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with Dear ImGui, an Entity-Component-System (ECS) architecture, PBR materials, skeletal animation, AngelScript scripting, and modern rendering capabilities.
+Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with Dear ImGui, an Entity-Component-System (ECS) architecture, PBR materials, skeletal animation, AngelScript scripting, and modern rendering capabilities.
 
 This manual covers everything you need to get started and build games with Enjin.
 
@@ -355,13 +355,33 @@ Controls the visual surface properties of a mesh. Supports PBR rendering, textur
 | `emissiveStrength` | f32 | 0.0 | Emission intensity multiplier. |
 | `baseColorTexturePath` | string | "" | Path to base color/albedo texture. |
 | `normalTexturePath` | string | "" | Path to tangent-space normal map. |
+| `metallicRoughnessTexturePath` | string | "" | Path to metallic-roughness texture (G=roughness, B=metallic). |
+| `emissiveTexturePath` | string | "" | Path to emissive texture. |
 | `heightTexturePath` | string | "" | Path to height map for parallax mapping. |
 | `parallaxScale` | f32 | 0.05 | Parallax occlusion mapping depth. |
+| `parallaxMode` | u32 | 0 | 0=Basic, 1=Steep, 2=OcclusionMapping, 3=ReliefMapping. |
+| `pomMaxSteps` | u32 | 32 | Max ray-march steps for POM modes. |
+| `pomHeightScale` | f32 | 0.05 | Height scale for POM. |
 | `doubleSided` | bool | false | Render both front and back faces. |
 | `castShadows` | bool | true | Whether this mesh casts shadows. |
 | `receiveShadows` | bool | true | Whether this mesh receives shadows. |
 | `alphaMode` | enum | Opaque | Alpha mode: `Opaque`, `Mask`, `Blend`. |
 | `alphaCutoff` | f32 | 0.5 | Cutoff threshold for `Mask` alpha mode. |
+| `reflectivity` | f32 | 0.0 | Environment reflection strength (0-1). |
+| `fresnelPower` | f32 | 5.0 | Edge vs center reflection falloff (0.5-10). |
+| `rimLightStrength` | f32 | 0.0 | Additive rim/edge glow (0-3). |
+| `excludeFromCelShading` | bool | false | Opt out of scene-level cel shading. |
+
+**Transmission and subsurface scattering** (for glass, water, skin, wax):
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `transmission` | f32 | 0.0 | 0=opaque, 1=fully transmissive (glass, water). |
+| `ior` | f32 | 1.5 | Index of refraction (1.0=vacuum, 1.33=water, 1.5=glass, 2.42=diamond). |
+| `thickness` | f32 | 0.0 | Thin-surface thickness for translucency falloff (0=solid). |
+| `sssIntensity` | f32 | 0.0 | Subsurface scattering strength (0=off). |
+| `sssRadius` | f32 | 1.0 | Scatter radius in world units. |
+| `sssColor` | Vector3 | (1, 0.2, 0.1) | Scatter tint color (skin/wax default). |
 
 **Retro rendering flags** (per-material):
 
@@ -381,10 +401,18 @@ Adds a light source to the entity. The engine supports multiple simultaneous lig
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `type` | enum | Directional | Light type: `Directional`, `Point`, `Spot`. |
+| `type` | enum | Point | Light type: `Directional`, `Point`, `Spot`. |
 | `color` | Vector3 | (1, 1, 1) | Light color (RGB). |
 | `intensity` | f32 | 1.0 | Brightness multiplier. |
-| `direction` | Vector3 | (0, -1, 0) | Light direction (for directional and spot lights). |
+| `range` | f32 | 10.0 | Maximum range (point/spot lights). |
+| `constantAttenuation` | f32 | 1.0 | Constant attenuation factor. |
+| `linearAttenuation` | f32 | 0.09 | Linear attenuation factor. |
+| `quadraticAttenuation` | f32 | 0.032 | Quadratic attenuation factor. |
+| `innerConeAngle` | f32 | 12.5 | Spot light inner cone angle (degrees). |
+| `outerConeAngle` | f32 | 17.5 | Spot light outer cone angle (degrees). |
+| `castShadows` | bool | true | Whether this light casts shadows. |
+
+> **Note:** LightComponent has no `direction` field. The light direction is derived from the entity's `TransformComponent` rotation.
 
 #### CameraComponent
 
@@ -1926,7 +1954,29 @@ To distribute: ship both files together. The player expects `game.enjpak` in the
 
 ### Distribution
 
-Enjin supports multiple distribution formats via CMake/CPack:
+#### Inno Setup Installer (Windows, Recommended)
+
+The primary Windows installer is built with **Inno Setup 6** using the script at `installer/EnjinSetup.iss`. To build:
+
+```bash
+# Requires Inno Setup 6 installed (https://jrsoftware.org/isinfo.php)
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\EnjinSetup.iss
+```
+
+Or open `installer/EnjinSetup.iss` in the Inno Setup Compiler GUI and click Compile. The output installer is written to `installer/output/`.
+
+The **Inno Setup installer** provides:
+- Component-based installation (Editor, Player, Shaders, Script Templates, Documentation).
+- Start Menu shortcuts for TEGE Editor and Documentation.
+- Optional desktop shortcut for the Editor.
+- File association (`.enjin` project files open in Editor).
+- Standard Windows uninstaller via Add/Remove Programs.
+- Default install to `Program Files/TEGE` (runs without admin if needed).
+- LZMA2 compression for small installer size.
+
+#### CPack (Cross-Platform)
+
+Enjin also supports distribution via CMake/CPack for cross-platform packaging:
 
 | Format | Platform | Command |
 |--------|----------|---------|
@@ -1934,13 +1984,6 @@ Enjin supports multiple distribution formats via CMake/CPack:
 | **NSIS Installer** | Windows | `cd build && cpack -G NSIS` |
 | **TGZ** | macOS/Linux | `cd build && cpack -G TGZ` |
 | **DEB** | Linux | `cd build && cpack -G DEB` |
-
-The **NSIS installer** provides:
-- Start Menu shortcuts for Enjin Editor and Enjin Player.
-- Desktop shortcut for the Editor.
-- File associations (`.enjin` opens in Editor, `.enjpak` opens in Player).
-- Standard Windows uninstaller via Add/Remove Programs.
-- Default install to `Program Files/Enjin`.
 
 To create both a ZIP and installer in one step: `cd build && cpack` (uses all configured generators).
 
@@ -2951,8 +2994,10 @@ Each effect can be independently enabled/disabled with its own configuration:
 | **RT Reflections** | RGBA16F | Max distance, roughness threshold |
 | **RT Ambient Occlusion** | R16F | Radius, power |
 | **RT Global Illumination** | RGBA16F | Bounce count, intensity |
+| **RT Translucency** | RGBA16F | Transmission/thickness-based light transport through surfaces |
+| **RT Caustics** | RGBA16F | Light focusing through refractive surfaces |
 
-**Composite strength sliders** control the blend factor for each effect when composited into the final image.
+**Composite strength sliders** control the blend factor for each effect when composited into the final image. The RTCompositor enable flags are a 6-bit field (bits 0-5: shadows, reflections, AO, GI, translucency, caustics).
 
 ### Path Tracing Mode
 
@@ -2964,7 +3009,9 @@ Progressive path tracer for reference-quality rendering:
 - **Converged indicator** — Displays when target SPP is reached
 - **Reset button** — Clears accumulation buffer (automatically resets on camera/scene changes)
 
-### SVGF Denoiser
+### Denoisers
+
+#### SVGF (Built-in)
 
 The SVGF (Spatiotemporal Variance-Guided Filtering) denoiser smooths noisy RT output:
 
@@ -2973,6 +3020,14 @@ The SVGF (Spatiotemporal Variance-Guided Filtering) denoiser smooths noisy RT ou
 3. **A-trous wavelet** — Edge-preserving spatial filter (configurable iteration count, default 5)
 
 Settings: temporal alpha, a-trous iterations, reset history button.
+
+#### OIDN (Intel Open Image Denoise)
+
+AI-based denoiser using trained neural networks. Requires the `ENJIN_RAYTRACING_OIDN` CMake flag to be enabled at build time. Runs on CPU; no GPU vendor lock-in.
+
+#### OptiX (NVIDIA)
+
+NVIDIA's GPU-accelerated AI denoiser. Requires the `ENJIN_RAYTRACING_OPTIX` CMake flag and an NVIDIA GPU with OptiX support. Fastest denoiser option on supported hardware.
 
 ### Scene Render Settings
 
@@ -2992,6 +3047,43 @@ All RT settings are saved/loaded with scene render settings (JSON). 24 configura
 5. **Composite** — Compute shader multiplies shadows, adds reflections, multiplies AO, adds GI into scene HDR
 
 The RT pipeline only runs for 3D scenes (`SceneRenderMode::Scene3D`). 2D and 2.5D scenes skip RT entirely with no performance impact.
+
+### Rendering Performance Features
+
+Enjin includes several advanced rendering optimizations, most controlled by CMake flags. See `docs/BUILD.md` for the full CMake configuration reference.
+
+#### Clustered Forward Lighting
+
+Enabled by default (`ENJIN_CLUSTERED_LIGHTING=ON`). Divides the view frustum into a 16x9x24 spatial grid and assigns lights to clusters, so each fragment only evaluates lights that actually affect it. Uses descriptor bindings 14 (cluster grid SSBO) and 15 (cluster light index SSBO). Dramatically reduces per-fragment lighting cost in scenes with many point/spot lights.
+
+#### GPU Occlusion Culling
+
+Two-phase hierarchical Z-buffer (HiZ) occlusion culling runs entirely on the GPU via compute shaders. Objects occluded by closer geometry are culled before any draw calls are issued, reducing draw call count and GPU overdraw. Uses async compute overlap with the render pass.
+
+#### Level of Detail (LOD)
+
+The `LODComponent` supports up to 5 LOD levels per mesh with configurable distance thresholds. Features include:
+- **Hysteresis** — Separate upgrade/downgrade thresholds (default 10% dead-zone) to prevent LOD flickering near transition boundaries.
+- **Screen-space sizing** — LOD selection based on projected screen-space size rather than raw distance, which is more accurate for objects of varying scale.
+- **Auto-generation** — LOD meshes can be auto-generated with configurable reduction ratios per level (default: 100%, 50%, 25%, 12%, 6%).
+
+#### Variable Rate Shading (VRS)
+
+Requires `ENJIN_VRS=OFF` by default (opt-in). Uses `VK_KHR_fragment_shading_rate` to reduce shading rate in regions where full-rate shading is unnecessary (e.g., low-contrast or peripheral areas). Supports content-adaptive and motion-based modes.
+
+#### Virtual Texturing
+
+Requires `ENJIN_VIRTUAL_TEXTURING=OFF` by default (opt-in). Page-based texture streaming system that loads only the texture pages visible on screen. Uses descriptor bindings 16 (VT indirection texture) and 17 (VT physical atlas). Enables scenes with aggregate texture data far exceeding GPU memory.
+
+#### Visibility Buffer
+
+Requires `ENJIN_VISIBILITY_BUFFER=OFF` by default (opt-in). Deferred material resolve render path: a lightweight visibility pass writes triangle/material IDs, then a fullscreen compute pass resolves materials. Reduces geometry bandwidth for complex scenes with many small triangles.
+
+#### Additional Optimizations
+
+- **Per-frame linear allocator** — `FrameAllocator` for transient per-frame allocations with zero fragmentation.
+- **64-bit material sort keys** — Radix-friendly sort key encoding (pipeline/material/texture/depth) minimizes state changes and overdraw.
+- **Async compute overlap** — Compute workloads (culling, light clustering) overlap with render passes.
 
 ---
 

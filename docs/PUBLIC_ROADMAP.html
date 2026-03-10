@@ -297,7 +297,7 @@
     <div class="hero">
         <h1>Development Roadmap</h1>
         <p>A tiered, quality-first approach to building a production-grade game engine. Core systems are hardened first — features ship only when they're ready.</p>
-        <div class="date">Last updated: February 19, 2026</div>
+        <div class="date">Last updated: March 8, 2026</div>
     </div>
 
     <!-- ===== LEGEND ===== -->
@@ -319,19 +319,19 @@
             <div class="metric-label">Component Types</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">686+</div>
+            <div class="metric-value">700+</div>
             <div class="metric-label">Script Bindings</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">143+</div>
+            <div class="metric-value">260+</div>
             <div class="metric-label">Visual Script Nodes</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">600+</div>
+            <div class="metric-value">700+</div>
             <div class="metric-label">Tests Passing</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">31</div>
+            <div class="metric-value">51</div>
             <div class="metric-label">Test Suites</div>
         </div>
     </div>
@@ -339,7 +339,7 @@
     <!-- ===== VISION ===== -->
     <section id="vision">
         <h2>Vision &amp; Strategy</h2>
-        <p>Enjin is a proprietary, licensable game engine built from scratch with C++20 and Vulkan. The engine has reached a breadth milestone of 150+ features — the next phase shifts from <strong>feature expansion</strong> to <strong>depth and stability</strong>.</p>
+        <p>Enjin is an open-source (BSL 1.1) game engine built from scratch with C++20 and Vulkan. The engine has reached a breadth milestone of 150+ features — the next phase shifts from <strong>feature expansion</strong> to <strong>depth and stability</strong>.</p>
 
         <h3>Core Principles</h3>
         <ul>
@@ -423,6 +423,8 @@ graph TB
         AUD["Audio"]
         INP["Input"]
         BLD["Build Pipeline"]
+        CUL["GPU Culling"]
+        CLU["Clustered Lighting"]
     end
 
     subgraph T2["TIER 2 — ESSENTIAL (Beta)"]
@@ -447,6 +449,7 @@ graph TB
         FX_["Effects"]
         ACC["Accessibility"]
         GRF["Graph Editors"]
+        VRS["VRS / VT / VisBuffer"]
     end
 
     subgraph T4["TIER 4 — EXPERIMENTAL (Lab)"]
@@ -464,9 +467,9 @@ graph TB
     classDef preview fill:#422006,stroke:#d97706,color:#fcd34d
     classDef lab fill:#3b1111,stroke:#ef4444,color:#fca5a5
 
-    class ECS,REN,SER,EDT,PHY,AUD,INP,BLD stable
+    class ECS,REN,SER,EDT,PHY,AUD,INP,BLD,CUL,CLU stable
     class SCR,VSC,ANI,SPR,UIS,SAV,PRF,SCN beta
-    class NET,RT_,PRO,DLG,AI_,FX_,ACC,GRF preview
+    class NET,RT_,PRO,DLG,AI_,FX_,ACC,GRF,VRS preview
     class GEN,FLA,PLT,ADV lab
             </div>
         </div>
@@ -496,6 +499,11 @@ graph TB
                     <div class="feature-item"><div class="dot done"></div> miniaudio Backend</div>
                     <div class="feature-item"><div class="dot done"></div> Input System</div>
                     <div class="feature-item"><div class="dot done"></div> Build Pipeline &amp; Player</div>
+                    <div class="feature-item"><div class="dot done"></div> Clustered Forward Lighting</div>
+                    <div class="feature-item"><div class="dot done"></div> GPU HiZ Occlusion Culling</div>
+                    <div class="feature-item"><div class="dot done"></div> LOD Hysteresis &amp; Screen-Size</div>
+                    <div class="feature-item"><div class="dot done"></div> 64-bit Material Sort Keys</div>
+                    <div class="feature-item"><div class="dot done"></div> Per-Frame Linear Allocator</div>
                 </div>
             </div>
 
@@ -508,9 +516,9 @@ graph TB
                 <p class="tier-desc">Systems most games need. Functional and integrated, currently being hardened with better tests, edge-case handling, and documentation.</p>
                 <div class="feature-grid">
                     <div class="feature-item"><div class="dot wip"></div> AngelScript Engine</div>
-                    <div class="feature-item"><div class="dot wip"></div> 686+ Script Bindings</div>
+                    <div class="feature-item"><div class="dot wip"></div> 700+ Script Bindings</div>
                     <div class="feature-item"><div class="dot wip"></div> Visual Script Editor</div>
-                    <div class="feature-item"><div class="dot wip"></div> 143+ VS Nodes</div>
+                    <div class="feature-item"><div class="dot wip"></div> 260+ VS Nodes</div>
                     <div class="feature-item"><div class="dot done"></div> Skeletal Animation</div>
                     <div class="feature-item"><div class="dot done"></div> Sprite Animation</div>
                     <div class="feature-item"><div class="dot done"></div> Sprites &amp; Tilemaps</div>
@@ -530,18 +538,21 @@ graph TB
                 </div>
                 <p class="tier-desc">Opt-in systems for specific game genres. Usable but APIs may change. Gated behind CMake options or runtime flags — they don't bloat the core.</p>
                 <div class="feature-grid">
-                    <div class="feature-item"><div class="dot plan"></div> LAN Multiplayer</div>
-                    <div class="feature-item"><div class="dot plan"></div> Ray Tracing Pipeline</div>
-                    <div class="feature-item"><div class="dot plan"></div> Procedural Generation</div>
-                    <div class="feature-item"><div class="dot plan"></div> Dialogue Trees</div>
-                    <div class="feature-item"><div class="dot plan"></div> Quest System</div>
-                    <div class="feature-item"><div class="dot plan"></div> AI / Navmesh / BT</div>
-                    <div class="feature-item"><div class="dot plan"></div> Weather &amp; Water</div>
-                    <div class="feature-item"><div class="dot plan"></div> Particle System</div>
-                    <div class="feature-item"><div class="dot plan"></div> Post-Processing</div>
-                    <div class="feature-item"><div class="dot plan"></div> Accessibility Suite</div>
-                    <div class="feature-item"><div class="dot plan"></div> Shader Graph</div>
-                    <div class="feature-item"><div class="dot plan"></div> Audio Event Graph</div>
+                    <div class="feature-item"><div class="dot wip"></div> LAN Multiplayer</div>
+                    <div class="feature-item"><div class="dot wip"></div> Ray Tracing Pipeline</div>
+                    <div class="feature-item"><div class="dot wip"></div> Procedural Generation</div>
+                    <div class="feature-item"><div class="dot wip"></div> Dialogue Trees</div>
+                    <div class="feature-item"><div class="dot wip"></div> Quest System</div>
+                    <div class="feature-item"><div class="dot wip"></div> AI / Navmesh / BT</div>
+                    <div class="feature-item"><div class="dot wip"></div> Weather &amp; Water</div>
+                    <div class="feature-item"><div class="dot wip"></div> Particle System</div>
+                    <div class="feature-item"><div class="dot wip"></div> Post-Processing</div>
+                    <div class="feature-item"><div class="dot wip"></div> Accessibility Suite</div>
+                    <div class="feature-item"><div class="dot wip"></div> Shader Graph</div>
+                    <div class="feature-item"><div class="dot wip"></div> Audio Event Graph</div>
+                    <div class="feature-item"><div class="dot plan"></div> Variable Rate Shading</div>
+                    <div class="feature-item"><div class="dot plan"></div> Virtual Texturing</div>
+                    <div class="feature-item"><div class="dot plan"></div> Visibility Buffer</div>
                 </div>
             </div>
 
@@ -629,7 +640,7 @@ graph LR
                 <tr>
                     <td>CMake Option</td>
                     <td>Compile-time — entire subsystem included or excluded</td>
-                    <td><code>ENJIN_PHYSICS_JOLT=ON</code>, <code>ENJIN_RAYTRACING=OFF</code>, <code>ENJIN_NETWORKING=OFF</code></td>
+                    <td><code>ENJIN_PHYSICS_JOLT=ON</code>, <code>ENJIN_CLUSTERED_LIGHTING=ON</code>, <code>ENJIN_VRS=OFF</code>, <code>ENJIN_VIRTUAL_TEXTURING=OFF</code></td>
                 </tr>
                 <tr>
                     <td>Runtime Flag</td>
@@ -807,10 +818,14 @@ flowchart LR
                 <tr><td>Animation</td><td>—</td><td><span class="status-pill active">ON</span></td><td>—</td><td>Always</td></tr>
                 <tr><td>UI System</td><td>—</td><td><span class="status-pill active">ON</span></td><td>—</td><td>Always</td></tr>
                 <tr><td>Save System</td><td>—</td><td><span class="status-pill active">ON</span></td><td>—</td><td>Always</td></tr>
+                <tr><td>Clustered Lighting</td><td><span class="status-pill done">ON</span></td><td>—</td><td>—</td><td><code>ENJIN_CLUSTERED_LIGHTING</code></td></tr>
                 <tr><td>Networking</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_NETWORKING</code></td></tr>
                 <tr><td>Ray Tracing</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_RAYTRACING</code></td></tr>
                 <tr><td>Procedural Gen</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_PROCEDURAL</code></td></tr>
                 <tr><td>AI / Navmesh</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_AI</code></td></tr>
+                <tr><td>Variable Rate Shading</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_VRS</code></td></tr>
+                <tr><td>Virtual Texturing</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_VIRTUAL_TEXTURING</code></td></tr>
+                <tr><td>Visibility Buffer</td><td>—</td><td>—</td><td><span class="status-pill planned">FLAG</span></td><td><code>ENJIN_VISIBILITY_BUFFER</code></td></tr>
                 <tr><td>Experimental</td><td>—</td><td>—</td><td>—</td><td><code>ENJIN_EXPERIMENTAL</code></td></tr>
             </tbody>
         </table>

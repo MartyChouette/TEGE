@@ -6,7 +6,7 @@
 
 ## Overview
 
-Enjin is a proprietary, licensable game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering capabilities.
+Enjin is an open-source (BSL 1.1) game engine built from scratch using C++20 and the Vulkan graphics API. It features a complete editor with ImGui, an Entity-Component-System architecture, and modern rendering capabilities.
 
 ## Build Commands
 
@@ -94,11 +94,12 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 
 ### Renderer
 
-- **Descriptor Bindings:** 0=ViewProj UBO, 1=Lighting UBO, 2=Material UBO, 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO
+- **Descriptor Bindings:** 0=ViewProj UBO, 1=Lighting UBO, 2=Material UBO, 3=Base color tex, 4=Shadow map array, 5=Height map, 6=Normal map, 7=Bone SSBO, 8=Metallic-roughness tex, 9=Emissive tex, 10=Point shadow cubemaps, 11=Spot shadow maps, 12=Shadow data SSBO, 13=Object data SSBO, 14=Cluster grid SSBO (clustered lighting), 15=Cluster light index SSBO (clustered lighting), 16=VT indirection tex, 17=VT physical atlas
 - **Push Constants (128 bytes):** model matrix (64B), baseColor+metallic, emissiveColor+roughness, emissiveStrength, opacity, alphaCutoff, flags (bitfield), parallaxScale
 - **Flags layout:** bits 0-2 render, 3 skinned, 4 wind, 5-7 water, 8-9 alpha mode, 10 height tex, 11 ocean, 12 UV quantize, 13 gouraud, 14-15 shadow dither, 16-19 texture flags, 20-23 retro flags, 24-28 snap resolution (/8), 29-31 shadow dither pattern
 - **Scene classification:** `Scene2D` (sprites only, shadows skipped), `Scene2_5D` (sprites+lights), `Scene3D` (full pipeline)
 - **Ray tracing:** Full RT pipeline (shadows/reflections/AO/GI/translucency/caustics/path tracing, SVGF+OIDN+OptiX denoisers). RT descriptor set: 16 bindings (0-13 base, 14=translucency, 15=caustics). RTCompositor enable flags: bits 0-5 (shadows/reflections/AO/GI/translucency/caustics). Auto-activates on RT-capable hardware. CMake: `ENJIN_RAYTRACING_OIDN`, `ENJIN_RAYTRACING_OPTIX`.
+- **Performance optimizations:** Clustered forward lighting (16x9x24 grid, bindings 14-15), Variable Rate Shading (`VK_KHR_fragment_shading_rate`), Virtual Texturing (page-based streaming, bindings 16-17), Visibility Buffer (deferred material resolve). GPU two-phase HiZ occlusion culling, async compute overlap, per-frame linear allocator, 64-bit material sort keys, LOD hysteresis. CMake: `ENJIN_CLUSTERED_LIGHTING` (ON), `ENJIN_VRS` (OFF), `ENJIN_VIRTUAL_TEXTURING` (OFF), `ENJIN_VISIBILITY_BUFFER` (OFF).
 
 ### Editor
 

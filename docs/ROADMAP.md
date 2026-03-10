@@ -2,14 +2,15 @@
 
 This document captures detailed technical plans, performance findings, and strategic initiatives identified through codebase audits. It complements CLAUDE.md's feature roadmap with implementation-specific details.
 
-## Status Summary (2026-02-26)
+## Status Summary (2026-03-08)
 
-**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary.
+**150+ features complete.** Beta 0.8.5 hardening sprint complete — all audit issues resolved, 255+ new tests, security hardened. See `docs/AUDIT_HARDENING_SPRINT.md` for full sprint summary. BSL 1.1 license in place. Inno Setup installer functional with icon, license page, and file associations.
 
 ### Still Remaining
 
 | Category | Item | Priority |
 |----------|------|----------|
+| **Release** | Splash screen (optional "Made with Enjin") | P2 |
 | **Platforms** | macOS (MoltenVK) | P2 |
 | **Platforms** | Xbox Series X/S (GDK/D3D12) | P2 |
 | **Platforms** | PlayStation 5 (PSDK/AGC) | P3 |
@@ -21,6 +22,16 @@ This document captures detailed technical plans, performance findings, and strat
 
 | Category | Item |
 |----------|------|
+| **Release** | App icon — `installer/enjin.ico` (7 sizes: 16-256px) with PNG assets, wired into Inno Setup installer and editor exe |
+| **Release** | BSL 1.1 licensing — `LICENSE` file in place (4-year change date to Apache 2.0, free game use, no competing engine forks) |
+| **Release** | Inno Setup installer (`installer/EnjinSetup.iss`) — icon, license page, `.enjin` file associations, component selection, Start Menu/Desktop shortcuts |
+| **Renderer** | Clustered Forward Lighting — 16x9x24 grid, light assignment/bounds compute shaders (bindings 14-15), CMake `ENJIN_CLUSTERED_LIGHTING` (ON) |
+| **Renderer** | GPU Two-Phase HiZ Occlusion Culling — `GPUCullingSystem::ExecuteTwoPhase()`, HiZ pyramid, phase 0 frustum+HiZ cull, partial pyramid regen, phase 1 re-test |
+| **Renderer** | Variable Rate Shading — `VK_KHR_fragment_shading_rate`, content-adaptive and motion-based modes, CMake `ENJIN_VRS` (OFF) |
+| **Renderer** | Virtual Texturing — page-based streaming pipeline (`PageCache`, `FeedbackBuffer`, `VirtualTextureSystem`), indirection texture + physical atlas (bindings 16-17), CMake `ENJIN_VIRTUAL_TEXTURING` (OFF) |
+| **Renderer** | Visibility Buffer — deferred material resolve pipeline (`VisibilityBuffer`, `MaterialResolve`), CMake `ENJIN_VISIBILITY_BUFFER` (OFF) |
+| **Renderer** | LOD hysteresis + screen-space sizing, 64-bit material sort keys, per-frame linear allocator (`FrameAllocator`) |
+| **Renderer** | Material enhancements: transmission, IOR, thickness, SSS intensity/radius/color fields on `MaterialComponent` |
 | **Physics** | Box2D sensor body sync: ECS→Box2D push for sensor bodies, skip Box2D→ECS writeback — enables collision callbacks for controller/AI/tween-driven entities |
 | **Templates** | 2D platformer: fixed 12 entities (player, 8 coins, 3 pickups, 4 enemies) missing sensor bodies for collision detection |
 | **Renderer** | Fixed particle double-rendering in editor game view (wrong camera descriptor set after RenderToTarget restore) |
@@ -658,7 +669,7 @@ Comprehensive audit (2026-02-10) of all engine features to identify systems that
 | Inspector tooltips | Medium | Low | P3 | ✅ Complete (50+ tooltips across Transform/Material/Light/Camera/Rigidbody/Collider) |
 | Source-app import presets | Medium | High | P3 | ✅ Complete (10 DCC presets with auto-detection, per-axis flip toggles, texture search paths, editor import dialog) |
 | Pre-built binary distribution | High | Medium | P2 | ✅ Complete (CMake install rules + CPack, Windows ZIP, scripts/package.bat + package.sh) |
-| Installer distribution | Medium | High | P3 | ✅ Complete (NSIS installer with Start Menu/Desktop shortcuts, .enjin/.enjpak file associations, uninstaller) |
+| Installer distribution | Medium | High | P3 | ✅ Complete (Inno Setup installer with icon, license page, component selection, file associations, Start Menu/Desktop shortcuts; NSIS via CPack as alternative) |
 | Hub application (launcher) | Medium | Very High | P4 | ✅ Done |
 | **— Flash Game Revival —** | | | | |
 | SWF import & conversion | Medium | Very High | P4 | ✅ Done |
@@ -784,7 +795,7 @@ Import dialog enhancements:
 
 ### Pipeline Optimization ✅ COMPLETE
 
-All pipeline optimization items resolved: multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling.
+All pipeline optimization items resolved: multi-threaded command buffer recording, GPU payload batching (sort by pipeline/material), indirect rendering (VkCmdDrawIndexedIndirect), async compute for culling/particles/post-process, frame graph resource scheduling, Hi-Z culling. Extended with clustered forward lighting (16x9x24 grid, compute shaders for bounds + light assignment), GPU two-phase HiZ occlusion culling (frustum + depth pyramid cull, partial regen, re-test pass), Variable Rate Shading (`VK_KHR_fragment_shading_rate`), Virtual Texturing (page-based streaming with feedback buffer), Visibility Buffer (deferred material resolve), per-frame linear allocator (`FrameAllocator`), 64-bit material sort keys, and LOD hysteresis with screen-space sizing.
 
 ### Camera Presets & Cinematic Effects ✅ COMPLETE
 
@@ -1427,8 +1438,8 @@ The engine is currently source-built (clone + cmake + build). Future distributio
 - Target audience: game developers who don't need to modify the engine
 
 **Tier 3: Installer Distribution ✅ COMPLETE**
-- Windows: NSIS installer via CPack (`cpack -G NSIS`) with Start Menu + Desktop shortcuts, `.enjin`/`.enjpak` file associations, standard uninstaller
-- Generates both ZIP and NSIS from a single `cpack` invocation
+- Windows (primary): **Inno Setup** installer (`installer/EnjinSetup.iss`) — app icon (`enjin.ico`), license page (BSL 1.1), component selection (Editor/Player/Shaders/Scripts/Docs), `.enjin` file associations, Start Menu + Desktop shortcuts, modern wizard style, LZMA2 compression. Build: `ISCC.exe installer\EnjinSetup.iss`
+- Windows (alternative): NSIS installer via CPack (`cpack -G NSIS`) with Start Menu + Desktop shortcuts, `.enjin`/`.enjpak` file associations, standard uninstaller. Generates both ZIP and NSIS from a single `cpack` invocation
 - Linux: AppImage or Flatpak (self-contained, no system dependencies) — future
 - macOS: `.dmg` with drag-to-Applications — future
 - Auto-updater (check GitHub releases API on startup, download + replace binaries) — future
@@ -1557,4 +1568,4 @@ All 24 previously-tracked stubs have been resolved (Audit #4, 2026-02-14). Notab
 
 No outstanding stubs remain.
 
-*Last updated: 2026-02-18 — Session 32: Beta 0.8 branch created for systematic hardening. ECS audit (5 findings fixed: O(1) entity validity, deferred destruction, event bus, 40 tests). Renderer audit (16 findings fixed: VkResult checks on enumeration/surface/queues, VulkanBuffer resource leaks and null guards, VulkanSwapchain error propagation). Serialization deep audit (12 findings) and Asset Pack audit (16 findings) identified — fixes in progress. See docs/AUDIT_2026_02_18.md and docs/DEV_JOURNAL.md.*
+*Last updated: 2026-03-08 — Roadmap audit: marked app icon (.ico, 7 sizes) done, BSL 1.1 licensing done, Inno Setup installer done. Added new rendering features: Clustered Forward Lighting, GPU Two-Phase HiZ Occlusion Culling, Variable Rate Shading, Virtual Texturing, Visibility Buffer, LOD hysteresis, 64-bit material sort keys, FrameAllocator, material transmission/SSS. Updated distribution section with Inno Setup as primary Windows installer.*

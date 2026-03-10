@@ -1,0 +1,71 @@
+TEGE - The Enjin Game Engine
+Copyright (c) 2024 Marty Scott
+
+This product includes software developed by Marty Scott.
+
+Licensed under the Works-Based Source License (WBSL) Version 1.0.
+See LICENSE for details. This license converts to Apache 2.0 thirty-six
+(36) months after the public release of version 1.0.
+
+================================================================================
+Third-Party Dependencies
+================================================================================
+
+Vulkan SDK
+  License: Apache 2.0
+  https://www.vulkan.org/
+
+Jolt Physics v5.2.0
+  Copyright (c) 2021 Jorrit Rouwe
+  License: MIT
+  https://github.com/jrouwe/JoltPhysics
+
+Box2D v3.0.0
+  Copyright (c) 2023 Erin Catto
+  License: MIT
+  https://github.com/erincatto/box2d
+
+AngelScript
+  Copyright (c) 2003-2024 Andreas Jonsson
+  License: zlib
+  https://www.angelcode.com/angelscript/
+
+miniaudio
+  Copyright (c) 2024 David Reid
+  License: Public Domain (Unlicense OR MIT-0)
+  https://github.com/mackron/miniaudio
+
+GLFW3
+  Copyright (c) 2002-2024 Marcus Geelnard and Camilla Lowy
+  License: zlib/libpng
+  https://www.glfw.org/
+
+Assimp (Open Asset Import Library)
+  Copyright (c) 2006-2024 assimp team
+  License: BSD 3-Clause
+  https://github.com/assimp/assimp
+
+Dear ImGui
+  Copyright (c) 2014-2024 Omar Cornut
+  License: MIT
+  https://github.com/ocornut/imgui
+
+ImGuizmo
+  Copyright (c) 2016 Cedric Guillemet
+  License: MIT
+  https://github.com/CedricGuillemet/ImGuizmo
+
+nlohmann/json
+  Copyright (c) 2013-2024 Niels Lohmann
+  License: MIT
+  https://github.com/nlohmann/json
+
+stb_truetype
+  Copyright (c) 2017 Sean Barrett
+  License: Public Domain (Unlicense OR MIT)
+  https://github.com/nothings/stb
+
+nanosvg
+  Copyright (c) 2013-2024 Mikko Mononen
+  License: zlib
+  https://github.com/memononen/nanosvg

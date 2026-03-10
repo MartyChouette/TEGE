@@ -208,11 +208,31 @@ cmake .. \
 |--------|---------|-------------|
 | `ENJIN_BUILD_EDITOR` | ON | Build the editor application |
 | `ENJIN_BUILD_PLAYER` | ON | Build the standalone game player |
+| `ENJIN_BUILD_HUB` | OFF | Build the Enjin Hub launcher |
 | `ENJIN_BUILD_TESTS` | OFF | Build unit tests |
 | `ENJIN_BUILD_EXAMPLES` | OFF | Build example projects |
-| `ENJIN_PHYSICS_JOLT` | OFF | Enable Jolt Physics backend for 3D (FetchContent v5.2.0) |
-| `ENJIN_PHYSICS_BOX2D` | OFF | Enable Box2D v3 backend for 2D (FetchContent v3.0.0) |
-| `ENJIN_STEAM` | OFF | Enable Steam integration (requires Steamworks SDK) |
+| **Physics** | | |
+| `ENJIN_PHYSICS_JOLT` | ON | Enable Jolt Physics backend for 3D (FetchContent v5.2.0) |
+| `ENJIN_PHYSICS_BOX2D` | ON | Enable Box2D v3 backend for 2D (FetchContent v3.0.0) |
+| **Rendering** | | |
+| `ENJIN_CLUSTERED_LIGHTING` | ON | Clustered forward lighting (16x9x24 spatial grid) |
+| `ENJIN_VRS` | OFF | Variable Rate Shading (VK_KHR_fragment_shading_rate) |
+| `ENJIN_VIRTUAL_TEXTURING` | OFF | Virtual texturing (page-based streaming) |
+| `ENJIN_VISIBILITY_BUFFER` | OFF | Visibility buffer render path |
+| **Ray Tracing Denoisers** | | |
+| `ENJIN_RAYTRACING_OIDN` | OFF | Intel Open Image Denoise backend (requires OIDN install) |
+| `ENJIN_RAYTRACING_OPTIX` | OFF | NVIDIA OptiX AI Denoiser (requires OptiX SDK + CUDA) |
+| **Audio** | | |
+| `ENJIN_AUDIO_STEAM_AUDIO` | OFF | Steam Audio HRTF binaural rendering (requires SDK in `third_party/steamaudio/`) |
+| **Integrations** | | |
+| `ENJIN_STEAM` | OFF | Steam integration (requires Steamworks SDK in `third_party/steamworks/`) |
+| **Platform** | | |
+| `ENJIN_PLATFORM_WEB` | OFF | Build for WebAssembly with WebGPU (requires Emscripten) |
+| **Sanitizers** | | |
+| `ENJIN_ENABLE_ASAN` | OFF | Enable AddressSanitizer |
+| `ENJIN_ENABLE_UBSAN` | OFF | Enable UndefinedBehaviorSanitizer (GCC/Clang only) |
+| `ENJIN_ENABLE_TSAN` | OFF | Enable ThreadSanitizer (GCC/Clang only) |
+| **Build Type** | | |
 | `CMAKE_BUILD_TYPE` | -- | Debug, Release, RelWithDebInfo, MinSizeRel |
 
 ## 5. Running
@@ -425,3 +445,44 @@ build/
     libEnjinCore.a    # Linux/macOS
     libEnjinEngine.a  # Linux/macOS
 ```
+
+## 10. Distribution / Installer
+
+### Windows -- Inno Setup (recommended)
+
+The primary Windows installer is built with **Inno Setup 6**. The script is at `installer/EnjinSetup.iss`.
+
+Prerequisites:
+- Build the project in Release first (`cd build && cmake --build . --config Release`)
+- Install [Inno Setup 6](https://jrsoftware.org/isinfo.php)
+
+Build the installer from the project root:
+
+```cmd
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\EnjinSetup.iss
+```
+
+Or open `installer/EnjinSetup.iss` in the Inno Setup Compiler GUI and click Compile.
+
+The output installer is written to `installer/output/TEGESetup-<version>.exe`. It includes:
+- Editor and Player executables
+- Compiled shaders (.spv)
+- Script templates
+- Documentation
+- `.enjin` file association (registered in HKCU)
+- Desktop and Start Menu shortcuts
+
+### CPack (cross-platform)
+
+CMake also ships CPack configuration for archive and package generation:
+
+```bash
+cd build
+cmake --build . --config Release
+cpack -G ZIP           # Windows: ZIP archive
+cpack -G NSIS          # Windows: NSIS installer (alternative to Inno Setup)
+cpack -G TGZ           # Linux/macOS: tar.gz archive
+cpack -G DEB           # Linux: .deb package
+```
+
+The CPack/NSIS installer is a secondary option. For polished Windows distribution, prefer the Inno Setup installer above.
