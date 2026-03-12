@@ -142,6 +142,7 @@ bool VulkanRenderer::CreateSurface() {
 }
 
 bool VulkanRenderer::CreateRenderPass() {
+    // Attachment 0: Color (swapchain format)
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_Swapchain->GetImageFormat();
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -152,6 +153,18 @@ bool VulkanRenderer::CreateRenderPass() {
     colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
+    // Attachment 1: Velocity buffer (RG16F per-pixel motion vectors for TAA)
+    VkAttachmentDescription velocityAttachment{};
+    velocityAttachment.format = VulkanSwapchain::VELOCITY_FORMAT;
+    velocityAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    velocityAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    velocityAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    velocityAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    velocityAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    velocityAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    velocityAttachment.finalLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    // Attachment 2: Depth
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = m_Swapchain->GetDepthFormat();
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
@@ -162,18 +175,21 @@ bool VulkanRenderer::CreateRenderPass() {
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-    VkAttachmentReference colorAttachmentRef{};
-    colorAttachmentRef.attachment = 0;
-    colorAttachmentRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    // Color attachment references (MRT: color + velocity)
+    std::array<VkAttachmentReference, 2> colorAttachmentRefs{};
+    colorAttachmentRefs[0].attachment = 0;
+    colorAttachmentRefs[0].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    colorAttachmentRefs[1].attachment = 1;
+    colorAttachmentRefs[1].layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentReference depthAttachmentRef{};
-    depthAttachmentRef.attachment = 1;
+    depthAttachmentRef.attachment = 2;
     depthAttachmentRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
     VkSubpassDescription subpass{};
     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-    subpass.colorAttachmentCount = 1;
-    subpass.pColorAttachments = &colorAttachmentRef;
+    subpass.colorAttachmentCount = static_cast<u32>(colorAttachmentRefs.size());
+    subpass.pColorAttachments = colorAttachmentRefs.data();
     subpass.pDepthStencilAttachment = &depthAttachmentRef;
 
     VkSubpassDependency dependency{};
@@ -184,7 +200,7 @@ bool VulkanRenderer::CreateRenderPass() {
     dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
     dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+    std::array<VkAttachmentDescription, 3> attachments = { colorAttachment, velocityAttachment, depthAttachment };
 
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -201,7 +217,7 @@ bool VulkanRenderer::CreateRenderPass() {
         return false;
     }
 
-    ENJIN_LOG_INFO(Renderer, "Render pass created with depth attachment");
+    ENJIN_LOG_INFO(Renderer, "Render pass created with velocity + depth attachments");
     return true;
 }
 
@@ -445,9 +461,10 @@ void VulkanRenderer::BeginMainRenderPass() {
     renderPassInfo.renderArea.offset = { 0, 0 };
     renderPassInfo.renderArea.extent = m_Swapchain->GetExtent();
 
-    std::array<VkClearValue, 2> clearValues{};
+    std::array<VkClearValue, 3> clearValues{};
     clearValues[0].color = { { 0.1f, 0.1f, 0.2f, 1.0f } };  // Dark blue to confirm clearing works
-    clearValues[1].depthStencil = { 1.0f, 0 };
+    clearValues[1].color = { { 0.0f, 0.0f, 0.0f, 0.0f } };  // Velocity: zero motion
+    clearValues[2].depthStencil = { 1.0f, 0 };
 
     renderPassInfo.clearValueCount = static_cast<u32>(clearValues.size());
     renderPassInfo.pClearValues = clearValues.data();

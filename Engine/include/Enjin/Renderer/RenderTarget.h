@@ -42,6 +42,7 @@ public:
     VkRenderPass GetRenderPass() const { return m_RenderPass; }
     VkFramebuffer GetFramebuffer() const { return m_Framebuffer; }
     VkImageView GetColorImageView() const { return m_ColorImageView; }
+    VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkSampler GetSampler() const { return m_Sampler; }
     VkDescriptorSet GetImGuiTextureID() const { return m_ImGuiDescriptor; }
     VkImage GetColorImage() const { return m_ColorImage; }

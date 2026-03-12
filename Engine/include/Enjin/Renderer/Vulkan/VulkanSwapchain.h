@@ -37,6 +37,10 @@ public:
     VkImageView GetDepthImageView() const { return m_DepthImageView; }
     VkFormat GetDepthFormat() const { return m_DepthFormat; }
 
+    // Velocity buffer for TAA / temporal upscaling (RG16F per-pixel motion vectors)
+    VkImageView GetVelocityImageView() const { return m_VelocityImageView; }
+    static constexpr VkFormat VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
+
     VkFramebuffer GetFramebuffer(u32 index) const {
         return index < m_Framebuffers.size() ? m_Framebuffers[index] : VK_NULL_HANDLE;
     }
@@ -59,6 +63,8 @@ private:
     void DestroyImageViews();
     bool CreateDepthResources();
     void DestroyDepthResources();
+    bool CreateVelocityResources();
+    void DestroyVelocityResources();
     VkFormat FindDepthFormat();
     void DestroyFramebuffers();
 
@@ -77,6 +83,11 @@ private:
     VkDeviceMemory m_DepthImageMemory = VK_NULL_HANDLE;
     VkImageView m_DepthImageView = VK_NULL_HANDLE;
     VkFormat m_DepthFormat = VK_FORMAT_UNDEFINED;
+
+    // Velocity buffer resources (RG16F for TAA motion vectors)
+    VkImage m_VelocityImage = VK_NULL_HANDLE;
+    VkDeviceMemory m_VelocityImageMemory = VK_NULL_HANDLE;
+    VkImageView m_VelocityImageView = VK_NULL_HANDLE;
 
     // VSync state
     bool m_VSyncEnabled = false;

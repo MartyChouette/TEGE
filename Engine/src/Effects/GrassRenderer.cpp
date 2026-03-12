@@ -174,6 +174,7 @@ void GrassRenderer::CreatePipeline(VkDescriptorSetLayout sharedLayout) {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = false;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -235,6 +236,7 @@ void GrassRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDescriptor
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = false;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

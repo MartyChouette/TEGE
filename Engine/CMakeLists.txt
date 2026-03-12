@@ -155,12 +155,7 @@ if(ENJIN_PHYSICS_BOX2D)
     message(STATUS "Box2D v3 enabled")
 endif()
 
-# SimplePhysics legacy backend (built-in, no external deps) — ON by default
-option(ENJIN_PHYSICS_SIMPLE "Enable SimplePhysics legacy backend" ON)
-if(ENJIN_PHYSICS_SIMPLE)
-    target_compile_definitions(EnjinEngine PUBLIC ENJIN_PHYSICS_SIMPLE)
-    message(STATUS "SimplePhysics legacy backend enabled")
-endif()
+# SimplePhysics legacy backend — REMOVED (source files deleted, Jolt + Box2D are production backends)
 
 # Intel Open Image Denoise — optional alternative RT denoiser (OFF by default, requires OIDN install)
 option(ENJIN_RAYTRACING_OIDN "Enable Intel OIDN denoiser backend for ray tracing" OFF)

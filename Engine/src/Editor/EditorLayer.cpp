@@ -1583,9 +1583,36 @@ void EditorLayer::RenderOffscreen(VkCommandBuffer commandBuffer) {
             }
         }
 
+        // TAA resolve: compute dispatch must happen outside the render pass.
+        // Bind velocity/depth views and dispatch, then update the source image
+        // so subsequent post-processing reads the TAA-resolved output.
+        if (m_PostProcessing->IsTAAEnabled() && m_Renderer) {
+            auto* swapchain = m_Renderer->GetSwapchain();
+            if (swapchain) {
+                m_PostProcessing->SetVelocityImageView(swapchain->GetVelocityImageView());
+            }
+            if (m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+                m_PostProcessing->SetDepthImageView(m_SceneRenderTarget->GetDepthImageView());
+            }
+            m_PostProcessing->ApplyTAA(commandBuffer);
+
+            // Redirect post-processing input to TAA output
+            VkImageView taaOutput = m_PostProcessing->GetTAAOutputImageView();
+            if (taaOutput != VK_NULL_HANDLE && m_SceneRenderTarget) {
+                m_PostProcessing->UpdateSourceImage(taaOutput, m_SceneRenderTarget->GetSampler());
+            }
+        }
+
         m_GameViewRenderTarget->Begin(commandBuffer);
         m_PostProcessing->ApplyToCurrentPass(commandBuffer, rtWidth, rtHeight);
         m_GameViewRenderTarget->End(commandBuffer);
+
+        // Restore original source image for next frame (avoid stale TAA reference)
+        if (m_PostProcessing->IsTAAEnabled() && m_SceneRenderTarget && m_SceneRenderTarget->IsValid()) {
+            m_PostProcessing->UpdateSourceImage(
+                m_SceneRenderTarget->GetColorImageView(),
+                m_SceneRenderTarget->GetSampler());
+        }
     }
 
     // Set weather for main pass (editor viewport) so it renders weather particles too

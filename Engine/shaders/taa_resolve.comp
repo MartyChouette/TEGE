@@ -1,0 +1,127 @@
+#version 450
+
+// Temporal Anti-Aliasing Resolve Compute Shader
+//
+// Blends the current jittered frame with the reprojected history buffer
+// using neighborhood clamping to reject stale/disoccluded history samples.
+// Includes velocity-adaptive blend weight and optional sharpening.
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+// --- Inputs ---
+
+layout(set = 0, binding = 0) uniform sampler2D currentColor;   // Current frame (jittered)
+layout(set = 0, binding = 1) uniform sampler2D historyColor;   // Previous frame (resolved)
+layout(set = 0, binding = 2) uniform sampler2D velocityBuffer;  // RG16F motion vectors in NDC [-0.5, 0.5]
+layout(set = 0, binding = 3) uniform sampler2D depthBuffer;     // D32F depth
+
+// --- Output ---
+
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D outputColor;
+
+// --- Push constants ---
+
+layout(push_constant) uniform TAAParams {
+    vec2 resolution;
+    vec2 invResolution;
+    float feedbackMin;   // Lower blend weight (more current frame), default 0.88
+    float feedbackMax;   // Upper blend weight (more history), default 0.97
+    float sharpness;     // Unsharp mask strength [0, 1], default 0.1
+    uint frameIndex;
+};
+
+// Convert RGB to luminance for weighting
+float Luminance(vec3 color) {
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
+// Tonemap for stable neighborhood clamping in HDR
+// Karis 2014 inverse-luminance weight
+vec3 TonemapForClamp(vec3 c) {
+    return c / (1.0 + Luminance(c));
+}
+
+vec3 UntonemapForClamp(vec3 c) {
+    return c / (1.0 - Luminance(c));
+}
+
+void main() {
+    ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+
+    // Early out for pixels outside the framebuffer
+    if (pixel.x >= int(resolution.x) || pixel.y >= int(resolution.y)) {
+        return;
+    }
+
+    vec2 uv = (vec2(pixel) + 0.5) * invResolution;
+
+    // --- Step 1: Read current color ---
+    vec3 current = texture(currentColor, uv).rgb;
+
+    // --- Step 2: Read velocity ---
+    vec2 velocity = texture(velocityBuffer, uv).rg;
+
+    // --- Step 3: Compute reprojected UV ---
+    vec2 historyUV = uv - velocity;
+
+    // --- Step 4: Sample history (bilinear) ---
+    vec3 history = texture(historyColor, historyUV).rgb;
+
+    // Reject history if reprojected UV falls outside the screen
+    bool historyValid = all(greaterThanEqual(historyUV, vec2(0.0))) &&
+                        all(lessThanEqual(historyUV, vec2(1.0)));
+
+    // --- Step 5: Neighborhood clamping (3x3) ---
+    // Sample the 3x3 neighborhood around the current pixel in tonemapped space
+    vec3 neighborMin = vec3( 1e20);
+    vec3 neighborMax = vec3(-1e20);
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 sampleUV = (vec2(pixel + ivec2(dx, dy)) + 0.5) * invResolution;
+            vec3 s = TonemapForClamp(texture(currentColor, sampleUV).rgb);
+            neighborMin = min(neighborMin, s);
+            neighborMax = max(neighborMax, s);
+        }
+    }
+
+    // --- Step 6: Clamp history to neighborhood AABB ---
+    vec3 historyTM = TonemapForClamp(history);
+    vec3 clampedHistoryTM = clamp(historyTM, neighborMin, neighborMax);
+    vec3 clampedHistory = UntonemapForClamp(clampedHistoryTM);
+
+    // If history is off-screen, just use current frame
+    if (!historyValid) {
+        clampedHistory = current;
+    }
+
+    // --- Step 7: Compute blend weight ---
+    // Higher velocity = more current frame (lower blend weight)
+    // Lower velocity = more history (higher blend weight, reduces flicker)
+    float velocityMag = length(velocity * resolution); // In pixels
+    float blendWeight = mix(feedbackMax, feedbackMin, clamp(velocityMag / 8.0, 0.0, 1.0));
+
+    // --- Step 8: Blend current and clamped history ---
+    vec3 result = mix(current, clampedHistory, blendWeight);
+
+    // --- Step 9: Optional sharpening (unsharp mask) ---
+    if (sharpness > 0.0) {
+        // Simple 4-tap cross filter for blur estimate
+        vec3 blur = vec3(0.0);
+        blur += texture(currentColor, uv + vec2( invResolution.x, 0.0)).rgb;
+        blur += texture(currentColor, uv + vec2(-invResolution.x, 0.0)).rgb;
+        blur += texture(currentColor, uv + vec2(0.0,  invResolution.y)).rgb;
+        blur += texture(currentColor, uv + vec2(0.0, -invResolution.y)).rgb;
+        blur *= 0.25;
+
+        // Unsharp mask: result + sharpness * (result - blur)
+        vec3 detail = result - blur;
+        result += detail * sharpness;
+    }
+
+    // Clamp to non-negative (avoid fireflies from sharpening)
+    result = max(result, vec3(0.0));
+
+    // --- Step 10: Write output ---
+    imageStore(outputColor, pixel, vec4(result, 1.0));
+}

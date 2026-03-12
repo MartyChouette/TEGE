@@ -54,6 +54,11 @@ struct CullableObject {
     }
 };
 
+// Size of ObjectDataGPU (defined in RenderSystem.h) in bytes.
+// Kept as a constant here to avoid a circular include (RenderSystem.h includes GPUCulling.h).
+// Must stay in sync with the static_assert in RenderSystem.h.
+static constexpr usize OBJECT_DATA_GPU_SIZE = 192;
+
 // GPU frustum culling system
 // INNOVATION: Move culling to GPU, reducing CPU overhead
 class VulkanBuffer; // Forward declaration

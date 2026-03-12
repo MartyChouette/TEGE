@@ -105,7 +105,7 @@ VkBuffer GPUCullingSystem::GetOcclusionFlagBuffer() const {
 
 bool GPUCullingSystem::UploadObjectData(const void* data, usize sizeBytes) {
     if (!m_ObjectDataBuffer || !data || sizeBytes == 0) return false;
-    usize maxSize = static_cast<usize>(m_MaxObjects) * 128; // 128 bytes per ObjectData
+    usize maxSize = static_cast<usize>(m_MaxObjects) * OBJECT_DATA_GPU_SIZE;
     if (sizeBytes > maxSize) {
         ENJIN_LOG_WARN(Renderer, "ObjectData upload truncated: %zu > %zu bytes", sizeBytes, maxSize);
         sizeBytes = maxSize;
@@ -346,8 +346,8 @@ bool GPUCullingSystem::CreateBuffers() {
     }
 
     // Object data SSBO (per-object material/transform for indirect rendering)
-    // 128 bytes per object, matches ObjectDataGPU struct in triangle.vert/frag
-    usize objectDataSize = m_MaxObjects * 128;
+    // Matches ObjectDataGPU struct (192 bytes: model + prevModel + material fields + teleported flag)
+    usize objectDataSize = m_MaxObjects * OBJECT_DATA_GPU_SIZE;
     m_ObjectDataBuffer = std::make_unique<VulkanBuffer>(m_Context);
     if (!m_ObjectDataBuffer->Create(objectDataSize, BufferUsage::Storage, true)) {
         ENJIN_LOG_ERROR(Renderer, "Failed to create object data buffer");

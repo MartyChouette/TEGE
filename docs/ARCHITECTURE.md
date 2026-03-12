@@ -225,7 +225,7 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 | `ENJIN_VISIBILITY_BUFFER` | OFF | Visibility buffer with deferred material resolve |
 | `ENJIN_PHYSICS_JOLT` | ON | Jolt Physics v5.2.0 (3D) |
 | `ENJIN_PHYSICS_BOX2D` | ON | Box2D v3.0.0 (2D) |
-| `ENJIN_PHYSICS_SIMPLE` | ON | Legacy SimplePhysics backend |
+| ~~`ENJIN_PHYSICS_SIMPLE`~~ | — | Removed (legacy backend retired) |
 | `ENJIN_RAYTRACING_OIDN` | — | Intel Open Image Denoise support |
 | `ENJIN_RAYTRACING_OPTIX` | — | NVIDIA OptiX denoiser support |
 
@@ -299,10 +299,9 @@ Alternative render path: geometry-only pass writes triangle ID + instance ID to 
 **Backend Abstraction** (pluggable physics engines):
 - `IPhysicsBackend` — abstract 3D interface (SetWorld, Update, Raycast, MoveAndSlide, collision events, etc.)
 - `IPhysicsBackend2D` — abstract 2D interface (Initialize, Update, Raycast2D, OverlapCircle, collision callbacks, CCD)
-- `SimplePhysicsBackend` / `SimplePhysicsBackend2D` — adapters wrapping existing engines behind the interfaces
 - `JoltBackend` — Jolt Physics v5.2.0 backend (see below)
-- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D/Simple) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
-- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0), `ENJIN_PHYSICS_SIMPLE` (legacy) — all ON by default
+- `PhysicsBackendFactory` — `CreatePhysicsBackend(type, mode)` creates backend by `PhysicsBackendType` (Auto/Jolt/Box2D) and `ProjectMode`. When `ENJIN_PHYSICS_JOLT=ON`, Auto selects Jolt for 3D/Mixed modes
+- CMake options: `ENJIN_PHYSICS_JOLT` (Jolt v5.2.0), `ENJIN_PHYSICS_BOX2D` (Box2D v3.0.0) — both ON by default
 - PlayMode and Player own physics via `unique_ptr<IPhysicsBackend>`; all consumers accept `IPhysicsBackend*`
 
 **JoltBackend** (production-grade 3D physics via Jolt v5.2.0):

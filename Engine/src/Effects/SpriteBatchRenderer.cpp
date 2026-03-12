@@ -208,6 +208,7 @@ void SpriteBatchRenderer::CreatePipelineWithPass(VkRenderPass renderPass, VkDesc
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
@@ -310,6 +311,7 @@ void SpriteBatchRenderer::CreateLitPipelineWithPass(VkRenderPass renderPass, VkD
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
     config.customVertexInput = &vertexInput;
 
     m_LitPipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());

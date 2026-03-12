@@ -72,11 +72,20 @@ struct SceneRenderSettings {
     bool filmGrainEnabled = false;
     f32 filmGrainIntensity = 0.05f;
 
+    // Anti-Aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    u32 aaMode = 1;  // Default: FXAA
+
     // FXAA
     bool fxaaEnabled = true;
     f32 fxaaSpanMax = 8.0f;
     f32 fxaaReduceMin = 1.0f / 128.0f;
     f32 fxaaReduceMul = 1.0f / 8.0f;
+
+    // TAA (Temporal Anti-Aliasing)
+    f32 taaSharpness = 0.1f;       // Sharpening strength applied after TAA resolve (0 = off)
+    f32 taaJitterScale = 1.0f;     // Jitter magnitude multiplier (1.0 = standard Halton)
+    f32 taaFeedbackMin = 0.88f;    // Min history blend weight (low = more responsive, more flicker)
+    f32 taaFeedbackMax = 0.97f;    // Max history blend weight (high = smoother, more ghosting)
 
     // Retro: Dithering
     bool ditherEnabled = false;

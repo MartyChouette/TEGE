@@ -1086,6 +1086,7 @@ void NetworkSystem::HandleEntitySpawn(const u8* payload, u32 size) {
     transform.position = position;
     transform.rotation = rotation;
     transform.scale = scale;
+    transform.teleportedThisFrame = true;  // Spawned entity — zero velocity to prevent TAA ghosting
     m_World->AddComponent<ECS::TransformComponent>(entity, transform);
 
     ECS::NetworkIdentityComponent netComp;
@@ -1527,6 +1528,18 @@ void NetworkSystem::InterpolateRemoteEntities(f32 dt) {
         InterpolationState from, to;
         f32 t;
         if (it->second.GetInterpolationPair(renderTime, from, to, t)) {
+            // Detect teleport: if the interpolation endpoints are far apart,
+            // the entity was teleported or respawned.  Flag it so the render
+            // system zeroes the motion vector and TAA doesn't ghost.
+            constexpr f32 TELEPORT_THRESHOLD_SQ = 5.0f * 5.0f;  // 5 world units
+            f32 dx = to.position.x - from.position.x;
+            f32 dy = to.position.y - from.position.y;
+            f32 dz = to.position.z - from.position.z;
+            f32 distSq = dx * dx + dy * dy + dz * dz;
+            if (distSq > TELEPORT_THRESHOLD_SQ) {
+                transform->teleportedThisFrame = true;
+            }
+
             // Lerp position
             transform->position = Math::Vector3(
                 from.position.x + (to.position.x - from.position.x) * t,

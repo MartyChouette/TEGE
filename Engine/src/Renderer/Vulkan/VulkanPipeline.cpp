@@ -363,7 +363,7 @@ bool VulkanPipeline::CreatePipeline(
     multisampling.alphaToCoverageEnable = VK_FALSE;
     multisampling.alphaToOneEnable = VK_FALSE;
 
-    // Color blending
+    // Color blending — supports MRT (multiple color attachments for velocity buffer)
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT |
                                            VK_COLOR_COMPONENT_G_BIT |
@@ -377,13 +377,23 @@ bool VulkanPipeline::CreatePipeline(
     colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
     colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
 
+    // Velocity attachment: no blending, write RG only
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT;
+    velocityBlendAttachment.blendEnable = VK_FALSE;
+
+    // Build attachment array: [0]=color, [1]=velocity (if MRT)
+    std::vector<VkPipelineColorBlendAttachmentState> blendAttachments;
+    u32 actualColorCount = config.hasColorAttachment ? config.colorAttachmentCount : 0;
+    if (actualColorCount >= 1) blendAttachments.push_back(colorBlendAttachment);
+    if (actualColorCount >= 2) blendAttachments.push_back(velocityBlendAttachment);
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
     colorBlending.logicOpEnable = VK_FALSE;
     colorBlending.logicOp = VK_LOGIC_OP_COPY;
-    // For depth-only passes (shadow mapping), no color attachments
-    colorBlending.attachmentCount = config.hasColorAttachment ? 1 : 0;
-    colorBlending.pAttachments = config.hasColorAttachment ? &colorBlendAttachment : nullptr;
+    colorBlending.attachmentCount = static_cast<u32>(blendAttachments.size());
+    colorBlending.pAttachments = blendAttachments.empty() ? nullptr : blendAttachments.data();
     colorBlending.blendConstants[0] = 0.0f;
     colorBlending.blendConstants[1] = 0.0f;
     colorBlending.blendConstants[2] = 0.0f;

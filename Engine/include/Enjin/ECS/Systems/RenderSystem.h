@@ -66,6 +66,7 @@ namespace Enjin { namespace Effects {
 #endif
 
 #include "Enjin/Memory/FrameAllocator.h"
+#include "Enjin/Renderer/HaltonSequence.h"
 
 #include <unordered_map>
 #include <unordered_set>
@@ -140,9 +141,11 @@ struct ObjectDataGPU {
     f32 alphaCutoff;                 // 4 bytes
     i32 flags;                       // 4 bytes
     f32 parallaxScale;               // 4 bytes
-    f32 _pad[3];                     // 12 bytes (pad to 128 total)
+    u32 teleported;                  // 1 = network snap/spawn (zero velocity), 0 = normal
+    f32 _pad[2];                     // 8 bytes (pad to 192 total)
+    Math::Matrix4 prevModel;         // 64 bytes — previous frame model matrix for velocity
 };
-static_assert(sizeof(ObjectDataGPU) == 128, "ObjectDataGPU must be 128 bytes for std430");
+static_assert(sizeof(ObjectDataGPU) == 192, "ObjectDataGPU must be 192 bytes for std430");
 
 #if !ENJIN_RENDERER_WEBGPU
 // Per-entity rendering data (stored in dense vector indexed by entity ID)
@@ -357,6 +360,10 @@ public:
     void SetCelDiffuseBands(f32 bands) { m_CelDiffuseBands = bands; }
     f32 GetCelSpecularCutoff() const { return m_CelSpecularCutoff; }
     void SetCelSpecularCutoff(f32 cutoff) { m_CelSpecularCutoff = cutoff; }
+
+    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
+    u32 GetAAMode() const { return m_AAMode; }
+    void SetAAMode(u32 mode) { m_AAMode = mode; }
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox
@@ -780,6 +787,17 @@ private:
 #endif
 
     bool m_Initialized = false;
+
+    // --- TAA (Temporal Anti-Aliasing) state ---
+    // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA (mirrors SceneRenderSettings::aaMode)
+    u32 m_AAMode = 1;
+    // Frame counter for Halton jitter sequence cycling (incremented each frame)
+    u32 m_TAAFrameCounter = 0;
+    // Previous jitter offset (NDC) stored for velocity buffer reprojection
+    Math::Vector2 m_PrevJitter = Math::Vector2(0.0f, 0.0f);
+    // Per-entity previous-frame model matrices for motion vector computation.
+    // Keyed by entity ID — entries are added on first sight, removed on entity destruction.
+    std::unordered_map<u64, Math::Matrix4> m_PrevModelMatrices;
 
 #if !ENJIN_RENDERER_WEBGPU
     // --- Ray Tracing subsystems (null when unsupported) ---

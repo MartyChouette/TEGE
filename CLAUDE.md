@@ -90,7 +90,7 @@ Bilateral bitmask: `(A.categoryBits & B.collisionMask) && (B.categoryBits & A.co
 
 ### Physics
 
-`IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Backends: Jolt v5.2.0 (3D), Box2D v3.0.0 (2D), SimplePhysics (legacy, compile-guarded). `PhysicsBackendFactory` creates via type enum (`Auto`/`Jolt`/`Box2D`/`Simple`). CMake: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON), `ENJIN_PHYSICS_SIMPLE` (ON). **Sensor bodies** (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions.
+`IPhysicsBackend`/`IPhysicsBackend2D` interfaces. Backends: Jolt v5.2.0 (3D), Box2D v3.0.0 (2D). `PhysicsBackendFactory` creates via type enum (`Auto`/`Jolt`/`Box2D`). CMake: `ENJIN_PHYSICS_JOLT` (ON), `ENJIN_PHYSICS_BOX2D` (ON). **Sensor bodies** (`Body2DComponent::isSensor = true`): Box2D syncs positions from ECS (not to ECS), enabling collision callbacks for controller/AI/tween-driven entities without Box2D overwriting their positions.
 
 ### Renderer
 

@@ -141,11 +141,16 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.filmGrainEnabled             = pp->filmGrainEnabled != 0;
         s.filmGrainIntensity           = pp->filmGrainIntensity;
 
-        // FXAA
+        // Anti-Aliasing
+        s.aaMode                       = pp->aaMode;
         s.fxaaEnabled                  = pp->fxaaEnabled != 0;
         s.fxaaSpanMax                  = pp->fxaaSpanMax;
         s.fxaaReduceMin                = pp->fxaaReduceMin;
         s.fxaaReduceMul                = pp->fxaaReduceMul;
+        s.taaSharpness                 = pp->taaSharpness;
+        s.taaJitterScale               = pp->taaJitterScale;
+        s.taaFeedbackMin               = pp->taaFeedbackMin;
+        s.taaFeedbackMax               = pp->taaFeedbackMax;
 
         // Retro: Dithering
         s.ditherEnabled                = pp->ditherEnabled != 0;
@@ -385,11 +390,16 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->filmGrainEnabled             = filmGrainEnabled ? 1 : 0;
         pp->filmGrainIntensity           = filmGrainIntensity;
 
-        // FXAA
-        pp->fxaaEnabled                  = fxaaEnabled ? 1 : 0;
+        // Anti-Aliasing
+        pp->aaMode                       = aaMode;
+        pp->fxaaEnabled                  = (aaMode == 1) ? 1 : 0;
         pp->fxaaSpanMax                  = fxaaSpanMax;
         pp->fxaaReduceMin                = fxaaReduceMin;
         pp->fxaaReduceMul                = fxaaReduceMul;
+        pp->taaSharpness                 = taaSharpness;
+        pp->taaJitterScale               = taaJitterScale;
+        pp->taaFeedbackMin               = taaFeedbackMin;
+        pp->taaFeedbackMax               = taaFeedbackMax;
 
         // Retro: Dithering
         pp->ditherEnabled                = ditherEnabled ? 1 : 0;
@@ -593,11 +603,16 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["filmGrainEnabled"]    = s.filmGrainEnabled;
     j["filmGrainIntensity"]  = RF(s.filmGrainIntensity);
 
-    // FXAA
+    // Anti-Aliasing
+    j["aaMode"]            = s.aaMode;
     j["fxaaEnabled"]       = s.fxaaEnabled;
     j["fxaaSpanMax"]       = RF(s.fxaaSpanMax);
     j["fxaaReduceMin"]     = RF(s.fxaaReduceMin);
     j["fxaaReduceMul"]     = RF(s.fxaaReduceMul);
+    j["taaSharpness"]      = RF(s.taaSharpness);
+    j["taaJitterScale"]    = RF(s.taaJitterScale);
+    j["taaFeedbackMin"]    = RF(s.taaFeedbackMin);
+    j["taaFeedbackMax"]    = RF(s.taaFeedbackMax);
 
     // Retro: Dithering
     j["ditherEnabled"]     = s.ditherEnabled;
@@ -810,11 +825,16 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("filmGrainEnabled"))    s.filmGrainEnabled    = JB(j["filmGrainEnabled"]);
     if (j.contains("filmGrainIntensity"))  s.filmGrainIntensity  = j["filmGrainIntensity"].get<f32>();
 
-    // FXAA
+    // Anti-Aliasing
+    if (j.contains("aaMode"))            s.aaMode            = j["aaMode"].get<u32>();
     if (j.contains("fxaaEnabled"))       s.fxaaEnabled       = JB(j["fxaaEnabled"]);
     if (j.contains("fxaaSpanMax"))       s.fxaaSpanMax       = j["fxaaSpanMax"].get<f32>();
     if (j.contains("fxaaReduceMin"))     s.fxaaReduceMin     = j["fxaaReduceMin"].get<f32>();
     if (j.contains("fxaaReduceMul"))     s.fxaaReduceMul     = j["fxaaReduceMul"].get<f32>();
+    if (j.contains("taaSharpness"))      s.taaSharpness      = j["taaSharpness"].get<f32>();
+    if (j.contains("taaJitterScale"))    s.taaJitterScale    = j["taaJitterScale"].get<f32>();
+    if (j.contains("taaFeedbackMin"))    s.taaFeedbackMin    = j["taaFeedbackMin"].get<f32>();
+    if (j.contains("taaFeedbackMax"))    s.taaFeedbackMax    = j["taaFeedbackMax"].get<f32>();
 
     // Retro: Dithering
     if (j.contains("ditherEnabled"))     s.ditherEnabled     = JB(j["ditherEnabled"]);

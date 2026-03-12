@@ -9,8 +9,11 @@ layout(location = 3) in float fragViewDepth;  // View-space depth for cascade se
 layout(location = 4) in vec4 fragVertColor;
 layout(location = 5) in float fragClipW;
 layout(location = 6) in vec4 fragTangent;
+layout(location = 7) in vec4 fragCurClipPos;  // Current clip position (for velocity)
+layout(location = 8) in vec4 fragPrevClipPos; // Previous frame clip position (for velocity)
 
 layout(location = 0) out vec4 outColor;
+layout(location = 1) out vec2 outVelocity;    // Per-pixel screen-space motion vector (RG16F)
 
 // Light limits (must match C++ constants)
 #define MAX_DIRECTIONAL_LIGHTS 4
@@ -1181,4 +1184,9 @@ void main() {
     }
 
     outColor = vec4(result, alpha);
+
+    // Per-pixel velocity: screen-space motion vector for TAA / temporal upscaling
+    vec2 curNDC  = fragCurClipPos.xy / fragCurClipPos.w;
+    vec2 prevNDC = fragPrevClipPos.xy / fragPrevClipPos.w;
+    outVelocity  = (curNDC - prevNDC) * 0.5;  // NDC is [-1,1], scale to [-0.5, 0.5] range
 }

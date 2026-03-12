@@ -16,6 +16,8 @@ namespace Renderer {
 struct UniformBufferObject {
     alignas(16) Math::Matrix4 view;
     alignas(16) Math::Matrix4 proj;
+    alignas(16) Math::Matrix4 prevViewProj;  // Previous frame view*proj for velocity
+    alignas(16) Math::Vector4 jitterOffset;  // xy = current jitter (NDC), zw = previous jitter
 };
 
 // Push constants for per-object data (model matrix + material)
@@ -57,6 +59,9 @@ struct PipelineConfig {
     bool hasColorAttachment = true;
     // Alpha blending (src alpha, one-minus-src-alpha)
     bool alphaBlend = false;
+    // Number of color attachments for MRT (velocity buffer).
+    // Default 1 = color only, 2 = color + velocity (RG16F)
+    u32 colorAttachmentCount = 1;
     // Custom vertex input state (for instanced pipelines with non-standard vertex layouts)
     // When non-null, replaces the default mesh vertex input
     const VkPipelineVertexInputStateCreateInfo* customVertexInput = nullptr;

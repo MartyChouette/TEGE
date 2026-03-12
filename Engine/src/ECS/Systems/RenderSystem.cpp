@@ -2064,6 +2064,7 @@ void RenderSystem::OnEntityRemoved(Entity entity) {
         rd.Invalidate();
     }
     m_TextTextureCache.erase(entity);
+    m_PrevModelMatrices.erase(static_cast<u64>(entity));
 
     // Invalidate scene composition cache (removed entity may change 2D/3D classification)
     m_SceneComposition.dirty = true;
@@ -2374,8 +2375,48 @@ void RenderSystem::UploadObjectData() {
         }
 
         if (m_GlobalFlatShading) obj.flags |= (1 << 20);
-        obj._pad[0] = obj._pad[1] = obj._pad[2] = 0.0f;
+
+        // Populate previous-frame model matrix for motion vector computation.
+        // If no previous matrix exists (first frame for this entity), use current
+        // model and mark as teleported so the shader outputs zero velocity.
+        u64 entityId = static_cast<u64>(entity);
+        auto prevIt = m_PrevModelMatrices.find(entityId);
+        if (prevIt != m_PrevModelMatrices.end()) {
+            obj.prevModel = prevIt->second;
+            obj.teleported = 0;
+        } else {
+            obj.prevModel = obj.model;
+            obj.teleported = 1;
+        }
+
+        // Network teleport detection: if the transform was flagged as teleported
+        // this frame (large position snap, spawn, or respawn), force teleported = 1
+        // so the shader zeroes the motion vector and TAA doesn't ghost.
+        if (xform->teleportedThisFrame) {
+            obj.teleported = 1;
+            obj.prevModel = obj.model;  // Ensure prevModel matches current to zero velocity
+            xform->teleportedThisFrame = false;  // Consume the flag (once per frame)
+        }
+
+        obj._pad[0] = obj._pad[1] = 0.0f;
         idx++;
+    }
+
+    // After building the upload array, store current-frame model matrices
+    // for next frame's previous-model lookup.
+    {
+        u32 storeIdx = 0;
+        for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+            auto* xform = m_World->GetComponent<TransformComponent>(entity);
+            if (!xform || !xform->visible) continue;
+            if (m_World->GetComponent<Sprite2DComponent>(entity)) continue;
+            if (m_World->GetComponent<TilemapComponent>(entity)) continue;
+            auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+            if (!mesh || !mesh->IsValid()) continue;
+            if (storeIdx >= idx) break;
+            m_PrevModelMatrices[static_cast<u64>(entity)] = m_ObjectDataCPU[storeIdx].model;
+            storeIdx++;
+        }
     }
 
     // Upload to GPU via GPUCulling's ObjectData buffer
@@ -2417,6 +2458,7 @@ void RenderSystem::CreatePipeline() {
     config.cullMode = m_BackfaceCulling ? VK_CULL_MODE_BACK_BIT : VK_CULL_MODE_NONE;
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = m_WireframeMode ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    config.colorAttachmentCount = 2; // MRT: color + velocity
 
     m_Pipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_Pipeline->Create(config, m_VertexShader.get(), m_FragmentShader.get())) {
@@ -2464,6 +2506,7 @@ void RenderSystem::CreateLinePipeline() {
     config.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
     config.polygonMode = VK_POLYGON_MODE_FILL;
     config.alphaBlend = true;
+    config.colorAttachmentCount = 2; // MRT: must match render pass
 
     m_LinePipeline = std::make_unique<Renderer::VulkanPipeline>(m_Renderer->GetContext());
     if (!m_LinePipeline->CreateWithLayout(config, m_VertexShader.get(), m_FragmentShader.get(),
@@ -3205,7 +3248,34 @@ void RenderSystem::UpdateFrameUniforms() {
     Renderer::UniformBufferObject ubo{};
     ubo.view = m_Camera->GetViewMatrix();
     ubo.proj = m_Camera->GetProjectionMatrix();
+    ubo.prevViewProj = m_PrevViewProj;
+
+    // TAA jitter injection: apply sub-pixel Halton offset to the projection matrix
+    // so each frame samples a slightly different sub-pixel position, which the TAA
+    // resolve pass blends together for effective supersampling.
+    if (m_AAMode == 2) { // TAA
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        if (extent.width > 0 && extent.height > 0) {
+            Math::Vector2 jitter = Renderer::HaltonJitter(m_TAAFrameCounter, extent.width, extent.height);
+            // Offset the projection matrix: translation in clip space X/Y
+            ubo.proj.m[8]  += jitter.x;  // m[2][0] in column-major
+            ubo.proj.m[9]  += jitter.y;  // m[2][1] in column-major
+            ubo.jitterOffset = Math::Vector4(jitter.x, jitter.y, m_PrevJitter.x, m_PrevJitter.y);
+            m_PrevJitter = jitter;
+        } else {
+            ubo.jitterOffset = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        }
+        m_TAAFrameCounter++;
+    } else {
+        ubo.jitterOffset = Math::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+        m_PrevJitter = Math::Vector2(0.0f, 0.0f);
+        m_TAAFrameCounter = 0;
+    }
+
     (*m_ActiveUniformBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&ubo, sizeof(ubo));
+
+    // Store current viewProj for next frame's velocity computation
+    m_PrevViewProj = ubo.proj * ubo.view;
 
     // Update Lighting UBO with all lights in the scene
     LightingUBO lighting{};
@@ -5251,10 +5321,17 @@ void RenderSystem::CreateSkyboxPipeline(VkRenderPass renderPass) {
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
 
+    // MRT: second attachment for velocity buffer (write zero velocity for skybox)
+    VkPipelineColorBlendAttachmentState velocityBlendAttachment{};
+    velocityBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
+                                              VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+    std::array<VkPipelineColorBlendAttachmentState, 2> skyboxBlendAttachments = { colorBlendAttachment, velocityBlendAttachment };
+
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-    colorBlending.attachmentCount = 1;
-    colorBlending.pAttachments = &colorBlendAttachment;
+    colorBlending.attachmentCount = 2; // MRT: color + velocity
+    colorBlending.pAttachments = skyboxBlendAttachments.data();
 
     VkPipelineShaderStageCreateInfo vertStage{};
     vertStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;

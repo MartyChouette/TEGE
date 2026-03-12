@@ -2,6 +2,7 @@
 #include "Enjin/Renderer/Vulkan/VulkanContext.h"
 #include "Enjin/Renderer/Vulkan/VulkanRenderer.h"
 #include "Enjin/Renderer/Vulkan/VulkanBuffer.h"
+#include "Enjin/Renderer/Vulkan/VulkanShader.h"
 #include "Enjin/Renderer/Vulkan/ShaderData.h"
 #include "Enjin/Logging/Log.h"
 #include "stb_image.h"
@@ -4025,6 +4026,11 @@ bool PostProcessing::Initialize(VulkanContext* context, VkRenderPass renderPass,
         }
     }
 
+    // Create TAA compute pipeline and history buffers
+    if (!CreateTAAResources()) {
+        ENJIN_LOG_WARN(Renderer, "TAA resources not created - TAA disabled (compute shader may need compilation)");
+    }
+
     m_Initialized = true;
 
     ENJIN_LOG_INFO(Renderer, "Post-processing initialized");
@@ -4056,6 +4062,9 @@ void PostProcessing::Shutdown() {
         vkDestroyDescriptorSetLayout(device, m_DescriptorSetLayout, nullptr);
         m_DescriptorSetLayout = VK_NULL_HANDLE;
     }
+
+    // Clean up TAA resources
+    DestroyTAAResources();
 
     // Clean up DoF staging buffers
     DestroyDofStagingBuffers();
@@ -4099,6 +4108,12 @@ void PostProcessing::OnResize(u32 width, u32 height) {
     DestroyDofStagingBuffers();
     DestroySceneRenderTarget();
     CreateSceneRenderTarget(width, height);
+
+    // Recreate TAA history buffers at the new resolution
+    DestroyTAAResources();
+    if (!CreateTAAResources()) {
+        ENJIN_LOG_WARN(Renderer, "TAA resources not recreated after resize");
+    }
 }
 
 void PostProcessing::Apply(VkCommandBuffer cmd, VkImageView sourceImage, VkFramebuffer targetFramebuffer) {
@@ -5703,6 +5718,489 @@ void PostProcessing::ApplyTiltShift(VkCommandBuffer cmd) {
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
         0, 0, nullptr, 0, nullptr, 1, &finalBarrier);
+}
+
+// ============================================================================
+// TAA (Temporal Anti-Aliasing) — Compute Resolve
+// ============================================================================
+
+// Push constants matching the shader layout
+struct TAAPushConstants {
+    f32 resolutionX;
+    f32 resolutionY;
+    f32 invResolutionX;
+    f32 invResolutionY;
+    f32 feedbackMin;
+    f32 feedbackMax;
+    f32 sharpness;
+    u32 frameIndex;
+};
+
+bool PostProcessing::CreateTAAResources() {
+    if (!m_Context || m_Width == 0 || m_Height == 0) return false;
+
+    VkDevice device = m_Context->GetDevice();
+
+    // --- Create two history images (RGBA16F, ping-pong) ---
+    for (int i = 0; i < 2; ++i) {
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        imageInfo.extent = { m_Width, m_Height, 1 };
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT |
+                          VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if (vkCreateImage(device, &imageInfo, nullptr, &m_TAAHistoryImages[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create history image %d", i);
+            DestroyTAAResources();
+            return false;
+        }
+
+        VkMemoryRequirements memReqs;
+        vkGetImageMemoryRequirements(device, m_TAAHistoryImages[i], &memReqs);
+
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = m_Context->FindMemoryType(
+            memReqs.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        if (vkAllocateMemory(device, &allocInfo, nullptr, &m_TAAHistoryMemory[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "TAA: Failed to allocate history memory %d", i);
+            DestroyTAAResources();
+            return false;
+        }
+
+        vkBindImageMemory(device, m_TAAHistoryImages[i], m_TAAHistoryMemory[i], 0);
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = m_TAAHistoryImages[i];
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R16G16B16A16_SFLOAT;
+        viewInfo.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+
+        if (vkCreateImageView(device, &viewInfo, nullptr, &m_TAAHistoryViews[i]) != VK_SUCCESS) {
+            ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create history view %d", i);
+            DestroyTAAResources();
+            return false;
+        }
+    }
+
+    // --- Create sampler for TAA inputs ---
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_LINEAR;
+    samplerInfo.minFilter = VK_FILTER_LINEAR;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.maxLod = 0.0f;
+
+    if (vkCreateSampler(device, &samplerInfo, nullptr, &m_TAASampler) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create sampler");
+        DestroyTAAResources();
+        return false;
+    }
+
+    // --- Create compute pipeline ---
+    if (!CreateTAAComputePipeline()) {
+        ENJIN_LOG_WARN(Renderer, "TAA: Compute pipeline creation failed (shader may need compilation)");
+        DestroyTAAResources();
+        return false;
+    }
+
+    m_TAACurrentIndex = 0;
+    m_TAAFrameIndex = 0;
+    m_TAAReady = true;
+
+    ENJIN_LOG_INFO(Renderer, "TAA resources created (%ux%u)", m_Width, m_Height);
+    return true;
+}
+
+void PostProcessing::DestroyTAAResources() {
+    if (!m_Context) return;
+
+    VkDevice device = m_Context->GetDevice();
+
+    m_TAAReady = false;
+
+    // Compute pipeline
+    if (m_TAAComputePipeline != VK_NULL_HANDLE) {
+        vkDestroyPipeline(device, m_TAAComputePipeline, nullptr);
+        m_TAAComputePipeline = VK_NULL_HANDLE;
+    }
+    if (m_TAAComputePipelineLayout != VK_NULL_HANDLE) {
+        vkDestroyPipelineLayout(device, m_TAAComputePipelineLayout, nullptr);
+        m_TAAComputePipelineLayout = VK_NULL_HANDLE;
+    }
+    if (m_TAADescriptorPool != VK_NULL_HANDLE) {
+        vkDestroyDescriptorPool(device, m_TAADescriptorPool, nullptr);
+        m_TAADescriptorPool = VK_NULL_HANDLE;
+        m_TAADescriptorSets[0] = VK_NULL_HANDLE;
+        m_TAADescriptorSets[1] = VK_NULL_HANDLE;
+    }
+    if (m_TAADescriptorSetLayout != VK_NULL_HANDLE) {
+        vkDestroyDescriptorSetLayout(device, m_TAADescriptorSetLayout, nullptr);
+        m_TAADescriptorSetLayout = VK_NULL_HANDLE;
+    }
+
+    // Sampler
+    if (m_TAASampler != VK_NULL_HANDLE) {
+        vkDestroySampler(device, m_TAASampler, nullptr);
+        m_TAASampler = VK_NULL_HANDLE;
+    }
+
+    // History buffers
+    for (int i = 0; i < 2; ++i) {
+        if (m_TAAHistoryViews[i] != VK_NULL_HANDLE) {
+            vkDestroyImageView(device, m_TAAHistoryViews[i], nullptr);
+            m_TAAHistoryViews[i] = VK_NULL_HANDLE;
+        }
+        if (m_TAAHistoryImages[i] != VK_NULL_HANDLE) {
+            vkDestroyImage(device, m_TAAHistoryImages[i], nullptr);
+            m_TAAHistoryImages[i] = VK_NULL_HANDLE;
+        }
+        if (m_TAAHistoryMemory[i] != VK_NULL_HANDLE) {
+            vkFreeMemory(device, m_TAAHistoryMemory[i], nullptr);
+            m_TAAHistoryMemory[i] = VK_NULL_HANDLE;
+        }
+    }
+}
+
+bool PostProcessing::CreateTAAComputePipeline() {
+    if (!m_Context) return false;
+
+    VkDevice device = m_Context->GetDevice();
+
+    // --- Descriptor set layout ---
+    // binding 0: sampler2D currentColor
+    // binding 1: sampler2D historyColor
+    // binding 2: sampler2D velocityBuffer
+    // binding 3: sampler2D depthBuffer
+    // binding 4: image2D  outputColor (storage image, writeonly)
+    VkDescriptorSetLayoutBinding bindings[5]{};
+    for (int i = 0; i < 4; ++i) {
+        bindings[i].binding = static_cast<u32>(i);
+        bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        bindings[i].descriptorCount = 1;
+        bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    }
+    bindings[4].binding = 4;
+    bindings[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    bindings[4].descriptorCount = 1;
+    bindings[4].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = 5;
+    layoutInfo.pBindings = bindings;
+
+    if (vkCreateDescriptorSetLayout(device, &layoutInfo, nullptr, &m_TAADescriptorSetLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create descriptor set layout");
+        return false;
+    }
+
+    // --- Push constant range ---
+    VkPushConstantRange pushRange{};
+    pushRange.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    pushRange.offset = 0;
+    pushRange.size = sizeof(TAAPushConstants);
+
+    // --- Pipeline layout ---
+    VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
+    pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_TAADescriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushRange;
+
+    if (vkCreatePipelineLayout(device, &pipelineLayoutInfo, nullptr, &m_TAAComputePipelineLayout) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create pipeline layout");
+        return false;
+    }
+
+    // --- Load compute shader from SPIR-V file ---
+    VulkanShader taaShader(m_Context);
+    const char* shaderPaths[] = {
+        "shaders/taa_resolve.comp.spv",
+        "Engine/shaders/taa_resolve.comp.spv",
+        "../Engine/shaders/taa_resolve.comp.spv",
+        "../../Engine/shaders/taa_resolve.comp.spv"
+    };
+    bool shaderLoaded = false;
+    for (const char* path : shaderPaths) {
+        if (taaShader.LoadFromFile(path) && taaShader.GetModule() != VK_NULL_HANDLE) {
+            shaderLoaded = true;
+            break;
+        }
+    }
+
+    if (!shaderLoaded) {
+        ENJIN_LOG_WARN(Renderer, "TAA: taa_resolve.comp.spv not found — compile with: "
+                       "glslangValidator -V Engine/shaders/taa_resolve.comp -o Engine/shaders/taa_resolve.comp.spv");
+        return false;
+    }
+
+    // --- Compute pipeline ---
+    VkPipelineShaderStageCreateInfo stage{};
+    stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+    stage.module = taaShader.GetModule();
+    stage.pName = "main";
+
+    VkComputePipelineCreateInfo pipelineInfo{};
+    pipelineInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    pipelineInfo.layout = m_TAAComputePipelineLayout;
+    pipelineInfo.stage = stage;
+
+    if (vkCreateComputePipelines(device, VK_NULL_HANDLE, 1, &pipelineInfo, nullptr,
+                                  &m_TAAComputePipeline) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create compute pipeline");
+        return false;
+    }
+
+    // --- Descriptor pool (2 sets for ping-pong, 4 samplers + 1 storage image each) ---
+    VkDescriptorPoolSize poolSizes[2]{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[0].descriptorCount = 8;   // 4 per set * 2 sets
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    poolSizes[1].descriptorCount = 2;   // 1 per set * 2 sets
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = 2;
+    poolInfo.pPoolSizes = poolSizes;
+    poolInfo.maxSets = 2;
+
+    if (vkCreateDescriptorPool(device, &poolInfo, nullptr, &m_TAADescriptorPool) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to create descriptor pool");
+        return false;
+    }
+
+    // --- Allocate 2 descriptor sets ---
+    VkDescriptorSetLayout layouts[2] = { m_TAADescriptorSetLayout, m_TAADescriptorSetLayout };
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_TAADescriptorPool;
+    allocInfo.descriptorSetCount = 2;
+    allocInfo.pSetLayouts = layouts;
+
+    if (vkAllocateDescriptorSets(device, &allocInfo, m_TAADescriptorSets) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "TAA: Failed to allocate descriptor sets");
+        return false;
+    }
+
+    // Descriptor sets are written dynamically each frame in ApplyTAA() because the
+    // velocity/depth views and ping-pong indices change every frame.
+
+    ENJIN_LOG_INFO(Renderer, "TAA compute pipeline created");
+    return true;
+}
+
+VkImageView PostProcessing::GetTAAOutputImageView() const {
+    if (!m_TAAReady) return VK_NULL_HANDLE;
+    // After ApplyTAA(), m_TAACurrentIndex points to the buffer that will be written
+    // *next* frame.  The most recent output is in the other buffer.
+    return m_TAAHistoryViews[1 - m_TAACurrentIndex];
+}
+
+void PostProcessing::ApplyTAA(VkCommandBuffer cmd) {
+    if (!m_TAAReady || m_Settings.aaMode != 2) return;
+    if (m_TAAComputePipeline == VK_NULL_HANDLE) return;
+    if (m_SceneImageView == VK_NULL_HANDLE) return;
+    if (m_TAAVelocityView == VK_NULL_HANDLE || m_TAADepthView == VK_NULL_HANDLE) return;
+
+    VkDevice device = m_Context->GetDevice();
+
+    // Determine ping-pong indices
+    u32 outputIdx = m_TAACurrentIndex;         // Write to this one
+    u32 historyIdx = 1 - m_TAACurrentIndex;    // Read from this one
+
+    // --- Transition images for compute ---
+    // Scene image: COLOR_ATTACHMENT_OPTIMAL -> SHADER_READ_ONLY_OPTIMAL
+    // History (read): GENERAL or UNDEFINED -> SHADER_READ_ONLY_OPTIMAL
+    // Output: GENERAL or UNDEFINED -> GENERAL (for storage image writes)
+
+    VkImageMemoryBarrier preBarriers[3]{};
+    u32 barrierCount = 0;
+
+    // Scene image -> shader read
+    preBarriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    preBarriers[barrierCount].oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    preBarriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    preBarriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].image = m_SceneImage;
+    preBarriers[barrierCount].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    preBarriers[barrierCount].srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+    preBarriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrierCount++;
+
+    // History read buffer -> shader read (might be UNDEFINED on first frame)
+    preBarriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    preBarriers[barrierCount].oldLayout = (m_TAAFrameIndex == 0) ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
+    preBarriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    preBarriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].image = m_TAAHistoryImages[historyIdx];
+    preBarriers[barrierCount].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    preBarriers[barrierCount].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    preBarriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrierCount++;
+
+    // Output buffer -> general for storage writes
+    preBarriers[barrierCount].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    preBarriers[barrierCount].oldLayout = (m_TAAFrameIndex == 0) ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL;
+    preBarriers[barrierCount].newLayout = VK_IMAGE_LAYOUT_GENERAL;
+    preBarriers[barrierCount].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    preBarriers[barrierCount].image = m_TAAHistoryImages[outputIdx];
+    preBarriers[barrierCount].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    preBarriers[barrierCount].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    preBarriers[barrierCount].dstAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    barrierCount++;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        0, 0, nullptr, 0, nullptr, barrierCount, preBarriers);
+
+    // --- Update descriptor set for this frame ---
+    VkDescriptorSet activeSet = m_TAADescriptorSets[outputIdx];
+
+    VkDescriptorImageInfo currentColorInfo{};
+    currentColorInfo.sampler = m_TAASampler;
+    currentColorInfo.imageView = m_SceneImageView;
+    currentColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo historyColorInfo{};
+    historyColorInfo.sampler = m_TAASampler;
+    historyColorInfo.imageView = m_TAAHistoryViews[historyIdx];
+    historyColorInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo velocityInfo{};
+    velocityInfo.sampler = m_TAASampler;
+    velocityInfo.imageView = m_TAAVelocityView;
+    velocityInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo depthInfo{};
+    depthInfo.sampler = m_TAASampler;
+    depthInfo.imageView = m_TAADepthView;
+    depthInfo.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+    VkDescriptorImageInfo outputInfo{};
+    outputInfo.imageView = m_TAAHistoryViews[outputIdx];
+    outputInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+
+    VkWriteDescriptorSet writes[5]{};
+    writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[0].dstSet = activeSet;
+    writes[0].dstBinding = 0;
+    writes[0].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[0].descriptorCount = 1;
+    writes[0].pImageInfo = &currentColorInfo;
+
+    writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[1].dstSet = activeSet;
+    writes[1].dstBinding = 1;
+    writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[1].descriptorCount = 1;
+    writes[1].pImageInfo = &historyColorInfo;
+
+    writes[2].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[2].dstSet = activeSet;
+    writes[2].dstBinding = 2;
+    writes[2].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[2].descriptorCount = 1;
+    writes[2].pImageInfo = &velocityInfo;
+
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = activeSet;
+    writes[3].dstBinding = 3;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    writes[3].descriptorCount = 1;
+    writes[3].pImageInfo = &depthInfo;
+
+    writes[4].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[4].dstSet = activeSet;
+    writes[4].dstBinding = 4;
+    writes[4].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    writes[4].descriptorCount = 1;
+    writes[4].pImageInfo = &outputInfo;
+
+    vkUpdateDescriptorSets(device, 5, writes, 0, nullptr);
+
+    // --- Push constants ---
+    TAAPushConstants pc{};
+    pc.resolutionX = static_cast<f32>(m_Width);
+    pc.resolutionY = static_cast<f32>(m_Height);
+    pc.invResolutionX = 1.0f / pc.resolutionX;
+    pc.invResolutionY = 1.0f / pc.resolutionY;
+    pc.feedbackMin = m_Settings.taaFeedbackMin;
+    pc.feedbackMax = m_Settings.taaFeedbackMax;
+    pc.sharpness = m_Settings.taaSharpness;
+    pc.frameIndex = m_TAAFrameIndex;
+
+    // --- Bind pipeline and dispatch ---
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TAAComputePipeline);
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, m_TAAComputePipelineLayout,
+                             0, 1, &activeSet, 0, nullptr);
+    vkCmdPushConstants(cmd, m_TAAComputePipelineLayout, VK_SHADER_STAGE_COMPUTE_BIT,
+                        0, sizeof(TAAPushConstants), &pc);
+
+    // Dispatch: workgroup size is 8x8 in the shader
+    u32 groupsX = (m_Width + 7) / 8;
+    u32 groupsY = (m_Height + 7) / 8;
+    vkCmdDispatch(cmd, groupsX, groupsY, 1);
+
+    // --- Post-dispatch barriers ---
+    // Output image: GENERAL -> SHADER_READ_ONLY_OPTIMAL (for post-process fragment shader to sample)
+    // Scene image: SHADER_READ_ONLY_OPTIMAL -> COLOR_ATTACHMENT_OPTIMAL (restore for next frame)
+    VkImageMemoryBarrier postBarriers[2]{};
+
+    postBarriers[0].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    postBarriers[0].oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+    postBarriers[0].newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    postBarriers[0].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    postBarriers[0].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    postBarriers[0].image = m_TAAHistoryImages[outputIdx];
+    postBarriers[0].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    postBarriers[0].srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+    postBarriers[0].dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+
+    postBarriers[1].sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    postBarriers[1].oldLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+    postBarriers[1].newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    postBarriers[1].srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    postBarriers[1].dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    postBarriers[1].image = m_SceneImage;
+    postBarriers[1].subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+    postBarriers[1].srcAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    postBarriers[1].dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+    vkCmdPipelineBarrier(cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        0, 0, nullptr, 0, nullptr, 2, postBarriers);
+
+    // Advance frame counter and swap ping-pong for next frame.
+    // After the swap, m_TAACurrentIndex points to the buffer that will be *written*
+    // next frame.  The buffer we just wrote (outputIdx) is the "previous" history
+    // buffer that GetTAAOutputImageView() should return.
+    m_TAAFrameIndex++;
+    m_TAACurrentIndex = 1 - outputIdx;  // Next frame writes to the other buffer
 }
 
 } // namespace Renderer

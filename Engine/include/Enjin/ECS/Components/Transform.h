@@ -16,6 +16,12 @@ struct ENJIN_API TransformComponent : public IComponent {
     Math::Vector3 scale = Math::Vector3(1.0f);
     bool visible = true;  // false = skip rendering (entity still exists, physics still runs)
 
+    // Set by networking (or gameplay code) when entity undergoes a large position
+    // discontinuity (teleport, spawn, respawn).  RenderSystem reads this to zero
+    // the per-object motion vector, preventing TAA ghosting artifacts.
+    // Automatically cleared each frame after the render system consumes it.
+    bool teleportedThisFrame = false;
+
     Math::Matrix4 ToMatrix() const {
         Math::Matrix4 translation = Math::Matrix4::Translation(position);
         Math::Matrix4 rotationMat = rotation.ToMatrix();

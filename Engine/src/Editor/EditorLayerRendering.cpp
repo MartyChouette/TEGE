@@ -1025,17 +1025,29 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             }
         }
 
-        // FXAA
-        if (ImGui::CollapsingHeader("Anti-Aliasing (FXAA)")) {
-            bool fxaaEnabled = settings.fxaaEnabled != 0;
-            if (ImGui::Checkbox("Enabled##FXAA", &fxaaEnabled)) {
-                settings.fxaaEnabled = fxaaEnabled ? 1 : 0;
+        // Anti-Aliasing
+        if (ImGui::CollapsingHeader("Anti-Aliasing")) {
+            const char* aaModes[] = { "None", "FXAA", "TAA", "SMAA" };
+            int aaMode = static_cast<int>(settings.aaMode);
+            if (ImGui::Combo("AA Mode", &aaMode, aaModes, IM_ARRAYSIZE(aaModes))) {
+                settings.aaMode = static_cast<u32>(aaMode);
+                // Sync legacy fxaaEnabled flag
+                settings.fxaaEnabled = (settings.aaMode == 1) ? 1 : 0;
             }
 
-            if (settings.fxaaEnabled) {
+            // FXAA settings
+            if (settings.aaMode == 1) {
                 ImGui::DragFloat("Span Max", &settings.fxaaSpanMax, 0.5f, 2.0f, 16.0f);
                 ImGui::DragFloat("Reduce Min", &settings.fxaaReduceMin, 0.001f, 0.0f, 0.1f, "%.4f");
                 ImGui::DragFloat("Reduce Mul", &settings.fxaaReduceMul, 0.01f, 0.0f, 0.5f);
+            }
+
+            // TAA settings (CPU-side config for the TAA compute pass)
+            if (settings.aaMode == 2) {
+                ImGui::SliderFloat("Sharpness", &settings.taaSharpness, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Jitter Scale", &settings.taaJitterScale, 0.0f, 2.0f, "%.2f");
+                ImGui::SliderFloat("Feedback Min", &settings.taaFeedbackMin, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Feedback Max", &settings.taaFeedbackMax, 0.0f, 1.0f, "%.2f");
             }
         }
 
