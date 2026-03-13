@@ -70,6 +70,46 @@ struct RTMaterial {
     float sssRadius;        // SSS scatter radius in world units
 };
 
+// GPU material struct matching C++ MaterialGPU (std430 layout, 80 bytes)
+struct MaterialGPU {
+    vec3 baseColor;
+    float metallic;
+    vec3 emissiveColor;
+    float roughness;
+    float emissiveStrength;
+    float opacity;
+    float alphaCutoff;
+    int flags;
+    float transmission;
+    float ior;
+    float thickness;
+    float sssIntensity;
+    vec3 sssColor;
+    float sssRadius;
+};
+
+// Per-entity material data uploaded from the CPU
+layout(binding = 9, set = 0) readonly buffer MaterialSSBO {
+    MaterialGPU materials[];
+};
+
+// Fetch material for the hit instance and convert to RTMaterial
+RTMaterial fetchMaterial(uint instanceIndex) {
+    MaterialGPU m = materials[instanceIndex];
+    RTMaterial mat;
+    mat.baseColor = m.baseColor;
+    mat.metallic = m.metallic;
+    mat.emissive = m.emissiveColor * m.emissiveStrength;
+    mat.roughness = m.roughness;
+    mat.transmission = m.transmission;
+    mat.ior = m.ior;
+    mat.thickness = m.thickness;
+    mat.sssIntensity = m.sssIntensity;
+    mat.sssColor = m.sssColor;
+    mat.sssRadius = m.sssRadius;
+    return mat;
+}
+
 // Light data for shadow rays
 struct RTLight {
     vec3 position;

@@ -10,7 +10,11 @@
 #ifdef ENJIN_RAYTRACING_OPTIX
 #include <optix.h>
 #include <optix_stubs.h>
+#include <cuda.h>
 #include <cuda_runtime.h>
+#ifdef _WIN32
+#include <vulkan/vulkan_win32.h>
+#endif
 #endif
 
 namespace Enjin {
@@ -75,6 +79,29 @@ private:
     bool SetupCudaInterop();
     void CleanupCudaInterop();
 
+#ifdef ENJIN_RAYTRACING_OPTIX
+    // Create a VkBuffer with exportable external memory and import into CUDA
+    bool CreateSharedBuffer(VkBuffer& buffer, VkDeviceMemory& memory,
+                            CUexternalMemory& extMem, CUdeviceptr& devPtr,
+                            usize size);
+    void DestroySharedBuffer(VkBuffer& buffer, VkDeviceMemory& memory,
+                             CUexternalMemory& extMem, CUdeviceptr& devPtr);
+
+    // Vulkan image <-> shared buffer GPU-side copy
+    void CopyImageToSharedBuffer(VkCommandBuffer cmd, VkImage image, VkFormat format,
+                                 VkBuffer sharedBuf, u32 channels);
+    void CopySharedBufferToImage(VkCommandBuffer cmd, VkImage image, VkFormat format,
+                                 VkBuffer sharedBuf, u32 channels);
+
+    // Vulkan-CUDA semaphore synchronization
+    bool CreateInteropSemaphores();
+    void DestroyInteropSemaphores();
+    void SignalVulkanSemaphore(VkCommandBuffer cmd);
+    void WaitCudaOnVulkan();
+    void SignalCudaForVulkan();
+    void WaitVulkanOnCuda(VkCommandBuffer cmd);
+#endif
+
     // Image view -> image mapping
     struct ImageInfo {
         VkImage image = VK_NULL_HANDLE;
@@ -109,10 +136,28 @@ private:
     usize m_ScratchSize = 0;
     CUstream m_CudaStream = nullptr;
 
-    // Vulkan-CUDA external memory handles
-    VkBuffer m_SharedBuffer = VK_NULL_HANDLE;
-    VkDeviceMemory m_SharedMemory = VK_NULL_HANDLE;
+    // Vulkan-CUDA shared input buffer (VkImage → this → CUDA reads)
+    VkBuffer m_SharedInputBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_SharedInputMemory = VK_NULL_HANDLE;
+    CUexternalMemory m_CudaExtInputMem = nullptr;
+    CUdeviceptr m_CudaInputPtr = 0;
+
+    // Vulkan-CUDA shared output buffer (CUDA writes → this → VkImage)
+    VkBuffer m_SharedOutputBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_SharedOutputMemory = VK_NULL_HANDLE;
+    CUexternalMemory m_CudaExtOutputMem = nullptr;
+    CUdeviceptr m_CudaOutputPtr = 0;
+
     usize m_SharedBufferSize = 0;
+
+    // Vulkan-CUDA semaphore interop for synchronization
+    VkSemaphore m_VkReadySemaphore = VK_NULL_HANDLE;   // Vulkan signals when copy-to-shared is done
+    VkSemaphore m_CudaDoneSemaphore = VK_NULL_HANDLE;  // CUDA signals when denoise is done
+    CUexternalSemaphore m_CudaExtReadySem = nullptr;
+    CUexternalSemaphore m_CudaExtDoneSem = nullptr;
+
+    // Timeline semaphore values (monotonically increasing)
+    u64 m_SemaphoreValue = 0;
 #endif
 
     // Vulkan staging buffers for fallback path (when CUDA interop unavailable)

@@ -5774,9 +5774,23 @@ void RenderSystem::InitializeRayTracing() {
     // Create dummy resources and RT light UBOs for descriptor binding
     CreateRTDummyResources();
 
-    // Register dummy image with OIDN so depth/normal/motion view lookups resolve
+    // Register dummy image with OIDN/OptiX so depth/normal/motion view lookups resolve
     if (m_OIDNDenoiser && m_RTDummyImageView != VK_NULL_HANDLE) {
         m_OIDNDenoiser->RegisterImageMapping(m_RTDummyImageView, m_RTDummyImage, VK_FORMAT_R8G8B8A8_UNORM);
+    }
+    if (m_OptiXDenoiser && m_RTDummyImageView != VK_NULL_HANDLE) {
+        m_OptiXDenoiser->RegisterImageMapping(m_RTDummyImageView, m_RTDummyImage, VK_FORMAT_R8G8B8A8_UNORM);
+    }
+
+    // Register velocity buffer with denoisers for temporal accumulation
+    auto* swapchain = m_Renderer->GetSwapchain();
+    if (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE) {
+        VkImageView velView = swapchain->GetVelocityImageView();
+        VkImage velImage = swapchain->GetVelocityImage();
+        if (m_OIDNDenoiser)
+            m_OIDNDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
+        if (m_OptiXDenoiser)
+            m_OptiXDenoiser->RegisterImageMapping(velView, velImage, Renderer::VulkanSwapchain::VELOCITY_FORMAT);
     }
 
     ENJIN_LOG_INFO(Renderer, "Ray tracing subsystems initialized (shadows=%s, reflections=%s, AO=%s, GI=%s, pathtracer=%s)",
@@ -5787,6 +5801,7 @@ void RenderSystem::InitializeRayTracing() {
 
 void RenderSystem::ShutdownRayTracing() {
     m_RTCompositor.reset();
+    m_OptiXDenoiser.reset();
     m_OIDNDenoiser.reset();
     m_SVGFDenoiser.reset();
     m_PathTracer.reset();
@@ -5874,6 +5889,11 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         m_ASManager->AddInstance(blasId, model, static_cast<u32>(entity));
     }
 
+    // Upload per-entity material data to the RT material SSBO (binding 9).
+    // Must happen before TLAS build so the buffer is valid when descriptors are written,
+    // and every frame thereafter since material properties can change at runtime.
+    UploadRTMaterials();
+
     // Flush BLAS builds and build/update TLAS
     if (m_ASManager->HasPendingBuilds()) {
         m_ASManager->FlushPendingBLASBuilds(cmd);
@@ -5885,6 +5905,23 @@ void RenderSystem::RebuildTLAS(VkCommandBuffer cmd) {
         WriteRTDescriptors();
         TransitionRTOutputImages(cmd);
         m_RTDescriptorsWritten = true;
+    } else if (m_RTDescriptorsWritten && m_RTMaterialBuffer != VK_NULL_HANDLE) {
+        // Update binding 9 each frame to reflect current material data.
+        // The buffer contents are already uploaded via UploadRTMaterials() above;
+        // this ensures the descriptor points to the correct buffer after any reallocation.
+        VkDescriptorBufferInfo matBufInfo{};
+        matBufInfo.buffer = m_RTMaterialBuffer;
+        matBufInfo.offset = 0;
+        matBufInfo.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet matWrite{};
+        matWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        matWrite.dstSet = m_RTDescriptorSet;
+        matWrite.dstBinding = 9;
+        matWrite.descriptorCount = 1;
+        matWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        matWrite.pBufferInfo = &matBufInfo;
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &matWrite, 0, nullptr);
     }
 }
 
@@ -6010,13 +6047,14 @@ void RenderSystem::DenoiseRTOutputs(VkCommandBuffer cmd) {
     }
     if (!denoiser) return;
 
-    // Use real depth from swapchain; normals + motion vectors still use dummy
-    // (spatial denoising still works without motion vectors — just no temporal accumulation)
+    // Use real depth and velocity from swapchain when available; normals still use dummy
+    // (no G-buffer MRT normal output yet — will be wired when deferred normals are added)
     auto* swapchain = m_Renderer->GetSwapchain();
     VkImageView depthView = (swapchain && swapchain->GetDepthImageView() != VK_NULL_HANDLE)
         ? swapchain->GetDepthImageView() : m_RTDummyImageView;
     VkImageView normalView = m_RTDummyImageView;
-    VkImageView motionView = m_RTDummyImageView;
+    VkImageView motionView = (swapchain && swapchain->GetVelocityImageView() != VK_NULL_HANDLE)
+        ? swapchain->GetVelocityImageView() : m_RTDummyImageView;
 
     // Denoise shadow output (single channel R16F)
     if (m_RTShadows && m_RTShadows->GetConfig().enabled) {
@@ -6194,7 +6232,82 @@ void RenderSystem::CreateRTDummyResources() {
         std::memset(m_RTLightUBOMapped[i], 0, 256);
     }
 
-    ENJIN_LOG_INFO(Renderer, "RT dummy resources and light UBOs created");
+    // Create RT material SSBO (binding 9) — persistently mapped, host visible + coherent
+    EnsureRTMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
+
+    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, and material SSBO created");
+}
+
+void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
+    if (requiredCapacity <= m_RTMaterialBufferCapacity && m_RTMaterialBuffer != VK_NULL_HANDLE) return;
+
+    auto* ctx = m_Renderer->GetContext();
+    VkDevice device = ctx->GetDevice();
+
+    // Destroy old buffer if exists
+    if (m_RTMaterialMapped) {
+        vkUnmapMemory(device, m_RTMaterialMemory);
+        m_RTMaterialMapped = nullptr;
+    }
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE) {
+        vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr);
+        m_RTMaterialBuffer = VK_NULL_HANDLE;
+    }
+    if (m_RTMaterialMemory != VK_NULL_HANDLE) {
+        vkFreeMemory(device, m_RTMaterialMemory, nullptr);
+        m_RTMaterialMemory = VK_NULL_HANDLE;
+    }
+
+    // Grow by at least 2x to avoid frequent reallocations
+    u32 newCapacity = m_RTMaterialBufferCapacity > 0
+        ? m_RTMaterialBufferCapacity * 2
+        : RT_MATERIAL_BUFFER_INITIAL_CAPACITY;
+    if (newCapacity < requiredCapacity) newCapacity = requiredCapacity;
+
+    VkDeviceSize bufferSize = static_cast<VkDeviceSize>(newCapacity) * sizeof(MaterialGPU);
+
+    VkBufferCreateInfo bufInfo{};
+    bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufInfo.size = bufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+    bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(device, &bufInfo, nullptr, &m_RTMaterialBuffer) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to create RT material SSBO (%u entries)", newCapacity);
+        return;
+    }
+
+    VkMemoryRequirements memReqs;
+    vkGetBufferMemoryRequirements(device, m_RTMaterialBuffer, &memReqs);
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(device, &allocInfo, nullptr, &m_RTMaterialMemory) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to allocate RT material SSBO memory");
+        vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr);
+        m_RTMaterialBuffer = VK_NULL_HANDLE;
+        return;
+    }
+
+    if (vkBindBufferMemory(device, m_RTMaterialBuffer, m_RTMaterialMemory, 0) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to bind RT material SSBO memory");
+        return;
+    }
+
+    if (vkMapMemory(device, m_RTMaterialMemory, 0, bufferSize, 0, &m_RTMaterialMapped) != VK_SUCCESS) {
+        ENJIN_LOG_ERROR(Renderer, "Failed to map RT material SSBO");
+        m_RTMaterialMapped = nullptr;
+        return;
+    }
+
+    std::memset(m_RTMaterialMapped, 0, static_cast<size_t>(bufferSize));
+    m_RTMaterialBufferCapacity = newCapacity;
+
+    ENJIN_LOG_INFO(Renderer, "RT material SSBO created/resized: %u entries (%llu bytes)",
+                   newCapacity, static_cast<unsigned long long>(bufferSize));
 }
 
 void RenderSystem::DestroyRTDummyResources() {
@@ -6216,6 +6329,76 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
     if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
     if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
+
+    // Destroy RT material SSBO
+    if (m_RTMaterialMapped) { vkUnmapMemory(device, m_RTMaterialMemory); m_RTMaterialMapped = nullptr; }
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE) { vkDestroyBuffer(device, m_RTMaterialBuffer, nullptr); m_RTMaterialBuffer = VK_NULL_HANDLE; }
+    if (m_RTMaterialMemory != VK_NULL_HANDLE) { vkFreeMemory(device, m_RTMaterialMemory, nullptr); m_RTMaterialMemory = VK_NULL_HANDLE; }
+    m_RTMaterialBufferCapacity = 0;
+}
+
+void RenderSystem::UploadRTMaterials() {
+    if (!m_RTEnabled || !m_ASManager) return;
+
+    // Find the highest entity ID among renderable mesh entities to size the buffer
+    u32 maxEntityId = 0;
+    u32 entityCount = 0;
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!transform || !mesh || !transform->visible) continue;
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+
+        u32 eid = static_cast<u32>(entity);
+        if (eid > maxEntityId) maxEntityId = eid;
+        entityCount++;
+    }
+
+    if (entityCount == 0) return;
+
+    // Ensure buffer is large enough (indexed by entity ID, so need maxEntityId + 1 entries)
+    u32 requiredCapacity = maxEntityId + 1;
+    bool bufferGrew = (requiredCapacity > m_RTMaterialBufferCapacity);
+    if (bufferGrew) {
+        // GPU must be idle before reallocating a buffer that may be in-flight
+        vkDeviceWaitIdle(m_Renderer->GetContext()->GetDevice());
+        EnsureRTMaterialBuffer(requiredCapacity);
+
+        // Force descriptor re-write since the buffer handle changed
+        m_RTDescriptorsWritten = false;
+    }
+
+    if (!m_RTMaterialMapped) return;
+
+    // Upload MaterialGPU for each renderable entity, indexed by entity ID
+    // (matches gl_InstanceCustomIndexEXT set in AddInstance)
+    auto* dst = static_cast<MaterialGPU*>(m_RTMaterialMapped);
+    for (Entity entity : m_World->GetEntitiesWithComponent<MeshComponent>()) {
+        auto* transform = m_World->GetComponent<TransformComponent>(entity);
+        auto* mesh = m_World->GetComponent<MeshComponent>(entity);
+        if (!transform || !mesh || !transform->visible) continue;
+        if (mesh->vertices.empty() || mesh->indices.empty()) continue;
+        if (static_cast<usize>(entity) >= m_EntityRenderData.size()) continue;
+        if (!m_EntityRenderData[static_cast<usize>(entity)].valid) continue;
+
+        u32 eid = static_cast<u32>(entity);
+        auto* mat = m_World->GetComponent<MaterialComponent>(entity);
+        if (mat) {
+            dst[eid] = MaterialGPU::FromComponent(*mat);
+        } else {
+            // Default material for entities without a MaterialComponent
+            dst[eid] = MaterialGPU{};
+            dst[eid].baseColor = Math::Vector3(1.0f, 1.0f, 1.0f);
+            dst[eid].roughness = 0.5f;
+            dst[eid].opacity = 1.0f;
+            dst[eid].alphaCutoff = 0.5f;
+            dst[eid].ior = 1.5f;
+            dst[eid].sssColor = Math::Vector3(1.0f, 0.2f, 0.1f);
+            dst[eid].sssRadius = 1.0f;
+        }
+    }
 }
 
 void RenderSystem::WriteRTDescriptors() {
@@ -6265,12 +6448,24 @@ void RenderSystem::WriteRTDescriptors() {
     rtOutputInfos[5].imageView = m_RTCaustics ? m_RTCaustics->GetOutputView() : m_RTDummyImageView;
     rtOutputInfos[5].imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
-    // Bindings 9-12: Storage buffers (dummy for now — will be real vertex/index/material data later)
+    // Bindings 9-12: Storage buffers
+    // Binding 9 = material SSBO (real buffer), bindings 10-12 = dummy (vertex/index/transforms TBD)
     VkDescriptorBufferInfo dummyBufInfos[4]{};
-    for (auto& bi : dummyBufInfos) {
-        bi.buffer = m_RTDummyBuffer;
-        bi.offset = 0;
-        bi.range = 256;
+    // Binding 9: Material SSBO — use real buffer if available, otherwise dummy
+    if (m_RTMaterialBuffer != VK_NULL_HANDLE && m_RTMaterialBufferCapacity > 0) {
+        dummyBufInfos[0].buffer = m_RTMaterialBuffer;
+        dummyBufInfos[0].offset = 0;
+        dummyBufInfos[0].range = VK_WHOLE_SIZE;
+    } else {
+        dummyBufInfos[0].buffer = m_RTDummyBuffer;
+        dummyBufInfos[0].offset = 0;
+        dummyBufInfos[0].range = 256;
+    }
+    // Bindings 10-12: Still dummy (vertex/index/transforms — future work)
+    for (u32 i = 1; i < 4; ++i) {
+        dummyBufInfos[i].buffer = m_RTDummyBuffer;
+        dummyBufInfos[i].offset = 0;
+        dummyBufInfos[i].range = 256;
     }
 
     // Binding 13: RT light UBO

@@ -6,10 +6,6 @@ layout(binding = 14, set = 0, rgba16f) uniform image2D translucencyOutput;
 layout(binding = 2, set = 0) uniform sampler2D depthTex;
 layout(binding = 3, set = 0) uniform sampler2D normalTex;
 
-layout(binding = 9, set = 0) readonly buffer MaterialSSBO {
-    float materialData[];  // Per-entity material data (transmission, ior, thickness, sssIntensity, sssColor, sssRadius)
-};
-
 layout(binding = 13, set = 0) uniform LightData {
     vec4 lightDir;
     vec4 lightColor;

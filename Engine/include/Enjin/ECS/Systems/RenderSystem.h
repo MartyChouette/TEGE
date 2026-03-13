@@ -394,7 +394,7 @@ public:
 #endif
 
 #if !ENJIN_RENDERER_WEBGPU
-    // Denoiser type selection: 0=SVGF, 1=OIDN
+    // Denoiser type selection: 0=SVGF, 1=OIDN, 2=OptiX
     u32 GetDenoiserType() const { return m_DenoiserType; }
     void SetDenoiserType(u32 type) { m_DenoiserType = type; }
 
@@ -825,7 +825,7 @@ private:
     std::unique_ptr<Renderer::OIDNDenoiser> m_OIDNDenoiser;
     std::unique_ptr<Renderer::OptiXDenoiser> m_OptiXDenoiser;
     std::unique_ptr<Renderer::RTCompositor> m_RTCompositor;
-    u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN
+    u32 m_DenoiserType = 0;  // 0=SVGF, 1=OIDN, 2=OptiX
 
     // RT descriptor set layout and pool
     VkDescriptorSetLayout m_RTDescriptorSetLayout = VK_NULL_HANDLE;
@@ -846,6 +846,13 @@ private:
     VkDeviceMemory m_RTLightUBOMemory[RT_FRAMES_IN_FLIGHT] = {};
     void* m_RTLightUBOMapped[RT_FRAMES_IN_FLIGHT] = {};
 
+    // RT material SSBO (binding 9) — per-entity MaterialGPU indexed by entity ID
+    static constexpr u32 RT_MATERIAL_BUFFER_INITIAL_CAPACITY = 4096;
+    VkBuffer m_RTMaterialBuffer = VK_NULL_HANDLE;
+    VkDeviceMemory m_RTMaterialMemory = VK_NULL_HANDLE;
+    void* m_RTMaterialMapped = nullptr;
+    u32 m_RTMaterialBufferCapacity = 0;  // Current capacity in number of MaterialGPU entries
+
     bool m_RTDescriptorsWritten = false;
 
     // --- Order-Independent Transparency (Weighted Blended OIT) ---
@@ -865,6 +872,8 @@ private:
     void DestroyRTDummyResources();
     void WriteRTDescriptors();
     void TransitionRTOutputImages(VkCommandBuffer cmd);
+    void UploadRTMaterials();
+    void EnsureRTMaterialBuffer(u32 requiredCapacity);
     void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
                           f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount);
 #endif // !ENJIN_RENDERER_WEBGPU (RT/OIT/SH/SDF block)

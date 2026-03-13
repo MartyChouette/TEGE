@@ -39,6 +39,7 @@ public:
 
     // Velocity buffer for TAA / temporal upscaling (RG16F per-pixel motion vectors)
     VkImageView GetVelocityImageView() const { return m_VelocityImageView; }
+    VkImage GetVelocityImage() const { return m_VelocityImage; }
     static constexpr VkFormat VELOCITY_FORMAT = VK_FORMAT_R16G16_SFLOAT;
 
     VkFramebuffer GetFramebuffer(u32 index) const {

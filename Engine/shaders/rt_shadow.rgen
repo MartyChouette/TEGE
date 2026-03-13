@@ -53,7 +53,7 @@ void main() {
     shadowPayload = 0.0;  // Assume occluded
 
     traceRayEXT(topLevelAS,
-        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        gl_RayFlagsTerminateOnFirstHitEXT,
         0xFF,           // mask
         0,              // sbtRecordOffset
         0,              // sbtRecordStride
