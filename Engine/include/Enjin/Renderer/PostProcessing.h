@@ -277,6 +277,11 @@ struct alignas(16) PostProcessSettings {
     f32 taaFeedbackMin = 0.88f;    // Min history blend weight
     f32 taaFeedbackMax = 0.97f;    // Max history blend weight
 
+    // Temporal upscaling config (CPU-side only — drives IUpscaler dispatch, not the UBO)
+    u32 upscalerType     = 0;      // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
+    u32 upscalerQuality  = 2;      // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
+    f32 upscalerSharpness = 0.0f;  // Additional sharpening (0 = upscaler default)
+
     // Returns true if any post-processing effect is actually enabled or non-identity.
     // When false, the entire post-processing pass can be skipped (render direct to target).
     bool HasAnyActiveEffects() const {

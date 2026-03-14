@@ -63,6 +63,8 @@
 #ifdef ENJIN_VRS
 #include "Enjin/Renderer/VRS/VariableRateShading.h"
 #endif
+#include "Enjin/Renderer/Upscaling/IUpscaler.h"
+#include "Enjin/Renderer/Upscaling/FSR2Upscaler.h"
 #include <cstring>
 #include <array>
 #include <algorithm>
@@ -3250,10 +3252,10 @@ void RenderSystem::UpdateFrameUniforms() {
     ubo.proj = m_Camera->GetProjectionMatrix();
     ubo.prevViewProj = m_PrevViewProj;
 
-    // TAA jitter injection: apply sub-pixel Halton offset to the projection matrix
-    // so each frame samples a slightly different sub-pixel position, which the TAA
-    // resolve pass blends together for effective supersampling.
-    if (m_AAMode == 2) { // TAA
+    // TAA / Upscaler jitter injection: apply sub-pixel Halton offset to the projection
+    // matrix so each frame samples a slightly different sub-pixel position. Both TAA
+    // and temporal upscalers (FSR 2, DLSS, XeSS) require jittered input.
+    if (m_AAMode == 2 || m_UpscalerType > 0) { // TAA or temporal upscaler
         VkExtent2D extent = m_Renderer->GetSwapchainExtent();
         if (extent.width > 0 && extent.height > 0) {
             Math::Vector2 jitter = Renderer::HaltonJitter(m_TAAFrameCounter, extent.width, extent.height);
@@ -6877,6 +6879,89 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         neeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
         neeWrite.pBufferInfo = &neeBufInfo;
         vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
+    }
+}
+
+// ============================================================================
+// TEMPORAL UPSCALING (FSR 2 / DLSS / XeSS)
+// ============================================================================
+
+void RenderSystem::SetUpscalerType(u32 type) {
+    if (type == m_UpscalerType) return;
+
+    // Tear down existing upscaler
+    if (m_Upscaler) {
+        m_Upscaler->Shutdown();
+        m_Upscaler.reset();
+    }
+
+    m_UpscalerType = type;
+
+    if (type == 0) {
+        ENJIN_LOG_INFO(Renderer, "Temporal upscaler disabled");
+        return;
+    }
+
+    // Create the requested backend
+    auto* ctx = m_Renderer->GetContext();
+    switch (type) {
+        case 1: // FSR 2
+            m_Upscaler = std::make_unique<Renderer::FSR2Upscaler>(ctx);
+            break;
+        case 2: // DLSS (stub)
+            ENJIN_LOG_WARN(Renderer, "DLSS upscaler not yet implemented");
+            m_UpscalerType = 0;
+            return;
+        case 3: // XeSS (stub)
+            ENJIN_LOG_WARN(Renderer, "XeSS upscaler not yet implemented");
+            m_UpscalerType = 0;
+            return;
+        default:
+            m_UpscalerType = 0;
+            return;
+    }
+
+    if (!m_Upscaler->IsAvailable()) {
+        ENJIN_LOG_WARN(Renderer, "%s upscaler SDK not compiled in", m_Upscaler->GetName());
+        m_Upscaler.reset();
+        m_UpscalerType = 0;
+        return;
+    }
+
+    // Initialize with current display resolution
+    VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+    u32 renderW, renderH;
+    Renderer::IUpscaler::GetRenderResolution(
+        extent.width, extent.height,
+        static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality),
+        renderW, renderH);
+
+    if (!m_Upscaler->Initialize(renderW, renderH, extent.width, extent.height,
+                                static_cast<Renderer::UpscalerQuality>(m_UpscalerQuality))) {
+        ENJIN_LOG_WARN(Renderer, "Failed to initialize %s upscaler", m_Upscaler->GetName());
+        m_Upscaler.reset();
+        m_UpscalerType = 0;
+        return;
+    }
+
+    ENJIN_LOG_INFO(Renderer, "%s upscaler active (%ux%u -> %ux%u)",
+                   m_Upscaler->GetName(), renderW, renderH, extent.width, extent.height);
+}
+
+void RenderSystem::SetUpscalerQuality(u32 quality) {
+    if (quality == m_UpscalerQuality) return;
+    m_UpscalerQuality = quality;
+
+    if (m_Upscaler && m_UpscalerType > 0) {
+        VkExtent2D extent = m_Renderer->GetSwapchainExtent();
+        u32 renderW, renderH;
+        Renderer::IUpscaler::GetRenderResolution(
+            extent.width, extent.height,
+            static_cast<Renderer::UpscalerQuality>(quality),
+            renderW, renderH);
+        m_Upscaler->Resize(renderW, renderH, extent.width, extent.height);
+        ENJIN_LOG_INFO(Renderer, "Upscaler quality changed: %ux%u -> %ux%u",
+                       renderW, renderH, extent.width, extent.height);
     }
 }
 

@@ -1051,6 +1051,48 @@ void EditorLayer::DrawSettingsSection_PostProcessing() {
             }
         }
 
+        // Temporal Upscaling
+        if (ImGui::CollapsingHeader("Upscaling")) {
+            const char* upscalerTypes[] = { "None", "FSR 2", "DLSS", "XeSS" };
+            int upType = static_cast<int>(settings.upscalerType);
+            if (ImGui::Combo("Upscaler", &upType, upscalerTypes, IM_ARRAYSIZE(upscalerTypes))) {
+                settings.upscalerType = static_cast<u32>(upType);
+            }
+
+            if (settings.upscalerType > 0) {
+                const char* qualityModes[] = { "Performance (50%)", "Balanced (58%)", "Quality (67%)", "Ultra Quality (77%)" };
+                int upQuality = static_cast<int>(settings.upscalerQuality);
+                if (ImGui::Combo("Quality##Upscaler", &upQuality, qualityModes, IM_ARRAYSIZE(qualityModes))) {
+                    settings.upscalerQuality = static_cast<u32>(upQuality);
+                }
+
+                ImGui::SliderFloat("Sharpness##Upscaler", &settings.upscalerSharpness, 0.0f, 1.0f, "%.2f");
+
+                // Availability indicators
+                ImGui::Spacing();
+                ImGui::TextDisabled("Compiled backends:");
+#ifdef ENJIN_UPSCALING_FSR2
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  FSR 2: Available");
+#else
+                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "  FSR 2: Not compiled (ENJIN_UPSCALING_FSR2=OFF)");
+#endif
+#ifdef ENJIN_UPSCALING_DLSS
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  DLSS: Available");
+#else
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  DLSS: Not compiled");
+#endif
+#ifdef ENJIN_UPSCALING_XESS
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "  XeSS: Available");
+#else
+                ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "  XeSS: Not compiled");
+#endif
+
+                if (settings.upscalerType > 0 && settings.aaMode == 2) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.2f, 1.0f), "Note: TAA is bypassed when upscaler is active");
+                }
+            }
+        }
+
         // LUT Color Grading
         if (ImGui::CollapsingHeader("LUT Color Grading")) {
             bool lutEnabled = settings.lutEnabled != 0;

@@ -157,6 +157,11 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         s.taaFeedbackMin               = pp->taaFeedbackMin;
         s.taaFeedbackMax               = pp->taaFeedbackMax;
 
+        // Temporal Upscaling
+        s.upscalerType                 = pp->upscalerType;
+        s.upscalerQuality              = pp->upscalerQuality;
+        s.upscalerSharpness            = pp->upscalerSharpness;
+
         // Retro: Dithering
         s.ditherEnabled                = pp->ditherEnabled != 0;
         s.ditherPattern                = pp->ditherPattern;
@@ -411,6 +416,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         pp->taaFeedbackMin               = taaFeedbackMin;
         pp->taaFeedbackMax               = taaFeedbackMax;
 
+        // Temporal Upscaling
+        pp->upscalerType                 = upscalerType;
+        pp->upscalerQuality              = upscalerQuality;
+        pp->upscalerSharpness            = upscalerSharpness;
+
         // Retro: Dithering
         pp->ditherEnabled                = ditherEnabled ? 1 : 0;
         pp->ditherPattern                = ditherPattern;
@@ -623,6 +633,11 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["taaJitterScale"]    = RF(s.taaJitterScale);
     j["taaFeedbackMin"]    = RF(s.taaFeedbackMin);
     j["taaFeedbackMax"]    = RF(s.taaFeedbackMax);
+
+    // Temporal Upscaling
+    j["upscalerType"]      = s.upscalerType;
+    j["upscalerQuality"]   = s.upscalerQuality;
+    j["upscalerSharpness"] = RF(s.upscalerSharpness);
 
     // Retro: Dithering
     j["ditherEnabled"]     = s.ditherEnabled;
@@ -850,6 +865,11 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("taaJitterScale"))    s.taaJitterScale    = j["taaJitterScale"].get<f32>();
     if (j.contains("taaFeedbackMin"))    s.taaFeedbackMin    = j["taaFeedbackMin"].get<f32>();
     if (j.contains("taaFeedbackMax"))    s.taaFeedbackMax    = j["taaFeedbackMax"].get<f32>();
+
+    // Temporal Upscaling
+    if (j.contains("upscalerType"))      s.upscalerType      = j["upscalerType"].get<u32>();
+    if (j.contains("upscalerQuality"))   s.upscalerQuality   = j["upscalerQuality"].get<u32>();
+    if (j.contains("upscalerSharpness")) s.upscalerSharpness = j["upscalerSharpness"].get<f32>();
 
     // Retro: Dithering
     if (j.contains("ditherEnabled"))     s.ditherEnabled     = JB(j["ditherEnabled"]);

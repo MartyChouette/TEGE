@@ -87,6 +87,11 @@ struct SceneRenderSettings {
     f32 taaFeedbackMin = 0.88f;    // Min history blend weight (low = more responsive, more flicker)
     f32 taaFeedbackMax = 0.97f;    // Max history blend weight (high = smoother, more ghosting)
 
+    // Temporal Upscaling (FSR 2 / DLSS / XeSS — replaces TAA when active)
+    u32 upscalerType = 0;             // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
+    u32 upscalerQuality = 2;          // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
+    f32 upscalerSharpness = 0.0f;     // Additional sharpening (0 = upscaler default)
+
     // Retro: Dithering
     bool ditherEnabled = false;
     u32 ditherPattern = 0;

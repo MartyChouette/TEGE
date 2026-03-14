@@ -89,6 +89,7 @@ namespace Enjin { namespace Renderer {
     class OIDNDenoiser;
     class OptiXDenoiser;
     class RTCompositor;
+    class IUpscaler;
     class OITManager;
     class SHLightingSystem;
     class SDFScene;
@@ -365,6 +366,16 @@ public:
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA
     u32 GetAAMode() const { return m_AAMode; }
     void SetAAMode(u32 mode) { m_AAMode = mode; }
+
+    // Temporal upscaling (FSR 2, DLSS, XeSS — replaces TAA when active)
+    u32 GetUpscalerType() const { return m_UpscalerType; }
+    void SetUpscalerType(u32 type);
+    u32 GetUpscalerQuality() const { return m_UpscalerQuality; }
+    void SetUpscalerQuality(u32 quality);
+    f32 GetUpscalerSharpness() const { return m_UpscalerSharpness; }
+    void SetUpscalerSharpness(f32 s) { m_UpscalerSharpness = s; }
+    bool IsUpscalerActive() const { return m_UpscalerType > 0 && m_Upscaler != nullptr; }
+    Renderer::IUpscaler* GetUpscaler() const { return m_Upscaler.get(); }
 
 #if !ENJIN_RENDERER_WEBGPU
     // Skybox
@@ -789,6 +800,12 @@ private:
 #endif
 
     bool m_Initialized = false;
+
+    // --- Temporal Upscaling state ---
+    u32 m_UpscalerType = 0;        // 0=None, 1=FSR2, 2=DLSS, 3=XeSS
+    u32 m_UpscalerQuality = 2;     // 0=Performance, 1=Balanced, 2=Quality, 3=UltraQuality
+    f32 m_UpscalerSharpness = 0.0f;
+    std::unique_ptr<Renderer::IUpscaler> m_Upscaler;
 
     // --- TAA (Temporal Anti-Aliasing) state ---
     // Anti-aliasing mode: 0=None, 1=FXAA, 2=TAA, 3=SMAA (mirrors SceneRenderSettings::aaMode)
