@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 
+if(WIN32)
+    set(PLAYER_RC "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc")
+endif()
+
 if(ENJIN_PLATFORM_WEB)
     add_executable(EnjinPlayer
         src/web_main.cpp
@@ -7,6 +11,7 @@ if(ENJIN_PLATFORM_WEB)
 else()
     add_executable(EnjinPlayer
         src/main.cpp
+        ${PLAYER_RC}
     )
 endif()
 

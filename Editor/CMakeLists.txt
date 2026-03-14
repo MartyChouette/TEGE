@@ -7,7 +7,11 @@ file(GLOB_RECURSE EDITOR_SOURCES
     "include/*.hpp"
 )
 
-add_executable(EnjinEditor ${EDITOR_SOURCES})
+if(WIN32)
+    set(EDITOR_RC "${CMAKE_CURRENT_SOURCE_DIR}/resources.rc")
+endif()
+
+add_executable(EnjinEditor ${EDITOR_SOURCES} ${EDITOR_RC})
 
 target_include_directories(EnjinEditor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include

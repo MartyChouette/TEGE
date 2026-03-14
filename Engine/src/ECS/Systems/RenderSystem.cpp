@@ -3299,6 +3299,7 @@ void RenderSystem::UpdateFrameUniforms() {
         lighting.fogParams = Math::Vector4(m_FogDensity, m_FogStart, m_FogEnd, m_FogHeightFalloff);
         lighting.fogColorSnow = Math::Vector4(m_FogColor.x, m_FogColor.y, m_FogColor.z, m_SnowIntensity);
         (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+        m_CachedLightingData = lighting;
         return;
     }
 
@@ -3489,6 +3490,9 @@ void RenderSystem::UpdateFrameUniforms() {
     }
 
     (*m_ActiveLightingBuffers)[GetActiveBufferIndex(currentFrame)]->UploadData(&lighting, sizeof(lighting));
+
+    // Cache lighting data for RT/path tracer NEE access
+    m_CachedLightingData = lighting;
 
     // Upload shadow data SSBO for point/spot light shadows
     if (m_ShadowDataBuffer && m_ShadowsEnabled) {
@@ -5509,8 +5513,8 @@ void RenderSystem::InitializeRayTracing() {
     auto* ctx = m_Renderer->GetContext();
     ENJIN_LOG_INFO(Renderer, "Initializing ray tracing subsystems...");
 
-    // Create RT descriptor set layout (14 bindings)
-    std::array<VkDescriptorSetLayoutBinding, 16> rtBindings{};
+    // Create RT descriptor set layout (17 bindings)
+    std::array<VkDescriptorSetLayoutBinding, 17> rtBindings{};
 
     // Binding 0: TLAS
     rtBindings[0].binding = 0;
@@ -5592,6 +5596,12 @@ void RenderSystem::InitializeRayTracing() {
     rtBindings[15].descriptorCount = 1;
     rtBindings[15].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_COMPUTE_BIT;
 
+    // Binding 16: NEE light SSBO (scene lights for path tracer direct light sampling)
+    rtBindings[16].binding = 16;
+    rtBindings[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    rtBindings[16].descriptorCount = 1;
+    rtBindings[16].stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+
     VkDescriptorSetLayoutCreateInfo layoutInfo{};
     layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
     layoutInfo.bindingCount = static_cast<u32>(rtBindings.size());
@@ -5607,7 +5617,7 @@ void RenderSystem::InitializeRayTracing() {
     poolSizes[0] = { VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 1 };
     poolSizes[1] = { VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 7 };
     poolSizes[2] = { VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3 };
-    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 4 };
+    poolSizes[3] = { VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 5 };  // 9-12 + NEE light SSBO at 16
     poolSizes[4] = { VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1 };
 
     VkDescriptorPoolCreateInfo poolInfo{};
@@ -5977,8 +5987,33 @@ void RenderSystem::DispatchRTEffects(VkCommandBuffer cmd) {
     // Update RT light UBO with current frame data
     f32 shadowRadius = m_RTShadows ? m_RTShadows->GetConfig().radius : 0.01f;
     if (m_RTShadows) lightShadowDistance = m_RTShadows->GetConfig().maxDistance;
+
+    // Path tracer config for shader upload
+    f32 fireflyClamp = 10.0f;
+    i32 enableNEE = 1, enableMIS = 1, rrMinBounce = 3;
+    f32 rrMinProb = 0.05f;
+    u32 ptMaxBounces = 4, ptAccumulatedSamples = 0;
+    if (m_PathTracer) {
+        const auto& ptCfg = m_PathTracer->GetConfig();
+        fireflyClamp = ptCfg.fireflyClampValue;
+        enableNEE = ptCfg.enableNEE ? 1 : 0;
+        enableMIS = ptCfg.enableMIS ? 1 : 0;
+        rrMinBounce = static_cast<i32>(ptCfg.russianRouletteMinBounce);
+        rrMinProb = ptCfg.russianRouletteMinProb;
+        ptMaxBounces = ptCfg.maxBounces;
+        ptAccumulatedSamples = m_PathTracer->GetAccumulatedSamples();
+    }
+
+    // Light counts from cached forward renderer data
+    u32 dirLightCount = m_CachedLightingData.directionalLightCount;
+    u32 ptLightCount = m_CachedLightingData.pointLightCount;
+    u32 sptLightCount = m_CachedLightingData.spotLightCount;
+
     UpdateRTLightUBO(invViewProj, lightDir, lightIntensity, lightShadowDistance,
-                     shadowRadius, m_RTFrameCount);
+                     shadowRadius, m_RTFrameCount,
+                     fireflyClamp, enableNEE, enableMIS, rrMinBounce, rrMinProb,
+                     dirLightCount, ptLightCount, sptLightCount,
+                     ptMaxBounces, ptAccumulatedSamples);
 
     // Update TLAS descriptor (handle may change on rebuild)
     {
@@ -6232,10 +6267,35 @@ void RenderSystem::CreateRTDummyResources() {
         std::memset(m_RTLightUBOMapped[i], 0, 256);
     }
 
+    // Create NEE light SSBOs (binding 16, per frame in flight — scene lights for path tracer)
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        VkBufferCreateInfo bufInfo{};
+        bufInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        bufInfo.size = RT_NEE_LIGHT_BUFFER_SIZE;
+        bufInfo.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
+        bufInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        vkCreateBuffer(device, &bufInfo, nullptr, &m_RTNEELightBuffer[i]);
+
+        VkMemoryRequirements memReqs;
+        vkGetBufferMemoryRequirements(device, m_RTNEELightBuffer[i], &memReqs);
+        VkMemoryAllocateInfo allocInfo{};
+        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocInfo.allocationSize = memReqs.size;
+        allocInfo.memoryTypeIndex = ctx->FindMemoryType(memReqs.memoryTypeBits,
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        vkAllocateMemory(device, &allocInfo, nullptr, &m_RTNEELightMemory[i]);
+        vkBindBufferMemory(device, m_RTNEELightBuffer[i], m_RTNEELightMemory[i], 0);
+        if (vkMapMemory(device, m_RTNEELightMemory[i], 0, RT_NEE_LIGHT_BUFFER_SIZE, 0, &m_RTNEELightMapped[i]) != VK_SUCCESS) {
+            m_RTNEELightMapped[i] = nullptr;
+            continue;
+        }
+        std::memset(m_RTNEELightMapped[i], 0, RT_NEE_LIGHT_BUFFER_SIZE);
+    }
+
     // Create RT material SSBO (binding 9) — persistently mapped, host visible + coherent
     EnsureRTMaterialBuffer(RT_MATERIAL_BUFFER_INITIAL_CAPACITY);
 
-    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, and material SSBO created");
+    ENJIN_LOG_INFO(Renderer, "RT dummy resources, light UBOs, NEE light SSBOs, and material SSBO created");
 }
 
 void RenderSystem::EnsureRTMaterialBuffer(u32 requiredCapacity) {
@@ -6329,6 +6389,16 @@ void RenderSystem::DestroyRTDummyResources() {
     if (m_RTDummyImageMemory) { vkFreeMemory(device, m_RTDummyImageMemory, nullptr); m_RTDummyImageMemory = VK_NULL_HANDLE; }
     if (m_RTDummyBuffer) { vkDestroyBuffer(device, m_RTDummyBuffer, nullptr); m_RTDummyBuffer = VK_NULL_HANDLE; }
     if (m_RTDummyBufferMemory) { vkFreeMemory(device, m_RTDummyBufferMemory, nullptr); m_RTDummyBufferMemory = VK_NULL_HANDLE; }
+
+    // Destroy NEE light SSBOs
+    for (u32 i = 0; i < RT_FRAMES_IN_FLIGHT; ++i) {
+        if (m_RTNEELightMapped[i]) {
+            vkUnmapMemory(device, m_RTNEELightMemory[i]);
+            m_RTNEELightMapped[i] = nullptr;
+        }
+        if (m_RTNEELightBuffer[i]) { vkDestroyBuffer(device, m_RTNEELightBuffer[i], nullptr); m_RTNEELightBuffer[i] = VK_NULL_HANDLE; }
+        if (m_RTNEELightMemory[i]) { vkFreeMemory(device, m_RTNEELightMemory[i], nullptr); m_RTNEELightMemory[i] = VK_NULL_HANDLE; }
+    }
 
     // Destroy RT material SSBO
     if (m_RTMaterialMapped) { vkUnmapMemory(device, m_RTMaterialMemory); m_RTMaterialMapped = nullptr; }
@@ -6474,8 +6544,14 @@ void RenderSystem::WriteRTDescriptors() {
     uboInfo.offset = 0;
     uboInfo.range = 256;
 
-    // Build write array for all 16 bindings
-    std::array<VkWriteDescriptorSet, 16> writes{};
+    // Binding 16: NEE light SSBO
+    VkDescriptorBufferInfo neeBufInfo{};
+    neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx] ? m_RTNEELightBuffer[frameIdx] : m_RTDummyBuffer;
+    neeBufInfo.offset = 0;
+    neeBufInfo.range = m_RTNEELightBuffer[frameIdx] ? static_cast<VkDeviceSize>(RT_NEE_LIGHT_BUFFER_SIZE) : 256;
+
+    // Build write array for all 17 bindings
+    std::array<VkWriteDescriptorSet, 17> writes{};
 
     // Binding 0: TLAS
     writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
@@ -6547,9 +6623,17 @@ void RenderSystem::WriteRTDescriptors() {
     writes[15].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     writes[15].pImageInfo = &rtOutputInfos[5];
 
+    // Binding 16: NEE light SSBO
+    writes[16].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[16].dstSet = m_RTDescriptorSet;
+    writes[16].dstBinding = 16;
+    writes[16].descriptorCount = 1;
+    writes[16].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    writes[16].pBufferInfo = &neeBufInfo;
+
     vkUpdateDescriptorSets(device, static_cast<u32>(writes.size()), writes.data(), 0, nullptr);
 
-    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 16 bindings)");
+    ENJIN_LOG_INFO(Renderer, "RT descriptor set written (all 17 bindings)");
 }
 
 void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
@@ -6594,19 +6678,34 @@ void RenderSystem::TransitionRTOutputImages(VkCommandBuffer cmd) {
 }
 
 void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
-                                     f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount) {
+                                     f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
+                                     f32 fireflyClamp, i32 enableNEE, i32 enableMIS,
+                                     i32 rrMinBounce, f32 rrMinProb,
+                                     u32 dirLightCount, u32 ptLightCount, u32 sptLightCount,
+                                     u32 maxBounces, u32 accumulatedSamples) {
     u32 frameIdx = m_Renderer->GetCurrentFrameIndex();
     if (!m_RTLightUBOMapped[frameIdx]) return;
 
     VkExtent2D extent = m_Renderer->GetSwapchainExtent();
 
-    // RT light UBO layout (std140):
-    // vec4 lightDir       (offset 0)
-    // vec4 lightColor     (offset 16)
-    // mat4 invViewProj    (offset 32)
-    // vec2 screenSize     (offset 96)
-    // uint frameCount     (offset 104)
-    // float shadowRadius  (offset 108)
+    // RT light UBO layout (std140, matches shader LightData uniform block):
+    // vec4 lightDir            (offset 0)
+    // vec4 lightColor          (offset 16)
+    // mat4 invViewProj         (offset 32)
+    // vec2 screenSize          (offset 96)
+    // uint frameCount          (offset 104)
+    // float shadowRadius       (offset 108)
+    // float fireflyClamp       (offset 112)
+    // int enableNEE            (offset 116)
+    // int enableMIS            (offset 120)
+    // int rrMinBounce          (offset 124)
+    // float rrMinProb          (offset 128)
+    // uint dirLightCount       (offset 132)
+    // uint pointLightCount     (offset 136)
+    // uint spotLightCount      (offset 140)
+    // uint maxBounces          (offset 144)
+    // uint accumulatedSamples  (offset 148)
+    // uint _pad[2]             (offset 152)  -- pad to 160 bytes
     struct RTLightData {
         f32 lightDir[4];
         f32 lightColor[4];
@@ -6614,6 +6713,21 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
         f32 screenSize[2];
         u32 frameCount;
         f32 shadowRadius;
+        // Path tracer config
+        f32 fireflyClamp;
+        i32 enableNEE;
+        i32 enableMIS;
+        i32 rrMinBounce;
+        f32 rrMinProb;
+        // NEE light counts
+        u32 directionalLightCount;
+        u32 pointLightCount;
+        u32 spotLightCount;
+        // Convergence
+        u32 maxBounces;
+        u32 accumulatedSamples;
+        u32 _pad0;
+        u32 _pad1;
     };
 
     RTLightData data{};
@@ -6636,6 +6750,22 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     data.frameCount = frameCount;
     data.shadowRadius = shadowRadius;
 
+    // Path tracer config
+    data.fireflyClamp = fireflyClamp;
+    data.enableNEE = enableNEE;
+    data.enableMIS = enableMIS;
+    data.rrMinBounce = rrMinBounce;
+    data.rrMinProb = rrMinProb;
+
+    // NEE light counts
+    data.directionalLightCount = dirLightCount;
+    data.pointLightCount = ptLightCount;
+    data.spotLightCount = sptLightCount;
+
+    // Convergence
+    data.maxBounces = maxBounces;
+    data.accumulatedSamples = accumulatedSamples;
+
     std::memcpy(m_RTLightUBOMapped[frameIdx], &data, sizeof(data));
 
     // Update descriptor binding 13 to point to this frame's UBO
@@ -6652,6 +6782,102 @@ void RenderSystem::UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math
     write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     write.pBufferInfo = &uboInfo;
     vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &write, 0, nullptr);
+
+    // Upload NEE light data to SSBO (binding 16) for path tracer direct light sampling
+    if (m_RTNEELightMapped[frameIdx] && (dirLightCount > 0 || ptLightCount > 0 || sptLightCount > 0)) {
+        // NEE light SSBO layout: packed RTLight structs (64 bytes each, matches rt_common.glsl)
+        // RTLight { vec3 position, float range, vec3 direction, float intensity,
+        //           vec3 color, int type, float innerCutoff, float outerCutoff, float _pad0, float _pad1 }
+        struct RTLightGPU {
+            f32 position[3]; f32 range;
+            f32 direction[3]; f32 intensity;
+            f32 color[3]; i32 type;
+            f32 innerCutoff; f32 outerCutoff;
+            f32 _pad0; f32 _pad1;
+        };
+
+        u8* dst = static_cast<u8*>(m_RTNEELightMapped[frameIdx]);
+        u32 offset = 0;
+        u32 maxLights = RT_NEE_LIGHT_BUFFER_SIZE / sizeof(RTLightGPU);
+        u32 totalLights = 0;
+
+        // Copy directional lights
+        for (u32 i = 0; i < dirLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = 0.0f; light.position[1] = 0.0f; light.position[2] = 0.0f;
+            light.range = 0.0f;  // Infinite for directional
+            light.direction[0] = m_CachedLightingData.directionalLights[i].direction.x;
+            light.direction[1] = m_CachedLightingData.directionalLights[i].direction.y;
+            light.direction[2] = m_CachedLightingData.directionalLights[i].direction.z;
+            light.intensity = m_CachedLightingData.directionalLights[i].intensity;
+            light.color[0] = m_CachedLightingData.directionalLights[i].color.x;
+            light.color[1] = m_CachedLightingData.directionalLights[i].color.y;
+            light.color[2] = m_CachedLightingData.directionalLights[i].color.z;
+            light.type = 0;
+            light.innerCutoff = 0.0f;
+            light.outerCutoff = 0.0f;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Copy point lights
+        for (u32 i = 0; i < ptLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = m_CachedLightingData.pointLights[i].position.x;
+            light.position[1] = m_CachedLightingData.pointLights[i].position.y;
+            light.position[2] = m_CachedLightingData.pointLights[i].position.z;
+            light.range = m_CachedLightingData.pointLights[i].range;
+            light.direction[0] = 0.0f; light.direction[1] = 0.0f; light.direction[2] = 0.0f;
+            light.intensity = m_CachedLightingData.pointLights[i].intensity;
+            light.color[0] = m_CachedLightingData.pointLights[i].color.x;
+            light.color[1] = m_CachedLightingData.pointLights[i].color.y;
+            light.color[2] = m_CachedLightingData.pointLights[i].color.z;
+            light.type = 1;
+            light.innerCutoff = 0.0f;
+            light.outerCutoff = 0.0f;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Copy spot lights
+        for (u32 i = 0; i < sptLightCount && totalLights < maxLights; ++i) {
+            RTLightGPU light{};
+            light.position[0] = m_CachedLightingData.spotLights[i].position.x;
+            light.position[1] = m_CachedLightingData.spotLights[i].position.y;
+            light.position[2] = m_CachedLightingData.spotLights[i].position.z;
+            light.range = m_CachedLightingData.spotLights[i].range;
+            light.direction[0] = m_CachedLightingData.spotLights[i].direction.x;
+            light.direction[1] = m_CachedLightingData.spotLights[i].direction.y;
+            light.direction[2] = m_CachedLightingData.spotLights[i].direction.z;
+            light.intensity = m_CachedLightingData.spotLights[i].intensity;
+            light.color[0] = m_CachedLightingData.spotLights[i].color.x;
+            light.color[1] = m_CachedLightingData.spotLights[i].color.y;
+            light.color[2] = m_CachedLightingData.spotLights[i].color.z;
+            light.type = 2;
+            light.innerCutoff = m_CachedLightingData.spotLights[i].innerCutoff;
+            light.outerCutoff = m_CachedLightingData.spotLights[i].outerCutoff;
+            std::memcpy(dst + offset, &light, sizeof(RTLightGPU));
+            offset += sizeof(RTLightGPU);
+            totalLights++;
+        }
+
+        // Update descriptor binding 16 to point to this frame's NEE light SSBO
+        VkDescriptorBufferInfo neeBufInfo{};
+        neeBufInfo.buffer = m_RTNEELightBuffer[frameIdx];
+        neeBufInfo.offset = 0;
+        neeBufInfo.range = VK_WHOLE_SIZE;
+
+        VkWriteDescriptorSet neeWrite{};
+        neeWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        neeWrite.dstSet = m_RTDescriptorSet;
+        neeWrite.dstBinding = 16;
+        neeWrite.descriptorCount = 1;
+        neeWrite.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        neeWrite.pBufferInfo = &neeBufInfo;
+        vkUpdateDescriptorSets(m_Renderer->GetContext()->GetDevice(), 1, &neeWrite, 0, nullptr);
+    }
 }
 
 } // namespace ECS

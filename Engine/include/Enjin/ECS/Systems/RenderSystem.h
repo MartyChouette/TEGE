@@ -24,6 +24,7 @@
 #include "Enjin/Renderer/TextRasterizer.h"
 #include "Enjin/ECS/Components/Skeleton.h"
 #include "Enjin/ECS/Components/Material.h"
+#include "Enjin/ECS/Components/Light.h"
 #include "Enjin/ECS/Components/Text.h"
 
 #if !ENJIN_RENDERER_WEBGPU
@@ -684,6 +685,7 @@ private:
     // Uniform buffers (one per frame in flight)
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_UniformBuffers;
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_LightingBuffers;
+    LightingUBO m_CachedLightingData{};  // Cached copy of the latest lighting UBO for RT path tracer NEE
     std::vector<std::unique_ptr<Renderer::VulkanBuffer>> m_MaterialBuffers;
     std::vector<VkDescriptorSet> m_DescriptorSets;
     VkDescriptorPool m_DescriptorPool = VK_NULL_HANDLE;
@@ -853,6 +855,12 @@ private:
     void* m_RTMaterialMapped = nullptr;
     u32 m_RTMaterialBufferCapacity = 0;  // Current capacity in number of MaterialGPU entries
 
+    // NEE light SSBO (binding 16) — scene lights for path tracer direct light sampling
+    VkBuffer m_RTNEELightBuffer[RT_FRAMES_IN_FLIGHT] = {};
+    VkDeviceMemory m_RTNEELightMemory[RT_FRAMES_IN_FLIGHT] = {};
+    void* m_RTNEELightMapped[RT_FRAMES_IN_FLIGHT] = {};
+    static constexpr u32 RT_NEE_LIGHT_BUFFER_SIZE = 8192;  // Enough for all scene lights
+
     bool m_RTDescriptorsWritten = false;
 
     // --- Order-Independent Transparency (Weighted Blended OIT) ---
@@ -875,7 +883,11 @@ private:
     void UploadRTMaterials();
     void EnsureRTMaterialBuffer(u32 requiredCapacity);
     void UpdateRTLightUBO(const Math::Matrix4& invViewProj, const Math::Vector3& lightDir,
-                          f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount);
+                          f32 lightIntensity, f32 shadowDistance, f32 shadowRadius, u32 frameCount,
+                          f32 fireflyClamp, i32 enableNEE, i32 enableMIS,
+                          i32 rrMinBounce, f32 rrMinProb,
+                          u32 dirLightCount, u32 ptLightCount, u32 sptLightCount,
+                          u32 maxBounces, u32 accumulatedSamples);
 #endif // !ENJIN_RENDERER_WEBGPU (RT/OIT/SH/SDF block)
 };
 

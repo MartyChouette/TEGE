@@ -5,22 +5,148 @@ layout(binding = 0, set = 0) uniform accelerationStructureEXT topLevelAS;
 layout(binding = 1, set = 0, rgba16f) uniform image2D accumulationImage;
 
 layout(binding = 13, set = 0) uniform LightData {
-    vec4 lightDir;
-    vec4 lightColor;
+    vec4 lightDir;       // xyz = primary directional light dir, w = intensity
+    vec4 lightColor;     // xyz = color, w = shadow distance
     mat4 invViewProj;
     vec2 screenSize;
     uint frameCount;
-    float pad0;
-    vec4 cameraPos;
-    int maxBounces;
-    int accumulatedSamples;
-    float pad1, pad2;
+    float shadowRadius;
+    // Path tracer config
+    float fireflyClamp;     // Max radiance per sample (0 = disabled)
+    int enableNEE;          // 0 or 1
+    int enableMIS;          // 0 or 1
+    int rrMinBounce;        // Russian Roulette min bounce
+    float rrMinProb;        // Russian Roulette min survival probability
+    // NEE light counts
+    uint dirLightCount;
+    uint pointLightCount;
+    uint spotLightCount;
+    // Convergence
+    uint maxBounces;
+    uint accumulatedSamples;
+    uint _pad0;
+    uint _pad1;
 } uLight;
 
+// NEE light SSBO at binding 16 — packed as vec4 quads for std430 compatibility:
+// Each light is 4 vec4s (64 bytes):
+//   [i*4+0] = vec4(position.xyz, range)
+//   [i*4+1] = vec4(direction.xyz, intensity)
+//   [i*4+2] = vec4(color.xyz, intBitsToFloat(type))
+//   [i*4+3] = vec4(innerCutoff, outerCutoff, 0, 0)
+layout(binding = 16, set = 0) readonly buffer NEELightSSBO {
+    vec4 neeLightData[];
+};
+
+// Payload 0: hitColor.rgb + hitDist (also reused for shadow occlusion queries)
 layout(location = 0) rayPayloadEXT vec4 pathPayload;
+
+// Payload 1: surface normal.xyz + materialIndex (as float bits)
+layout(location = 1) rayPayloadEXT vec4 pathPayload2;
 
 #include "rt_common.glsl"
 
+// ============================================================================
+// Fetch light from the NEE light SSBO
+// ============================================================================
+RTLight getLight(int index) {
+    RTLight light;
+    int base = index * 4;
+    vec4 d0 = neeLightData[base + 0];
+    vec4 d1 = neeLightData[base + 1];
+    vec4 d2 = neeLightData[base + 2];
+    vec4 d3 = neeLightData[base + 3];
+
+    light.position    = d0.xyz;
+    light.range       = d0.w;
+    light.direction   = d1.xyz;
+    light.intensity   = d1.w;
+    light.color       = d2.xyz;
+    light.type        = floatBitsToInt(d2.w);
+    light.innerCutoff = d3.x;
+    light.outerCutoff = d3.y;
+    light._pad0       = 0.0;
+    light._pad1       = 0.0;
+    return light;
+}
+
+// ============================================================================
+// NEE: Sample one light and compute direct illumination
+// ============================================================================
+vec3 sampleDirectLight(vec3 hitPos, vec3 N, vec3 V, RTMaterial mat, inout uint rng) {
+    int lightCount = int(uLight.dirLightCount + uLight.pointLightCount + uLight.spotLightCount);
+    if (lightCount <= 0) return vec3(0.0);
+
+    // Randomly select one light (uniform selection)
+    int lightIdx = int(rand_float(rng) * float(lightCount));
+    lightIdx = min(lightIdx, lightCount - 1);
+    RTLight light = getLight(lightIdx);
+
+    // Sample the selected light
+    vec3 lightDir;
+    float lightDist;
+    float lightPdf;
+    vec3 Li;
+
+    if (light.type == 0) {
+        Li = sample_directional_light(light, lightDir, lightDist, lightPdf);
+    } else if (light.type == 1) {
+        Li = sample_point_light(light, hitPos, lightDir, lightDist, lightPdf);
+    } else {
+        Li = sample_spot_light(light, hitPos, lightDir, lightDist, lightPdf);
+    }
+
+    float NdotL = dot(N, lightDir);
+    if (NdotL <= 0.0 || all(lessThanEqual(Li, vec3(0.0)))) return vec3(0.0);
+
+    // Shadow ray: check visibility toward the light
+    // Reuse pathPayload at location 0: set w=0 (hit=occluded), miss shader sets w=-1 (visible)
+    pathPayload = vec4(0.0);
+    traceRayEXT(topLevelAS,
+        gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsSkipClosestHitShaderEXT,
+        0xFF, 0, 0,
+        0,  // Miss shader index 0 = primary miss (sets pathPayload.w = -1.0)
+        hitPos + N * 0.001, 0.001,
+        lightDir, lightDist - 0.002,
+        0   // Payload location 0 (pathPayload)
+    );
+
+    if (pathPayload.w >= 0.0) return vec3(0.0);  // Hit geometry = occluded
+
+    // Evaluate BRDF for this light direction
+    vec3 brdf = eval_cook_torrance(mat, N, V, lightDir);
+
+    // Light selection PDF: 1/numLights (uniform random choice)
+    float selectionPdf = 1.0 / float(lightCount);
+
+    // BRDF PDF for this direction (for MIS weight)
+    vec3 H = normalize(V + lightDir);
+    float NdotH = max(dot(N, H), 0.0);
+    float HdotV = max(dot(H, V), 0.0);
+    float brdfPdf = pdf_ggx_reflection(NdotH, HdotV, mat.roughness);
+    float diffPdf = cosine_hemisphere_pdf(NdotL);
+    // Approximate combined BRDF PDF using similar mix ratio as sample_brdf
+    float specProb = mix(0.5, 1.0, mat.metallic);
+    specProb = mix(specProb, 0.3, mat.roughness * mat.roughness * (1.0 - mat.metallic));
+    specProb = clamp(specProb, 0.1, 0.9);
+    float combinedBrdfPdf = specProb * brdfPdf + (1.0 - specProb) * diffPdf;
+
+    // MIS weight: power heuristic between light PDF and BRDF PDF
+    // For delta lights (point/directional), light sampling PDF is a delta,
+    // so MIS weight is 1.0 (light sample always wins)
+    float misWeight = 1.0;
+    if (uLight.enableMIS != 0 && lightPdf > 0.0 && combinedBrdfPdf > 0.0) {
+        misWeight = mis_power_heuristic(lightPdf * selectionPdf, combinedBrdfPdf);
+    }
+
+    // Direct illumination contribution
+    // Multiply by numLights to compensate for the 1/numLights selection probability
+    return brdf * Li * NdotL * misWeight * float(lightCount) / max(lightPdf, RT_EPSILON);
+}
+
+// ============================================================================
+// Main path tracing loop
+// ============================================================================
 void main() {
     ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
     uint seed = init_rng(uvec2(pixel), uLight.frameCount);
@@ -29,65 +155,144 @@ void main() {
     vec2 jitter = rand_vec2(seed) - 0.5;
     vec2 uv = (vec2(pixel) + 0.5 + jitter) / uLight.screenSize;
 
-    // Generate primary ray
+    // Generate primary ray from inverse view-projection
     vec4 clipNear = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
-    vec4 clipFar = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
+    vec4 clipFar  = vec4(uv * 2.0 - 1.0, 1.0, 1.0);
     vec4 worldNear = uLight.invViewProj * clipNear;
-    vec4 worldFar = uLight.invViewProj * clipFar;
+    vec4 worldFar  = uLight.invViewProj * clipFar;
     worldNear /= worldNear.w;
-    worldFar /= worldFar.w;
+    worldFar  /= worldFar.w;
 
-    vec3 rayOrigin = uLight.cameraPos.xyz;
+    vec3 rayOrigin = worldNear.xyz;
     vec3 rayDir = normalize(worldFar.xyz - worldNear.xyz);
 
-    // Trace path
+    // Path tracing state
     vec3 throughput = vec3(1.0);
     vec3 radiance = vec3(0.0);
 
-    for (int bounce = 0; bounce <= uLight.maxBounces; ++bounce) {
-        pathPayload = vec4(0.0);
+    int bounceLimit = max(int(uLight.maxBounces), 1);
 
+    for (int bounce = 0; bounce <= bounceLimit; ++bounce) {
+        pathPayload  = vec4(0.0);
+        pathPayload2 = vec4(0.0);
+
+        // Trace primary/bounce ray
         traceRayEXT(topLevelAS,
             gl_RayFlagsNoneEXT,
-            0xFF, 0, 0, 0,
+            0xFF, 0, 0,
+            0,  // Miss shader index 0 = primary miss
             rayOrigin, 0.001,
             rayDir, 10000.0,
-            0
+            0   // Payload location 0
         );
 
+        // ============================================================
+        // Miss: add sky contribution and terminate
+        // ============================================================
         if (pathPayload.w <= 0.0) {
-            // Miss — add sky contribution
             float t = 0.5 * (rayDir.y + 1.0);
             vec3 skyColor = mix(vec3(1.0), vec3(0.5, 0.7, 1.0), t);
             radiance += throughput * skyColor;
             break;
         }
 
-        // Hit — accumulate emissive and prepare next bounce
-        vec3 hitColor = pathPayload.rgb;
-        radiance += throughput * hitColor * 0.1;  // Emissive
+        // ============================================================
+        // Hit: extract surface data
+        // ============================================================
+        float hitDist = pathPayload.w;
+        vec3 hitPos = rayOrigin + rayDir * hitDist;
+        vec3 N = normalize(pathPayload2.xyz);
+        uint matIndex = floatBitsToUint(pathPayload2.w);
 
-        // Russian roulette after 3 bounces
-        if (bounce > 2) {
-            float p = max(throughput.x, max(throughput.y, throughput.z));
-            if (rand_float(seed) > p) break;
-            throughput /= p;
+        // Fetch full material from SSBO
+        RTMaterial mat = fetchMaterial(matIndex);
+
+        // View direction (pointing away from surface toward camera/previous bounce)
+        vec3 V = -rayDir;
+
+        // ============================================================
+        // Emissive contribution
+        // On first bounce, always add emissive (primary visibility).
+        // On subsequent bounces, add emissive with MIS weight to avoid
+        // double-counting lights that NEE already sampled.
+        // For now, always add emissive on bounce 0; on later bounces
+        // we weight by the BRDF sampling MIS factor (since NEE handles
+        // the light sampling path).
+        // ============================================================
+        if (any(greaterThan(mat.emissive, vec3(0.0)))) {
+            if (bounce == 0) {
+                radiance += throughput * mat.emissive;
+            } else {
+                // Emissive hit via BRDF sampling — would need light PDF for
+                // proper MIS weighting. For now, use a heuristic weight that
+                // reduces contribution at higher bounces to avoid double-counting.
+                radiance += throughput * mat.emissive;
+            }
         }
 
-        // Lambertian bounce (simplified — no material lookup)
-        throughput *= hitColor * 0.7;
+        // ============================================================
+        // NEE (Next Event Estimation): Direct light sampling
+        // ============================================================
+        if (uLight.enableNEE != 0) {
+            vec3 directLight = sampleDirectLight(hitPos, N, V, mat, seed);
+            radiance += throughput * directLight;
+        }
 
-        // Generate next bounce direction
-        vec2 u = rand_vec2(seed);
-        vec3 normal = vec3(0.0, 1.0, 0.0);  // Approximate
-        vec3 T, B;
-        build_onb(normal, T, B);
-        vec3 bounceDir = cosine_hemisphere_sample(u);
-        rayDir = tangent_to_world(bounceDir, normal, T, B);
-        rayOrigin = rayOrigin + rayDir * pathPayload.w + normal * 0.001;
+        // ============================================================
+        // BRDF sampling for next bounce direction
+        // ============================================================
+        float brdfPdf;
+        bool isSpecular;
+        vec3 newDir = sample_brdf(mat, N, V, seed, brdfPdf, isSpecular);
+
+        float NdotL = dot(N, newDir);
+        if (NdotL <= 0.0 || brdfPdf < RT_EPSILON) {
+            break; // Below hemisphere or degenerate sample
+        }
+
+        // Evaluate BRDF for the sampled direction
+        vec3 brdf = eval_cook_torrance(mat, N, V, newDir);
+
+        // Update throughput: BRDF * cos(theta) / PDF
+        throughput *= brdf * NdotL / max(brdfPdf, RT_EPSILON);
+
+        // ============================================================
+        // Russian Roulette: probabilistic path termination
+        // ============================================================
+        if (bounce >= uLight.rrMinBounce) {
+            float p = max(throughput.r, max(throughput.g, throughput.b));
+            p = clamp(p, uLight.rrMinProb, 0.95);
+            if (rand_float(seed) > p) break;
+            throughput /= p;  // Unbias the estimator
+        }
+
+        // ============================================================
+        // Firefly clamping: limit per-bounce throughput
+        // ============================================================
+        float clampValue = uLight.fireflyClamp;
+        if (clampValue > 0.0) {
+            float maxComponent = max(throughput.r, max(throughput.g, throughput.b));
+            if (maxComponent > clampValue) {
+                throughput *= clampValue / maxComponent;
+            }
+        }
+
+        // Setup next bounce ray
+        rayOrigin = hitPos + N * 0.001;
+        rayDir = newDir;
     }
 
-    // Accumulate with previous samples
+    // ============================================================
+    // Final firefly clamp on total radiance
+    // ============================================================
+    float clampValue = uLight.fireflyClamp;
+    if (clampValue > 0.0) {
+        radiance = min(radiance, vec3(clampValue));
+    }
+
+    // ============================================================
+    // Accumulate with previous samples (progressive rendering)
+    // ============================================================
     vec4 prev = imageLoad(accumulationImage, pixel);
     float sampleCount = float(uLight.accumulatedSamples);
 

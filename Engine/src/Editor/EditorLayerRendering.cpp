@@ -1900,6 +1900,38 @@ void EditorLayer::DrawSettingsSection_RayTracing() {
                                 cfg.targetSPP = static_cast<u32>(targetSPP);
                             }
 
+                            ImGui::Separator();
+
+                            // Firefly clamp
+                            ImGui::DragFloat("Firefly Clamp", &cfg.fireflyClampValue, 0.5f, 0.0f, 1000.0f, "%.1f");
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Max radiance per sample. Lower values reduce fireflies but may dim highlights.");
+
+                            // NEE toggle
+                            if (ImGui::Checkbox("Next Event Estimation (NEE)", &cfg.enableNEE)) {
+                                pathTracer->ResetAccumulation();
+                            }
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Sample lights directly each bounce for faster convergence.");
+
+                            // MIS toggle
+                            if (ImGui::Checkbox("Multiple Importance Sampling (MIS)", &cfg.enableMIS)) {
+                                pathTracer->ResetAccumulation();
+                            }
+                            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Balance BRDF and light sampling weights for lower variance.");
+
+                            // Russian Roulette
+                            if (ImGui::TreeNode("Russian Roulette")) {
+                                int rrMinBounce = static_cast<int>(cfg.russianRouletteMinBounce);
+                                if (ImGui::SliderInt("Min Bounce##RR", &rrMinBounce, 0, 16)) {
+                                    cfg.russianRouletteMinBounce = static_cast<f32>(rrMinBounce);
+                                }
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Start Russian Roulette path termination after this many bounces.");
+                                ImGui::SliderFloat("Min Survival Prob##RR", &cfg.russianRouletteMinProb, 0.0f, 1.0f, "%.3f");
+                                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Minimum probability a path survives at each bounce (lower = more aggressive termination).");
+                                ImGui::TreePop();
+                            }
+
+                            ImGui::Separator();
+
                             // Progress
                             u32 accumulated = pathTracer->GetAccumulatedSamples();
                             f32 progress = (cfg.targetSPP > 0)

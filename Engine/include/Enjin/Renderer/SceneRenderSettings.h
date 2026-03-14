@@ -249,6 +249,11 @@ struct SceneRenderSettings {
     // Path Tracer
     u32 rtPathTracerMaxBounces = 4;
     u32 rtPathTracerTargetSPP = 1024;
+    f32 rtPathTracerFireflyClamp = 10.0f;  // Max radiance per sample
+    bool rtPathTracerNEE = true;           // Next Event Estimation
+    bool rtPathTracerMIS = true;           // Multiple Importance Sampling
+    f32 rtPathTracerRRMinBounce = 3.0f;    // Russian Roulette min bounce
+    f32 rtPathTracerRRMinProb = 0.05f;     // Russian Roulette min survival probability
 
     // Denoiser
     bool rtDenoiserEnabled = true;

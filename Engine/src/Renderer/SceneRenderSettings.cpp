@@ -91,6 +91,11 @@ SceneRenderSettings SceneRenderSettings::CaptureFromRuntime(ECS::RenderSystem* r
         if (auto* pathTracer = rs->GetPathTracer()) {
             s.rtPathTracerMaxBounces = pathTracer->GetConfig().maxBounces;
             s.rtPathTracerTargetSPP = pathTracer->GetConfig().targetSPP;
+            s.rtPathTracerFireflyClamp = pathTracer->GetConfig().fireflyClampValue;
+            s.rtPathTracerNEE = pathTracer->GetConfig().enableNEE;
+            s.rtPathTracerMIS = pathTracer->GetConfig().enableMIS;
+            s.rtPathTracerRRMinBounce = pathTracer->GetConfig().russianRouletteMinBounce;
+            s.rtPathTracerRRMinProb = pathTracer->GetConfig().russianRouletteMinProb;
         }
         if (auto* denoiser = rs->GetSVGFDenoiser()) {
             s.rtDenoiserEnabled = true;
@@ -334,6 +339,11 @@ void SceneRenderSettings::ApplyToRuntime(ECS::RenderSystem* rs, PostProcessSetti
         if (auto* pathTracer = rs->GetPathTracer()) {
             pathTracer->GetConfig().maxBounces = rtPathTracerMaxBounces;
             pathTracer->GetConfig().targetSPP = rtPathTracerTargetSPP;
+            pathTracer->GetConfig().fireflyClampValue = rtPathTracerFireflyClamp;
+            pathTracer->GetConfig().enableNEE = rtPathTracerNEE;
+            pathTracer->GetConfig().enableMIS = rtPathTracerMIS;
+            pathTracer->GetConfig().russianRouletteMinBounce = rtPathTracerRRMinBounce;
+            pathTracer->GetConfig().russianRouletteMinProb = rtPathTracerRRMinProb;
         }
         if (auto* denoiser = rs->GetSVGFDenoiser()) {
             denoiser->GetConfig().atrousIterations = rtDenoiserIterations;
@@ -757,6 +767,11 @@ json SerializeRenderSettings(const SceneRenderSettings& s) {
     j["rtGIBounces"]                   = s.rtGIBounces;
     j["rtPathTracerMaxBounces"]        = s.rtPathTracerMaxBounces;
     j["rtPathTracerTargetSPP"]         = s.rtPathTracerTargetSPP;
+    j["rtPathTracerFireflyClamp"]      = RF(s.rtPathTracerFireflyClamp);
+    j["rtPathTracerNEE"]               = s.rtPathTracerNEE;
+    j["rtPathTracerMIS"]               = s.rtPathTracerMIS;
+    j["rtPathTracerRRMinBounce"]       = RF(s.rtPathTracerRRMinBounce);
+    j["rtPathTracerRRMinProb"]         = RF(s.rtPathTracerRRMinProb);
     j["rtDenoiserEnabled"]             = s.rtDenoiserEnabled;
     j["rtDenoiserType"]                = s.rtDenoiserType;
     j["rtDenoiserIterations"]          = s.rtDenoiserIterations;
@@ -980,6 +995,11 @@ SceneRenderSettings DeserializeRenderSettings(const json& j) {
     if (j.contains("rtGIBounces"))                    s.rtGIBounces                    = j["rtGIBounces"].get<u32>();
     if (j.contains("rtPathTracerMaxBounces"))         s.rtPathTracerMaxBounces         = j["rtPathTracerMaxBounces"].get<u32>();
     if (j.contains("rtPathTracerTargetSPP"))          s.rtPathTracerTargetSPP          = j["rtPathTracerTargetSPP"].get<u32>();
+    if (j.contains("rtPathTracerFireflyClamp"))       s.rtPathTracerFireflyClamp       = j["rtPathTracerFireflyClamp"].get<f32>();
+    if (j.contains("rtPathTracerNEE"))                s.rtPathTracerNEE                = JB(j["rtPathTracerNEE"]);
+    if (j.contains("rtPathTracerMIS"))                s.rtPathTracerMIS                = JB(j["rtPathTracerMIS"]);
+    if (j.contains("rtPathTracerRRMinBounce"))        s.rtPathTracerRRMinBounce        = j["rtPathTracerRRMinBounce"].get<f32>();
+    if (j.contains("rtPathTracerRRMinProb"))          s.rtPathTracerRRMinProb          = j["rtPathTracerRRMinProb"].get<f32>();
     if (j.contains("rtDenoiserEnabled"))              s.rtDenoiserEnabled              = JB(j["rtDenoiserEnabled"]);
     if (j.contains("rtDenoiserType"))                 s.rtDenoiserType                 = j["rtDenoiserType"].get<u32>();
     if (j.contains("rtDenoiserIterations"))           s.rtDenoiserIterations           = j["rtDenoiserIterations"].get<u32>();

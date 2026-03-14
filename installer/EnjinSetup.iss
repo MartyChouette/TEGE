@@ -14,7 +14,7 @@
 ; ============================================================
 
 #define AppName      "TEGE"
-#define AppVersion   "0.8.0"
+#define AppVersion   "0.8.5"
 #define AppPublisher "Marty Scott"
 #define AppURL       "https://www.marty64.net/enjin"
 #define AppExeName   "EnjinEditor.exe"
@@ -33,6 +33,7 @@ DisableProgramGroupPage=yes
 OutputDir={#SourceRoot}\installer\output
 OutputBaseFilename=TEGESetup-{#AppVersion}
 SetupIconFile={#SourceRoot}\installer\enjin.ico
+UninstallDisplayIcon={app}\enjin.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 LZMANumBlockThreads=4
@@ -80,6 +81,7 @@ Source: "{#SourceRoot}\Engine\shaders\*.spv"; DestDir: "{app}\shaders"; Componen
 Source: "{#SourceRoot}\build\bin\Release\scripts\*"; DestDir: "{app}\scripts"; Components: scripts; Flags: ignoreversion recursesubdirs createallsubdirs skipifsourcedoesntexist
 
 ; --- Documentation ---
+Source: "{#SourceRoot}\installer\enjin.ico";     DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\LICENSE";                DestDir: "{app}"; Components: editor; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\USER_MANUAL.md";   DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion
 Source: "{#SourceRoot}\docs\API_REFERENCE.md";  DestDir: "{app}\docs"; Components: docs; Flags: ignoreversion skipifsourcedoesntexist
@@ -92,10 +94,10 @@ Source: "{#SourceRoot}\docs\manual.html";       DestDir: "{app}\docs"; Component
 ; ============================================================
 
 [Icons]
-Name: "{group}\TEGE Editor";             Filename: "{app}\bin\{#AppExeName}"
+Name: "{group}\TEGE Editor";             Filename: "{app}\bin\{#AppExeName}"; IconFilename: "{app}\enjin.ico"
 Name: "{group}\Documentation";           Filename: "{app}\docs\USER_MANUAL.md";  Components: docs
 Name: "{group}\Uninstall TEGE";          Filename: "{uninstallexe}"
-Name: "{autodesktop}\TEGE Editor";       Filename: "{app}\bin\{#AppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\TEGE Editor";       Filename: "{app}\bin\{#AppExeName}"; Tasks: desktopicon; IconFilename: "{app}\enjin.ico"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"
